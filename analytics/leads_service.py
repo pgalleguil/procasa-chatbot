@@ -32,6 +32,7 @@ from .leads_queries import (
     query_source_performance,
     query_leads_operational_dashboard,
     query_property_commission_rows,
+    query_cartera_demanda_coverage,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -1117,6 +1118,14 @@ def get_leads_dashboard_overview(
     propiedades_sin_precio = pipeline.get("propiedades_sin_precio", 0)
     propiedades_no_en_cartera = pipeline.get("propiedades_no_en_cartera", 0)
 
+    # Cobertura de demanda sobre la cartera ACTIVA de SUCRE (denominador
+    # dinámico, en vivo; no estático).
+    _cobertura = query_cartera_demanda_coverage(
+        period_start=period_start, period_end=period_end, oficina="PROCASA SUCRE")
+    propiedades_con_demanda = _cobertura["propiedades_con_demanda"]
+    cartera_activa = _cobertura["propiedades_activas"]
+    pct_cartera_con_demanda = _cobertura["pct_cartera_con_demanda"]
+
     macro = _load_commercial_macro_information()
     uf_info = (macro.get("indicators") or {}).get("uf") or {}
     uf_value = uf_info.get("value")
@@ -1179,6 +1188,22 @@ def get_leads_dashboard_overview(
     }
 
     sla_data = {
+        # KPI principal CARD 4: "En SLA al corte" (estado al cierre del período).
+        "in_sla_pct": sla_panel.get("overall_in_sla_pct"),
+        "in_sla_count": sla_panel.get("in_sla_count", 0),
+        "out_sla_count": sla_panel.get("out_sla_count", 0),
+        "eligible_total": sla_panel.get("eligible_total", 0),
+        "managed": sla_panel.get("managed", 0),
+        "open": sla_panel.get("open", 0),
+        "open_breached": sla_panel.get("open_breached", 0),
+        "not_evaluable": sla_panel.get("not_evaluable", 0),
+        "excluded_tests": sla_panel.get("excluded_tests", 0),
+        "resolved_compliance_pct": sla_panel.get("resolved_compliance_pct"),
+        "lead": sla_panel.get("lead", {}),
+        "lead_hot": sla_panel.get("lead_hot", {}),
+        "hot_threshold_min": 60,
+        "normal_threshold_min": 180,
+        # Retrocompatibilidad con otros consumidores (PDF, resumen ejecutivo).
         "mediana_general_min": sla_panel.get("overall_median_minutes"),
         "pct_cumplimiento_sla": sla_panel.get("overall_compliance_pct"),
         "mediana_hot_min": (sla_panel.get("lead_hot") or {}).get("median_minutes"),
@@ -1186,8 +1211,6 @@ def get_leads_dashboard_overview(
         "leads_evaluados": sla_panel.get("eligible_total", 0),
         "no_gestionados": sla_panel.get("no_management", 0),
         "vencidos": sla_panel.get("critical_open", 0),
-        "hot_threshold_min": 60,
-        "normal_threshold_min": 180,
     }
 
     rescatados = rescue.get("recuperabilidad_alta", 0)
@@ -1316,6 +1339,9 @@ def get_leads_dashboard_overview(
             "propiedades_otro": propiedades_otro,
             "propiedades_sin_precio": propiedades_sin_precio,
             "propiedades_no_en_cartera": propiedades_no_en_cartera,
+            "propiedades_con_demanda": propiedades_con_demanda,
+            "cartera_activa": cartera_activa,
+            "pct_cartera_con_demanda": pct_cartera_con_demanda,
             "reconciliacion": reconciliacion_pipeline,
             "pct_valorizadas": pct_valorizadas,
             "leads_vinculados": pipeline.get("leads_vinculados", 0),

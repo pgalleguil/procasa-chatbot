@@ -108,7 +108,7 @@ def test_hot_conversion_uses_history_timestamp():
 
 def test_current_hot_without_timestamp_is_insufficient():
     result = payload([lead(cl_dt(27, 9), temperature="HOT")], cl_dt(27, 12))
-    assert result["excluded"]["insufficient_data"] == 1
+    assert result["excluded"]["hot_no_traceability"] == 1
     assert result["lead_hot"]["eligible"] == 0
 
 
@@ -119,7 +119,10 @@ def test_exclusions_are_disjoint_and_not_eligible():
         lead(CHILE_TZ.localize(datetime(2025, 12, 31, 9))),
     ]
     result = payload(rows, cl_dt(27, 12))
-    assert result["excluded"] == {"historical": 1, "not_assigned": 1, "insufficient_data": 1}
+    assert result["excluded"] == {
+        "historical": 1, "not_assigned": 1, "insufficient_data": 0,
+        "hot_no_traceability": 1, "excluded_tests": 0,
+    }
     assert result["lead"]["eligible"] + result["lead_hot"]["eligible"] == 0
 
 

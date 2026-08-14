@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 import math
+import re
 from typing import Any, Mapping, Optional
 
 from chatbot.constants import CHILE_TZ
@@ -15,6 +16,11 @@ from chatbot.crm_metrics import (
 )
 from chatbot.utils import calculate_business_minutes
 from chatbot.storage import get_db
+from chatbot.lead_temperature import (
+    COMMERCIAL_ALERT_TYPES,
+    HOT_INTENTS,
+    HOT_STAGES,
+)
 from config import Config
 
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
@@ -2169,6 +2175,87 @@ def query_property_commission_rows(
     return result
 
 
+def _active_cartera_filter(oficina: Optional[str] = None) -> dict:
+    """Filtro canónico de propiedad comercial ACTIVA en universo_cartera_prop360.
+
+    Definición auditada:
+    - ``disponible_prop360 == True``: estado fiable de activa/retirada (las
+      inactivas además tienen fecha_baja_automatica).
+    - operación comercial definida: ``tipo_operacion.venta`` o
+      ``tipo_operacion.arriendo`` (excluye registros sin operación ni tipo).
+    - opcionalmente restringe a una oficina (``estado.oficina``).
+    """
+    filtro: dict = {
+        "disponible_prop360": True,
+        "$or": [
+            {"tipo_operacion.venta": True},
+            {"tipo_operacion.arriendo": True},
+        ],
+    }
+    if oficina:
+        filtro["estado.oficina"] = {"$regex": f"^{re.escape(oficina)}$", "$options": "i"}
+    return filtro
+
+
+def count_active_cartera_properties(oficina: Optional[str] = None) -> int:
+    """Propiedades comerciales ACTIVAS de la cartera actual (denominador CARD 3).
+
+    Por defecto toda la compañía; con ``oficina`` restringe a una oficina
+    (p. ej. "PROCASA SUCRE"). El conteo es en vivo (no estático): refleja el
+    inventario vigente al momento de la consulta.
+    """
+    try:
+        db = get_db()
+        return int(db["universo_cartera_prop360"].count_documents(
+            _active_cartera_filter(oficina)))
+    except Exception:
+        return 0
+
+
+def query_cartera_demanda_coverage(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    oficina: str = "PROCASA SUCRE",
+) -> dict:
+    """Cobertura de demanda sobre la cartera ACTIVA de una oficina (footer CARD 3).
+
+    - ``propiedades_activas``: cartera comercial activa de la oficina
+      (denominador dinámico, en vivo).
+    - ``propiedades_con_demanda``: de esas activas, códigos únicos con al menos
+      un lead del período (sin leads de prueba), deduplicados por código.
+    - ``pct_cartera_con_demanda``: con_demanda / activas * 100 (1 decimal).
+    """
+    db = get_db()
+    active_codes = set()
+    for d in db["universo_cartera_prop360"].find(
+            _active_cartera_filter(oficina), {"codigo": 1}):
+        c = d.get("codigo")
+        if c is not None:
+            active_codes.add(str(c))
+
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    demand_codes = set()
+    for l in db["leads"].aggregate([
+        _cohort_indexed_prefilter(start_utc, end_utc),
+        _normalized_created_at_stage(),
+        {"$match": _build_commercial_cohort_match(start_utc, end_utc)},
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"prospecto.codigo": 1}},
+    ]):
+        c = (l.get("prospecto") or {}).get("codigo")
+        if c is not None and str(c).strip():
+            demand_codes.add(str(c))
+
+    activas = len(active_codes)
+    con_demanda = len(demand_codes & active_codes)
+    pct = round(con_demanda / activas * 100, 1) if activas else None
+    return {
+        "propiedades_con_demanda": con_demanda,
+        "propiedades_activas": activas,
+        "pct_cartera_con_demanda": pct,
+    }
+
+
 def query_leads_dashboard_rescue(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
@@ -3437,28 +3524,115 @@ def _sla_percentile(values, percentile):
     return round(values[lower] + (values[upper] - values[lower]) * (position - lower), 1)
 
 
-def _sla_bucket():
+def _sla_bucket(threshold_minutes=180):
     return {
-        "eligible": 0, "open_normal": 0, "attention": 0,
-        "near_breach": 0, "breached": 0,
+        "eligible": 0,
         "managed_within": 0, "managed_outside": 0,
-        "median_minutes": None, "p90_minutes": None,
+        "open_within": 0, "open_normal": 0, "attention": 0,
+        "near_breach": 0, "breached": 0, "open_breached": 0,
+        "not_evaluable": 0,
+        "in_sla_count": 0, "out_sla_count": 0, "in_sla_pct": None,
+        "resolved_compliance_pct": None,
+        "median_minutes": None, "p90_minutes": None, "managed_sample": 0,
+        "threshold_minutes": threshold_minutes,
         "_managed_minutes": [],
     }
 
 
-def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
-    """Build the dashboard SLA contract from canonical lead evidence only."""
+def _resolve_hot_start_evidence(lead: Mapping[str, Any]) -> Optional[datetime]:
+    """Timestamp canónico de inicio HOT por jerarquía de evidencia real.
+
+    1. temperature_history con valor HOT y timestamp.
+    2. lifecycle.hot_since.
+    3. last_intent_at cuando la intención es HOT.
+    4. timestamp mínimo de alerta comercial compatible (prospecto.alerts_sent).
+    5. stage_history con etapa HOT / lifecycle.visit_scheduled_at.
+
+    Nunca usa lead_temperature_effective_updated_at, assigned_at arbitrario ni
+    fechas inventadas. Devuelve None cuando no hay evidencia.
+    """
+    lifecycle = lead.get("lifecycle") or {}
+
+    for entry in lead.get("temperature_history") or []:
+        if isinstance(entry, Mapping) and str(entry.get("value") or entry.get("temperature") or "").upper() == "HOT":
+            timestamp = coerce_utc_datetime(entry.get("at") or entry.get("timestamp"))
+            if timestamp:
+                return timestamp
+
+    timestamp = coerce_utc_datetime(lifecycle.get("hot_since"))
+    if timestamp:
+        return timestamp
+
+    intent = str(lead.get("last_intent") or "").upper()
+    if intent in HOT_INTENTS:
+        timestamp = coerce_utc_datetime(lead.get("last_intent_at"))
+        if timestamp:
+            return timestamp
+
+    prospecto = lead.get("prospecto") or {}
+    raw_alerts = prospecto.get("alerts_sent") or lead.get("alerts_sent") or {}
+    if isinstance(raw_alerts, Mapping):
+        alert_times = []
+        for alert_type, raw_at in raw_alerts.items():
+            if alert_type in COMMERCIAL_ALERT_TYPES:
+                timestamp = coerce_utc_datetime(raw_at)
+                if timestamp:
+                    alert_times.append(timestamp)
+        if alert_times:
+            return min(alert_times)
+
+    for entry in lead.get("stage_history") or []:
+        if isinstance(entry, Mapping) and str(entry.get("to") or "").upper() in HOT_STAGES:
+            timestamp = coerce_utc_datetime(entry.get("timestamp") or entry.get("at"))
+            if timestamp:
+                return timestamp
+
+    timestamp = coerce_utc_datetime(lifecycle.get("visit_scheduled_at"))
+    if timestamp:
+        return timestamp
+
+    return None
+
+
+def build_sla_risk_payload(leads, *, now=None, cutover_at=None, cutoff_at=None, exclude_tests=False):
+    """Build the dashboard SLA contract from canonical lead evidence only.
+
+    Definición definitiva de CARD 4:
+
+    - ``cutoff_at`` es el límite exclusivo del período (``period_end`` UTC). El
+      reloj as-of es ``cutoff = min(now, cutoff_at)``: toda evaluación se
+      congela en el cierre del período; un lead abierto al corte se mide hasta
+      ``cutoff`` y NO hasta ``datetime.now()`` cuando el período ya cerró.
+    - Una primera gestión solo cuenta si ``first_valid_management_at < cutoff``.
+    - Un lead se considera HOT en el snapshot solo si ``hot_start_at < cutoff``
+      (la temperatura posterior al cierre no reescribe períodos históricos).
+    - ``hot_start_at`` se resuelve por la jerarquía de evidencia real
+      (``_resolve_hot_start_evidence``); HOT sin evidencia = no evaluable por
+      trazabilidad (no se trata como Normal).
+    - Una primera gestión anterior a ``hot_start_at`` se evalúa como NORMAL
+      (el HOT no reescribe el pasado). Si el HOT precede a la gestión, el SLA
+      HOT parte en ``max(assigned_at, hot_start_at)``.
+    - ``exclude_tests`` excluye estructuralmente los leads de prueba (misma
+      regla de CARD 3) y los contabiliza en ``excluded.excluded_tests``.
+    """
     now = coerce_utc_datetime(now) or datetime.now(timezone.utc)
     cutover = coerce_utc_datetime(cutover_at)
-    buckets = {"lead": _sla_bucket(), "lead_hot": _sla_bucket()}
+    cutoff = coerce_utc_datetime(cutoff_at) or now
+    cutoff = min(cutoff, now)
+    buckets = {"lead": _sla_bucket(threshold_minutes=180), "lead_hot": _sla_bucket(threshold_minutes=60)}
     managed_durations = {"lead": [], "lead_hot": []}
-    excluded = {"historical": 0, "not_assigned": 0, "insufficient_data": 0}
+    excluded = {
+        "historical": 0, "not_assigned": 0, "insufficient_data": 0,
+        "hot_no_traceability": 0, "excluded_tests": 0,
+    }
 
     for lead in leads:
         lifecycle = lead.get("lifecycle") or {}
         assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
         managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if exclude_tests and _is_test_lead(lead):
+            excluded["excluded_tests"] += 1
+            continue
         if not assigned:
             excluded["not_assigned"] += 1
             continue
@@ -3468,93 +3642,145 @@ def build_sla_risk_payload(leads, *, now=None, cutover_at=None):
         if managed and managed < assigned:
             excluded["insufficient_data"] += 1
             continue
+        if assigned >= cutoff:
+            # Al cierre del período el SLA aún no había iniciado (asignación
+            # posterior al corte): no evaluable.
+            excluded["insufficient_data"] += 1
+            continue
 
+        # --- Hot: evidencia y as-of ---
         history = lead.get("temperature_history") or []
         has_hot_evidence = str(lead.get("lead_temperature_effective") or "").upper() == "HOT"
         has_hot_evidence = has_hot_evidence or any(
             str((entry or {}).get("value") or (entry or {}).get("temperature") or "").upper() == "HOT"
             for entry in history if isinstance(entry, Mapping)
         )
-        hot_start = resolve_hot_start_at(
-            assigned_at=assigned,
-            temperature_history=history,
-            effective_temperature=lead.get("lead_temperature_effective"),
-        ) if has_hot_evidence else None
-        # The SLA is closed at first valid management. A Hot event after that
-        # point cannot reclassify the already-closed Lead cycle.
-        profile = "lead_hot" if hot_start and (not managed or hot_start < managed) else "lead"
-        if has_hot_evidence and not hot_start:
-            excluded["insufficient_data"] += 1
+        hot_start = _resolve_hot_start_evidence(lead) if has_hot_evidence else None
+        if has_hot_evidence and hot_start and hot_start >= cutoff:
+            # Se volvió HOT después del cierre del período: en este snapshot NO
+            # era HOT; se evalúa por su evidencia disponible hasta el corte.
+            has_hot_evidence = False
+            hot_start = None
+        if has_hot_evidence and hot_start is None:
+            excluded["hot_no_traceability"] += 1
             continue
-        sla = calculate_sla(
-            assigned_at=assigned,
-            first_valid_management_at=managed,
-            now=now,
-            temperature="HOT" if profile == "lead_hot" else "COLD",
-            hot_started_at=hot_start,
-            require_hot_start=(profile == "lead_hot"),
-        )
-        if profile == "lead_hot" and hot_start and hot_start > assigned:
-            # A Lead breach before Hot conversion remains an outside-SLA
-            # result even if the later Hot segment itself was short.
-            pre_hot = calculate_sla(
-                assigned_at=assigned,
-                first_valid_management_at=hot_start,
-                now=now,
-                temperature="COLD",
-            )
-            if pre_hot.get("canonical_state") == "MANAGED_OUTSIDE_SLA":
-                sla["canonical_state"] = "MANAGED_OUTSIDE_SLA"
-            elif pre_hot.get("canonical_state") == "BREACHED":
-                sla["canonical_state"] = "BREACHED"
-        if sla.get("canonical_state") in {"SLA_NOT_STARTED", "INSUFFICIENT_DATA"}:
-            excluded["insufficient_data"] += 1
-            continue
+
+        # --- Perfil y sla_start (sin reescribir el pasado) ---
+        if has_hot_evidence:
+            if managed and managed < hot_start:
+                # La primera gestión se resolvió antes del HOT: perfil NORMAL.
+                profile = "lead"
+                sla_start = assigned
+                threshold = 180
+            else:
+                profile = "lead_hot"
+                sla_start = max(assigned, hot_start)
+                threshold = 60
+        else:
+            profile = "lead"
+            sla_start = assigned
+            threshold = 180
+
+        # --- As-of: la gestión solo cuenta si ocurrió antes del corte ---
+        if managed and managed >= cutoff:
+            managed = None  # al cierre del período seguía abierto
 
         bucket = buckets[profile]
+        boundary = managed or cutoff
+        if profile == "lead_hot":
+            minutes = max(0, calculate_business_minutes(
+                sla_start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
+        else:
+            minutes = max(0, calculate_business_minutes(
+                assigned.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
         bucket["eligible"] += 1
-        minutes = sla.get("hot_minutes") if profile == "lead_hot" else sla.get("minutes")
+
         if managed:
-            bucket["managed_within" if sla["canonical_state"] == "MANAGED_WITHIN_SLA" else "managed_outside"] += 1
+            if minutes < threshold:
+                bucket["managed_within"] += 1
+            else:
+                bucket["managed_outside"] += 1
             if minutes is not None:
                 managed_durations[profile].append(minutes)
-        elif sla["canonical_state"] == "ACTIVE_NORMAL":
-            bucket["open_normal"] += 1
-        elif sla["canonical_state"] == "ATTENTION":
-            bucket["attention"] += 1
-        elif sla["canonical_state"] == "NEAR_BREACH":
-            bucket["near_breach"] += 1
-        elif sla["canonical_state"] == "BREACHED":
+        elif minutes >= threshold:
             bucket["breached"] += 1
+        elif minutes >= (45 if profile == "lead_hot" else 150):
+            bucket["near_breach"] += 1
+        elif minutes >= (30 if profile == "lead_hot" else 120):
+            bucket["attention"] += 1
+        else:
+            bucket["open_within"] += 1
 
-    for bucket in buckets.values():
-        profile = "lead" if bucket is buckets["lead"] else "lead_hot"
+    # --- Resumen por perfil ---
+    for profile in ("lead", "lead_hot"):
+        bucket = buckets[profile]
         bucket.pop("_managed_minutes", None)
+        bucket["open_normal"] = bucket["open_within"]
+        bucket["open_breached"] = bucket["breached"]
+        bucket["in_sla_count"] = (
+            bucket["managed_within"] + bucket["open_within"]
+            + bucket["attention"] + bucket["near_breach"]
+        )
+        bucket["out_sla_count"] = bucket["managed_outside"] + bucket["breached"]
+        bucket["in_sla_pct"] = _coverage_pct(
+            bucket["in_sla_count"], bucket["in_sla_count"] + bucket["out_sla_count"])
+        resolved = bucket["managed_within"] + bucket["managed_outside"]
+        bucket["resolved_compliance_pct"] = _coverage_pct(
+            bucket["managed_within"], resolved) if resolved else None
         bucket["median_minutes"] = _sla_percentile(managed_durations[profile], 50)
+        bucket["p50_minutes"] = bucket["median_minutes"]
         bucket["p90_minutes"] = _sla_percentile(managed_durations[profile], 90)
+        bucket["managed_sample"] = len(managed_durations[profile])
+
+    # --- Global ---
+    overall_in_sla = sum(bucket["in_sla_count"] for bucket in buckets.values())
+    overall_out_sla = sum(bucket["out_sla_count"] for bucket in buckets.values())
+    overall_eligible = overall_in_sla + overall_out_sla
+    overall_in_sla_pct = _coverage_pct(overall_in_sla, overall_eligible) if overall_eligible else None
+    overall_managed = sum(bucket["managed_within"] + bucket["managed_outside"] for bucket in buckets.values())
+    overall_open = overall_eligible - overall_managed
+    overall_breached = sum(bucket["breached"] for bucket in buckets.values())
+    overall_resolved = sum(bucket["managed_within"] + bucket["managed_outside"] for bucket in buckets.values())
+    resolved_within = sum(bucket["managed_within"] for bucket in buckets.values())
+    resolved_compliance_pct = _coverage_pct(resolved_within, overall_resolved) if overall_resolved else None
     overall_median_minutes = _sla_percentile(
         managed_durations["lead"] + managed_durations["lead_hot"], 50
     )
+    # Retrocompatibilidad: ratio resuelto/vencido (sin abiertos dentro de SLA).
     overall_numerator = sum(bucket["managed_within"] for bucket in buckets.values())
     overall_denominator = overall_numerator + sum(
         bucket["managed_outside"] + bucket["breached"] for bucket in buckets.values()
     )
-    overall_pct = _coverage_pct(overall_numerator, overall_denominator) if overall_denominator else None
+    overall_compliance_pct = _coverage_pct(overall_numerator, overall_denominator) if overall_denominator else None
     policy_cutover = cutover.isoformat() if cutover else None
+    not_evaluable = excluded["insufficient_data"] + excluded["hot_no_traceability"]
     return {
         "policy_timezone": "America/Santiago",
         "business_hours": {"days": "lunes-viernes", "start": "09:00", "end": "19:00"},
         "policy_cutover_at": policy_cutover,
-        "overall_compliance_pct": overall_pct,
+        # KPI principal CARD 4: estado al corte.
+        "overall_in_sla_pct": overall_in_sla_pct,
+        "in_sla_count": overall_in_sla,
+        "out_sla_count": overall_out_sla,
+        "eligible_total": overall_eligible,
+        "managed": overall_managed,
+        "open": overall_open,
+        "open_breached": overall_breached,
+        "not_evaluable": not_evaluable,
+        "excluded_tests": excluded["excluded_tests"],
+        "resolved_compliance_pct": resolved_compliance_pct,
+        # Retrocompatibilidad (otros consumidores del payload).
+        "overall_compliance_pct": overall_compliance_pct,
         "overall_median_minutes": overall_median_minutes,
         "overall_numerator": overall_numerator,
         "overall_denominator": overall_denominator,
+        "within_sla_pct": overall_compliance_pct,
         "lead": buckets["lead"], "lead_hot": buckets["lead_hot"],
         "excluded": excluded,
-        "within_sla_pct": overall_pct,
         "critical_open": buckets["lead"]["breached"] + buckets["lead_hot"]["breached"],
-        "no_management": sum(bucket["open_normal"] + bucket["attention"] + bucket["near_breach"] + bucket["breached"] for bucket in buckets.values()),
-        "eligible_total": sum(bucket["eligible"] for bucket in buckets.values()),
+        "no_management": sum(
+            bucket["open_within"] + bucket["attention"] + bucket["near_breach"] + bucket["breached"]
+            for bucket in buckets.values()),
         "missing_reference": excluded["insufficient_data"],
         "risk_bands": [],
         "distribution": [],
@@ -3724,7 +3950,12 @@ def query_executive_summary(period_start=None, period_end=None, filters=None,
 
 
 def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
-    """Canonical SLA panel using business minutes and verified assignment evidence."""
+    """Canonical SLA panel using business minutes and verified assignment evidence.
+
+    CARD 4 definitivo: aplica corte as-of (``period_end``), resuelve HOT por la
+    jerarquía de evidencia real y excluye estructuralmente los leads de prueba
+    (misma regla de CARD 3).
+    """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     pipeline = [
@@ -3735,8 +3966,21 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
             "_id": 1,
             "lifecycle.assigned_at": 1,
             "lifecycle.first_valid_management_at": 1,
+            "lifecycle.hot_since": 1,
+            "lifecycle.visit_scheduled_at": 1,
             "lead_temperature_effective": 1,
             "temperature_history": 1,
+            "last_intent": 1,
+            "last_intent_at": 1,
+            "stage_history": 1,
+            "prospecto.alerts_sent": 1,
+            "alerts_sent": 1,
+            "_test_lead": 1,
+            "is_test": 1,
+            "phone": 1,
+            "prospecto.canal_origen": 1,
+            "prospecto.origen": 1,
+            "prospecto.nombre": 1,
         }},
     ]
     raw = list(db["leads"].aggregate(pipeline))
@@ -3744,6 +3988,8 @@ def query_sla_risk_panel(period_start=None, period_end=None, filters=None):
         raw,
         now=datetime.now(timezone.utc),
         cutover_at=getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None),
+        cutoff_at=end_utc,
+        exclude_tests=True,
     )
 
 

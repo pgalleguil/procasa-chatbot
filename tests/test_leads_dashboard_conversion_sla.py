@@ -419,9 +419,13 @@ def _service_patches(total, citas, evaluable, prev_total=0, prev_citas=0, prev_e
             "previous": {"total": prev_total, "citas": prev_citas, "evaluable": prev_evaluable, "orders_ambiguous": 0},
         }),
         patch.object(lq, "query_leads_dashboard_pipeline", return_value={
-            "monto_uf": 0, "propiedades_vinculadas": 0, "leads_vinculados": 0,
+            "monto_uf": 0, "propiedades_vinculadas": 0, "propiedades_con_precio": 0,
+            "propiedades_cartera": 0, "propiedades_cartera_valorizadas": 0,
+            "propiedades_venta": 0, "propiedades_arriendo": 0, "propiedades_otro": 0,
+            "propiedades_sin_precio": 0, "propiedades_no_en_cartera": 0, "leads_vinculados": 0,
             "monto_venta_uf": 0, "monto_arriendo_uf": 0, "monto_otro_uf": 0,
         }),
+        patch.object(lq, "query_property_commission_rows", return_value=[]),
         patch.object(lq, "query_sla_risk_panel", return_value={
             "overall_median_minutes": None, "overall_compliance_pct": None,
             "lead_hot": {}, "lead": {}, "eligible_total": 0, "no_management": 0, "critical_open": 0,
@@ -1082,3 +1086,860 @@ def test_frontend_sin_asignar_siempre_al_final():
         key=lambda a: (a["nombre"].strip().lower() == "sin asignar", -(a["citas"] or 0), -(a["conversion_pct"] or 0))
     )
     assert ordered[-1]["nombre"] == "Sin Asignar"
+
+
+# =============================================================================
+# 6. CARD 3 — CARTERA POTENCIAL & VALORIZACIÓN
+# =============================================================================
+
+
+def _run_overview_pipeline(properties, commission_rows, uf=40846.11):
+    """Ejecuta get_leads_dashboard_overview con pipeline/commission simulados."""
+    from analytics.leads_service import get_leads_dashboard_overview
+    db = make_db([])
+    _valued = [p for p in properties if p.get("precio_uf") is not None]
+    pipeline_mock = {
+        "monto_uf": sum((p["precio_uf"] or 0) for p in properties),
+        "propiedades_vinculadas": len(properties),
+        "propiedades_cartera": len(properties),
+        "propiedades_con_precio": len(_valued),
+        "propiedades_cartera_valorizadas": len(_valued),
+        "propiedades_venta": sum(1 for p in _valued if p["operacion"] == "venta"),
+        "propiedades_arriendo": sum(1 for p in _valued if p["operacion"] == "arriendo"),
+        "propiedades_otro": sum(1 for p in _valued if p["operacion"] == "otro"),
+        "propiedades_sin_precio": sum(1 for p in properties if p.get("precio_uf") is None),
+        "propiedades_no_en_cartera": 0,
+        "leads_vinculados": len(properties),
+        "monto_venta_uf": round(sum((p["precio_uf"] or 0) for p in properties if p["operacion"] == "venta"), 1),
+        "monto_arriendo_uf": round(sum((p["precio_uf"] or 0) for p in properties if p["operacion"] == "arriendo"), 1),
+        "monto_otro_uf": round(sum((p["precio_uf"] or 0) for p in properties if p["operacion"] == "otro"), 1),
+    }
+    with ExitStack() as stack:
+        for patcher in _service_patches(total=len(properties), citas=0, evaluable=0):
+            stack.enter_context(patcher)
+        stack.enter_context(patch.object(lq, "get_db", return_value=db))
+        stack.enter_context(patch.object(lq, "_normalized_created_at_stage", return_value={}))
+        stack.enter_context(patch.object(lq, "_build_commercial_cohort_match", return_value={}))
+        stack.enter_context(patch.object(lq, "query_leads_dashboard_pipeline", return_value=pipeline_mock))
+        stack.enter_context(patch.object(lq, "query_property_commission_rows", return_value=commission_rows))
+        # El service importa query_property_commission_rows como nombre local:
+        stack.enter_context(patch("analytics.leads_service.query_property_commission_rows", return_value=commission_rows))
+        # uf_value viene de leer_uf_cache / macro; forzamos con macro
+        stack.enter_context(patch("analytics.leads_service._load_commercial_macro_information", return_value={
+            "available": True, "indicators": {"uf": {"value": uf, "as_of": "2026-08-10T04:00:00Z", "available": True}},
+        }))
+        return get_leads_dashboard_overview(period_start="2026-07-10", period_end="2026-07-20", compare="none")
+
+
+def test_card3_propiedad_repetida_se_cuenta_una_vez():
+    # Deduplicación por código: dos leads P1 -> una sola propiedad en comisión.
+    rows = [
+        {"codigo": "P1", "precio_uf": 5200.0, "operacion": "venta"},
+        {"codigo": "P2", "precio_uf": 1000.0, "operacion": "venta"},
+    ]
+    # El query deduplica por codigo; simulamos 2 filas únicas aunque hubo 3 leads.
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "P1", "precio_uf": 5200.0, "operacion": "venta"},
+                    {"codigo": "P2", "precio_uf": 1000.0, "operacion": "venta"}],
+        commission_rows=rows,
+    )
+    p = ov["pipeline"]
+    assert p["propiedades_valorizadas"] == 2
+    assert p["monto_venta_uf"] == 6200.0
+
+
+def test_card3_venta_usa_2pct_no_4():
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "P1", "precio_uf": 10000.0, "operacion": "venta"}],
+        commission_rows=[{"codigo": "P1", "precio_uf": 10000.0, "operacion": "venta"}],
+    )
+    p = ov["pipeline"]
+    # 2% de 10000 = 200 UF (no 400)
+    assert p["comision_venta_uf"] == 200.0
+    assert p["comision_potencial_uf"] == 200.0
+
+
+def test_card3_venta_bajo_minimo_usa_1mm_uf():
+    UF = 40846.11
+    min_uf = 1000000 / UF  # ~24.48 UF
+    # 100 UF * 2% = 2 UF < 24.48 UF -> aplica mínimo
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "P1", "precio_uf": 100.0, "operacion": "venta"}],
+        commission_rows=[{"codigo": "P1", "precio_uf": 100.0, "operacion": "venta"}],
+    )
+    p = ov["pipeline"]
+    assert round(min_uf, 2) == round(24.48, 2)
+    assert round(p["comision_venta_uf"], 1) == round(min_uf, 1)  # aplica mínimo (1 decimal)
+    assert p["comision_venta_afectadas_min"] == 1
+
+
+def test_card3_venta_sobre_minimo_usa_2pct():
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "P1", "precio_uf": 20000.0, "operacion": "venta"}],
+        commission_rows=[{"codigo": "P1", "precio_uf": 20000.0, "operacion": "venta"}],
+    )
+    p = ov["pipeline"]
+    assert p["comision_venta_uf"] == 400.0  # 20000 * 0.02
+
+
+def test_card3_arriendo_usa_50pct_no_100():
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "A1", "precio_uf": 80.0, "operacion": "arriendo"}],
+        commission_rows=[{"codigo": "A1", "precio_uf": 80.0, "operacion": "arriendo"}],
+    )
+    p = ov["pipeline"]
+    assert p["comision_arriendo_uf"] == 40.0  # 80 * 0.50, no 80
+
+
+def test_card3_arriendo_bajo_minimo_usa_100k_uf():
+    UF = 40846.11
+    min_uf = 100000 / UF  # ~2.4482 UF
+    # canon 4 UF * 50% = 2 UF < 2.4482 UF -> aplica mínimo
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "A1", "precio_uf": 4.0, "operacion": "arriendo"}],
+        commission_rows=[{"codigo": "A1", "precio_uf": 4.0, "operacion": "arriendo"}],
+    )
+    p = ov["pipeline"]
+    assert round(min_uf, 4) == round(2.4482, 4)
+    assert round(p["comision_arriendo_uf"], 1) == round(min_uf, 1)  # aplica mínimo (1 decimal)
+    assert p["comision_arriendo_afectadas_min"] == 1
+
+
+def test_card3_comision_total_por_propiedad():
+    rows = [
+        {"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"},
+        {"codigo": "V2", "precio_uf": 300.0, "operacion": "venta"},
+        {"codigo": "A1", "precio_uf": 100.0, "operacion": "arriendo"},
+    ]
+    ov = _run_overview_pipeline(properties=rows, commission_rows=rows)
+    p = ov["pipeline"]
+    UF = 40846.11
+    min_v = 1000000 / UF
+    min_a = 100000 / UF
+    expected_venta = round(max(10000 * 0.02, min_v) + max(300 * 0.02, min_v), 1)
+    expected_arriendo = round(max(100 * 0.50, min_a), 1)
+    assert p["comision_venta_uf"] == expected_venta
+    assert p["comision_arriendo_uf"] == expected_arriendo
+    assert p["comision_potencial_uf"] == round(expected_venta + expected_arriendo, 1)
+
+
+def test_card3_comision_total_venta_mas_arriendo_valida():
+    rows = [
+        {"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"},
+        {"codigo": "A1", "precio_uf": 100.0, "operacion": "arriendo"},
+    ]
+    ov = _run_overview_pipeline(properties=rows, commission_rows=rows)
+    p = ov["pipeline"]
+    assert p["comision_potencial_uf"] == round(p["comision_venta_uf"] + p["comision_arriendo_uf"], 1)
+
+
+def test_card3_sin_iva():
+    # Comisión neta: no multiplicar por 1.19
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"}],
+        commission_rows=[{"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"}],
+    )
+    p = ov["pipeline"]
+    assert p["comision_venta_uf"] == 200.0  # no 238
+
+
+def test_card3_propiedad_sin_precio_no_genera_comision():
+    # Propiedad sin precio: vinculada, no valorizada, sin comisión.
+    rows = [{"codigo": "P2", "precio_uf": 2000.0, "operacion": "venta"}]  # solo con precio
+    ov = _run_overview_pipeline(
+        properties=[
+            {"codigo": "P1", "precio_uf": None, "operacion": "venta"},
+            {"codigo": "P2", "precio_uf": 2000.0, "operacion": "venta"},
+        ],
+        commission_rows=rows,
+    )
+    p = ov["pipeline"]
+    assert p["propiedades_vinculadas"] == 2
+    assert p["propiedades_valorizadas"] == 1
+    assert p["propiedades_sin_precio"] == 1
+    assert p["comision_venta_uf"] == 40.0  # 2000 * 0.02, solo P2
+
+
+def test_card3_vinculadas_igual_valorizadas_mas_sin_precio():
+    ov = _run_overview_pipeline(
+        properties=[
+            {"codigo": "P1", "precio_uf": 1000.0, "operacion": "venta"},
+            {"codigo": "P2", "precio_uf": None, "operacion": "venta"},
+            {"codigo": "P3", "precio_uf": 500.0, "operacion": "arriendo"},
+        ],
+        commission_rows=[
+            {"codigo": "P1", "precio_uf": 1000.0, "operacion": "venta"},
+            {"codigo": "P3", "precio_uf": 500.0, "operacion": "arriendo"},
+        ],
+    )
+    p = ov["pipeline"]
+    assert p["propiedades_vinculadas"] == p["propiedades_valorizadas"] + p["propiedades_sin_precio"]
+    assert p["propiedades_valorizadas"] == 2
+    assert p["propiedades_sin_precio"] == 1
+    assert p["pct_valorizadas"] == round(2 / 3 * 100, 1)
+
+
+def test_card3_venta_y_arriendo_no_se_suman_como_total_uf():
+    # monto_uf legacy puede existir, pero venta y arriendo se entregan separados
+    # y el frontend no los suma como valorización única.
+    ov = _run_overview_pipeline(
+        properties=[
+            {"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"},
+            {"codigo": "A1", "precio_uf": 100.0, "operacion": "arriendo"},
+        ],
+        commission_rows=[
+            {"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"},
+            {"codigo": "A1", "precio_uf": 100.0, "operacion": "arriendo"},
+        ],
+    )
+    p = ov["pipeline"]
+    assert p["monto_venta_uf"] == 10000.0
+    assert p["monto_arriendo_uf"] == 100.0
+    # comisión potencial sí suma (mismo concepto UF)
+    assert p["comision_potencial_uf"] == round(200.0 + 50.0, 1)
+
+
+def test_card3_frontend_arriendo_uf_visible():
+    # Presentación: Arriendo en UF (sin "/mes" visible), en UNA SOLA LÍNEA con
+    # Venta (sin nota "Renta mensual" debajo). El tooltip mantiene la unidad
+    # real (UF/mes, canon mensual).
+    card_html = HTML.split('id="cardPipeline"', 1)[1].split('id="cardSla"', 1)[0]
+    arriendo_item = card_html.split('id="cd3MontoArriendo"', 1)[1]
+    arriendo_item = arriendo_item[:200]
+    assert "UF" in arriendo_item
+    assert "/mes" not in arriendo_item
+    assert "Renta mensual" not in card_html
+    assert "renta mensual" in HTML  # el tooltip explica que es el canon mensual
+    # Métricas secundarias en una sola línea horizontal (mismo contenedor .cd3-sec).
+    assert 'id="cd3MontoVenta"' in card_html and 'id="cd3MontoArriendo"' in card_html
+    assert 'cd3-sec-item-arriendo' not in card_html  # sin columna separada
+
+
+def test_card3_comision_estimada_desaparece_y_aparece_potencial():
+    assert "Comisión estimada" not in HTML
+    assert "Comisión potencial" in HTML
+    assert "comision_potencial_uf" in HTML
+
+
+def test_card3_no_4pct_en_frontend():
+    assert "4% venta" not in HTML
+    assert "comision_estimada_uf" not in HTML
+    assert "pct_comision" not in HTML
+
+
+def test_card3_pdf_usa_comision_potencial():
+    pdf = HTML.split("function exportExecutivePDF()", 1)[1]
+    assert "Comisión potencial" in pdf
+    assert "comision_potencial_uf" in pdf
+    assert "Comisión estimada" not in pdf
+    assert "Venta + Arriendo" not in pdf
+
+
+def test_card3_property_6756_no_filtrada():
+    src = SERVICE_SRC + "\n" + Path("analytics/leads_queries.py").read_text(encoding="utf-8")
+    assert "6756" not in src
+
+
+def test_card3_json_serializable():
+    ov = _run_overview_pipeline(
+        properties=[{"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"}],
+        commission_rows=[{"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"}],
+    )
+    json.dumps(ov)
+
+
+# =============================================================================
+# 6.1 CARD 3 — FUENTE CANÓNICA DE PRECIO (universo_cartera_prop360)
+# =============================================================================
+
+from analytics.leads_queries import (
+    _canonical_prices_for_codes,
+    _property_price_rows,
+    query_leads_dashboard_pipeline,
+    query_property_commission_rows,
+)
+
+
+def _make_prop_db(leads, universo):
+    db = make_db(leads=leads)
+    if universo:
+        db["universo_cartera_prop360"].insert_many(universo)
+    return db
+
+
+def _run_property_rows(db, **kw):
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        return query_property_commission_rows(period_start="2026-07-10", period_end="2026-07-20", **kw)
+
+def test_card3_fuente_canonica_lead_sin_precio_recupera_precio():
+    # A. Lead sin precio, pero propiedad actual SÍ tiene precio en cartera.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "operacion": "Venta", "precio_uf": None}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 5000.0},
+                "precio_arriendo": {"precio_uf": None},
+            }},
+        ],
+    )
+    rows = _run_property_rows(db)
+    assert len(rows) == 1
+    assert rows[0]["codigo"] == "100"
+    assert rows[0]["precio_uf"] == 5000.0
+    assert rows[0]["operacion"] == "venta"
+
+
+def test_card3_fuente_canonica_se_usa_cuando_existe():
+    # La prioridad conceptual es la fuente canónica, no los campos del lead.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "operacion": "Venta", "precio_uf": 4000.0}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 5000.0},
+                "precio_arriendo": {"precio_uf": None},
+            }},
+        ],
+    )
+    rows = _run_property_rows(db)
+    assert rows[0]["precio_uf"] == 5000.0
+
+
+def test_card3_fuente_canonica_lead_corrige_unidad_6801():
+    # 6801: el lead trae 1220 UF/mes (error de unidad), el canónico 12,2 UF.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "6801", "operacion": "Arriendo"},
+             "cartera_data": {"precio_uf": 1220.0}},
+        ],
+        universo=[
+            {"codigo": "6801", "tipo_operacion": {
+                "venta": False, "arriendo": True,
+                "precio_venta": {"precio_uf": None},
+                "precio_arriendo": {"precio_uf": 12.2},
+            }},
+        ],
+    )
+    rows = _run_property_rows(db)
+    assert rows[0]["precio_uf"] == 12.2
+
+
+def test_card3_fuente_canonica_operacion_desde_canonico_si_lead_vacia():
+    # Lead sin operación: la operación se resuelve desde la fuente canónica.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "precio_uf": None}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": False, "arriendo": True,
+                "precio_venta": {"precio_uf": None},
+                "precio_arriendo": {"precio_uf": 60.0},
+            }},
+        ],
+    )
+    rows = _run_property_rows(db)
+    assert len(rows) == 1
+    assert rows[0]["operacion"] == "arriendo"
+    assert rows[0]["precio_uf"] == 60.0
+
+
+def test_card3_sin_precio_en_ninguna_fuente():
+    # B. Propiedad realmente sin precio en ninguna fuente actual.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "operacion": "Venta", "precio_uf": None}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": None},
+                "precio_arriendo": {"precio_uf": None},
+            }},
+        ],
+    )
+    rows = _run_property_rows(db)
+    assert rows == []
+
+
+def test_card3_codigo_no_existe_en_cartera_se_reporta_separado():
+    # C. Código que no existe en la cartera actual: sin valorización, reportado aparte.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "SMOKE005", "operacion": "Venta", "precio_uf": None}},
+        ],
+        universo=[],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(period_start="2026-07-10", period_end="2026-07-20")
+    assert pipe["propiedades_vinculadas"] == 1
+    assert pipe["propiedades_cartera"] == 0
+    assert pipe["propiedades_con_precio"] == 0
+    assert pipe["propiedades_cartera_valorizadas"] == 0
+    assert pipe["propiedades_sin_precio"] == 0
+    assert pipe["propiedades_no_en_cartera"] == 1
+
+
+def test_card3_pipeline_contabiliza_canonico_y_no_en_cartera():
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "A", "operacion": "Venta", "precio_uf": None}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "B", "operacion": "Venta", "precio_uf": 2000.0}},
+            {"_id": "l3", "created_at": "2026-07-13T14:00:00Z",
+             "prospecto": {"codigo": "C", "operacion": "Arriendo", "precio_uf": None}},
+            {"_id": "l4", "created_at": "2026-07-14T14:00:00Z",
+             "prospecto": {"codigo": "GHOST", "operacion": "Venta", "precio_uf": None}},
+        ],
+        universo=[
+            {"codigo": "A", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 3000.0}, "precio_arriendo": {"precio_uf": None}}},
+            {"codigo": "B", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 2000.0}, "precio_arriendo": {"precio_uf": None}}},
+            {"codigo": "C", "tipo_operacion": {
+                "venta": False, "arriendo": True,
+                "precio_venta": {"precio_uf": None}, "precio_arriendo": {"precio_uf": 100.0}}},
+        ],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(period_start="2026-07-10", period_end="2026-07-20")
+    assert pipe["propiedades_vinculadas"] == 4
+    assert pipe["propiedades_cartera"] == 3
+    assert pipe["propiedades_cartera_valorizadas"] == 3
+    assert pipe["propiedades_venta"] == 2
+    assert pipe["propiedades_arriendo"] == 1
+    assert pipe["propiedades_sin_precio"] == 0
+    assert pipe["propiedades_no_en_cartera"] == 1
+    # Reconciliación Venta/Arriendo sobre la cartera valorizada.
+    assert pipe["propiedades_venta"] + pipe["propiedades_arriendo"] == pipe["propiedades_cartera_valorizadas"]
+    assert pipe["monto_venta_uf"] == 5000.0  # A(3000 canon) + B(2000 lead)
+    assert pipe["monto_arriendo_uf"] == 100.0
+
+
+def test_card3_canonical_prices_lee_operacion_vigente():
+    db = _make_prop_db([], universo=[
+        {"codigo": "X", "tipo_operacion": {
+            "venta": False, "arriendo": True,
+            "precio_venta": {"precio_uf": None}, "precio_arriendo": {"precio_uf": 25.5}}},
+    ])
+    with patch.object(lq, "get_db", return_value=db):
+        m = _canonical_prices_for_codes(["X"])
+    assert m["X"]["arriendo_uf"] == 25.5
+    assert m["X"]["op_canon"] == "Arriendo"
+
+
+def test_card3_canonical_precio_clp_sin_uf_se_convierte_con_uf_snapshot():
+    # 7726: canon arriendo CLP 450.000 sin UF -> 450000 / 40846.11 UF/mes.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "7726", "operacion": "Arriendo"}},
+        ],
+        universo=[
+            {"codigo": "7726", "tipo_operacion": {
+                "venta": False, "arriendo": True,
+                "precio_venta": {"precio_clp": None}, "precio_arriendo": {"precio_clp": 450000}}},
+        ],
+    )
+    rows = _run_property_rows(db, uf_value=40846.11)
+    assert len(rows) == 1
+    assert round(rows[0]["precio_uf"], 2) == round(450000 / 40846.11, 2)
+    assert rows[0]["operacion"] == "arriendo"
+
+
+def test_card3_canonical_venta_clp_sin_uf_se_convierte():
+    # 6815 / 6282: venta CLP sin UF -> CLP / UF.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "6815", "operacion": "Venta"}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "6282", "operacion": "Venta"}},
+        ],
+        universo=[
+            {"codigo": "6815", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_clp": 130000000}, "precio_arriendo": {"precio_clp": None}}},
+            {"codigo": "6282", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_clp": 55000000}, "precio_arriendo": {"precio_clp": None}}},
+        ],
+    )
+    rows = {r["codigo"]: r["precio_uf"] for r in _run_property_rows(db, uf_value=40846.11)}
+    assert round(rows["6815"], 1) == round(130000000 / 40846.11, 1)
+    assert round(rows["6282"], 1) == round(55000000 / 40846.11, 1)
+
+
+def test_card3_uf_directo_prioritario_sobre_clp():
+    # Si el canónico tiene UF y CLP, se usa UF (no se convierte CLP).
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "X", "operacion": "Venta"}},
+        ],
+        universo=[
+            {"codigo": "X", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 100.0, "precio_clp": 100000000},
+                "precio_arriendo": {"precio_clp": None}}},
+        ],
+    )
+    rows = _run_property_rows(db, uf_value=40846.11)
+    assert rows[0]["precio_uf"] == 100.0
+
+
+def test_card3_test_leads_excluidos_estructuralmente():
+    # _test_lead/is_test/canales de prueba se excluyen del universo CARD 3.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "t1", "created_at": "2026-07-11T14:00:00Z", "_test_lead": True,
+             "prospecto": {"codigo": "SMOKE005", "operacion": "Venta"}},
+            {"_id": "t2", "created_at": "2026-07-12T14:00:00Z", "is_test": True,
+             "prospecto": {"codigo": "12345", "operacion": "Venta"}},
+            {"_id": "r1", "created_at": "2026-07-13T14:00:00Z",
+             "prospecto": {"codigo": "REAL1", "operacion": "Venta", "precio_uf": 500.0}},
+        ],
+        universo=[],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(
+            period_start="2026-07-10", period_end="2026-07-20", uf_value=40846.11)
+    assert pipe["propiedades_vinculadas"] == 1
+    assert pipe["propiedades_cartera"] == 0
+    assert pipe["propiedades_cartera_valorizadas"] == 0
+    assert pipe["propiedades_no_en_cartera"] == 1
+    assert pipe["leads_vinculados"] == 1
+
+
+def test_card3_phone_synthetic_no_excluye_leads_portal():
+    # phone_is_synthetic = True cubre leads reales del portal sin teléfono
+    # (no-phone-prop360-*); NO son datos de prueba.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "r1", "created_at": "2026-07-11T14:00:00Z", "phone": "no-phone-prop360-1234",
+             "prospecto": {"codigo": "REAL1", "operacion": "Venta", "precio_uf": 500.0}},
+        ],
+        universo=[],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(
+            period_start="2026-07-10", period_end="2026-07-20", uf_value=40846.11)
+    assert pipe["propiedades_vinculadas"] == 1
+    assert pipe["propiedades_no_en_cartera"] == 1
+
+
+def test_card3_frontend_kpi_principal_comision():
+    # Jerarquía: KPI principal = comisión potencial; Venta/Arriendo secundarios.
+    card_html = HTML.split('id="cardPipeline"', 1)[1].split('id="cardSla"', 1)[0]
+    assert 'Comisión potencial' in card_html
+    assert 'id="cd3ComisionValue"' in card_html
+    assert 'cd3-kpi-value' in HTML
+    assert 'cd3-kpi-unit' in HTML
+    assert 'id="cd3MontoVenta"' in card_html
+    assert 'id="cd3MontoArriendo"' in card_html
+    # Sin nota visible "Renta mensual" (queda en el tooltip).
+    assert 'Renta mensual' not in card_html
+    # No debe existir el layout anterior de 3 KPIs grandes en paralelo.
+    assert 'cd3-stats' not in HTML
+    assert 'cd3-stat-value' not in HTML
+
+
+def test_card3_frontend_unico_micrografico_composicion_comision():
+    card_html = HTML.split('id="cardPipeline"', 1)[1].split('id="cardSla"', 1)[0]
+    # Un solo micrográfico: composición de comisión potencial (Venta vs Arriendo UF).
+    assert card_html.count('cd3-mix-track') == 1
+    assert 'Composición comisión potencial' in card_html
+    assert 'id="cd3MixVenta"' in card_html
+    assert 'id="cd3MixArriendo"' in card_html
+    assert 'id="cd3MixPct"' in card_html
+    # La cobertura de valorización ya no existe (es 100% en cartera válida).
+    assert 'cd3-coverage-track' not in HTML
+    assert 'Cobertura de valorización' not in HTML
+    assert 'cd3CoveragePct' not in HTML
+
+
+def test_card3_frontend_barra_unica_apilada_continua():
+    # Micrográfico = UNA sola barra horizontal apilada continua: sin gap entre
+    # segmentos, sin border-radius interno y colores Venta/Arriendo diferenciados.
+    mix_css = HTML.split('.cd3-mix-track', 1)[1].split('/* --- CARD 4', 1)[0]
+    assert 'gap: 0' in mix_css
+    seg_region = HTML.split('.cd3-mix-seg', 1)[1].split('.cd3-mix-venta', 1)[0]
+    assert 'border-radius: 0' in seg_region
+    assert '.cd3-mix-venta' in mix_css and '.cd3-mix-arriendo' in mix_css
+    assert 'var(--pipeline-accent)' in mix_css  # Venta (ámbar de la paleta)
+    # Arriendo: tono neutral/slate existente en la paleta, NO protagonista.
+    assert 'var(--spark-target)' in mix_css
+    for banned in ('38BDF8', '0891B2', '#10B981', '10b981', '#8B5CF6', '#6366F1',
+                   '#6366f1', '#F59E0B', '#F87171', '#ef4444'):
+        assert banned not in mix_css
+    # Los porcentajes siguen siendo dinámicos.
+    render = HTML.split('function renderPipelineCard()', 1)[1]
+    assert 'mixVentaEl.style.width' in render
+    assert 'mixArriendoEl.style.width' in render
+    assert 'Venta ' in render and '· Arriendo ' in render
+
+
+def test_card3_frontend_sin_divisiones_verticales_ni_boxes():
+    # Métricas secundarias sin cajas/mini-cards/divisores verticales.
+    card_html = HTML.split('id="cardPipeline"', 1)[1].split('id="cardSla"', 1)[0]
+    assert 'border-left' not in card_html
+    assert 'cd3-sec-item' in card_html
+    # Footer ejecutivo breve: propiedades de cartera vinculadas.
+    render = HTML.split('function renderPipelineCard()', 1)[1]
+    assert 'propiedades de cartera vinculadas' in render
+
+
+def test_card3_no_inventa_precio_no_promedio_no_otro_codigo():
+    src = Path("analytics/leads_queries.py").read_text(encoding="utf-8")
+    # La resolución de precio por propiedad usa el precio canónico de esa
+    # operación (UF directo o CLP/UF) y el campo del lead como respaldo; nunca
+    # promedios ni precio de otro código.
+    assert "lead_price" in src
+    assert "canon.get(\"venta_uf\")" in src or "canon.get('venta_uf')" in src
+    assert "/ uf_value" in src
+
+
+def test_card3_footer_no_menciona_sin_valorizacion():
+    # La métrica "sin valorización disponible" desapareció del frontend.
+    assert 'sin valorización disponible' not in HTML
+    render = HTML.split('function renderPipelineCard()', 1)[1]
+    assert 'propiedades_no_en_cartera' in render
+    assert 'cd3TooltipNoCartera' in HTML
+    # Las referencias fuera de la cartera actual se reportan como diagnóstico.
+    assert 'fuera de la cartera actual' in render
+    assert 'propiedades_otro' in render
+    assert 'cd3TooltipOtro' in HTML
+
+
+def test_card3_count_active_cartera_properties():
+    # Denominador auditado: disponible_prop360=True y operación venta/arriendo.
+    from analytics.leads_queries import count_active_cartera_properties
+    db = make_db([])
+    db["universo_cartera_prop360"].insert_many([
+        {"codigo": "A", "disponible_prop360": True, "tipo_operacion": {"venta": True, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "B", "disponible_prop360": True, "tipo_operacion": {"venta": False, "arriendo": True},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "C", "disponible_prop360": True, "tipo_operacion": {"venta": False, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "D", "disponible_prop360": False, "tipo_operacion": {"venta": True, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "E", "disponible_prop360": True, "tipo_operacion": {"venta": True, "arriendo": False},
+         "estado": {"oficina": "PROCASA LA GLORIA"}},
+    ])
+    with patch.object(lq, "get_db", return_value=db):
+        assert count_active_cartera_properties() == 3          # toda la compañía
+        assert count_active_cartera_properties("PROCASA SUCRE") == 2
+
+
+def test_card3_query_cartera_demanda_coverage_sucre():
+    # Cobertura SUCRE: numerador = activas con demanda (dedup), denominador = activas.
+    from analytics.leads_queries import query_cartera_demanda_coverage
+    db = make_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "A", "operacion": "Venta"}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "A", "operacion": "Venta"}},  # dup -> cuenta 1 vez
+            {"_id": "l3", "created_at": "2026-07-13T14:00:00Z",
+             "prospecto": {"codigo": "B", "operacion": "Venta"}},
+            {"_id": "l4", "created_at": "2026-07-14T14:00:00Z", "_test_lead": True,
+             "prospecto": {"codigo": "E", "operacion": "Venta"}},  # test -> excluido
+        ])
+    db["universo_cartera_prop360"].insert_many([
+        {"codigo": "A", "disponible_prop360": True, "tipo_operacion": {"venta": True, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "B", "disponible_prop360": True, "tipo_operacion": {"venta": False, "arriendo": True},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+        {"codigo": "C", "disponible_prop360": True, "tipo_operacion": {"venta": False, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},  # sin operación -> no activa
+        {"codigo": "E", "disponible_prop360": True, "tipo_operacion": {"venta": True, "arriendo": False},
+         "estado": {"oficina": "PROCASA SUCRE"}},
+    ])
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        cov = query_cartera_demanda_coverage("2026-07-10", "2026-07-20", oficina="PROCASA SUCRE")
+    assert cov["propiedades_activas"] == 3   # A, B, E (C sin operación queda fuera)
+    assert cov["propiedades_con_demanda"] == 2  # A (dedup) + B; E es test
+    assert cov["pct_cartera_con_demanda"] == round(2 / 3 * 100, 1)
+
+
+def test_card3_pct_cartera_con_demanda_en_payload():
+    # El payload expone propiedades_con_demanda, cartera_activa y pct.
+    from analytics.leads_service import get_leads_dashboard_overview
+    db = make_db([])
+    with ExitStack() as stack:
+        for patcher in _service_patches(total=2, citas=0, evaluable=0):
+            stack.enter_context(patcher)
+        stack.enter_context(patch.object(lq, "get_db", return_value=db))
+        stack.enter_context(patch.object(lq, "query_leads_dashboard_pipeline", return_value={
+            "monto_uf": 0, "propiedades_vinculadas": 2, "propiedades_cartera": 2,
+            "propiedades_con_precio": 2, "propiedades_cartera_valorizadas": 2,
+            "propiedades_venta": 2, "propiedades_arriendo": 0, "propiedades_otro": 0,
+            "propiedades_sin_precio": 0, "propiedades_no_en_cartera": 0, "leads_vinculados": 2,
+            "monto_venta_uf": 0, "monto_arriendo_uf": 0, "monto_otro_uf": 0,
+        }))
+        stack.enter_context(patch.object(lq, "query_property_commission_rows", return_value=[]))
+        stack.enter_context(patch("analytics.leads_service.query_property_commission_rows", return_value=[]))
+        stack.enter_context(patch("analytics.leads_service.query_cartera_demanda_coverage", return_value={
+            "propiedades_con_demanda": 119, "propiedades_activas": 442,
+            "pct_cartera_con_demanda": 26.9}))
+        stack.enter_context(patch("analytics.leads_service._load_commercial_macro_information", return_value={
+            "available": True, "indicators": {"uf": {"value": 40846.11, "as_of": "2026-08-10T04:00:00Z", "available": True}}}))
+        ov = get_leads_dashboard_overview(period_start="2026-07-10", period_end="2026-07-20", compare="none")
+    p = ov["pipeline"]
+    assert p["propiedades_con_demanda"] == 119
+    assert p["cartera_activa"] == 442
+    assert p["pct_cartera_con_demanda"] == 26.9
+
+
+def test_card3_frontend_footer_cobertura_cartera():
+    # Footer gerencial: "X de Y propiedades con demanda · Z% de la cartera".
+    render = HTML.split('function renderPipelineCard()', 1)[1]
+    assert 'propiedades_con_demanda' in render
+    assert 'cartera_activa' in render
+    assert 'pct_cartera_con_demanda' in render
+    assert 'propiedades con demanda' in render
+    assert 'de la cartera' in render
+    # Tooltip: aclaración de cobertura de demanda vs cartera activa actual.
+    assert 'cobertura de demanda compara las propiedades que recibieron leads' in HTML
+
+
+def test_card3_footer_cuenta_solo_cartera_actual():
+    # Auditoría: 132 referencias, 131 en cartera + 1 (12345) fuera de cartera.
+    # El footer debe contabilizar solo las propiedades de cartera actuales.
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "operacion": "Venta", "precio_uf": None}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "200", "operacion": "Venta", "precio_uf": None}},
+            {"_id": "l3", "created_at": "2026-07-13T14:00:00Z",
+             "prospecto": {"codigo": "12345", "operacion": "Venta", "precio_uf": 800.0}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 3000.0}, "precio_arriendo": {"precio_uf": None}}},
+            {"codigo": "200", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 4000.0}, "precio_arriendo": {"precio_uf": None}}},
+        ],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(
+            period_start="2026-07-10", period_end="2026-07-20", uf_value=40846.11)
+    assert pipe["propiedades_vinculadas"] == 3
+    assert pipe["propiedades_cartera"] == 2  # footer visible
+    assert pipe["propiedades_cartera_valorizadas"] == 2
+    assert pipe["propiedades_no_en_cartera"] == 1
+    # La referencia fuera de cartera (12345) no entra en Venta ni Arriendo.
+    assert pipe["monto_venta_uf"] == 7000.0  # solo 100 + 200
+    assert pipe["monto_arriendo_uf"] == 0.0
+    # Reconciliación Venta/Arriendo = cartera valorizada.
+    assert pipe["propiedades_venta"] + pipe["propiedades_arriendo"] == pipe["propiedades_cartera_valorizadas"]
+
+
+def test_card3_no_en_cartera_no_genera_comision():
+    # 12345 fuera de cartera: presente como diagnóstico pero sin fila de
+    # comisión (no entra en Venta, Arriendo ni Comisión).
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "100", "operacion": "Venta", "precio_uf": 3000.0}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "12345", "operacion": "Venta", "precio_uf": 800.0}},
+        ],
+        universo=[
+            {"codigo": "100", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 3000.0}, "precio_arriendo": {"precio_uf": None}}},
+        ],
+    )
+    rows = _run_property_rows(db, uf_value=40846.11)
+    codes = [r["codigo"] for r in rows]
+    assert "100" in codes
+    assert "12345" not in codes
+
+
+def test_card3_reconciliacion_venta_arriendo_service():
+    # Reconciliación: venta + arriendo = cartera valorizada; footer_ok sin Otro.
+    rows = [
+        {"codigo": "V1", "precio_uf": 10000.0, "operacion": "venta"},
+        {"codigo": "V2", "precio_uf": 300.0, "operacion": "venta"},
+        {"codigo": "A1", "precio_uf": 100.0, "operacion": "arriendo"},
+    ]
+    ov = _run_overview_pipeline(properties=rows, commission_rows=rows)
+    p = ov["pipeline"]
+    rec = p["reconciliacion"]
+    assert rec["propiedades_venta"] == 2
+    assert rec["propiedades_arriendo"] == 1
+    assert rec["propiedades_cartera_valorizadas"] == 3
+    assert rec["ok"] is True
+    assert rec["propiedades_otro"] == 0
+    assert rec["footer_ok"] is True
+    assert p["propiedades_venta"] + p["propiedades_arriendo"] == p["propiedades_cartera_valorizadas"]
+
+
+def test_card3_otro_reportado_sin_valorizacion():
+    # Propiedad de cartera con operación "Otro": se reporta aparte y no se
+    # inventa valorización (ni Venta ni Arriendo ni comisión).
+    db = _make_prop_db(
+        leads=[
+            {"_id": "l1", "created_at": "2026-07-11T14:00:00Z",
+             "prospecto": {"codigo": "X", "operacion": "Permuta", "precio_uf": None}},
+            {"_id": "l2", "created_at": "2026-07-12T14:00:00Z",
+             "prospecto": {"codigo": "V1", "operacion": "Venta", "precio_uf": None}},
+        ],
+        universo=[
+            {"codigo": "X", "tipo_operacion": {
+                "venta": False, "arriendo": False,
+                "precio_venta": {"precio_uf": 5000.0}, "precio_arriendo": {"precio_uf": 30.0}}},
+            {"codigo": "V1", "tipo_operacion": {
+                "venta": True, "arriendo": False,
+                "precio_venta": {"precio_uf": 2000.0}, "precio_arriendo": {"precio_uf": None}}},
+        ],
+    )
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        pipe = query_leads_dashboard_pipeline(
+            period_start="2026-07-10", period_end="2026-07-20", uf_value=40846.11)
+    assert pipe["propiedades_cartera"] == 2
+    assert pipe["propiedades_otro"] == 1
+    assert pipe["propiedades_venta"] == 1
+    assert pipe["propiedades_arriendo"] == 0
+    assert pipe["propiedades_cartera_valorizadas"] == 1
+    # La propiedad "Otro" no aporta monto (no se inventa valorización).
+    assert pipe["monto_venta_uf"] == 2000.0
+    assert pipe["monto_arriendo_uf"] == 0.0
+    assert pipe["monto_otro_uf"] == 0.0
+    assert pipe["propiedades_sin_precio"] == 0
+

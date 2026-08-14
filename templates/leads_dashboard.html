@@ -801,6 +801,8 @@
             .cd-grid { grid-template-columns: 1fr; }
         }
 
+        /* Estructura común: header -> contenido -> visualización -> footer.
+           El footer queda anclado al borde inferior vía margin-top:auto. */
         .cd1, .cd2, .cd3, .cd4 {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -808,28 +810,36 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
             gap: 8px;
             position: relative;
-            transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
             min-width: 0;
             overflow-wrap: anywhere;
         }
 
-        .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        /* Hover sutil y uniforme solo en dispositivos con hover real (no en touch).
+           !important sobre transform: el fill de la animación de revelado
+           (.seq-el.seq-shown / desktopCardGlassReveal both) mantiene el transform
+           en identidad y bloquearía el desplazamiento del hover.
+           El borde mantiene el acento morado original de la tarjeta. */
+        @media (hover: hover) and (pointer: fine) {
+            .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover {
+                transform: translateY(-2px) !important;
+                box-shadow: 0 10px 26px rgba(2, 6, 23, 0.24);
+                border-color: var(--conversion-accent);
+            }
         }
 
-        .cd1:hover { border-color: var(--conversion-accent); }
+        [data-theme="light"] .cd1:hover, [data-theme="light"] .cd2:hover,
+        [data-theme="light"] .cd3:hover, [data-theme="light"] .cd4:hover {
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10);
+        }
 
-        .cd2:hover { border-color: var(--conversion-accent); }
-
-        .cd3:hover { border-color: var(--conversion-accent); }
-
-        .cd4:hover { border-color: var(--conversion-accent); }
-
-        [data-theme="light"] .cd1:hover { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08); }
+        @media (prefers-reduced-motion: reduce) {
+            .cd1, .cd2, .cd3, .cd4 { transition: border-color 0.2s ease; }
+            .cd1:hover, .cd2:hover, .cd3:hover, .cd4:hover { transform: none; }
+        }
 
         .cd1-header {
             display: flex;
@@ -863,7 +873,7 @@
             transition: color 0.15s;
         }
 
-        .cd1-info:hover { color: var(--spark-accent); }
+        .cd1-info:hover { color: var(--conversion-accent); }
 
         .cd1-tooltip {
             position: absolute;
@@ -949,7 +959,7 @@
         .cd1-footer {
             border-top: 1px solid var(--border-color);
             padding-top: 10px;
-            margin-top: 2px;
+            margin-top: auto;
             font-size: 11px;
             color: var(--text-secondary);
             display: flex;
@@ -960,6 +970,10 @@
         }
 
         .cd1-footer strong { color: var(--text-primary); font-weight: 600; }
+
+        /* Footer de CARD 3: texto gerencial de cobertura en una sola línea
+           (10px para caber en el ancho de la card sin romper la alineación). */
+        .cd3-footer { font-size: 10px; }
 
         /* --- CARD 2: EFECTIVIDAD & CONVERSIÓN --- */
         .cd2-info:hover { color: var(--conversion-accent); }
@@ -989,27 +1003,105 @@
             flex-shrink: 0;
         }
 
-        .cd2-bars {
+        .cd2-delta {
+            flex: 1 1 auto;
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            margin: 6px 0 8px;
-        }
-
-        .cd2-bar-row {
-            display: grid;
-            grid-template-columns: 92px 1fr;
-            align-items: center;
+            justify-content: center;
             gap: 8px;
+            min-height: 0;
+            margin: 2px 0;
         }
 
-        .cd2-bar-lbl {
+        .cd2-delta-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
             font-size: 10px;
             color: var(--text-secondary);
+        }
+
+        .cd2-delta-pp {
+            font-size: 15px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
             white-space: nowrap;
         }
 
-        .cd2-bar-lbl strong { color: var(--text-primary); font-weight: 600; }
+        .cd2-delta-pp.pos { color: #34D399; }
+        .cd2-delta-pp.neg { color: #FCA5A5; }
+        .cd2-delta-pp.neutral { color: var(--text-secondary); }
+
+        .cd2-delta-track {
+            position: relative;
+            height: 10px;
+        }
+
+        .cd2-delta-base {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 2px;
+            background: var(--border-color);
+            border-radius: 99px;
+            transform: translateY(-50%);
+        }
+
+        .cd2-delta-seg {
+            position: absolute;
+            top: 50%;
+            height: 2px;
+            border-radius: 99px;
+            transform: translateY(-50%);
+            opacity: 0;
+            transition: left 0.8s ease, width 0.8s ease, opacity 0.3s ease;
+        }
+
+        .cd2-delta-seg.pos { background: #34D399; }
+        .cd2-delta-seg.neg { background: #FCA5A5; }
+        .cd2-delta-seg.neutral { background: var(--text-secondary); }
+
+        .cd2-delta-dot {
+            position: absolute;
+            top: 50%;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: left 0.8s ease, opacity 0.3s ease;
+        }
+
+        .cd2-delta-dot-comp {
+            width: 4px;
+            height: 4px;
+            background: var(--text-secondary);
+            opacity: 0;
+        }
+
+        .cd2-delta-dot-act {
+            width: 9px;
+            height: 9px;
+            border: 2px solid var(--bg-card);
+        }
+
+        .cd2-delta-dot-act.pos { background: #34D399; }
+        .cd2-delta-dot-act.neg { background: #FCA5A5; }
+        .cd2-delta-dot-act.neutral { background: var(--text-secondary); }
+
+        .cd2-delta-legend {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .cd2-delta-legend em {
+            font-style: normal;
+            color: var(--text-primary);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
 
         .cd2-bar-track {
             height: 8px;
@@ -1033,10 +1125,10 @@
         .cd2-pp-neg { color: #FCA5A5; font-weight: 600; }
 
         /* --- CARD 3: CARTERA POTENCIAL & VALORIZACIÓN --- */
-        .cd3-info:hover { color: var(--pipeline-accent); }
+        .cd3-info:hover { color: var(--conversion-accent); }
 
         .cd3-kpi {
-            margin: 6px 0 2px;
+            margin: 0 0 2px;
             min-width: 0;
         }
 
@@ -1150,7 +1242,7 @@
         }
 
         /* --- CARD 4: SLA & VELOCIDAD DE RESPUESTA --- */
-        .cd4-info:hover { color: var(--sla-accent); }
+        .cd4-info:hover { color: var(--conversion-accent); }
 
         .cd4-value {
             color: var(--text-primary);
@@ -2634,12 +2726,10 @@
                             <span class="cd1-title" id="cd1Title"></span>
                             <button type="button" class="cd1-info" id="cd1Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd1Tooltip" hidden>
-                                <strong>Demanda & Meta</strong><br>
-                                Lead: oportunidad ingresada por cualquier canal (WhatsApp, portales, manual).<br>
-                                Deduplicación: 1 lead = 1 teléfono normalizado.<br>
-                                Meta: objetivo mensual prorrateado por días del período (configuración comercial).<br>
-                                Fórmula: (leads del período / meta del período) × 100.<br>
-                                Variación: vs. período equivalente anterior de igual duración.
+                                Leads captados en el período seleccionado.<br>
+                                El cumplimiento compara los leads recibidos con la meta mensual, ajustada proporcionalmente a los días consultados.<br>
+                                Sobre 100% significa que la meta fue superada.<br>
+                                La meta es global y no aplica al usar filtros de ejecutivo, comuna u origen.
                             </div>
                         </div>
 
@@ -2663,10 +2753,10 @@
                             <span class="cd1-title" id="cd2Title"></span>
                             <button type="button" class="cd1-info cd2-info" id="cd2Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd2Tooltip" hidden>
-                                Porcentaje de leads del período que ya tenían una visita agendada registrada al cierre del período (pipeline, resultado de gestión en CRM u orden de visita firmada).<br>
-                                <strong>0%</strong>: ningún lead del período tenía una visita agendada registrada al cierre.<br>
-                                <strong>N/D</strong>: no hay leads en el período.<br>
-                                La cobertura de trazabilidad del pipeline se reporta como contexto de calidad de datos, no como denominador.
+                                Porcentaje de leads que alcanzaron una visita agendada.<br>
+                                Considera registros confirmados en CRM y órdenes de visita, sin duplicar leads.<br>
+                                Se calcula sobre todos los leads del período usando solo información disponible al cierre.<br>
+                                0% = sin visitas registradas · N/D = no existe base para calcular.
                             </div>
                         </div>
 
@@ -2677,10 +2767,20 @@
 
                         <p class="cd1-sub" id="cd2Sub">— visitas agendadas de — leads</p>
 
-                        <div class="cd2-bars">
-                            <div class="cd2-bar-row">
-                                <span class="cd2-bar-lbl">Visitas: <strong id="cd2BarCitasPct">0%</strong></span>
-                                <div class="cd2-bar-track"><div class="cd2-bar cd2-bar-citas" id="cd2BarCitas" style="width:0%"></div></div>
+                        <div class="cd2-delta">
+                            <div class="cd2-delta-head">
+                                <span>Variación vs. período comparable</span>
+                                <strong class="cd2-delta-pp" id="cd2DeltaPp">—</strong>
+                            </div>
+                            <div class="cd2-delta-track" role="img" aria-label="Brecha de conversión vs período comparable">
+                                <span class="cd2-delta-base"></span>
+                                <span class="cd2-delta-seg" id="cd2DeltaSeg"></span>
+                                <span class="cd2-delta-dot cd2-delta-dot-comp" id="cd2DeltaDotComp"></span>
+                                <span class="cd2-delta-dot cd2-delta-dot-act" id="cd2DeltaDotAct"></span>
+                            </div>
+                            <div class="cd2-delta-legend">
+                                <span>Comparable <em id="cd2DeltaPrev">—</em></span>
+                                <span>Actual <em id="cd2DeltaCur">—</em></span>
                             </div>
                         </div>
 
@@ -2695,23 +2795,20 @@
                             <span class="cd1-title" id="cd3Title"></span>
                             <button type="button" class="cd1-info cd3-info" id="cd3Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd3Tooltip" hidden>
-                                Valorización ACTUAL (snapshot) de las propiedades vinculadas a los leads del período; no es precio histórico.<br>
-                                <strong>Fuente de precio</strong>: fuente canónica de cartera (universo_cartera_prop360). Se usa el precio vigente por operación: UF directo o CLP convertido a UF con la UF del snapshot. El dato embebido del lead se usa solo como respaldo.<br>
-                                <strong>Comisión potencial</strong>: honorario contractual potencial NETO de IVA (Venta + Arriendo).<br>
-                                <strong>Venta</strong>: valor actual publicado de propiedades en venta vinculadas (UF). Comisión 2% con mínimo $1.000.000.<br>
-                                <strong>Arriendo</strong>: renta mensual publicada (UF/mes). Comisión 50% de un canon con mínimo $100.000.<br>
-                                Condiciones contractuales especiales (p. ej. arriendos &gt; 24 meses) pueden modificar el honorario definitivo.<br>
+                                Valor actual de las propiedades de cartera vinculadas a los leads del período.<br>
+                                Venta se expresa en UF; Arriendo corresponde a renta mensual.<br>
+                                La Comisión potencial es neta de IVA: Venta 2% y Arriendo 50%, aplicando mínimos contractuales.<br>
+                                Usa precios actuales de cartera; no representa la valorización histórica del período.<br>
+                                La cobertura de demanda compara las propiedades que recibieron leads en el período con la cartera activa actual.<br>
                                 <span id="cd3TooltipOtro" hidden></span>
-                                <span id="cd3TooltipNoCartera" hidden></span><br>
-                                UF aplicada: <span id="cd3TooltipUf">—</span> (fecha <span id="cd3TooltipUfFecha">—</span>).
+                                <span id="cd3TooltipNoCartera" hidden></span>
                             </div>
                         </div>
 
                         <div class="cd3-kpi">
-                            <span class="cd3-kpi-label">Comisión potencial</span>
                             <div class="cd3-kpi-row">
                                 <span class="cd3-kpi-value" id="cd3ComisionValue">0</span>
-                                <span class="cd3-kpi-unit">UF neta</span>
+                                <span class="cd3-kpi-unit">Comisión potencial</span>
                             </div>
                         </div>
 
@@ -2731,7 +2828,7 @@
                             </div>
                         </div>
 
-                        <div class="cd1-footer">
+                        <div class="cd1-footer cd3-footer">
                             <span id="cd3Footer"></span>
                         </div>
                     </div>
@@ -2742,25 +2839,27 @@
                             <span class="cd1-title" id="cd4Title"></span>
                             <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd4Tooltip" hidden>
-                                Mide la mediana de tiempo transcurrido desde que un lead ingresa hasta el primer contacto humano o asignación efectiva.<br>
-                                Meta HOT: primera respuesta en menos de 60 minutos. El porcentaje en SLA muestra la proporción de leads atendidos dentro del estándar definido.
+                                Mide si los leads fueron gestionados dentro de su plazo.<br>
+                                HOT: 60 min hábiles · NORMAL: 180 min hábiles, desde asignación hasta primera gestión registrada.<br>
+                                Dentro de SLA incluye gestionados a tiempo y abiertos aún vigentes; fuera incluye tardíos y vencidos.<br>
+                                P50 es la mediana de tiempo de los leads gestionados. Un WhatsApp por sí solo no detiene el SLA.
+                                <span id="cd4TooltipNoTraz" hidden></span>
                             </div>
                         </div>
 
                         <div class="cd1-kpi-row">
-                            <h2 class="cd1-value cd4-value" id="cd4Value">0 <span class="cd1-unit">min</span></h2>
-                            <span class="cd4-sla-badge" id="cd4Badge">⚡ —% en SLA</span>
+                            <h2 class="cd1-value cd4-value" id="cd4Value">N/D <span class="cd1-unit">%</span></h2>
                         </div>
 
-                        <p class="cd1-sub" id="cd4Sub">Mediana de tiempo de primera respuesta comercial</p>
+                        <p class="cd1-sub" id="cd4Sub">Leads dentro de SLA</p>
 
                         <div class="cd4-bars">
                             <div class="cd4-bar-group">
-                                <div class="cd4-bar-lbl"><span>Lead HOT</span><span class="cd4-bar-val" id="cd4HotMin">— min</span></div>
+                                <div class="cd4-bar-lbl"><span>HOT</span><span class="cd4-bar-val" id="cd4HotMeta">N/D</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-hot" id="cd4BarHot" style="width:0%"></div></div>
                             </div>
                             <div class="cd4-bar-group">
-                                <div class="cd4-bar-lbl"><span>Lead Normal</span><span class="cd4-bar-val" id="cd4NormalMin">— min</span></div>
+                                <div class="cd4-bar-lbl"><span>NORMAL</span><span class="cd4-bar-val" id="cd4NormalMeta">N/D</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-normal" id="cd4BarNormal" style="width:0%"></div></div>
                             </div>
                         </div>
@@ -4175,8 +4274,12 @@
                     $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>Sin leads';
                     $('cd2Sub').innerHTML = 'Sin leads en el período';
                     $('cd2Value').textContent = 'N/D';
-                    $('cd2BarCitas').style.width = '0%';
-                    $('cd2BarCitasPct').textContent = '—';
+                    $('cd2DeltaPp').textContent = '—';
+                    $('cd2DeltaPrev').textContent = '—';
+                    $('cd2DeltaCur').textContent = '—';
+                    $('cd2DeltaSeg').style.opacity = '0';
+                    $('cd2DeltaDotComp').style.opacity = '0';
+                    $('cd2DeltaDotAct').style.left = '0%';
                     $('cd2Footer').innerHTML = '<span style="font-style:italic;color:var(--text-secondary)">No hay leads en el período para calcular la conversión.</span>';
                     showCardReveal(card);
                     return;
@@ -4185,18 +4288,56 @@
                 $('cd2CitasBadge').innerHTML = '<span class="cd2-dot"></span>' + citasText;
                 $('cd2Sub').innerHTML = citas + ' visitas agendadas registradas de ' + leads + ' leads';
 
-                const citasPctBar = Math.min((citas / leads) * 100, 100);
-                $('cd2BarCitas').style.width = '0%';
-                setTimeout(() => { $('cd2BarCitas').style.width = citasPctBar + '%'; }, 860);
-                $('cd2BarCitasPct').textContent = citasPctBar.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                // Variación vs. período comparable (brecha/delta, protagonista = diff_pp).
+                const prevPct = c.previous_pct;
+                const scale = Math.max(convPct || 0, prevPct || 0) || 0;
+                const fmtRate = (v) => (v === null || v === undefined)
+                    ? '—'
+                    : v.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                $('cd2DeltaCur').textContent = fmtRate(convPct);
+                $('cd2DeltaPrev').textContent = fmtRate(prevPct);
+                const posCur = scale > 0 ? (convPct || 0) / scale * 100 : 0;
+                const posPrev = (prevPct !== null && prevPct !== undefined && scale > 0)
+                    ? prevPct / scale * 100 : null;
+                let ppCls = 'neutral', ppTxt = '—';
+                if (diffPP !== null && diffPP !== undefined) {
+                    ppCls = diffPP > 0 ? 'pos' : (diffPP < 0 ? 'neg' : 'neutral');
+                    ppTxt = (diffPP > 0 ? '+' : (diffPP < 0 ? '-' : '0')) +
+                            Math.abs(diffPP).toFixed(1).replace('.', ',') + ' pp';
+                }
+                const ppEl = $('cd2DeltaPp');
+                ppEl.className = 'cd2-delta-pp ' + ppCls;
+                ppEl.textContent = ppTxt;
+                const seg = $('cd2DeltaSeg');
+                const dotComp = $('cd2DeltaDotComp');
+                const dotAct = $('cd2DeltaDotAct');
+                seg.className = 'cd2-delta-seg ' + ppCls;
+                dotAct.className = 'cd2-delta-dot cd2-delta-dot-act ' + ppCls;
+                seg.style.left = '0%';
+                seg.style.width = '0%';
+                seg.style.opacity = '0';
+                dotComp.style.left = '0%';
+                dotComp.style.opacity = '0';
+                dotAct.style.left = '0%';
+                setTimeout(() => {
+                    dotAct.style.left = posCur + '%';
+                    if (posPrev === null) {
+                        seg.style.opacity = '0';
+                        dotComp.style.opacity = '0';
+                    } else {
+                        const lo = Math.min(posCur, posPrev);
+                        const hi = Math.max(posCur, posPrev);
+                        seg.style.left = lo + '%';
+                        seg.style.width = (hi - lo) + '%';
+                        seg.style.opacity = '1';
+                        dotComp.style.left = posPrev + '%';
+                        dotComp.style.opacity = '1';
+                    }
+                }, 860);
 
                 let footer;
                 if (citas > 0) {
-                    const ppText = (diffPP === null || diffPP === undefined)
-                        ? ''
-                        : ' <span class="' + (diffPP >= 0 ? 'cd2-pp-pos' : 'cd2-pp-neg') + '">(' +
-                          (diffPP >= 0 ? '▲ +' : '▼ -') + Math.abs(diffPP).toFixed(1) + ' pp)</span>';
-                    footer = '1 visita agendada cada <strong>' + ratio + ' leads</strong>' + ppText;
+                    footer = '1 visita agendada cada <strong>' + ratio + ' leads</strong>';
                 } else if (leads > 0) {
                     footer = '<span style="font-style:italic;color:var(--text-secondary)">0 visitas agendadas registradas de ' + leads + ' leads</span>';
                 } else {
@@ -4262,11 +4403,6 @@
                         : '—';
                 }
 
-                // Tooltip: valor y fecha UF
-                const tUf = $('cd3TooltipUf');
-                if (tUf) tUf.textContent = (p.valor_uf_clp || '—');
-                const tUfF = $('cd3TooltipUfFecha');
-                if (tUfF) tUfF.textContent = p.fecha_uf ? String(p.fecha_uf).slice(0, 10) : '—';
                 // Tooltip: operaciones "Otro" de cartera válida (reporte separado, sin valorización).
                 const otroProps = p.propiedades_otro || 0;
                 const tOtro = $('cd3TooltipOtro');
@@ -4291,8 +4427,15 @@
                     }
                 }
 
-                // Footer ejecutivo breve: solo propiedades que pertenecen a la cartera actual.
-                if (props > 0) {
+                // Footer ejecutivo: cobertura de demanda sobre la cartera ACTIVA de SUCRE.
+                const conDemanda = p.propiedades_con_demanda || 0;
+                const carteraActiva = p.cartera_activa || 0;
+                const pctDemanda = p.pct_cartera_con_demanda;
+                if (carteraActiva > 0 && conDemanda > 0) {
+                    $('cd3Footer').innerHTML = '<strong>' + conDemanda + ' de ' + carteraActiva + ' propiedades con demanda</strong> · ' +
+                        (pctDemanda === null || pctDemanda === undefined ? '—' : pctDemanda.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%') +
+                        ' de la cartera';
+                } else if (props > 0) {
                     $('cd3Footer').innerHTML = '<strong>' + props + ' propiedades de cartera vinculadas</strong>';
                 } else {
                     $('cd3Footer').innerHTML = '<span style="font-style:italic;color:var(--text-secondary)">Sin propiedades de cartera vinculadas en el período</span>';
@@ -4306,37 +4449,63 @@
                 const card = $('cardSla');
                 if (!card || !OVERVIEW || !OVERVIEW.sla) return;
                 const s = OVERVIEW.sla;
-                const medianaGeneral = s.mediana_general_min;
-                const slaPct = s.pct_cumplimiento_sla;
-                const hotMin = s.mediana_hot_min;
-                const normalMin = s.mediana_normal_min;
-                const evaluados = s.leads_evaluados || 0;
+                const lead = s.lead || {};
+                const hot = s.lead_hot || {};
                 const hotThreshold = s.hot_threshold_min || 60;
                 const normalThreshold = s.normal_threshold_min || 180;
 
-                const badge = $('cd4Badge');
-                badge.className = 'cd4-sla-badge ' + (slaPct === null || slaPct === undefined ? '' : (slaPct >= 90 ? 'ok' : 'bad'));
-                badge.innerHTML = '⚡ ' + (slaPct === null || slaPct === undefined ? '—' : slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 })) + '% en SLA';
+                $('cd4Title').textContent = 'SLA & Velocidad de Respuesta';
 
-                $('cd4Title').textContent = 'SLA & Velocidad Respuesta';
-                $('cd4HotMin').textContent = (hotMin === null || hotMin === undefined) ? '— min' : hotMin + ' min';
-                $('cd4NormalMin').textContent = (normalMin === null || normalMin === undefined) ? '— min' : normalMin + ' min';
+                // KPI principal: % de leads dentro de SLA (estado al cierre del período).
+                const inSlaPct = s.in_sla_pct;
+                $('cd4Value').innerHTML = (inSlaPct === null || inSlaPct === undefined)
+                    ? 'N/D <span class="cd1-unit">%</span>'
+                    : inSlaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' <span class="cd1-unit">%</span>';
+                $('cd4Sub').textContent = 'Leads dentro de SLA';
+
+                // Desglose HOT / NORMAL: estado al corte + velocidad por perfil.
+                const fmtProfileMeta = (b, threshold) => {
+                    const pct = b.in_sla_pct;
+                    const p50 = b.p50_minutes;
+                    const pctTxt = (pct === null || pct === undefined)
+                        ? 'N/D dentro de SLA'
+                        : pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% dentro de SLA';
+                    const p50Txt = (p50 === null || p50 === undefined)
+                        ? 'P50 N/D'
+                        : 'P50 ' + Math.round(p50).toLocaleString('es-CL') + ' min';
+                    return pctTxt + ' · ' + p50Txt + ' · Meta ' + threshold + ' min';
+                };
+                $('cd4HotMeta').textContent = fmtProfileMeta(hot, hotThreshold);
+                $('cd4NormalMeta').textContent = fmtProfileMeta(lead, normalThreshold);
+
+                // Barras = % de leads dentro de SLA (cumplimiento al corte), no mediana/umbral.
+                const hotPct = (hot.in_sla_pct === null || hot.in_sla_pct === undefined) ? 0 : hot.in_sla_pct;
+                const normPct = (lead.in_sla_pct === null || lead.in_sla_pct === undefined) ? 0 : lead.in_sla_pct;
                 $('cd4BarHot').style.width = '0%';
                 $('cd4BarNormal').style.width = '0%';
-                setTimeout(() => { $('cd4BarHot').style.width = (hotMin === null || hotMin === undefined) ? '0%' : Math.min((hotMin / hotThreshold) * 100, 100) + '%'; }, 1000);
-                setTimeout(() => { $('cd4BarNormal').style.width = (normalMin === null || normalMin === undefined) ? '0%' : Math.min((normalMin / normalThreshold) * 100, 100) + '%'; }, 1060);
+                setTimeout(() => { $('cd4BarHot').style.width = hotPct + '%'; }, 700);
+                setTimeout(() => { $('cd4BarNormal').style.width = normPct + '%'; }, 760);
 
-                $('cd4Sub').textContent = 'Mediana desde el ingreso hasta la primera respuesta efectiva';
-                $('cd4Footer').innerHTML = evaluados > 0
-                    ? '<strong>' + evaluados + ' leads evaluados</strong> · Meta HOT: &lt; ' + hotThreshold + ' min'
-                    : '<span style="font-style:italic;color:var(--text-secondary)">Sin registros suficientes de tiempo</span>';
+                // Footer ejecutivo compacto: gestionados · abiertos · vencidos.
+                // El diagnóstico "sin trazabilidad" vive en el tooltip (no ocupa
+                // espacio permanente en la fila).
+                const managed = s.managed || 0;
+                const open = s.open || 0;
+                const breached = s.open_breached || 0;
+                const notEval = s.not_evaluable || 0;
+                $('cd4Footer').innerHTML = '<strong>' + managed + ' gestionados</strong> · ' + open + ' abiertos · <strong>' + breached + ' vencidos</strong>';
+                const tNoTraz = $('cd4TooltipNoTraz');
+                if (tNoTraz) {
+                    if (notEval > 0) {
+                        tNoTraz.innerHTML = '<br>' + notEval + ' sin trazabilidad';
+                        tNoTraz.hidden = false;
+                    } else {
+                        tNoTraz.innerHTML = '';
+                        tNoTraz.hidden = true;
+                    }
+                }
 
                 showCardReveal(card);
-                if (medianaGeneral === null || medianaGeneral === undefined) {
-                    $('cd4Value').innerHTML = '0 <span class="cd1-unit">min</span>';
-                } else {
-                    animateCountUpMin($('cd4Value'), medianaGeneral);
-                }
             }
 
             function animateCountUpMin(el, end, duration = 1200) {
@@ -4647,32 +4816,59 @@
                 const btnPdf = $('btnExportPdf');
                 if (btnPdf) btnPdf.addEventListener('click', exportExecutivePDF);
 
-                // Tooltip de la CARD 1
-                const cd1Info = $('cd1Info');
-                if (cd1Info) {
-                    const tip = $('cd1Tooltip');
-                    cd1Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
-                    cd1Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
-                    cd1Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
+                // Tooltips de las 4 cards (mismo comportamiento hover/click y
+                // contenido siempre dentro del viewport, incluso en mobile).
+                function bindCardTooltip(infoId, tipId) {
+                    const info = $(infoId);
+                    const tip = $(tipId);
+                    if (!info || !tip) return;
+                    let pin = false;
+                    let fitTimer = null;
+                    const fit = () => {
+                        tip.style.maxHeight = '';
+                        tip.style.overflowY = '';
+                        const vh = window.innerHeight;
+                        let r = tip.getBoundingClientRect();
+                        // Destino en viewport para que el tamaño natural quepa con margen 8px.
+                        let targetTop = r.top;
+                        if (r.bottom > vh - 8) targetTop = vh - 8 - r.height;
+                        if (targetTop < 8) targetTop = 8;
+                        const parent = tip.offsetParent;
+                        const parentTop = parent ? parent.getBoundingClientRect().top : 0;
+                        const rel = Math.round(targetTop - parentTop);
+                        tip.style.top = (rel >= 0 && Math.abs(targetTop - r.top) > 0.5) ? rel + 'px' : '';
+                        r = tip.getBoundingClientRect();
+                        const avail = vh - r.top - 8;
+                        if (avail < r.height) {
+                            tip.style.maxHeight = Math.max(120, Math.floor(avail)) + 'px';
+                            tip.style.overflowY = 'auto';
+                        }
+                    };
+                    const show = () => {
+                        tip.hidden = false;
+                        fit();
+                        if (fitTimer) clearTimeout(fitTimer);
+                        fitTimer = setTimeout(fit, 260);
+                    };
+                    const hide = () => {
+                        tip.hidden = true;
+                        tip.style.top = '';
+                        tip.style.maxHeight = '';
+                        tip.style.overflowY = '';
+                        if (fitTimer) { clearTimeout(fitTimer); fitTimer = null; }
+                    };
+                    // El scroll puede ser animado (scroll-behavior: smooth); re-ajusta
+                    // mientras el tooltip esté visible para que nunca salga del viewport.
+                    const onScroll = () => { if (!tip.hidden) fit(); };
+                    window.addEventListener('scroll', onScroll, true);
+                    info.addEventListener('mouseenter', () => { pin = false; show(); });
+                    info.addEventListener('mouseleave', () => { if (!pin) hide(); });
+                    info.addEventListener('click', () => { pin = !pin; if (pin) show(); else hide(); });
                 }
-
-                // Tooltip de la CARD 2
-                const cd2Info = $('cd2Info');
-                if (cd2Info) {
-                    const tip = $('cd2Tooltip');
-                    cd2Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
-                    cd2Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
-                    cd2Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
-                }
-
-                // Tooltip de la CARD 3
-                const cd3Info = $('cd3Info');
-                if (cd3Info) {
-                    const tip = $('cd3Tooltip');
-                    cd3Info.addEventListener('mouseenter', () => { if (tip) tip.hidden = false; });
-                    cd3Info.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
-                    cd3Info.addEventListener('click', () => { if (tip) tip.hidden = !tip.hidden; });
-                }
+                bindCardTooltip('cd1Info', 'cd1Tooltip');
+                bindCardTooltip('cd2Info', 'cd2Tooltip');
+                bindCardTooltip('cd3Info', 'cd3Tooltip');
+                bindCardTooltip('cd4Info', 'cd4Tooltip');
 
                 // Tooltip del BLOQUE 2 (AI Briefing) — sin tooltip en el diseño minimalista
 

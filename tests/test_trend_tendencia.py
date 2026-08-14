@@ -8,12 +8,16 @@ estructura del pipeline.
 """
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from analytics.leads_queries import (
     _build_chile_period_bounds,
     query_comparative_trends,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+HTML = (ROOT / "templates" / "leads_dashboard.html").read_text(encoding="utf-8")
 
 CHILE = ZoneInfo("America/Santiago")
 
@@ -79,3 +83,15 @@ def test_bounds_periodo_exclusivo_final():
     assert not (start_utc <= lead_at_end < end_utc)
     # Un lead un microsegundo antes SÍ está dentro.
     assert start_utc <= end_utc - datetime.resolution < end_utc
+
+
+def test_trend_hover_interaction_presente():
+    # Interacción hover/tap: snap por área con guía + puntos + tooltip ampliado.
+    render = HTML.split("function renderTrendsAndChannels()", 1)[1]
+    assert "tc-guide" in render
+    assert "tc-hl-cur" in render
+    assert "tc-hl-prev" in render
+    assert "tc-zone" in render
+    assert "Leads del día" in render
+    assert "Actual acumulado" in render
+    assert "matchMedia('(hover: hover)')" in render

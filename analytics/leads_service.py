@@ -399,8 +399,139 @@ def _build_executive_story(executive_summary, sla, period_info, contribution, fi
     }
 
 
-def _pct(value, denominator):
-    return round(value / denominator * 100, 1) if denominator else None
+def build_executive_insights(demand, conversion, sla, sources, pipeline):
+    """Motor determinístico de Insights Ejecutivos (máx. 3).
+
+    Solo usa métricas canónicas ya validadas del payload filtrado:
+    - CARD 4: ``in_sla_pct`` y ``open_breached`` (vencidos); nunca las claves
+      SLA antiguas del Resumen.
+    - CARD 2: ``conversion_pct`` y ``previous_pct``.
+    - Origen de Demanda: ``sources.items`` (cantidad, pct, conversion_pct).
+    - Cobertura SUCRE: ``pipeline`` (propiedades_con_demanda, cartera_activa,
+      pct_cartera_con_demanda).
+    - Tendencia: ``demand.variation_pct``.
+
+    Cada insight conecta datos (no repite KPIs) y entrega título breve,
+    interpretación y una acción concreta. No se afirma causalidad.
+    """
+    global_conv = (conversion or {}).get("conversion_pct")
+    prev_conv = (conversion or {}).get("previous_pct")
+    in_sla = (sla or {}).get("in_sla_pct")
+    vencidos = (sla or {}).get("open_breached", 0) or 0
+    variacion = (demand or {}).get("variation_pct")
+    items = ((sources or {}).get("items") or []) if sources else []
+
+    def _es(n):
+        """Formato decimal es-CL (coma) para un porcentaje/pp con 1 decimal."""
+        s = f"{n:.1f}"
+        if s.endswith(".0"):
+            s = s[:-2]
+        return s.replace(".", ",")
+
+    priorities = []
+    opportunities = []
+    positives = []
+
+    # A. SLA / capacidad de gestión (sin afirmar causalidad con conversión).
+    if in_sla is not None and in_sla < 50 and vencidos > 0:
+        priorities.append({
+            "tipo": "prioridad",
+            "titulo": "Respuesta comercial crítica",
+            "texto": (f"Solo {_es(in_sla)}% de los leads permanece dentro de SLA "
+                      f"y existen {vencidos} vencidos. El volumen actual está generando "
+                      f"presión relevante sobre la gestión."),
+            "accion": "Priorizar vencidos, especialmente Hot, y verificar capacidad de primera gestión.",
+        })
+
+    # B. Origen con alto volumen y bajo resultado.
+    if global_conv is not None and global_conv > 0:
+        low = [it for it in items
+               if it.get("cantidad", 0) >= 20 and (it.get("pct", 0) or 0) >= 15
+               and it.get("conversion_pct") is not None
+               and it["conversion_pct"] < global_conv * 0.6]
+        if low:
+            low.sort(key=lambda it: -it.get("cantidad", 0))
+            src = low[0]
+            priorities.append({
+                "tipo": "prioridad",
+                "titulo": "Calidad de la principal fuente",
+                "texto": (f"{src['nombre']} aporta {_es(src.get('pct', 0))}% de los leads, "
+                          f"pero convierte solo {_es(src['conversion_pct'])}% a visita."),
+                "accion": "Revisar calidad, segmentación y gestión de los leads provenientes de ese origen.",
+            })
+
+    # D. Volumen vs conversión temporal (en puntos porcentuales, CARD 2).
+    if variacion is not None and variacion > 0 and global_conv is not None and prev_conv is not None:
+        pp = round(global_conv - prev_conv, 1)
+        if pp < 0:
+            priorities.append({
+                "tipo": "prioridad",
+                "titulo": "Volumen y conversión divergen",
+                "texto": (f"La demanda creció {_es(variacion)}%, pero la conversión a visita "
+                          f"bajó {_es(abs(pp))} pp; el crecimiento no se está traduciendo en visitas."),
+                "accion": "Revisar la gestión de los leads nuevos y la calidad de las fuentes que crecieron.",
+            })
+        elif pp > 0:
+            positives.append({
+                "tipo": "positivo",
+                "titulo": "Crecimiento con mejor conversión",
+                "texto": (f"La demanda creció {_es(variacion)}% y la conversión a visita "
+                          f"mejoró {_es(pp)} pp; el crecimiento se está traduciendo en visitas."),
+                "accion": "Consolidar el proceso actual y mantener el ritmo.",
+            })
+
+    # C. Oportunidad por origen (lenguaje prudente si muestra pequeña).
+    if global_conv is not None and global_conv > 0:
+        favorable = [it for it in items
+                     if it.get("cantidad", 0) >= 20 and it.get("conversion_pct") is not None
+                     and it["conversion_pct"] > global_conv]
+        favorable.sort(key=lambda it: -it.get("conversion_pct", 0))
+        if favorable:
+            small = any(it.get("cantidad", 0) < 50 for it in favorable)
+            chosen = favorable[:2]
+            if len(chosen) == 1:
+                s = chosen[0]
+                texto = (f"{s['nombre']} muestra una conversión a visita superior a la media "
+                         f"({_es(s['conversion_pct'])}% vs {_es(global_conv)}%), aunque con volúmenes moderados.")
+            else:
+                nombres = " y ".join(it["nombre"] for it in chosen)
+                texto = (f"{nombres} muestran conversiones a visita superiores a la media "
+                         f"({_es(global_conv)}%), aunque todavía con volúmenes moderados.")
+            if not small:
+                texto += " La muestra ya es suficiente."
+            opportunities.append({
+                "tipo": "oportunidad",
+                "titulo": "Señal favorable en otros orígenes",
+                "texto": texto,
+                "accion": "Observar si el comportamiento se mantiene al acumular una muestra mayor.",
+            })
+
+    # E. Cobertura de cartera (solo si señal material, no prioritaria).
+    cov = (pipeline or {}).get("pct_cartera_con_demanda")
+    if cov is not None and cov < 15:
+        con_demanda = (pipeline or {}).get("propiedades_con_demanda", 0)
+        activa = (pipeline or {}).get("cartera_activa", 0)
+        opportunities.append({
+            "tipo": "oportunidad",
+            "titulo": "Cobertura de cartera baja",
+            "texto": (f"La demanda cubre solo {_es(cov)}% de la cartera activa "
+                      f"({con_demanda} de {activa}); hay potencial sin explorar."),
+            "accion": "Evaluar la activación de propiedades sin demanda en el período.",
+        })
+
+    # Priorización: máx. 3. Si existe oportunidad/positivo, acotar prioridades
+    # a 2 para dar balance; si no, mostrar hasta 3 prioridades reales.
+    result = []
+    has_balance = bool(opportunities) or bool(positives)
+    if has_balance:
+        result = priorities[:2]
+        for cand in (opportunities + positives):
+            if len(result) >= 3:
+                break
+            result.append(cand)
+    else:
+        result = priorities[:3]
+    return result
 
 
 def _summary_delta(current, previous, key):
@@ -1284,6 +1415,14 @@ def get_leads_dashboard_overview(
         },
     }
 
+    insights = build_executive_insights(
+        demand={"variation_pct": trends.get("variation_pct")},
+        conversion={"conversion_pct": conv_pct, "previous_pct": prev_pct},
+        sla=sla_data,
+        sources=sources_data,
+        pipeline=pipeline,
+    )
+
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -1363,6 +1502,7 @@ def get_leads_dashboard_overview(
         "rescue": rescue_data,
         "sources": sources_data,
         "executives": executives_data,
+        "insights": insights,
         "meta": {
             "target": meta_target,
             "global_target": target_info.get("global_target") if target_info.get("available") else meta_target,

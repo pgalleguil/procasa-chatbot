@@ -586,8 +586,7 @@
             flex-wrap: wrap;
             align-items: center;
             gap: 10px;
-            background: var(--bg-body);
-            backdrop-filter: blur(14px);
+            background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 8px 12px;
@@ -705,7 +704,7 @@
             gap: 8px;
             margin: 0 0 10px;
             padding: 8px 12px;
-            background: var(--bg-body);
+            background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 10px;
         }
@@ -1449,16 +1448,26 @@
 
         .ai-label {
             display: block;
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+
+        .ai-ins-title {
+            margin: 0 0 4px;
+            font-size: 13px;
+            font-weight: 700;
             color: var(--text-primary);
-            margin-bottom: 4px;
+            line-height: 1.3;
         }
 
         .ai-text { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
         .ai-text strong { color: var(--text-primary); font-weight: 600; }
-        .ai-action-line { display: block; margin-top: 6px; color: var(--text-primary); }
-        .ai-action-line strong { color: var(--conversion-accent); }
+        .ai-action-line { display: block; margin-top: 6px; font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+        .ai-action-line strong { color: var(--conversion-accent); font-weight: 600; }
 
         .ai-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
         .ai-chip {
@@ -1613,6 +1622,42 @@
         }
         .tc-chart-tooltip strong { display: block; color: #C4B5FD; font-size: 12px; }
         .tc-chart-tooltip small { display: block; color: var(--text-secondary); font-size: 9px; margin-top: 2px; }
+
+        /* Guía y puntos del hover (overlay HTML, tamaño en píxeles exactos,
+           evita la deformación del SVG con preserveAspectRatio="none"). */
+        .tc-guide {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #94A3B8;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-0.5px);
+            transition: opacity 0.12s ease;
+        }
+
+        .tc-hl {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.12s ease;
+        }
+
+        .tc-hl-cur {
+            width: 6px;
+            height: 6px;
+            background: #8B5CF6;
+            border: 1px solid #FFFFFF;
+        }
+
+        .tc-hl-prev {
+            width: 5px;
+            height: 5px;
+            background: #64748B;
+        }
 
         .tc-line {
             stroke-dasharray: 2000;
@@ -2944,29 +2989,7 @@
                         <span class="ai-briefing-meta">Procesado en tiempo real</span>
                     </div>
 
-                    <div class="ai-grid">
-                        <div class="ai-ins" data-kind="growth">
-                            <span class="ai-dot"></span>
-                            <div class="ai-ins-body">
-                                <span class="ai-label">Crecimiento de Demanda</span>
-                                <p class="ai-text" id="aiGrowthText"></p>
-                            </div>
-                        </div>
-                        <div class="ai-ins" data-kind="alert">
-                            <span class="ai-dot"></span>
-                            <div class="ai-ins-body">
-                                <span class="ai-label">Velocidad de Respuesta</span>
-                                <p class="ai-text" id="aiAlertText"></p>
-                            </div>
-                        </div>
-                        <div class="ai-ins" data-kind="action">
-                            <span class="ai-dot"></span>
-                            <div class="ai-ins-body">
-                                <span class="ai-label">Decisión Recomendada</span>
-                                <p class="ai-text" id="aiActionText"></p>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="ai-grid" id="aiInsightsGrid"></div>
 
                     <div class="ai-briefing-cta">
                         <a class="ai-btn ai-btn-primary" href="/crm"><i class="fa-solid fa-list-check"></i> Ver acciones recomendadas</a>
@@ -3880,71 +3903,35 @@
             function renderInsightsBlock() {
                 const block = $('aiBriefing');
                 if (!block || !OVERVIEW) return;
-                const demand = OVERVIEW.demand || {};
-                const sla = OVERVIEW.sla || {};
-                const period = OVERVIEW.period || {};
-                const total = demand.total || 0;
-                const variacion = demand.variation_pct;
-                const mediana = sla.mediana_general_min;
-                const slaPct = sla.pct_cumplimiento_sla;
-                const noGest = sla.no_gestionados || 0;
-                const resolved = period.compare_resolved || 'none';
-
-                let growthText;
-                if (resolved === 'none' || variacion === null || variacion === undefined) {
-                    growthText = 'Se capturaron <strong>' + total + ' oportunidades</strong> en el período.';
-                } else if (variacion >= 0) {
-                    growthText = 'Los leads aumentaron <strong>+' + variacion.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong>, alcanzando <strong>' + total + ' oportunidades</strong>.';
-                } else {
-                    growthText = 'Los leads cayeron <strong>' + variacion.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> vs. el período anterior, con <strong>' + total + ' oportunidades</strong>.';
+                const insights = OVERVIEW.insights || [];
+                const grid = $('aiInsightsGrid');
+                const cta = block.querySelector('.ai-briefing-cta');
+                const KINDS = {
+                    prioridad: { dot: '#F59E0B', lbl: 'Prioridad' },
+                    oportunidad: { dot: '#8B5CF6', lbl: 'Oportunidad' },
+                    positivo: { dot: '#34D399', lbl: 'Evolución' },
+                };
+                if (grid) {
+                    if (!insights.length) {
+                        grid.innerHTML = '<div class="ai-ins"><div class="ai-ins-body">' +
+                            '<span class="ai-label">Diagnóstico</span>' +
+                            '<p class="ai-text">Sin señales que requieran intervención en el período seleccionado.</p>' +
+                            '</div></div>';
+                    } else {
+                        grid.innerHTML = insights.map(ins => {
+                            const kind = KINDS[ins.tipo] || KINDS.oportunidad;
+                            return '<div class="ai-ins" data-kind="' + (ins.tipo || 'oportunidad') + '">' +
+                                '<span class="ai-dot" style="background:' + kind.dot + '"></span>' +
+                                '<div class="ai-ins-body">' +
+                                '<span class="ai-label">' + esc(kind.lbl) + '</span>' +
+                                '<h4 class="ai-ins-title">' + esc(ins.titulo || '') + '</h4>' +
+                                '<p class="ai-text">' + esc(ins.texto || '') + '</p>' +
+                                (ins.accion ? '<span class="ai-action-line"><strong>Acción:</strong> ' + esc(ins.accion) + '</span>' : '') +
+                                '</div></div>';
+                        }).join('');
+                    }
                 }
-
-                let alertText;
-                const medianaTxt = (mediana === null || mediana === undefined) ? '' : mediana.toLocaleString('es-CL', { maximumFractionDigits: 1 });
-                if (mediana === null || mediana === undefined || slaPct === null || slaPct === undefined) {
-                    alertText = 'Sin datos suficientes de tiempos de respuesta en el período.';
-                } else if (slaPct >= 90) {
-                    alertText = 'Mediana de atención de <strong>' + medianaTxt + ' min</strong> con <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> dentro de SLA.';
-                } else {
-                    alertText = 'Mediana de atención de <strong>' + medianaTxt + ' min</strong>; solo el <strong>' + slaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</strong> cumple el SLA objetivo (&lt; 180 min).';
-                }
-
-                let actionText;
-                const vencidos = sla.vencidos || 0;
-                const execItems = ((OVERVIEW.executives || {}).items) || [];
-                const topExec = execItems.slice(0, 2);
-                if (vencidos > 0 && topExec.length >= 2) {
-                    const s1 = Math.ceil(vencidos / 2);
-                    const s2 = vencidos - s1;
-                    actionText = 'Contactar hoy los <strong>' + vencidos + ' leads con SLA vencido</strong>: asignar ' + s1 + ' a <strong>' + topExec[0].nombre + '</strong> y ' + s2 + ' a <strong>' + topExec[1].nombre + '</strong>, con meta de contacto en menos de 60 minutos.';
-                } else if (vencidos > 0) {
-                    actionText = 'Contactar hoy los <strong>' + vencidos + ' leads con SLA vencido</strong> para evitar el enfriamiento de la demanda.';
-                } else if (noGest > 0) {
-                    actionText = 'Dar seguimiento a los <strong>' + noGest + ' leads sin gestión</strong> para acelerar la agendación de visitas.';
-                } else {
-                    actionText = 'Operación estable: sin leads en riesgo en el período.';
-                }
-
-                $('aiGrowthText').innerHTML = growthText + ' <span class="ai-action-line"><strong>Acción:</strong> revisar capacidad de atención y distribución de nuevos leads.</span>';
-                $('aiAlertText').innerHTML = alertText + ' <span class="ai-action-line"><strong>Acción:</strong> priorizar la respuesta de leads vencidos y revisar la cobertura de registro.</span>';
-                $('aiActionText').innerHTML = actionText;
-                const growthAction = resolved === 'none'
-                    ? 'Validar si la capacidad comercial acompaña el volumen capturado.'
-                    : (variacion >= 0
-                        ? 'Asegurar capacidad de respuesta para absorber el crecimiento sin deteriorar el SLA.'
-                        : 'Revisar fuentes de captación y activar acciones para recuperar el volumen.' );
-                const alertAction = (slaPct !== null && slaPct !== undefined && slaPct < 90)
-                    ? 'Priorizar leads vencidos y corregir la asignación de primera respuesta.'
-                    : 'Mantener el estándar y monitorear diariamente los casos fuera de SLA.';
-                $('aiGrowthText').innerHTML = growthText + ' <span class="ai-action-line"><strong>Acción:</strong> ' + growthAction + '</span>';
-                $('aiAlertText').innerHTML = alertText + ' <span class="ai-action-line"><strong>Acción:</strong> ' + alertAction + '</span>';
-                if (vencidos > 0) {
-                    $('aiActionText').innerHTML = '<strong>Prioridad inmediata:</strong> contactar ' + vencidos + ' leads vencidos y registrar el resultado en CRM.';
-                } else if (noGest > 0) {
-                    $('aiActionText').innerHTML = '<strong>Prioridad operativa:</strong> gestionar ' + noGest + ' leads sin actividad y llevarlos a visita.';
-                } else {
-                    $('aiActionText').innerHTML = '<strong>Control:</strong> mantener seguimiento diario de SLA y conversión.';
-                }
+                if (cta) cta.style.display = insights.length ? '' : 'none';
                 showCardReveal(block);
             }
 
@@ -4114,9 +4101,6 @@
                 const lineD = smooth(curPts);
                 const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
                 const prevLineD = prevPts.length > 1 ? smooth(prevPts) : '';
-                const pointsHtml = curPts.map((pt, i) =>
-                    '<circle class="tc-hit" cx="' + pt[0].toFixed(2) + '" cy="' + pt[1].toFixed(2) + '" r="3.2" data-index="' + i + '" fill="transparent" stroke="none"/>'
-                ).join('');
                 const step = Math.max(1, Math.ceil(days / 10));
                 let labelsHtml = '';
                 for (let i = 0; i < days; i += step) {
@@ -4137,32 +4121,79 @@
                         (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
                         '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
                         '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
-                        pointsHtml +
-                        '</svg><div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
+                        '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
+                        '</svg>' +
+                        '<div class="tc-guide"></div>' +
+                        '<div class="tc-hl tc-hl-cur"></div>' +
+                        (hasCmp ? '<div class="tc-hl tc-hl-prev"></div>' : '') +
+                        '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
                         '<div class="tc-line-labels">' + labelsHtml + '</div>';
                 }
 
                 const trendTooltip = chart ? chart.querySelector('#tcTrendTooltip') : null;
+                const svg = chart ? chart.querySelector('svg') : null;
+                const guide = chart ? chart.querySelector('.tc-guide') : null;
+                const hlCur = chart ? chart.querySelector('.tc-hl-cur') : null;
+                const hlPrev = chart ? chart.querySelector('.tc-hl-prev') : null;
+                const zone = chart ? chart.querySelector('.tc-zone') : null;
                 if (chart && trendTooltip) {
                     const formatTrendDate = (iso) => {
                         const dt = new Date(String(iso || '') + 'T12:00:00');
                         return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
                     };
-                    chart.querySelectorAll('.tc-hit').forEach(hit => {
-                        hit.addEventListener('mouseenter', () => {
-                            const idx = Number(hit.getAttribute('data-index'));
-                            const prevVal = hasCmp && prevCum[idx] !== undefined ? prevCum[idx] : null;
-                            const delta = prevVal === null ? null : cum[idx] - prevVal;
-                            const deltaText = delta === null ? '' : '<small>Brecha: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</small>';
-                            trendTooltip.innerHTML = '<span>' + formatTrendDate(labels[idx]) + '</span>' +
-                                '<strong>Actual acumulado: ' + cum[idx] + ' leads</strong>' +
-                                (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
-                                deltaText;
-                            trendTooltip.style.left = Math.max(12, Math.min(88, curPts[idx][0])) + '%';
-                            trendTooltip.hidden = false;
-                        });
-                        hit.addEventListener('mouseleave', () => { trendTooltip.hidden = true; });
-                    });
+                    const showAt = (idx) => {
+                        idx = Math.max(0, Math.min(days - 1, idx));
+                        const snapX = xAt(idx);
+                        const pctY = (v) => (yAt(v) / H * 100) + '%';
+                        if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
+                        if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(cum[idx]); hlCur.style.opacity = 1; }
+                        if (hlPrev) {
+                            if (prevCum.length) { hlPrev.style.left = snapX + '%'; hlPrev.style.top = pctY(prevCum[idx]); hlPrev.style.opacity = 1; }
+                            else hlPrev.style.opacity = 0;
+                        }
+                        const prevVal = hasCmp && prevCum[idx] !== undefined ? prevCum[idx] : null;
+                        const delta = prevVal === null ? null : cum[idx] - prevVal;
+                        trendTooltip.innerHTML = '<span>' + formatTrendDate(labels[idx]) + '</span>' +
+                            '<strong>Leads del día: ' + nums[idx] + '</strong>' +
+                            '<small>Actual acumulado: ' + cum[idx] + ' leads</small>' +
+                            (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
+                            (delta !== null ? '<small>Brecha: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</small>' : '');
+                        trendTooltip.style.left = snapX + '%';
+                        if (snapX > 75) trendTooltip.style.transform = 'translateX(calc(-100% - 4px))';
+                        else if (snapX < 25) trendTooltip.style.transform = 'translateX(4px)';
+                        else trendTooltip.style.transform = 'translateX(-50%)';
+                        trendTooltip.hidden = false;
+                    };
+                    const hideAt = () => {
+                        if (guide) guide.style.opacity = 0;
+                        if (hlCur) hlCur.style.opacity = 0;
+                        if (hlPrev) hlPrev.style.opacity = 0;
+                        if (trendTooltip) trendTooltip.hidden = true;
+                    };
+                    const indexFromEvent = (e) => {
+                        if (!svg) return 0;
+                        const rect = svg.getBoundingClientRect();
+                        if (rect.width <= 0) return 0;
+                        const xv = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+                        return Math.round(xv * (days - 1) / 100);
+                    };
+                    if (zone) {
+                        if (window.matchMedia('(hover: hover)').matches) {
+                            zone.addEventListener('mousemove', (e) => showAt(indexFromEvent(e)));
+                            zone.addEventListener('mouseleave', hideAt);
+                        } else {
+                            zone.addEventListener('click', (e) => {
+                                showAt(indexFromEvent(e));
+                                trendTooltip.dataset.pinned = '1';
+                            });
+                            document.addEventListener('click', (e) => {
+                                if (trendTooltip.dataset.pinned === '1' && !chart.contains(e.target)) {
+                                    trendTooltip.dataset.pinned = '';
+                                    hideAt();
+                                }
+                            }, true);
+                        }
+                    }
                 }
 
                 const prevLegend = $('tcTrendChart') ? document.querySelector('.tc-leg-prev') : null;
@@ -4734,12 +4765,11 @@
                         </div>
                     </div>`;
 
-                // Briefing
-                const briefing = [
-                    ['Crecimiento de Demanda', (document.getElementById('aiGrowthText') || {}).textContent || ''],
-                    ['Velocidad de Respuesta', (document.getElementById('aiAlertText') || {}).textContent || ''],
-                    ['Acción Recomendada', (document.getElementById('aiActionText') || {}).textContent || ''],
-                ].map(row => '<li><strong>' + esc(row[0]) + ':</strong> ' + esc(row[1]) + '</li>').join('');
+                // Briefing (insights determinísticos)
+                const briefing = (OVERVIEW.insights || []).map(ins =>
+                    '<li><strong>' + esc(ins.titulo || '') + ':</strong> ' + esc(ins.texto || '') +
+                    (ins.accion ? ' <em>Acción: ' + esc(ins.accion) + '</em>' : '') + '</li>'
+                ).join('');
 
                 // Embudo
                 const funnelRows = Array.from(document.querySelectorAll('#funnelBars .funnel-row')).map(r => {

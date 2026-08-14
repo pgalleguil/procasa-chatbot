@@ -39,19 +39,7 @@ _LOCAL_CACHE_L1 = {}
 def get_captacion_collection(db):
     return Config.get_captacion_collection(db)
 
-def normalize_commune_canonical(value):
-    """Normaliza nombre de comuna a slug canónico (lowercase, sin acentos, guiones)."""
-    if not value:
-        return None
-    import unicodedata
-    s = str(value).lower().strip()
-    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-    s = s.replace('ñ', 'n').replace('Ã±', 'n')
-    s = re.sub(r'[^a-z0-9\s_-]', '', s)
-    s = re.sub(r'[\s_]+', '-', s.strip())
-    s = re.sub(r'-+', '-', s)
-    s = s.strip('-')
-    return s if s else None
+from comuna_utils import normalize_commune_canonical  # noqa: F401  (canonical, corrige mojibake)
 
 def normalize_captacion_document(doc):
     """View model consistente para lista y detalle desde cualquier origen."""
@@ -517,18 +505,14 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
                     {"nombre": executive_filter}, {"email": 1}
                 )
                 executive_ids = [executive_filter]
-                executive_emails = [executive_filter]
                 if executive_doc:
                     executive_ids.append(str(executive_doc["_id"]))
-                    if executive_doc.get("email"):
-                        executive_emails.append(executive_doc["email"])
                 add_condition({"$or": [
                     {"gestion.ejecutivo_asignado": executive_filter},
                     {"$and": [
                         {"gestion.ejecutivo_asignado": {"$in": [None, ""]}},
                         {"$or": [
                             {"gestion.ejecutivo_id": {"$in": executive_ids}},
-                            {"gestion.ejecutivo_email": {"$in": executive_emails}},
                         ]},
                     ]},
                 ]})
@@ -597,6 +581,10 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             {"contact_phone": tel_pattern},
             {"whatsapp_phone": tel_pattern},
             {"telefono": tel_pattern},
+            {"details.whatsapp_phone": tel_pattern},
+            {"details.contact_phone": tel_pattern},
+            {"details.telefono": tel_pattern},
+            {"details.phone": tel_pattern},
         ]})
     
     # Cache
@@ -1985,6 +1973,8 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
         {"$set": {
             "gestion.ejecutivo_id": None,
             "gestion.ejecutivo_asignado": None,
+            "gestion.ejecutivo_nombre": None,
+            "gestion.ejecutivo_email": None,
             "gestion.assignment_cycle_id": None,
             "gestion.first_valid_action_at": None,
             "gestion.estado": "NUEVO",
@@ -1999,6 +1989,38 @@ def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
     else:
         logger.info(f"[SLA] Sin captaciones inactivas para liberar.")
     return liberadas
+
+
+BROKER_GUARD_TERMS = (
+    "re max", "re/max", "remax", "fuenzalida", "procasa", "houm", "assetplan",
+    "portal inmobiliario", "chilepropiedades", "goplaceit", "easyprop",
+    "engel volkers", "coldwell banker", "urbalia", "enlace inmobiliario",
+    "capitalizarme", "toctoc",
+    "inmobiliaria", "corredor", "corredora", "corretaje", "asesor inmobiliario",
+    "asesora inmobiliaria", "agente inmobiliario", "broker inmobiliario",
+    "gestion inmobiliaria", "servicios inmobiliarios", "consultora inmobiliaria",
+    "bienes raices", "bienes raices", "real estate", "broker", "propiedades",
+    "constructora", "limitada", "sociedad",
+)
+
+BROKER_GUARD_FIELDS = (
+    "company_name", "broker_brand", "publicador_visible", "contact_name",
+    "contact_logo_alt", "listing_advertiser", "seller_jsonld_name",
+    "seller_name", "seller_text",
+)
+
+
+def _has_broker_identity(doc: dict) -> bool:
+    """Defensa en profundidad: aunque la clasificación fallara, nunca asignar
+    al equipo una captación cuyo publicador tiene identidad de corredor."""
+    from captacion_assignment_eligibility import assignment_eligibility
+    ok, reasons = assignment_eligibility(doc)
+    if not ok and "commercial_identity_or_profile" in reasons:
+        return True
+    raw = " ".join(str(doc.get(f) or "") for f in BROKER_GUARD_FIELDS)
+    norm = re.sub(r"[^a-z0-9 ]+", " ", raw.lower())
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return any(term in norm for term in BROKER_GUARD_TERMS)
 
 
 def distribute_sourced_leads():
@@ -2055,6 +2077,19 @@ def distribute_sourced_leads():
             logger.info(f"[DISTRIBUCION] {protected} contactos protegidos por gestión previa (no redistribuidos).")
     except Exception as e:
         logger.warning(f"[DISTRIBUCION] No se pudo aplicar guard de gestión previa: {e}")
+    # Defensa en profundidad: aunque la clasificación haya fallado y marque
+    # INCIERTO/assignment_ready, nunca asignar al equipo un publicador con
+    # identidad comercial de corredor (RE/MAX, inmobiliarias, etc.).
+    broker_guard = 0
+    kept = []
+    for p in props:
+        if _has_broker_identity(p):
+            broker_guard += 1
+        else:
+            kept.append(p)
+    props = kept
+    if broker_guard > 0:
+        logger.warning(f"[DISTRIBUCION] {broker_guard} propiedades con identidad de corredor bloqueadas (guard comercial).")
     logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
 
     assigned = 0

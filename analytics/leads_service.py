@@ -1226,19 +1226,23 @@ def get_leads_dashboard_overview(
     }
 
     src_items = sources.get("current", [])
-    src_prev = sources.get("previous", {}) or {}
     src_total = sources.get("total", 0) or 0
+    src_total_visitas = sources.get("total_visitas", 0) or 0
     sources_data = {
         "items": [
             {
                 "nombre": s.get("nombre", "Otro"),
                 "cantidad": s.get("cantidad", 0),
-                "pct": round(s.get("cantidad", 0) / src_total * 100, 1) if src_total else 0.0,
-                "diff": s.get("cantidad", 0) - src_prev.get(s.get("nombre", ""), 0),
+                "visitas": s.get("visitas", 0),
+                "conversion_pct": s.get("conversion_pct"),
+                "pct": s.get("pct", 0.0),
+                "prev": s.get("prev", 0),
+                "diff": s.get("cantidad", 0) - s.get("prev", 0),
             }
             for s in src_items
         ],
         "total": src_total,
+        "total_visitas": src_total_visitas,
     }
 
     _sum_exec = sum(r.get("leads", 0) for r in exec_rows)

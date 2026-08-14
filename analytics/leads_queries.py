@@ -2301,11 +2301,15 @@ def query_leads_dashboard_sources(
     include_comparison: bool = True,
     filters: Optional[dict] = None,
 ) -> dict:
-    """Distribución por canal/origen (SECCIÓN 3) con comparativa anterior.
+    """Distribución por origen (SECCIÓN Origen de Demanda) con conversión a
+    visita canónica y comparativa anterior.
 
-    Combina prospecto.origen (WhatsApp, MercadoLibre, etc.) con
-    prospecto.canal_origen (origen de scraping Prop360 / manuales) y los
-    códigos de portal en los leads WhatsApp.
+    - Origen: _resolve_origin + _normalize_source_name (fusiona variantes).
+    - Visitas por origen: la MISMA evidencia canónica de CARD 2
+      (_scheduled_visit_lead_ids): stage/lifecycle histórico, crm_events
+      VISITA_AGENDADA y órdenes de visita firmadas, deduplicado por lead, as-of.
+    - Orden: leads DESC. Filas: Top 6 + Otros (agregando el resto); si hay
+      <=7 orígenes se muestran todos sin "Otros".
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -2315,68 +2319,102 @@ def query_leads_dashboard_sources(
     else:
         prev_start = prev_end = None
 
-    _origin_expr = {"$ifNull": [
-        # 1. Si prospecto.origen es un portal real (no WhatsApp), usarlo
-        {"$cond": [
-            {"$and": [
-                {"$ne": ["$prospecto.origen", ""]},
-                {"$ne": ["$prospecto.origen", "WhatsApp"]},
-            ]},
-            "$prospecto.origen",
-            None,
-        ]},
-        # 2. canal_origen (portal de scraping / manuales)
-        {"$ifNull": [
-            {"$cond": [{"$ne": ["$prospecto.canal_origen", ""]}, "$prospecto.canal_origen", None]},
-            # 3. WhatsApp con propiedad de MercadoLibre
-            {"$ifNull": [
-                {"$cond": [{"$ne": ["$prospecto.codigo_mercadolibre", ""]}, "MercadoLibre", None]},
-                # 4. WhatsApp con propiedad de Yapo
-                {"$ifNull": [
-                    {"$cond": [{"$ne": ["$prospecto.codigo_yapo", ""]}, "Yapo", None]},
-                    # 5. WhatsApp sin portal detectado (canal)
-                    {"$cond": [{"$eq": ["$prospecto.origen", "WhatsApp"]}, "WhatsApp", "Sin informacion"]},
-                ]},
-            ]},
-        ]},
-    ]}
-
-    def _counts(ps_utc, pe_utc):
-        pipeline = [
+    def _load(ps_utc, pe_utc):
+        return list(db["leads"].aggregate([
             _cohort_indexed_prefilter(ps_utc, pe_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
-            {"$addFields": {"_origin": _origin_expr}},
-            {"$group": {"_id": "$_origin", "count": {"$sum": 1}}},
+            {"$project": {
+                "_id": 1, "phone": 1, "prospecto": 1, "created_at": 1,
+                "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+                "lifecycle.visit_scheduled_at": 1,
+            }},
+        ]))
+
+    cohort = _load(start_utc, end_utc)
+    lead_ids = {str(l["_id"]) for l in cohort}
+    scheduled = _scheduled_visit_lead_ids(cohort, lead_ids, end_utc)
+
+    per_origin: dict = {}
+    for lead in cohort:
+        name = _normalize_source_name(_resolve_origin(lead))
+        entry = per_origin.setdefault(name, {"leads": 0, "visitas": 0})
+        entry["leads"] += 1
+        if str(lead["_id"]) in scheduled:
+            entry["visitas"] += 1
+
+    prev_counts: dict = {}
+    if prev_start:
+        for lead in _load(prev_start, prev_end):
+            name = _normalize_source_name(_resolve_origin(lead))
+            prev_counts[name] = prev_counts.get(name, 0) + 1
+
+    current_total = sum(e["leads"] for e in per_origin.values())
+    total_visitas = sum(e["visitas"] for e in per_origin.values())
+
+    ordered = sorted(per_origin.items(), key=lambda kv: -kv[1]["leads"])
+    if len(ordered) > 7:
+        top = ordered[:6]
+        rest = ordered[6:]
+        items = [
+            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
+             "prev": prev_counts.get(name, 0)}
+            for name, e in top
         ]
-        rows = list(db["leads"].aggregate(pipeline))
-        merged: dict = {}
-        for r in rows:
-            name = _normalize_source_name(r["_id"])
-            merged[name] = merged.get(name, 0) + r["count"]
-        return merged
+        otros_leads = sum(e["leads"] for _, e in rest)
+        otros_visitas = sum(e["visitas"] for _, e in rest)
+        otros_prev = sum(prev_counts.get(name, 0) for name, _ in rest)
+        items.append({"nombre": "Otros", "cantidad": otros_leads,
+                      "visitas": otros_visitas, "prev": otros_prev})
+    else:
+        items = [
+            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
+             "prev": prev_counts.get(name, 0)}
+            for name, e in ordered
+        ]
 
-    current = _counts(start_utc, end_utc)
-    previous = _counts(prev_start, prev_end) if prev_start else {}
-    current_total = sum(current.values())
+    for it in items:
+        it["pct"] = round(it["cantidad"] / current_total * 100, 1) if current_total else 0.0
+        it["conversion_pct"] = round(it["visitas"] / it["cantidad"] * 100, 1) if it["cantidad"] else None
 
-    current_items = [
-        {"nombre": name, "cantidad": count}
-        for name, count in sorted(current.items(), key=lambda item: -item[1])[:8]
-    ]
     return {
-        "current": current_items,
-        "previous": previous,
+        "current": items,
+        "previous": prev_counts,
         "total": current_total,
+        "total_visitas": total_visitas,
     }
 
 
+def _resolve_origin(lead: Mapping[str, Any]) -> str:
+    """Origen de un lead con la misma precedencia canónica de _origin_expr."""
+    prospecto = lead.get("prospecto") or {}
+    origen = str(prospecto.get("origen") or "").strip()
+    if origen and origen.upper() != "WHATSAPP":
+        return origen
+    canal = str(prospecto.get("canal_origen") or "").strip()
+    if canal:
+        return canal
+    if prospecto.get("codigo_mercadolibre"):
+        return "MercadoLibre"
+    if prospecto.get("codigo_yapo"):
+        return "Yapo"
+    if origen.upper() == "WHATSAPP":
+        return "WhatsApp"
+    return "Sin informacion"
+
+
 def _normalize_source_name(value) -> str:
-    """Normaliza nombres de canal/origen de captura para el dashboard."""
+    """Normaliza nombres de canal/origen de captura para el dashboard.
+
+    Fusiona variantes (Portal Inmobiliario/PortalInmobiliario, TocToc/TOCTOC).
+    La ausencia de información se presenta como "Sin información" (no se
+    disfraza de origen "Directo"). e2e_test se mantiene como tal (política de
+    test global pendiente), sin convertirlo en "Directo".
+    """
     text = str(value or "").strip()
     low = text.lower()
-    if low in {"", "sin informacion", "sin información", "sin info", "sin informacion", "n/a", "null", "none", "desconocido", "-", "no informado", "e2e_test"}:
-        return "Directo"
+    if low in {"", "sin informacion", "sin información", "sin info", "n/a", "null", "none", "desconocido", "-", "no informado"}:
+        return "Sin información"
     mapping = {
         "portal inmobiliario": "Portal Inmobiliario",
         "portalinmobiliario": "Portal Inmobiliario",

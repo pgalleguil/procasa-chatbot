@@ -1712,33 +1712,64 @@
         .tc-today-delta.neg { color: #FCA5A5; }
         .tc-today-delta.neutral { color: var(--text-secondary); }
 
+        .tc-source-card { position: relative; }
+
         .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
 
         .tc-src { display: flex; flex-direction: column; gap: 5px; }
 
-        .tc-src-top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 8px; }
+        .tc-src-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
 
         .tc-src-name {
             color: var(--text-primary);
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            font-weight: 600;
+            flex: 1 1 auto;
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
 
-        .tc-src-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .tc-src-val { color: var(--text-secondary); white-space: nowrap; flex-shrink: 0; }
 
-        .tc-src-val { color: var(--text-secondary); font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 11px; white-space: nowrap; }
-
-        .tc-src-val strong { color: var(--text-primary); }
+        .tc-src-val strong { color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
 
         .tc-src-track { height: 6px; border-radius: 99px; background: var(--border-color); overflow: hidden; }
 
-        .tc-src-bar { height: 100%; border-radius: 99px; transition: width 0.5s ease; }
+        .tc-src-bar { height: 100%; border-radius: 99px; background: var(--conversion-accent); transition: width 0.8s ease; }
+
+        .tc-src-tooltip {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            width: 210px;
+            padding: 8px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 10px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            z-index: 40;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            pointer-events: none;
+        }
+
+        .tc-src-tooltip strong { color: var(--text-primary); display: block; margin-bottom: 2px; }
+
+        .tc-src-tooltip small { display: block; }
+
+        @media (max-width: 640px) {
+            .tc-src-top { flex-wrap: wrap; row-gap: 2px; }
+            .tc-src-name { white-space: normal; overflow: visible; }
+        }
 
         /* --- NAVEGACIÓN DE TABS (iconos monocromáticos) --- */
         .dash-tabs {
@@ -2985,14 +3016,11 @@
                         <div class="tc-head">
                             <div>
                                 <h3>Origen de la Demanda</h3>
-                                <p>Distribución por portal o canal de captura</p>
+                                <p>Volumen y conversión a visita por origen</p>
                             </div>
                         </div>
                         <div class="tc-sources-list" id="tcSourcesList"></div>
-                        <div class="tc-foot">
-                            <span id="tcLeader">—</span>
-                            <span id="tcSourcesCount">—</span>
-                        </div>
+                        <div class="tc-src-tooltip" id="tcSrcTooltip" hidden></div>
                     </div>
                 </div>
             </section>
@@ -3950,6 +3978,76 @@
 
                 const chart = $('tcTrendChart');
 
+                // Panel Origen de Demanda: ranking por volumen + conversión a
+                // visita (evidencia canónica CARD 2) y comparable en tooltip.
+                const renderSourcesPanel = () => {
+                    const list = $('tcSourcesList');
+                    const srcTip = $('tcSrcTooltip');
+                    if (!list) return;
+                    const fmtPct = (v) => (v === null || v === undefined)
+                        ? '—'
+                        : v.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                    let html = '';
+                    sources.forEach((src) => {
+                        const nombre = src.nombre || 'Otro';
+                        const leads = src.cantidad || 0;
+                        const conv = src.conversion_pct;
+                        const pct = src.pct || 0;
+                        const barW = Math.min(pct, 100);
+                        html += '<div class="tc-src" data-nombre="' + esc(nombre) + '" data-leads="' + leads +
+                            '" data-pct="' + pct + '" data-visitas="' + (src.visitas || 0) + '" data-conv="' +
+                            (conv === null || conv === undefined ? '' : conv) + '" data-prev="' + (src.prev || 0) + '">' +
+                            '<div class="tc-src-top">' +
+                            '<span class="tc-src-name">' + esc(nombre) + '</span>' +
+                            '<span class="tc-src-val"><strong>' + leads + ' leads</strong> · <span class="tc-src-conv">' + fmtPct(conv) + ' a visita</span></span>' +
+                            '</div>' +
+                            '<div class="tc-src-track"><div class="tc-src-bar" data-w="' + barW + '" style="width:0%"></div></div>' +
+                            '</div>';
+                    });
+                    list.innerHTML = html;
+                    requestAnimationFrame(() => {
+                        list.querySelectorAll('.tc-src-bar').forEach(bar => {
+                            bar.style.width = bar.getAttribute('data-w') + '%';
+                        });
+                    });
+                    const showTip = (row) => {
+                        if (!srcTip) return;
+                        const nombre = row.getAttribute('data-nombre');
+                        const leads = Number(row.getAttribute('data-leads'));
+                        const pct = row.getAttribute('data-pct');
+                        const visitas = Number(row.getAttribute('data-visitas'));
+                        const convRaw = row.getAttribute('data-conv');
+                        const prev = Number(row.getAttribute('data-prev'));
+                        const convTxt = convRaw === ''
+                            ? 'n/d'
+                            : Number(convRaw).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                        const pctTxt = Number(pct).toLocaleString('es-CL', { maximumFractionDigits: 1 });
+                        let h = '<strong>' + esc(nombre) + '</strong>' +
+                            '<small>' + leads + ' leads · ' + pctTxt + '% del total</small>' +
+                            '<small>' + visitas + ' visita(s) agendada(s) · ' + convTxt + ' conversión</small>';
+                        h += (prev > 0)
+                            ? '<small>Período comparable: ' + prev + ' leads · ' + (leads - prev >= 0 ? '+' : '') + (leads - prev) + '</small>'
+                            : '<small>Período comparable: sin leads</small>';
+                        if (leads < 20) h += '<small>Base reducida: interpretar conversión con cautela.</small>';
+                        srcTip.innerHTML = h;
+                        srcTip.hidden = false;
+                        const card = $('sourceBlock');
+                        const cardRect = card ? card.getBoundingClientRect() : { top: 0, height: 300 };
+                        const rowRect = row.getBoundingClientRect();
+                        const top = Math.max(8, Math.min(rowRect.top - cardRect.top - 4, (cardRect.height || 300) - 130));
+                        srcTip.style.top = top + 'px';
+                    };
+                    let pinnedRow = null;
+                    list.querySelectorAll('.tc-src').forEach(row => {
+                        row.addEventListener('mouseenter', () => { pinnedRow = null; showTip(row); });
+                        row.addEventListener('mouseleave', () => { if (!pinnedRow && srcTip) srcTip.hidden = true; });
+                        row.addEventListener('click', () => {
+                            if (pinnedRow === row) { pinnedRow = null; if (srcTip) srcTip.hidden = true; }
+                            else { pinnedRow = row; showTip(row); }
+                        });
+                    });
+                };
+
                 // CASO "HOY" (1 día): microcomparación textual, sin curva.
                 if (days === 1) {
                     const curVal = nums[0] || 0;
@@ -3972,30 +4070,7 @@
                         : '';
                     const prevLegend = document.querySelector('.tc-leg-prev');
                     if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
-                    const list = $('tcSourcesList');
-                    if (list) {
-                        let html = '';
-                        sources.forEach((src, i) => {
-                            const color = TC_COLORS[i % TC_COLORS.length];
-                            const pct = src.pct || 0;
-                            const diff = src.diff || 0;
-                            const diffClass = diff > 0 ? 'pos' : (diff < 0 ? 'neg' : 'zero');
-                            const diffText = diff > 0 ? '+' + diff : diff;
-                            html += '<div class="tc-src">' +
-                                '<div class="tc-src-top">' +
-                                '<span class="tc-src-name"><span class="tc-src-dot" style="background:' + color + '"></span>' + (src.nombre || 'Otro') + '</span>' +
-                                '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) ' + (hasCmp ? '<span class="tc-diff ' + diffClass + '">[' + diffText + ']</span>' : '') + '</span>' +
-                                '</div>' +
-                                '<div class="tc-src-track"><div class="tc-src-bar" style="width:0%;background:' + color + '" data-w="' + Math.min(pct, 100) + '"></div></div>' +
-                                '</div>';
-                        });
-                        list.innerHTML = html;
-                    }
-                    const leader = sources.length ? sources[0] : null;
-                    const leaderDiff = leader ? (leader.diff || 0) : 0;
-                    const leaderDiffText = leaderDiff > 0 ? '+' + leaderDiff : leaderDiff;
-                    $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong>' + (hasCmp ? ' (' + leaderDiffText + ' leads)' : '');
-                    $('tcSourcesCount').innerHTML = sources.length + ' fuentes activas';
+                    renderSourcesPanel();
                     block.hidden = false;
                     return;
                 }
@@ -4100,31 +4175,7 @@
                 $('tcPeak').innerHTML = 'Mejor día: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
                 $('tcAvg').innerHTML = 'Ritmo promedio: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>';
 
-                const list = $('tcSourcesList');
-                if (list) {
-                    let html = '';
-                    sources.forEach((src, i) => {
-                        const color = TC_COLORS[i % TC_COLORS.length];
-                        const pct = src.pct || 0;
-                        const diff = src.diff || 0;
-                        const diffClass = diff > 0 ? 'pos' : (diff < 0 ? 'neg' : 'zero');
-                        const diffText = diff > 0 ? '+' + diff : diff;
-                        html += '<div class="tc-src">' +
-                            '<div class="tc-src-top">' +
-                            '<span class="tc-src-name"><span class="tc-src-dot" style="background:' + color + '"></span>' + (src.nombre || 'Otro') + '</span>' +
-                            '<span class="tc-src-val"><strong>' + src.cantidad + '</strong> (' + pct.toFixed(1).replace('.', ',') + '%) ' + (hasCmp ? '<span class="tc-diff ' + diffClass + '">[' + diffText + ']</span>' : '') + '</span>' +
-                            '</div>' +
-                            '<div class="tc-src-track"><div class="tc-src-bar" style="width:0%;background:' + color + '" data-w="' + Math.min(pct, 100) + '"></div></div>' +
-                            '</div>';
-                    });
-                    list.innerHTML = html;
-                }
-
-                const leader = sources.length ? sources[0] : null;
-                const leaderDiff = leader ? (leader.diff || 0) : 0;
-                const leaderDiffText = leaderDiff > 0 ? '+' + leaderDiff : leaderDiff;
-                $('tcLeader').innerHTML = 'Canal líder: <strong>' + (leader ? leader.nombre : '—') + '</strong>' + (hasCmp ? ' (' + leaderDiffText + ' leads)' : '');
-                $('tcSourcesCount').innerHTML = sources.length + ' fuentes activas';
+                renderSourcesPanel();
 
                 block.hidden = false;
             }

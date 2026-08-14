@@ -1847,88 +1847,326 @@ def query_leads_dashboard_conversion(
     }
 
 
-def query_leads_dashboard_pipeline(
-    period_start: Optional[str] = None,
-    period_end: Optional[str] = None,
-    filters: Optional[dict] = None,
-) -> dict:
-    """Valorización UF del pipeline para el Leads Dashboard (CARD 3).
+def _to_positive_float(value):
+    """Convierte un valor a float positivo utilizable, o None si no lo es."""
+    if value is None or value == "" or value == 0:
+        return None
+    try:
+        f = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    return f if f > 0 else None
 
-    DISTINCT PROPERTY AGGREGATION: agrupa primero por propiedad única
-    (prospecto.codigo) para NO inflar el pipeline cuando varios leads
-    consultan por la misma propiedad. El precio por propiedad es el promedio
-    de los precios registrados en sus leads.
+
+def _canonical_prices_for_codes(codes):
+    """Precios vigentes (UF y CLP) por código desde la fuente canónica de cartera.
+
+    Lee universo_cartera_prop360 (una sola query $in) y devuelve, por código:
+    venta_uf / arriendo_uf y venta_clp / arriendo_clp (positivos) y op_canon
+    (operación vigente cuando el lead no la especifica). No se usan leads de
+    otros períodos.
     """
+    if not codes:
+        return {}
+    out = {}
+    for u in get_db()["universo_cartera_prop360"].find(
+        {"codigo": {"$in": codes}}, {"codigo": 1, "tipo_operacion": 1}
+    ):
+        top = u.get("tipo_operacion") or {}
+        pv = top.get("precio_venta") or {}
+        pa = top.get("precio_arriendo") or {}
+        op_canon = None
+        if top.get("arriendo") and not top.get("venta"):
+            op_canon = "Arriendo"
+        elif top.get("venta"):
+            op_canon = "Venta"
+        out[str(u.get("codigo"))] = {
+            "venta_uf": _to_positive_float(pv.get("precio_uf")),
+            "venta_clp": _to_positive_float(pv.get("precio_clp")),
+            "arriendo_uf": _to_positive_float(pa.get("precio_uf")),
+            "arriendo_clp": _to_positive_float(pa.get("precio_clp")),
+            "op_canon": op_canon,
+        }
+    return out
+
+
+def _resolve_property_op(ops, canon):
+    """Operación definitiva por propiedad: lead primero, canónico como respaldo.
+
+    El lead puede no traer operación; entonces se usa la operación vigente
+    de la fuente canónica. Si ninguna existe, "otro".
+    """
+    up = {str(o).upper() for o in ops}
+    if up & {"VENTA", "V"}:
+        return "Venta"
+    if up & {"ARRIENDO", "A"}:
+        return "Arriendo"
+    if canon and canon.get("op_canon") in ("Venta", "Arriendo"):
+        return canon["op_canon"]
+    return "otro"
+
+
+def _resolve_property_price(op, lead_price, canon, uf_value=None):
+    """Precio definitivo de CARD 3: canónico de la operación primero.
+
+    Prioridad conceptual por operación:
+    1. UF vigente de la fuente canónica de cartera (precio_uf canónico);
+    2. CLP vigente canónico convertido determinísticamente: precio_clp / UF
+       (conversión de unidad, no imputación);
+    3. fallback a campos embebidos del lead (prospecto.precio_uf ->
+       cartera_data.precio_uf) solo si la fuente actual no entrega un precio
+       utilizable en ninguna moneda para esa operación.
+    Nunca se usa otra propiedad, promedios, ni precios históricos como actuales.
+    Operación "Otro": sin valorización (se reporta aparte, no se inventa
+    un precio de venta o arriendo para ella).
+    """
+    if op in ("Venta", "Arriendo"):
+        if canon:
+            if op == "Venta":
+                if canon.get("venta_uf"):
+                    return canon["venta_uf"]
+                if uf_value and canon.get("venta_clp"):
+                    return canon["venta_clp"] / uf_value
+            else:
+                if canon.get("arriendo_uf"):
+                    return canon["arriendo_uf"]
+                if uf_value and canon.get("arriendo_clp"):
+                    return canon["arriendo_clp"] / uf_value
+        return lead_price
+    return None
+
+
+# Orígenes/canales de prueba excluidos del universo comercial (regla estructural).
+_TEST_ORIGINS = frozenset({
+    "test", "backfill", "reconciliation", "automated_historical", "e2e_test",
+})
+_TEST_PHONE_PREFIXES = ("+56900000", "5690000000", "synthetic-archived-")
+_TEST_PHONES = frozenset({"56900000000", "+56900000000", "0000000000"})
+
+
+def _is_test_lead(lead: dict) -> bool:
+    """Regla estructural canónica de lead de prueba.
+
+    No es una lista hardcodeada de códigos: usa flags ya existentes
+    (_test_lead / is_test), orígenes/canales de prueba (EXCLUDED_ORIGINS del
+    sistema de alertas) y teléfonos sintéticos conocidos. NO usa
+    phone_is_synthetic porque ese flag también cubre leads reales del portal
+    con número desconocido (no-phone-prop360-*).
+    """
+    if lead.get("_test_lead") is True or lead.get("is_test") is True:
+        return True
+    phone = str(lead.get("phone") or "")
+    if phone in _TEST_PHONES or phone.startswith(_TEST_PHONE_PREFIXES):
+        return True
+    prospecto = lead.get("prospecto") or {}
+    canal = str(prospecto.get("canal_origen") or "").lower()
+    origen = str(prospecto.get("origen") or "").lower()
+    nombre = str(prospecto.get("nombre") or "").lower()
+    if canal in _TEST_ORIGINS or origen in _TEST_ORIGINS:
+        return True
+    if "test" in nombre or "e2e" in nombre:
+        return True
+    return False
+
+
+def _build_test_lead_exclusion_match() -> dict:
+    """$match de exclusión estructural de leads de prueba para CARD 3.
+
+    Se aplica solo al universo de CARD 3 (no altera las demás métricas).
+    Usa flags (y orígenes/canales) ya existentes; no depende de regex para
+    mantener compatibilidad con motores de prueba y con la regla estructural.
+    """
+    return {
+        "$and": [
+            {"$or": [
+                {"_test_lead": {"$ne": True}},
+                {"_test_lead": {"$exists": False}},
+            ]},
+            {"$or": [
+                {"is_test": {"$ne": True}},
+                {"is_test": {"$exists": False}},
+            ]},
+            {"$or": [
+                {"phone": {"$nin": list(_TEST_PHONES)}},
+                {"phone": {"$exists": False}},
+            ]},
+            {"$or": [
+                {"prospecto.canal_origen": {"$nin": list(_TEST_ORIGINS)}},
+                {"prospecto.canal_origen": {"$exists": False}},
+            ]},
+            {"$or": [
+                {"prospecto.origen": {"$nin": list(_TEST_ORIGINS)}},
+                {"prospecto.origen": {"$exists": False}},
+            ]},
+        ]
+    }
+
+
+def _property_price_rows(period_start, period_end, filters=None, uf_value=None):
+    """Filas de propiedad única (codigo, precio_uf, operacion) con precio
+    resuelto desde la fuente canónica (universo_cartera_prop360) primero.
+
+    Agrupa por prospecto.codigo, consulta la fuente canónica de cartera en
+    una sola query y aplica la prioridad canónico (UF -> CLP/UF) -> lead.
+    Excluye estructuralmente los leads de prueba del universo comercial.
+    Devuelve también leads_interesados y banderas de disponibilidad de precio
+    en cada fuente.
+    """
+    if uf_value is None:
+        try:
+            from chatbot.uf_service import leer_uf_cache
+            _uf = leer_uf_cache()
+            if _uf and _uf.get("valor"):
+                uf_value = _uf["valor"]
+        except Exception:
+            uf_value = None
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-
     pipeline = [
         _cohort_indexed_prefilter(start_utc, end_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+        {"$match": _build_test_lead_exclusion_match()},
         {"$addFields": {
             "_code": {"$ifNull": ["$prospecto.codigo", ""]},
-            "_precio_uf": {"$convert": {
-                "input": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", None]},
-                "to": "double",
-                "onError": None,
-                "onNull": None,
-            }},
+            "_lead_precio_uf": {"$ifNull": ["$prospecto.precio_uf", "$cartera_data.precio_uf", None]},
             "_op": {"$toUpper": {"$ifNull": [
                 {"$ifNull": ["$prospecto.operacion", {"$ifNull": ["$operacion", ""]}]},
                 "",
             ]}},
         }},
         {"$match": {"_code": {"$ne": ""}}},
-        # 1. Agrupar por PROPIEDAD ÚNICA
         {"$group": {
             "_id": "$_code",
-            "precio_uf": {"$max": "$_precio_uf"},
+            "lead_precio_uf": {"$push": "$_lead_precio_uf"},
             "ops": {"$addToSet": "$_op"},
             "leads_interesados": {"$sum": 1},
-            "con_precio": {"$sum": {"$cond": [{"$ne": ["$_precio_uf", None]}, 1, 0]}},
-        }},
-        {"$project": {
-            "precio_uf": {"$round": [{"$ifNull": ["$precio_uf", 0]}, 1]},
-            "operacion": {"$cond": [
-                {"$in": ["VENTA", "$ops"]}, "Venta",
-                {"$cond": [
-                    {"$in": ["V", "$ops"]}, "Venta",
-                    {"$cond": [
-                        {"$in": ["ARRIENDO", "$ops"]}, "Arriendo",
-                        {"$cond": [{"$in": ["A", "$ops"]}, "Arriendo", {"$arrayElemAt": ["$ops", 0]}]},
-                    ]},
-                ]},
-            ]},
-            "leads_interesados": 1,
-            "con_precio": 1,
-        }},
-        # 2. Sumar el inventario real y desglosar Venta vs Arriendo
-        {"$group": {
-            "_id": None,
-            "monto_uf": {"$sum": "$precio_uf"},
-            "propiedades_vinculadas": {"$sum": 1},
-            "propiedades_con_precio": {"$sum": {"$cond": [{"$gte": ["$con_precio", 1]}, 1, 0]}},
-            "leads_vinculados": {"$sum": "$leads_interesados"},
-            "monto_venta_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Venta"]}, "$precio_uf", 0]}},
-            "monto_arriendo_uf": {"$sum": {"$cond": [{"$eq": ["$operacion", "Arriendo"]}, "$precio_uf", 0]}},
-            "monto_otro_uf": {"$sum": {"$cond": [
-                {"$and": [{"$ne": ["$operacion", "Venta"]}, {"$ne": ["$operacion", "Arriendo"]}]},
-                "$precio_uf", 0,
-            ]}},
+            "con_precio_lead": {"$sum": {"$cond": [{"$ne": ["$_lead_precio_uf", None]}, 1, 0]}},
         }},
     ]
-    row = list(db["leads"].aggregate(pipeline))
-    facet = row[0] if row else {}
+    rows = list(db["leads"].aggregate(pipeline))
+    if not rows:
+        return []
+    codes = [str(r["_id"]) for r in rows]
+    canon_map = _canonical_prices_for_codes(codes)
+
+    result = []
+    for r in rows:
+        code = str(r["_id"])
+        canon = canon_map.get(code)
+        op = _resolve_property_op(r["ops"], canon)
+        lead_price = None
+        for raw in r.get("lead_precio_uf", []):
+            v = _to_positive_float(raw)
+            if v and (lead_price is None or v > lead_price):
+                lead_price = v
+        price = _resolve_property_price(op, lead_price, canon, uf_value=uf_value)
+        # Referencias vinculadas fuera de la cartera actual: solo diagnóstico,
+        # sin valorización (no entran en Venta, Arriendo ni Comisión).
+        if canon is None:
+            price = None
+        result.append({
+            "codigo": code,
+            "precio_uf": price,
+            "operacion": op,
+            "leads_interesados": r["leads_interesados"],
+            "con_precio_lead": r["con_precio_lead"] > 0,
+            "con_precio_canon": bool(canon and (canon.get("venta_uf") or canon.get("arriendo_uf")
+                                                or canon.get("venta_clp") or canon.get("arriendo_clp"))),
+            "existe_canon": canon is not None,
+        })
+    return result
+
+
+def query_leads_dashboard_pipeline(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+    uf_value: Optional[float] = None,
+) -> dict:
+    """Valorización UF del pipeline para el Leads Dashboard (CARD 3).
+
+    DISTINCT PROPERTY AGGREGATION: agrupa primero por propiedad única
+    (prospecto.codigo) para NO inflar el pipeline cuando varios leads
+    consultan por la misma propiedad. El precio por propiedad se resuelve
+    con la fuente canónica de cartera (universo_cartera_prop360) primero
+    (UF directo, luego CLP/UF) y los campos embebidos del lead como fallback.
+    Excluye estructuralmente leads de prueba.
+    """
+    rows = _property_price_rows(period_start, period_end, filters, uf_value=uf_value)
+    monto_uf = monto_venta_uf = monto_arriendo_uf = monto_otro_uf = 0.0
+    propiedades_vinculadas = 0
+    propiedades_cartera = 0
+    propiedades_cartera_valorizadas = 0
+    propiedades_venta = 0
+    propiedades_arriendo = 0
+    propiedades_otro = 0
+    propiedades_sin_precio = 0
+    propiedades_no_en_cartera = 0
+    leads_vinculados = 0
+    for p in rows:
+        propiedades_vinculadas += 1
+        leads_vinculados += p["leads_interesados"]
+        if not p["existe_canon"]:
+            # Referencia vinculada fuera de la cartera actual: solo diagnóstico.
+            propiedades_no_en_cartera += 1
+            continue
+        propiedades_cartera += 1
+        if p["operacion"] == "otro":
+            # Operación "Otro": se reporta aparte, sin valorización.
+            propiedades_otro += 1
+            continue
+        precio = p["precio_uf"]
+        if precio is None:
+            propiedades_sin_precio += 1
+            continue
+        propiedades_cartera_valorizadas += 1
+        monto_uf += precio
+        if p["operacion"] == "Venta":
+            monto_venta_uf += precio
+            propiedades_venta += 1
+        else:
+            monto_arriendo_uf += precio
+            propiedades_arriendo += 1
     return {
-        "leads_vinculados": facet.get("leads_vinculados", 0),
-        "propiedades_vinculadas": facet.get("propiedades_vinculadas", 0),
-        "propiedades_con_precio": facet.get("propiedades_con_precio", 0),
-        "monto_uf": round(facet.get("monto_uf", 0.0) or 0.0, 1),
-        "monto_venta_uf": round(facet.get("monto_venta_uf", 0.0) or 0.0, 1),
-        "monto_arriendo_uf": round(facet.get("monto_arriendo_uf", 0.0) or 0.0, 1),
-        "monto_otro_uf": round(facet.get("monto_otro_uf", 0.0) or 0.0, 1),
+        "leads_vinculados": leads_vinculados,
+        "propiedades_vinculadas": propiedades_vinculadas,
+        "propiedades_cartera": propiedades_cartera,
+        "propiedades_con_precio": propiedades_cartera_valorizadas,
+        "propiedades_cartera_valorizadas": propiedades_cartera_valorizadas,
+        "propiedades_venta": propiedades_venta,
+        "propiedades_arriendo": propiedades_arriendo,
+        "propiedades_otro": propiedades_otro,
+        "propiedades_sin_precio": propiedades_sin_precio,
+        "propiedades_no_en_cartera": propiedades_no_en_cartera,
+        "monto_uf": round(monto_uf, 1),
+        "monto_venta_uf": round(monto_venta_uf, 1),
+        "monto_arriendo_uf": round(monto_arriendo_uf, 1),
+        "monto_otro_uf": round(monto_otro_uf, 1),
     }
+
+
+def query_property_commission_rows(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+    uf_value: Optional[float] = None,
+) -> list:
+    """Filas de propiedad única (código, precio_uf, operación) con precio.
+
+    Se usa para calcular la comisión potencial por propiedad (con mínimos
+    contractuales individuales). Misma deduplicación canónica por
+    prospecto.codigo y misma resolución de precio (canónico UF -> CLP/UF ->
+    lead) que query_leads_dashboard_pipeline. Excluye estructuralmente leads
+    de prueba.
+    """
+    result = []
+    for p in _property_price_rows(period_start, period_end, filters, uf_value=uf_value):
+        if p["precio_uf"] is None:
+            continue
+        result.append({"codigo": p["codigo"], "precio_uf": float(p["precio_uf"]),
+                       "operacion": p["operacion"].lower()})
+    return result
 
 
 def query_leads_dashboard_rescue(

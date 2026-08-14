@@ -31,6 +31,7 @@ from .leads_queries import (
     query_executive_load_detail,
     query_source_performance,
     query_leads_operational_dashboard,
+    query_property_commission_rows,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -1106,10 +1107,15 @@ def get_leads_dashboard_overview(
     pct_arriendo = round(arriendo_uf / monto_uf * 100, 1) if monto_uf else 0.0
     pct_otro = round(otro_uf / monto_uf * 100, 1) if monto_uf else 0.0
     cobertura = round(pipeline.get("leads_vinculados", 0) / total_leads * 100, 1) if total_leads else 0.0
-    comision_pct = 4.0  # comisión para la oficina
-    comision_venta_uf = round(venta_uf * 0.04, 1)       # 4% sobre ventas
-    comision_arriendo_uf = round(arriendo_uf * 0.50 * 2, 1)  # 50% arrendatario + 50% arrendador (1er mes)
-    comision_uf = round(comision_venta_uf + comision_arriendo_uf, 1)
+    propiedades_vinculadas = pipeline.get("propiedades_vinculadas", 0)
+    propiedades_cartera = pipeline.get("propiedades_cartera", 0)
+    propiedades_con_precio = pipeline.get("propiedades_con_precio", 0)
+    propiedades_cartera_valorizadas = pipeline.get("propiedades_cartera_valorizadas", propiedades_con_precio)
+    propiedades_venta = pipeline.get("propiedades_venta", 0)
+    propiedades_arriendo = pipeline.get("propiedades_arriendo", 0)
+    propiedades_otro = pipeline.get("propiedades_otro", 0)
+    propiedades_sin_precio = pipeline.get("propiedades_sin_precio", 0)
+    propiedades_no_en_cartera = pipeline.get("propiedades_no_en_cartera", 0)
 
     macro = _load_commercial_macro_information()
     uf_info = (macro.get("indicators") or {}).get("uf") or {}
@@ -1123,6 +1129,54 @@ def get_leads_dashboard_overview(
             uf_asof = _uf.get("fecha") or uf_asof
     except Exception:
         pass
+
+    # Comisión potencial por propiedad (mínimos contractuales netos).
+    # Venta: max(precio_uf*0.02, 1.000.000/UF) · Arriendo: max(canon*0.50, 100.000/UF).
+    MIN_VENTA_CLP = 1_000_000
+    MIN_ARRIENDO_CLP = 100_000
+    uf_clp = float(uf_value) if uf_value else None
+    _props = query_property_commission_rows(
+        period_start=period_start, period_end=period_end, uf_value=uf_clp,
+    )
+    comision_venta_uf = 0.0
+    comision_arriendo_uf = 0.0
+    venta_afectadas_min = 0
+    arriendo_afectadas_min = 0
+    if uf_clp:
+        min_venta_uf = MIN_VENTA_CLP / uf_clp
+        min_arriendo_uf = MIN_ARRIENDO_CLP / uf_clp
+        for p in _props:
+            if p["operacion"] == "venta":
+                base = p["precio_uf"] * 0.02
+                if base < min_venta_uf:
+                    venta_afectadas_min += 1
+                    base = min_venta_uf
+                comision_venta_uf += base
+            elif p["operacion"] == "arriendo":
+                base = p["precio_uf"] * 0.50
+                if base < min_arriendo_uf:
+                    arriendo_afectadas_min += 1
+                    base = min_arriendo_uf
+                comision_arriendo_uf += base
+    comision_venta_uf = round(comision_venta_uf, 1)
+    comision_arriendo_uf = round(comision_arriendo_uf, 1)
+    comision_potencial_uf = round(comision_venta_uf + comision_arriendo_uf, 1)
+    # Reconciliación Venta/Arriendo sobre la cartera valorizada: la suma de
+    # propiedades valorizadas en venta y arriendo debe igualar la cartera
+    # valorizada; las operaciones "Otro" y las sin precio se reportan aparte.
+    pct_valorizadas = round(propiedades_cartera_valorizadas / propiedades_cartera * 100, 1) if propiedades_cartera else None
+    reconciliacion_pipeline = {
+        "propiedades_venta": propiedades_venta,
+        "propiedades_arriendo": propiedades_arriendo,
+        "propiedades_cartera_valorizadas": propiedades_cartera_valorizadas,
+        "suma_venta_arriendo": propiedades_venta + propiedades_arriendo,
+        "ok": (propiedades_venta + propiedades_arriendo) == propiedades_cartera_valorizadas,
+        "propiedades_otro": propiedades_otro,
+        "propiedades_sin_precio": propiedades_sin_precio,
+        "propiedades_cartera": propiedades_cartera,
+        "propiedades_no_en_cartera": propiedades_no_en_cartera,
+        "footer_ok": (propiedades_cartera_valorizadas + propiedades_otro + propiedades_sin_precio) == propiedades_cartera,
+    }
 
     sla_data = {
         "mediana_general_min": sla_panel.get("overall_median_minutes"),
@@ -1241,24 +1295,35 @@ def get_leads_dashboard_overview(
         },
         "pipeline": {
             "monto_uf": monto_uf,
-            "pct_comision": comision_pct,
-            "comision_estimada_uf": comision_uf,
+            "comision_potencial_uf": comision_potencial_uf,
             "comision_venta_uf": comision_venta_uf,
             "comision_arriendo_uf": comision_arriendo_uf,
-            "comision_policy": "4% venta \u00b7 50% arrendatario + 50% arrendador (1er mes arriendo)",
+            "comision_venta_afectadas_min": venta_afectadas_min,
+            "comision_arriendo_afectadas_min": arriendo_afectadas_min,
+            "comision_policy": "2% venta (m\u00edn $1.000.000) \u00b7 50% arriendo (m\u00edn $100.000) \u00b7 neto de IVA",
             "pct_venta": pct_venta,
             "pct_arriendo": pct_arriendo,
             "pct_otro": pct_otro,
             "monto_venta_uf": venta_uf,
             "monto_arriendo_uf": arriendo_uf,
             "monto_otro_uf": otro_uf,
-            "propiedades_vinculadas": pipeline.get("propiedades_vinculadas", 0),
+            "propiedades_vinculadas": propiedades_vinculadas,
+            "propiedades_cartera": propiedades_cartera,
+            "propiedades_cartera_valorizadas": propiedades_cartera_valorizadas,
+            "propiedades_valorizadas": propiedades_cartera_valorizadas,
+            "propiedades_venta": propiedades_venta,
+            "propiedades_arriendo": propiedades_arriendo,
+            "propiedades_otro": propiedades_otro,
+            "propiedades_sin_precio": propiedades_sin_precio,
+            "propiedades_no_en_cartera": propiedades_no_en_cartera,
+            "reconciliacion": reconciliacion_pipeline,
+            "pct_valorizadas": pct_valorizadas,
             "leads_vinculados": pipeline.get("leads_vinculados", 0),
             "pct_cobertura": cobertura,
             "fecha_uf": uf_asof,
             "valor_uf_clp": uf_value,
             "monto_clp": round(monto_uf * uf_value, 0) if uf_value else None,
-            "comision_clp": round(comision_uf * uf_value, 0) if uf_value else None,
+            "comision_clp": round(comision_potencial_uf * uf_value, 0) if uf_value else None,
             "suma_componentes_uf": round(venta_uf + arriendo_uf + otro_uf, 1),
             "diferencia_redondeo_uf": round(monto_uf - (venta_uf + arriendo_uf + otro_uf), 1),
             "pct_conciliacion": round((venta_uf + arriendo_uf + otro_uf) / monto_uf * 100, 1) if monto_uf else 100.0,

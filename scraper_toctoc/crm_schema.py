@@ -4,6 +4,14 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from comuna_utils import normalize_commune_slug
+except ImportError:  # ejecución directa desde scraper_toctoc/
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from comuna_utils import normalize_commune_slug
+
 def _utcnow() -> str: return datetime.now(timezone.utc).isoformat()
 
 
@@ -282,6 +290,7 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "listing_id": listing_id, "listing_id_source": str(raw.get("listing_id_source") or ""),
         "url": url, "canonical_url": url, "title": title,
         "operacion": operacion, "tipo_propiedad": tipo_prop, "comuna": comuna, "region": region,
+        "comuna_slug": normalize_commune_slug(comuna) or "",
         "fecha_publicacion_raw": "", "fecha_publicacion": "",
         "price": price_display, "precio_raw": price_raw or price_display,
         "precio_moneda_original": precio_moneda_original, "precio_original_num": precio_original_num,

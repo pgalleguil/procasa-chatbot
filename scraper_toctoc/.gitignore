@@ -1,0 +1,7 @@
+# Local scrape output and caches. These may contain personal data or session data.
+html_dumps/
+reports/
+__pycache__/
+.pytest_cache/
+*.bak
+*.log

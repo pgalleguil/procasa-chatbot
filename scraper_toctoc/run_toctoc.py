@@ -432,8 +432,9 @@ def cmd_process(args, config):
                 from html_store import html_path as _hp, sha256_text as _st
                 actual_path = _hp(url, batch_id)
                 if actual_path:
-                    dl._html_path_proxy = str(actual_path)
-                    dl._html_sha256_proxy = _st(dl.html)
+                    # DownloadResult usa slots; guardar la ruta en sus campos
+                    # propios evita fallar al procesar descargas hechas por proxy.
+                    dl.html_path = actual_path
                 html_download_count += 1
 
             # Check traffic limit
@@ -580,6 +581,16 @@ def cmd_process(args, config):
                                     "deepseek_message_content": ds.message_content,
                                     "deepseek_reasoning_content": ds.reasoning_content,
                                     "post_validation": post_validation, "deepseek_proposed_state": ds.state}
+                                # An empty, valid evidence set is a legitimate INCIERTO
+                                # result, but zero confidence violates the CRM canonical
+                                # floor. Keep it conservative while allowing the record
+                                # to enter the pending-owner pool for human review.
+                                if str(final_state).upper() == "INCIERTO" and not 0.50 <= float(final_confidence or 0) < 0.70:
+                                    classification["confidence"] = 0.5
+                                    classification["reason"] = final_reason or "Sin evidencia concluyente de dueño o corredor."
+                                elif str(final_state).upper() == "DUEÑO_PROBABLE":
+                                    if not 0.70 <= float(final_confidence or 0) < 0.90:
+                                        classification["confidence"] = 0.85
                             elif ds:
                                 rule_state = rctx.get("owner_signal_evidence", []) and "INCONCLUSIVE" or "INCONCLUSIVE"
                                 classification = {"state": "INCONCLUSIVE", "confidence": 0.3,
@@ -618,11 +629,7 @@ def cmd_process(args, config):
         html_dump_path = ""
         html_sha256 = ""
         
-        proxy_html_path = getattr(dl, '_html_path_proxy', None) or getattr(dl, '_html_sha256_proxy', None)
-        if proxy_html_path:
-            html_dump_path = str(getattr(dl, '_html_path_proxy', ''))
-            html_sha256 = str(getattr(dl, '_html_sha256_proxy', ''))
-        elif hasattr(dl, 'html_path') and dl.html_path:
+        if hasattr(dl, 'html_path') and dl.html_path:
             html_dump_path = str(dl.html_path)
         elif url and batch_id:
             try:

@@ -31,7 +31,7 @@ def load_rule_sets() -> dict[str, Any]:
     for name, (filename, key) in rule_files.items():
         path = DATA_DIR / filename
         if not path.exists(): sets[name] = []; continue
-        try: data = json.loads(path.read_text(encoding="utf-8"))
+        try: data = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception: sets[name] = []; continue
         if isinstance(data, dict): values = data.get(key, [])
         elif isinstance(data, list): values = data

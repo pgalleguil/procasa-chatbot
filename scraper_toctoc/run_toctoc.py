@@ -83,6 +83,7 @@ def _build_parser():
     pr.add_argument("--force-download", action="store_true", help="Force re-download even if HTML exists")
     pr.add_argument("--reprocess-html-only", action="store_true", help="Process only local HTML, no network")
     pr.add_argument("--reprocess-existing", action="store_true", help="Allow reprocessing of existing MongoDB docs")
+    pr.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
 
     rf = s.add_parser("run-full", help="Discover + process in one step")
     rf.add_argument("--operacion", default="venta", choices=["venta", "arriendo"])
@@ -107,6 +108,7 @@ def _build_parser():
     rf.add_argument("--force-download", action="store_true", help="Force re-download even if HTML exists")
     rf.add_argument("--reprocess-html-only", action="store_true", help="Process only local HTML, no network")
     rf.add_argument("--reprocess-existing", action="store_true", help="Allow reprocessing of existing MongoDB docs")
+    rf.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
 
     return p
 
@@ -718,8 +720,10 @@ def cmd_process(args, config):
     print(f"\nProcessed {len(processed)} records -> {_processed_path(config, batch_id)}")
 
     # ---- POST-SCRAPE: distribuir captaciones nuevas ----
-    if args.write_db and not args.dry_run and processed:
+    if args.write_db and not args.dry_run and processed and not getattr(args, "disable_post_distribution", False):
         _run_post_scrape_distribution()
+    elif args.write_db and not args.dry_run and processed:
+        print("  [POST-SCRAPE] Distribución deshabilitada para esta corrida")
 
 
 def _run_post_scrape_distribution():
@@ -794,6 +798,7 @@ def cmd_run_full(args, config):
         force_download=args.force_download,
         reprocess_html_only=args.reprocess_html_only,
         reprocess_existing=getattr(args, "reprocess_existing", False),
+        disable_post_distribution=getattr(args, "disable_post_distribution", False),
     )
     cmd_process(ca, config)
 

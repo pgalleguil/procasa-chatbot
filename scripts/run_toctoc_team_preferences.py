@@ -40,13 +40,16 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Escribe documentos nuevos/actualizados en MongoDB")
     parser.add_argument("--communes", default="", help="Comunas separadas por coma; vacío = todas las preferencias")
     parser.add_argument("--operations", default="venta,arriendo", help="Operaciones separadas por coma")
-    parser.add_argument("--max-pages", type=int, default=1)
-    parser.add_argument("--max-urls", type=int, default=20)
-    parser.add_argument("--limit", type=int, default=20)
-    parser.add_argument("--estado", type=int, choices=[0, 1, 2], default=2,
-                        help="0=todos, 1=nuevo, 2=usado (default: 2)")
-    parser.add_argument("--publicador", type=int, choices=[0, 1, 2], default=2,
-                        help="0=todos, 1=profesional, 2=particular (default: 2)")
+    parser.add_argument("--max-pages", type=int, default=None,
+                        help="Límite artificial; vacío = todas las páginas")
+    parser.add_argument("--max-urls", type=int, default=None,
+                        help="Límite artificial; vacío = todas las URLs")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Límite de procesamiento; vacío = todos los descubiertos")
+    parser.add_argument("--estado", type=int, choices=[0, 1, 2], default=None,
+                        help="0=todos, 1=nuevo, 2=usado; vacío = todos")
+    parser.add_argument("--publicador", type=int, choices=[0, 1, 2], default=None,
+                        help="0=todos, 1=profesional, 2=particular; vacío = todos")
     parser.add_argument("--proxy-mode", choices=["direct", "proxy", "auto"], default="auto")
     parser.add_argument("--use-playwright-discovery", action="store_true")
     parser.add_argument("--no-llm", action="store_true", help="No usar clasificación DeepSeek")
@@ -66,15 +69,21 @@ def main() -> int:
                 sys.executable, str(TOCTOC_RUNNER), "run-full",
                 "--operacion", operation,
                 "--comuna", comuna,
-                "--max-pages", str(args.max_pages),
-                "--max-urls", str(args.max_urls),
-                "--limit", str(args.limit),
-                "--estado", str(args.estado),
-                "--publicador", str(args.publicador),
                 "--proxy-mode", args.proxy_mode,
                 "--use-playwright",
+                "--disable-post-distribution",
                 "--write-db" if args.apply else "--dry-run",
             ]
+            if args.max_pages is not None:
+                cmd.extend(["--max-pages", str(args.max_pages)])
+            if args.max_urls is not None:
+                cmd.extend(["--max-urls", str(args.max_urls)])
+            if args.limit is not None:
+                cmd.extend(["--limit", str(args.limit)])
+            if args.estado is not None:
+                cmd.extend(["--estado", str(args.estado)])
+            if args.publicador is not None:
+                cmd.extend(["--publicador", str(args.publicador)])
             if args.use_playwright_discovery:
                 cmd.append("--use-playwright-discovery")
             if args.no_llm:

@@ -591,6 +591,7 @@ def apply_owner_probability_to_document(
     classification["assignment_block_reasons"] = (
         [] if classification["assignment_ready"]
         else ["PROFESSIONAL_HARD_VETO"] if hard_veto == "PROFESSIONAL"
+        else ["NON_OWNER_STATE_NOT_ASSIGNABLE"] if final_state not in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
         else ["BROKER_CONFIRMED"] if broker_confirmed
         else completeness.get("reasons", []) or ["OWNER_PROBABILITY_BELOW_50"]
     )

@@ -3,7 +3,11 @@ import sys
 import unittest
 
 sys.path.insert(0, r"C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok")
-from owner_evidence_deepseek import classify_owner_phrase, _validate_evidence
+from owner_evidence_deepseek import (
+    classify_owner_phrase,
+    extract_explicit_professional_evidence,
+    _validate_evidence,
+)
 
 
 class TestOwnerEvidenceSemantics(unittest.TestCase):
@@ -65,6 +69,31 @@ class TestOwnerEvidenceSemantics(unittest.TestCase):
         )
         self.assertEqual(rejected, [])
         self.assertEqual(valid[0]["code"], "OWNER_FIRST_PERSON_EXPLICIT")
+
+    def test_explicit_professional_signals(self):
+        for phrase in (
+            "Corredor 9 7609 3628",
+            "Contactar con su corredora Patricia Canal",
+            "Se cobra comisión de corretaje",
+            "Honorarios de corretaje 2%",
+            "Agente inmobiliaria María Pérez",
+            "Corredora de propiedades",
+        ):
+            evidence = extract_explicit_professional_evidence({"description": phrase})
+            self.assertTrue(evidence, phrase)
+
+    def test_company_person_phone_professional_pattern(self):
+        evidence = extract_explicit_professional_evidence({
+            "description": "Habitacura Propiedades. Alvaro Yáñez. 569 75240399"
+        })
+        self.assertTrue(evidence)
+        self.assertEqual(evidence[0]["code"], "EXPLICIT_COMMERCIAL_IDENTITY")
+
+    def test_developer_inmobiliaria_alone_is_not_professional(self):
+        evidence = extract_explicit_professional_evidence({
+            "description": "Proyecto desarrollado por Inmobiliaria Barlovento S.A."
+        })
+        self.assertEqual(evidence, [])
 
 
 if __name__ == "__main__":

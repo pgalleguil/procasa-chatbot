@@ -104,6 +104,74 @@ def classify_owner_phrase(quote: str) -> str:
     return "NONE"
 
 
+def extract_explicit_professional_evidence(extracted: dict[str, Any]) -> list[dict[str, str]]:
+    """Extract only unambiguous publisher/contact professional signals.
+
+    Project-developer mentions such as ``desarrollado por Inmobiliaria X`` are
+    deliberately excluded unless the announcement also identifies a broker,
+    agent, commission, or a company-plus-person contact pattern.
+    """
+    fields = (
+        "title", "description", "descripcion", "seller_name", "contact_name",
+        "seller_type_evidence", "company_name", "broker_brand", "listing_advertiser",
+    )
+    results: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for field in fields:
+        source = str(extracted.get(field) or "")
+        if not source:
+            continue
+        for match in re.finditer(
+            r"\b(?:corredor(?:a)?(?:\s+de\s+propiedades)?|"
+            r"agente\s+inmobiliari[oa]|asesor(?:a)?\s+inmobiliari[oa])\b",
+            source, flags=re.IGNORECASE,
+        ):
+            prefix = _norm(source[max(0, match.start() - 24):match.start()])
+            if re.search(r"\b(?:sin|no|abstenerse)\s*$", prefix):
+                continue
+            quote = match.group(0)
+            key = (field, quote.lower())
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "code": "PROFESSIONAL_BADGE",
+                    "source_field": field,
+                    "quote": quote[:300],
+                    "explanation": "Identidad o rol profesional explícito del publicador/contacto.",
+                    "evidence_type": "EXPLICIT_PROFESSIONAL_IDENTITY",
+                })
+        for match in re.finditer(
+            r"\b(?:comisi[oó]n(?:es)?|honorarios?)\s+(?:de\s+)?(?:corretaje|corredor(?:a)?)\b|"
+            r"\bse\s+cobra\s+(?:una\s+)?comisi[oó]n\b",
+            source, flags=re.IGNORECASE,
+        ):
+            key = (field, match.group(0).lower())
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "code": "COMMISSION_OR_BROKERAGE_FEES",
+                    "source_field": field,
+                    "quote": match.group(0)[:300],
+                    "explanation": "Comisión u honorarios de corretaje explícitos.",
+                    "evidence_type": "EXPLICIT_PROFESSIONAL_IDENTITY",
+                })
+        company = re.search(r"\b[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'&.-]{2,40}\s+Propiedades\b", source)
+        if company:
+            nearby = source[company.start():company.start() + 180]
+            if re.search(r"(?:\+?56\s*)?(?:\d[\s-]*){8,}", nearby):
+                key = (field, company.group(0).lower())
+                if key not in seen:
+                    seen.add(key)
+                    results.append({
+                        "code": "EXPLICIT_COMMERCIAL_IDENTITY",
+                        "source_field": field,
+                        "quote": nearby[:300],
+                        "explanation": "Nombre comercial de propiedades asociado a persona y teléfono de contacto.",
+                        "evidence_type": "EXPLICIT_PROFESSIONAL_IDENTITY",
+                    })
+    return results
+
+
 def _source_payload(extracted: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": _sanitize(extracted.get("title"), 800),
@@ -238,6 +306,15 @@ def adjudicate_owner_evidence(
                 last_error = "invalid_schema"
                 raise ValueError(last_error)
             valid, rejected = _validate_evidence(parsed, payload)
+            deterministic_professional = extract_explicit_professional_evidence(extracted)
+            existing_professional = {
+                (item.get("code"), item.get("source_field"), item.get("quote"))
+                for item in valid
+            }
+            for item in deterministic_professional:
+                key = (item.get("code"), item.get("source_field"), item.get("quote"))
+                if key not in existing_professional:
+                    valid.append(item)
             neutral = [str(value)[:300] for value in parsed.get("neutral_observations") or [] if str(value).strip()]
             return EvidenceResult(
                 status="VALID",

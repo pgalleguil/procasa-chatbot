@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunparse
 
 from config import AppConfig
 from proxy_manager import ProxyManager
@@ -399,6 +399,282 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
     return discovered
 
 
+GW_LISTA_ENDPOINT = "/gw-lista-seo/propiedades"
+GW_LISTA_ORDER = 1
+GW_LISTA_MIN_COMMUNE_PRECISION = 0.95
+
+
+def _gw_filter_payload_from_url(url: str) -> list[dict[str, Any]]:
+    """Read the current filter contract from a real Toctoc BFF request."""
+    values = parse_qs(urlparse(url).query).get("filtros", [])
+    if not values:
+        raise ValueError("GW_LISTA_FILTERS_MISSING")
+    payload = json.loads(values[0])
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("GW_LISTA_FILTERS_INVALID")
+    return payload
+
+
+def build_gw_lista_request(
+    *,
+    base_url: str,
+    filtros: list[dict[str, Any]],
+    operacion: str,
+    tipo: str,
+    region: str,
+    comuna: str,
+    page: int,
+    order: int = GW_LISTA_ORDER,
+) -> dict[str, Any]:
+    """Build one auditable request for the current gw-lista-seo contract."""
+    if page < 1:
+        raise ValueError("page must be >= 1")
+    endpoint = base_url.rstrip("/") + GW_LISTA_ENDPOINT
+    query = urlencode({
+        "filtros": json.dumps(filtros, ensure_ascii=False, separators=(",", ":")),
+        "order": str(order),
+        "page": str(page),
+    })
+    effective = {}
+    for item in filtros:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id", ""))
+        values = item.get("values") or item.get("value") or []
+        effective[item_id] = values
+    return {
+        "url": f"{endpoint}?{query}",
+        "page": page,
+        "order": order,
+        "requested_filters": {
+            "operacion": operacion,
+            "tipo_propiedad": tipo,
+            "region": region,
+            "comuna": comuna,
+        },
+        "effective_numeric_filters": effective,
+        "filters": filtros,
+    }
+
+
+def _gw_page_signature(ids: list[str]) -> str:
+    import hashlib
+    return hashlib.sha256(",".join(ids).encode("utf-8")).hexdigest()
+
+
+def _gw_response_items(data: Any, page_num: int, requested_commune: str) -> tuple[list[dict], dict]:
+    if not isinstance(data, dict):
+        raise ValueError("INVALID_RESPONSE")
+    results = data.get("results")
+    if not isinstance(results, list):
+        raise ValueError("INVALID_RESPONSE_RESULTS")
+    metadata = {
+        "page": data.get("page", page_num),
+        "total": data.get("total"),
+        "results_raw": len(results),
+    }
+    records = []
+    for prop in results:
+        if not isinstance(prop, dict):
+            continue
+        url_ficha = str(prop.get("urlFicha", "") or prop.get("url", "")).strip()
+        if not url_ficha or not is_listing_detail_url(url_ficha):
+            continue
+        lid = str(prop.get("idProperty", "") or listing_id_from_url(url_ficha)[0])
+        if not lid:
+            continue
+        rec = {
+            "url": url_ficha,
+            "listing_id": lid,
+            "listing_id_source": "gw_lista_seo",
+            "url_format": classify_url_format(url_ficha),
+            "title": str(prop.get("titulo", "")),
+            "comuna": str(prop.get("comuna", "") or _extract_commune_slug(url_ficha)),
+            "region": str(prop.get("region", "")),
+            "operacion": "venta" if "venta" in str(prop.get("tipoOperacion", "")).lower() else "arriendo",
+            "tipo_propiedad": str(prop.get("tipoPropiedad", "")).lower(),
+            "tipo_operacion": str(prop.get("tipoOperacion", "")),
+            "price_uf": "",
+            "price_clp": "",
+            "publicador": str(prop.get("imagenInmobiliaria", {}).get("alt", prop.get("clientId", ""))) if isinstance(prop.get("imagenInmobiliaria", {}), dict) else "",
+            "client_id": str(prop.get("clientId", "")),
+            "discovery_page": page_num,
+        }
+        records.append(rec)
+    metadata["results_target_commune"] = sum(matches_requested_commune(r["url"], requested_commune) for r in records)
+    metadata["results_wrong_commune"] = sum(not matches_requested_commune(r["url"], requested_commune) for r in records)
+    return records, metadata
+
+
+def discover_via_gw_lista(
+    max_pages: int | None,
+    max_urls: int | None,
+    batch_id: str,
+    discovered: list[dict],
+    seen_urls: set[str],
+    seen_ids: set[str],
+    *,
+    operacion: str,
+    tipo: str,
+    region: str,
+    comuna: str,
+    block_resources: bool = True,
+) -> list[dict]:
+    """Primary geographic discovery using Toctoc's live gw-lista-seo contract."""
+    if max_urls is not None and max_urls <= 0:
+        return discovered
+    from playwright.sync_api import sync_playwright
+
+    config = AppConfig()
+    route_url = f"{config.base_url.rstrip('/')}/{operacion}/{tipo}/{_search_route_commune(region)}/{_search_route_commune(comuna)}"
+    trace = {
+        "source": "gw_lista_seo",
+        "requested_commune": comuna,
+        "requested_operation": operacion,
+        "requested_type": tipo,
+        "requested_region": region,
+        "route_url": route_url,
+        "pages": [],
+        "stop_reason": "",
+        "batch_id": batch_id,
+    }
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(locale="es-CL", viewport={"width": 1920, "height": 1080}, user_agent=config.user_agent)
+        page = context.new_page()
+        if block_resources:
+            def _route(route):
+                if route.request.resource_type in ("image", "media", "font"):
+                    route.abort()
+                else:
+                    route.continue_()
+            page.route("**/*", _route)
+        bff_urls: list[str] = []
+        page.on("request", lambda req: bff_urls.append(req.url) if GW_LISTA_ENDPOINT in req.url and "page=1" in req.url else None)
+        try:
+            page.goto(route_url, wait_until="domcontentloaded", timeout=config.request_timeout_seconds * 1000)
+            page.wait_for_timeout(4000)
+        except Exception as exc:
+            trace["stop_reason"] = "HTTP_ERROR"
+            trace["error"] = str(exc)[:500]
+            browser.close()
+            _save_gw_trace(trace, batch_id)
+            return discovered
+        if not bff_urls:
+            trace["stop_reason"] = "INVALID_RESPONSE"
+            trace["error"] = "No se capturó la solicitud real de gw-lista-seo"
+            browser.close()
+            _save_gw_trace(trace, batch_id)
+            return discovered
+        try:
+            filtros = _gw_filter_payload_from_url(bff_urls[-1])
+        except Exception as exc:
+            trace["stop_reason"] = "INVALID_RESPONSE"
+            trace["error"] = str(exc)
+            browser.close()
+            _save_gw_trace(trace, batch_id)
+            return discovered
+        trace["resolved_commune_id"] = next((
+            (item.get("values") or [{}])[0].get("id")
+            for item in filtros if isinstance(item, dict) and item.get("id") == "comuna"
+        ), None)
+        trace["resolved_operation_filter"] = next((
+            item.get("values") or item.get("value")
+            for item in filtros if isinstance(item, dict) and item.get("id") == "tipo-de-busqueda"
+        ), None)
+        seen_page_signatures: set[str] = set()
+        page_num = 1
+        while True:
+            if max_pages is not None and page_num > max_pages:
+                trace["stop_reason"] = "MAX_PAGES_REACHED"
+                break
+            request_meta = build_gw_lista_request(base_url=config.base_url, filtros=filtros,
+                operacion=operacion, tipo=tipo, region=region, comuna=comuna, page=page_num)
+            trace["resolved_filters"] = request_meta["effective_numeric_filters"]
+            try:
+                data = page.evaluate("""async (url) => { const r = await fetch(url); return {status:r.status, data: await r.json()}; }""", request_meta["url"])
+                if not isinstance(data, dict) or data.get("status") != 200:
+                    raise ValueError(f"HTTP_ERROR:{data.get('status') if isinstance(data, dict) else 'unknown'}")
+                records, meta = _gw_response_items(data.get("data"), page_num, comuna)
+            except Exception as exc:
+                trace["stop_reason"] = "HTTP_ERROR" if str(exc).startswith("HTTP_ERROR") else "INVALID_RESPONSE"
+                trace["error"] = str(exc)[:500]
+                break
+            raw_ids = [r["listing_id"] for r in records]
+            signature = _gw_page_signature(raw_ids)
+            expected = None
+            total = meta.get("total")
+            observed_page_size = meta.get("results_raw") or 0
+            if not trace.get("page_size") and observed_page_size:
+                trace["page_size"] = observed_page_size
+            page_size = trace.get("page_size") or observed_page_size
+            if isinstance(total, (int, float)) and page_size:
+                expected = (int(total) + page_size - 1) // page_size
+            page_report = {
+                **request_meta,
+                "page": page_num,
+                "page_size": observed_page_size,
+                "total_reported": total,
+                "results_raw": meta["results_raw"],
+                "results_target_commune": meta["results_target_commune"],
+                "results_wrong_commune": meta["results_wrong_commune"],
+                "page_signature": signature,
+                "listing_ids": raw_ids,
+                "first_listing_id": raw_ids[0] if raw_ids else "",
+                "last_listing_id": raw_ids[-1] if raw_ids else "",
+            }
+            trace["pages"].append(page_report)
+            if not raw_ids and meta["results_raw"] == 0:
+                trace["stop_reason"] = "EMPTY_PAGE"
+                break
+            precision = meta["results_target_commune"] / len(records) if records else 0
+            if records and precision < GW_LISTA_MIN_COMMUNE_PRECISION:
+                trace["stop_reason"] = "COMMUNE_PRECISION_FAILURE"
+                break
+            if signature in seen_page_signatures:
+                trace["stop_reason"] = "REPEATED_PAGE"
+                break
+            seen_page_signatures.add(signature)
+            for rec in records:
+                if not matches_requested_commune(rec["url"], comuna):
+                    continue
+                if rec["url"] in seen_urls or rec["listing_id"] in seen_ids:
+                    continue
+                seen_urls.add(rec["url"]); seen_ids.add(rec["listing_id"])
+                rec.update({"source": "gw_lista_seo", "source_search_url": route_url,
+                            "source_page_url": request_meta["url"], "page_number": page_num,
+                            "discovery_page": page_num, "batch_id": batch_id,
+                            "discovered_at": _utcnow()})
+                discovered.append(rec)
+                if max_urls is not None and len(discovered) >= max_urls:
+                    trace["stop_reason"] = "MAX_URLS_REACHED"
+                    break
+            if trace["stop_reason"] == "MAX_URLS_REACHED":
+                break
+            if expected is not None and page_num >= expected:
+                trace["stop_reason"] = "TOTAL_PAGES_COMPLETED"
+                break
+            page_num += 1
+        trace["pages_expected"] = expected
+        trace["pages_processed"] = len(trace["pages"])
+        trace["total_reported"] = trace["pages"][0].get("total_reported") if trace["pages"] else None
+        trace["raw_urls"] = sum(p["results_raw"] for p in trace["pages"])
+        trace["unique_urls"] = len(discovered)
+        trace["commune_precision"] = (sum(p["results_target_commune"] for p in trace["pages"]) /
+                                      max(1, sum(p["results_raw"] for p in trace["pages"])))
+        browser.close()
+    _save_gw_trace(trace, batch_id)
+    print(f"  gw-lista-seo: {trace['pages_processed']} páginas, {trace['unique_urls']} URLs, "
+          f"precisión comuna={trace['commune_precision']:.1%}, stop={trace['stop_reason']}")
+    return discovered
+
+
+def _save_gw_trace(trace: dict, batch_id: str) -> None:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    (REPORTS_DIR / f"discovery_gw_lista_{batch_id}.json").write_text(
+        json.dumps(trace, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
                              proxy_manager=None, block_resources=True, requested_commune=None):
     if max_urls is not None and max_urls <= 0:
@@ -785,8 +1061,13 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
                                          proxy_manager=proxy_manager, block_resources=block_resources,
                                          requested_commune=comuna)
     else:
-        result = discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                                  requested_commune=comuna)
+        # Primary geographic source: the live BFF request made by Toctoc's SSR route.
+        # The legacy SSR parser remains available above for controlled diagnostics.
+        result = discover_via_gw_lista(
+            max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
+            operacion=operacion, tipo=tipo, region=region, comuna=comuna,
+            block_resources=block_resources,
+        )
 
     # Defensa obligatoria: Toctoc puede devolver resultados fuera de la zona
     # pedida cuando la SPA pierde parte de los parámetros de búsqueda.

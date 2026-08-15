@@ -12,6 +12,14 @@ except ImportError:  # ejecución directa desde scraper_toctoc/
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from comuna_utils import normalize_commune_slug
 
+try:
+    from owner_probability import expected_state_for_probability
+except ImportError:  # ejecución directa desde scraper_toctoc/
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from owner_probability import expected_state_for_probability
+
 def _utcnow() -> str: return datetime.now(timezone.utc).isoformat()
 
 
@@ -68,15 +76,30 @@ DEEPSEEK_STATUS_LEGACY = "LEGACY_UNKNOWN"
 
 def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
     state = raw.get("state", "INCIERTO")
+    owner_probability = raw.get("owner_probability")
+    try:
+        if owner_probability is not None and float(owner_probability) > 1:
+            owner_probability = float(owner_probability) / 100.0
+        elif owner_probability is not None:
+            owner_probability = float(owner_probability)
+    except (TypeError, ValueError):
+        owner_probability = None
+    if owner_probability is not None:
+        state = expected_state_for_probability(owner_probability)
     if state == "INCONCLUSIVE": state = "INCIERTO"
-    if state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "AD_REMOVED"):
+    if state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "AD_REMOVED"):
         state = "INCIERTO"
     rule_state = raw.get("rule_state", "INCONCLUSIVE")
-    if rule_state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÃ‘O_SEGURO", "INCIERTO", "INCONCLUSIVE", "AD_REMOVED"):
+    if rule_state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "INCONCLUSIVE", "AD_REMOVED"):
         rule_state = "INCONCLUSIVE"
     confidence = raw.get("confidence", 0.0)
     try: confidence = float(confidence)
     except: confidence = 0.0
+    if owner_probability is not None:
+        confidence = round(owner_probability, 2)
+    rule_confidence = raw.get("rule_confidence", raw.get("confidence"))
+    try: rule_confidence = float(rule_confidence)
+    except: rule_confidence = None
     evidence = [str(e) for e in (raw.get("evidence", []) or raw.get("signals", [])) if str(e).strip()]
     
     # Preserve DeepSeek tracing fields (or mark legacy)
@@ -107,6 +130,9 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
     
     normalized = {
         "state": state, "final_state": state, "confidence": confidence, "score": confidence,
+        "canonical_confidence": confidence, "owner_probability": owner_probability,
+        "rule_confidence": rule_confidence,
+        "status": raw.get("status", ""),
         "rule_state": rule_state, "signals": raw.get("signals", {}),
         "evidence": evidence, "reason": str(raw.get("reason", "")),
         "decision_source": raw.get("source", "rules"), "decision_pattern": raw.get("decision_pattern", ""),

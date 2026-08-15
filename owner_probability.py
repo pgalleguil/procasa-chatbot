@@ -1,8 +1,9 @@
 """Deterministic, explainable estimate that a listing was posted by its owner.
 
-This module deliberately does not use ``classification.confidence`` and does
-not let an LLM choose a percentage. Portal-specific extractors normalize their
-evidence and this module applies the same versioned rules to Yapo and TocToc.
+This module deliberately does not use the classifier's ``rule_confidence`` and
+does not let an LLM choose a percentage. Portal-specific extractors normalize
+their evidence and this module applies the same versioned rules to Yapo and
+TocToc.
 """
 from __future__ import annotations
 
@@ -14,6 +15,11 @@ from typing import Any, Iterable
 
 OWNER_PROBABILITY_VERSION = "owner-probability-evidence-v1"
 OWNER_PROBABILITY_SOURCE = "deterministic_evidence_engine"
+
+FINAL_CLASSIFICATION_STATES = frozenset({
+    "CORREDOR_SEGURO", "CORREDOR_PROBABLE", "INCIERTO",
+    "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "AD_REMOVED",
+})
 
 STRUCTURED_EVIDENCE_RULES = {
     "OWNER_FIRST_PERSON_EXPLICIT": ("owner_identity", 35),
@@ -116,10 +122,8 @@ def probability_band(probability: float | None) -> str:
         return "0-19"
     if percentage <= 49:
         return "20-49"
-    if percentage == 50:
-        return "50"
     if percentage <= 69:
-        return "51-69"
+        return "50-69"
     if percentage <= 89:
         return "70-89"
     return "90-100"
@@ -131,8 +135,7 @@ def expected_state_for_probability(probability: float | None) -> str:
         "S/I": "INCOMPLETE",
         "0-19": "CORREDOR_SEGURO",
         "20-49": "CORREDOR_PROBABLE",
-        "50": "INCIERTO",
-        "51-69": "INCIERTO",
+        "50-69": "INCIERTO",
         "70-89": "DUEÑO_PROBABLE",
         "90-100": "DUEÑO_SEGURO",
     }[band]
@@ -505,12 +508,28 @@ def apply_owner_probability_to_document(
     """Persist the single owner probability and derive the public state.
 
     This is the mandatory final gate used by both production scrapers.  It
-    intentionally preserves ``classification.confidence`` as internal
-    technical metadata and never turns it into an owner probability.
+    ``classification.rule_confidence`` preserves technical classifier output;
+    canonical ``classification.confidence`` is derived from owner_probability.
     """
     classification = dict(doc.get("classification") or {})
+    if classification.get("status") in {
+        "PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED",
+    }:
+        # Processing states are not classification decisions and must not be
+        # converted into an artificial INCIERTO document.
+        doc["classification"] = classification
+        return doc
+    # Keep the classifier's technical confidence separate from the final,
+    # deterministic owner probability exposed as canonical confidence.
+    if "rule_confidence" not in classification and classification.get("confidence") is not None:
+        classification["rule_confidence"] = classification.get("confidence")
     previous_state = normalize_state(
         classification.get("state") or classification.get("final_state")
+    )
+    classification_source = str(classification.get("source") or "").lower()
+    broker_confirmed = (
+        previous_state.startswith("CORREDOR")
+        and classification_source in {"structural_rules", "rules_json", "profile_correlation"}
     )
     result = calculate_owner_probability(doc, extracted=extracted or doc)
     classification.update(result)
@@ -520,22 +539,32 @@ def apply_owner_probability_to_document(
     if "REMOVED_LISTING" in completeness.get("reasons", []):
         final_state = "AD_REMOVED"
     elif probability is None:
-        final_state = "PENDIENTE"
+        final_state = previous_state if broker_confirmed else "PENDIENTE"
     else:
         final_state = expected_state_for_probability(probability)
 
     classification["previous_classification_state"] = previous_state
-    classification["state"] = final_state
-    classification["final_state"] = final_state
+    if probability is not None:
+        classification["confidence"] = probability
+        classification["canonical_confidence"] = probability
+        classification["state"] = final_state
+        classification["final_state"] = final_state
+        classification["classification_semantics"] = "owner_probability_band"
+    else:
+        classification["state"] = final_state
+        classification["final_state"] = final_state
+        classification["classification_semantics"] = "pending_or_structural_without_probability"
     classification["state_source"] = "classification.owner_probability_band"
     classification["classification_rule_version"] = OWNER_PROBABILITY_VERSION
     classification["assignment_ready"] = bool(
         probability is not None and probability >= 0.50
         and final_state not in {"PENDIENTE", "AD_REMOVED"}
+        and not final_state.startswith("CORREDOR")
     )
     classification["exclude_from_assignment"] = not classification["assignment_ready"]
     classification["assignment_block_reasons"] = (
         [] if classification["assignment_ready"]
+        else ["BROKER_CONFIRMED"] if broker_confirmed
         else completeness.get("reasons", []) or ["OWNER_PROBABILITY_BELOW_50"]
     )
     doc["classification"] = classification

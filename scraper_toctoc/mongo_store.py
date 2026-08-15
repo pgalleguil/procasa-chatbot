@@ -8,11 +8,13 @@ from config import AppConfig
 from crm_schema import build_crm_document
 try:
     from owner_probability import apply_owner_probability_to_document
+    from owner_probability import expected_state_for_probability
 except ImportError:  # direct execution from scraper_toctoc/
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from owner_probability import apply_owner_probability_to_document
+    from owner_probability import expected_state_for_probability
 
 try:
     from pymongo import MongoClient, errors
@@ -21,15 +23,19 @@ except Exception:
 
 
 def validate_classification_probability_consistency(state, confidence):
-    """Valida que estado y probabilidad sean consistentes.
-    INCIERTO: 0.50-0.69, DUEÑO_PROBABLE: 0.70-0.89, DUEÑO_SEGURO: 0.90-1.00
+    """Valida que estado y confianza canónica sean consistentes.
+    The owner_probability bands are the canonical source of truth.
     Retorna lista de errores (vacia = OK)."""
     errors = []
     if not state: return errors
     try: conf = float(confidence)
     except (TypeError, ValueError): return ["INVALID_CONFIDENCE"]
     
-    if state == "INCIERTO":
+    if state == "CORREDOR_SEGURO":
+        if conf < 0.00 or conf >= 0.20: errors.append(f"CORREDOR_SEGURO_CONFIDENCE_OUT_OF_RANGE({conf})")
+    elif state == "CORREDOR_PROBABLE":
+        if conf < 0.20 or conf >= 0.50: errors.append(f"CORREDOR_PROBABLE_CONFIDENCE_OUT_OF_RANGE({conf})")
+    elif state == "INCIERTO":
         if conf < 0.50: errors.append(f"INCIERTO_CONFIDENCE_TOO_LOW({conf})")
         if conf >= 0.70: errors.append(f"INCIERTO_CONFIDENCE_TOO_HIGH({conf})")
     elif state == "DUEÑO_PROBABLE":
@@ -69,6 +75,11 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     classification = doc.get("classification") or {}
     state = classification.get("state", "")
     confidence = classification.get("confidence", 0)
+    owner_probability = classification.get("owner_probability")
+    if classification.get("status") in {"PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED"}:
+        errors.append(f"NON_FINAL_CLASSIFICATION_STATUS({classification.get('status')})")
+    if doc.get("processing_status") in {"SKIP_PROFESSIONAL", "HISTORICAL_DUPLICATE", "DOWNLOAD_FAILED"}:
+        errors.append(f"NON_FINAL_PROCESSING_STATUS({doc.get('processing_status')})")
     source = classification.get("source") or classification.get("decision_source", "")
 
     # Rechazar clasificacion solo por URL path
@@ -81,8 +92,22 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     if not source:
         errors.append("MISSING_CLASSIFICATION_SOURCE")
 
-    # Consistencia estado-probabilidad
-    errors.extend(validate_classification_probability_consistency(state, confidence))
+    # One source of truth: when owner_probability exists, it defines both the
+    # final state and canonical confidence. Legacy documents still use the
+    # state/confidence validation below until they are re-normalized.
+    if owner_probability is not None:
+        try:
+            probability = float(owner_probability)
+            if probability > 1: probability /= 100.0
+            expected = expected_state_for_probability(probability)
+            if state != expected:
+                errors.append(f"STATE_DOES_NOT_MATCH_OWNER_PROBABILITY({state}!={expected})")
+            if abs(float(confidence) - probability) > 0.001:
+                errors.append("CANONICAL_CONFIDENCE_DOES_NOT_MATCH_OWNER_PROBABILITY")
+        except (TypeError, ValueError):
+            errors.append("INVALID_OWNER_PROBABILITY")
+    else:
+        errors.extend(validate_classification_probability_consistency(state, confidence))
 
     # Scrape stage valido
     scrape_stage = doc.get("scrape_stage", "")

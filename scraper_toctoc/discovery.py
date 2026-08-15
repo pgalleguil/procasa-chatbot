@@ -584,6 +584,7 @@ def discover_via_gw_lista(
         ), None)
         seen_page_signatures: set[str] = set()
         page_num = 1
+        expected = None
         while True:
             if max_pages is not None and page_num > max_pages:
                 trace["stop_reason"] = "MAX_PAGES_REACHED"

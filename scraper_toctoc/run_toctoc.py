@@ -199,10 +199,7 @@ def cmd_process(args, config):
             pre_filter_results["skipped"] += 1
             # Still add to processed as skipped (no download)
             processed.append({**item,
-                "classification": {"state": "INCIERTO", "confidence": 0.3,
-                    "reason": f"Discovery pre-filter: {decision} (formato profesional: {url_format})",
-                    "evidence": [f"url_format={url_format}"],
-                    "source": "discovery_pre_filter"},
+                "processing_status": "SKIP_PROFESSIONAL",
                 "processed_at": _utcnow(), "batch_id": batch_id,
                 "source": "owner_hunt", "origen": "toctoc", "source_portal": "toctoc",
                 "schema_version": "crm_v1",
@@ -240,10 +237,7 @@ def cmd_process(args, config):
             if existing:
                 historical_duplicates += 1
                 processed.append({**item,
-                    "classification": {"state": "INCIERTO", "confidence": 0.3,
-                        "reason": "historical_duplicate: ya existia en MongoDB",
-                        "evidence": [f"listing_id={lid}"],
-                        "source": "dedup_pre_filter"},
+                    "processing_status": "HISTORICAL_DUPLICATE",
                     "processed_at": _utcnow(), "batch_id": batch_id,
                     "source": "owner_hunt", "origen": "toctoc", "source_portal": "toctoc",
                     "schema_version": "crm_v1",
@@ -511,11 +505,15 @@ def cmd_process(args, config):
             print(f"  HTML no disponible ({dl.validation_status}), guardando registro basico.")
             raw_record = {**item, "html_validation_status": dl.validation_status,
                          "html_validation_reason": dl.validation_reason, "fetch_source": dl.fetch_source,
-                         "classification": {"state": "AD_REMOVED" if dl.validation_status == "LISTING_REMOVED" else "INCIERTO",
-                                           "confidence": 0.3, "reason": f"Download failed: {dl.validation_reason}",
-                                           "source": "download_fallback"},
+                         "processing_status": "AD_REMOVED" if dl.validation_status == "LISTING_REMOVED" else "DOWNLOAD_FAILED",
                          "processed_at": _utcnow(), "batch_id": batch_id, "source": "owner_hunt",
                          "origen": "toctoc", "source_portal": "toctoc", "schema_version": "crm_v1"}
+            if dl.validation_status == "LISTING_REMOVED":
+                raw_record["classification"] = {
+                    "state": "AD_REMOVED", "confidence": 1.0,
+                    "reason": f"Download confirmed removed listing: {dl.validation_reason}",
+                    "source": "html_validation",
+                }
             processed.append(raw_record)
             continue
 
@@ -538,7 +536,7 @@ def cmd_process(args, config):
             else:
                 rctx = build_rule_context(extracted)
                 if args.no_llm:
-                    classification = {"state": "INCONCLUSIVE", "confidence": 0.3,
+                    classification = {"status": "PENDING_LLM",
                         "reason": "No se encontraron senales suficientes de corredor ni de propietario.",
                         "evidence": rctx.get("company_like_evidence", []), "source": "rules_json",
                         "ai_not_used_reason": "DeepSeek disabled via --no-llm",
@@ -553,7 +551,7 @@ def cmd_process(args, config):
                         seller_type=str(extracted.get("seller_type", "")),
                     )
                     if not must_invoke:
-                        classification = {"state": "INCIERTO", "confidence": 0.3,
+                        classification = {"status": "PENDING_SEMANTIC_REVIEW",
                             "reason": f"DS skipped: {ds_reason}", "source": "rules_fallback",
                             "deepseek_status": "NOT_NEEDED"}
                     else:
@@ -593,16 +591,16 @@ def cmd_process(args, config):
                                         classification["confidence"] = 0.85
                             elif ds:
                                 rule_state = rctx.get("owner_signal_evidence", []) and "INCONCLUSIVE" or "INCONCLUSIVE"
-                                classification = {"state": "INCONCLUSIVE", "confidence": 0.3,
+                                classification = {"status": "SEMANTIC_CLASSIFICATION_FAILED",
                                     "reason": f"DeepSeek {ds.status}: {ds.reason}. Fallback a reglas.",
                                     "evidence": rctx.get("company_like_evidence", []), "source": "rules_json",
                                     "deepseek_status": ds.status, "deepseek_reason": ds.reason,
                                     **company_shape_in_publisher_fields(extracted)}
                             else:
-                                classification = {"state": "INCONCLUSIVE", "confidence": 0.3, "reason": "DeepSeek no result",
+                                classification = {"status": "SEMANTIC_CLASSIFICATION_FAILED", "reason": "DeepSeek no result",
                                     "evidence": [], "source": "fallback", "deepseek_status": DSStatus.NOT_NEEDED.value}
                         except Exception as es:
-                            classification = {"state": "INCONCLUSIVE", "confidence": 0.3, "reason": f"DeepSeek error: {es}",
+                            classification = {"status": "SEMANTIC_CLASSIFICATION_FAILED", "reason": f"DeepSeek error: {es}",
                                 "evidence": [], "source": "error", "deepseek_status": DSStatus.API_ERROR.value}
 
         classification["rule_state"] = rule_state

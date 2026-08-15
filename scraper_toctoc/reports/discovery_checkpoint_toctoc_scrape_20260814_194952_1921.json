@@ -1,0 +1,1380 @@
+{
+  "batch_id": "toctoc_scrape_20260814_194952_1921",
+  "search_url": "https://www.toctoc.com/resultados/lista/compra/departamento/metropolitana/macul/?estado=2&moneda=2&pagina=1&publicador=0",
+  "last_completed_page": 138,
+  "total_unique_urls": 78,
+  "stop_reason": "NEXT_NOT_FOUND",
+  "page_reports": [
+    {
+      "page": 1,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4178201",
+      "last_listing_id": "4087153",
+      "page_signature": "cbba229bf1f8acc2"
+    },
+    {
+      "page": 2,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4250018",
+      "last_listing_id": "4225588",
+      "page_signature": "32dfd2bc56e7fc6a"
+    },
+    {
+      "page": 3,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4223291",
+      "last_listing_id": "4276267",
+      "page_signature": "2f5e6840623db865"
+    },
+    {
+      "page": 4,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4256217",
+      "last_listing_id": "4176573",
+      "page_signature": "365db41b90a96264"
+    },
+    {
+      "page": 5,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "2352860",
+      "last_listing_id": "4141775",
+      "page_signature": "396545f2b10956e4"
+    },
+    {
+      "page": 6,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4165383",
+      "last_listing_id": "4271059",
+      "page_signature": "33fe09043caf12e9"
+    },
+    {
+      "page": 7,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3697018",
+      "last_listing_id": "4114224",
+      "page_signature": "87a0c32cb3346fc2"
+    },
+    {
+      "page": 8,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4171363",
+      "last_listing_id": "4006076",
+      "page_signature": "3d19978a7d765450"
+    },
+    {
+      "page": 9,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "2473931",
+      "last_listing_id": "3745781",
+      "page_signature": "38d03c53996b2def"
+    },
+    {
+      "page": 10,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4226568",
+      "last_listing_id": "4057774",
+      "page_signature": "dd646d684ae2516f"
+    },
+    {
+      "page": 11,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4202628",
+      "last_listing_id": "3524529",
+      "page_signature": "f154a1243e145182"
+    },
+    {
+      "page": 12,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3797516",
+      "last_listing_id": "4066751",
+      "page_signature": "64da078663f2c412"
+    },
+    {
+      "page": 13,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3797517",
+      "last_listing_id": "2970712",
+      "page_signature": "653b15efa02e9ef9"
+    },
+    {
+      "page": 14,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4208728",
+      "last_listing_id": "4059211",
+      "page_signature": "d7c25e99a0278ab4"
+    },
+    {
+      "page": 15,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3145714",
+      "last_listing_id": "4089580",
+      "page_signature": "63a13dfd8d5d09c9"
+    },
+    {
+      "page": 16,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4082366",
+      "last_listing_id": "3618453",
+      "page_signature": "89dc9704ad74d3b3"
+    },
+    {
+      "page": 17,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4226602",
+      "last_listing_id": "2824284",
+      "page_signature": "90b22f7a74d534c7"
+    },
+    {
+      "page": 18,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "2237518",
+      "last_listing_id": "3923431",
+      "page_signature": "e68acd8c0c292500"
+    },
+    {
+      "page": 19,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4285727",
+      "last_listing_id": "4230609",
+      "page_signature": "632a5873bd40d15b"
+    },
+    {
+      "page": 20,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "2727582",
+      "last_listing_id": "3934189",
+      "page_signature": "c76d53c0129e0a9e"
+    },
+    {
+      "page": 21,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4288209",
+      "last_listing_id": "2265661",
+      "page_signature": "4f00999f356cb4bc"
+    },
+    {
+      "page": 22,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "1897946",
+      "last_listing_id": "3925680",
+      "page_signature": "95a45709ca467f97"
+    },
+    {
+      "page": 23,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3376633",
+      "last_listing_id": "3920745",
+      "page_signature": "3a15bc4fa190f500"
+    },
+    {
+      "page": 24,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 1,
+      "duplicates": 0,
+      "first_listing_id": "4028241",
+      "last_listing_id": "2644433",
+      "page_signature": "97255bba8ec17e5f"
+    },
+    {
+      "page": 25,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3683102",
+      "last_listing_id": "4083258",
+      "page_signature": "1f1d7b079c4a89e0"
+    },
+    {
+      "page": 26,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 1,
+      "duplicates": 0,
+      "first_listing_id": "3385649",
+      "last_listing_id": "2534431",
+      "page_signature": "b3acc18f94cd59de"
+    },
+    {
+      "page": 27,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 3,
+      "duplicates": 0,
+      "first_listing_id": "4301445",
+      "last_listing_id": "4153645",
+      "page_signature": "536b7f96ad8efa79"
+    },
+    {
+      "page": 28,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4278874",
+      "last_listing_id": "4251811",
+      "page_signature": "8f73e5932ca0abb6"
+    },
+    {
+      "page": 29,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4139225",
+      "last_listing_id": "4283136",
+      "page_signature": "dafc753a47f6d5fe"
+    },
+    {
+      "page": 30,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4234997",
+      "last_listing_id": "4302767",
+      "page_signature": "9f0d6ef53b700df3"
+    },
+    {
+      "page": 31,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3860797",
+      "last_listing_id": "4002872",
+      "page_signature": "3e70411fe13a4c34"
+    },
+    {
+      "page": 32,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4002236",
+      "last_listing_id": "4312026",
+      "page_signature": "d575c1b580c955e1"
+    },
+    {
+      "page": 33,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4313087",
+      "last_listing_id": "4065490",
+      "page_signature": "8e585b5ae3d41336"
+    },
+    {
+      "page": 34,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4085052",
+      "last_listing_id": "4239352",
+      "page_signature": "fd464441093a7018"
+    },
+    {
+      "page": 35,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3898551",
+      "last_listing_id": "4032631",
+      "page_signature": "ed8a5858948e039e"
+    },
+    {
+      "page": 36,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4296267",
+      "last_listing_id": "4250575",
+      "page_signature": "835a9cc964bfe949"
+    },
+    {
+      "page": 37,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4293068",
+      "last_listing_id": "4303605",
+      "page_signature": "380a236f5c8b500a"
+    },
+    {
+      "page": 38,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4283038",
+      "last_listing_id": "4142891",
+      "page_signature": "29768a361804d02a"
+    },
+    {
+      "page": 39,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4105687",
+      "last_listing_id": "4247226",
+      "page_signature": "ece63658d29b4548"
+    },
+    {
+      "page": 40,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3988616",
+      "last_listing_id": "3965335",
+      "page_signature": "9fa2da0d6478cbaf"
+    },
+    {
+      "page": 41,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4178962",
+      "last_listing_id": "4171873",
+      "page_signature": "e90b9c6786070829"
+    },
+    {
+      "page": 42,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3661167",
+      "last_listing_id": "4212711",
+      "page_signature": "919dca66b6082687"
+    },
+    {
+      "page": 43,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3630146",
+      "last_listing_id": "4252781",
+      "page_signature": "a8ef4556dfa1ee54"
+    },
+    {
+      "page": 44,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4276142",
+      "last_listing_id": "3253468",
+      "page_signature": "790adc71134a502c"
+    },
+    {
+      "page": 45,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4309924",
+      "last_listing_id": "4306042",
+      "page_signature": "ba3ad26edcfeee11"
+    },
+    {
+      "page": 46,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3812662",
+      "last_listing_id": "4220052",
+      "page_signature": "28309a1752ac6ac1"
+    },
+    {
+      "page": 47,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3977394",
+      "last_listing_id": "4200780",
+      "page_signature": "a014513638499689"
+    },
+    {
+      "page": 48,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3812710",
+      "last_listing_id": "4126242",
+      "page_signature": "78fdd1d4fc3ffdee"
+    },
+    {
+      "page": 49,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4238734",
+      "last_listing_id": "4309486",
+      "page_signature": "a98582043fcd216c"
+    },
+    {
+      "page": 50,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4286610",
+      "last_listing_id": "3960987",
+      "page_signature": "efd1c9de6d3ac7eb"
+    },
+    {
+      "page": 51,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 1,
+      "duplicates": 0,
+      "first_listing_id": "4250695",
+      "last_listing_id": "3540266",
+      "page_signature": "cf7a91577c484dd3"
+    },
+    {
+      "page": 52,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4242907",
+      "last_listing_id": "4239013",
+      "page_signature": "e7d4d812ed47764f"
+    },
+    {
+      "page": 53,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4309188",
+      "last_listing_id": "4217993",
+      "page_signature": "1beea5e0131547ad"
+    },
+    {
+      "page": 54,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4290628",
+      "last_listing_id": "4301438",
+      "page_signature": "070fc00bedde8a1c"
+    },
+    {
+      "page": 55,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 2,
+      "duplicates": 0,
+      "first_listing_id": "4302695",
+      "last_listing_id": "4118794",
+      "page_signature": "d82ce975a811a9b7"
+    },
+    {
+      "page": 56,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4293274",
+      "last_listing_id": "4201026",
+      "page_signature": "395da02966207427"
+    },
+    {
+      "page": 57,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4278894",
+      "last_listing_id": "3919970",
+      "page_signature": "29153ad748f951c8"
+    },
+    {
+      "page": 58,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4018438",
+      "last_listing_id": "4250529",
+      "page_signature": "9ecb936f81eea9b2"
+    },
+    {
+      "page": 59,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 1,
+      "duplicates": 0,
+      "first_listing_id": "4202338",
+      "last_listing_id": "4193683",
+      "page_signature": "7688da480551d64f"
+    },
+    {
+      "page": 60,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4099079",
+      "last_listing_id": "4287589",
+      "page_signature": "3790ffcdba7804fc"
+    },
+    {
+      "page": 61,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4306920",
+      "last_listing_id": "4210582",
+      "page_signature": "0c8b9974334e8bec"
+    },
+    {
+      "page": 62,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4307846",
+      "last_listing_id": "4227045",
+      "page_signature": "10f56604ab643e52"
+    },
+    {
+      "page": 63,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4204867",
+      "last_listing_id": "4280349",
+      "page_signature": "79a6df8aea1ad7ec"
+    },
+    {
+      "page": 64,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4310838",
+      "last_listing_id": "4302739",
+      "page_signature": "e496aae1d7a123b4"
+    },
+    {
+      "page": 65,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4277524",
+      "last_listing_id": "4305484",
+      "page_signature": "1cd0cd18296d7aa1"
+    },
+    {
+      "page": 66,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3541046",
+      "last_listing_id": "4196515",
+      "page_signature": "326d18af36d793e6"
+    },
+    {
+      "page": 67,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4155104",
+      "last_listing_id": "4174718",
+      "page_signature": "7c725906e69456f0"
+    },
+    {
+      "page": 68,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4248792",
+      "last_listing_id": "4251602",
+      "page_signature": "52517c73f8684515"
+    },
+    {
+      "page": 69,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4249639",
+      "last_listing_id": "4275360",
+      "page_signature": "6e337162e4957320"
+    },
+    {
+      "page": 70,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4291252",
+      "last_listing_id": "4174762",
+      "page_signature": "746171360c31603f"
+    },
+    {
+      "page": 71,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4210911",
+      "last_listing_id": "4254962",
+      "page_signature": "452c11986ea2db5e"
+    },
+    {
+      "page": 72,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3823969",
+      "last_listing_id": "3695197",
+      "page_signature": "e6e0890c3960b73a"
+    },
+    {
+      "page": 73,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4311963",
+      "last_listing_id": "4287016",
+      "page_signature": "26dcea702615458c"
+    },
+    {
+      "page": 74,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3956720",
+      "last_listing_id": "4206260",
+      "page_signature": "eb781249f325a212"
+    },
+    {
+      "page": 75,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4219332",
+      "last_listing_id": "4160073",
+      "page_signature": "b6d41a4d8182e742"
+    },
+    {
+      "page": 76,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4302449",
+      "last_listing_id": "4306274",
+      "page_signature": "b4201084439b4aa0"
+    },
+    {
+      "page": 77,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3444527",
+      "last_listing_id": "4239282",
+      "page_signature": "d76a6f1d346dcaa6"
+    },
+    {
+      "page": 78,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3926580",
+      "last_listing_id": "4256658",
+      "page_signature": "b49094d4f491096d"
+    },
+    {
+      "page": 79,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4248624",
+      "last_listing_id": "4050025",
+      "page_signature": "aeb0564e9ed7519c"
+    },
+    {
+      "page": 80,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3545172",
+      "last_listing_id": "4018177",
+      "page_signature": "16d4b7636bad3957"
+    },
+    {
+      "page": 81,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4277064",
+      "last_listing_id": "4293029",
+      "page_signature": "70dab45c46f6ae30"
+    },
+    {
+      "page": 82,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4220779",
+      "last_listing_id": "4308366",
+      "page_signature": "a783877024cc1071"
+    },
+    {
+      "page": 83,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3960937",
+      "last_listing_id": "4312452",
+      "page_signature": "a918466aeaebc144"
+    },
+    {
+      "page": 84,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4122527",
+      "last_listing_id": "4239010",
+      "page_signature": "c72c063995a0bc4c"
+    },
+    {
+      "page": 85,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4219554",
+      "last_listing_id": "4205796",
+      "page_signature": "00f6c06a7a02e38c"
+    },
+    {
+      "page": 86,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4210577",
+      "last_listing_id": "3070673",
+      "page_signature": "6555626d797ab669"
+    },
+    {
+      "page": 87,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4277911",
+      "last_listing_id": "4308423",
+      "page_signature": "6bdf7ca32f9c7b46"
+    },
+    {
+      "page": 88,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3544253",
+      "last_listing_id": "3480928",
+      "page_signature": "e6e905454de85de1"
+    },
+    {
+      "page": 89,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4312932",
+      "last_listing_id": "4247091",
+      "page_signature": "0636d78c52c4ae94"
+    },
+    {
+      "page": 90,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4189405",
+      "last_listing_id": "4311629",
+      "page_signature": "f174754d593761f3"
+    },
+    {
+      "page": 91,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4287630",
+      "last_listing_id": "4216523",
+      "page_signature": "2f89b669ba1ff8c1"
+    },
+    {
+      "page": 92,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4279067",
+      "last_listing_id": "4089936",
+      "page_signature": "9210281d783d7cbe"
+    },
+    {
+      "page": 93,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3884623",
+      "last_listing_id": "4247710",
+      "page_signature": "79c2acb8b6d7660f"
+    },
+    {
+      "page": 94,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4285429",
+      "last_listing_id": "3541287",
+      "page_signature": "130cd0bc6fb88ea4"
+    },
+    {
+      "page": 95,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4302420",
+      "last_listing_id": "4308317",
+      "page_signature": "a199f688c78f1afd"
+    },
+    {
+      "page": 96,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4293101",
+      "last_listing_id": "4293440",
+      "page_signature": "8786d53754be2396"
+    },
+    {
+      "page": 97,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4268177",
+      "last_listing_id": "3444911",
+      "page_signature": "67af06f50e86256b"
+    },
+    {
+      "page": 98,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4282091",
+      "last_listing_id": "4274198",
+      "page_signature": "8e8fcd957cdbb5bd"
+    },
+    {
+      "page": 99,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 17,
+      "duplicates": 0,
+      "first_listing_id": "4286801",
+      "last_listing_id": "4068544",
+      "page_signature": "4389e21792596665"
+    },
+    {
+      "page": 100,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4080275",
+      "last_listing_id": "4171998",
+      "page_signature": "cfb6dc119910d977"
+    },
+    {
+      "page": 101,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3911192",
+      "last_listing_id": "4306689",
+      "page_signature": "0516866b50d9a030"
+    },
+    {
+      "page": 102,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4105492",
+      "last_listing_id": "4278428",
+      "page_signature": "26b64292b8b2f5fe"
+    },
+    {
+      "page": 103,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3981089",
+      "last_listing_id": "4280484",
+      "page_signature": "e7a8661067bd14e2"
+    },
+    {
+      "page": 104,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 10,
+      "duplicates": 0,
+      "first_listing_id": "4308620",
+      "last_listing_id": "4278480",
+      "page_signature": "c49189a4765f07c8"
+    },
+    {
+      "page": 105,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4283027",
+      "last_listing_id": "4291406",
+      "page_signature": "6f2d8b727b6e3a27"
+    },
+    {
+      "page": 106,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4302497",
+      "last_listing_id": "4067462",
+      "page_signature": "9661ba5688e223a4"
+    },
+    {
+      "page": 107,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4094283",
+      "last_listing_id": "4053107",
+      "page_signature": "3546fb993425eb10"
+    },
+    {
+      "page": 108,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4283068",
+      "last_listing_id": "2142248",
+      "page_signature": "4cd110f1c9ec6cdc"
+    },
+    {
+      "page": 109,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4253620",
+      "last_listing_id": "4305418",
+      "page_signature": "40ab8c713b03adfc"
+    },
+    {
+      "page": 110,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4294597",
+      "last_listing_id": "4191575",
+      "page_signature": "6b789395174a135e"
+    },
+    {
+      "page": 111,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3680080",
+      "last_listing_id": "4240564",
+      "page_signature": "4246ccfdd0b85db1"
+    },
+    {
+      "page": 112,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 11,
+      "duplicates": 0,
+      "first_listing_id": "3517248",
+      "last_listing_id": "4280567",
+      "page_signature": "ff755e417994fdd0"
+    },
+    {
+      "page": 113,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 7,
+      "duplicates": 0,
+      "first_listing_id": "2170775",
+      "last_listing_id": "4156745",
+      "page_signature": "65f9873a3459b549"
+    },
+    {
+      "page": 114,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4303967",
+      "last_listing_id": "4309415",
+      "page_signature": "7dd4a316d0630a58"
+    },
+    {
+      "page": 115,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3298639",
+      "last_listing_id": "3517231",
+      "page_signature": "233a873233fb8075"
+    },
+    {
+      "page": 116,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4231817",
+      "last_listing_id": "3540358",
+      "page_signature": "9e4eeff4629f6be1"
+    },
+    {
+      "page": 117,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4143249",
+      "last_listing_id": "4250449",
+      "page_signature": "5ba33e5d8eb576eb"
+    },
+    {
+      "page": 118,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4179570",
+      "last_listing_id": "4222670",
+      "page_signature": "b5c6d37ed3b1020d"
+    },
+    {
+      "page": 119,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4219485",
+      "last_listing_id": "4075507",
+      "page_signature": "51b3ab266bacbfb7"
+    },
+    {
+      "page": 120,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3652991",
+      "last_listing_id": "4229862",
+      "page_signature": "d7d80ca4e347749a"
+    },
+    {
+      "page": 121,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3870903",
+      "last_listing_id": "4275678",
+      "page_signature": "6e3b44e7a42e75d9"
+    },
+    {
+      "page": 122,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4236325",
+      "last_listing_id": "4293100",
+      "page_signature": "0d65a482bd7a9471"
+    },
+    {
+      "page": 123,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4282209",
+      "last_listing_id": "4251708",
+      "page_signature": "d6c1936d49ddfaab"
+    },
+    {
+      "page": 124,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 11,
+      "duplicates": 0,
+      "first_listing_id": "4029649",
+      "last_listing_id": "4137114",
+      "page_signature": "7ec234c95711e502"
+    },
+    {
+      "page": 125,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4214733",
+      "last_listing_id": "3693620",
+      "page_signature": "47a14540f7bbe5e6"
+    },
+    {
+      "page": 126,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3963392",
+      "last_listing_id": "4307951",
+      "page_signature": "8c1fb54d2773b164"
+    },
+    {
+      "page": 127,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3932161",
+      "last_listing_id": "4274004",
+      "page_signature": "b1c2dc0a888ff8d6"
+    },
+    {
+      "page": 128,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4223176",
+      "last_listing_id": "3540221",
+      "page_signature": "d7d8bea5a698468b"
+    },
+    {
+      "page": 129,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4193876",
+      "last_listing_id": "3484825",
+      "page_signature": "cba9e05c2bb0bc1c"
+    },
+    {
+      "page": 130,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4205589",
+      "last_listing_id": "3999033",
+      "page_signature": "edde40982b2d1b65"
+    },
+    {
+      "page": 131,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "4228759",
+      "last_listing_id": "4200540",
+      "page_signature": "10cf0f35961f2356"
+    },
+    {
+      "page": 132,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 1,
+      "duplicates": 0,
+      "first_listing_id": "4244695",
+      "last_listing_id": "4092303",
+      "page_signature": "a99201ae14bfc803"
+    },
+    {
+      "page": 133,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 2,
+      "duplicates": 0,
+      "first_listing_id": "4242092",
+      "last_listing_id": "4223405",
+      "page_signature": "d5c91798255f7a76"
+    },
+    {
+      "page": 134,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "3579172",
+      "last_listing_id": "4291360",
+      "page_signature": "f1ec38637aef95d0"
+    },
+    {
+      "page": 135,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 4,
+      "duplicates": 0,
+      "first_listing_id": "3296723",
+      "last_listing_id": "4311345",
+      "page_signature": "98e235d1ec2b14c3"
+    },
+    {
+      "page": 136,
+      "cards_detected": 30,
+      "urls_extracted": 30,
+      "new_unique_urls": 6,
+      "duplicates": 0,
+      "first_listing_id": "3831542",
+      "last_listing_id": "1932809",
+      "page_signature": "9509d33244dba8b0"
+    },
+    {
+      "page": 137,
+      "cards_detected": 0,
+      "urls_extracted": 0,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "",
+      "last_listing_id": "",
+      "page_signature": "e3b0c44298fc1c14"
+    }
+  ],
+  "updated_at": "2026-08-15T00:07:11.077388+00:00"
+}

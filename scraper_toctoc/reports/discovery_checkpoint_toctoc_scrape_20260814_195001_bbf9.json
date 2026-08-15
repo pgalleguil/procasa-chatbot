@@ -1,0 +1,20 @@
+{
+  "batch_id": "toctoc_scrape_20260814_195001_bbf9",
+  "search_url": "https://www.toctoc.com/resultados/lista/arriendo/departamento/metropolitana/macul/?estado=2&moneda=2&pagina=1&publicador=0",
+  "last_completed_page": 2,
+  "total_unique_urls": 0,
+  "stop_reason": "NEXT_NOT_FOUND",
+  "page_reports": [
+    {
+      "page": 1,
+      "cards_detected": 0,
+      "urls_extracted": 0,
+      "new_unique_urls": 0,
+      "duplicates": 0,
+      "first_listing_id": "",
+      "last_listing_id": "",
+      "page_signature": "e3b0c44298fc1c14"
+    }
+  ],
+  "updated_at": "2026-08-14T23:50:28.372082+00:00"
+}

@@ -89,6 +89,7 @@ def classify_owner_phrase(quote: str) -> str:
         r"\bsoy (?:el |la )?(?:dueno|duena|propietario|propietaria)\b",
         r"\b(?:dueno|duena|propietario|propietaria) directo\b",
         r"\bvende (?:el |su )?(?:dueno|duena|propietario|propietaria)\b",
+        r"\barrienda (?:el |su )?(?:dueno|duena|propietario|propietaria)\b",
         r"\bventa directa por (?:el |la )?(?:dueno|duena|propietario|propietaria)\b",
         r"\b(?:dueno|duena|propietario|propietaria) vende\b",
     )
@@ -166,9 +167,14 @@ def _validate_evidence(parsed: dict[str, Any], payload: dict[str, Any]) -> tuple
         else:
             source_text = str(source_value or "")
         if not quote or not _quote_in_source(quote, source_text):
-            rejected.append(f"quote_not_found:{code}:{source_field}")
+            rejected.append(f"QUOTE_NOT_FOUND_IN_SOURCE:{code}:{source_field}")
             continue
         semantic_type = classify_owner_phrase(quote)
+        semantic_code = {
+            "EXPLICIT_OWNER_IDENTITY": "OWNER_FIRST_PERSON_EXPLICIT",
+            "OWNER_POSSESSIVE_SUPPORTING": "OWNER_FIRST_PERSON_POSSESSION",
+            "OWNER_SUPPORTING": "OWNER_NO_COMMISSION_EXPLICIT",
+        }.get(semantic_type)
         if code in {
             "OWNER_FIRST_PERSON_EXPLICIT",
             "OWNER_FIRST_PERSON_POSSESSION",
@@ -177,8 +183,7 @@ def _validate_evidence(parsed: dict[str, Any], payload: dict[str, Any]) -> tuple
             if semantic_type in {"GENERIC_SELLING_LANGUAGE", "NONE"}:
                 rejected.append(f"generic_selling_not_owner:{code}")
                 continue
-            if semantic_type == "OWNER_POSSESSIVE_SUPPORTING":
-                code = "OWNER_FIRST_PERSON_POSSESSION"
+            code = semantic_code or code
         valid.append({
             "code": code,
             "source_field": source_field,
@@ -208,7 +213,7 @@ def adjudicate_owner_evidence(
         "temperature": 0,
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
-        "extra_body": {"thinking": {"type": "disabled"}},
+        "thinking": {"type": "disabled"},
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     last_error = ""

@@ -50,6 +50,22 @@ class TestOwnerEvidenceSemantics(unittest.TestCase):
         self.assertEqual(rejected, [])
         self.assertEqual(valid[0]["evidence_type"], "EXPLICIT_OWNER_IDENTITY")
 
+    def test_quote_not_found_is_rejected(self):
+        valid, rejected = _validate_evidence(
+            {"evidence": [{"code": "OWNER_FIRST_PERSON_EXPLICIT", "source_field": "description", "quote": "Soy propietario", "explanation": ""}]},
+            {"description": "Departamento en venta"},
+        )
+        self.assertEqual(valid, [])
+        self.assertTrue(any(item.startswith("QUOTE_NOT_FOUND_IN_SOURCE:") for item in rejected))
+
+    def test_taxonomy_overrides_wrong_model_code(self):
+        valid, rejected = _validate_evidence(
+            {"evidence": [{"code": "OWNER_NO_COMMISSION_EXPLICIT", "source_field": "description", "quote": "DUEÑO DIRECTO", "explanation": ""}]},
+            {"description": "DUEÑO DIRECTO"},
+        )
+        self.assertEqual(rejected, [])
+        self.assertEqual(valid[0]["code"], "OWNER_FIRST_PERSON_EXPLICIT")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

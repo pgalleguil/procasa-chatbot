@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-FINAL_STATES = {"DUEÑO_SEGURO", "DUENO_SEGURO", "DUEÑO_PROBABLE", "DUENO_PROBABLE", "INCIERTO"}
+FINAL_STATES = {"DUEÑO_SEGURO", "DUENO_SEGURO", "DUEÑO_PROBABLE", "DUENO_PROBABLE"}
 COMMERCIAL_TERMS = ("inmobiliaria", "corredor", "corredora", "propiedades", "real estate", "broker")
 
 
@@ -14,8 +14,8 @@ def assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
     state = str(cls.get("state") or cls.get("final_state") or "").upper()
     if state not in FINAL_STATES:
         reasons.append("classification_not_assignable")
-    # CORREDOR (corredor confirmado) nunca es elegible para captación de dueños.
-    # INCIERTO sí es elegible: tiene probabilidad de ser dueño (0.50-0.69).
+    # Solo estados de dueño pueden quedar disponibles para asignación.
+    # INCIERTO no es asignable aunque tenga una fuente o probabilidad válida.
     if state.startswith("CORR"):
         reasons.append("classification_not_assignable")
     if cls.get("assignment_ready") is not True:

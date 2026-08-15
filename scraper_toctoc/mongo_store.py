@@ -82,6 +82,19 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
         errors.append(f"NON_FINAL_PROCESSING_STATUS({doc.get('processing_status')})")
     source = classification.get("source") or classification.get("decision_source", "")
 
+    # assignment_ready is a derived safety flag, never a proxy for source or
+    # confidence. Only owner states can expose a record to assignment.
+    non_assignable_reasons = {
+        "INCIERTO": "ASSIGNMENT_READY_INVALID_FOR_INCIERTO",
+        "CORREDOR_SEGURO": "ASSIGNMENT_READY_INVALID_FOR_CORREDOR_SEGURO",
+        "CORREDOR_PROBABLE": "ASSIGNMENT_READY_INVALID_FOR_CORREDOR_PROBABLE",
+        "AD_REMOVED": "ASSIGNMENT_READY_INVALID_FOR_AD_REMOVED",
+    }
+    if classification.get("assignment_ready") is True and state in non_assignable_reasons:
+        errors.append(non_assignable_reasons[state])
+    if classification.get("hard_veto") == "PROFESSIONAL" and not state.startswith("CORREDOR"):
+        errors.append("PROFESSIONAL_HARD_VETO_STATE_LOST")
+
     # Rechazar clasificacion solo por URL path
     if source == "url_path_signal":
         errors.append("CLASSIFICATION_FROM_URL_PATH_ONLY")
@@ -100,10 +113,13 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
             probability = float(owner_probability)
             if probability > 1: probability /= 100.0
             expected = expected_state_for_probability(probability)
-            if state != expected:
+            hard_veto = classification.get("hard_veto") == "PROFESSIONAL"
+            if not hard_veto and state != expected:
                 errors.append(f"STATE_DOES_NOT_MATCH_OWNER_PROBABILITY({state}!={expected})")
-            if abs(float(confidence) - probability) > 0.001:
+            if not hard_veto and abs(float(confidence) - probability) > 0.001:
                 errors.append("CANONICAL_CONFIDENCE_DOES_NOT_MATCH_OWNER_PROBABILITY")
+            if hard_veto and state != "CORREDOR_SEGURO":
+                errors.append("PROFESSIONAL_HARD_VETO_STATE_INVALID")
         except (TypeError, ValueError):
             errors.append("INVALID_OWNER_PROBABILITY")
     else:

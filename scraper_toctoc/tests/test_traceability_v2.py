@@ -13,7 +13,19 @@ def test_rule_state_is_not_overwritten_by_deepseek_final_state():
     assert result["final_state"] == "INCIERTO"
     assert result["deepseek_payload"] == {"messages": []}
     assert result["deepseek_message_content"] == "{}"
-    assert result["assignment_ready"] is True
+    assert result["assignment_ready"] is False
+
+
+def test_non_owner_states_are_never_assignment_ready():
+    for state in ("INCIERTO", "CORREDOR_SEGURO", "CORREDOR_PROBABLE", "AD_REMOVED"):
+        result = normalize_classification({
+            "state": state,
+            "source": "deepseek",
+            "deepseek_status": "VALID",
+            "deepseek_raw": {"choices": [{}]},
+            "assignment_ready": True,
+        })
+        assert result["assignment_ready"] is False, state
 
 
 def test_valid_deepseek_owner_state_is_assignment_ready():

@@ -75,7 +75,8 @@ DEEPSEEK_STATUS_LEGACY = "LEGACY_UNKNOWN"
 
 
 def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
-    state = raw.get("state", "INCIERTO")
+    raw_state = raw.get("state", "INCIERTO")
+    state = raw_state
     owner_probability = raw.get("owner_probability")
     try:
         if owner_probability is not None and float(owner_probability) > 1:
@@ -84,7 +85,14 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
             owner_probability = float(owner_probability)
     except (TypeError, ValueError):
         owner_probability = None
-    if owner_probability is not None:
+    decision_source = raw.get("decision_source") or raw.get("source", "rules")
+    hard_veto = str(raw.get("hard_veto") or raw.get("professional_hard_veto") or "").upper()
+    if not hard_veto and str(raw_state).upper() == "CORREDOR_SEGURO" and str(decision_source).lower() in {
+        "structural_rules", "rules_json", "structural_professional_rule"
+    } and raw.get("strong_signal_found", True) is not False:
+        hard_veto = "PROFESSIONAL"
+
+    if owner_probability is not None and hard_veto != "PROFESSIONAL":
         state = expected_state_for_probability(owner_probability)
     if state == "INCONCLUSIVE": state = "INCIERTO"
     if state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "AD_REMOVED"):
@@ -104,7 +112,7 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
     
     # Preserve DeepSeek tracing fields (or mark legacy)
     deepseek_status = raw.get("deepseek_status") or DEEPSEEK_STATUS_LEGACY
-    state_source = raw.get("decision_source") or raw.get("source", "rules")
+    state_source = decision_source
     
     # Extract DeepSeek usage from raw if available (support both deepseek_raw and legacy raw)
     ds_raw = raw.get("deepseek_raw", None)
@@ -135,7 +143,8 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "status": raw.get("status", ""),
         "rule_state": rule_state, "signals": raw.get("signals", {}),
         "evidence": evidence, "reason": str(raw.get("reason", "")),
-        "decision_source": raw.get("source", "rules"), "decision_pattern": raw.get("decision_pattern", ""),
+        "decision_source": decision_source, "decision_pattern": raw.get("decision_pattern", ""),
+        "hard_veto": hard_veto,
         "state_source": state_source,
         "deepseek_status": deepseek_status,
         "deepseek_state": "",
@@ -164,7 +173,7 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "trace": raw.get("trace") or {},
     }
     normalized["assignment_ready"] = (
-        (state == "INCIERTO" or (state.startswith("DUE") and state.endswith("O_SEGURO")))
+        state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
         and not raw.get("manual_review_required")
         and ((state_source in ("structural_rules", "rules_json") and rule_state != "INCONCLUSIVE")
              or (state_source == "deepseek" and deepseek_status == "VALID" and bool(ds_raw)))

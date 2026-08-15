@@ -527,10 +527,25 @@ def apply_owner_probability_to_document(
         classification.get("state") or classification.get("final_state")
     )
     classification_source = str(classification.get("source") or "").lower()
+    hard_veto = str(
+        classification.get("hard_veto")
+        or classification.get("professional_hard_veto")
+        or ""
+    ).upper()
     broker_confirmed = (
         previous_state.startswith("CORREDOR")
         and classification_source in {"structural_rules", "rules_json", "profile_correlation"}
     )
+    if (
+        not hard_veto
+        and previous_state == "CORREDOR_SEGURO"
+        and classification_source in {"structural_rules", "rules_json", "structural_professional_rule"}
+        and classification.get("strong_signal_found", True) is not False
+    ):
+        hard_veto = "PROFESSIONAL"
+    if hard_veto == "PROFESSIONAL":
+        classification["hard_veto"] = "PROFESSIONAL"
+        classification["professional_hard_veto"] = True
     result = calculate_owner_probability(doc, extracted=extracted or doc)
     classification.update(result)
     probability = result["owner_probability"]
@@ -538,6 +553,8 @@ def apply_owner_probability_to_document(
 
     if "REMOVED_LISTING" in completeness.get("reasons", []):
         final_state = "AD_REMOVED"
+    elif hard_veto == "PROFESSIONAL":
+        final_state = "CORREDOR_SEGURO"
     elif probability is None:
         final_state = previous_state if broker_confirmed else "PENDIENTE"
     else:
@@ -545,25 +562,35 @@ def apply_owner_probability_to_document(
 
     classification["previous_classification_state"] = previous_state
     if probability is not None:
-        classification["confidence"] = probability
-        classification["canonical_confidence"] = probability
+        if hard_veto != "PROFESSIONAL":
+            classification["confidence"] = probability
+            classification["canonical_confidence"] = probability
         classification["state"] = final_state
         classification["final_state"] = final_state
-        classification["classification_semantics"] = "owner_probability_band"
+        classification["classification_semantics"] = (
+            "professional_hard_veto" if hard_veto == "PROFESSIONAL"
+            else "owner_probability_band"
+        )
     else:
         classification["state"] = final_state
         classification["final_state"] = final_state
         classification["classification_semantics"] = "pending_or_structural_without_probability"
-    classification["state_source"] = "classification.owner_probability_band"
+    classification["state_source"] = (
+        "classification.professional_hard_veto"
+        if hard_veto == "PROFESSIONAL"
+        else "classification.owner_probability_band"
+    )
     classification["classification_rule_version"] = OWNER_PROBABILITY_VERSION
     classification["assignment_ready"] = bool(
-        probability is not None and probability >= 0.50
-        and final_state not in {"PENDIENTE", "AD_REMOVED"}
-        and not final_state.startswith("CORREDOR")
+        final_state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
+        and probability is not None and probability >= 0.50
+        and not classification.get("manual_review_required")
+        and hard_veto != "PROFESSIONAL"
     )
     classification["exclude_from_assignment"] = not classification["assignment_ready"]
     classification["assignment_block_reasons"] = (
         [] if classification["assignment_ready"]
+        else ["PROFESSIONAL_HARD_VETO"] if hard_veto == "PROFESSIONAL"
         else ["BROKER_CONFIRMED"] if broker_confirmed
         else completeness.get("reasons", []) or ["OWNER_PROBABILITY_BELOW_50"]
     )

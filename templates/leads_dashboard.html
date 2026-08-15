@@ -1417,16 +1417,19 @@
             font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
-        .ai-grid { display: block; }
+        .ai-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+
+        @media (min-width: 768px) { .ai-grid { grid-template-columns: repeat(3, 1fr); } }
 
         .ai-row {
             display: flex;
             align-items: flex-start;
-            gap: 10px;
-            padding: 10px 2px;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg-elevated, rgba(30, 41, 59, 0.35));
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
         }
-
-        .ai-divider { height: 1px; background: var(--border-color); margin: 0 2px; }
 
         .ai-row-body { flex: 1 1 auto; min-width: 0; }
 
@@ -2054,58 +2057,54 @@
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
 
-        /* Pipeline horizontal de 4 etapas con conectores de tasa/pérdida. */
-        .funnel-pipe { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
-
-        .funnel-stage {
-            flex: 0 0 auto;
+        /* Embudo vertical estilizado: 4 niveles con ancho decreciente. */
+        .funnel-pipe {
             display: flex;
             flex-direction: column;
             align-items: center;
             gap: 2px;
-            padding: 10px 14px;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background: var(--bg-elevated, #202D43);
-            min-width: 84px;
+            margin: 12px 0 4px;
         }
 
-        .funnel-stage strong {
-            font-size: 20px;
+        .funnel-level {
+            --w: 100%;
+            width: var(--w);
+            max-width: 520px;
+            padding: 11px 0;
+            text-align: center;
+            background: linear-gradient(180deg, rgba(139, 92, 246, 0.18), rgba(139, 92, 246, 0.05));
+            border: 1px solid rgba(139, 92, 246, 0.28);
+            clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+        }
+
+        .funnel-level strong {
+            display: block;
+            font-size: 22px;
             font-weight: 800;
             color: var(--text-primary);
             font-variant-numeric: tabular-nums;
             line-height: 1;
         }
 
-        .funnel-stage span {
+        .funnel-level span {
+            display: block;
             font-size: 9px;
-            color: var(--text-secondary);
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
-            text-align: center;
-            line-height: 1.3;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-top: 3px;
         }
 
-        .funnel-connector {
-            flex: 1 1 auto;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 2px;
-            text-align: center;
-            min-width: 0;
-        }
-
-        .funnel-connector .fc-pct {
+        .funnel-rate {
+            align-self: flex-start;
+            margin: 4px 0 4px 13%;
             font-size: 11px;
             font-weight: 700;
             color: var(--conversion-accent);
-            white-space: nowrap;
         }
 
-        .funnel-connector .fc-sub { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+        .funnel-rate small { display: block; font-size: 10px; color: var(--text-secondary); font-weight: 400; }
 
         .funnel-notes { font-size: 10px; color: var(--text-secondary); margin-top: 8px; }
 
@@ -2120,14 +2119,7 @@
         .funnel-conclusion strong { color: var(--text-primary); font-weight: 700; }
 
         @media (max-width: 640px) {
-            .funnel-pipe { flex-direction: column; align-items: stretch; }
-            .funnel-stage { align-self: center; min-width: 120px; }
-            .funnel-connector {
-                border-left: 2px solid var(--border-color);
-                padding-left: 12px;
-                align-items: flex-start;
-                text-align: left;
-            }
+            .funnel-rate { margin-left: 8%; }
         }
 
         .dash-updated {
@@ -3974,7 +3966,7 @@
                                 '<p class="ai-text">' + esc(ins.texto || '') + '</p>' +
                                 (ins.accion ? '<span class="ai-action-line"><strong>Acción:</strong> ' + esc(ins.accion) + '</span>' : '') +
                                 '</div></div>';
-                        }).join('<div class="ai-divider"></div>');
+                        }).join('');
                     }
                 }
                 if (cta) cta.style.display = insights.length ? '' : 'none';
@@ -4364,22 +4356,23 @@
                 const tr = f.transitions || {};
                 const exc = f.exceptions || {};
                 const fmtPct = (v) => (v === null || v === undefined) ? '—' : v.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
-                const stageBlock = (n, label) =>
-                    '<div class="funnel-stage"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
-                const connector = (pctTxt, sub) =>
-                    '<div class="funnel-connector"><span class="fc-pct">' + pctTxt + '</span><span class="fc-sub">' + esc(sub) + '</span></div>';
                 const gPct = (byKey.gestionados || {}).transition_pct;
                 const cPct = (byKey.contacto_efectivo || {}).transition_pct;
                 const vPct = (byKey.visita_agendada || {}).transition_pct;
                 const pipe = $('funnelPipe');
+                const level = (n, label, w) =>
+                    '<div class="funnel-level" style="--w:' + w + '"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
+                const rate = (pct, sub) =>
+                    '<div class="funnel-rate"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
                 if (pipe) {
-                    pipe.innerHTML = stageBlock(rec, 'Recibidos') +
-                        connector(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
-                        stageBlock(ges, 'Gestionados') +
-                        connector(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
-                        stageBlock(con, 'Contacto efectivo') +
-                        connector(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
-                        stageBlock(vis, 'Visitas agendadas');
+                    pipe.innerHTML =
+                        level(rec, 'Recibidos', '100%') +
+                        rate(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
+                        level(ges, 'Gestionados', '72%') +
+                        rate(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
+                        level(con, 'Contacto efectivo', '46%') +
+                        rate(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
+                        level(vis, 'Visitas agendadas', '24%');
                 }
 
                 // Excepciones de registro en una línea discreta.
@@ -4458,6 +4451,28 @@
                     const progress = Math.min((now - startTime) / duration, 1);
                     const value = (progress * end).toFixed(1).replace('.', ',');
                     el.textContent = value + ' %';
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            function animateCountUpInt(el, end, duration = 1200) {
+                if (!el) return;
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    el.textContent = Math.floor(progress * end).toLocaleString('es-CL');
+                    if (progress < 1) requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            function animateCountUpPct(el, end, duration = 1200) {
+                if (!el) return;
+                const startTime = performance.now();
+                const step = (now) => {
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    el.innerHTML = (progress * end).toFixed(1).replace('.', ',') + ' <span class="cd1-unit">%</span>';
                     if (progress < 1) requestAnimationFrame(step);
                 };
                 requestAnimationFrame(step);
@@ -4583,12 +4598,12 @@
 
                 $('cd3Title').textContent = 'Cartera Potencial & Valorización';
 
-                // KPI principal: comisión potencial (sin prefijo "UF").
-                $('cd3ComisionValue').textContent = Math.round(comisionUF).toLocaleString('es-CL');
+                // KPI principal: comisión potencial (sin prefijo "UF"), con count-up.
+                animateCountUpInt($('cd3ComisionValue'), Math.round(comisionUF));
 
-                // Métricas secundarias: Venta y Arriendo en una sola línea.
-                $('cd3MontoVenta').textContent = Math.round(montoVenta).toLocaleString('es-CL');
-                $('cd3MontoArriendo').textContent = Math.round(montoArriendo).toLocaleString('es-CL');
+                // Métricas secundarias: Venta y Arriendo en una sola línea (count-up).
+                animateCountUpInt($('cd3MontoVenta'), Math.round(montoVenta));
+                animateCountUpInt($('cd3MontoArriendo'), Math.round(montoArriendo));
 
                 // Micrográfico: composición de comisión potencial (Venta vs Arriendo, UF netas).
                 const mixTotal = comisionVenta + comisionArriendo;
@@ -4664,11 +4679,13 @@
 
                 $('cd4Title').textContent = 'SLA & Velocidad de Respuesta';
 
-                // KPI principal: % de leads dentro de SLA (estado al cierre del período).
+                // KPI principal: % de leads dentro de SLA (estado al cierre del período), count-up.
                 const inSlaPct = s.in_sla_pct;
-                $('cd4Value').innerHTML = (inSlaPct === null || inSlaPct === undefined)
-                    ? 'N/D <span class="cd1-unit">%</span>'
-                    : inSlaPct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' <span class="cd1-unit">%</span>';
+                if (inSlaPct === null || inSlaPct === undefined) {
+                    $('cd4Value').innerHTML = 'N/D <span class="cd1-unit">%</span>';
+                } else {
+                    animateCountUpPct($('cd4Value'), inSlaPct);
+                }
                 $('cd4Sub').textContent = 'Leads dentro de SLA';
 
                 // Desglose HOT / NORMAL: estado al corte + velocidad por perfil.

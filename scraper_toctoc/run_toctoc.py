@@ -96,7 +96,8 @@ def _build_parser():
     rf.add_argument("--precio-hasta", type=int, default=None, help="Precio maximo en CLP")
     rf.add_argument("--max-pages", type=int, default=None, help="Límite artificial de páginas; por defecto recorre el total reportado")
     rf.add_argument("--max-urls", type=int, default=None, help="Límite artificial de URLs; por defecto no limita")
-    rf.add_argument("--limit", type=int, default=50)
+    rf.add_argument("--limit", type=int, default=None,
+                    help="Límite de procesamiento; vacío = todos los descubiertos")
     rf.add_argument("--write-db", action="store_true")
     rf.add_argument("--dry-run", action="store_true")
     rf.add_argument("--no-llm", action="store_true")

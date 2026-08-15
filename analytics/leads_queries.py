@@ -2353,9 +2353,9 @@ def query_leads_dashboard_sources(
     total_visitas = sum(e["visitas"] for e in per_origin.values())
 
     ordered = sorted(per_origin.items(), key=lambda kv: -kv[1]["leads"])
-    if len(ordered) > 7:
-        top = ordered[:6]
-        rest = ordered[6:]
+    if len(ordered) > 6:
+        top = ordered[:5]
+        rest = ordered[5:]
         items = [
             {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
              "prev": prev_counts.get(name, 0)}

@@ -1417,25 +1417,18 @@
             font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
-        .ai-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .ai-grid { display: block; }
 
-        @media (min-width: 768px) { .ai-grid { grid-template-columns: repeat(3, 1fr); } }
-
-        .ai-ins {
+        .ai-row {
             display: flex;
             align-items: flex-start;
-            gap: 12px;
-            padding: 14px;
-            background: var(--bg-elevated, rgba(30, 41, 59, 0.3));
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            transition: background-color 0.2s, border-color 0.2s;
+            gap: 10px;
+            padding: 10px 2px;
         }
 
-        .ai-ins:hover {
-            background: var(--bg-elevated, rgba(30, 41, 59, 0.5));
-            border-color: var(--conversion-accent);
-        }
+        .ai-divider { height: 1px; background: var(--border-color); margin: 0 2px; }
+
+        .ai-row-body { flex: 1 1 auto; min-width: 0; }
 
         .ai-dot {
             width: 8px;
@@ -1619,6 +1612,7 @@
             pointer-events: none;
             z-index: 5;
             white-space: nowrap;
+            transition: left 0.09s ease-out, transform 0.09s ease-out;
         }
         .tc-chart-tooltip strong { display: block; color: #C4B5FD; font-size: 12px; }
         .tc-chart-tooltip small { display: block; color: var(--text-secondary); font-size: 9px; margin-top: 2px; }
@@ -1634,7 +1628,7 @@
             opacity: 0;
             pointer-events: none;
             transform: translateX(-0.5px);
-            transition: opacity 0.12s ease;
+            transition: opacity 0.12s ease-out, left 0.11s ease-out;
         }
 
         .tc-hl {
@@ -1643,7 +1637,7 @@
             pointer-events: none;
             opacity: 0;
             transform: translate(-50%, -50%);
-            transition: opacity 0.12s ease;
+            transition: opacity 0.12s ease-out, left 0.11s ease-out, top 0.11s ease-out;
         }
 
         .tc-hl-cur {
@@ -1657,6 +1651,10 @@
             width: 5px;
             height: 5px;
             background: #64748B;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .tc-guide, .tc-hl, .tc-chart-tooltip { transition: none !important; }
         }
 
         .tc-line {
@@ -1757,7 +1755,7 @@
         .tc-today-delta.neg { color: #FCA5A5; }
         .tc-today-delta.neutral { color: var(--text-secondary); }
 
-        .tc-source-card { position: relative; }
+        .tc-source-card { position: relative; align-self: start; }
 
         .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
 
@@ -2056,32 +2054,81 @@
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
 
-        .funnel-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        /* Pipeline horizontal de 4 etapas con conectores de tasa/pérdida. */
+        .funnel-pipe { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
 
-        .funnel-row {
-            display: grid;
-            grid-template-columns: 120px 1fr 150px;
+        .funnel-stage {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 12px;
+            gap: 2px;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-elevated, #202D43);
+            min-width: 84px;
+        }
+
+        .funnel-stage strong {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .funnel-stage span {
+            font-size: 9px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .funnel-connector {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .funnel-connector .fc-pct {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--conversion-accent);
+            white-space: nowrap;
+        }
+
+        .funnel-connector .fc-sub { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+
+        .funnel-notes { font-size: 10px; color: var(--text-secondary); margin-top: 8px; }
+
+        .funnel-conclusion {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
             font-size: 12px;
+            color: var(--text-secondary);
         }
 
-        .funnel-lbl { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+        .funnel-conclusion strong { color: var(--text-primary); font-weight: 700; }
 
-        .funnel-trk { height: 10px; border-radius: 99px; background: var(--border-color); overflow: hidden; }
-
-        .funnel-fill {
-            height: 100%;
-            border-radius: 99px;
-            background: linear-gradient(90deg, #8B5CF6, #A78BFA);
-            transition: width 0.6s ease;
+        @media (max-width: 640px) {
+            .funnel-pipe { flex-direction: column; align-items: stretch; }
+            .funnel-stage { align-self: center; min-width: 120px; }
+            .funnel-connector {
+                border-left: 2px solid var(--border-color);
+                padding-left: 12px;
+                align-items: flex-start;
+                text-align: left;
+            }
         }
-
-        .funnel-val { color: var(--text-secondary); text-align: right; font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; white-space: nowrap; }
-
-        .funnel-val strong { color: var(--text-primary); }
-
-        .funnel-val small { display: block; font-size: 9px; color: var(--text-secondary); }
 
         .dash-updated {
             font-size: 10px;
@@ -2985,8 +3032,7 @@
             <section class="ai-briefing seq-el seq-scroll" id="aiBriefing" hidden>
                 <div class="ai-briefing-inner">
                     <div class="ai-briefing-head">
-                        <div class="ai-briefing-title"><h3>Resumen Ejecutivo y Diagnóstico</h3></div>
-                        <span class="ai-briefing-meta">Procesado en tiempo real</span>
+                        <div class="ai-briefing-title"><h3>Diagnóstico Ejecutivo</h3></div>
                     </div>
 
                     <div class="ai-grid" id="aiInsightsGrid"></div>
@@ -3003,12 +3049,12 @@
                     <div class="exec-table-head">
                         <div>
                             <h3>Embudo Comercial</h3>
-                            <p>Conversión etapa a etapa sobre los leads del período</p>
+                            <p>Recibidos → Gestionados → Contacto efectivo → Visita agendada</p>
                         </div>
-                        <span class="exec-count" id="funnelRecv">—</span>
                     </div>
-                    <div class="funnel-bars" id="funnelBars"></div>
-                    <div class="funnel-hitos" id="funnelHitos" hidden></div>
+                    <div class="funnel-pipe" id="funnelPipe"></div>
+                    <div class="funnel-notes" id="funnelNotes" hidden></div>
+                    <div class="funnel-conclusion" id="funnelConclusion"></div>
                 </div>
             </section>
 
@@ -3039,7 +3085,7 @@
                         <div class="tc-head">
                             <div>
                                 <h3>Origen de la Demanda</h3>
-                                <p>Volumen y conversión a visita por origen</p>
+                                <p>Volumen y conversión por origen</p>
                             </div>
                         </div>
                         <div class="tc-sources-list" id="tcSourcesList"></div>
@@ -3913,22 +3959,22 @@
                 };
                 if (grid) {
                     if (!insights.length) {
-                        grid.innerHTML = '<div class="ai-ins"><div class="ai-ins-body">' +
+                        grid.innerHTML = '<div class="ai-row"><span class="ai-dot"></span><div class="ai-row-body">' +
                             '<span class="ai-label">Diagnóstico</span>' +
                             '<p class="ai-text">Sin señales que requieran intervención en el período seleccionado.</p>' +
                             '</div></div>';
                     } else {
                         grid.innerHTML = insights.map(ins => {
                             const kind = KINDS[ins.tipo] || KINDS.oportunidad;
-                            return '<div class="ai-ins" data-kind="' + (ins.tipo || 'oportunidad') + '">' +
+                            return '<div class="ai-row" data-kind="' + (ins.tipo || 'oportunidad') + '">' +
                                 '<span class="ai-dot" style="background:' + kind.dot + '"></span>' +
-                                '<div class="ai-ins-body">' +
+                                '<div class="ai-row-body">' +
                                 '<span class="ai-label">' + esc(kind.lbl) + '</span>' +
                                 '<h4 class="ai-ins-title">' + esc(ins.titulo || '') + '</h4>' +
                                 '<p class="ai-text">' + esc(ins.texto || '') + '</p>' +
                                 (ins.accion ? '<span class="ai-action-line"><strong>Acción:</strong> ' + esc(ins.accion) + '</span>' : '') +
                                 '</div></div>';
-                        }).join('');
+                        }).join('<div class="ai-divider"></div>');
                     }
                 }
                 if (cta) cta.style.display = insights.length ? '' : 'none';
@@ -3986,7 +4032,7 @@
                             (conv === null || conv === undefined ? '' : conv) + '" data-prev="' + (src.prev || 0) + '">' +
                             '<div class="tc-src-top">' +
                             '<span class="tc-src-name">' + esc(nombre) + '</span>' +
-                            '<span class="tc-src-val"><strong>' + leads + ' leads</strong> · <span class="tc-src-conv">' + fmtPct(conv) + ' a visita</span></span>' +
+                            '<span class="tc-src-val"><strong>' + leads + ' leads</strong> <span class="tc-src-conv">Conv. ' + fmtPct(conv) + '</span></span>' +
                             '</div>' +
                             '<div class="tc-src-track"><div class="tc-src-bar" data-w="' + barW + '" style="width:0%"></div></div>' +
                             '</div>';
@@ -4308,60 +4354,61 @@
                 const block = $('funnelBlock');
                 if (!block || !OVERVIEW || !OVERVIEW.funnel) return;
                 const f = OVERVIEW.funnel;
-                const received = f.received || 0;
-                $('funnelRecv').innerHTML = received + ' leads';
-                const bars = $('funnelBars');
-                const allStages = f.stages || [];
-                const visitas = (allStages.find(s => s.key === 'visita_agendada') || {}).count || 0;
-
-                // Embudo descendente: Recibidos → Gestionados → Contacto efectivo → Visita agendada
-                const stages = allStages; // backend ya entrega las 4 etapas ordenadas
-                if (bars) {
-                    let html = '';
-                    stages.forEach((s, i) => {
-                        const w = received > 0 ? Math.max((s.count / received) * 100, 0.5) : 0;
-                        const tPct = (s.transition_pct === null || s.transition_pct === undefined)
-                            ? ''
-                            : '<small class="funnel-transition">↓ ' + s.transition_pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</small>';
-                        const acc = (i === 0 || s.pct_of_received === null || s.pct_of_received === undefined)
-                            ? ''
-                            : '<small class="funnel-acc">' + s.pct_of_received.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% del total</small>';
-                        html += '<div class="funnel-row">' +
-                            '<span class="funnel-lbl">' + s.label + '</span>' +
-                            '<div class="funnel-trk"><div class="funnel-fill" data-w="' + w + '" style="width:0%"></div></div>' +
-                            '<span class="funnel-val"><strong>' + s.count + '</strong>' + tPct + acc + '</span>' +
-                            '</div>';
-                    });
-                    bars.innerHTML = html;
-                }
-
-                // Excepciones de trazabilidad + hitos comerciales excepcionales
-                const hitos = $('funnelHitos');
+                const stages = f.stages || [];
+                const byKey = {};
+                stages.forEach(s => { byKey[s.key] = s; });
+                const rec = (byKey.received || {}).count || 0;
+                const ges = (byKey.gestionados || {}).count || 0;
+                const con = (byKey.contacto_efectivo || {}).count || 0;
+                const vis = (byKey.visita_agendada || {}).count || 0;
+                const tr = f.transitions || {};
                 const exc = f.exceptions || {};
-                const hitosExc = f.hitos_excepcionales || {};
-                const chips = [];
-                if (exc.visitas_sin_contacto_efectivo > 0) {
-                    chips.push('<span class="funnel-hito-chip trazabilidad"><i class="fa-solid fa-triangle-exclamation"></i> ' + exc.visitas_sin_contacto_efectivo + ' visitas sin contacto efectivo previo</span>');
+                const fmtPct = (v) => (v === null || v === undefined) ? '—' : v.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                const stageBlock = (n, label) =>
+                    '<div class="funnel-stage"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
+                const connector = (pctTxt, sub) =>
+                    '<div class="funnel-connector"><span class="fc-pct">' + pctTxt + '</span><span class="fc-sub">' + esc(sub) + '</span></div>';
+                const gPct = (byKey.gestionados || {}).transition_pct;
+                const cPct = (byKey.contacto_efectivo || {}).transition_pct;
+                const vPct = (byKey.visita_agendada || {}).transition_pct;
+                const pipe = $('funnelPipe');
+                if (pipe) {
+                    pipe.innerHTML = stageBlock(rec, 'Recibidos') +
+                        connector(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
+                        stageBlock(ges, 'Gestionados') +
+                        connector(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
+                        stageBlock(con, 'Contacto efectivo') +
+                        connector(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
+                        stageBlock(vis, 'Visitas agendadas');
                 }
-                if (exc.visitas_sin_gestion > 0) {
-                    chips.push('<span class="funnel-hito-chip trazabilidad"><i class="fa-solid fa-triangle-exclamation"></i> ' + exc.visitas_sin_gestion + ' visitas sin gestión registrada</span>');
+
+                // Excepciones de registro en una línea discreta.
+                const notes = [];
+                const nSinContacto = exc.visitas_sin_contacto_efectivo || 0;
+                const nSinGestion = exc.visitas_sin_gestion || 0;
+                if (nSinContacto > 0 || nSinGestion > 0) {
+                    let t = 'Excepciones de registro: ';
+                    const parts = [];
+                    if (nSinContacto > 0) parts.push(nSinContacto + ' sin contacto previo');
+                    if (nSinGestion > 0) parts.push(nSinGestion + ' sin gestión registrada');
+                    notes.push(t + parts.join(' · '));
                 }
-                if (hitosExc.avanzados_sin_visita > 0) {
-                    chips.push('<span class="funnel-hito-chip oferta"><i class="fa-solid fa-handshake"></i> Hitos avanzados sin visita: ' + hitosExc.avanzados_sin_visita + '</span>');
-                }
-                if (hitosExc.cierres_sin_visita > 0) {
-                    chips.push('<span class="funnel-hito-chip cierre"><i class="fa-solid fa-circle-check"></i> Cierres sin visita: ' + hitosExc.cierres_sin_visita + '</span>');
-                }
-                if (hitos) {
-                    if (chips.length === 0) {
-                        hitos.hidden = true;
-                        hitos.innerHTML = '';
-                    } else {
-                        hitos.hidden = false;
-                        hitos.innerHTML =
-                            '<div class="funnel-hitos-title"><i class="fa-solid fa-asterisk"></i> Hitos comerciales excepcionales</div>' +
-                            '<div class="funnel-hitos-chips">' + chips.join('') + '</div>';
-                    }
+                const notesEl = $('funnelNotes');
+                if (notesEl) { notesEl.innerHTML = notes.join(' · '); notesEl.hidden = notes.length === 0; }
+
+                // Mayor pérdida entre etapas.
+                const losses = [
+                    { label: 'Recibidos → Gestionados', loss: rec - ges },
+                    { label: 'Gestionados → Contacto efectivo', loss: ges - con },
+                    { label: 'Contacto efectivo → Visita agendada', loss: con - vis },
+                ];
+                losses.sort((a, b) => b.loss - a.loss);
+                const topLoss = losses[0];
+                const pctLoss = rec > 0 ? topLoss.loss / rec * 100 : 0;
+                const conclEl = $('funnelConclusion');
+                if (conclEl) {
+                    conclEl.innerHTML = 'Mayor pérdida: <strong>' + esc(topLoss.label) + '</strong> · ' + topLoss.loss + ' leads (' +
+                        pctLoss.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%)';
                 }
                 block.hidden = false;
             }
@@ -4771,14 +4818,13 @@
                     (ins.accion ? ' <em>Acción: ' + esc(ins.accion) + '</em>' : '') + '</li>'
                 ).join('');
 
-                // Embudo
-                const funnelRows = Array.from(document.querySelectorAll('#funnelBars .funnel-row')).map(r => {
-                    const lbl = (r.querySelector('.funnel-lbl') || {}).textContent || '';
-                    const val = (r.querySelector('.funnel-val strong') || {}).textContent || '';
-                    return '<li>' + esc(lbl) + ': <strong>' + esc(val) + '</strong></li>';
-                }).join('');
-                const hitosTxt = (document.getElementById('funnelHitos') && !document.getElementById('funnelHitos').hidden)
-                    ? esc((document.getElementById('funnelHitos').textContent || '').replace(/\s+/g, ' ').trim())
+                // Embudo (pipeline)
+                const funnelRows = (OVERVIEW.funnel ? OVERVIEW.funnel.stages : []).map(s =>
+                    '<li>' + esc(s.label) + ': <strong>' + esc(String(s.count)) + '</strong> (' +
+                    (s.transition_pct == null ? '—' : s.transition_pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%') + ')</li>'
+                ).join('');
+                const hitosTxt = (document.getElementById('funnelNotes') && !document.getElementById('funnelNotes').hidden)
+                    ? esc((document.getElementById('funnelNotes').textContent || '').replace(/\s+/g, ' ').trim())
                     : '';
 
                 // Tendencia

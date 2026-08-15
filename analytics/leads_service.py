@@ -438,8 +438,8 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
             "tipo": "prioridad",
             "titulo": "Respuesta comercial crítica",
             "texto": (f"Solo {_es(in_sla)}% de los leads permanece dentro de SLA "
-                      f"y existen {vencidos} vencidos. El volumen actual está generando "
-                      f"presión relevante sobre la gestión."),
+                      f"y existen {vencidos} vencidos, lo que requiere intervención "
+                      f"sobre la primera gestión."),
             "accion": "Priorizar vencidos, especialmente Hot, y verificar capacidad de primera gestión.",
         })
 

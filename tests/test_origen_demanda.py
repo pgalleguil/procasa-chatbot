@@ -53,8 +53,8 @@ def test_normalize_variantes_fusionadas():
     assert _normalize_source_name("MercadoLibre") == "MercadoLibre"
 
 
-def test_sources_reconcilia_y_top6_otros():
-    # 8 orígenes -> Top 6 + Otros (agregando el resto).
+def test_sources_reconcilia_y_top5_otros():
+    # 8 orígenes -> Top 5 + Otros (agregando el resto).
     leads = []
     nombres = ["A", "B", "C", "D", "E", "F", "G", "H"]
     counts = [30, 25, 20, 15, 10, 8, 6, 4]
@@ -66,7 +66,7 @@ def test_sources_reconcilia_y_top6_otros():
     res = _run_sources(db)
     assert res["total"] == 118
     items = res["current"]
-    assert len(items) == 7
+    assert len(items) == 6
     assert items[-1]["nombre"] == "Otros"
     top_sum = sum(it["cantidad"] for it in items[:-1])
     assert items[-1]["cantidad"] == 118 - top_sum  # agrega el resto (6+4)

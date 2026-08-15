@@ -17,7 +17,7 @@ from typing import Any
 import requests
 
 
-PROMPT_VERSION = "owner-evidence-deepseek-v1"
+PROMPT_VERSION = "owner-evidence-deepseek-v2-owner-identity"
 ALLOWED_CODES = {
     "OWNER_FIRST_PERSON_EXPLICIT",
     "OWNER_FIRST_PERSON_POSSESSION",
@@ -82,6 +82,27 @@ def _quote_in_source(quote: str, source: str) -> bool:
     return False
 
 
+def classify_owner_phrase(quote: str) -> str:
+    """Classify semantic owner evidence without assigning a probability."""
+    text = _norm(quote)
+    explicit = (
+        r"\bsoy (?:el |la )?(?:dueno|duena|propietario|propietaria)\b",
+        r"\b(?:dueno|duena|propietario|propietaria) directo\b",
+        r"\bvende (?:el |su )?(?:dueno|duena|propietario|propietaria)\b",
+        r"\bventa directa por (?:el |la )?(?:dueno|duena|propietario|propietaria)\b",
+        r"\b(?:dueno|duena|propietario|propietaria) vende\b",
+    )
+    if any(re.search(pattern, text) for pattern in explicit):
+        return "EXPLICIT_OWNER_IDENTITY"
+    if re.search(r"\b(?:vendo|arrienda|arriendo) (?:mi|mis|nuestro|nuestra)\b", text):
+        return "OWNER_POSSESSIVE_SUPPORTING"
+    if re.search(r"\b(?:sin comision(?:es)?|sin intermediarios|trato directo|no corredores?|abstenerse corredores?)\b", text):
+        return "OWNER_SUPPORTING"
+    if re.search(r"\b(?:vendo|vende|venden|se vende|venta|precio conversable|oportunidad|contactar)\b", text):
+        return "GENERIC_SELLING_LANGUAGE"
+    return "NONE"
+
+
 def _source_payload(extracted: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": _sanitize(extracted.get("title"), 800),
@@ -107,6 +128,12 @@ Devuelve exclusivamente JSON con este esquema:
 {{"evidence":[{{"code":"CODIGO_PERMITIDO","source_field":"campo","quote":"cita textual exacta","explanation":"motivo breve"}}],"neutral_observations":["observación"]}}
 Códigos permitidos: {allowed}.
 Cada evidencia debe contener una cita textual que exista literalmente en el campo indicado. No inventes datos.
+REGLA CENTRAL: acción de vender NO equivale a identidad de dueño.
+No inferir que el anunciante es propietario únicamente porque utiliza verbos como "vendo", "vende", "se vende" o redacta el aviso en primera persona. Estas expresiones describen una acción comercial, no la identidad jurídica o factual del propietario.
+Para evidencia fuerte debe existir una declaración explícita como "soy dueño", "soy propietario", "dueño directo", "vende su dueño", "vende el dueño" o equivalente. Usa OWNER_FIRST_PERSON_EXPLICIT.
+"Vendo mi departamento" o "vendo mi casa" es OWNER_FIRST_PERSON_POSSESSION, una señal posesiva de apoyo, no evidencia explícita.
+"Sin comisión", "sin comisiones", "sin intermediarios", "trato directo" o "no corredores" son OWNER_NO_COMMISSION_EXPLICIT de apoyo, pero no prueban por sí solos que el anunciante sea propietario.
+"Vendo", "vende", "se vende", "venta", "vendo departamento", "vendo conversable", "precio conversable", "oportunidad" y "contactar" son lenguaje genérico de venta: déjalos fuera de evidence y descríbelos como neutrales.
 Las referencias en tercera persona como "propiedad de un solo dueño", "vendida por sus dueños", "trato directo con el propietario" y referencias jurídicas son NEUTRALES.
 Solo declaraciones inequívocas del anunciante en primera persona prueban identidad de dueño.
 La ausencia de señales comerciales no prueba que sea dueño.
@@ -141,11 +168,23 @@ def _validate_evidence(parsed: dict[str, Any], payload: dict[str, Any]) -> tuple
         if not quote or not _quote_in_source(quote, source_text):
             rejected.append(f"quote_not_found:{code}:{source_field}")
             continue
+        semantic_type = classify_owner_phrase(quote)
+        if code in {
+            "OWNER_FIRST_PERSON_EXPLICIT",
+            "OWNER_FIRST_PERSON_POSSESSION",
+            "OWNER_NO_COMMISSION_EXPLICIT",
+        }:
+            if semantic_type in {"GENERIC_SELLING_LANGUAGE", "NONE"}:
+                rejected.append(f"generic_selling_not_owner:{code}")
+                continue
+            if semantic_type == "OWNER_POSSESSIVE_SUPPORTING":
+                code = "OWNER_FIRST_PERSON_POSSESSION"
         valid.append({
             "code": code,
             "source_field": source_field,
             "quote": quote[:300],
             "explanation": explanation[:300],
+            "evidence_type": semantic_type,
         })
     return valid, rejected
 

@@ -112,8 +112,13 @@ def download_html(
     force_refresh: bool = False,
     attempt: int = 0,
     session: Any = None,
+    proxy: str | None = None,
 ) -> DownloadResult:
-    """Download HTML. Like Yapo: attempt 0 = direct, attempt > 0 = proxy fallback."""
+    """Download HTML using the explicitly selected proxy when provided.
+
+    Proxy rotation belongs to the caller. Legacy attempt-based resolution is
+    retained only for callers that do not pass ``proxy``.
+    """
     html_path = html_path_for_url(url, config, batch_id=batch_id)
     html_path.parent.mkdir(parents=True, exist_ok=True)
     if html_path.exists() and not force_refresh:
@@ -127,8 +132,11 @@ def download_html(
     timeout = config.request_timeout_seconds
 
     # Like Yapo: attempt 0 = direct (None), attempt > 0 = proxy
-    from proxy_manager import get_proxy_for_attempt
-    proxy_url = get_proxy_for_attempt(attempt)
+    if proxy is None:
+        from proxy_manager import get_proxy_for_attempt
+        proxy_url = get_proxy_for_attempt(attempt)
+    else:
+        proxy_url = proxy
     proxy_used = proxy_url is not None
 
     proxies = None

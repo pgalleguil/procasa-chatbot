@@ -165,3 +165,10 @@ def get_proxy_for_attempt(attempt: int) -> str | None:
     if not proxies:
         return None
     return proxies[min(max(attempt, 0), len(proxies) - 1)]
+
+
+def select_proxy_from_pool(proxy_pool: list[str], sequence_index: int) -> str | None:
+    """Select one proxy by an explicit runner-owned sequence index."""
+    if not proxy_pool:
+        return None
+    return proxy_pool[sequence_index % len(proxy_pool)]

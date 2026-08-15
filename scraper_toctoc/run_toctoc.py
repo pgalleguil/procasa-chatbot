@@ -181,9 +181,11 @@ def cmd_process(args, config):
     _pw = None
 
     proxy_mode = (args.proxy_mode or config.proxy_mode or "direct").lower()
-    from proxy_manager import load_proxies_from_env
+    from proxy_manager import load_proxies_from_env, select_proxy_from_pool
     proxy_pool = load_proxies_from_env()
     print(f"  Proxy mode: {proxy_mode}, Pool: {len(proxy_pool)} proxies")
+    if proxy_mode == "proxy" and not proxy_pool:
+        raise RuntimeError("proxy_mode=proxy requires at least one configured proxy")
 
     # ---- PRE-FILTER: skip professional formats before download ----
     from discovery import classify_discovery_candidate, SKIP_PROFESSIONAL, KEEP_OWNER_CANDIDATE, KEEP_AMBIGUOUS
@@ -324,7 +326,7 @@ def cmd_process(args, config):
                 html_path=hpath, validation_status="INVALID", validation_reason=str(e), blocked=False)
 
     if proxy_mode == "proxy":
-        block = {"proxy": None, "count": 0, "max": 25, "idx": 0}
+        block = {"proxy": None, "count": 0, "max": 25, "idx": -1}
         session = None
 
         def _open_block():
@@ -336,8 +338,8 @@ def cmd_process(args, config):
                 proxy_sessions_timings.append(dict(current_session))
             if not proxy_pool:
                 return None, None
-            block["idx"] = (block["idx"] + 1) % len(proxy_pool)
-            p_url = proxy_pool[block["idx"]]
+            block["idx"] += 1
+            p_url = select_proxy_from_pool(proxy_pool, block["idx"])
             block["proxy"] = p_url
             block["count"] = 0
             import requests as req
@@ -378,7 +380,7 @@ def cmd_process(args, config):
                         print(f"  Traffic limit reached, stopping.")
                         break
                     try:
-                        dl = download_html(url, config, batch_id=batch_id, attempt=1, session=session)
+                        dl = download_html(url, config, batch_id=batch_id, attempt=1, session=session, proxy=p_url)
                         if dl:
                             attempt_bytes = dl.wire_bytes
                             proxy_bytes["total"] += dl.wire_bytes
@@ -480,8 +482,8 @@ def cmd_process(args, config):
                     print(f"  Trying Playwright...")
                     dl = _download_with_pw(url, html_path_for_url(url, config, batch_id=batch_id))
                 else:
-                    p_url = proxy_pool[0] if (proxy_mode == "auto" and proxy_pool) else None
-                    try: dl = download_html(url, config, batch_id=batch_id, attempt=1 if p_url else 0)
+                    p_url = select_proxy_from_pool(proxy_pool, attempt - 2) if proxy_mode == "auto" else None
+                    try: dl = download_html(url, config, batch_id=batch_id, attempt=1 if p_url else 0, proxy=p_url)
                     except: continue
                 if dl and dl.validation_status in ("INVALID", "BLOCKED") and dl.fetch_source != "playwright_error":
                     continue

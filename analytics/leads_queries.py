@@ -4092,9 +4092,27 @@ def query_sla_accountability(period_start=None, period_end=None, filters=None):
             "result": 1, "confirmed": 1, "meta": 1,
             "timestamp": 1, "occurred_at": 1,
         }
+        # event_evidence() solo puede marcar actividad con confirmación y un
+        # resultado de contacto. Evitar leer aperturas, asignaciones y eventos
+        # del sistema reduce drásticamente esta consulta.
+        contact_results = [
+            "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
+            "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
+            "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
+            "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
+        ]
+        event_filter = {
+            "lead_id": {"$in": ids},
+            "confirmed": True,
+            "$or": [
+                {"result": {"$in": contact_results}},
+                {"meta.result": {"$in": contact_results}},
+                {"meta.contact_result": {"$in": contact_results}},
+            ],
+        }
         try:
             for event in db["crm_events"].find(
-                {"lead_id": {"$in": ids}}, event_projection
+                event_filter, event_projection
             ):
                 events_by_lead.setdefault(str(event.get("lead_id")), []).append(event)
         except NetworkTimeout:

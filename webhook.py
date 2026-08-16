@@ -3730,6 +3730,7 @@ def asegurar_indices_db():
         db["crm_tasks"].create_index([("status", 1), ("execute_at", 1)])
         db["crm_events"].create_index([("phone", 1), ("type", 1), ("timestamp", -1)])
         db["crm_events"].create_index([("lead_id", 1)])
+        db["crm_events"].create_index([("lead_id", 1), ("confirmed", 1), ("result", 1)])
         db["crm_events"].create_index([("lead_id", 1), ("result", 1)])
         db["crm_events"].create_index([("lead_id", 1), ("meta.result", 1)])
         

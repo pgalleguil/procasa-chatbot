@@ -1725,8 +1725,20 @@ def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
     # Fuente B — crm_events con resultado canónico de visita agendada (as-of).
     if lead_ids:
         by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
-        for event in db["crm_events"].find({"lead_id": {"$in": [l["_id"] for l in cohort_leads]}},
-                                           {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1}):
+        # Filtrar en Mongo por el resultado canónico. Antes se descargaban
+        # todos los eventos de cada lead y se descartaban aquí, lo que podía
+        # agotar socketTimeoutMS en cohortes grandes.
+        event_filter = {
+            "lead_id": {"$in": [l["_id"] for l in cohort_leads]},
+            "$or": [
+                {"result": {"$in": ["visita_agendada", "VISITA_AGENDADA"]}},
+                {"meta.result": {"$in": ["visita_agendada", "VISITA_AGENDADA"]}},
+            ],
+        }
+        for event in db["crm_events"].find(
+            event_filter,
+            {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1},
+        ):
             raw = event.get("result") or (event.get("meta") or {}).get("result") or ""
             if str(raw).strip().upper() not in CANONICAL_SCHEDULED_VISIT_RESULTS:
                 continue

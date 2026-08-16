@@ -2261,12 +2261,15 @@
         .funnel-level {
             --w: 100%;
             width: var(--w);
-            padding: 13px 0;
+            padding: 14px 0;
             text-align: center;
             background: linear-gradient(180deg, rgba(139, 92, 246, 0.26), rgba(139, 92, 246, 0.07));
             border: 1px solid rgba(139, 92, 246, 0.32);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-            clip-path: polygon(0 0, 100% 0, 84% 100%, 16% 100%);
+            /* Trapecio invertido: cada etapa se estrecha hacia abajo para
+               formar una silueta de embudo continua. */
+            clip-path: polygon(3% 0, 97% 0, 86% 100%, 14% 100%);
+            transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
         }
 
         /* El volumen se comunica con cifras y tasas; el tamaño visual de cada
@@ -4828,9 +4831,14 @@
                 const pipe = $('funnelPipe');
                 const funnelWidth = (n) => {
                     if (!rec) return 100;
-                    // El ancho representa el volumen relativo al universo
-                    // recibido, con un mínimo de 30% para no perder legibilidad.
-                    return Math.max(30, Math.min(100, Math.round(n / rec * 100)));
+                    // El ancho representa el volumen relativo al universo.
+                    // El mínimo bajo conserva legibilidad sin convertir 8 y 6
+                    // en bloques iguales.
+                    if (!n) return 6;
+                    // Base de 8% para legibilidad + 92% proporcional: dos
+                    // volúmenes positivos distintos nunca colapsan al mismo
+                    // ancho por un mínimo artificial.
+                    return Math.min(100, Math.round(8 + (n / rec) * 92));
                 };
                 const level = (n, label, w) =>
                     '<div class="funnel-level" style="--w:' + w + '"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';

@@ -2285,17 +2285,19 @@
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 400px;
-            margin: 16px auto 4px;
+            max-width: 560px;
+            margin: 12px auto 2px;
+            gap: 0;
         }
 
         .funnel-level {
             --w: 100%;
             width: var(--w);
             box-sizing: border-box;
-            padding: 14px 22px;
+            padding: 16px 24px;
             text-align: left;
             align-items: flex-start;
+            min-height: 82px;
             position: relative;
             overflow: visible;
             transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
@@ -2312,13 +2314,16 @@
             z-index: 0;
         }
 
-        /* El volumen se comunica con cifras y tasas; el tamaño visual de cada
-           etapa permanece constante para no exagerar diferencias pequeñas. */
+        /* La geometría nace del volumen real; solo las etapas pequeñas tienen
+           un mínimo visual para que el número y la etiqueta no se corten. */
         .funnel-level { width: var(--w); }
+        .funnel-level[data-funnel-stage="2"] { min-width: 126px; }
+        .funnel-level[data-funnel-stage="3"] { min-width: 112px; }
+        .funnel-level[data-funnel-stage="4"] { min-width: 104px; }
 
         .funnel-level strong {
             display: block;
-            font-size: 22px;
+            font-size: 28px;
             font-weight: 800;
             color: var(--text-primary);
             font-variant-numeric: tabular-nums;
@@ -2331,7 +2336,7 @@
 
         .funnel-level span {
             display: block;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -2350,7 +2355,7 @@
             font-weight: 700;
             color: var(--conversion-accent);
             line-height: 1.25;
-            padding: 3px 0 5px;
+            padding: 2px 0 4px;
         }
 
         .funnel-transition small {
@@ -4898,27 +4903,38 @@
                 const funnelWidth = (n) => {
                     if (!rec) return 100;
                     // El ancho representa el volumen relativo al universo.
-                    // El mínimo bajo conserva legibilidad sin convertir 8 y 6
-                    // en bloques iguales.
+                    // Solo se aplica un mínimo visual; la proporción real no se
+                    // diluye con una base artificial que infle las etapas chicas.
                     if (!n) return 6;
-                    // Base de 8% para legibilidad + 92% proporcional: dos
-                    // volúmenes positivos distintos nunca colapsan al mismo
-                    // ancho por un mínimo artificial.
-                    return Math.min(100, Math.round(8 + (n / rec) * 92));
+                    return Math.min(100, Math.max(6, Math.round((n / rec) * 1000) / 10));
                 };
-                const level = (n, label, w) =>
-                    '<div class="funnel-level" style="--w:' + w + '"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
+                const level = (n, label, w, stage) =>
+                    '<div class="funnel-level" data-funnel-stage="' + stage + '" style="--w:' + w + '"><strong data-funnel-count="' + n + '">0</strong><span>' + esc(label) + '</span></div>';
                 const transition = (pct, sub) =>
                     '<div class="funnel-transition"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
                 if (pipe) {
                     pipe.innerHTML =
-                        level(rec, 'Recibidos', funnelWidth(rec) + '%') +
+                        level(rec, 'Recibidos', funnelWidth(rec) + '%', 1) +
                         transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
-                        level(ges, 'Gestionados', funnelWidth(ges) + '%') +
+                        level(ges, 'Gestionados', funnelWidth(ges) + '%', 2) +
                         transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
-                        level(con, 'Contacto efectivo', funnelWidth(con) + '%') +
+                        level(con, 'Contacto efectivo', funnelWidth(con) + '%', 3) +
                         transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo') +
-                        level(vis, 'Visitas agendadas', funnelWidth(vis) + '%');
+                        level(vis, 'Visitas agendadas', funnelWidth(vis) + '%', 4);
+                    // Count-up consistente con las tarjetas KPI al cargar o
+                    // actualizar realmente el dataset del embudo.
+                    pipe.querySelectorAll('[data-funnel-count]').forEach((el) => {
+                        const target = Number(el.dataset.funnelCount) || 0;
+                        const started = performance.now();
+                        const duration = 650;
+                        const tick = (now) => {
+                            const progress = Math.min(1, (now - started) / duration);
+                            const eased = 1 - Math.pow(1 - progress, 3);
+                            el.textContent = Math.round(target * eased).toLocaleString('es-CL');
+                            if (progress < 1) requestAnimationFrame(tick);
+                        };
+                        requestAnimationFrame(tick);
+                    });
                 }
 
                 // Conversión total del embudo: visitas agendadas sobre recibidos.

@@ -1676,23 +1676,25 @@
 
         .tc-head-tools {
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: flex-end;
-            gap: 14px;
+            gap: 8px;
             flex-wrap: wrap;
             min-width: 0;
             position: relative;
-            min-height: 34px;
+            min-height: 0;
         }
 
         .tc-head-tools .tc-legend {
-            position: absolute;
-            top: 0;
-            right: 0;
-            min-height: 15px;
+            position: static;
+            order: 1;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+            width: 100%;
         }
 
-        .tc-head-tools .tc-seg { margin-top: 20px; }
+        .tc-head-tools .tc-seg { order: 2; margin-top: 0; }
 
         .tc-leg-item { display: flex; align-items: center; gap: 6px; }
 
@@ -2290,8 +2292,9 @@
         .funnel-level {
             --w: 100%;
             width: var(--w);
-            padding: 14px 0;
-            text-align: center;
+            box-sizing: border-box;
+            padding: 14px 22px;
+            text-align: left;
             position: relative;
             overflow: visible;
             transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
@@ -2338,7 +2341,8 @@
         }
 
         .funnel-transition {
-            text-align: center;
+            width: 100%;
+            text-align: left;
             font-size: 11px;
             font-weight: 700;
             color: var(--conversion-accent);
@@ -2357,7 +2361,7 @@
             margin-top: 10px;
             padding-top: 8px;
             border-top: 1px dashed var(--border-color);
-            text-align: center;
+            text-align: left;
             font-size: 12px;
             color: var(--text-secondary);
         }
@@ -2939,9 +2943,9 @@
             .exec-table-head { align-items: flex-start; }
             .exec-table-head p { font-size: 11px; }
             .tc-head { flex-direction: column; align-items: flex-start; }
-            .tc-head-tools { width: 100%; min-height: 34px; position: relative; }
-            .tc-head-tools .tc-legend { right: auto; left: 0; }
-            .tc-head-tools .tc-seg { margin-top: 20px; }
+            .tc-head-tools { width: 100%; min-height: 0; position: relative; }
+            .tc-head-tools .tc-legend { position: static; width: 100%; }
+            .tc-head-tools .tc-seg { margin-top: 0; }
             .tc-legend { flex-wrap: wrap; }
             .tc-line-labels span { font-size: 8px; }
             .tc-foot { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -4660,7 +4664,11 @@
 
                 const seg = $('tcModeSeg');
                 if (seg) {
-                    seg.querySelectorAll('.tc-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === TC_MODE));
+                    seg.querySelectorAll('.tc-seg-btn').forEach(b => {
+                        const active = b.dataset.mode === TC_MODE;
+                        b.classList.toggle('active', active);
+                        b.setAttribute('aria-pressed', String(active));
+                    });
                     // "Hoy" (1 día): el selector no aporta análisis temporal suficiente.
                     seg.style.display = (days === 1) ? 'none' : '';
                 }
@@ -5563,9 +5571,17 @@
                 const tcSeg = $('tcModeSeg');
                 if (tcSeg) {
                     tcSeg.querySelectorAll('.tc-seg-btn').forEach(btn => {
-                        btn.addEventListener('click', () => {
-                            TC_MODE = btn.dataset.mode;
-                            tcSeg.querySelectorAll('.tc-seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+                        btn.addEventListener('click', (event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const mode = btn.dataset.mode;
+                            if (!TC_SERIES || !['acumulado', 'diario'].includes(mode)) return;
+                            TC_MODE = mode;
+                            tcSeg.querySelectorAll('.tc-seg-btn').forEach(b => {
+                                const active = b.dataset.mode === TC_MODE;
+                                b.classList.toggle('active', active);
+                                b.setAttribute('aria-pressed', String(active));
+                            });
                             renderTrendChart();
                         });
                     });

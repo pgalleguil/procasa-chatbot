@@ -869,7 +869,10 @@
             color: var(--text-secondary);
             font-size: 13px;
             cursor: help;
-            transition: color 0.15s;
+            opacity: 1;
+            visibility: visible;
+            z-index: 3;
+            transition: color 0.15s, opacity 0.15s;
         }
 
         .cd1-info:hover { color: var(--conversion-accent); }
@@ -1813,6 +1816,19 @@
         /* Transición sobria al alternar Acumulado / Diario */
         .tc-switch { animation: tcModeFade 0.28s ease; }
 
+        /* Al cambiar de serie, el SVG se regenera. Evita repetir la animación
+           larga de entrada y deja solo un crossfade corto y discreto. */
+        .tc-switch .tc-line,
+        .tc-switch .tc-line-area,
+        .tc-switch .tc-line-prev,
+        .tc-switch .tc-line-area-prev,
+        .tc-switch .tc-line-meta,
+        .tc-switch rect {
+            animation: none !important;
+            stroke-dashoffset: 0 !important;
+            opacity: 1;
+        }
+
         @keyframes tcModeFade {
             from { opacity: 0.25; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
@@ -2252,6 +2268,10 @@
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
             clip-path: polygon(0 0, 100% 0, 84% 100%, 16% 100%);
         }
+
+        /* El volumen se comunica con cifras y tasas; el tamaño visual de cada
+           etapa permanece constante para no exagerar diferencias pequeñas. */
+        .funnel-level { width: 100% !important; }
 
         .funnel-level strong {
             display: block;
@@ -2846,6 +2866,14 @@
             .cd1-value, .cd2-value, .cd4-value { font-size: 26px; }
             .cd1-sub, .cd1-footer, .cd2-bars, .cd4-bars, .cd4-bar-group, .cd3-sec, .cd3-kpi-row { min-width: 0; overflow-wrap: anywhere; }
             .cd1-header { flex-wrap: wrap; }
+            .cd1-info {
+                opacity: 1 !important;
+                visibility: visible !important;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex: 0 0 auto;
+            }
             .cd1-title { white-space: normal; }
             .cd2-bar-row { grid-template-columns: 1fr; }
             .funnel-row { grid-template-columns: 84px 1fr 96px; gap: 8px; font-size: 11px; }
@@ -4788,11 +4816,11 @@
                     pipe.innerHTML =
                         level(rec, 'Recibidos', '100%') +
                         transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
-                        level(ges, 'Gestionados', '72%') +
+                        level(ges, 'Gestionados', '100%') +
                         transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
-                        level(con, 'Contacto efectivo', '46%') +
+                        level(con, 'Contacto efectivo', '100%') +
                         transition(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
-                        level(vis, 'Visitas agendadas', '24%');
+                        level(vis, 'Visitas agendadas', '100%');
                 }
 
                 // Conversión total del embudo: visitas agendadas sobre recibidos.
@@ -5544,11 +5572,27 @@
                     };
                     // El scroll puede ser animado (scroll-behavior: smooth); re-ajusta
                     // mientras el tooltip esté visible para que nunca salga del viewport.
-                    const onScroll = () => { if (!tip.hidden) fit(); };
+                    const onScroll = () => {
+                        if (tip.hidden) return;
+                        // En móvil el tooltip no debe quedar fijado mientras el
+                        // usuario desplaza la página hacia otra tarjeta.
+                        if (window.matchMedia('(hover: none), (max-width: 768px)').matches) {
+                            pin = false;
+                            hide();
+                        } else {
+                            fit();
+                        }
+                    };
                     window.addEventListener('scroll', onScroll, true);
                     info.addEventListener('mouseenter', () => { pin = false; show(); });
                     info.addEventListener('mouseleave', () => { if (!pin) hide(); });
                     info.addEventListener('click', () => { pin = !pin; if (pin) show(); else hide(); });
+                    document.addEventListener('pointerdown', (event) => {
+                        if (!info.contains(event.target) && !tip.contains(event.target)) {
+                            pin = false;
+                            hide();
+                        }
+                    }, true);
                 }
                 bindCardTooltip('cd1Info', 'cd1Tooltip');
                 bindCardTooltip('cd2Info', 'cd2Tooltip');

@@ -2400,7 +2400,7 @@
         .exec-name { vertical-align: middle; }
 
         .exec-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .header-right { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
         .btn-export-pdf {
             height: 30px;
             padding: 0 10px;
@@ -2900,19 +2900,20 @@
             .ai-grid { grid-template-columns: 1fr; }
             .ai-briefing-cta { justify-content: stretch; }
             .ai-briefing-cta .ai-btn-primary { width: 100%; justify-content: center; }
-            .header-container { gap: 10px; }
-            .header-right { width: 100%; flex-wrap: wrap; }
+            .header-container { gap: 8px; margin-bottom: 16px; }
+            .header-right { width: auto; max-width: 100%; flex-wrap: nowrap; margin-left: auto; gap: 6px; }
             .exec-export.btn-export-pdf {
-                width: auto;
-                max-width: 100%;
+                width: 34px;
+                max-width: 34px;
                 white-space: nowrap;
                 justify-content: center;
                 height: 32px;
                 min-height: 32px;
-                padding: 0 10px;
-                font-size: 11px;
+                padding: 0;
+                font-size: 0;
             }
-            .dash-updated { width: 100%; text-align: left; }
+            .exec-export.btn-export-pdf i { font-size: 12px; margin: 0; }
+            .dash-updated { width: auto; max-width: 118px; overflow: hidden; text-overflow: ellipsis; text-align: right; font-size: 9px; }
 
             .sidebar-footer { display: flex; flex-direction: column; }
             .sidebar-close {
@@ -3795,9 +3796,14 @@
                 document.body.style.setProperty('--seq-dur', dur + 'ms');
                 document.body.classList.add('seq-pending');
                 document.body.classList.toggle('seq-refresh', isRefresh);
+                // La estructura superior siempre debe existir antes de las
+                // tarjetas: cabecera, pestañas y filtros no esperan al efecto
+                // de entrada de los KPIs.
+                all.filter(el => el.classList.contains('seq-static'))
+                    .forEach(el => el.classList.add('seq-shown'));
                 // Refresh: no re-animar elementos estructurales ni secciones inferiores
                 const els = all.filter(el => {
-                    if (isRefresh && el.classList.contains('seq-static')) return false;
+                    if (el.classList.contains('seq-static')) return false;
                     if (isScrollEl(el)) return false;
                     if (isMobile && el.matches('#cardDemandMeta, #cardConversion, #cardPipeline, #cardSla')) return false;
                     return true;
@@ -3855,6 +3861,7 @@
                 });
                 Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
                 seqObservers = {};
+                // Al volver a la pestaña ejecutiva sí se vuelve al inicio.
                 window.scrollTo({ top: 0, behavior: 'auto' });
                 // Sólo reanima tarjetas y contenido; título, fecha, pestañas y filtros quedan estables.
                 if (startSequence) runRevealSequence('refresh');
@@ -3874,7 +3881,7 @@
                 });
                 Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
                 seqObservers = {};
-                window.scrollTo({ top: 0, behavior: 'auto' });
+                // El refresh automático conserva la posición de scroll.
             }
 
             function growBars(selector) {
@@ -5629,7 +5636,11 @@
                 loadData('full');
             });
 
-            setInterval(() => loadData('refresh'), 300000);
+            // Actualización silenciosa cada 15 min. No es una recarga de página
+            // y se omite si la pestaña no está visible.
+            setInterval(() => {
+                if (!document.hidden) loadData('refresh');
+            }, 900000);
 
             // --- SMART SESSION CONTROL ---
             // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.

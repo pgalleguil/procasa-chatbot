@@ -2648,9 +2648,28 @@ def query_leads_dashboard_funnel(
     # ---- Contacto efectivo (as-of, clasificación canónica) ----
     contacto_efectivo = set()
     if ids:
-        for event in db["crm_events"].find({"lead_id": {"$in": [l["_id"] for l in cohort]}},
-                                           {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
-                                            "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1}):
+        effective_results = [
+            "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
+            "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
+            "REQUIERE_SEGUIMIENTO",
+            "VISITA_AGENDADA", "visita_agendada",
+            "contactado", "solicita_seguimiento", "no_interesado",
+            "effective_contact", "follow_up_requested",
+            "requiere_seguimiento",
+        ]
+        for event in db["crm_events"].find(
+            {
+                "lead_id": {"$in": [l["_id"] for l in cohort]},
+                "confirmed": True,
+                "$or": [
+                    {"result": {"$in": effective_results}},
+                    {"meta.result": {"$in": effective_results}},
+                    {"meta.contact_result": {"$in": effective_results}},
+                ],
+            },
+            {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
+             "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1},
+        ):
             if not event_evidence(event).get("effective_contact"):
                 continue
             eid = str(event.get("lead_id"))

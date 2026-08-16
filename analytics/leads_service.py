@@ -38,7 +38,9 @@ from .leads_queries import (
 L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
 MAX_CACHE_ENTRIES = 200
-_COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="commercial_analytics")
+# El overview ejecuta diez consultas independientes. Mantener seis workers
+# dejaba cuatro consultas esperando en cola y alargaba cada carga del panel.
+_COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=10, thread_name_prefix="commercial_analytics")
 
 
 def _load_commercial_macro_information():

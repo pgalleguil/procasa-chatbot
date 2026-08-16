@@ -850,7 +850,7 @@
         }
 
         .cd1-title {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -940,7 +940,7 @@
         .cd1-badge-vs { font-size: 10px; opacity: 0.7; font-weight: 400; }
 
         .cd1-sub {
-            font-size: 12px;
+            font-size: 12.5px;
             color: var(--text-secondary);
             margin: 2px 0 4px;
         }
@@ -959,7 +959,7 @@
             border-top: 1px solid var(--border-color);
             padding-top: 10px;
             margin-top: auto;
-            font-size: 11px;
+            font-size: 12px;
             color: var(--text-secondary);
             display: flex;
             justify-content: space-between;
@@ -972,7 +972,15 @@
 
         /* Footer de CARD 3: texto gerencial de cobertura en una sola línea
            (10px para caber en el ancho de la card sin romper la alineación). */
-        .cd3-footer { font-size: 10px; }
+        .cd3-footer { font-size: 10.5px; }
+
+        .cd3-sec-unit {
+            font-style: normal;
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-left: 2px;
+        }
 
         /* --- CARD 2: EFECTIVIDAD & CONVERSIÓN --- */
         .cd2-info:hover { color: var(--conversion-accent); }
@@ -1295,7 +1303,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            font-size: 10px;
+            font-size: 11px;
             color: var(--text-secondary);
             min-width: 0;
             gap: 8px;
@@ -1304,6 +1312,36 @@
         .cd4-bar-lbl span:first-child { overflow-wrap: anywhere; }
 
         .cd4-bar-val { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+
+        /* Velocidad de primera gestión (P50/P90) como métrica secundaria de SLA */
+        .cd4-speed {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 4px 0 2px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border-color);
+            min-width: 0;
+        }
+
+        .cd4-speed-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-width: 0;
+        }
+
+        .cd4-speed-row strong {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        .cd4-speed-hint { font-size: 10px; color: var(--text-secondary); opacity: 0.8; }
 
         /* --- GLASS BLUR REVEAL + TYPEWRITER (efectos de carga) --- */
         @keyframes glassReveal {
@@ -1403,7 +1441,7 @@
         .ai-briefing-title .ai-emoji { font-size: 13px; color: var(--text-secondary); }
 
         .ai-briefing-title h3 {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.07em;
             text-transform: uppercase;
@@ -1417,52 +1455,79 @@
             font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
         }
 
-        .ai-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        /* Jerarquía 50/25/25: panel principal (prioridad) + riesgo + oportunidad.
+           Grid de 4 columnas: primario ocupa 2 (50%), los secundarios 1 (25%) cada uno. */
+        .ai-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: stretch; }
 
-        @media (min-width: 768px) { .ai-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (min-width: 768px) {
+            .ai-grid { grid-template-columns: repeat(4, 1fr); }
+            .ai-panel.ai-span-2 { grid-column: span 2; }
+            .ai-panel.ai-span-3 { grid-column: span 3; }
+            .ai-panel.ai-span-4 { grid-column: span 4; }
+        }
 
-        .ai-row {
+        .ai-panel {
+            position: relative;
             display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            padding: 10px 12px;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
+            padding: 14px 16px;
             background: var(--bg-elevated, rgba(30, 41, 59, 0.35));
             border: 1px solid var(--border-color);
+            border-left: 3px solid var(--text-secondary);
             border-radius: 10px;
+            overflow-wrap: anywhere;
+            transition: border-color 0.18s;
         }
 
-        .ai-row-body { flex: 1 1 auto; min-width: 0; }
+        .ai-panel[data-tone="critical"] { border-left-color: #EF4444; }
+        .ai-panel[data-tone="risk"] { border-left-color: #F59E0B; }
+        .ai-panel[data-tone="positive"] { border-left-color: #10B981; }
+        .ai-panel[data-tone="opportunity"] { border-left-color: #8B5CF6; }
 
-        .ai-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-top: 5px;
-            flex-shrink: 0;
-            background: #A78BFA;
-        }
+        [data-theme="light"] .ai-panel[data-tone="critical"] { border-left-color: #DC2626; }
+        [data-theme="light"] .ai-panel[data-tone="risk"] { border-left-color: #D97706; }
+        [data-theme="light"] .ai-panel[data-tone="positive"] { border-left-color: #059669; }
+        [data-theme="light"] .ai-panel[data-tone="opportunity"] { border-left-color: #6D28D9; }
 
-        .ai-label {
+        .ai-kicker {
             display: block;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
             color: var(--text-secondary);
-            margin-bottom: 2px;
         }
 
-        .ai-ins-title {
-            margin: 0 0 4px;
-            font-size: 13px;
+        .ai-panel[data-tone="critical"] .ai-kicker { color: #F87171; }
+        .ai-panel[data-tone="risk"] .ai-kicker { color: #FBBF24; }
+        .ai-panel[data-tone="positive"] .ai-kicker { color: #34D399; }
+        .ai-panel[data-tone="opportunity"] .ai-kicker { color: #A78BFA; }
+
+        [data-theme="light"] .ai-panel[data-tone="critical"] .ai-kicker { color: #DC2626; }
+        [data-theme="light"] .ai-panel[data-tone="risk"] .ai-kicker { color: #B45309; }
+        [data-theme="light"] .ai-panel[data-tone="positive"] .ai-kicker { color: #059669; }
+        [data-theme="light"] .ai-panel[data-tone="opportunity"] .ai-kicker { color: #6D28D9; }
+
+        .ai-panel h4 {
+            margin: 0;
+            font-size: 14px;
             font-weight: 700;
             color: var(--text-primary);
             line-height: 1.3;
         }
 
-        .ai-text { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
-        .ai-text strong { color: var(--text-primary); font-weight: 600; }
-        .ai-action-line { display: block; margin-top: 6px; font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+        .ai-panel p { font-size: 13px; color: var(--text-secondary); line-height: 1.55; margin: 0; }
+        .ai-panel p strong { color: var(--text-primary); font-weight: 600; }
+        .ai-action-line {
+            display: block;
+            margin-top: auto;
+            padding-top: 8px;
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+        }
         .ai-action-line strong { color: var(--conversion-accent); font-weight: 600; }
 
         .ai-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -1526,6 +1591,33 @@
 
         .tc-grid > * { min-width: 0; }
 
+        /* Fila 1 del Resumen Ejecutivo: Embudo (~65%) | Origen (~35%).
+           Fila 2 (Tendencia) queda en .tc-block con ancho completo. */
+        .exec-zone-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin: 24px 0;
+            min-width: 0;
+        }
+
+        @media (min-width: 1024px) {
+            .exec-zone-row { grid-template-columns: 13fr 7fr; align-items: stretch; }
+        }
+
+        .exec-zone-row > .funnel-block,
+        .exec-zone-row > .tc-source-zone { margin: 0; min-width: 0; }
+
+        .tc-source-zone { display: flex; }
+
+        .tc-source-zone .tc-source-card { flex: 1; align-self: stretch; }
+
+        /* Tendencia a todo el ancho. Altura reducida ~30-35% respecto a la
+           versión previa (que el ratio intrínseco del SVG inflaba según el ancho). */
+        @media (min-width: 1024px) {
+            #trendsBlock .tc-chart { height: 350px; min-height: 350px; }
+        }
+
         .tc-card {
             background: var(--bg-card);
             backdrop-filter: blur(14px);
@@ -1558,7 +1650,7 @@
         }
 
         .tc-head h3 {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -1567,7 +1659,7 @@
             overflow-wrap: anywhere;
         }
 
-        .tc-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
+        .tc-head p { font-size: 13px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
 
         .tc-legend {
             display: flex;
@@ -1575,6 +1667,15 @@
             gap: 12px;
             font-size: 11px;
             font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+        }
+
+        .tc-head-tools {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 14px;
+            flex-wrap: wrap;
+            min-width: 0;
         }
 
         .tc-leg-item { display: flex; align-items: center; gap: 6px; }
@@ -1587,12 +1688,57 @@
 
         .tc-dash { width: 14px; height: 0; border-top: 2px dashed #64748B; }
 
+        .tc-dash-meta { border-top: 2px dashed #F59E0B; }
+        .tc-leg-item.tc-leg-meta { color: var(--text-secondary); }
+
+        .tc-bar-swatch { width: 10px; height: 10px; border-radius: 2px; background: #8B5CF6; opacity: 0.85; }
+        .tc-ma-swatch { width: 14px; height: 0; border-top: 2px solid #F59E0B; }
+        .tc-leg-item.tc-leg-ma { color: var(--text-secondary); }
+
+        /* Selector Acumulado / Diario (solo local a Tendencia de Captura) */
+        .tc-seg {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            padding: 2px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-elevated, #1E293B);
+            flex-shrink: 0;
+        }
+
+        .tc-seg-btn {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            font-family: 'Outfit', sans-serif;
+            white-space: nowrap;
+        }
+
+        .tc-seg-btn:hover { color: var(--text-primary); }
+
+        .tc-seg-btn.active {
+            background: var(--conversion-accent);
+            color: #FFFFFF;
+        }
+
         .tc-chart {
-            flex: 1;
+            flex: 0 0 auto;
             display: flex;
             flex-direction: column;
-            min-height: 200px;
+            height: 150px;
+            min-height: 150px;
             padding: 6px 2px;
+        }
+
+        @media (min-width: 640px) {
+            .tc-chart { height: 220px; min-height: 220px; }
         }
 
         .tc-line-wrap { flex: 1; min-height: 0; position: relative; }
@@ -1656,6 +1802,29 @@
             background: #64748B;
         }
 
+        .tc-hl-meta {
+            width: 5px;
+            height: 5px;
+            background: #F59E0B;
+            border-radius: 2px;
+            transform: translate(-50%, -50%) rotate(45deg);
+        }
+
+        /* Transición sobria al alternar Acumulado / Diario */
+        .tc-switch { animation: tcModeFade 0.28s ease; }
+
+        @keyframes tcModeFade {
+            from { opacity: 0.25; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tc-ma-note {
+            margin-top: 6px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
         @media (prefers-reduced-motion: reduce) {
             .tc-guide, .tc-hl, .tc-chart-tooltip { transition: none !important; }
         }
@@ -1687,6 +1856,11 @@
         .tc-trend-card.entered .tc-line-prev,
         .tc-trend-card.entered .tc-line-area-prev {
             animation: sparkFade 0.3s ease 0.15s forwards;
+        }
+
+        .tc-block.entered .tc-line-meta,
+        .tc-trend-card.entered .tc-line-meta {
+            animation: sparkFade 0.3s ease 0.25s forwards;
         }
 
         .tc-diff { font-weight: 600; }
@@ -1918,7 +2092,7 @@
         .exec-table-head > div { min-width: 0; }
 
         .exec-table-head h3 {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
@@ -1927,7 +2101,7 @@
             overflow-wrap: anywhere;
         }
 
-        .exec-table-head p { font-size: 12px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
+        .exec-table-head p { font-size: 13px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
 
         .exec-count {
             font-size: 11px;
@@ -2057,24 +2231,26 @@
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
         }
 
-        /* Embudo vertical estilizado: 4 niveles con ancho decreciente. */
+        /* Embudo vertical estilizado: 4 segmentos decrecientes, alineados y
+           contenidos, con las tasas de transición integradas entre niveles. */
         .funnel-pipe {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 2px;
-            margin: 12px 0 4px;
+            width: 100%;
+            max-width: 400px;
+            margin: 16px auto 4px;
         }
 
         .funnel-level {
             --w: 100%;
             width: var(--w);
-            max-width: 520px;
-            padding: 11px 0;
+            padding: 13px 0;
             text-align: center;
-            background: linear-gradient(180deg, rgba(139, 92, 246, 0.18), rgba(139, 92, 246, 0.05));
-            border: 1px solid rgba(139, 92, 246, 0.28);
-            clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+            background: linear-gradient(180deg, rgba(139, 92, 246, 0.26), rgba(139, 92, 246, 0.07));
+            border: 1px solid rgba(139, 92, 246, 0.32);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            clip-path: polygon(0 0, 100% 0, 84% 100%, 16% 100%);
         }
 
         .funnel-level strong {
@@ -2096,15 +2272,38 @@
             margin-top: 3px;
         }
 
-        .funnel-rate {
-            align-self: flex-start;
-            margin: 4px 0 4px 13%;
+        .funnel-transition {
+            text-align: center;
             font-size: 11px;
             font-weight: 700;
             color: var(--conversion-accent);
+            line-height: 1.25;
+            padding: 3px 0 5px;
         }
 
-        .funnel-rate small { display: block; font-size: 10px; color: var(--text-secondary); font-weight: 400; }
+        .funnel-transition small {
+            display: block;
+            font-size: 10px;
+            font-weight: 400;
+            color: var(--text-secondary);
+        }
+
+        .funnel-total {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border-color);
+            text-align: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .funnel-total strong {
+            color: var(--conversion-accent);
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .funnel-total span { font-size: 11px; }
 
         .funnel-notes { font-size: 10px; color: var(--text-secondary); margin-top: 8px; }
 
@@ -2119,7 +2318,8 @@
         .funnel-conclusion strong { color: var(--text-primary); font-weight: 700; }
 
         @media (max-width: 640px) {
-            .funnel-rate { margin-left: 8%; }
+            .funnel-pipe { max-width: 100%; }
+            .funnel-transition { white-space: normal; }
         }
 
         .dash-updated {
@@ -2473,10 +2673,6 @@
             }
 
             #aiBriefing.seq-reveal-active {
-                animation-duration: 0.62s;
-            }
-
-            #execTableBlock.seq-reveal-active {
                 animation-duration: 0.62s;
             }
 
@@ -2988,10 +3184,12 @@
                             <span class="cd1-title" id="cd4Title"></span>
                             <button type="button" class="cd1-info cd4-info" id="cd4Info" aria-label="Información del indicador"><i class="fa-solid fa-circle-info"></i></button>
                             <div class="cd1-tooltip" id="cd4Tooltip" hidden>
-                                Mide si los leads fueron gestionados dentro de su plazo.<br>
-                                HOT: 60 min hábiles · NORMAL: 180 min hábiles, desde asignación hasta primera gestión registrada.<br>
+                                Mide si los leads fueron gestionados dentro de su plazo de primera gestión válida.<br>
+                                HOT: primera gestión válida ≤ 60 min hábiles.<br>
+                                NORMAL: primera gestión válida ≤ 180 min hábiles.<br>
                                 Dentro de SLA incluye gestionados a tiempo y abiertos aún vigentes; fuera incluye tardíos y vencidos.<br>
-                                P50 es la mediana de tiempo de los leads gestionados. Un WhatsApp por sí solo no detiene el SLA.
+                                P50 es la mediana del tiempo hasta la primera gestión; P90 indica que 9 de cada 10 gestiones se completaron en ese tiempo o menos.<br>
+                                Un WhatsApp por sí solo no detiene el SLA.
                                 <span id="cd4TooltipNoTraz" hidden></span>
                             </div>
                         </div>
@@ -3004,14 +3202,16 @@
 
                         <div class="cd4-bars">
                             <div class="cd4-bar-group">
-                                <div class="cd4-bar-lbl"><span>HOT</span><span class="cd4-bar-val" id="cd4HotMeta">N/D</span></div>
+                                <div class="cd4-bar-lbl"><span>HOT · ≤ 60 min háb</span><span class="cd4-bar-val" id="cd4HotMeta">N/D</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-hot" id="cd4BarHot" style="width:0%"></div></div>
                             </div>
                             <div class="cd4-bar-group">
-                                <div class="cd4-bar-lbl"><span>NORMAL</span><span class="cd4-bar-val" id="cd4NormalMeta">N/D</span></div>
+                                <div class="cd4-bar-lbl"><span>NORMAL · ≤ 180 min háb</span><span class="cd4-bar-val" id="cd4NormalMeta">N/D</span></div>
                                 <div class="cd2-bar-track"><div class="cd2-bar cd4-bar-normal" id="cd4BarNormal" style="width:0%"></div></div>
                             </div>
                         </div>
+
+                        <div class="cd4-speed" id="cd4Speed"></div>
 
                         <div class="cd1-footer">
                             <span id="cd4Footer"></span>
@@ -3035,44 +3235,26 @@
                 </div>
             </section>
 
-            <!-- EMBUDO COMERCIAL -->
-            <section class="funnel-block seq-el seq-scroll" id="funnelBlock" hidden>
-                <div class="funnel-card">
-                    <div class="exec-table-head">
-                        <div>
-                            <h3>Embudo Comercial</h3>
-                            <p>Recibidos → Gestionados → Contacto efectivo → Visita agendada</p>
-                        </div>
-                    </div>
-                    <div class="funnel-pipe" id="funnelPipe"></div>
-                    <div class="funnel-notes" id="funnelNotes" hidden></div>
-                    <div class="funnel-conclusion" id="funnelConclusion"></div>
-                </div>
-            </section>
-
-            <!-- SECCIÓN 3: TENDENCIA & CANALES -->
-            <section class="tc-block" id="trendsBlock" hidden>
-                <div class="tc-grid">
-                    <!-- TENDENCIA TEMPORAL (8 col / 70%) -->
-                    <div class="tc-card tc-trend-card seq-el seq-scroll" id="trendCardBlock">
-                        <div class="tc-head">
+            <!-- FILA 1: EMBUDO COMERCIAL | ORIGEN DE LA DEMANDA -->
+            <section class="exec-zone-row" id="execZoneRow">
+                <!-- EMBUDO COMERCIAL -->
+                <section class="funnel-block seq-el seq-scroll" id="funnelBlock" hidden>
+                    <div class="funnel-card">
+                        <div class="exec-table-head">
                             <div>
-                                <h3>Tendencia de Captura</h3>
-                                <p>Evolución del volumen de leads ingresados en el período</p>
-                            </div>
-                            <div class="tc-legend">
-                                <span class="tc-leg-item tc-leg-cur"><span class="tc-swatch"></span> Período Actual</span>
-                                <span class="tc-leg-item tc-leg-prev"><span class="tc-dash"></span> Período Anterior</span>
+                                <h3>Embudo Comercial</h3>
+                                <p>Recibidos → Gestionados → Contacto efectivo → Visita agendada</p>
                             </div>
                         </div>
-                        <div class="tc-chart" id="tcTrendChart"></div>
-                        <div class="tc-foot">
-                            <span id="tcPeak">—</span>
-                            <span id="tcAvg">—</span>
-                        </div>
+                        <div class="funnel-pipe" id="funnelPipe"></div>
+                        <div class="funnel-total" id="funnelTotal"></div>
+                        <div class="funnel-notes" id="funnelNotes" hidden></div>
+                        <div class="funnel-conclusion" id="funnelConclusion"></div>
                     </div>
+                </section>
 
-                    <!-- ORIGEN DE LA DEMANDA (4 col / 30%) -->
+                <!-- ORIGEN DE LA DEMANDA -->
+                <section class="tc-block tc-source-zone" id="sourceZone" hidden>
                     <div class="tc-card tc-source-card seq-el seq-scroll" id="sourceBlock">
                         <div class="tc-head">
                             <div>
@@ -3083,38 +3265,32 @@
                         <div class="tc-sources-list" id="tcSourcesList"></div>
                         <div class="tc-src-tooltip" id="tcSrcTooltip" hidden></div>
                     </div>
-                </div>
+                </section>
             </section>
 
-            <!-- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL -->
-            <section class="exec-table-block seq-el seq-scroll" id="execTableBlock" hidden>
-                <div class="exec-table-card">
-                    <div class="exec-table-head">
+            <!-- FILA 2: TENDENCIA DE CAPTURA (ancho completo) -->
+            <section class="tc-block" id="trendsBlock" hidden>
+                <div class="tc-card tc-trend-card seq-el seq-scroll" id="trendCardBlock">
+                    <div class="tc-head">
                         <div>
-                            <h3>Rendimiento Comercial por Ejecutivo</h3>
-                            <p>Resultados comerciales de la cartera bajo responsabilidad de cada ejecutivo al cierre del período</p>
+                            <h3>Tendencia de Captura</h3>
+                            <p id="tcSub">Evolución del volumen de leads ingresados en el período</p>
                         </div>
-                        <div class="exec-tools">
-                            <span class="exec-count" id="execCount">—</span>
+                        <div class="tc-head-tools">
+                            <div class="tc-legend" id="tcLegend"></div>
+                            <div class="tc-seg" id="tcModeSeg" role="group" aria-label="Vista de la tendencia">
+                                <button type="button" class="tc-seg-btn active" data-mode="acumulado">Acumulado</button>
+                                <button type="button" class="tc-seg-btn" data-mode="diario">Diario</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="exec-table-wrap">
-                        <table class="exec-table" id="execTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-sort="nombre">Ejecutivo<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="leads">Leads<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="citas">Visitas Agendadas<span class="sort-arrow"></span></th>
-                                    <th class="sortable r" data-sort="conversion_pct">Conversión<span class="sort-arrow"></span></th>
-                                </tr>
-                            </thead>
-                            <tbody id="execTableBody"></tbody>
-                        </table>
+                    <div class="tc-chart" id="tcTrendChart"></div>
+                    <div class="tc-foot">
+                        <span id="tcPeak">—</span>
+                        <span id="tcAvg">—</span>
                     </div>
-                    <div class="exec-reconcile" id="execReconcile"></div>
                 </div>
             </section>
-
 
             </div>
 
@@ -3129,12 +3305,36 @@
                     <div class="ops-insights" id="opsInsights"></div>
                     <div class="ops-panel"><div class="ops-panel-head"><div><h4 class="ops-panel-title">Bandeja priorizada</h4><span class="ops-panel-sub">SLA vencido - Hot proximo a vencer - nuevos mas antiguos</span></div><span class="ops-panel-sub" id="opsRowCount">—</span></div><div class="ops-filters"><select class="ops-filter" id="opsExecutiveFilter"><option value="">Todos los ejecutivos</option></select><select class="ops-filter" id="opsTemperatureFilter"><option value="">Todos los tipos</option><option value="HOT">Lead Hot</option><option value="NORMAL">Lead Normal</option></select><select class="ops-filter" id="opsPriorityFilter"><option value="">Todas las prioridades</option><option value="overdue">SLA vencido</option><option value="near_due">Hot proximo</option><option value="pending">Pendiente</option><option value="unassigned">Sin asignar</option></select><select class="ops-filter" id="opsAssignmentFilter"><option value="">Toda asignacion</option><option value="assigned">Asignados</option><option value="unassigned">Sin asignar</option></select><input class="ops-filter search" id="opsSearch" placeholder="Buscar cliente o telefono" type="search"></div><div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Prioridad</th><th>SLA / transcurrido</th><th>Tipo</th><th>Cliente</th><th>Propiedad</th><th>Estado</th><th>Ultima accion</th><th>Ejecutivo</th><th></th></tr></thead><tbody id="opsTableBody"></tbody></table><div class="ops-empty" id="opsEmpty" hidden>No hay leads que coincidan con los filtros.</div></div></div>
                 </div>
-                <div class="t-placeholder">
-                    <div class="t-ico"><i class="fa-solid fa-users-gear"></i></div>
-                    <h4>CRM & Gestión de Leads</h4>
-                    <p>Ranking de leads por prioridad, estado de gestión por ejecutivo, bandeja de rescate y flujo de seguimiento comercial.</p>
-                    <span class="t-soon-badge">Próximamente</span>
-                </div>
+                <!-- Rendimiento Comercial por Ejecutivo (trasladado desde Resumen
+                     Ejecutivo: responde a "cómo está funcionando cada ejecutivo").
+                     Complementa la vista operativa con el resultado comercial. -->
+                <section class="exec-table-block" id="execTableBlock" hidden>
+                    <div class="exec-table-card">
+                        <div class="exec-table-head">
+                            <div>
+                                <h3>Rendimiento Comercial por Ejecutivo</h3>
+                                <p>Resultados comerciales de la cartera bajo responsabilidad de cada ejecutivo al cierre del período</p>
+                            </div>
+                            <div class="exec-tools">
+                                <span class="exec-count" id="execCount">—</span>
+                            </div>
+                        </div>
+                        <div class="exec-table-wrap">
+                            <table class="exec-table" id="execTable">
+                                <thead>
+                                    <tr>
+                                        <th class="sortable" data-sort="nombre">Ejecutivo<span class="sort-arrow"></span></th>
+                                        <th class="sortable r" data-sort="leads">Leads<span class="sort-arrow"></span></th>
+                                        <th class="sortable r" data-sort="citas">Visitas Agendadas<span class="sort-arrow"></span></th>
+                                        <th class="sortable r" data-sort="conversion_pct">Conversión<span class="sort-arrow"></span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="execTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="exec-reconcile" id="execReconcile"></div>
+                    </div>
+                </section>
             </div>
             <div id="viewProperties" hidden>
                 <div class="t-placeholder">
@@ -3404,12 +3604,11 @@
 
             // --- 4. CARGA DE DATOS Y RENDER DE TARJETAS ---
             let SEQUENCE_MODE = 'full';
-            const SCROLL_REVEAL_SELECTOR = '#aiBriefing, #funnelBlock, #trendCardBlock, #sourceBlock, #execTableBlock';
+            const SCROLL_REVEAL_SELECTOR = '#aiBriefing, #funnelBlock, #trendCardBlock, #sourceBlock';
             const SCROLL_REVEAL_DEPENDENCIES = {
                 funnelBlock: 'aiBriefing',
-                trendCardBlock: 'funnelBlock',
-                sourceBlock: 'trendCardBlock',
-                execTableBlock: 'sourceBlock'
+                sourceBlock: 'funnelBlock',
+                trendCardBlock: 'sourceBlock'
             };
             let seqObservers = {};
             let seqTimers = [];
@@ -3938,35 +4137,64 @@
             }
 
             // --- BLOQUE 2: AI EXECUTIVE BRIEFING & DIAGNÓSTICO COMERCIAL ---
+            // Jerarquía 50/25/25: la prioridad crítica domina, luego el riesgo
+            // secundario y, al final, la oportunidad. Semántica de color:
+            // rojo = crítico · ámbar = riesgo · verde = positivo · violeta = oportunidad.
             function renderInsightsBlock() {
                 const block = $('aiBriefing');
                 if (!block || !OVERVIEW) return;
-                const insights = OVERVIEW.insights || [];
+                const insights = (OVERVIEW.insights || []).slice();
                 const grid = $('aiInsightsGrid');
                 const cta = block.querySelector('.ai-briefing-cta');
-                const KINDS = {
-                    prioridad: { dot: '#F59E0B', lbl: 'Prioridad' },
-                    oportunidad: { dot: '#8B5CF6', lbl: 'Oportunidad' },
-                    positivo: { dot: '#34D399', lbl: 'Evolución' },
+
+                const TONES = {
+                    critical: { kicker: 'Prioridad crítica', tone: 'critical' },
+                    risk: { kicker: 'Riesgo a monitorear', tone: 'risk' },
+                    opportunity: { kicker: 'Oportunidad', tone: 'opportunity' },
+                    positive: { kicker: 'Evolución positiva', tone: 'positive' },
                 };
+
+                // Ordena por severidad: prioridades primero (la primera es crítica),
+                // luego oportunidades/positivos. Máximo 3.
+                const classify = (list) => {
+                    const out = [];
+                    const prios = list.filter(i => i.tipo === 'prioridad');
+                    const others = list.filter(i => i.tipo !== 'prioridad');
+                    if (prios.length) out.push(Object.assign({ tone: 'critical' }, prios[0]));
+                    prios.slice(1).forEach(i => out.push(Object.assign({ tone: 'risk' }, i)));
+                    others.forEach(i => out.push(Object.assign({
+                        tone: i.tipo === 'positivo' ? 'positive' : 'opportunity'
+                    }, i)));
+                    return out.slice(0, 3);
+                };
+
+                const panel = (ins, spanClass) => {
+                    const t = TONES[ins.tone] || TONES.opportunity;
+                    return '<div class="ai-panel' + (spanClass ? ' ' + spanClass : '') + '" data-tone="' + t.tone + '">' +
+                        '<span class="ai-kicker">' + t.kicker + '</span>' +
+                        '<h4>' + esc(ins.titulo || '') + '</h4>' +
+                        '<p>' + esc(ins.texto || '') + '</p>' +
+                        (ins.accion ? '<span class="ai-action-line"><strong>Acción:</strong> ' + esc(ins.accion) + '</span>' : '') +
+                        '</div>';
+                };
+
                 if (grid) {
                     if (!insights.length) {
-                        grid.innerHTML = '<div class="ai-row"><span class="ai-dot"></span><div class="ai-row-body">' +
-                            '<span class="ai-label">Diagnóstico</span>' +
-                            '<p class="ai-text">Sin señales que requieran intervención en el período seleccionado.</p>' +
-                            '</div></div>';
+                        grid.innerHTML = '<div class="ai-panel ai-span-4" data-tone="opportunity">' +
+                            '<span class="ai-kicker">Diagnóstico</span>' +
+                            '<h4>Sin señales críticas</h4>' +
+                            '<p>Sin señales que requieran intervención en el período seleccionado.</p>' +
+                            '</div>';
                     } else {
-                        grid.innerHTML = insights.map(ins => {
-                            const kind = KINDS[ins.tipo] || KINDS.oportunidad;
-                            return '<div class="ai-row" data-kind="' + (ins.tipo || 'oportunidad') + '">' +
-                                '<span class="ai-dot" style="background:' + kind.dot + '"></span>' +
-                                '<div class="ai-row-body">' +
-                                '<span class="ai-label">' + esc(kind.lbl) + '</span>' +
-                                '<h4 class="ai-ins-title">' + esc(ins.titulo || '') + '</h4>' +
-                                '<p class="ai-text">' + esc(ins.texto || '') + '</p>' +
-                                (ins.accion ? '<span class="ai-action-line"><strong>Acción:</strong> ' + esc(ins.accion) + '</span>' : '') +
-                                '</div></div>';
-                        }).join('');
+                        const items = classify(insights);
+                        const n = items.length;
+                        if (n === 1) {
+                            grid.innerHTML = panel(items[0], 'ai-span-4');
+                        } else if (n === 2) {
+                            grid.innerHTML = panel(items[0], 'ai-span-3') + panel(items[1], 'ai-span-1');
+                        } else {
+                            grid.innerHTML = panel(items[0], 'ai-span-2') + panel(items[1], 'ai-span-1') + panel(items[2], 'ai-span-1');
+                        }
                     }
                 }
                 if (cta) cta.style.display = insights.length ? '' : 'none';
@@ -3977,11 +4205,335 @@
             const TC_MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
             const TC_COLORS = ['#8B5CF6', '#A78BFA', '#6366F1', '#4C1D95', '#7C3AED', '#6D28D9', '#5B21B6', '#4338CA'];
 
+            // Selector local Acumulado / Diario (NO es un filtro global del dashboard).
+            let TC_MODE = 'acumulado';
+            let TC_SERIES = null;
+
             function tcShortLabel(iso) {
                 if (!iso) return '';
                 const parts = String(iso).split('-');
                 if (parts.length < 3) return iso;
                 return parseInt(parts[2], 10) + ' ' + TC_MONTHS[parseInt(parts[1], 10) - 1];
+            }
+
+            function tcSmooth(p) {
+                if (p.length < 2) return 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                let d = 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
+                for (let i = 0; i < p.length - 1; i++) {
+                    const p0 = p[i - 1] || p[i];
+                    const p1 = p[i];
+                    const p2 = p[i + 1];
+                    const p3 = p[i + 2] || p2;
+                    const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+                    const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+                    const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+                    const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+                    d += 'C' + cp1x.toFixed(2) + ',' + cp1y.toFixed(2) + ' ' + cp2x.toFixed(2) + ',' + cp2y.toFixed(2) + ' ' + p2[0].toFixed(2) + ',' + p2[1].toFixed(2);
+                }
+                return d;
+            }
+
+            function tcFormatDate(iso) {
+                const dt = new Date(String(iso || '') + 'T12:00:00');
+                return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
+            }
+
+            function tcPlaceTooltip(tooltip, snapX) {
+                if (!tooltip) return;
+                tooltip.style.left = snapX + '%';
+                if (snapX > 75) tooltip.style.transform = 'translateX(calc(-100% - 4px))';
+                else if (snapX < 25) tooltip.style.transform = 'translateX(4px)';
+                else tooltip.style.transform = 'translateX(-50%)';
+                tooltip.hidden = false;
+            }
+
+            // Leyenda según el modo de la tendencia (solo local a esta sección).
+            function renderTrendLegend(mode) {
+                const lg = $('tcLegend');
+                if (!lg) return;
+                const s = TC_SERIES || {};
+                if (mode === 'diario') {
+                    lg.innerHTML =
+                        '<span class="tc-leg-item tc-leg-cur"><span class="tc-bar-swatch"></span> Leads por día</span>' +
+                        '<span class="tc-leg-item tc-leg-ma"><span class="tc-ma-swatch"></span> Media móvil 7 días</span>';
+                } else {
+                    lg.innerHTML =
+                        '<span class="tc-leg-item tc-leg-cur"><span class="tc-swatch"></span> Período Actual</span>' +
+                        (s.hasCmp ? '<span class="tc-leg-item tc-leg-prev"><span class="tc-dash"></span> Período Anterior</span>' : '') +
+                        '<span class="tc-leg-item tc-leg-meta"><span class="tc-dash tc-dash-meta"></span> Ritmo de meta</span>';
+                }
+            }
+
+            // Re-renderiza SOLO el gráfico según TC_MODE (sin tocar Origen ni KPIs).
+            function renderTrendChart() {
+                const s = TC_SERIES;
+                const chart = $('tcTrendChart');
+                if (!s || !chart) return;
+                if (TC_MODE === 'diario') renderDailyTrend();
+                else renderCumulativeTrend();
+                chart.classList.remove('tc-switch');
+                void chart.offsetWidth;
+                chart.classList.add('tc-switch');
+                renderTrendLegend(TC_MODE);
+                const sub = document.querySelector('#trendsBlock .tc-head p');
+                if (sub) {
+                    sub.textContent = TC_MODE === 'diario'
+                        ? 'Leads captados por día y media móvil de 7 días'
+                        : 'Evolución acumulada vs. período comparable y ritmo de meta';
+                }
+            }
+
+            function renderCumulativeTrend() {
+                const s = TC_SERIES;
+                const chart = $('tcTrendChart');
+                if (!s || !chart) return;
+                const { nums, prevNums, labels, hasCmp } = s;
+                const days = nums.length;
+
+                // Acumulados por fecha.
+                const cum = [];
+                let acc = 0;
+                for (const v of nums) { acc += v; cum.push(acc); }
+                const prevCum = [];
+                let pacc = 0;
+                for (const v of prevNums) { pacc += v; prevCum.push(pacc); }
+
+                // Trayectoria de meta: cuánto deberíamos llevar acumulado en cada
+                // fecha si el avance fuera lineal hasta la meta prorrateada del período.
+                const metaTarget = (OVERVIEW.meta && OVERVIEW.meta.target) || 0;
+                const metaPace = [];
+                if (metaTarget > 0) {
+                    for (let i = 0; i < days; i++) metaPace.push(metaTarget * (i + 1) / days);
+                }
+
+                const allNums = cum.concat(prevCum, metaPace);
+                const rawMax = Math.max(...allNums, 1);
+                const yMax = rawMax * 1.15;
+                const min = Math.min(...allNums, 0);
+                const range = (yMax - min) || 1;
+                const W = 100, H = 40, PAD = 4;
+                const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
+                const yAt = (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
+
+                const curPts = cum.map((v, i) => [xAt(i), yAt(v)]);
+                const prevPts = prevCum.map((v, i) => [xAt(i), yAt(v)]);
+                const metaPts = metaPace.map((v, i) => [xAt(i), yAt(v)]);
+                const lineD = tcSmooth(curPts);
+                const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
+                const prevLineD = prevPts.length > 1 ? tcSmooth(prevPts) : '';
+                const metaLineD = metaPts.length > 1 ? tcSmooth(metaPts) : '';
+
+                const step = Math.max(1, Math.ceil(days / 10));
+                let labelsHtml = '';
+                for (let i = 0; i < days; i += step) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[i]) + '</span>';
+                }
+                if (days > 1 && (days - 1) % step !== 0) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[days - 1]) + '</span>';
+                }
+
+                chart.innerHTML =
+                    '<div class="tc-line-wrap"><svg viewBox="0 0 100 40" preserveAspectRatio="none">' +
+                    '<defs>' +
+                    '<linearGradient id="tcGrad" x1="0" y1="0" x2="0" y2="1">' +
+                    '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.20"/>' +
+                    '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
+                    '</linearGradient>' +
+                    '</defs>' +
+                    (metaLineD ? '<path class="tc-line-meta" d="' + metaLineD + '" fill="none" stroke="#F59E0B" stroke-width="1.25" stroke-dasharray="3 4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                    (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                    '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
+                    '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+                    '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
+                    '</svg>' +
+                    '<div class="tc-guide"></div>' +
+                    '<div class="tc-hl tc-hl-cur"></div>' +
+                    (hasCmp ? '<div class="tc-hl tc-hl-prev"></div>' : '') +
+                    '<div class="tc-hl tc-hl-meta"></div>' +
+                    '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
+                    '<div class="tc-line-labels">' + labelsHtml + '</div>';
+
+                const svg = chart.querySelector('svg');
+                const guide = chart.querySelector('.tc-guide');
+                const hlCur = chart.querySelector('.tc-hl-cur');
+                const hlPrev = chart.querySelector('.tc-hl-prev');
+                const hlMeta = chart.querySelector('.tc-hl-meta');
+                const tooltip = chart.querySelector('#tcTrendTooltip');
+                const zone = chart.querySelector('.tc-zone');
+                const pctY = (v) => (yAt(v) / H * 100) + '%';
+                const indexFromEvent = (e) => {
+                    if (!svg || svg.getBoundingClientRect().width <= 0) return 0;
+                    const rect = svg.getBoundingClientRect();
+                    const xv = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+                    return Math.round(xv * (days - 1) / 100);
+                };
+                const showAt = (idx) => {
+                    idx = Math.max(0, Math.min(days - 1, idx));
+                    const snapX = xAt(idx);
+                    if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
+                    if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(cum[idx]); hlCur.style.opacity = 1; }
+                    if (hlPrev) {
+                        if (prevCum.length) { hlPrev.style.left = snapX + '%'; hlPrev.style.top = pctY(prevCum[idx]); hlPrev.style.opacity = 1; }
+                        else hlPrev.style.opacity = 0;
+                    }
+                    if (hlMeta) {
+                        if (metaPace.length) { hlMeta.style.left = snapX + '%'; hlMeta.style.top = pctY(metaPace[idx]); hlMeta.style.opacity = 1; }
+                        else hlMeta.style.opacity = 0;
+                    }
+                    const prevVal = hasCmp && prevCum[idx] !== undefined ? prevCum[idx] : null;
+                    const metaVal = metaPace[idx];
+                    const delta = prevVal === null ? null : cum[idx] - prevVal;
+                    const gapMeta = metaVal === undefined ? null : cum[idx] - metaVal;
+                    if (tooltip) {
+                        tooltip.innerHTML = '<span>' + tcFormatDate(labels[idx]) + '</span>' +
+                            '<strong>Leads del día: ' + nums[idx] + '</strong>' +
+                            '<small>Actual acumulado: ' + cum[idx] + ' leads</small>' +
+                            (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
+                            (delta !== null ? '<small>Brecha vs. comparable: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + '</small>' : '') +
+                            (gapMeta !== null ? '<small>Ritmo meta: ' + Math.round(metaVal) + ' leads · ' + (gapMeta >= 0 ? '+' : '-') + Math.abs(gapMeta) + '</small>' : '');
+                        tcPlaceTooltip(tooltip, snapX);
+                    }
+                };
+                const hideAt = () => {
+                    if (guide) guide.style.opacity = 0;
+                    if (hlCur) hlCur.style.opacity = 0;
+                    if (hlPrev) hlPrev.style.opacity = 0;
+                    if (hlMeta) hlMeta.style.opacity = 0;
+                    if (tooltip) tooltip.hidden = true;
+                };
+                if (zone) {
+                    if (window.matchMedia('(hover: hover)').matches) {
+                        zone.addEventListener('mousemove', (e) => showAt(indexFromEvent(e)));
+                        zone.addEventListener('mouseleave', hideAt);
+                    } else {
+                        zone.addEventListener('click', (e) => {
+                            showAt(indexFromEvent(e));
+                            if (tooltip) tooltip.dataset.pinned = '1';
+                        });
+                        document.addEventListener('click', (e) => {
+                            if (tooltip && tooltip.dataset.pinned === '1' && !chart.contains(e.target)) {
+                                tooltip.dataset.pinned = '';
+                                hideAt();
+                            }
+                        }, true);
+                    }
+                }
+
+                // Footer: mejor día + ritmo promedio (desde la serie diaria, no acumulada).
+                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+                const peakIdx = nums.indexOf(Math.max(...nums));
+                const peakVal = nums[peakIdx] || 0;
+                $('tcPeak').innerHTML = 'Mejor día: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
+                $('tcAvg').innerHTML = 'Ritmo promedio: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>';
+            }
+
+            function renderDailyTrend() {
+                const s = TC_SERIES;
+                const chart = $('tcTrendChart');
+                if (!s || !chart) return;
+                const { nums, labels } = s;
+                const days = nums.length;
+                const max = Math.max(...nums, 1);
+                const W = 100, H = 40, PAD = 4;
+                const stepW = 100 / days;
+                const barW = stepW * 0.72;
+                const xAt = (i) => (i + 0.5) * stepW;
+                const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
+
+                // Media móvil de 7 días (ventana final, calculada sobre datos reales).
+                const ma = [];
+                for (let i = 0; i < days; i++) {
+                    const win = nums.slice(Math.max(0, i - 6), i + 1);
+                    ma.push(win.reduce((a, b) => a + b, 0) / win.length);
+                }
+                const hasMA = days >= 7;
+                const maPts = hasMA ? ma.map((v, i) => [xAt(i), yAt(v)]) : [];
+                const maD = hasMA && maPts.length > 1 ? tcSmooth(maPts) : '';
+
+                const step = Math.max(1, Math.ceil(days / 10));
+                let labelsHtml = '';
+                for (let i = 0; i < days; i += step) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[i]) + '</span>';
+                }
+                if (days > 1 && (days - 1) % step !== 0) {
+                    labelsHtml += '<span>' + tcShortLabel(labels[days - 1]) + '</span>';
+                }
+
+                let bars = '';
+                for (let i = 0; i < days; i++) {
+                    const y = yAt(nums[i]);
+                    const hgt = (H - PAD) - y;
+                    bars += '<rect x="' + (xAt(i) - barW / 2).toFixed(2) + '" y="' + y.toFixed(2) +
+                        '" width="' + barW.toFixed(2) + '" height="' + Math.max(0.5, hgt).toFixed(2) +
+                        '" fill="#8B5CF6" fill-opacity="0.82" rx="0.6"/>';
+                }
+
+                chart.innerHTML =
+                    '<div class="tc-line-wrap">' +
+                    '<svg viewBox="0 0 100 40" preserveAspectRatio="none">' +
+                    '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
+                    bars +
+                    (hasMA && maD ? '<path class="tc-line tc-ma" d="' + maD + '" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                    '</svg>' +
+                    '<div class="tc-guide"></div>' +
+                    '<div class="tc-hl tc-hl-cur"></div>' +
+                    '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
+                    '<div class="tc-line-labels">' + labelsHtml + '</div>' +
+                    (hasMA ? '' : '<div class="tc-ma-note">La media móvil se muestra con períodos de 7 días o más.</div>');
+
+                const svg = chart.querySelector('svg');
+                const guide = chart.querySelector('.tc-guide');
+                const hlCur = chart.querySelector('.tc-hl-cur');
+                const tooltip = chart.querySelector('#tcTrendTooltip');
+                const zone = chart.querySelector('.tc-zone');
+                const pctY = (v) => (yAt(v) / H * 100) + '%';
+                const indexFromEvent = (e) => {
+                    if (!svg || svg.getBoundingClientRect().width <= 0) return 0;
+                    const rect = svg.getBoundingClientRect();
+                    const xv = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+                    return Math.round(xv * (days - 1) / 100);
+                };
+                const showAt = (idx) => {
+                    idx = Math.max(0, Math.min(days - 1, idx));
+                    const snapX = xAt(idx);
+                    if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
+                    if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(nums[idx]); hlCur.style.opacity = 1; }
+                    if (tooltip) {
+                        tooltip.innerHTML = '<span>' + tcFormatDate(labels[idx]) + '</span>' +
+                            '<strong>' + nums[idx] + ' leads captados</strong>' +
+                            (hasMA ? '<small>Media móvil 7 días: ' + ma[idx].toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
+                        tcPlaceTooltip(tooltip, snapX);
+                    }
+                };
+                const hideAt = () => {
+                    if (guide) guide.style.opacity = 0;
+                    if (hlCur) hlCur.style.opacity = 0;
+                    if (tooltip) tooltip.hidden = true;
+                };
+                if (zone) {
+                    if (window.matchMedia('(hover: hover)').matches) {
+                        zone.addEventListener('mousemove', (e) => showAt(indexFromEvent(e)));
+                        zone.addEventListener('mouseleave', hideAt);
+                    } else {
+                        zone.addEventListener('click', (e) => {
+                            showAt(indexFromEvent(e));
+                            if (tooltip) tooltip.dataset.pinned = '1';
+                        });
+                        document.addEventListener('click', (e) => {
+                            if (tooltip && tooltip.dataset.pinned === '1' && !chart.contains(e.target)) {
+                                tooltip.dataset.pinned = '';
+                                hideAt();
+                            }
+                        }, true);
+                    }
+                }
+
+                // Footer: mejor día + ritmo promedio.
+                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+                const peakIdx = nums.indexOf(Math.max(...nums));
+                const peakVal = nums[peakIdx] || 0;
+                $('tcPeak').innerHTML = 'Mejor día: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
+                $('tcAvg').innerHTML = 'Ritmo promedio: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>';
             }
 
             function renderTrendsAndChannels() {
@@ -3998,10 +4550,16 @@
                 const prevNums = hasCmp ? ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0) : [];
                 const days = Math.max(nums.length, 1);
 
-                const sub = block.querySelector('.tc-head p');
-                if (sub) sub.textContent = 'Evolución acumulada de leads vs. período comparable';
+                // Al cargar datos, el selector siempre abre en Acumulado.
+                TC_MODE = 'acumulado';
+                TC_SERIES = (days > 1) ? { nums, prevNums, labels, hasCmp } : null;
 
-                const chart = $('tcTrendChart');
+                const seg = $('tcModeSeg');
+                if (seg) {
+                    seg.querySelectorAll('.tc-seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === TC_MODE));
+                    // "Hoy" (1 día): el selector no aporta análisis temporal suficiente.
+                    seg.style.display = (days === 1) ? 'none' : '';
+                }
 
                 // Panel Origen de Demanda: ranking por volumen + conversión a
                 // visita (evidencia canónica CARD 2) y comparable en tooltip.
@@ -4073,13 +4631,14 @@
                     });
                 };
 
-                // CASO "HOY" (1 día): microcomparación textual, sin curva.
+                // CASO "HOY" (1 día): microcomparación textual, sin curva ni selector.
                 if (days === 1) {
                     const curVal = nums[0] || 0;
                     const prevVal = hasCmp ? (prevNums[0] || 0) : null;
                     const delta = prevVal === null ? null : curVal - prevVal;
                     const dir = delta === null ? '' : (delta > 0 ? '▲' : (delta < 0 ? '▼' : '·'));
                     const cls = delta === null ? 'neutral' : (delta > 0 ? 'pos' : (delta < 0 ? 'neg' : 'neutral'));
+                    const chart = $('tcTrendChart');
                     if (chart) {
                         chart.innerHTML =
                             '<div class="tc-today">' +
@@ -4093,160 +4652,21 @@
                     $('tcAvg').innerHTML = (delta !== null && hasCmp)
                         ? '<strong>' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</strong> vs. comparable'
                         : '';
-                    const prevLegend = document.querySelector('.tc-leg-prev');
-                    if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
+                    const lg = $('tcLegend');
+                    if (lg) lg.innerHTML = '';
                     renderSourcesPanel();
                     block.hidden = false;
+                    const sz = $('sourceZone');
+                    if (sz) sz.hidden = false;
                     return;
                 }
 
-                // Acumulados: cada punto = suma acumulada hasta la misma posición.
-                const cum = [];
-                let acc = 0;
-                for (const v of nums) { acc += v; cum.push(acc); }
-                const prevCum = [];
-                let pacc = 0;
-                for (const v of prevNums) { pacc += v; prevCum.push(pacc); }
-
-                const allNums = cum.concat(prevCum);
-                const rawMax = Math.max(...allNums, 1);
-                const yMax = rawMax * 1.15;
-                const min = Math.min(...allNums, 0);
-                const range = (yMax - min) || 1;
-                const W = 100, H = 40, PAD = 4;
-                const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
-                const yAt = (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
-
-                const smooth = (p) => {
-                    if (p.length < 2) return 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
-                    let d = 'M' + p[0][0].toFixed(2) + ',' + p[0][1].toFixed(2);
-                    for (let i = 0; i < p.length - 1; i++) {
-                        const p0 = p[i - 1] || p[i];
-                        const p1 = p[i];
-                        const p2 = p[i + 1];
-                        const p3 = p[i + 2] || p2;
-                        const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
-                        const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
-                        const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
-                        const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
-                        d += 'C' + cp1x.toFixed(2) + ',' + cp1y.toFixed(2) + ' ' + cp2x.toFixed(2) + ',' + cp2y.toFixed(2) + ' ' + p2[0].toFixed(2) + ',' + p2[1].toFixed(2);
-                    }
-                    return d;
-                };
-
-                const curPts = cum.map((v, i) => [xAt(i), yAt(v)]);
-                const prevPts = prevCum.map((v, i) => [xAt(i), yAt(v)]);
-                const lineD = smooth(curPts);
-                const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
-                const prevLineD = prevPts.length > 1 ? smooth(prevPts) : '';
-                const step = Math.max(1, Math.ceil(days / 10));
-                let labelsHtml = '';
-                for (let i = 0; i < days; i += step) {
-                    labelsHtml += '<span>' + tcShortLabel(labels[i]) + '</span>';
-                }
-                if (days > 1 && (days - 1) % step !== 0) {
-                    labelsHtml += '<span>' + tcShortLabel(labels[days - 1]) + '</span>';
-                }
-                if (chart) {
-                    chart.innerHTML =
-                        '<div class="tc-line-wrap"><svg viewBox="0 0 100 40" preserveAspectRatio="none">' +
-                        '<defs>' +
-                        '<linearGradient id="tcGrad" x1="0" y1="0" x2="0" y2="1">' +
-                        '<stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.20"/>' +
-                        '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
-                        '</linearGradient>' +
-                        '</defs>' +
-                        (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
-                        '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
-                        '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
-                        '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
-                        '</svg>' +
-                        '<div class="tc-guide"></div>' +
-                        '<div class="tc-hl tc-hl-cur"></div>' +
-                        (hasCmp ? '<div class="tc-hl tc-hl-prev"></div>' : '') +
-                        '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
-                        '<div class="tc-line-labels">' + labelsHtml + '</div>';
-                }
-
-                const trendTooltip = chart ? chart.querySelector('#tcTrendTooltip') : null;
-                const svg = chart ? chart.querySelector('svg') : null;
-                const guide = chart ? chart.querySelector('.tc-guide') : null;
-                const hlCur = chart ? chart.querySelector('.tc-hl-cur') : null;
-                const hlPrev = chart ? chart.querySelector('.tc-hl-prev') : null;
-                const zone = chart ? chart.querySelector('.tc-zone') : null;
-                if (chart && trendTooltip) {
-                    const formatTrendDate = (iso) => {
-                        const dt = new Date(String(iso || '') + 'T12:00:00');
-                        return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
-                    };
-                    const showAt = (idx) => {
-                        idx = Math.max(0, Math.min(days - 1, idx));
-                        const snapX = xAt(idx);
-                        const pctY = (v) => (yAt(v) / H * 100) + '%';
-                        if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
-                        if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(cum[idx]); hlCur.style.opacity = 1; }
-                        if (hlPrev) {
-                            if (prevCum.length) { hlPrev.style.left = snapX + '%'; hlPrev.style.top = pctY(prevCum[idx]); hlPrev.style.opacity = 1; }
-                            else hlPrev.style.opacity = 0;
-                        }
-                        const prevVal = hasCmp && prevCum[idx] !== undefined ? prevCum[idx] : null;
-                        const delta = prevVal === null ? null : cum[idx] - prevVal;
-                        trendTooltip.innerHTML = '<span>' + formatTrendDate(labels[idx]) + '</span>' +
-                            '<strong>Leads del día: ' + nums[idx] + '</strong>' +
-                            '<small>Actual acumulado: ' + cum[idx] + ' leads</small>' +
-                            (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
-                            (delta !== null ? '<small>Brecha: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + ' leads</small>' : '');
-                        trendTooltip.style.left = snapX + '%';
-                        if (snapX > 75) trendTooltip.style.transform = 'translateX(calc(-100% - 4px))';
-                        else if (snapX < 25) trendTooltip.style.transform = 'translateX(4px)';
-                        else trendTooltip.style.transform = 'translateX(-50%)';
-                        trendTooltip.hidden = false;
-                    };
-                    const hideAt = () => {
-                        if (guide) guide.style.opacity = 0;
-                        if (hlCur) hlCur.style.opacity = 0;
-                        if (hlPrev) hlPrev.style.opacity = 0;
-                        if (trendTooltip) trendTooltip.hidden = true;
-                    };
-                    const indexFromEvent = (e) => {
-                        if (!svg) return 0;
-                        const rect = svg.getBoundingClientRect();
-                        if (rect.width <= 0) return 0;
-                        const xv = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
-                        return Math.round(xv * (days - 1) / 100);
-                    };
-                    if (zone) {
-                        if (window.matchMedia('(hover: hover)').matches) {
-                            zone.addEventListener('mousemove', (e) => showAt(indexFromEvent(e)));
-                            zone.addEventListener('mouseleave', hideAt);
-                        } else {
-                            zone.addEventListener('click', (e) => {
-                                showAt(indexFromEvent(e));
-                                trendTooltip.dataset.pinned = '1';
-                            });
-                            document.addEventListener('click', (e) => {
-                                if (trendTooltip.dataset.pinned === '1' && !chart.contains(e.target)) {
-                                    trendTooltip.dataset.pinned = '';
-                                    hideAt();
-                                }
-                            }, true);
-                        }
-                    }
-                }
-
-                const prevLegend = $('tcTrendChart') ? document.querySelector('.tc-leg-prev') : null;
-                if (prevLegend) prevLegend.style.display = hasCmp ? '' : 'none';
-
-                // Footer: Ritmo promedio + Mejor día (desde la serie diaria, no acumulada).
-                const avg = nums.length ? (nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
-                const peakIdx = nums.indexOf(Math.max(...nums));
-                const peakVal = nums[peakIdx] || 0;
-                $('tcPeak').innerHTML = 'Mejor día: <strong>' + tcShortLabel(labels[peakIdx]) + ' (' + peakVal + ' leads)</strong>';
-                $('tcAvg').innerHTML = 'Ritmo promedio: <strong>' + avg.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads/día</strong>';
-
+                renderTrendChart();
                 renderSourcesPanel();
 
                 block.hidden = false;
+                const sz = $('sourceZone');
+                if (sz) sz.hidden = false;
             }
 
             // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
@@ -4323,9 +4743,9 @@
                         const nameClass = isUnasig ? ' exec-muted' : '';
                         html += '<tr>' +
                             '<td><span class="exec-name' + nameClass + '">' + r.nombre + '</span></td>' +
-                            '<td class="exec-mono">' + leadsText + '</td>' +
-                            '<td class="exec-mono">' + visitText + '</td>' +
-                            '<td class="exec-mono">' + convText + ppText + '</td>' +
+                            '<td class="exec-mono r">' + leadsText + '</td>' +
+                            '<td class="exec-mono r">' + visitText + '</td>' +
+                            '<td class="exec-mono r">' + convText + ppText + '</td>' +
                             '</tr>';
                     });
                     body.innerHTML = html;
@@ -4362,17 +4782,29 @@
                 const pipe = $('funnelPipe');
                 const level = (n, label, w) =>
                     '<div class="funnel-level" style="--w:' + w + '"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
-                const rate = (pct, sub) =>
-                    '<div class="funnel-rate"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
+                const transition = (pct, sub) =>
+                    '<div class="funnel-transition"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
                 if (pipe) {
                     pipe.innerHTML =
                         level(rec, 'Recibidos', '100%') +
-                        rate(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
+                        transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
                         level(ges, 'Gestionados', '72%') +
-                        rate(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
+                        transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
                         level(con, 'Contacto efectivo', '46%') +
-                        rate(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
+                        transition(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
                         level(vis, 'Visitas agendadas', '24%');
+                }
+
+                // Conversión total del embudo: visitas agendadas sobre recibidos.
+                const totalEl = $('funnelTotal');
+                if (totalEl) {
+                    if (rec > 0) {
+                        totalEl.innerHTML = 'Conversión total: <strong>' +
+                            (vis / rec * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) +
+                            '%</strong> <span>(' + vis + ' de ' + rec + ' recibidos)</span>';
+                    } else {
+                        totalEl.innerHTML = 'Conversión total: <strong>—</strong>';
+                    }
                 }
 
                 // Excepciones de registro en una línea discreta.
@@ -4598,8 +5030,9 @@
 
                 $('cd3Title').textContent = 'Cartera Potencial & Valorización';
 
-                // KPI principal: comisión potencial (sin prefijo "UF"), con count-up.
-                animateCountUpInt($('cd3ComisionValue'), Math.round(comisionUF));
+                // KPI principal: comisión potencial con unidad explícita (UF) para
+                // evitar ambigüedad con las cifras de Venta/Arriendo de la sección.
+                animateCountUpUF($('cd3ComisionValue'), Math.round(comisionUF));
 
                 // Métricas secundarias: Venta y Arriendo en una sola línea (count-up).
                 animateCountUpInt($('cd3MontoVenta'), Math.round(montoVenta));
@@ -4674,8 +5107,6 @@
                 const s = OVERVIEW.sla;
                 const lead = s.lead || {};
                 const hot = s.lead_hot || {};
-                const hotThreshold = s.hot_threshold_min || 60;
-                const normalThreshold = s.normal_threshold_min || 180;
 
                 $('cd4Title').textContent = 'SLA & Velocidad de Respuesta';
 
@@ -4688,20 +5119,39 @@
                 }
                 $('cd4Sub').textContent = 'Leads dentro de SLA';
 
-                // Desglose HOT / NORMAL: estado al corte + velocidad por perfil.
-                const fmtProfileMeta = (b, threshold) => {
+                // Desglose HOT / NORMAL: % dentro de SLA por perfil (los estándares
+                // se explicitan en la etiqueta de cada barra).
+                const fmtProfileMeta = (b) => {
                     const pct = b.in_sla_pct;
-                    const p50 = b.p50_minutes;
-                    const pctTxt = (pct === null || pct === undefined)
+                    return (pct === null || pct === undefined)
                         ? 'N/D dentro de SLA'
                         : pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% dentro de SLA';
-                    const p50Txt = (p50 === null || p50 === undefined)
-                        ? 'P50 N/D'
-                        : 'P50 ' + Math.round(p50).toLocaleString('es-CL') + ' min';
-                    return pctTxt + ' · ' + p50Txt + ' · Meta ' + threshold + ' min';
                 };
-                $('cd4HotMeta').textContent = fmtProfileMeta(hot, hotThreshold);
-                $('cd4NormalMeta').textContent = fmtProfileMeta(lead, normalThreshold);
+                $('cd4HotMeta').textContent = fmtProfileMeta(hot);
+                $('cd4NormalMeta').textContent = fmtProfileMeta(lead);
+
+                // Velocidad de primera gestión: P50/P90 por perfil (datos reales del panel).
+                const speedEl = $('cd4Speed');
+                if (speedEl) {
+                    const fmtMin = (v) => (v === null || v === undefined)
+                        ? '—'
+                        : Math.round(v).toLocaleString('es-CL') + ' min';
+                    const p50H = hot.p50_minutes, p90H = hot.p90_minutes;
+                    const p50N = lead.p50_minutes, p90N = lead.p90_minutes;
+                    if (p50H === null && p90H === null && p50N === null && p90N === null) {
+                        speedEl.innerHTML = '<div class="cd4-speed-row"><span>Velocidad de primera gestión</span><strong>Sin muestra suficiente</strong></div>';
+                    } else {
+                        let rows = '';
+                        if (p50H !== null || p90H !== null) {
+                            rows += '<div class="cd4-speed-row"><span>HOT · P50 / P90</span><strong>' + fmtMin(p50H) + ' · ' + fmtMin(p90H) + '</strong></div>';
+                        }
+                        if (p50N !== null || p90N !== null) {
+                            rows += '<div class="cd4-speed-row"><span>NORMAL · P50 / P90</span><strong>' + fmtMin(p50N) + ' · ' + fmtMin(p90N) + '</strong></div>';
+                        }
+                        speedEl.innerHTML = rows +
+                            '<div class="cd4-speed-hint">P50 = mediana · P90 = 9 de cada 10 gestiones</div>';
+                    }
+                }
 
                 // Barras = % de leads dentro de SLA (cumplimiento al corte), no mediana/umbral.
                 const hotPct = (hot.in_sla_pct === null || hot.in_sla_pct === undefined) ? 0 : hot.in_sla_pct;
@@ -4993,6 +5443,18 @@
                 ['opsExecutiveFilter','opsTemperatureFilter','opsPriorityFilter','opsAssignmentFilter'].forEach(id => { const el=$(id); if(el) el.addEventListener('change',()=>loadOperationalData().catch(e=>console.error(e))); });
                 const opsSearch=$('opsSearch'); if(opsSearch) opsSearch.addEventListener('input',()=>{ clearTimeout(window.__opsSearchTimer); window.__opsSearchTimer=setTimeout(()=>loadOperationalData().catch(e=>console.error(e)),250); });
                 const opsRefresh=$('opsRefresh'); if(opsRefresh) opsRefresh.addEventListener('click',()=>loadOperationalData().catch(e=>console.error(e)));
+
+                // Selector local Acumulado / Diario (solo Tendencia de Captura).
+                const tcSeg = $('tcModeSeg');
+                if (tcSeg) {
+                    tcSeg.querySelectorAll('.tc-seg-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            TC_MODE = btn.dataset.mode;
+                            tcSeg.querySelectorAll('.tc-seg-btn').forEach(b => b.classList.toggle('active', b === btn));
+                            renderTrendChart();
+                        });
+                    });
+                }
                 document.addEventListener('click', e => { const btn=e.target.closest('[data-ops-priority]'); if(btn){ const el=$('opsPriorityFilter'); if(el){el.value=btn.dataset.opsPriority; loadOperationalData().catch(err=>console.error(err)); el.scrollIntoView({behavior:'smooth',block:'center'}); } } const leadBtn=e.target.closest('[data-lead-id]'); if(leadBtn && leadBtn.dataset.leadId) window.open('/crm?lead_id='+encodeURIComponent(leadBtn.dataset.leadId),'_blank'); });
 
                 document.querySelectorAll('#presetSeg button').forEach(btn => {

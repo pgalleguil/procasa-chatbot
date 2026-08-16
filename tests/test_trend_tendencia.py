@@ -87,11 +87,13 @@ def test_bounds_periodo_exclusivo_final():
 
 def test_trend_hover_interaction_presente():
     # Interacción hover/tap: snap por área con guía + puntos + tooltip ampliado.
-    render = HTML.split("function renderTrendsAndChannels()", 1)[1]
-    assert "tc-guide" in render
-    assert "tc-hl-cur" in render
-    assert "tc-hl-prev" in render
-    assert "tc-zone" in render
-    assert "Leads del día" in render
-    assert "Actual acumulado" in render
-    assert "matchMedia('(hover: hover)')" in render
+    # (refactor 2026-08: el render del gráfico vive en renderCumulativeTrend /
+    #  renderDailyTrend, antes de renderTrendsAndChannels).
+    section = HTML.split("// --- SECCIÓN 3: TENDENCIA & CANALES ---", 1)[1]
+    assert "tc-guide" in section
+    assert "tc-hl-cur" in section
+    assert "tc-hl-prev" in section
+    assert "tc-zone" in section
+    assert "Leads del día" in section
+    assert "Actual acumulado" in section
+    assert "matchMedia('(hover: hover)')" in section

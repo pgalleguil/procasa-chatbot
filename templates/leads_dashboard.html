@@ -1684,14 +1684,22 @@
             min-width: 0;
             position: relative;
             min-height: 0;
+            width: 320px;
+            flex: 0 0 320px;
+            align-items: flex-end;
+            height: 58px;
+            flex-wrap: nowrap;
         }
 
         .tc-head-tools .tc-legend {
             position: static;
             order: 1;
             justify-content: flex-end;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             width: 100%;
+            min-height: 16px;
+            height: 16px;
+            white-space: nowrap;
         }
 
         .tc-head-tools .tc-seg { order: 2; margin-top: 0; }
@@ -1770,11 +1778,33 @@
             background: var(--bg-card);
             pointer-events: none;
             opacity: 1;
+            overflow: hidden;
+        }
+
+        .tc-chart-previous .tc-line-wrap {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .tc-chart-previous .tc-line-wrap svg {
+            overflow: hidden;
         }
 
         .tc-chart-previous.is-fading {
             opacity: 0;
-            transition: opacity 360ms cubic-bezier(0.22, 0.61, 0.36, 1);
+            transition: opacity 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        }
+
+        /* Al salir, todo el gráfico anterior se desvanece como una sola pieza;
+           ninguna línea queda animándose por separado hasta el final. */
+        .tc-chart-previous.is-fading .tc-line,
+        .tc-chart-previous.is-fading .tc-line-prev,
+        .tc-chart-previous.is-fading .tc-line-meta,
+        .tc-chart-previous.is-fading .tc-line-area {
+            animation: none !important;
+            opacity: 1 !important;
+            clip-path: none !important;
+            stroke-dashoffset: 0 !important;
         }
 
         .tc-line-wrap svg { width: 100%; height: 100%; display: block; overflow: visible; }
@@ -1845,24 +1875,70 @@
         }
 
         /* Transición sobria al alternar Acumulado / Diario */
-        .tc-switch { animation: tcModeFade 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
+        .tc-switch { animation: tcModeFade 0.62s cubic-bezier(0.22, 0.61, 0.36, 1); }
 
-        /* Al cambiar de serie, el SVG se regenera. Evita repetir la animación
-           larga de entrada y deja solo un crossfade corto y discreto. */
-        #tcTrendChart.tc-switch .tc-line,
-        #tcTrendChart.tc-switch .tc-line-area,
-        #tcTrendChart.tc-switch .tc-line-prev,
-        #tcTrendChart.tc-switch .tc-line-area-prev,
-        #tcTrendChart.tc-switch .tc-line-meta,
-        #tcTrendChart.tc-switch rect {
+        /* Al cambiar de serie, se conserva el trazado original y solo se
+           anima su aparición después del fade de la serie anterior. */
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-line {
+            animation: drawSpark 3.2s cubic-bezier(0.16, 1, 0.3, 1) 0.6s forwards !important;
+            opacity: 1 !important;
+        }
+
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-line-prev,
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-line-meta {
+            animation: sparkFade 0.55s ease 0.58s forwards !important;
+            opacity: 0;
+        }
+
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-line-area,
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-line-area-prev {
+            animation: sparkFade 0.32s ease 0.48s forwards !important;
+            opacity: 0;
+        }
+
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-zone {
             animation: none !important;
-            stroke-dashoffset: 0 !important;
             opacity: 1 !important;
         }
 
         @keyframes tcModeFade {
-            from { opacity: 0.78; transform: translateY(1px) scale(0.998); }
-            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0.72; }
+            to { opacity: 1; }
+        }
+
+        @keyframes revealTrendLine {
+            from { clip-path: inset(0 100% 0 0); opacity: 0.2; }
+            to { clip-path: inset(0 0 0 0); opacity: 1; }
+        }
+
+        /* En Acumulado las tres líneas se revelan de izquierda a derecha.
+           La máscara conserva intacto el patrón discontinuo de comparación/meta. */
+        #tcTrendChart[data-mode="acumulado"] > .tc-line-wrap .tc-line-prev,
+        #tcTrendChart[data-mode="acumulado"] > .tc-line-wrap .tc-line-meta {
+            animation: revealTrendLine 3.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards !important;
+            clip-path: inset(0 100% 0 0);
+            opacity: 0.2;
+        }
+
+        #tcTrendChart[data-mode="acumulado"].tc-switch > .tc-line-wrap .tc-line-prev,
+        #tcTrendChart[data-mode="acumulado"].tc-switch > .tc-line-wrap .tc-line-meta {
+            animation-duration: 3.2s;
+            animation-delay: 0.6s;
+        }
+
+        @keyframes tcBarsFade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        #tcTrendChart > .tc-line-wrap .tc-daily-bar {
+            opacity: 0;
+        }
+
+        #trendCardBlock.entered #tcTrendChart > .tc-line-wrap .tc-daily-bar,
+        #trendsBlock.entered #tcTrendChart > .tc-line-wrap .tc-daily-bar,
+        #tcTrendChart.tc-switch > .tc-line-wrap .tc-daily-bar {
+            animation: tcBarsFade 1.15s ease 0.42s forwards;
         }
 
         .tc-ma-note {
@@ -2352,6 +2428,7 @@
         }
 
         .funnel-transition {
+            position: relative;
             width: 100%;
             text-align: left;
             font-size: 11px;
@@ -2359,6 +2436,39 @@
             color: var(--conversion-accent);
             line-height: 1.25;
             padding: 2px 0 4px;
+        }
+
+        .funnel-transition::after {
+            content: '';
+            position: absolute;
+            left: 156px;
+            right: var(--connector-right, 18%);
+            top: 50%;
+            border-top: 1px dashed rgba(167, 139, 250, 0.42);
+            pointer-events: none;
+        }
+
+        .funnel-transition::before {
+            content: '';
+            position: absolute;
+            right: var(--connector-right, 18%);
+            top: calc(50% - 2px);
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--conversion-accent);
+            box-shadow: 0 0 8px rgba(167, 139, 250, 0.35);
+            pointer-events: none;
+        }
+
+        .funnel-transition > span,
+        .funnel-transition > small {
+            position: relative;
+            z-index: 1;
+            display: block;
+            width: max-content;
+            padding-right: 8px;
+            background: var(--bg-card);
         }
 
         .funnel-transition small {
@@ -2857,7 +2967,7 @@
             .tc-block.entered .tc-line,
             .tc-trend-card.entered .tc-line {
                 animation-name: desktopTrendDraw;
-                animation-duration: 2.4s;
+                animation-duration: 3.8s;
                 animation-delay: 0.25s;
                 animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
                 animation-fill-mode: forwards;
@@ -2954,7 +3064,7 @@
             .exec-table-head { align-items: flex-start; }
             .exec-table-head p { font-size: 11px; }
             .tc-head { flex-direction: column; align-items: flex-start; }
-            .tc-head-tools { width: 100%; min-height: 0; position: relative; }
+            .tc-head-tools { width: 100%; flex: 1 1 100%; height: auto; min-height: 0; position: relative; }
             .tc-head-tools .tc-legend { position: static; width: 100%; }
             .tc-head-tools .tc-seg { margin-top: 0; }
             .tc-legend { flex-wrap: wrap; }
@@ -4375,7 +4485,7 @@
                     lg.innerHTML =
                         '<span class="tc-leg-item tc-leg-cur"><span class="tc-swatch"></span> Período Actual</span>' +
                         (s.hasCmp ? '<span class="tc-leg-item tc-leg-prev"><span class="tc-dash"></span> Período Anterior</span>' : '') +
-                        '<span class="tc-leg-item tc-leg-meta"><span class="tc-dash tc-dash-meta"></span> Ritmo de meta</span>';
+                        '<span class="tc-leg-item tc-leg-meta"><span class="tc-dash tc-dash-meta"></span> Meta</span>';
                 }
             }
 
@@ -4394,17 +4504,19 @@
                     previous.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
                     chart.appendChild(previous);
                     requestAnimationFrame(() => previous.classList.add('is-fading'));
-                    setTimeout(() => previous.remove(), 400);
+                    setTimeout(() => previous.remove(), 680);
                 }
                 chart.classList.remove('tc-switch');
-                void chart.offsetWidth;
-                chart.classList.add('tc-switch');
+                if (previousMarkup.trim()) {
+                    void chart.offsetWidth;
+                    chart.classList.add('tc-switch');
+                }
                 renderTrendLegend(TC_MODE);
                 const sub = document.querySelector('#trendsBlock .tc-head p');
                 if (sub) {
                     sub.textContent = TC_MODE === 'diario'
                         ? 'Leads captados por día y media móvil de 7 días'
-                        : 'Evolución acumulada vs. período comparable y ritmo de meta';
+                        : 'Evolución acumulada vs. período comparable y meta';
                 }
             }
 
@@ -4412,6 +4524,7 @@
                 const s = TC_SERIES;
                 const chart = $('tcTrendChart');
                 if (!s || !chart) return;
+                chart.dataset.mode = 'acumulado';
                 const { nums, prevNums, labels, hasCmp } = s;
                 const days = nums.length;
 
@@ -4465,9 +4578,9 @@
                     '<stop offset="100%" stop-color="#8B5CF6" stop-opacity="0.0"/>' +
                     '</linearGradient>' +
                     '</defs>' +
+                    '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
                     (metaLineD ? '<path class="tc-line-meta" d="' + metaLineD + '" fill="none" stroke="#F59E0B" stroke-width="1.25" stroke-dasharray="3 4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
                     (hasCmp && prevLineD ? '<path class="tc-line-prev" d="' + prevLineD + '" fill="none" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
-                    '<path class="tc-line-area" d="' + areaD + '" fill="url(#tcGrad)"/>' +
                     '<path class="tc-line" d="' + lineD + '" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
                     '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
                     '</svg>' +
@@ -4477,7 +4590,6 @@
                     '<div class="tc-hl tc-hl-meta"></div>' +
                     '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
                     '<div class="tc-line-labels">' + labelsHtml + '</div>';
-
                 const svg = chart.querySelector('svg');
                 const guide = chart.querySelector('.tc-guide');
                 const hlCur = chart.querySelector('.tc-hl-cur');
@@ -4515,7 +4627,7 @@
                             '<small>Actual acumulado: ' + cum[idx] + ' leads</small>' +
                             (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
                             (delta !== null ? '<small>Brecha vs. comparable: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + '</small>' : '') +
-                            (gapMeta !== null ? '<small>Ritmo meta: ' + Math.round(metaVal) + ' leads · ' + (gapMeta >= 0 ? '+' : '-') + Math.abs(gapMeta) + '</small>' : '');
+                            (gapMeta !== null ? '<small>Meta: ' + metaVal.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads · ' + (gapMeta >= 0 ? '+' : '-') + Math.abs(gapMeta).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
                         tcPlaceTooltip(tooltip, snapX);
                     }
                 };
@@ -4556,6 +4668,7 @@
                 const s = TC_SERIES;
                 const chart = $('tcTrendChart');
                 if (!s || !chart) return;
+                chart.dataset.mode = 'diario';
                 const { nums, labels } = s;
                 const days = nums.length;
                 const max = Math.max(...nums, 1);
@@ -4588,7 +4701,7 @@
                 for (let i = 0; i < days; i++) {
                     const y = yAt(nums[i]);
                     const hgt = (H - PAD) - y;
-                    bars += '<rect x="' + (xAt(i) - barW / 2).toFixed(2) + '" y="' + y.toFixed(2) +
+                    bars += '<rect class="tc-daily-bar" x="' + (xAt(i) - barW / 2).toFixed(2) + '" y="' + y.toFixed(2) +
                         '" width="' + barW.toFixed(2) + '" height="' + Math.max(0.5, hgt).toFixed(2) +
                         '" fill="#8B5CF6" fill-opacity="0.82" rx="0.6"/>';
                 }
@@ -4605,7 +4718,6 @@
                     '<div class="tc-chart-tooltip" id="tcTrendTooltip" hidden></div></div>' +
                     '<div class="tc-line-labels">' + labelsHtml + '</div>' +
                     (hasMA ? '' : '<div class="tc-ma-note">La media móvil se muestra con períodos de 7 días o más.</div>');
-
                 const svg = chart.querySelector('svg');
                 const guide = chart.querySelector('.tc-guide');
                 const hlCur = chart.querySelector('.tc-hl-cur');
@@ -4928,16 +5040,21 @@
                 };
                 const level = (n, label, w, stage) =>
                     '<div class="funnel-level" data-funnel-stage="' + stage + '" style="--w:' + w + '"><strong data-funnel-count="' + n + '">0</strong><span>' + esc(label) + '</span></div>';
-                const transition = (pct, sub) =>
-                    '<div class="funnel-transition"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
+                const readableStageMin = { 2: 126, 3: 112, 4: 104 };
+                const connectorRight = (nextWidth, nextStage) => {
+                    const minPct = ((readableStageMin[nextStage] || 0) / 5.6);
+                    return ((100 - Math.max(nextWidth, minPct)) / 2).toFixed(2) + '%';
+                };
+                const transition = (pct, sub, right) =>
+                    '<div class="funnel-transition" style="--connector-right:' + right + '"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
                 if (pipe) {
                     pipe.innerHTML =
                         level(rec, 'Recibidos', funnelWidth(rec) + '%', 1) +
-                        transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
+                        transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads', connectorRight(funnelWidth(ges), 2)) +
                         level(ges, 'Gestionados', funnelWidth(ges) + '%', 2) +
-                        transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
+                        transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads', connectorRight(funnelWidth(con), 3)) +
                         level(con, 'Contacto efectivo', funnelWidth(con) + '%', 3) +
-                        transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo') +
+                        transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo', connectorRight(funnelWidth(vis), 4)) +
                         level(vis, 'Visitas agendadas', funnelWidth(vis) + '%', 4);
                 }
 
@@ -5294,8 +5411,7 @@
                         if (p50N !== null || p90N !== null) {
                             rows += '<div class="cd4-speed-row"><span>NORMAL · P50 / P90</span><strong>' + fmtMin(p50N) + ' · ' + fmtMin(p90N) + '</strong></div>';
                         }
-                        speedEl.innerHTML = rows +
-                            '<div class="cd4-speed-hint">P50 = mediana · P90 = 9 de cada 10 gestiones</div>';
+                        speedEl.innerHTML = rows;
                     }
                 }
 

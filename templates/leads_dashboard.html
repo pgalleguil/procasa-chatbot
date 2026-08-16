@@ -1814,23 +1814,23 @@
         }
 
         /* Transición sobria al alternar Acumulado / Diario */
-        .tc-switch { animation: tcModeFade 0.28s ease; }
+        .tc-switch { animation: tcModeFade 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
 
         /* Al cambiar de serie, el SVG se regenera. Evita repetir la animación
            larga de entrada y deja solo un crossfade corto y discreto. */
-        .tc-switch .tc-line,
-        .tc-switch .tc-line-area,
-        .tc-switch .tc-line-prev,
-        .tc-switch .tc-line-area-prev,
-        .tc-switch .tc-line-meta,
-        .tc-switch rect {
+        #tcTrendChart.tc-switch .tc-line,
+        #tcTrendChart.tc-switch .tc-line-area,
+        #tcTrendChart.tc-switch .tc-line-prev,
+        #tcTrendChart.tc-switch .tc-line-area-prev,
+        #tcTrendChart.tc-switch .tc-line-meta,
+        #tcTrendChart.tc-switch rect {
             animation: none !important;
             stroke-dashoffset: 0 !important;
-            opacity: 1;
+            opacity: 1 !important;
         }
 
         @keyframes tcModeFade {
-            from { opacity: 0.25; transform: translateY(4px); }
+            from { opacity: 0.78; transform: translateY(1px) scale(0.998); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -2271,7 +2271,7 @@
 
         /* El volumen se comunica con cifras y tasas; el tamaño visual de cada
            etapa permanece constante para no exagerar diferencias pequeñas. */
-        .funnel-level { width: 100% !important; }
+        .funnel-level { width: var(--w); }
 
         .funnel-level strong {
             display: block;
@@ -4808,19 +4808,25 @@
                 const cPct = (byKey.contacto_efectivo || {}).transition_pct;
                 const vPct = (byKey.visita_agendada || {}).transition_pct;
                 const pipe = $('funnelPipe');
+                const funnelWidth = (n) => {
+                    if (!rec) return 100;
+                    // El ancho representa el volumen relativo al universo
+                    // recibido, con un mínimo de 30% para no perder legibilidad.
+                    return Math.max(30, Math.min(100, Math.round(n / rec * 100)));
+                };
                 const level = (n, label, w) =>
                     '<div class="funnel-level" style="--w:' + w + '"><strong>' + n + '</strong><span>' + esc(label) + '</span></div>';
                 const transition = (pct, sub) =>
                     '<div class="funnel-transition"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
                 if (pipe) {
                     pipe.innerHTML =
-                        level(rec, 'Recibidos', '100%') +
+                        level(rec, 'Recibidos', funnelWidth(rec) + '%') +
                         transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads') +
-                        level(ges, 'Gestionados', '100%') +
+                        level(ges, 'Gestionados', funnelWidth(ges) + '%') +
                         transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
-                        level(con, 'Contacto efectivo', '100%') +
+                        level(con, 'Contacto efectivo', funnelWidth(con) + '%') +
                         transition(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
-                        level(vis, 'Visitas agendadas', '100%');
+                        level(vis, 'Visitas agendadas', funnelWidth(vis) + '%');
                 }
 
                 // Conversión total del embudo: visitas agendadas sobre recibidos.
@@ -5531,6 +5537,14 @@
 
                 // Tooltips de las 4 cards (mismo comportamiento hover/click y
                 // contenido siempre dentro del viewport, incluso en mobile).
+                const closeDashboardTooltips = () => {
+                    document.querySelectorAll('.cd1-tooltip, .tc-chart-tooltip, .tc-src-tooltip').forEach(tip => {
+                        tip.hidden = true;
+                        tip.dataset.pinned = '';
+                    });
+                };
+                window.addEventListener('scroll', closeDashboardTooltips, true);
+
                 function bindCardTooltip(infoId, tipId) {
                     const info = $(infoId);
                     const tip = $(tipId);

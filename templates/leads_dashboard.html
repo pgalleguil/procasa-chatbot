@@ -2295,8 +2295,11 @@
             width: var(--w);
             box-sizing: border-box;
             padding: 16px 24px;
-            text-align: left;
-            align-items: flex-start;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
             min-height: 82px;
             position: relative;
             overflow: visible;
@@ -2331,7 +2334,7 @@
             position: relative;
             z-index: 1;
             white-space: nowrap;
-            text-align: left;
+            text-align: center;
         }
 
         .funnel-level span {
@@ -2345,7 +2348,7 @@
             position: relative;
             z-index: 1;
             white-space: nowrap;
-            text-align: left;
+            text-align: center;
         }
 
         .funnel-transition {
@@ -3813,6 +3816,7 @@
                         // para evitar un bloque vacÃ­o al llegar al final.
                         el.classList.add('seq-shown', 'entered');
                         requestAnimationFrame(() => el.classList.add('seq-reveal-active'));
+                        if (el.id === 'funnelBlock') requestAnimationFrame(animateFunnelCounts);
                         growBarsIn(el);
                         scheduleScrollRevealReady(el);
                         observeScrollEls();
@@ -3820,6 +3824,7 @@
                     }
                     if (!('IntersectionObserver' in window)) {
                         el.classList.add('seq-shown', 'entered');
+                        if (el.id === 'funnelBlock') requestAnimationFrame(animateFunnelCounts);
                         scheduleScrollRevealReady(el);
                         growBarsIn(el);
                         return;
@@ -3829,6 +3834,7 @@
                             if (e.isIntersecting) {
                                 e.target.classList.add('seq-shown', 'entered');
                                 requestAnimationFrame(() => e.target.classList.add('seq-reveal-active'));
+                                if (e.target.id === 'funnelBlock') requestAnimationFrame(animateFunnelCounts);
                                 growBarsIn(e.target);
                                 scheduleScrollRevealReady(e.target);
                                 ob.unobserve(e.target);
@@ -4150,6 +4156,9 @@
                     renderInsightsBlock();
                     renderTrendsAndChannels();
                     renderFunnel();
+                    if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) {
+                        requestAnimationFrame(animateFunnelCounts);
+                    }
                     renderExecutivesTable();
                     if (!document.getElementById('viewLeads').hidden) loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:',e));
                     const now = new Date();
@@ -4163,14 +4172,14 @@
             }
 
             // --- CARD 1: DEMANDA & META ---
-            function animateCountUp(el, end, duration = 1200) {
+            function animateCountUp(el, end, duration = 1200, renderValue = null) {
                 if (!el) return;
-                if (end === 0) { el.innerHTML = '0 <span class="cd1-unit">Leads</span>'; return; }
+                if (end === 0) { el.innerHTML = renderValue ? renderValue(0) : '0 <span class="cd1-unit">Leads</span>'; return; }
                 const startTime = performance.now();
                 const step = (now) => {
                     const progress = Math.min((now - startTime) / duration, 1);
                     const value = Math.floor(progress * end);
-                    el.innerHTML = value + ' <span class="cd1-unit">Leads</span>';
+                    el.innerHTML = renderValue ? renderValue(value) : value + ' <span class="cd1-unit">Leads</span>';
                     if (progress < 1) requestAnimationFrame(step);
                 };
                 requestAnimationFrame(step);
@@ -4882,6 +4891,15 @@
             // --- EMBUDO COMERCIAL ---
             const FUNNEL_MAIN_LABELS = { gestionados: 'Gestionados', contacto_efectivo: 'Contacto efectivo', visita_agendada: 'Visita agendada' };
 
+            function animateFunnelCounts() {
+                const pipe = $('funnelPipe');
+                if (!pipe) return;
+                pipe.querySelectorAll('[data-funnel-count]').forEach((el) => {
+                    const target = Number(el.dataset.funnelCount) || 0;
+                    animateCountUp(el, target, 1200, value => Number(value).toLocaleString('es-CL'));
+                });
+            }
+
             function renderFunnel() {
                 const block = $('funnelBlock');
                 if (!block || !OVERVIEW || !OVERVIEW.funnel) return;
@@ -4921,20 +4939,6 @@
                         level(con, 'Contacto efectivo', funnelWidth(con) + '%', 3) +
                         transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo') +
                         level(vis, 'Visitas agendadas', funnelWidth(vis) + '%', 4);
-                    // Count-up consistente con las tarjetas KPI al cargar o
-                    // actualizar realmente el dataset del embudo.
-                    pipe.querySelectorAll('[data-funnel-count]').forEach((el) => {
-                        const target = Number(el.dataset.funnelCount) || 0;
-                        const started = performance.now();
-                        const duration = 650;
-                        const tick = (now) => {
-                            const progress = Math.min(1, (now - started) / duration);
-                            const eased = 1 - Math.pow(1 - progress, 3);
-                            el.textContent = Math.round(target * eased).toLocaleString('es-CL');
-                            if (progress < 1) requestAnimationFrame(tick);
-                        };
-                        requestAnimationFrame(tick);
-                    });
                 }
 
                 // Conversión total del embudo: visitas agendadas sobre recibidos.

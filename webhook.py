@@ -4079,16 +4079,15 @@ async def reassign_unassigned_leads_loop():
 
 async def cache_prewarmer_loop():
     """
-    PRE-WARMING DE CACHE: Refresca get_leads_executive_report() cada 4.5 minutos
-    en background (en executor), garantizando que NUNCA haya un cache miss
-    durante un request HTTP real.
-    El cache TTL es 5 min; este loop refresca a 4.5 min → siempre hay datos frescos.
+    PRE-WARMING DE CACHE: precalienta el overview real del Leads Dashboard.
+    El reporte ejecutivo antiguo no alimenta /api/leads-dashboard/overview,
+    por lo que no evitaba el primer request lento de week/month/today.
     """
     logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (smart mode)...")
     # Espera inicial para no competir con el startup
     await asyncio.sleep(30)
     local_warm_in_progress = False
-    cache_key = "leads_executive_report_v2"
+    cache_key = "leads_dashboard_overview_v1"
     lock_key = "lock_cache_prewarm_leads_intel_v1"
     while True:
         try:
@@ -4102,7 +4101,8 @@ async def cache_prewarmer_loop():
             db = get_db()
             now_utc = datetime.now(timezone.utc)
 
-            # 1) Skip inteligente: si cache aún tiene >120s de vida, no recalcular.
+            # 1) Skip inteligente: si el lock/ciclo aún está vigente, no
+            # recalcular todos los rangos en cada vuelta.
             loop_ref = asyncio.get_running_loop()
             cache_doc = await loop_ref.run_in_executor(
                 _WORKER_THREAD_POOL,
@@ -4136,10 +4136,20 @@ async def cache_prewarmer_loop():
             loop = asyncio.get_running_loop()
             t0 = time.time()
             # Warmer pool dedicado: evita competir con workers de procesamiento.
-            await asyncio.wait_for(
-                loop.run_in_executor(_WARMER_THREAD_POOL, get_leads_executive_report),
-                timeout=8.0
-            )
+            # Los nombres de preset generan la misma clave canónica que las
+            # peticiones del frontend, incluso cuando este envía fechas explícitas.
+            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"))
+            for preset, label in warm_specs:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _WARMER_THREAD_POOL,
+                        lambda p=preset: get_leads_dashboard_overview(
+                            compare="auto", period_preset=p,
+                        ),
+                    ),
+                    timeout=25.0,
+                )
+                logger.info("[CACHE_WARMER] overview %s precalentado", label)
             elapsed_ms = (time.time() - t0) * 1000
             logger.debug(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
             # Liberar lock explícitamente tras warm exitoso.

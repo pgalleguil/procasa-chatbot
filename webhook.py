@@ -18,6 +18,7 @@ import inspect
 from concurrent.futures import ThreadPoolExecutor
 from pymongo import MongoClient
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import uvicorn
@@ -4121,11 +4122,15 @@ async def cache_prewarmer_loop():
             # 2) Lock distribuido: evita prewarm simultáneo entre instancias/restarts.
             lock_until = now_utc + timedelta(seconds=90)
             def _acquire_lock():
-                return db["cache_locks"].find_one_and_update(
-                    {"_id": lock_key, "$or": [{"expires_at": {"$exists": False}}, {"expires_at": {"$lte": now_utc}}]},
-                    {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
-                    upsert=True, return_document=ReturnDocument.AFTER
-                )
+                try:
+                    return db["cache_locks"].find_one_and_update(
+                        {"_id": lock_key, "$or": [{"expires_at": {"$exists": False}}, {"expires_at": {"$lte": now_utc}}]},
+                        {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
+                        upsert=True, return_document=ReturnDocument.AFTER
+                    )
+                except DuplicateKeyError:
+                    # Otra instancia ganó el upsert simultáneamente.
+                    return None
             lock_doc = await loop_ref.run_in_executor(_WORKER_THREAD_POOL, _acquire_lock)
             if not lock_doc:
                 logger.debug("[CACHE_WARMER] Skip: lock activo en otra instancia")
@@ -4138,7 +4143,7 @@ async def cache_prewarmer_loop():
             # Warmer pool dedicado: evita competir con workers de procesamiento.
             # Los nombres de preset generan la misma clave canónica que las
             # peticiones del frontend, incluso cuando este envía fechas explícitas.
-            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"))
+            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"), ("30d", "30 días"))
             for preset, label in warm_specs:
                 await asyncio.wait_for(
                     loop.run_in_executor(

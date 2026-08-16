@@ -1664,6 +1664,8 @@
 
         .tc-head p { font-size: 13px; color: var(--text-secondary); margin: 2px 0 0; overflow-wrap: anywhere; }
 
+        #tcSub { min-height: 2.5em; }
+
         .tc-legend {
             display: flex;
             align-items: center;
@@ -1679,7 +1681,18 @@
             gap: 14px;
             flex-wrap: wrap;
             min-width: 0;
+            position: relative;
+            min-height: 34px;
         }
+
+        .tc-head-tools .tc-legend {
+            position: absolute;
+            top: 0;
+            right: 0;
+            min-height: 15px;
+        }
+
+        .tc-head-tools .tc-seg { margin-top: 20px; }
 
         .tc-leg-item { display: flex; align-items: center; gap: 6px; }
 
@@ -1745,6 +1758,22 @@
         }
 
         .tc-line-wrap { flex: 1; min-height: 0; position: relative; }
+
+        .tc-chart { position: relative; }
+
+        .tc-chart-previous {
+            position: absolute;
+            inset: 0;
+            z-index: 8;
+            background: var(--bg-card);
+            pointer-events: none;
+            opacity: 1;
+        }
+
+        .tc-chart-previous.is-fading {
+            opacity: 0;
+            transition: opacity 360ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        }
 
         .tc-line-wrap svg { width: 100%; height: 100%; display: block; overflow: visible; }
 
@@ -2263,13 +2292,20 @@
             width: var(--w);
             padding: 14px 0;
             text-align: center;
+            position: relative;
+            overflow: visible;
+            transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
+        }
+
+        .funnel-level::before {
+            content: '';
+            position: absolute;
+            inset: 0;
             background: linear-gradient(180deg, rgba(139, 92, 246, 0.26), rgba(139, 92, 246, 0.07));
             border: 1px solid rgba(139, 92, 246, 0.32);
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-            /* Trapecio invertido: cada etapa se estrecha hacia abajo para
-               formar una silueta de embudo continua. */
             clip-path: polygon(3% 0, 97% 0, 86% 100%, 14% 100%);
-            transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
+            z-index: 0;
         }
 
         /* El volumen se comunica con cifras y tasas; el tamaño visual de cada
@@ -2283,6 +2319,9 @@
             color: var(--text-primary);
             font-variant-numeric: tabular-nums;
             line-height: 1;
+            position: relative;
+            z-index: 1;
+            white-space: nowrap;
         }
 
         .funnel-level span {
@@ -2293,6 +2332,9 @@
             letter-spacing: 0.05em;
             color: var(--text-secondary);
             margin-top: 3px;
+            position: relative;
+            z-index: 1;
+            white-space: nowrap;
         }
 
         .funnel-transition {
@@ -2897,6 +2939,9 @@
             .exec-table-head { align-items: flex-start; }
             .exec-table-head p { font-size: 11px; }
             .tc-head { flex-direction: column; align-items: flex-start; }
+            .tc-head-tools { width: 100%; min-height: 34px; position: relative; }
+            .tc-head-tools .tc-legend { right: auto; left: 0; }
+            .tc-head-tools .tc-seg { margin-top: 20px; }
             .tc-legend { flex-wrap: wrap; }
             .tc-line-labels span { font-size: 8px; }
             .tc-foot { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -4318,8 +4363,18 @@
                 const s = TC_SERIES;
                 const chart = $('tcTrendChart');
                 if (!s || !chart) return;
+                const previousMarkup = chart.innerHTML;
                 if (TC_MODE === 'diario') renderDailyTrend();
                 else renderCumulativeTrend();
+                if (previousMarkup.trim()) {
+                    const previous = document.createElement('div');
+                    previous.className = 'tc-chart-previous';
+                    previous.innerHTML = previousMarkup;
+                    previous.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'));
+                    chart.appendChild(previous);
+                    requestAnimationFrame(() => previous.classList.add('is-fading'));
+                    setTimeout(() => previous.remove(), 400);
+                }
                 chart.classList.remove('tc-switch');
                 void chart.offsetWidth;
                 chart.classList.add('tc-switch');

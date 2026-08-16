@@ -897,6 +897,84 @@ async def ver_leads(request: Request):
     })
 
 
+def _public_executive_overview(payload: dict) -> dict:
+    """Allowlist only the aggregated fields needed by the public demo.
+
+    The private overview also contains executive rows and internal rescue data.
+    They are deliberately omitted from this public read-only surface.
+    """
+    allowed = ("period", "demand", "conversion", "pipeline", "funnel", "sla", "sources", "insights", "meta")
+    return {key: payload.get(key) for key in allowed if key in payload}
+
+
+def _overview_server_timing(timing: dict) -> str:
+    parts = []
+    cache = timing.get("cache")
+    if cache:
+        parts.append(f'cache;desc="{cache}"')
+    for name, item in (timing.get("components") or {}).items():
+        duration = item.get("duration_ms")
+        if duration is not None:
+            parts.append(f"{name};dur={duration}")
+    for name in ("concurrent_block_ms", "total_ms"):
+        duration = timing.get(name)
+        if duration is not None:
+            parts.append(f"{name};dur={duration}")
+    return ", ".join(parts)
+
+
+@app.get("/demo/leads-intelligence", response_class=HTMLResponse)
+async def public_leads_intelligence_demo(request: Request):
+    """Temporary, read-only public shell for the Executive Summary only."""
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
+        "user_role": "public_demo",
+        "user_name": "",
+        "public_demo": True,
+    })
+
+
+@app.get("/api/demo/leads-intelligence/overview")
+async def public_leads_intelligence_overview(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    compare: str = Query(None),
+    period_preset: str = Query(None),
+):
+    """Aggregated read-only Overview API for external performance audits."""
+    from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
+
+    for key in ("period_start", "period_end", "compare", "period_preset"):
+        if len(request.query_params.getlist(key)) > 1:
+            raise HTTPException(status_code=422, detail=f"Parámetro duplicado: {key}")
+    if compare is not None and compare not in VALID_COMPARISONS:
+        raise HTTPException(status_code=422, detail="Comparación inválida")
+    if period_preset is not None and period_preset not in VALID_PRESETS:
+        raise HTTPException(status_code=422, detail="Preset inválido")
+    try:
+        _, _, period_preset = validate_explicit_range(period_start, period_end, period_preset)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    timing = {}
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_leads_dashboard_overview(
+            period_start=period_start,
+            period_end=period_end,
+            compare=compare,
+            period_preset=period_preset,
+            timing=timing,
+        ),
+    )
+    response = JSONResponse(_public_executive_overview(payload))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Overview-Cache"] = str(timing.get("cache", "UNKNOWN"))
+    response.headers["Server-Timing"] = _overview_server_timing(timing)
+    return response
+
+
 @app.get("/api/leads-dashboard/overview")
 async def api_leads_dashboard_overview(
     request: Request,

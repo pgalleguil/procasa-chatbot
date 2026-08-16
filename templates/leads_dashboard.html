@@ -3203,6 +3203,20 @@
         html.chrome-performance body {
             transition: background-color 0.3s ease, color 0.3s ease;
         }
+
+        /* La demo pública conserva únicamente el Resumen Ejecutivo. */
+        body.public-demo #sidebar,
+        body.public-demo #dashTabs,
+        body.public-demo .mobile-tab-select,
+        body.public-demo .exec-export,
+        body.public-demo .hamburger-mobile {
+            display: none !important;
+        }
+        body.public-demo .main-content {
+            margin-left: 0;
+            width: 100%;
+        }
+        body.public-demo .header-container { margin-top: 0; }
     </style>
 </head>
 
@@ -3214,7 +3228,7 @@
     })();
 </script>
 
-<body class="seq-pending">
+<body class="seq-pending{% if public_demo|default(false) %} public-demo{% endif %}">
         <nav class="sidebar seq-el seq-static" id="sidebar">
             <button type="button" class="sidebar-close" aria-label="Cerrar menú" onclick="closeMobileMenu()"><i class="fa-solid fa-xmark"></i></button>
             <div class="brand">
@@ -3269,6 +3283,7 @@
                 </div>
             </div>
 
+            {% if not public_demo|default(false) %}
             <!-- NAVEGACIÓN DE PESTAÑAS -->
             <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
@@ -3284,6 +3299,7 @@
                     <option value="channels">Portales & ROI</option>
                 </select>
             </div>
+            {% endif %}
 
             <!-- FILTROS DE PERIODO (estilo Dashboard Comercial) -->
             <div class="period-filterbar seq-el seq-static">
@@ -3567,6 +3583,7 @@
 
             </div>
 
+            {% if not public_demo|default(false) %}
             <!-- VISTAS PENDIENTES (Próximamente) -->
             <div id="viewLeads" hidden>
                 <div class="ops-dashboard" id="opsDashboard">
@@ -3625,6 +3642,7 @@
                     <span class="t-soon-badge">Próximamente</span>
                 </div>
             </div>
+            {% endif %}
 
         </div>
 
@@ -3665,6 +3683,8 @@
         <script>
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
+            const PUBLIC_DEMO = {{ 'true' if public_demo|default(false) else 'false' }};
+            const PRIVATE_OPERATIONS_ENDPOINT = {{ "''" if public_demo|default(false) else "'/api/leads-dashboard/operations'" }};
 
             // Estado de periodo (misma lógica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
@@ -4193,7 +4213,7 @@
                 if($('opsInsights')) $('opsInsights').innerHTML='<div class="ops-insight"><strong>'+(c.overdue||0)+' leads vencidos</strong><p>Casos fuera del estándar de respuesta.</p><button class="ops-mini-btn" data-ops-priority="overdue">Ver vencidos →</button></div><div class="ops-insight"><strong>'+(c.near_due||0)+' Hot próximos</strong><p>Oportunidades cerca de cruzar el SLA.</p><button class="ops-mini-btn" data-ops-priority="near_due">Ver Hot →</button></div><div class="ops-insight"><strong>'+(c.unassigned||0)+' sin asignar</strong><p>La distribución inicia el control operativo.</p><button class="ops-mini-btn" data-ops-priority="unassigned">Revisar asignación →</button></div>';
             }
             async function loadOperationalData() {
-                const res=await fetch('/api/leads-dashboard/operations?'+opsParams().toString(),{headers:{Accept:'application/json'}});
+                const res=await fetch(PRIVATE_OPERATIONS_ENDPOINT+'?'+opsParams().toString(),{headers:{Accept:'application/json'}});
                 if(!res.ok) throw new Error('Error operativo '+res.status);
                 renderOperational(await res.json());
                 normalizeOpsEncoding();
@@ -4230,7 +4250,10 @@
                     if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
                     if (COMPARE) p.set('compare', COMPARE);
                     if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
-                    const res = await fetch('/api/leads-dashboard/overview?' + p.toString(), { headers: { Accept: 'application/json' } });
+                    const overviewPath = PUBLIC_DEMO
+                        ? '/api/demo/leads-intelligence/overview'
+                        : '/api/leads-dashboard/overview';
+                    const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
                     if (!res.ok) throw new Error('Error ' + res.status);
                     OVERVIEW = await res.json();
                     syncUrl();
@@ -4246,7 +4269,7 @@
                         requestAnimationFrame(animateFunnelCounts);
                     }
                     renderExecutivesTable();
-                    if (!document.getElementById('viewLeads').hidden) loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:',e));
+                    if ($('viewLeads') && !$('viewLeads').hidden) loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:',e));
                     const now = new Date();
                     LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
                     $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;

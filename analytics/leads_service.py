@@ -9,6 +9,7 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -1058,6 +1059,7 @@ def get_leads_dashboard_overview(
     period_end: str = None,
     compare: str = None,
     period_preset: str = None,
+    timing: dict | None = None,
 ) -> dict:
     """Resumen para la CARD 1 (Demanda & Meta) del Leads Dashboard.
 
@@ -1067,6 +1069,24 @@ def get_leads_dashboard_overview(
     """
     from datetime import datetime as dt, timedelta as td
     from .commercial_periods import canonical_preset, comparison_period, local_today, preset_range
+
+    request_started = time.perf_counter()
+    timing_lock = Lock()
+
+    def record_timing(name: str, started: float, **extra):
+        if timing is None:
+            return
+        item = {"duration_ms": round((time.perf_counter() - started) * 1000, 1)}
+        item.update(extra)
+        with timing_lock:
+            timing.setdefault("components", {})[name] = item
+
+    def run_timed(name: str, fn, kwargs: dict):
+        started = time.perf_counter()
+        try:
+            return fn(**kwargs)
+        finally:
+            record_timing(name, started, thread=__import__("threading").current_thread().name)
 
     today = local_today()
     try:
@@ -1100,7 +1120,15 @@ def get_leads_dashboard_overview(
     )
     cached = _cache_get(key)
     if cached:
+        if timing is not None:
+            timing["cache"] = "HIT"
+            timing["total_ms"] = round((time.perf_counter() - request_started) * 1000, 1)
+            logger.info("[OVERVIEW_TIMING] cache=HIT total_ms=%.1f", timing["total_ms"])
         return cached
+
+    if timing is not None:
+        timing["cache"] = "MISS"
+    concurrent_started = time.perf_counter()
 
     from .leads_queries import (
         query_leads_dashboard_conversion,
@@ -1112,58 +1140,38 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_funnel,
     )
 
-    f_trends = _COMMERCIAL_QUERY_POOL.submit(
-        query_comparative_trends,
-        period_start=period_start,
-        period_end=period_end,
-        comparison_start=prev_start,
-        comparison_end=prev_end,
-        include_comparison=bool(prev_start),
-    )
-    f_conv = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_conversion,
-        period_start=period_start,
-        period_end=period_end,
-        comparison_start=prev_start,
-        comparison_end=prev_end,
-        include_comparison=bool(prev_start),
-    )
-    f_pipe = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_pipeline,
-        period_start=period_start,
-        period_end=period_end,
-    )
-    f_sla = _COMMERCIAL_QUERY_POOL.submit(
-        query_sla_risk_panel,
-        period_start=period_start,
-        period_end=period_end,
-    )
-    f_rescue = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_rescue,
-        period_start=period_start,
-        period_end=period_end,
-    )
-    f_sources = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_sources,
-        period_start=period_start,
-        period_end=period_end,
-        comparison_start=prev_start,
-        comparison_end=prev_end,
-        include_comparison=bool(prev_start),
-    )
-    f_exec = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_executives,
-        period_start=period_start,
-        period_end=period_end,
-        comparison_start=prev_start,
-        comparison_end=prev_end,
-        include_comparison=bool(prev_start),
-    )
-    f_funnel = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_funnel,
-        period_start=period_start,
-        period_end=period_end,
-    )
+    f_trends = _COMMERCIAL_QUERY_POOL.submit(run_timed, "demand_trend", query_comparative_trends, {
+        "period_start": period_start, "period_end": period_end,
+        "comparison_start": prev_start, "comparison_end": prev_end,
+        "include_comparison": bool(prev_start),
+    })
+    f_conv = _COMMERCIAL_QUERY_POOL.submit(run_timed, "conversion", query_leads_dashboard_conversion, {
+        "period_start": period_start, "period_end": period_end,
+        "comparison_start": prev_start, "comparison_end": prev_end,
+        "include_comparison": bool(prev_start),
+    })
+    f_pipe = _COMMERCIAL_QUERY_POOL.submit(run_timed, "valuation_pipeline", query_leads_dashboard_pipeline, {
+        "period_start": period_start, "period_end": period_end,
+    })
+    f_sla = _COMMERCIAL_QUERY_POOL.submit(run_timed, "sla", query_sla_risk_panel, {
+        "period_start": period_start, "period_end": period_end,
+    })
+    f_rescue = _COMMERCIAL_QUERY_POOL.submit(run_timed, "rescue", query_leads_dashboard_rescue, {
+        "period_start": period_start, "period_end": period_end,
+    })
+    f_sources = _COMMERCIAL_QUERY_POOL.submit(run_timed, "sources", query_leads_dashboard_sources, {
+        "period_start": period_start, "period_end": period_end,
+        "comparison_start": prev_start, "comparison_end": prev_end,
+        "include_comparison": bool(prev_start),
+    })
+    f_exec = _COMMERCIAL_QUERY_POOL.submit(run_timed, "diagnostics_executives", query_leads_dashboard_executives, {
+        "period_start": period_start, "period_end": period_end,
+        "comparison_start": prev_start, "comparison_end": prev_end,
+        "include_comparison": bool(prev_start),
+    })
+    f_funnel = _COMMERCIAL_QUERY_POOL.submit(run_timed, "funnel", query_leads_dashboard_funnel, {
+        "period_start": period_start, "period_end": period_end,
+    })
     trends = f_trends.result()
     conversion = f_conv.result()
     pipeline = f_pipe.result()
@@ -1183,14 +1191,18 @@ def get_leads_dashboard_overview(
     except Exception as exc:
         logger.warning("Leads dashboard funnel unavailable: %s", exc)
         funnel = {"received": 0, "stages": []}
+    if timing is not None:
+        timing["concurrent_block_ms"] = round((time.perf_counter() - concurrent_started) * 1000, 1)
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []
     # La meta mensual debe prorratearse según los días calendario realmente
     # seleccionados. Evita comparar, por ejemplo, 2 días contra la meta total
     # de 200 leads del mes.
+    stage_started = time.perf_counter()
     target_info = _executive_target_info(period_start, period_end, today=today)
     meta_target = target_info.get("target") if target_info.get("available") else _load_received_leads_meta_target()
+    record_timing("goal", stage_started)
 
     conv_current = conversion.get("current", {})
     conv_previous = conversion.get("previous", {})
@@ -1233,8 +1245,10 @@ def get_leads_dashboard_overview(
 
     # Cobertura de demanda sobre la cartera ACTIVA de SUCRE (denominador
     # dinámico, en vivo; no estático).
+    stage_started = time.perf_counter()
     _cobertura = query_cartera_demanda_coverage(
         period_start=period_start, period_end=period_end, oficina="PROCASA SUCRE")
+    record_timing("demand_coverage", stage_started)
     propiedades_con_demanda = _cobertura["propiedades_con_demanda"]
     cartera_activa = _cobertura["propiedades_activas"]
     pct_cartera_con_demanda = _cobertura["pct_cartera_con_demanda"]
@@ -1257,9 +1271,11 @@ def get_leads_dashboard_overview(
     MIN_VENTA_CLP = 1_000_000
     MIN_ARRIENDO_CLP = 100_000
     uf_clp = float(uf_value) if uf_value else None
+    stage_started = time.perf_counter()
     _props = query_property_commission_rows(
         period_start=period_start, period_end=period_end, uf_value=uf_clp,
     )
+    record_timing("property_commission", stage_started)
     comision_venta_uf = 0.0
     comision_arriendo_uf = 0.0
     venta_afectadas_min = 0
@@ -1405,6 +1421,7 @@ def get_leads_dashboard_overview(
         pipeline=pipeline,
     )
 
+    serialization_started = time.perf_counter()
     result = _sanitize_non_finite({
         "period": {
             "preset": preset,
@@ -1492,5 +1509,12 @@ def get_leads_dashboard_overview(
             "days_in_period": (pe_dt - ps_dt).days + 1,
         },
     })
+    record_timing("serialization", serialization_started)
     _cache_set(key, result)
+    if timing is not None:
+        timing["total_ms"] = round((time.perf_counter() - request_started) * 1000, 1)
+        logger.info(
+            "[OVERVIEW_TIMING] cache=MISS total_ms=%.1f concurrent_ms=%.1f components=%s",
+            timing["total_ms"], timing.get("concurrent_block_ms", 0), timing.get("components", {}),
+        )
     return result

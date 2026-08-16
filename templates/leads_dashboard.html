@@ -2295,6 +2295,7 @@
             box-sizing: border-box;
             padding: 14px 22px;
             text-align: left;
+            align-items: flex-start;
             position: relative;
             overflow: visible;
             transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
@@ -2325,6 +2326,7 @@
             position: relative;
             z-index: 1;
             white-space: nowrap;
+            text-align: left;
         }
 
         .funnel-level span {
@@ -2338,6 +2340,7 @@
             position: relative;
             z-index: 1;
             white-space: nowrap;
+            text-align: left;
         }
 
         .funnel-transition {
@@ -4914,7 +4917,7 @@
                         level(ges, 'Gestionados', funnelWidth(ges) + '%') +
                         transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads') +
                         level(con, 'Contacto efectivo', funnelWidth(con) + '%') +
-                        transition(fmtPct(vPct) + ' avanza con trazabilidad', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con) +
+                        transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo') +
                         level(vis, 'Visitas agendadas', funnelWidth(vis) + '%');
                 }
 
@@ -4939,7 +4942,7 @@
                     const parts = [];
                     if (nSinContacto > 0) parts.push(nSinContacto + ' sin contacto previo');
                     if (nSinGestion > 0) parts.push(nSinGestion + ' sin gestión registrada');
-                    notes.push(t + parts.join(' · '));
+                    notes.push(t + parts.join(' · ') + '. El embudo conserva las visitas totales y marca aparte las trazables.');
                 }
                 const notesEl = $('funnelNotes');
                 if (notesEl) { notesEl.innerHTML = notes.join(' · '); notesEl.hidden = notes.length === 0; }

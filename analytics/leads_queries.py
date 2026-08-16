@@ -4080,7 +4080,16 @@ def query_sla_accountability(period_start=None, period_end=None, filters=None):
     ids = [lead.get("_id") for lead in leads if lead.get("_id") is not None]
     events_by_lead = {}
     if ids:
-        for event in db["crm_events"].find({"lead_id": {"$in": ids}}):
+        # Solo se necesitan estos campos para event_evidence(); evitar traer
+        # payloads completos de eventos reduce mucho la respuesta de Mongo.
+        event_projection = {
+            "lead_id": 1, "type": 1, "actor": 1, "actor_type": 1,
+            "result": 1, "confirmed": 1, "meta": 1,
+            "timestamp": 1, "occurred_at": 1,
+        }
+        for event in db["crm_events"].find(
+            {"lead_id": {"$in": ids}}, event_projection
+        ):
             events_by_lead.setdefault(str(event.get("lead_id")), []).append(event)
 
     rows = {}

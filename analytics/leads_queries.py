@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+import logging
 import math
 import re
 from typing import Any, Mapping, Optional
+
+from pymongo.errors import NetworkTimeout
 
 from chatbot.constants import CHILE_TZ
 from chatbot.crm_metrics import (
@@ -22,6 +25,8 @@ from chatbot.lead_temperature import (
     HOT_STAGES,
 )
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
@@ -4087,10 +4092,19 @@ def query_sla_accountability(period_start=None, period_end=None, filters=None):
             "result": 1, "confirmed": 1, "meta": 1,
             "timestamp": 1, "occurred_at": 1,
         }
-        for event in db["crm_events"].find(
-            {"lead_id": {"$in": ids}}, event_projection
-        ):
-            events_by_lead.setdefault(str(event.get("lead_id")), []).append(event)
+        try:
+            for event in db["crm_events"].find(
+                {"lead_id": {"$in": ids}}, event_projection
+            ):
+                events_by_lead.setdefault(str(event.get("lead_id")), []).append(event)
+        except NetworkTimeout:
+            # La actividad de contacto es complementaria para esta tarjeta.
+            # Si Mongo no termina la lectura dentro del timeout, no debemos
+            # tumbar todo el dashboard: se conserva SLA y se marca como sin
+            # actividad verificable en esta respuesta.
+            logger.warning(
+                "[SLA_ACCOUNTABILITY] crm_events timeout; continuing without activity evidence"
+            )
 
     rows = {}
     summary = {"open_breached": 0, "breached_with_activity_without_result": 0,

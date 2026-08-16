@@ -1109,9 +1109,7 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_rescue,
         query_leads_dashboard_sources,
         query_leads_dashboard_executives,
-        query_sla_accountability,
         query_leads_dashboard_funnel,
-        query_leads_dashboard_reconcile_breakdown,
     )
 
     f_trends = _COMMERCIAL_QUERY_POOL.submit(
@@ -1161,22 +1159,11 @@ def get_leads_dashboard_overview(
         comparison_end=prev_end,
         include_comparison=bool(prev_start),
     )
-    f_sla_acc = _COMMERCIAL_QUERY_POOL.submit(
-        query_sla_accountability,
-        period_start=period_start,
-        period_end=period_end,
-    )
     f_funnel = _COMMERCIAL_QUERY_POOL.submit(
         query_leads_dashboard_funnel,
         period_start=period_start,
         period_end=period_end,
     )
-    f_reconcile = _COMMERCIAL_QUERY_POOL.submit(
-        query_leads_dashboard_reconcile_breakdown,
-        period_start=period_start,
-        period_end=period_end,
-    )
-
     trends = f_trends.result()
     conversion = f_conv.result()
     pipeline = f_pipe.result()
@@ -1191,18 +1178,11 @@ def get_leads_dashboard_overview(
         # Compatibilidad si otra ruta devuelve lista (no debería ocurrir).
         exec_rows = _exec_payload or []
         exec_reconcile = {}
-    sla_acc = f_sla_acc.result()
     try:
         funnel = f_funnel.result()
     except Exception as exc:
         logger.warning("Leads dashboard funnel unavailable: %s", exc)
         funnel = {"received": 0, "stages": []}
-    try:
-        reconcile_breakdown = f_reconcile.result()
-    except Exception as exc:
-        logger.warning("Leads dashboard reconciliation unavailable: %s", exc)
-        reconcile_breakdown = {"items": [], "total": 0}
-
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []

@@ -916,6 +916,17 @@ def _overview_server_timing(timing: dict) -> str:
         duration = item.get("duration_ms")
         if duration is not None:
             parts.append(f"{name};dur={duration}")
+    # Diagnóstico agregado y temporal: permite distinguir los round trips
+    # internos del Funnel sin exponer documentos ni información de leads.
+    for component, detail in (timing.get("component_details") or {}).items():
+        for mongo_item in detail.get("mongo", []) if isinstance(detail, dict) else []:
+            operation = str(mongo_item.get("operation") or "mongo").replace(" ", "_")
+            duration = mongo_item.get("duration_ms")
+            if duration is not None:
+                parts.append(f"{component}.{operation};dur={duration}")
+        wait_ms = detail.get("signed_orders_wait_ms") if isinstance(detail, dict) else None
+        if wait_ms is not None:
+            parts.append(f"{component}.shared_orders_wait;dur={wait_ms}")
     for name in ("executor_wait_ms", "concurrent_block_ms", "total_ms"):
         duration = timing.get(name)
         if duration is not None:

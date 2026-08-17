@@ -1139,6 +1139,21 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_executives,
         query_leads_dashboard_funnel,
     )
+    conversion_detail = {}
+    executives_detail = {}
+    sources_detail = {}
+    shared_orders = None
+    shared_orders_started = time.perf_counter()
+    try:
+        from chatbot.storage import get_db
+        from .leads_queries import CANONICAL_SIGNED_ORDER_STATUSES
+        shared_orders = list(get_db()["visitas"].find(
+            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+        ))
+    except Exception as exc:
+        logger.warning("Overview shared signed-orders read unavailable; components will fall back: %s", exc)
+    record_timing("shared_signed_orders", shared_orders_started)
 
     f_trends = _COMMERCIAL_QUERY_POOL.submit(run_timed, "demand_trend", query_comparative_trends, {
         "period_start": period_start, "period_end": period_end,
@@ -1149,6 +1164,8 @@ def get_leads_dashboard_overview(
         "period_start": period_start, "period_end": period_end,
         "comparison_start": prev_start, "comparison_end": prev_end,
         "include_comparison": bool(prev_start),
+        "timing": conversion_detail,
+        "signed_orders": shared_orders,
     })
     f_pipe = _COMMERCIAL_QUERY_POOL.submit(run_timed, "valuation_pipeline", query_leads_dashboard_pipeline, {
         "period_start": period_start, "period_end": period_end,
@@ -1163,11 +1180,15 @@ def get_leads_dashboard_overview(
         "period_start": period_start, "period_end": period_end,
         "comparison_start": prev_start, "comparison_end": prev_end,
         "include_comparison": bool(prev_start),
+        "timing": sources_detail,
+        "signed_orders": shared_orders,
     })
     f_exec = _COMMERCIAL_QUERY_POOL.submit(run_timed, "diagnostics_executives", query_leads_dashboard_executives, {
         "period_start": period_start, "period_end": period_end,
         "comparison_start": prev_start, "comparison_end": prev_end,
         "include_comparison": bool(prev_start),
+        "timing": executives_detail,
+        "signed_orders": shared_orders,
     })
     f_funnel = _COMMERCIAL_QUERY_POOL.submit(run_timed, "funnel", query_leads_dashboard_funnel, {
         "period_start": period_start, "period_end": period_end,
@@ -1193,6 +1214,11 @@ def get_leads_dashboard_overview(
         funnel = {"received": 0, "stages": []}
     if timing is not None:
         timing["concurrent_block_ms"] = round((time.perf_counter() - concurrent_started) * 1000, 1)
+        timing["component_details"] = {
+            "conversion": conversion_detail,
+            "diagnostics_executives": executives_detail,
+            "sources": sources_detail,
+        }
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []
@@ -1245,13 +1271,10 @@ def get_leads_dashboard_overview(
 
     # Cobertura de demanda sobre la cartera ACTIVA de SUCRE (denominador
     # dinámico, en vivo; no estático).
-    stage_started = time.perf_counter()
-    _cobertura = query_cartera_demanda_coverage(
-        period_start=period_start, period_end=period_end, oficina="PROCASA SUCRE")
-    record_timing("demand_coverage", stage_started)
-    propiedades_con_demanda = _cobertura["propiedades_con_demanda"]
-    cartera_activa = _cobertura["propiedades_activas"]
-    pct_cartera_con_demanda = _cobertura["pct_cartera_con_demanda"]
+    coverage_future = _COMMERCIAL_QUERY_POOL.submit(
+        run_timed, "demand_coverage", query_cartera_demanda_coverage,
+        {"period_start": period_start, "period_end": period_end, "oficina": "PROCASA SUCRE"},
+    )
 
     macro = _load_commercial_macro_information()
     uf_info = (macro.get("indicators") or {}).get("uf") or {}
@@ -1271,11 +1294,15 @@ def get_leads_dashboard_overview(
     MIN_VENTA_CLP = 1_000_000
     MIN_ARRIENDO_CLP = 100_000
     uf_clp = float(uf_value) if uf_value else None
-    stage_started = time.perf_counter()
-    _props = query_property_commission_rows(
-        period_start=period_start, period_end=period_end, uf_value=uf_clp,
+    property_future = _COMMERCIAL_QUERY_POOL.submit(
+        run_timed, "property_commission", query_property_commission_rows,
+        {"period_start": period_start, "period_end": period_end, "uf_value": uf_clp},
     )
-    record_timing("property_commission", stage_started)
+    _cobertura = coverage_future.result()
+    _props = property_future.result()
+    propiedades_con_demanda = _cobertura["propiedades_con_demanda"]
+    cartera_activa = _cobertura["propiedades_activas"]
+    pct_cartera_con_demanda = _cobertura["pct_cartera_con_demanda"]
     comision_venta_uf = 0.0
     comision_arriendo_uf = 0.0
     venta_afectadas_min = 0
@@ -1514,7 +1541,8 @@ def get_leads_dashboard_overview(
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - request_started) * 1000, 1)
         logger.info(
-            "[OVERVIEW_TIMING] cache=MISS total_ms=%.1f concurrent_ms=%.1f components=%s",
-            timing["total_ms"], timing.get("concurrent_block_ms", 0), timing.get("components", {}),
+            "[OVERVIEW_TIMING] cache=MISS total_ms=%.1f concurrent_ms=%.1f components=%s details=%s",
+            timing["total_ms"], timing.get("concurrent_block_ms", 0),
+            timing.get("components", {}), timing.get("component_details", {}),
         )
     return result

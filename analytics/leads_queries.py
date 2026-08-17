@@ -1612,6 +1612,20 @@ CANONICAL_SCHEDULED_VISIT_RESULTS = frozenset({"VISITA_AGENDADA"})
 CANONICAL_SIGNED_ORDER_STATUSES = frozenset({"signed"})
 
 
+def _profile_query(profile: Optional[dict], collection: str, operation: str, loader):
+    """Materialize one read and record safe, aggregate-only diagnostics."""
+    started = __import__("time").perf_counter()
+    rows = list(loader())
+    if profile is not None:
+        profile.setdefault("mongo", []).append({
+            "collection": collection,
+            "operation": operation,
+            "duration_ms": round((__import__("time").perf_counter() - started) * 1000, 1),
+            "documents": len(rows),
+        })
+    return rows
+
+
 def _normalize_match_phone(raw: str) -> str:
     """Normalización determinística para emparejar orden de visita <-> lead."""
     from chatbot.phone_utils import extract_digits
@@ -1693,7 +1707,7 @@ def _match_signed_orders_to_leads(orders: list, leads: list) -> tuple:
     return dict(attributed), ambiguous
 
 
-def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
+def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc, profile: Optional[dict] = None, signed_orders: Optional[list] = None) -> set:
     """Leads de la cohorte con evidencia canónica de visita agendada as-of.
 
     Definición EXACTA de CARD 2 (Conversión a Visita Agendada), reutilizada por
@@ -1740,10 +1754,11 @@ def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
                 {"meta.result": {"$in": ["visita_agendada", "VISITA_AGENDADA"]}},
             ],
         }
-        for event in db["crm_events"].find(
+        events = _profile_query(profile, "crm_events", "find_scheduled_events", lambda: db["crm_events"].find(
             event_filter,
             {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1},
-        ):
+        ))
+        for event in events:
             raw = event.get("result") or (event.get("meta") or {}).get("result") or ""
             if str(raw).strip().upper() not in CANONICAL_SCHEDULED_VISIT_RESULTS:
                 continue
@@ -1758,11 +1773,14 @@ def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
                 scheduled.add(eid)
 
     # Fuente C — órdenes de visita firmadas con accepted timestamp (as-of).
-    signed_orders = list(db["visitas"].find(
-        {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
-        {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
-    ))
-    order_matches, _ambiguous = _match_signed_orders_to_leads(signed_orders, cohort_leads)
+    if signed_orders is None:
+        signed_orders = _profile_query(profile, "visitas", "find_signed_orders", lambda: db["visitas"].find(
+            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+        ))
+    order_matches, ambiguous_orders = _match_signed_orders_to_leads(signed_orders, cohort_leads)
+    if profile is not None:
+        profile["orders_ambiguous"] = len(ambiguous_orders)
     by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
     for lid, accepted_list in order_matches.items():
         if lid not in lead_ids:
@@ -1776,7 +1794,7 @@ def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc) -> set:
     return scheduled
 
 
-def _cohort_conversion_metrics(db, ps_utc, pe_utc, filters):
+def _cohort_conversion_metrics(db, ps_utc, pe_utc, filters, profile: Optional[dict] = None, signed_orders: Optional[list] = None):
     """Conversión as-of al cierre del período.
 
     Numerador: COUNT(DISTINCT lead) del período cuya evidencia canónica de
@@ -1790,51 +1808,41 @@ def _cohort_conversion_metrics(db, ps_utc, pe_utc, filters):
 
     Denominador: TODOS los leads del período (sin excluir no-trazados).
     """
-    pipeline = [
+    base_pipeline = [
         _cohort_indexed_prefilter(ps_utc, pe_utc),
         _normalized_created_at_stage(),
         {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
-        {"$facet": {
-            "total": [{"$count": "c"}],
-            "evaluable": [{"$match": _VISIT_TRACEABILITY_MATCH}, {"$count": "c"}],
-        }},
-        {"$project": {
-            "total": {"$ifNull": [{"$arrayElemAt": ["$total.c", 0]}, 0]},
-            "evaluable": {"$ifNull": [{"$arrayElemAt": ["$evaluable.c", 0]}, 0]},
-        }},
     ]
-    row = list(db["leads"].aggregate(pipeline))
-    total = row[0].get("total", 0) if row else 0
-    evaluable = row[0].get("evaluable", 0) if row else 0
-
-    # Cargar los leads de la cohorte (proyección mínima) para las fuentes A/C.
-    lead_pipe = [
-        _cohort_indexed_prefilter(ps_utc, pe_utc),
-        _normalized_created_at_stage(),
-        {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
-        {"$project": {
+    pipeline = base_pipeline + [{"$facet": {
+        "total": [{"$count": "c"}],
+        "evaluable": [{"$match": _VISIT_TRACEABILITY_MATCH}, {"$count": "c"}],
+        "cohort": [{"$project": {
             "_id": 1, "phone": 1,
             "prospecto.codigo": 1,
             "created_at": 1,
             "pipeline_stage": 1, "stage": 1,
             "stage_history": 1,
             "lifecycle.visit_scheduled_at": 1,
-        }},
-    ]
-    cohort_leads = list(db["leads"].aggregate(lead_pipe))
+        }}],
+    }}]
+    row = _profile_query(profile, "leads", "aggregate_conversion_counts_and_cohort", lambda: db["leads"].aggregate(pipeline))
+    combined = row[0] if row else {}
+    total = ((combined.get("total") or [{}])[0]).get("c", 0)
+    evaluable = ((combined.get("evaluable") or [{}])[0]).get("c", 0)
+    cohort_leads = combined.get("cohort") or []
     lead_ids = {str(l["_id"]) for l in cohort_leads}
 
-    scheduled = _scheduled_visit_lead_ids(cohort_leads, lead_ids, pe_utc)
+    evidence_profile = {}
+    scheduled = _scheduled_visit_lead_ids(cohort_leads, lead_ids, pe_utc, evidence_profile, signed_orders)
+    if profile is not None:
+        profile.setdefault("mongo", []).extend(evidence_profile.get("mongo", []))
+        profile["orders_ambiguous"] = profile.get("orders_ambiguous", 0) + evidence_profile.get("orders_ambiguous", 0)
 
     return {
         "total": total,
         "citas": len(scheduled),
         "evaluable": evaluable,
-        "orders_ambiguous": len(_match_signed_orders_to_leads(
-            list(db["visitas"].find(
-                {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
-                {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
-            )), cohort_leads)[1]),
+        "orders_ambiguous": evidence_profile.get("orders_ambiguous", 0),
     }
 
 
@@ -1845,6 +1853,8 @@ def query_leads_dashboard_conversion(
     comparison_end: Optional[str] = None,
     include_comparison: bool = True,
     filters: Optional[dict] = None,
+    timing: Optional[dict] = None,
+    signed_orders: Optional[list] = None,
 ) -> dict:
     """Conversión a Visita Agendada para el Leads Dashboard (CARD 2).
 
@@ -1866,10 +1876,20 @@ def query_leads_dashboard_conversion(
         prev_end = start_utc
         prev_start = prev_end - duration
 
-    current = _cohort_conversion_metrics(db, start_utc, end_utc, filters)
-    previous = _cohort_conversion_metrics(db, prev_start, prev_end, filters) if include_comparison else {
+    current_profile = {}
+    previous_profile = {}
+    shared_orders = signed_orders
+    if shared_orders is None:
+        shared_orders = _profile_query(timing, "visitas", "find_signed_orders_shared", lambda: db["visitas"].find(
+            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+        ))
+    current = _cohort_conversion_metrics(db, start_utc, end_utc, filters, current_profile, shared_orders)
+    previous = _cohort_conversion_metrics(db, prev_start, prev_end, filters, previous_profile, shared_orders) if include_comparison else {
         "total": 0, "citas": 0, "evaluable": 0, "orders_ambiguous": 0,
     }
+    if timing is not None:
+        timing.update({"current": current_profile, "previous": previous_profile})
 
     return {
         "current": current,
@@ -2317,6 +2337,8 @@ def query_leads_dashboard_sources(
     comparison_end: Optional[str] = None,
     include_comparison: bool = True,
     filters: Optional[dict] = None,
+    timing: Optional[dict] = None,
+    signed_orders: Optional[list] = None,
 ) -> dict:
     """Distribución por origen (SECCIÓN Origen de Demanda) con conversión a
     visita canónica y comparativa anterior.
@@ -2336,21 +2358,30 @@ def query_leads_dashboard_sources(
     else:
         prev_start = prev_end = None
 
-    def _load(ps_utc, pe_utc):
-        return list(db["leads"].aggregate([
+    def _load(ps_utc, pe_utc, label):
+        return _profile_query(timing, "leads", f"aggregate_sources_{label}", lambda: db["leads"].aggregate([
             _cohort_indexed_prefilter(ps_utc, pe_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
             {"$project": {
-                "_id": 1, "phone": 1, "prospecto": 1, "created_at": 1,
+                "_id": 1, "phone": 1,
+                "prospecto.origen": 1, "prospecto.canal_origen": 1,
+                "prospecto.codigo_mercadolibre": 1, "prospecto.codigo_yapo": 1,
+                "prospecto.codigo": 1, "created_at": 1,
                 "pipeline_stage": 1, "stage": 1, "stage_history": 1,
                 "lifecycle.visit_scheduled_at": 1,
             }},
         ]))
 
-    cohort = _load(start_utc, end_utc)
+    shared_orders = signed_orders
+    if shared_orders is None:
+        shared_orders = _profile_query(timing, "visitas", "find_signed_orders_shared", lambda: db["visitas"].find(
+            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+        ))
+    cohort = _load(start_utc, end_utc, "current")
     lead_ids = {str(l["_id"]) for l in cohort}
-    scheduled = _scheduled_visit_lead_ids(cohort, lead_ids, end_utc)
+    scheduled = _scheduled_visit_lead_ids(cohort, lead_ids, end_utc, timing, shared_orders)
 
     per_origin: dict = {}
     for lead in cohort:
@@ -2362,7 +2393,7 @@ def query_leads_dashboard_sources(
 
     prev_counts: dict = {}
     if prev_start:
-        for lead in _load(prev_start, prev_end):
+        for lead in _load(prev_start, prev_end, "previous"):
             name = _normalize_source_name(_resolve_origin(lead))
             prev_counts[name] = prev_counts.get(name, 0) + 1
 
@@ -2479,6 +2510,8 @@ def query_leads_dashboard_executives(
     comparison_end: Optional[str] = None,
     include_comparison: bool = True,
     filters: Optional[dict] = None,
+    timing: Optional[dict] = None,
+    signed_orders: Optional[list] = None,
 ) -> dict:
     """Rendimiento comercial por ejecutivo (BLOQUE 4).
 
@@ -2501,7 +2534,14 @@ def query_leads_dashboard_executives(
     else:
         prev_start = prev_end = None
 
-    def _cohort(ps, pe):
+    shared_orders = signed_orders
+    if shared_orders is None:
+        shared_orders = _profile_query(timing, "visitas", "find_signed_orders_shared", lambda: db["visitas"].find(
+            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+        ))
+
+    def _cohort(ps, pe, label):
         pipe = [
             _cohort_indexed_prefilter(ps, pe),
             _normalized_created_at_stage(),
@@ -2510,14 +2550,19 @@ def query_leads_dashboard_executives(
                           "pipeline_stage": 1, "stage": 1, "stage_history": 1,
                           "lifecycle.visit_scheduled_at": 1}},
         ]
-        leads = list(db["leads"].aggregate(pipe))
+        leads = _profile_query(timing, "leads", f"aggregate_executives_{label}", lambda: db["leads"].aggregate(pipe))
         lead_ids = {str(l["_id"]) for l in leads}
         # ciclos de la cohorte
         cycles_by_lead: dict = {}
-        for c in db["crm_assignment_cycles"].find({"lead_id": {"$in": [l["_id"] for l in leads]}}):
+        cycles = _profile_query(timing, "crm_assignment_cycles", f"find_assignment_cycles_{label}", lambda: db["crm_assignment_cycles"].find(
+            {"lead_id": {"$in": [l["_id"] for l in leads]}},
+            {"lead_id": 1, "assigned_at": 1, "unassigned_at": 1,
+             "assigned_to_display_name": 1, "assigned_to_user_id": 1},
+        ))
+        for c in cycles:
             cycles_by_lead.setdefault(str(c.get("lead_id")), []).append(c)
         # visitas CARD 2 as-of (misma definición aprobada)
-        visitas = _scheduled_visit_lead_ids(leads, lead_ids, pe)
+        visitas = _scheduled_visit_lead_ids(leads, lead_ids, pe, timing, shared_orders)
         # ejecutivo responsable as-of por lead
         lead_exec = {}
         for l in leads:
@@ -2525,8 +2570,8 @@ def query_leads_dashboard_executives(
             lead_exec[lid] = _executive_as_of(cycles_by_lead, lid, pe) or "Sin Asignar"
         return leads, lead_exec, visitas
 
-    cur_leads, cur_exec, cur_visitas = _cohort(start_utc, end_utc)
-    prev_leads, prev_exec, prev_visitas = _cohort(prev_start, prev_end) if prev_start else ([], {}, set())
+    cur_leads, cur_exec, cur_visitas = _cohort(start_utc, end_utc, "current")
+    prev_leads, prev_exec, prev_visitas = _cohort(prev_start, prev_end, "previous") if prev_start else ([], {}, set())
 
     # Solo ejecutivos con rol agente y activos en la colección "usuarios"
     active = {

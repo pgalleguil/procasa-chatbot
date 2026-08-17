@@ -3,6 +3,57 @@ from typing import Any
 from urllib.parse import urlparse
 
 
+def _parse_chilean_number(value: str, *, decimal_hint: bool = False) -> float | None:
+    """Parsea un número chileno sin mezclar segmentos de monedas.
+
+    Un punto aislado se interpreta como separador de miles; una coma como
+    decimal. Para UF se acepta además la forma ``5200.50`` cuando hay dos
+    dígitos después del punto.
+    """
+    raw = re.sub(r"[^0-9.,]", "", str(value or "")).strip()
+    if not raw:
+        return None
+    if "," in raw:
+        integer, decimal = raw.rsplit(",", 1)
+        integer = integer.replace(".", "")
+        try:
+            return float(f"{integer}.{decimal}")
+        except ValueError:
+            return None
+    if "." in raw:
+        parts = raw.split(".")
+        # 5.200 = miles; 5.20 = decimal UF.
+        if len(parts) == 2 and len(parts[1]) in (1, 2) and decimal_hint:
+            try:
+                return float(raw)
+            except ValueError:
+                return None
+        try:
+            return float("".join(parts))
+        except ValueError:
+            return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def parse_toctoc_price(price_text: str, uf_valor_clp: float | None = None) -> dict[str, Any]:
+    """Extrae CLP y UF por separado desde el texto publicado por Toctoc.
+
+    Nunca concatena los dígitos de ambas monedas. Si solo viene UF, calcula
+    CLP con el valor UF vigente; si solo viene CLP, conserva solo CLP aquí.
+    """
+    text = str(price_text or "")
+    uf_match = re.search(r"\bUF\s*([0-9][0-9.,]*)", text, re.IGNORECASE)
+    clp_match = re.search(r"\$\s*([0-9][0-9.,]*)", text)
+    precio_uf = _parse_chilean_number(uf_match.group(1), decimal_hint=True) if uf_match else None
+    precio_clp = _parse_chilean_number(clp_match.group(1)) if clp_match else None
+    if precio_uf is not None and precio_clp is None and uf_valor_clp:
+        precio_clp = round(precio_uf * float(uf_valor_clp))
+    return {"precio_uf": precio_uf, "precio_clp": precio_clp}
+
+
 def _enrich_property_fields(parsed: dict[str, Any], url: str, uf_valor_clp: float, uf_fecha: str) -> dict[str, Any]:
     main_fields = {"listing_id": "", "operacion": "", "tipo_propiedad": "", "comuna": "", "region": ""}
     for field, default in main_fields.items():
@@ -44,15 +95,18 @@ def _enrich_property_fields(parsed: dict[str, Any], url: str, uf_valor_clp: floa
         bano_match = re.search(r'(\d+)\s*(?:baño|bano|banio|ba)', str(attrs) + parsed.get("title", ""), re.I)
         if bano_match: parsed["banos"] = int(bano_match.group(1))
 
-    price_text = parsed.get("price", "") or parsed.get("precio", "")
-    if price_text and not parsed.get("precio_numerico"):
-        price_clean = re.sub(r"[^\d,.]", "", price_text.replace(".", "").replace(",", "."))
-        try: parsed["precio_numerico"] = float(price_clean)
-        except ValueError: parsed["precio_numerico"] = 0.0
-        if "uf" in price_text.lower():
+    price_text = parsed.get("price", "") or parsed.get("precio", "") or parsed.get("precio_raw", "")
+    if price_text:
+        components = parse_toctoc_price(price_text, uf_valor_clp)
+        if components["precio_uf"] is not None:
+            parsed["precio_uf"] = components["precio_uf"]
+            parsed["precio_numerico"] = components["precio_uf"]
             parsed["moneda"] = "UF"
-            parsed["precio_uf"] = parsed["precio_numerico"]
-            parsed["precio_clp"] = round(parsed["precio_numerico"] * uf_valor_clp, 0)
+        if components["precio_clp"] is not None:
+            parsed["precio_clp"] = components["precio_clp"]
+            if components["precio_uf"] is None:
+                parsed["precio_numerico"] = components["precio_clp"]
+                parsed["moneda"] = "CLP"
 
     parsed["uf_valor_clp"] = uf_valor_clp
     parsed["uf_fecha"] = uf_fecha

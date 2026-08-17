@@ -1395,7 +1395,7 @@
                                 {% if item.precio_uf_display %}
                                 <div class="price-primary">UF {{ item.precio_uf_display }}</div>
                                 {% else %}
-                                <div class="price-primary">S/I</div>
+                                <div class="price-primary">{{ item.precio_raw_fallback or 'S/I' }}</div>
                                 {% endif %}
                                 {% if item.precio_clp_display %}
                                 <div class="price-secondary">${{ item.precio_clp_display }}</div>
@@ -1612,13 +1612,13 @@
                                     {% if item.precio_uf %}
                                             UF {{ item.precio_uf_display or 'S/I' }}
                                     {% else %}
-                                    S/I
+                                    {{ item.precio_raw_fallback or 'S/I' }}
                                     {% endif %}
                                 </div>
                                         {% if item.precio_clp_display %}
                                         <div class="small text-secondary">${{ item.precio_clp_display }}</div>
-                                {% elif item.precio and 'UF' not in item.precio|upper and item.precio != 'S/I' %}
-                                <div class="small text-secondary">{{ item.precio }}</div>
+                                {% elif item.precio_raw_fallback and item.precio_raw_fallback != 'S/I' %}
+                                <div class="small text-secondary">{{ item.precio_raw_fallback }}</div>
                                  {% endif %}
                                 {% if item.price_source_warning %}
                                 <div class="price-source-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ item.price_source_warning }}</div>

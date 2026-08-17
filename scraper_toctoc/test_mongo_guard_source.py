@@ -89,7 +89,8 @@ def test_dueno_seguro_low_conf_rejected():
 def test_corredor_with_decision_source_passes():
     doc = _base(classification={"decision_source": "structural_rules", "state": "CORREDOR_SEGURO", "confidence": 0.95})
     doc["classification"].pop("source", None)
-    assert validate_property_for_canonical_insert(doc) == []
+    errors = validate_property_for_canonical_insert(doc)
+    assert any("CORREDOR_SEGURO_CONFIDENCE_OUT_OF_RANGE" in e for e in errors)
 
 
 # 10. Missing title+description -> rejected

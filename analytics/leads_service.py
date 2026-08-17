@@ -1407,6 +1407,10 @@ def get_leads_dashboard_overview(
                 "labels": [d.get("date") for d in daily],
                 "values": [d.get("received", 0) for d in daily],
             },
+            "daily_lookback": {
+                "labels": [d.get("date") for d in current.get("daily_lookback", [])],
+                "values": [d.get("received", 0) for d in current.get("daily_lookback", [])],
+            },
             "previous_daily": {
                 "labels": [d.get("date") for d in previous.get("daily", [])],
                 "values": [d.get("received", 0) for d in previous.get("daily", [])],

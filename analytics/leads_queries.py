@@ -1490,6 +1490,10 @@ def query_comparative_trends(
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    lookback_start = (
+        datetime.strptime(period_start, "%Y-%m-%d").date() - timedelta(days=6)
+    ).isoformat() if period_start else None
+    lookback_start_utc, _ = _build_chile_period_bounds(lookback_start, period_end) if lookback_start else (start_utc, end_utc)
 
     if not include_comparison:
         prev_start = prev_end = None
@@ -1501,11 +1505,17 @@ def query_comparative_trends(
         prev_start = prev_end - duration
 
     if include_comparison and prev_start is not None and prev_end is not None:
-        combined_start = min(start_utc, prev_start)
+        combined_start = min(start_utc, prev_start, lookback_start_utc)
         combined_end = max(end_utc, prev_end)
         facets = {
             "current": [
                 {"$match": {"_created_normalized": {"$gte": start_utc, "$lt": end_utc}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
+                {"$sort": {"_id": 1}},
+                {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+            ],
+            "current_context": [
+                {"$match": {"_created_normalized": {"$gte": lookback_start_utc, "$lt": end_utc}}},
                 {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
                 {"$sort": {"_id": 1}},
                 {"$project": {"date": "$_id", "received": 1, "_id": 0}},
@@ -1526,17 +1536,31 @@ def query_comparative_trends(
         row = list(db["leads"].aggregate(pipeline))
         row = row[0] if row else {}
         current_daily = row.get("current", [])
+        current_context_daily = row.get("current_context", [])
         previous_daily = row.get("previous", [])
     else:
         pipeline = [
-            _cohort_indexed_prefilter(start_utc, end_utc),
+            _cohort_indexed_prefilter(lookback_start_utc, end_utc),
             _normalized_created_at_stage(),
-            {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
-            {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
-            {"$sort": {"_id": 1}},
-            {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+            {"$match": _build_commercial_cohort_match(lookback_start_utc, end_utc, filters)},
+            {"$facet": {
+                "current": [
+                    {"$match": {"_created_normalized": {"$gte": start_utc, "$lt": end_utc}}},
+                    {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
+                    {"$sort": {"_id": 1}},
+                    {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+                ],
+                "current_context": [
+                    {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
+                    {"$sort": {"_id": 1}},
+                    {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+                ],
+            }},
         ]
-        current_daily = list(db["leads"].aggregate(pipeline))
+        row = list(db["leads"].aggregate(pipeline))
+        row = row[0] if row else {}
+        current_daily = row.get("current", [])
+        current_context_daily = row.get("current_context", [])
         previous_daily = []
 
     # Rellenar días sin leads con 0 para que ambas series sean continuas y
@@ -1556,6 +1580,7 @@ def query_comparative_trends(
 
     if period_start and period_end:
         current_daily = _fill_daily(current_daily, period_start, period_end)
+        current_context_daily = _fill_daily(current_context_daily, lookback_start, period_end)
     if include_comparison and comparison_start and comparison_end:
         previous_daily = _fill_daily(previous_daily, comparison_start, comparison_end)
 
@@ -1571,6 +1596,7 @@ def query_comparative_trends(
     return {
         "current": {
             "daily": current_daily,
+            "daily_lookback": current_context_daily,
             "total": current_total,
             "avg_daily": current_avg,
         },

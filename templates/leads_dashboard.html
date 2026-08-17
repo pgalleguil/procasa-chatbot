@@ -4742,6 +4742,9 @@
                     return points;
                 }, []);
                 const maD = hasMA && maPts.length > 1 ? tcSmooth(maPts) : '';
+                const maPoint = maPts.length === 1
+                    ? '<circle class="tc-ma-point" cx="' + maPts[0][0].toFixed(2) + '" cy="' + maPts[0][1].toFixed(2) + '" r="2.1" fill="#F59E0B" stroke="var(--bg-card)" stroke-width="1" vector-effect="non-scaling-stroke"/>'
+                    : '';
 
                 const step = Math.max(1, Math.ceil(days / 10));
                 let labelsHtml = '';
@@ -4767,6 +4770,7 @@
                     '<rect class="tc-zone" x="0" y="0" width="100" height="40" fill="transparent" pointer-events="all"/>' +
                     bars +
                     (hasMA && maD ? '<path class="tc-line tc-ma" d="' + maD + '" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : '') +
+                    maPoint +
                     '</svg>' +
                     '<div class="tc-guide"></div>' +
                     '<div class="tc-hl tc-hl-cur"></div>' +

@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
+OPS_PORTFOLIO_OFFICE = "PROCASA SUCRE"
 
 
 def _effective_stage_expr() -> dict:
@@ -2916,6 +2917,14 @@ def _ops_percentile(values: list[float], percentile: int) -> Optional[float]:
     return round(ordered[index], 1)
 
 
+def _ops_stats(values: list[float]) -> dict:
+    ordered = sorted(float(value) for value in values if value is not None)
+    return {"n": len(ordered), "min": ordered[0] if ordered else None,
+            "q1": _ops_percentile(ordered, 25), "p50": _ops_percentile(ordered, 50),
+            "q3": _ops_percentile(ordered, 75), "p90": _ops_percentile(ordered, 90),
+            "max": ordered[-1] if ordered else None}
+
+
 def _ops_unassigned(value: Any) -> bool:
     return value is None or str(value).strip().lower() in {
         str(item).strip().lower() for item in UNASSIGNED_VALUES if item is not None
@@ -2932,14 +2941,37 @@ def _ops_filters(filters: Optional[dict]) -> tuple[dict, dict]:
     return _build_extra_filter(raw) or {}, {key: value for key, value in python_only.items() if value}
 
 
+def query_operational_portfolios() -> list[dict]:
+    """Captadores disponibles en la cartera canónica, en una sola lectura."""
+    values = get_db()["universo_cartera"].distinct("ejecutivo", {"oficina": OPS_PORTFOLIO_OFFICE, "ejecutivo": {"$nin": [None, ""]}})
+    names = sorted({str(value).strip() for value in values if str(value).strip()}, key=str.casefold)
+    # El administrador no es un captador de cartera y no debe aparecer como
+    # filtro comercial, aunque exista históricamente en la fuente.
+    names = [name for name in names if name.casefold() != "agente" and not name.casefold().startswith("pablo galleguillos") and name.casefold() != "administrador"]
+    return [{"captador": name} for name in names]
+
+
+def _ops_portfolio_codes(db, captador: Optional[str]) -> list[str]:
+    if not captador:
+        return []
+    docs = db["universo_cartera"].find(
+        {"oficina": OPS_PORTFOLIO_OFFICE, "ejecutivo": str(captador).strip()}, {"codigo": 1}
+    )
+    return sorted({str(doc.get("codigo")).strip() for doc in docs if doc.get("codigo") not in (None, "")})
+
+
 def _ops_projected_leads(db, match: dict) -> list[dict]:
     projection = {
         "_id": 1, "created_at": 1, "_created_normalized": 1,
-        "prospecto.nombre": 1, "prospecto.codigo": 1,
+        "phone": 1, "prospecto.nombre": 1, "prospecto.codigo": 1,
         "pipeline_stage": 1, "stage": 1, "ejecutivo_asignado": 1,
         "lead_temperature_effective": 1,
         "lifecycle.assigned_at": 1,
+        "lifecycle.current_assignment_cycle_id": 1,
         "lifecycle.first_valid_management_at": 1,
+        "lifecycle.first_effective_contact_at": 1,
+        "lifecycle.visit_scheduled_at": 1,
+        "stage_history": 1,
     }
     return list(db["leads"].aggregate([
         _normalized_created_at_stage(),
@@ -2956,10 +2988,23 @@ def _ops_elapsed(start: Optional[datetime], end: datetime) -> int:
     )))
 
 
-def _ops_state(doc: dict, now: datetime) -> dict:
+def _ops_response_minutes(start: Optional[datetime], end: Optional[datetime]) -> Optional[int]:
+    """Diferencia de respuesta sin convertir intervalos negativos en cero."""
+    if not start or not end:
+        return None
+    return round(calculate_business_minutes(
+        start.astimezone(CHILE_TZ), end.astimezone(CHILE_TZ)
+    ))
+
+
+_OPS_MANAGEMENT_UNSET = object()
+
+
+def _ops_state(doc: dict, now: datetime, management_override=_OPS_MANAGEMENT_UNSET) -> dict:
     lifecycle = doc.get("lifecycle") or {}
     assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
-    managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+    managed = (coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+               if management_override is _OPS_MANAGEMENT_UNSET else management_override)
     temperature = str(doc.get("lead_temperature_effective") or "NORMAL").upper()
     threshold = 60 if temperature == "HOT" else 180
     elapsed = _ops_elapsed(assigned or coerce_utc_datetime(doc.get("_created_normalized")), now)
@@ -2985,13 +3030,17 @@ def _ops_exec_bucket(name: str) -> dict:
     return {"executive": name,
             "current": {"active_load": 0, "share_of_team_load_pct": None,
                         "pending": 0, "hot_overdue": 0, "normal_overdue": 0,
-                        "hot_near_due": 0, "oldest_pending_minutes": None},
+                        "hot_near_due": 0, "oldest_pending_minutes": None,
+                        "aging": {"lt_24h": 0, "d_1_3": 0, "d_4_7": 0, "gt_7d": 0}},
             "period": {"assigned": 0, "managed": 0, "managed_within_sla": 0,
                        "managed_late": 0, "hot_sla_pct": None, "normal_sla_pct": None,
                        "p50_hot": None, "p90_hot": None, "p50_normal": None,
-                       "p90_normal": None},
+                       "p90_normal": None, "hot_n": 0, "normal_n": 0,
+                       "contact_effective": 0, "visits_scheduled": 0,
+                       "temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}},
             "_hot_managed": 0, "_hot_within": 0, "_normal_managed": 0,
-            "_normal_within": 0, "_hot_times": [], "_normal_times": []}
+            "_normal_within": 0, "_hot_times": [], "_normal_times": [],
+            "_temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}}
 
 
 def _ops_finalize_execs(buckets: dict[str, dict], team_load: int) -> list[dict]:
@@ -3004,34 +3053,119 @@ def _ops_finalize_execs(buckets: dict[str, dict], team_load: int) -> list[dict]:
         current["share_of_team_load_pct"] = round(current["active_load"] / team_load * 100, 1) if team_load else None
         period["hot_sla_pct"] = round(item["_hot_within"] / item["_hot_managed"] * 100, 1) if item["_hot_managed"] else None
         period["normal_sla_pct"] = round(item["_normal_within"] / item["_normal_managed"] * 100, 1) if item["_normal_managed"] else None
+        period["hot_n"] = len(item["_hot_times"])
+        period["normal_n"] = len(item["_normal_times"])
         period["p50_hot"], period["p90_hot"] = _ops_percentile(item["_hot_times"], 50), _ops_percentile(item["_hot_times"], 90)
         period["p50_normal"], period["p90_normal"] = _ops_percentile(item["_normal_times"], 50), _ops_percentile(item["_normal_times"], 90)
+        period["temporal_inconsistent"] = dict(item["_temporal_inconsistent"])
         for key in ("_hot_managed", "_hot_within", "_normal_managed", "_normal_within", "_hot_times", "_normal_times"):
             item.pop(key, None)
+        item.pop("_temporal_inconsistent", None)
     return sorted(buckets.values(), key=lambda item: (-item["current"]["active_load"], item["executive"]))
 
 
-def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None) -> dict:
+def _ops_active_executive_names(db) -> set[str]:
+    """Nombres que representan al equipo comercial visible en la matriz.
+
+    La matriz no debe mezclar administradores, supervisores ni ejecutivos
+    inactivos con la dotación comercial vigente.
+    """
+    names = {
+        str(user.get("nombre") or "").strip()
+        for user in db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1})
+    }
+    return {name for name in names if name and name.casefold() != "pablo galleguillos"}
+
+
+def _ops_assignment_episode_map(db, docs: list[dict]) -> dict[str, list[dict]]:
+    """Carga ciclos sospechosos en una sola lectura, nunca una por lead."""
+    suspicious_ids = []
+    for doc in docs:
+        lifecycle = doc.get("lifecycle") or {}
+        assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
+        managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if assigned and managed and managed < assigned:
+            suspicious_ids.append(doc.get("_id"))
+    if not suspicious_ids:
+        return {}
+    cycles = db["crm_assignment_cycles"].find(
+        {"lead_id": {"$in": suspicious_ids}},
+        {"lead_id": 1, "assignment_cycle_id": 1, "assigned_at": 1,
+         "unassigned_at": 1, "cycle_status": 1},
+    )
+    result: dict[str, list[dict]] = {}
+    for cycle in cycles:
+        result.setdefault(str(cycle.get("lead_id")), []).append(cycle)
+    return result
+
+
+def _ops_temporal_assignment(doc: dict, assignment_cycles: Optional[dict[str, list[dict]]] = None) -> dict:
+    """Resuelve el episodio actual sin convertir gestión histórica en respuesta cero."""
+    lifecycle = doc.get("lifecycle") or {}
+    assigned = coerce_utc_datetime(lifecycle.get("assigned_at"))
+    managed = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+    episode_start = assigned
+    cycles = (assignment_cycles or {}).get(str(doc.get("_id")), [])
+    current_cycle_id = lifecycle.get("current_assignment_cycle_id")
+    selected = next(
+        (cycle for cycle in cycles
+         if current_cycle_id and str(cycle.get("assignment_cycle_id")) == str(current_cycle_id)),
+        None,
+    )
+    if selected is None:
+        active = [cycle for cycle in cycles if cycle.get("unassigned_at") in (None, "")]
+        if active:
+            selected = max(active, key=lambda cycle: coerce_utc_datetime(cycle.get("assigned_at")) or datetime.min.replace(tzinfo=timezone.utc))
+    cycle_start = coerce_utc_datetime((selected or {}).get("assigned_at")) if selected else None
+    if cycle_start:
+        episode_start = cycle_start
+    inconsistent = bool(managed and episode_start and managed < episode_start)
+    return {"assignment_start": episode_start, "management": None if inconsistent else managed,
+            "temporal_inconsistent": inconsistent}
+
+
+def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None, team_executives: Optional[set[str]] = None, scheduled_visit_ids: Optional[set[str]] = None, assignment_cycles: Optional[dict[str, list[dict]]] = None) -> dict:
     """Construye CURRENT (stock) y PERIOD (desempeño) sin mezclarlos."""
     now = coerce_utc_datetime(now) or datetime.now(timezone.utc)
     _, period_cutoff = _build_chile_period_bounds(period_start, period_end)
     period_cutoff = min(period_cutoff, now)
     current = {"active_assigned": 0, "pending_first_management": 0, "open_overdue": 0,
-               "hot_overdue": 0, "normal_overdue": 0, "hot_near_due": 0, "unassigned": 0}
+               "hot_overdue": 0, "normal_overdue": 0, "hot_near_due": 0, "unassigned": 0,
+               "aging": {"lt_24h": 0, "d_1_3": 0, "d_4_7": 0, "gt_7d": 0}}
     period = {"assigned": 0, "managed": 0, "managed_within_sla": 0, "managed_late": 0,
               "hot_managed": 0, "hot_within_sla": 0, "hot_late": 0,
               "normal_managed": 0, "normal_within_sla": 0, "normal_late": 0,
               "hot_sla_pct": None, "normal_sla_pct": None, "p50_hot": None, "p90_hot": None,
-              "p50_normal": None, "p90_normal": None}
+              "p50_normal": None, "p90_normal": None,
+              "hot_n": 0, "normal_n": 0, "contact_effective": 0, "visits_scheduled": 0,
+              "hot_stats": {}, "normal_stats": {},
+              "temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}}
+    team_filter_enabled = team_executives is not None
+    if team_executives is None:
+        team_executives = {
+            str(doc.get("ejecutivo_asignado") or "").strip()
+            for doc in [*current_docs, *period_docs]
+            if str(doc.get("ejecutivo_asignado") or "").strip()
+        }
+    team_executives = set(team_executives)
+    team_keys = {name.casefold() for name in team_executives}
     executives, intervention = {}, []
+    excluded_non_team_current = 0
+    excluded_non_team_period = 0
     period_evaluated = 0
     summary = {"hot_open_overdue": 0, "normal_open_overdue": 0, "hot_near_due": 0,
                "unassigned": 0, "pending_first_management": 0}
 
+    scheduled_visit_ids = set(scheduled_visit_ids or set())
     for doc in current_docs:
-        state = _ops_state(doc, now)
+        temporal = _ops_temporal_assignment(doc, assignment_cycles)
+        state = _ops_state(doc, now, temporal["management"])
         name = str(doc.get("ejecutivo_asignado") or "Sin asignar").strip()
-        bucket = executives.setdefault(name, _ops_exec_bucket(name))
+        is_team_assigned = not state["unassigned"] and (not team_filter_enabled or name.casefold() in team_keys)
+        if not state["unassigned"] and not is_team_assigned:
+            excluded_non_team_current += 1
+            continue
+        bucket = executives.setdefault(name, _ops_exec_bucket(name)) if is_team_assigned else None
         if state["unassigned"]:
             current["unassigned"] += 1
         else:
@@ -3041,6 +3175,16 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
             current["pending_first_management"] += 1
             bucket["current"]["pending"] += 1
             bucket["current"]["oldest_pending_minutes"] = max(bucket["current"]["oldest_pending_minutes"] or 0, state["elapsed"])
+            if state["elapsed"] < 1440:
+                age_key = "lt_24h"
+            elif state["elapsed"] < 4320:
+                age_key = "d_1_3"
+            elif state["elapsed"] < 10080:
+                age_key = "d_4_7"
+            else:
+                age_key = "gt_7d"
+            current["aging"][age_key] += 1
+            bucket["current"]["aging"][age_key] += 1
         if state["priority_code"] in {"hot_open_overdue", "normal_open_overdue"}:
             current["open_overdue"] += 1
             current["hot_overdue" if state["temperature"] == "HOT" else "normal_overdue"] += 1
@@ -3061,19 +3205,38 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
                 "first_management": "sin primera gestión" if not state["managed"] else "gestionada"})
 
     for doc in period_docs:
-        state = _ops_state(doc, period_cutoff)
+        temporal = _ops_temporal_assignment(doc, assignment_cycles)
+        state = _ops_state(doc, period_cutoff, temporal["management"])
         if not state["assigned"] or state["assigned"] >= period_cutoff:
             continue
         period_evaluated += 1
         name = str(doc.get("ejecutivo_asignado") or "Sin asignar").strip()
+        if state["unassigned"] or (team_filter_enabled and name.casefold() not in team_keys):
+            excluded_non_team_period += 1
+            continue
         bucket = executives.setdefault(name, _ops_exec_bucket(name))
         period["assigned"] += 1
         bucket["period"]["assigned"] += 1
+        if temporal["temporal_inconsistent"]:
+            key = "hot" if state["temperature"] == "HOT" else "normal"
+            bucket["_temporal_inconsistent"][key] += 1
+            bucket["_temporal_inconsistent"]["total"] += 1
+            period["temporal_inconsistent"][key] += 1
+            period["temporal_inconsistent"]["total"] += 1
+        contact_at = coerce_utc_datetime((doc.get("lifecycle") or {}).get("first_effective_contact_at"))
+        if contact_at and temporal["assignment_start"] <= contact_at < period_cutoff:
+            period["contact_effective"] += 1
+            bucket["period"]["contact_effective"] += 1
+        if str(doc.get("_id")) in scheduled_visit_ids:
+            period["visits_scheduled"] += 1
+            bucket["period"]["visits_scheduled"] += 1
         if not state["managed"] or state["managed"] >= period_cutoff:
             continue
         period["managed"] += 1
         bucket["period"]["managed"] += 1
-        measured = _ops_elapsed(state["assigned"], state["managed"])
+        measured = _ops_response_minutes(temporal["assignment_start"], state["managed"])
+        if measured is None or measured < 0:
+            continue
         within = measured < state["threshold"]
         period["managed_within_sla" if within else "managed_late"] += 1
         bucket["period"]["managed_within_sla" if within else "managed_late"] += 1
@@ -3088,11 +3251,17 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
     period["normal_sla_pct"] = round(period["normal_within_sla"] / period["normal_managed"] * 100, 1) if period["normal_managed"] else None
     for key in ("hot", "normal"):
         values = [value for bucket in executives.values() for value in bucket["_" + key + "_times"]]
+        period[key + "_n"] = len(values)
         period["p50_" + key], period["p90_" + key] = _ops_percentile(values, 50), _ops_percentile(values, 90)
+        period[key + "_stats"] = _ops_stats(values)
     intervention.sort(key=lambda item: ({"hot_open_overdue": 1, "normal_open_overdue": 2, "hot_near_due": 3, "unassigned": 4, "pending_first_management": 5}.get(item["priority_code"], 6), -max(item["remaining_or_overdue_minutes"], item["elapsed_minutes"])))
     total_active = current["active_assigned"] + current["unassigned"]
     return {"meta": {"as_of": now.isoformat(), "period_start": period_start, "period_end": period_end,
-                      "timezone": "America/Santiago", "sla_hot_minutes": 60, "sla_normal_minutes": 180,
+            "timezone": "America/Santiago", "sla_hot_minutes": 60, "sla_normal_minutes": 180,
+            "team_executives": sorted(team_executives, key=str.casefold),
+            "excluded_non_team": excluded_non_team_current,
+            "excluded_non_team_current": excluded_non_team_current,
+            "excluded_non_team_period": excluded_non_team_period,
                       "first_management_source": "lifecycle.first_valid_management_at", "mongo_calls": 2,
                       "first_management_reconciliation": {
                           "total_evaluated": period_evaluated, "coincidences": period_evaluated,
@@ -3111,7 +3280,16 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
     """Query operacional en dos universos explícitos y dos lecturas por lote."""
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
-    mongo_filters, python_filters = _ops_filters(filters)
+    raw_filters = dict(filters or {})
+    portfolio = str(raw_filters.pop("portfolio", None) or "").strip()
+    portfolio_codes = _ops_portfolio_codes(db, portfolio)
+    mongo_filters, python_filters = _ops_filters(raw_filters)
+    if portfolio:
+        # El filtro es una intersección real: cartera/captador -> código de
+        # propiedad -> prospecto.codigo del lead. Si no hay códigos, el
+        # resultado debe ser vacío y no un fallback a toda la operación.
+        portfolio_condition = {"prospecto.codigo": {"$in": portfolio_codes or ["__NO_PORTFOLIO_MATCH__"]}}
+        mongo_filters = {"$and": [mongo_filters, portfolio_condition]} if mongo_filters else portfolio_condition
     active_parts = [build_active_filter()] + ([mongo_filters] if mongo_filters else [])
     active_match = {"$and": active_parts}
     assigned_date = {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}}
@@ -3125,7 +3303,56 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
     started = time.perf_counter()
     period_docs = _ops_projected_leads(db, period_match)
     period_ms = (time.perf_counter() - started) * 1000
-    result = build_operational_contract(current_docs, period_docs, period_start, period_end)
+    assignment_cycles = _ops_assignment_episode_map(db, [*current_docs, *period_docs])
+    portfolio_context = None
+    if portfolio:
+        team_names = {name.casefold() for name in _ops_active_executive_names(db)}
+        outside_counts: dict[str, int] = {}
+        outside_cases: list[dict] = []
+        unassigned_cases: list[dict] = []
+        unassigned_count = 0
+        active_team_count = 0
+        for doc in current_docs:
+            name = str(doc.get("ejecutivo_asignado") or "").strip()
+            if _ops_unassigned(name):
+                unassigned_count += 1
+                unassigned_cases.append({"lead_id": str(doc.get("_id")), "executive": "Sin asignar", "client": (doc.get("prospecto") or {}).get("nombre") or "Sin nombre", "property_reference": (doc.get("prospecto") or {}).get("codigo") or "Sin propiedad"})
+            elif name.casefold() in team_names:
+                active_team_count += 1
+            else:
+                outside_counts[name or "Sin nombre"] = outside_counts.get(name or "Sin nombre", 0) + 1
+                outside_cases.append({"lead_id": str(doc.get("_id")), "executive": name or "Sin nombre", "client": (doc.get("prospecto") or {}).get("nombre") or "Sin nombre", "property_reference": (doc.get("prospecto") or {}).get("codigo") or "Sin propiedad"})
+        portfolio_context = {
+            "captador": portfolio,
+            "property_codes": len(portfolio_codes),
+            "active_total": len(current_docs),
+            "active_team": active_team_count,
+            "unassigned": unassigned_count,
+            "outside_team": sum(outside_counts.values()),
+            "outside_breakdown": [
+                {"executive": name, "active": count}
+                for name, count in sorted(outside_counts.items(), key=lambda item: (-item[1], item[0].casefold()))
+            ],
+            "outside_cases": outside_cases,
+            "unassigned_cases": unassigned_cases,
+        }
+    period_cutoff = min(end_utc, datetime.now(timezone.utc))
+    period_lead_ids = {str(doc.get("_id")) for doc in period_docs}
+    scheduled_visit_ids = _scheduled_visit_lead_ids(
+        period_docs,
+        period_lead_ids,
+        period_cutoff,
+        timing,
+    ) if period_lead_ids else set()
+    result = build_operational_contract(
+        current_docs,
+        period_docs,
+        period_start,
+        period_end,
+        team_executives=_ops_active_executive_names(db),
+        scheduled_visit_ids=scheduled_visit_ids,
+        assignment_cycles=assignment_cycles,
+    )
     if python_filters:
         cases = result["intervention_cases"]
         if python_filters.get("priority"):
@@ -3139,8 +3366,15 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
             cases = [case for case in cases if term in str(case.get("client") or "").lower()]
         result["intervention_cases"] = cases[:20]
         result["total_intervention_cases"] = len(cases)
+    actual_mongo_calls = (4 if period_lead_ids else 2) + (1 if assignment_cycles else 0)
+    result["meta"]["mongo_calls"] = actual_mongo_calls
+    result["meta"]["visit_evidence_leads"] = len(scheduled_visit_ids)
+    result["meta"]["assignment_cycle_leads"] = len(assignment_cycles)
+    result["meta"]["portfolio"] = portfolio or None
+    result["meta"]["portfolio_property_codes"] = len(portfolio_codes) if portfolio else None
+    result["meta"]["portfolio_context"] = portfolio_context
     if timing is not None:
-        timing.update({"mongo_calls": 2, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1)})
+        timing.update({"mongo_calls": actual_mongo_calls, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1), "visit_evidence_leads": len(scheduled_visit_ids), "assignment_cycle_leads": len(assignment_cycles)})
     return result
 
 

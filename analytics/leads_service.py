@@ -32,6 +32,7 @@ from .leads_queries import (
     query_executive_load_detail,
     query_source_performance,
     query_leads_operational_dashboard,
+    query_operational_portfolios,
     query_leads_dashboard_executives,
     query_property_commission_rows,
     query_cartera_demanda_coverage,
@@ -278,6 +279,17 @@ def get_operational_executive_performance(
         period_start=period_start, period_end=period_end,
         filters=filters or {}, include_comparison=True,
     )
+    _cache_set(key, data)
+    return data
+
+
+def get_operational_portfolios() -> dict:
+    """Opciones dinámicas del filtro cartera/captador."""
+    key = _cache_key("leads-operational-portfolios")
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    data = {"portfolios": query_operational_portfolios()}
     _cache_set(key, data)
     return data
 

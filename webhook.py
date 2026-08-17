@@ -60,7 +60,7 @@ from analytics.leads_service import (
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
     get_leads_dashboard_overview, get_leads_operational_dashboard,
-    get_operational_executive_performance,
+    get_operational_executive_performance, get_operational_portfolios,
 )
 
 from api_captacion import (
@@ -1092,6 +1092,7 @@ async def api_leads_dashboard_operations(
     priority: str = Query(None),
     assignment: str = Query(None),
     search: str = Query(None),
+    portfolio: str = Query(None),
 ):
     """Datos operativos para la segunda pestaña del dashboard ejecutivo."""
     user = await get_current_user_doc(request)
@@ -1100,6 +1101,7 @@ async def api_leads_dashboard_operations(
     filters = {key: value for key, value in {
         "executive": executive, "temperature": temperature, "stage": stage,
         "priority": priority, "assignment": assignment, "search": search,
+        "portfolio": portfolio,
     }.items() if value}
     timing = {}
     loop = asyncio.get_running_loop()
@@ -1122,6 +1124,16 @@ async def api_leads_dashboard_operations(
     )
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
     return response
+
+
+@app.get("/api/leads-dashboard/operations/portfolios")
+async def api_leads_dashboard_operations_portfolios(request: Request):
+    """Opciones dinámicas de cartera/captador para la vista supervisiva."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_WEB_THREAD_POOL, get_operational_portfolios)
 
 
 @app.get("/api/leads-dashboard/operations/executives")

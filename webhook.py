@@ -60,6 +60,7 @@ from analytics.leads_service import (
     get_detail as analytics_get_detail, get_filters, get_field_coverage,
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
     get_leads_dashboard_overview, get_leads_operational_dashboard,
+    get_operational_executive_performance,
 )
 
 from api_captacion import (
@@ -1100,12 +1101,44 @@ async def api_leads_dashboard_operations(
         "executive": executive, "temperature": temperature, "stage": stage,
         "priority": priority, "assignment": assignment, "search": search,
     }.items() if value}
+    timing = {}
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_leads_operational_dashboard(
             period_start=period_start, period_end=period_end,
-            role=user.get("rol"), user_name=user.get("nombre"), filters=filters,
+            role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
+        ),
+    )
+    response = JSONResponse(payload)
+    response.headers["Server-Timing"] = ", ".join(
+        item for item in (
+            f'cache;desc="{timing.get("cache")}"' if timing.get("cache") else None,
+            f'mongo;dur={timing.get("current_query_ms", 0) + timing.get("period_query_ms", 0):.1f}' if timing.get("mongo_calls") else None,
+            f'current;dur={timing.get("current_query_ms")}' if timing.get("current_query_ms") is not None else None,
+            f'period;dur={timing.get("period_query_ms")}' if timing.get("period_query_ms") is not None else None,
+            f'backend;dur={timing.get("total_ms")}' if timing.get("total_ms") is not None else None,
+        ) if item
+    )
+    response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    return response
+
+
+@app.get("/api/leads-dashboard/operations/executives")
+async def api_leads_dashboard_operations_executives(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+):
+    """Rendimiento comercial lazy; nunca forma parte del Overview."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_operational_executive_performance(
+            period_start=period_start, period_end=period_end,
         ),
     )
 

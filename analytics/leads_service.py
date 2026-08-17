@@ -32,6 +32,7 @@ from .leads_queries import (
     query_executive_load_detail,
     query_source_performance,
     query_leads_operational_dashboard,
+    query_leads_dashboard_executives,
     query_property_commission_rows,
     query_cartera_demanda_coverage,
 )
@@ -236,22 +237,49 @@ def get_leads_operational_dashboard(
     role: str = None,
     user_name: str = None,
     filters: dict = None,
+    timing: dict | None = None,
 ) -> dict:
     """Dashboard operativo: bandeja priorizada, SLA y carga de trabajo."""
     filters = dict(filters or {})
     if role not in ("admin", "supervisor") and user_name:
         filters["executive"] = user_name
     key = _cache_key("leads-operational", ps=period_start, pe=period_end, filters=repr(sorted(filters.items())))
+    started = time.perf_counter()
     cached = _cache_get(key)
     if cached:
+        if timing is not None:
+            timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 0})
         return cached
-    data = query_leads_operational_dashboard(period_start=period_start, period_end=period_end, filters=filters)
+    if timing is not None:
+        timing["cache"] = "MISS"
+    data = query_leads_operational_dashboard(period_start=period_start, period_end=period_end, filters=filters, timing=timing)
+    if timing is not None:
+        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     _cache_set(key, data)
     return data
 
 
 def get_detail(lead_id: str) -> dict | None:
     return query_detail(lead_id)
+
+
+def get_operational_executive_performance(
+    period_start: str = None,
+    period_end: str = None,
+    filters: dict = None,
+) -> dict:
+    """Endpoint lazy de rendimiento, separado del Overview ejecutivo."""
+    key = _cache_key("leads-operational-executives", ps=period_start, pe=period_end,
+                     filters=repr(sorted((filters or {}).items())))
+    cached = _cache_get(key)
+    if cached:
+        return cached
+    data = query_leads_dashboard_executives(
+        period_start=period_start, period_end=period_end,
+        filters=filters or {}, include_comparison=True,
+    )
+    _cache_set(key, data)
+    return data
 
 
 def get_filters(

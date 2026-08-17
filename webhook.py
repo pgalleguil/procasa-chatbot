@@ -975,6 +975,57 @@ async def public_leads_intelligence_overview(
     return response
 
 
+@app.get("/api/demo/leads-intelligence/mongo-latency")
+async def public_leads_intelligence_mongo_latency():
+    """Temporary aggregate-only Mongo latency probe for infrastructure audit."""
+    def percentile(values, pct):
+        ordered = sorted(values)
+        if not ordered:
+            return None
+        index = min(len(ordered) - 1, max(0, int(round((pct / 100) * (len(ordered) - 1)))))
+        return round(ordered[index], 1)
+
+    def probe():
+        from chatbot.storage import get_db
+
+        db = get_db()
+        operations = {"ping": [], "find_one": []}
+        collection = "visitas"
+        for _ in range(10):
+            started = time.perf_counter()
+            db.command("ping")
+            operations["ping"].append((time.perf_counter() - started) * 1000)
+        for _ in range(10):
+            started = time.perf_counter()
+            db[collection].find_one({}, {"_id": 1})
+            operations["find_one"].append((time.perf_counter() - started) * 1000)
+        return {
+            "collection": collection,
+            "client_elapsed_ms": {
+                name: {
+                    "min": round(min(values), 1),
+                    "p50": percentile(values, 50),
+                    "p90": percentile(values, 90),
+                    "max": round(max(values), 1),
+                    "samples": len(values),
+                }
+                for name, values in operations.items()
+            },
+            "mongo_client_reused": True,
+            "thread": threading.current_thread().name,
+        }
+
+    loop = asyncio.get_running_loop()
+    submitted = time.perf_counter()
+    started = time.perf_counter()
+    result = await loop.run_in_executor(_WEB_THREAD_POOL, probe)
+    result["executor_wait_ms"] = round((started - submitted) * 1000, 1)
+    result["request_elapsed_ms"] = round((time.perf_counter() - submitted) * 1000, 1)
+    response = JSONResponse(result)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/api/leads-dashboard/overview")
 async def api_leads_dashboard_overview(
     request: Request,

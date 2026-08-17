@@ -61,3 +61,23 @@ def normalize_commune_slug(value):
 def normalize_commune_canonical(value):
     """Alias retrocompatible de normalize_commune_slug."""
     return normalize_commune_slug(value)
+
+
+def normalize_toctoc_commune(value=None, *, commune_id=None,
+                             structured_label=None, structured=False):
+    """Normaliza una comuna Toctoc sin inferir Santiago desde texto libre.
+
+    Toctoc publica la comuna oficial Santiago con id 339 y la ruta ``santiago``.
+    Solo una etiqueta territorial estructurada (o ese id) habilita el alias
+    comercial ``santiago-centro``. Un texto libre que menciona Santiago sigue
+    normalizándose como ``santiago`` y no queda automáticamente asignable.
+    """
+    label = structured_label if structured_label not in (None, "") else value
+    slug = normalize_commune_slug(label)
+    if not slug:
+        return None
+    if structured and str(commune_id or "") == "339" and slug == "santiago":
+        return "santiago-centro"
+    if structured and slug == "santiago":
+        return "santiago-centro"
+    return slug

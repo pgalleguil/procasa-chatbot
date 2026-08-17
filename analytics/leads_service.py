@@ -1271,6 +1271,7 @@ def get_leads_dashboard_overview(
     current = trends.get("current", {})
     previous = trends.get("previous", {})
     daily = current.get("daily", []) or []
+    daily_history = current.get("daily_history", []) or []
     # La meta mensual debe prorratearse según los días calendario realmente
     # seleccionados. Evita comparar, por ejemplo, 2 días contra la meta total
     # de 200 leads del mes.
@@ -1434,6 +1435,10 @@ def get_leads_dashboard_overview(
             "daily": {
                 "labels": [d.get("date") for d in daily],
                 "values": [d.get("received", 0) for d in daily],
+            },
+            "daily_history": {
+                "labels": [d.get("date") for d in daily_history],
+                "values": [d.get("received", 0) for d in daily_history],
             },
             "previous_daily": {
                 "labels": [d.get("date") for d in previous.get("daily", [])],

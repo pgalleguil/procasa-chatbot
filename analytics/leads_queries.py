@@ -1490,6 +1490,7 @@ def query_comparative_trends(
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    lookback_start_utc = start_utc - timedelta(days=6)
 
     if not include_comparison:
         prev_start = prev_end = None
@@ -1501,11 +1502,17 @@ def query_comparative_trends(
         prev_start = prev_end - duration
 
     if include_comparison and prev_start is not None and prev_end is not None:
-        combined_start = min(start_utc, prev_start)
+        combined_start = min(lookback_start_utc, prev_start)
         combined_end = max(end_utc, prev_end)
         facets = {
             "current": [
                 {"$match": {"_created_normalized": {"$gte": start_utc, "$lt": end_utc}}},
+                {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
+                {"$sort": {"_id": 1}},
+                {"$project": {"date": "$_id", "received": 1, "_id": 0}},
+            ],
+            "current_history": [
+                {"$match": {"_created_normalized": {"$gte": lookback_start_utc, "$lt": end_utc}}},
                 {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
                 {"$sort": {"_id": 1}},
                 {"$project": {"date": "$_id", "received": 1, "_id": 0}},
@@ -1526,17 +1533,19 @@ def query_comparative_trends(
         row = list(db["leads"].aggregate(pipeline))
         row = row[0] if row else {}
         current_daily = row.get("current", [])
+        current_history = row.get("current_history", [])
         previous_daily = row.get("previous", [])
     else:
         pipeline = [
-            _cohort_indexed_prefilter(start_utc, end_utc),
+            _cohort_indexed_prefilter(lookback_start_utc, end_utc),
             _normalized_created_at_stage(),
-            {"$match": _build_commercial_cohort_match(start_utc, end_utc, filters)},
+            {"$match": _build_commercial_cohort_match(lookback_start_utc, end_utc, filters)},
             {"$group": {"_id": _format_date_field("$_created_normalized", timezone="America/Santiago"), "received": {"$sum": 1}}},
             {"$sort": {"_id": 1}},
             {"$project": {"date": "$_id", "received": 1, "_id": 0}},
         ]
-        current_daily = list(db["leads"].aggregate(pipeline))
+        current_history = list(db["leads"].aggregate(pipeline))
+        current_daily = [row for row in current_history if period_start <= row["date"] <= period_end]
         previous_daily = []
 
     # Rellenar días sin leads con 0 para que ambas series sean continuas y
@@ -1556,6 +1565,8 @@ def query_comparative_trends(
 
     if period_start and period_end:
         current_daily = _fill_daily(current_daily, period_start, period_end)
+        lookback_start_date = (_date.fromisoformat(period_start) - _td(days=6)).isoformat()
+        current_history = _fill_daily(current_history, lookback_start_date, period_end)
     if include_comparison and comparison_start and comparison_end:
         previous_daily = _fill_daily(previous_daily, comparison_start, comparison_end)
 
@@ -1571,6 +1582,7 @@ def query_comparative_trends(
     return {
         "current": {
             "daily": current_daily,
+            "daily_history": current_history,
             "total": current_total,
             "avg_daily": current_avg,
         },

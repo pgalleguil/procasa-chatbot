@@ -4644,7 +4644,7 @@
                 const chart = $('tcTrendChart');
                 if (!s || !chart) return;
                 chart.dataset.mode = 'diario';
-                const { nums, labels } = s;
+                const { nums, labels, historyLabels = labels, historyValues = nums } = s;
                 const days = nums.length;
                 const max = Math.max(...nums, 1);
                 const W = 100, H = 40, PAD = 4;
@@ -4653,10 +4653,16 @@
                 const xAt = (i) => (i + 0.5) * stepW;
                 const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
 
-                // Media móvil de 7 días (ventana final, calculada sobre datos reales).
+                // Media móvil de 7 días: día visible + seis días calendario
+                // anteriores. Se calcula sobre la serie histórica continua,
+                // pero conserva un punto para cada fecha visible.
                 const ma = [];
                 for (let i = 0; i < days; i++) {
-                    const win = nums.slice(Math.max(0, i - 6), i + 1);
+                    const historyIndex = historyLabels.indexOf(labels[i]);
+                    const endIndex = historyIndex >= 0 ? historyIndex + 1 : historyValues.length;
+                    const startIndex = Math.max(0, endIndex - 7);
+                    const win = historyValues.slice(startIndex, endIndex);
+                    if (!win.length) win.push(nums[i] || 0);
                     ma.push(win.reduce((a, b) => a + b, 0) / win.length);
                 }
                 const hasMA = days >= 7;
@@ -4754,6 +4760,8 @@
                 const demand = OVERVIEW.demand || {};
                 const labels = (demand.daily || {}).labels || [];
                 const values = (demand.daily || {}).values || [];
+                const historyLabels = (demand.daily_history || {}).labels || labels;
+                const historyValues = (demand.daily_history || {}).values || values;
                 const sources = ((OVERVIEW.sources || {}).items) || [];
                 const resolved = (OVERVIEW.period || {}).compare_resolved || 'none';
                 const hasCmp = resolved !== 'none';
@@ -4765,7 +4773,14 @@
                 // TC_MODE es estado de la sesión/página: la primera entrada
                 // parte en Acumulado, pero un refresh o cambio de período no
                 // debe borrar la elección explícita del usuario.
-                TC_SERIES = (days > 1) ? { nums, prevNums, labels, hasCmp } : null;
+                TC_SERIES = (days > 1) ? {
+                    nums,
+                    prevNums,
+                    labels,
+                    hasCmp,
+                    historyLabels,
+                    historyValues: historyValues.map(v => Number(v) || 0),
+                } : null;
 
                 const seg = $('tcModeSeg');
                 if (seg) {

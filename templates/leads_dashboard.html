@@ -3843,6 +3843,30 @@
                 return 'Comparación automática';
             }
 
+            const DISPLAY_MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+            function parseDisplayDate(iso) {
+                const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').trim());
+                if (!match) return null;
+                const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+                if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+                return { year, month, day };
+            }
+            function formatDisplayDateRange(start, end) {
+                const first = parseDisplayDate(start), last = parseDisplayDate(end || start);
+                if (!first || !last) return String(start || end || '—');
+                const firstText = first.day + ' ' + DISPLAY_MONTHS_ES[first.month - 1] + ' ' + first.year;
+                const lastText = last.day + ' ' + DISPLAY_MONTHS_ES[last.month - 1] + ' ' + last.year;
+                if (first.year === last.year && first.month === last.month) {
+                    return first.day === last.day
+                        ? firstText
+                        : first.day + '–' + last.day + ' ' + DISPLAY_MONTHS_ES[first.month - 1] + ' ' + first.year;
+                }
+                if (first.year === last.year) {
+                    return first.day + ' ' + DISPLAY_MONTHS_ES[first.month - 1] + '–' + last.day + ' ' + DISPLAY_MONTHS_ES[last.month - 1] + ' ' + first.year;
+                }
+                return firstText + '–' + lastText;
+            }
+
             function renderPeriodMeta() {
                 const cur = $('psCurrent'), prev = $('psPrev');
                 if (!cur || !prev) return;
@@ -3850,8 +3874,8 @@
                 if (!s || !e) { cur.textContent = '—'; return; }
                 const period = (OVERVIEW && OVERVIEW.period) || {};
                 const p = period.previous || {};
-                cur.textContent = s + ' → ' + e;
-                prev.textContent = (p.start && p.end) ? 'vs. ' + p.start + ' → ' + p.end : 'sin comparación';
+                cur.textContent = formatDisplayDateRange(s, e);
+                prev.textContent = (p.start && p.end) ? 'vs. ' + formatDisplayDateRange(p.start, p.end) : 'sin comparación';
             }
 
             // --- 3. URL ---
@@ -3967,28 +3991,34 @@
                 // de entrada de los KPIs.
                 all.filter(el => el.classList.contains('seq-static'))
                     .forEach(el => el.classList.add('seq-shown'));
-                // Refresh: no re-animar elementos estructurales ni secciones inferiores
+                // La carga inicial respeta el orden DOM: KPI → diagnóstico → embudo/origen → tendencia.
+                // En refresh las secciones inferiores permanecen visibles y no se reaniman.
                 const els = all.filter(el => {
                     if (el.classList.contains('seq-static')) return false;
-                    if (isScrollEl(el)) return false;
+                    if (isRefresh && isScrollEl(el)) return false;
                     if (isMobile && el.matches('#cardDemandMeta, #cardConversion, #cardPipeline, #cardSla')) return false;
                     return true;
                 });
                 els.forEach(el => el.classList.remove('seq-shown'));
                 void document.body.offsetWidth;
                 els.forEach((el, i) => {
-                    seqTimers.push(setTimeout(() => el.classList.add('seq-shown'), (i + 1) * step));
+                    seqTimers.push(setTimeout(() => {
+                        el.classList.add('seq-shown');
+                        if (isScrollEl(el)) {
+                            el.classList.add('entered', 'seq-reveal-active');
+                            if (el.id === 'funnelBlock') requestAnimationFrame(animateFunnelCounts);
+                            growBarsIn(el);
+                        }
+                    }, i * step));
                 });
-                observeScrollEls();
                 observeMobileCards();
                 seqTimers.push(setTimeout(() => {
                     document.body.classList.remove('seq-pending', 'seq-refresh');
                     document.body.style.removeProperty('--seq-dur');
                     growBars('.funnel-fill');
                     growBars('.tc-src-bar');
-                    observeScrollEls();
                     seqTimers = [];
-                }, els.length * step + dur + 40));
+                }, Math.max(0, els.length - 1) * step + dur + 40));
             }
 
             function resetExecutiveReveal(startSequence = true) {
@@ -5525,8 +5555,8 @@
                 const variacion = demand.variation_pct;
                 const varTxt = (period.compare_resolved === 'none' || variacion === null || variacion === undefined)
                     ? '—' : ((variacion >= 0 ? '+' : '') + variacion.toFixed(1).replace('.', ',') + '%');
-                const periodTxt = (period.current ? (period.current.start + ' → ' + period.current.end) : '—');
-                const prevPeriodTxt = (period.previous && period.previous.start) ? (period.previous.start + ' → ' + period.previous.end) : 'Sin comparación';
+                const periodTxt = (period.current ? formatDisplayDateRange(period.current.start, period.current.end) : '—');
+                const prevPeriodTxt = (period.previous && period.previous.start) ? formatDisplayDateRange(period.previous.start, period.previous.end) : 'Sin comparación';
 
                 const fmtUf = (n) => 'UF ' + Math.round(n || 0).toLocaleString('es-CL');
                 const fmtClpReport = (n) => {

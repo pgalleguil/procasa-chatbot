@@ -916,7 +916,7 @@ def _overview_server_timing(timing: dict) -> str:
         duration = item.get("duration_ms")
         if duration is not None:
             parts.append(f"{name};dur={duration}")
-    for name in ("concurrent_block_ms", "total_ms"):
+    for name in ("executor_wait_ms", "concurrent_block_ms", "total_ms"):
         duration = timing.get(name)
         if duration is not None:
             parts.append(f"{name};dur={duration}")
@@ -958,15 +958,21 @@ async def public_leads_intelligence_overview(
 
     timing = {}
     loop = asyncio.get_running_loop()
-    payload = await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: get_leads_dashboard_overview(
+    submitted_at = time.perf_counter()
+
+    def load_overview():
+        timing["executor_wait_ms"] = round((time.perf_counter() - submitted_at) * 1000, 1)
+        return get_leads_dashboard_overview(
             period_start=period_start,
             period_end=period_end,
             compare=compare,
             period_preset=period_preset,
             timing=timing,
-        ),
+        )
+
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        load_overview,
     )
     response = JSONResponse(_public_executive_overview(payload))
     response.headers["Cache-Control"] = "no-store"

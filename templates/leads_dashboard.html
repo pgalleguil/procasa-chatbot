@@ -2168,11 +2168,18 @@
         .dash-tab:hover .t-ico { color: var(--conversion-accent); }
 
         .dash-tab:focus,
-        .dash-tab:focus-visible,
         .dash-tab:active {
             background: transparent;
             box-shadow: none;
             outline: none;
+        }
+
+        .dash-tab:focus-visible {
+            background: transparent;
+            color: var(--text-primary);
+            outline: 2px solid var(--conversion-accent, #A78BFA);
+            outline-offset: 3px;
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--conversion-accent, #A78BFA) 22%, transparent);
         }
 
         .dash-tab.active {
@@ -3274,7 +3281,7 @@
                     </button>
                     <div>
                         <h2 class="fw-bold m-0" id="pageTitle">Leads Intelligence</h2>
-                        <p class="text-secondary m-0 small" id="pageSubtitle">Rendimiento Comercial & Analytics AI</p>
+                        <p class="text-secondary m-0 small" id="pageSubtitle">Control de Gestión Comercial & Business Analytics</p>
                     </div>
                 </div>
                 <div class="header-right seq-el seq-static">
@@ -4317,12 +4324,18 @@
                 const nums = values.map(v => Number(v) || 0);
                 const min = Math.min(...nums);
                 const max = Math.max(...nums);
-                const range = max - min;
                 const days = nums.length;
+                const pacePerDay = metaTarget > 0 ? metaTarget / days : 0;
+                // La escala incluye el ritmo objetivo para que la referencia
+                // conserve su posición correcta si queda por debajo o por
+                // encima de los valores observados, incluso con serie plana.
+                const scaleMin = Math.min(min, pacePerDay);
+                const scaleMax = Math.max(max, pacePerDay);
+                const range = scaleMax - scaleMin;
                 const xAt = (i) => days === 1 ? W / 2 : (i / (days - 1)) * W;
                 const yAt = range === 0
                     ? () => H / 2
-                    : (v) => H - PAD - ((v - min) / range) * (H - 2 * PAD);
+                    : (v) => H - PAD - ((v - scaleMin) / range) * (H - 2 * PAD);
                 const pts = nums.map((v, i) => [xAt(i), yAt(v)]);
 
                 // Curva suave (Catmull-Rom -> Bezier)
@@ -4345,9 +4358,9 @@
 
                 const lineD = smooth(pts);
                 const areaD = lineD + ' L' + W + ',' + H + ' L0,' + H + ' Z';
-                // Línea punteada de referencia (target pace) en la escala min-max
-                const pacePerDay = metaTarget > 0 ? metaTarget / days : 0;
-                let paceY = pacePerDay > 0 ? yAt(min + pacePerDay) : H - PAD;
+                // Línea punteada de referencia: el ritmo objetivo es un valor
+                // absoluto diario, no un desplazamiento desde el mínimo observado.
+                let paceY = pacePerDay > 0 ? yAt(pacePerDay) : H - PAD;
                 paceY = Math.max(0, Math.min(H - 1, paceY));
 
                 return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
@@ -4793,8 +4806,9 @@
                 const prevNums = hasCmp ? ((demand.previous_daily || {}).values || []).map(v => Number(v) || 0) : [];
                 const days = Math.max(nums.length, 1);
 
-                // Al cargar datos, el selector siempre abre en Acumulado.
-                TC_MODE = 'acumulado';
+                // TC_MODE es estado de la sesión/página: la primera entrada
+                // parte en Acumulado, pero un refresh o cambio de período no
+                // debe borrar la elección explícita del usuario.
                 TC_SERIES = (days > 1) ? { nums, prevNums, labels, hasCmp } : null;
 
                 const seg = $('tcModeSeg');
@@ -5112,17 +5126,17 @@
 
                 // Mayor pérdida entre etapas.
                 const losses = [
-                    { label: 'Recibidos → Gestionados', loss: rec - ges },
-                    { label: 'Gestionados → Contacto efectivo', loss: ges - con },
-                    { label: 'Contacto efectivo → Visita agendada', loss: con - vis },
+                    { label: 'Recibidos → Gestionados', loss: rec - ges, denominator: rec, denominatorLabel: 'recibidos' },
+                    { label: 'Gestionados → Contacto efectivo', loss: ges - con, denominator: ges, denominatorLabel: 'gestionados' },
+                    { label: 'Contacto efectivo → Visita agendada', loss: con - vis, denominator: con, denominatorLabel: 'contactos efectivos' },
                 ];
                 losses.sort((a, b) => b.loss - a.loss);
                 const topLoss = losses[0];
-                const pctLoss = rec > 0 ? topLoss.loss / rec * 100 : 0;
+                const pctLoss = topLoss.denominator > 0 ? topLoss.loss / topLoss.denominator * 100 : 0;
                 const conclEl = $('funnelConclusion');
                 if (conclEl) {
                     conclEl.innerHTML = 'Mayor pérdida: <strong>' + esc(topLoss.label) + '</strong> · ' + topLoss.loss + ' leads (' +
-                        pctLoss.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%)';
+                        pctLoss.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% de ' + esc(topLoss.denominatorLabel) + ')';
                 }
                 block.hidden = false;
             }
@@ -5527,9 +5541,11 @@
                 const executiveReading = total >= metaTarget
                     ? 'El volumen capturado entrega una base comercial suficiente; la prioridad es proteger la velocidad de respuesta y convertir la demanda en visitas.'
                     : 'El principal foco de gestión es recuperar volumen de leads y asegurar que la menor demanda no oculte brechas de seguimiento comercial.';
-                const executiveRisk = (sla.pct_cumplimiento_sla != null && sla.pct_cumplimiento_sla < 90)
+                const executiveRisk = (sla.in_sla_pct != null && sla.in_sla_pct < 90)
                     ? 'Cumplimiento SLA bajo el estándar'
                     : 'Monitorear conversión a visita';
+
+                const fmtReportMin = (value) => value == null ? '—' : Math.round(value).toLocaleString('es-CL') + ' min';
 
                 // Tarjetas
                 const cardsHtml = `
@@ -5547,18 +5563,21 @@
                     </div>
                     <div class="report-card">
                         <h4>Cartera Potencial & Valorización</h4>
-                        <div class="kpi">${fmtUf(pipe.monto_venta_uf)}</div>
-                        <div class="kpi-sub">Venta: ${fmtUf(pipe.monto_venta_uf)} (valor actual de propiedades en venta vinculadas)</div>
+                        <div class="kpi">${fmtUf(pipe.comision_potencial_uf)}</div>
+                        <div class="kpi-sub">Comisión potencial neta</div>
+                        <div class="kpi-sub">Venta: ${fmtUf(pipe.comision_venta_uf)} · Arriendo: ${fmtUf(pipe.comision_arriendo_uf)}</div>
+                        <div class="kpi-sub">Valor de propiedades en venta: ${fmtUf(pipe.monto_venta_uf)}</div>
                         <div class="kpi-sub">Arriendo: ${fmtUf(pipe.monto_arriendo_uf)}/mes (renta mensual publicada)</div>
-                        <div class="kpi-sub">Comisión potencial (neta): <strong>${fmtUf(pipe.comision_potencial_uf)}</strong> · Venta UF ${pipe.comision_venta_uf != null ? pipe.comision_venta_uf.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—'} · Arriendo UF ${pipe.comision_arriendo_uf != null ? pipe.comision_arriendo_uf.toLocaleString('es-CL', { maximumFractionDigits: 1 }) : '—'}</div>
                         <div class="kpi-sub">Propiedades de cartera: ${pipe.propiedades_cartera || pipe.propiedades_vinculadas || 0} propiedades de cartera vinculadas${(pipe.propiedades_no_en_cartera || 0) ? ' · ' + pipe.propiedades_no_en_cartera + ' referencia(s) fuera de la cartera actual' : ''}</div>
                     </div>
                     <div class="report-card">
                         <h4>SLA & Velocidad de Respuesta</h4>
-                        <div class="kpi">${sla.mediana_general_min != null ? Math.round(sla.mediana_general_min) : '—'} <small>min</small></div>
-                        <div class="kpi-sub">Cumplimiento SLA: <strong>${sla.pct_cumplimiento_sla != null ? String(sla.pct_cumplimiento_sla).replace('.', ',') : '—'}%</strong></div>
-                        <div class="kpi-sub">HOT: ${sla.mediana_hot_min != null ? Math.round(sla.mediana_hot_min) : '—'} min · Normal: ${sla.mediana_normal_min != null ? Math.round(sla.mediana_normal_min) : '—'} min</div>
-                        <div class="kpi-sub">${sla.leads_evaluados || 0} leads medidos · HOT &lt; ${sla.hot_threshold_min || 60} min</div>
+                        <div class="kpi">${sla.in_sla_pct != null ? String(sla.in_sla_pct).replace('.', ',') : '—'} <small>%</small></div>
+                        <div class="kpi-sub">Dentro de SLA</div>
+                        <div class="kpi-sub">HOT ≤ ${sla.hot_threshold_min || 60} min hábiles · NORMAL ≤ ${sla.normal_threshold_min || 180} min hábiles</div>
+                        <div class="kpi-sub">P50/P90 HOT: ${fmtReportMin((sla.lead_hot || {}).p50_minutes)} / ${fmtReportMin((sla.lead_hot || {}).p90_minutes)}</div>
+                        <div class="kpi-sub">P50/P90 NORMAL: ${fmtReportMin((sla.lead || {}).p50_minutes)} / ${fmtReportMin((sla.lead || {}).p90_minutes)}</div>
+                        <div class="kpi-sub">${sla.managed || 0} gestionados · ${sla.open || 0} abiertos · ${sla.open_breached || 0} vencidos</div>
                     </div>`;
 
                 const executiveSummary = `
@@ -5598,12 +5617,6 @@
                     const val = (s.querySelector('.tc-src-val') || {}).textContent || '';
                     return '<li>' + esc(name) + ': ' + esc(val) + '</li>';
                 }).join('');
-
-                // Tabla ejecutiva
-                const execBody = Array.from(document.querySelectorAll('#execTableBody tr')).map(tr =>
-                    '<tr>' + Array.from(tr.children).map(td => '<td>' + esc(td.textContent) + '</td>').join('') + '</tr>'
-                ).join('');
-                const execReconcile = esc((document.getElementById('execReconcile') || {}).textContent || '');
 
                 const updated = ((document.getElementById('dashUpdated') || {}).textContent || '');
 
@@ -5676,11 +5689,6 @@
     ${trendSvg ? '<div class="report-chart">' + trendSvg + '</div>' : ''}
     <h2>Origen de la Demanda</h2>
     <ul>${sourcesHtml}</ul>
-    <h2>Rendimiento Comercial por Ejecutivo</h2>
-    <table><thead><tr>
-        <th>Ejecutivo</th><th>Leads</th><th>Visitas Agendadas</th><th>Conversión</th>
-    </tr></thead><tbody>${execBody}</tbody></table>
-    ${execReconcile ? '<div class="reconcile">' + execReconcile + '</div>' : ''}
     <div class="foot"><span>Informe generado automáticamente desde el dashboard ejecutivo.</span><span>Uso gerencial · Confidencial</span></div>
 </body></html>`;
                 win.document.write(doc);

@@ -719,6 +719,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "precio_display": norm["precio_display"],
             "precio_uf_display": norm["precio_uf_display"],
             "precio_clp_display": norm["precio_clp_display"],
+            "precio_raw_fallback": norm.get("precio_raw_fallback", norm.get("precio", "S/I")),
             "price_source_warning": detect_source_price_warning(
                 op_display, norm["precio_uf"], norm["precio_clp"]
             ),

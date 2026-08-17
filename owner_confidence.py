@@ -125,10 +125,13 @@ def resolve_price_display(document):
     uf_display = _format_price_uf(precio_uf)
     clp_display = _format_price_clp(precio_clp)
     parts = ([f"UF {uf_display}"] if uf_display else []) + ([f"${clp_display}"] if clp_display else [])
+    raw_price = (doc.get("precio_raw") or doc.get("price") or details.get("precio_raw") or details.get("price") or "")
+    raw_price = str(raw_price).strip()
     return {
-        "precio_display": " / ".join(parts) if parts else "S/I",
+        "precio_display": " / ".join(parts) if parts else (raw_price or "S/I"),
         "precio_uf_display": uf_display,
         "precio_clp_display": clp_display,
+        "precio_raw_fallback": raw_price or "S/I",
     }
 
 

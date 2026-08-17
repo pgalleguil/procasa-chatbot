@@ -1134,38 +1134,52 @@ def get_leads_dashboard_overview(
         query_leads_dashboard_conversion,
         query_leads_dashboard_pipeline,
         query_sla_risk_panel,
-        query_leads_dashboard_rescue,
         query_leads_dashboard_sources,
-        query_leads_dashboard_executives,
         query_leads_dashboard_funnel,
     )
     conversion_detail = {}
-    executives_detail = {}
     sources_detail = {}
-    shared_orders = None
-    shared_orders_started = time.perf_counter()
-    try:
-        from chatbot.storage import get_db
-        from .leads_queries import CANONICAL_SIGNED_ORDER_STATUSES
-        shared_orders = list(get_db()["visitas"].find(
-            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
-            {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
-        ))
-    except Exception as exc:
-        logger.warning("Overview shared signed-orders read unavailable; components will fall back: %s", exc)
-    record_timing("shared_signed_orders", shared_orders_started)
+    # La lectura de órdenes firmadas es compartida por Conversión y Origen,
+    # pero no debe bloquear el resto del Overview. Se inicia en la primera
+    # ola y solo sus consumidores esperan su resultado.
+    def load_shared_orders():
+        try:
+            from chatbot.storage import get_db
+            from .leads_queries import CANONICAL_SIGNED_ORDER_STATUSES
+            return list(get_db()["visitas"].find(
+                {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+                {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
+            ))
+        except Exception as exc:
+            logger.warning("Overview shared signed-orders read unavailable; components will fall back: %s", exc)
+            return None
 
+    # UF es una lectura local/cacheada y debe estar disponible antes de enviar
+    # la consulta de comisión, sin esperar a ningún KPI del Overview.
+    macro = _load_commercial_macro_information()
+    uf_info = (macro.get("indicators") or {}).get("uf") or {}
+    uf_value = uf_info.get("value")
+    uf_asof = uf_info.get("as_of")
+    try:
+        from chatbot.uf_service import leer_uf_cache
+        _uf = leer_uf_cache()
+        if _uf and _uf.get("valor"):
+            uf_value = _uf["valor"]
+            uf_asof = _uf.get("fecha") or uf_asof
+    except Exception:
+        pass
+
+    MIN_VENTA_CLP = 1_000_000
+    MIN_ARRIENDO_CLP = 100_000
+    uf_clp = float(uf_value) if uf_value else None
+
+    # Primera ola: todo lo que no depende de las órdenes firmadas se inicia de
+    # inmediato. Esto solapa las lecturas remotas y evita una segunda ola.
+    f_orders = _COMMERCIAL_QUERY_POOL.submit(run_timed, "shared_signed_orders", load_shared_orders, {})
     f_trends = _COMMERCIAL_QUERY_POOL.submit(run_timed, "demand_trend", query_comparative_trends, {
         "period_start": period_start, "period_end": period_end,
         "comparison_start": prev_start, "comparison_end": prev_end,
         "include_comparison": bool(prev_start),
-    })
-    f_conv = _COMMERCIAL_QUERY_POOL.submit(run_timed, "conversion", query_leads_dashboard_conversion, {
-        "period_start": period_start, "period_end": period_end,
-        "comparison_start": prev_start, "comparison_end": prev_end,
-        "include_comparison": bool(prev_start),
-        "timing": conversion_detail,
-        "signed_orders": shared_orders,
     })
     f_pipe = _COMMERCIAL_QUERY_POOL.submit(run_timed, "valuation_pipeline", query_leads_dashboard_pipeline, {
         "period_start": period_start, "period_end": period_end,
@@ -1173,8 +1187,26 @@ def get_leads_dashboard_overview(
     f_sla = _COMMERCIAL_QUERY_POOL.submit(run_timed, "sla", query_sla_risk_panel, {
         "period_start": period_start, "period_end": period_end,
     })
-    f_rescue = _COMMERCIAL_QUERY_POOL.submit(run_timed, "rescue", query_leads_dashboard_rescue, {
+    f_funnel = _COMMERCIAL_QUERY_POOL.submit(run_timed, "funnel", query_leads_dashboard_funnel, {
         "period_start": period_start, "period_end": period_end,
+    })
+    f_coverage = _COMMERCIAL_QUERY_POOL.submit(
+        run_timed, "demand_coverage", query_cartera_demanda_coverage,
+        {"period_start": period_start, "period_end": period_end, "oficina": "PROCASA SUCRE"},
+    )
+    f_property = _COMMERCIAL_QUERY_POOL.submit(
+        run_timed, "property_commission", query_property_commission_rows,
+        {"period_start": period_start, "period_end": period_end, "uf_value": uf_clp},
+    )
+
+    # Segunda ola mínima: solo Conversión y Origen necesitan las órdenes.
+    shared_orders = f_orders.result()
+    f_conv = _COMMERCIAL_QUERY_POOL.submit(run_timed, "conversion", query_leads_dashboard_conversion, {
+        "period_start": period_start, "period_end": period_end,
+        "comparison_start": prev_start, "comparison_end": prev_end,
+        "include_comparison": bool(prev_start),
+        "timing": conversion_detail,
+        "signed_orders": shared_orders,
     })
     f_sources = _COMMERCIAL_QUERY_POOL.submit(run_timed, "sources", query_leads_dashboard_sources, {
         "period_start": period_start, "period_end": period_end,
@@ -1183,40 +1215,23 @@ def get_leads_dashboard_overview(
         "timing": sources_detail,
         "signed_orders": shared_orders,
     })
-    f_exec = _COMMERCIAL_QUERY_POOL.submit(run_timed, "diagnostics_executives", query_leads_dashboard_executives, {
-        "period_start": period_start, "period_end": period_end,
-        "comparison_start": prev_start, "comparison_end": prev_end,
-        "include_comparison": bool(prev_start),
-        "timing": executives_detail,
-        "signed_orders": shared_orders,
-    })
-    f_funnel = _COMMERCIAL_QUERY_POOL.submit(run_timed, "funnel", query_leads_dashboard_funnel, {
-        "period_start": period_start, "period_end": period_end,
-    })
+
     trends = f_trends.result()
     conversion = f_conv.result()
     pipeline = f_pipe.result()
     sla_panel = f_sla.result()
-    rescue = f_rescue.result()
     sources = f_sources.result()
-    _exec_payload = f_exec.result()
-    if isinstance(_exec_payload, dict):
-        exec_rows = _exec_payload.get("rows") or []
-        exec_reconcile = _exec_payload.get("reconcile") or {}
-    else:
-        # Compatibilidad si otra ruta devuelve lista (no debería ocurrir).
-        exec_rows = _exec_payload or []
-        exec_reconcile = {}
     try:
         funnel = f_funnel.result()
     except Exception as exc:
         logger.warning("Leads dashboard funnel unavailable: %s", exc)
         funnel = {"received": 0, "stages": []}
+    _cobertura = f_coverage.result()
+    _props = f_property.result()
     if timing is not None:
         timing["concurrent_block_ms"] = round((time.perf_counter() - concurrent_started) * 1000, 1)
         timing["component_details"] = {
             "conversion": conversion_detail,
-            "diagnostics_executives": executives_detail,
             "sources": sources_detail,
         }
     current = trends.get("current", {})
@@ -1269,37 +1284,8 @@ def get_leads_dashboard_overview(
     propiedades_sin_precio = pipeline.get("propiedades_sin_precio", 0)
     propiedades_no_en_cartera = pipeline.get("propiedades_no_en_cartera", 0)
 
-    # Cobertura de demanda sobre la cartera ACTIVA de SUCRE (denominador
-    # dinámico, en vivo; no estático).
-    coverage_future = _COMMERCIAL_QUERY_POOL.submit(
-        run_timed, "demand_coverage", query_cartera_demanda_coverage,
-        {"period_start": period_start, "period_end": period_end, "oficina": "PROCASA SUCRE"},
-    )
-
-    macro = _load_commercial_macro_information()
-    uf_info = (macro.get("indicators") or {}).get("uf") or {}
-    uf_value = uf_info.get("value")
-    uf_asof = uf_info.get("as_of")
-    try:
-        from chatbot.uf_service import leer_uf_cache
-        _uf = leer_uf_cache()
-        if _uf and _uf.get("valor"):
-            uf_value = _uf["valor"]
-            uf_asof = _uf.get("fecha") or uf_asof
-    except Exception:
-        pass
-
-    # Comisión potencial por propiedad (mínimos contractuales netos).
-    # Venta: max(precio_uf*0.02, 1.000.000/UF) · Arriendo: max(canon*0.50, 100.000/UF).
-    MIN_VENTA_CLP = 1_000_000
-    MIN_ARRIENDO_CLP = 100_000
-    uf_clp = float(uf_value) if uf_value else None
-    property_future = _COMMERCIAL_QUERY_POOL.submit(
-        run_timed, "property_commission", query_property_commission_rows,
-        {"period_start": period_start, "period_end": period_end, "uf_value": uf_clp},
-    )
-    _cobertura = coverage_future.result()
-    _props = property_future.result()
+    # Cobertura y comisión ya se ejecutaron en la primera ola. Sus resultados
+    # se consumen aquí sin abrir una segunda ronda de consultas remotas.
     propiedades_con_demanda = _cobertura["propiedades_con_demanda"]
     cartera_activa = _cobertura["propiedades_activas"]
     pct_cartera_con_demanda = _cobertura["pct_cartera_con_demanda"]
@@ -1369,18 +1355,6 @@ def get_leads_dashboard_overview(
         "vencidos": sla_panel.get("critical_open", 0),
     }
 
-    rescatados = rescue.get("recuperabilidad_alta", 0)
-    vencidos = sla_panel.get("critical_open", 0)
-    eligible = sla_panel.get("eligible_total", 0) or 0
-    pct_al_dia = round((1 - vencidos / eligible) * 100, 1) if eligible else 100.0
-    pct_rescatados = round(rescatados / total_leads * 100, 1) if total_leads else 0.0
-    rescue_data = {
-        "leads_rescatados": rescatados,
-        "pct_rescatados": pct_rescatados,
-        "vencidos_abiertos": vencidos,
-        "pct_al_dia": pct_al_dia,
-    }
-
     src_items = sources.get("current", [])
     src_total = sources.get("total", 0) or 0
     src_total_visitas = sources.get("total_visitas", 0) or 0
@@ -1399,45 +1373,6 @@ def get_leads_dashboard_overview(
         ],
         "total": src_total,
         "total_visitas": src_total_visitas,
-    }
-
-    _sum_exec = sum(r.get("leads", 0) for r in exec_rows)
-    # Reconciliación con la MISMA atribución as-of de las filas (no
-    # ejecutivo_asignado actual). Ejecutivos comerciales, Sin asignar y Otros
-    # (admin/pruebas/no comerciales) son mutuamente excluyentes y suman el total.
-    _rec_total = exec_reconcile.get("total", total_leads) if isinstance(exec_reconcile, dict) else total_leads
-    _rec_comerciales = exec_reconcile.get("comerciales", 0) if isinstance(exec_reconcile, dict) else max(_sum_exec - exec_reconcile.get("sin_asignar", 0) if isinstance(exec_reconcile, dict) else _sum_exec, 0)
-    _rec_sin_asignar = exec_reconcile.get("sin_asignar", 0) if isinstance(exec_reconcile, dict) else 0
-    _rec_otros = exec_reconcile.get("otros", 0) if isinstance(exec_reconcile, dict) else max(_rec_total - _sum_exec, 0)
-    executives_data = {
-        "items": [
-            {
-                "nombre": r.get("ejecutivo", "Sin Asignar"),
-                "leads": r.get("leads", 0),
-                "leads_prev": r.get("leads_prev", 0),
-                "diff_leads": r.get("diff_leads", 0),
-                "pct_leads": round(r.get("leads", 0) / total_leads * 100, 1) if total_leads else 0.0,
-                "citas": r.get("citas", 0),
-                "citas_prev": r.get("citas_prev", 0),
-                "visitas_prev": r.get("visitas_prev", 0),
-                "conversion_pct": round(r.get("citas", 0) / r.get("leads", 0) * 100, 1) if r.get("leads", 0) else None,
-                "conversion_prev_pct": round(r.get("citas_prev", 0) / r.get("leads_prev", 0) * 100, 1) if r.get("leads_prev", 0) else None,
-                "diff_pp": round(
-                    (r.get("citas", 0) / r.get("leads", 0) - r.get("citas_prev", 0) / r.get("leads_prev", 0)) * 100, 1
-                ) if r.get("leads", 0) and r.get("leads_prev", 0) else None,
-                "estado": "Neutral",
-            }
-            for r in exec_rows
-        ],
-        "total": len(exec_rows),
-        "reconcile": {
-            "contabilizado": _sum_exec,
-            "comerciales": _rec_comerciales,
-            "sin_asignar": _rec_sin_asignar,
-            "otros": _rec_otros,
-            "total": _rec_total,
-            "pct": round(_rec_comerciales / _rec_total * 100, 1) if _rec_total else 0.0,
-        },
     }
 
     insights = build_executive_insights(
@@ -1525,9 +1460,7 @@ def get_leads_dashboard_overview(
         },
         "funnel": funnel,
         "sla": sla_data,
-        "rescue": rescue_data,
         "sources": sources_data,
-        "executives": executives_data,
         "insights": insights,
         "meta": {
             "target": meta_target,

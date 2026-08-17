@@ -2007,6 +2007,11 @@
             white-space: nowrap;
         }
 
+        /* En acumulado la línea usa los extremos reales del eje (x=0/100).
+           Elimina el inset visual de las etiquetas para que primer y último
+           tick queden alineados con los puntos extremos de la serie. */
+        #tcTrendChart[data-mode="acumulado"] .tc-line-labels { padding-inline: 0; }
+
         .tc-foot {
             display: flex;
             justify-content: space-between;
@@ -4727,14 +4732,15 @@
                 const xAt = (i) => (i + 0.5) * stepW;
                 const yAt = (v) => H - PAD - (v / max) * (H - 2 * PAD);
 
-                // Media móvil de 7 días (ventana final, calculada sobre datos reales).
-                const ma = [];
-                for (let i = 0; i < days; i++) {
-                    const win = nums.slice(Math.max(0, i - 6), i + 1);
-                    ma.push(win.reduce((a, b) => a + b, 0) / win.length);
-                }
-                const hasMA = days >= 7;
-                const maPts = hasMA ? ma.map((v, i) => [xAt(i), yAt(v)]) : [];
+                // MA7 trailing: solo se muestra cuando existe la ventana
+                // completa del día actual + los seis días anteriores. Los
+                // días sin leads permanecen dentro de la ventana como cero.
+                const ma = s.movingAverageData || Array(days).fill(null);
+                const hasMA = ma.some(v => v !== null);
+                const maPts = ma.reduce((points, v, i) => {
+                    if (v !== null) points.push([xAt(i), yAt(v)]);
+                    return points;
+                }, []);
                 const maD = hasMA && maPts.length > 1 ? tcSmooth(maPts) : '';
 
                 const step = Math.max(1, Math.ceil(days / 10));
@@ -4787,7 +4793,7 @@
                     if (tooltip) {
                         tooltip.innerHTML = '<span>' + tcFormatDate(labels[idx]) + '</span>' +
                             '<strong>' + nums[idx] + ' leads captados</strong>' +
-                            (hasMA ? '<small>Media móvil 7 días: ' + ma[idx].toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
+                            (ma[idx] !== null ? '<small>Media móvil 7 días: ' + ma[idx].toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
                         tcPlaceTooltip(tooltip, snapX);
                     }
                 };
@@ -4839,7 +4845,12 @@
                 // TC_MODE es estado de la sesión/página: la primera entrada
                 // parte en Acumulado, pero un refresh o cambio de período no
                 // debe borrar la elección explícita del usuario.
-                TC_SERIES = (days > 1) ? { nums, prevNums, labels, hasCmp } : null;
+                const movingAverageData = nums.map((_, i) => {
+                    if (i < 6) return null;
+                    const win = nums.slice(i - 6, i + 1);
+                    return win.reduce((a, b) => a + (Number(b) || 0), 0) / 7;
+                });
+                TC_SERIES = (days > 1) ? { nums, prevNums, labels, hasCmp, movingAverageData } : null;
 
                 const seg = $('tcModeSeg');
                 if (seg) {

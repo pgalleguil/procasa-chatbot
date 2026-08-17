@@ -3691,7 +3691,7 @@
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
             const PUBLIC_DEMO = {{ 'true' if public_demo|default(false) else 'false' }};
-            const PRIVATE_OPERATIONS_ENDPOINT = {{ "''" if public_demo|default(false) else "'/api/leads-dashboard/operations'" }};
+            const PRIVATE_OPERATIONS_ENDPOINT = {% if public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
 
             // Estado de periodo (misma lógica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };

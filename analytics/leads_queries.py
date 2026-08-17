@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 import math
 import re
+import time
 from typing import Any, Mapping, Optional
 
 from pymongo.errors import NetworkTimeout
@@ -1707,7 +1708,14 @@ def _match_signed_orders_to_leads(orders: list, leads: list) -> tuple:
     return dict(attributed), ambiguous
 
 
-def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc, profile: Optional[dict] = None, signed_orders: Optional[list] = None) -> set:
+def _scheduled_visit_lead_ids(
+    cohort_leads: list,
+    lead_ids: set,
+    pe_utc,
+    profile: Optional[dict] = None,
+    signed_orders: Optional[list] = None,
+    signed_orders_future=None,
+) -> set:
     """Leads de la cohorte con evidencia canónica de visita agendada as-of.
 
     Definición EXACTA de CARD 2 (Conversión a Visita Agendada), reutilizada por
@@ -1773,6 +1781,11 @@ def _scheduled_visit_lead_ids(cohort_leads: list, lead_ids: set, pe_utc, profile
                 scheduled.add(eid)
 
     # Fuente C — órdenes de visita firmadas con accepted timestamp (as-of).
+    if signed_orders is None and signed_orders_future is not None:
+        wait_started = time.perf_counter()
+        signed_orders = signed_orders_future.result()
+        if profile is not None:
+            profile["signed_orders_wait_ms"] = round((time.perf_counter() - wait_started) * 1000, 1)
     if signed_orders is None:
         signed_orders = _profile_query(profile, "visitas", "find_signed_orders", lambda: db["visitas"].find(
             {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
@@ -2646,6 +2659,9 @@ def query_leads_dashboard_funnel(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
     filters: Optional[dict] = None,
+    timing: Optional[dict] = None,
+    signed_orders: Optional[list] = None,
+    signed_orders_future=None,
 ) -> dict:
     """Embudo comercial (Recibidos → Gestionados → Contacto efectivo → Visita).
 
@@ -2673,7 +2689,12 @@ def query_leads_dashboard_funnel(
             "lifecycle.visit_scheduled_at": 1,
         }},
     ]
-    cohort = list(db["leads"].aggregate(lead_pipe))
+    cohort = _profile_query(
+        timing,
+        "leads",
+        "aggregate_funnel_cohort",
+        lambda: db["leads"].aggregate(lead_pipe),
+    )
     ids = {str(l["_id"]) for l in cohort}
     received = len(cohort)
     by_created = {lid: l.get("created_at") for lid, l in [(str(l["_id"]), l) for l in cohort]}
@@ -2702,7 +2723,7 @@ def query_leads_dashboard_funnel(
             "effective_contact", "follow_up_requested",
             "requiere_seguimiento",
         ]
-        for event in db["crm_events"].find(
+        for event in _profile_query(timing, "crm_events", "find_funnel_contact_events", lambda: db["crm_events"].find(
             {
                 "lead_id": {"$in": [l["_id"] for l in cohort]},
                 "confirmed": True,
@@ -2713,8 +2734,8 @@ def query_leads_dashboard_funnel(
                 ],
             },
             {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
-             "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1},
-        ):
+            "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1},
+        )):
             if not event_evidence(event).get("effective_contact"):
                 continue
             eid = str(event.get("lead_id"))
@@ -2728,7 +2749,14 @@ def query_leads_dashboard_funnel(
                 contacto_efectivo.add(eid)
 
     # ---- Visita agendada (definición CARD 2, reconcilia exactamente) ----
-    visita_agendada = _scheduled_visit_lead_ids(cohort, ids, end_utc)
+    visita_agendada = _scheduled_visit_lead_ids(
+        cohort,
+        ids,
+        end_utc,
+        profile=timing,
+        signed_orders=signed_orders,
+        signed_orders_future=signed_orders_future,
+    )
 
     # ---- Hitos avanzados / cierres históricos as-of ----
     avanzados = set()

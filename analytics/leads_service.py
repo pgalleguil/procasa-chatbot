@@ -1139,6 +1139,7 @@ def get_leads_dashboard_overview(
     )
     conversion_detail = {}
     sources_detail = {}
+    funnel_detail = {}
     # La lectura de órdenes firmadas es compartida por Conversión y Origen,
     # pero no debe bloquear el resto del Overview. Se inicia en la primera
     # ola y solo sus consumidores esperan su resultado.
@@ -1189,6 +1190,10 @@ def get_leads_dashboard_overview(
     })
     f_funnel = _COMMERCIAL_QUERY_POOL.submit(run_timed, "funnel", query_leads_dashboard_funnel, {
         "period_start": period_start, "period_end": period_end,
+        "timing": funnel_detail,
+        # Funnel espera este Future únicamente al llegar a la evidencia de
+        # órdenes, después de haber ejecutado su cohorte y eventos.
+        "signed_orders_future": f_orders,
     })
     f_coverage = _COMMERCIAL_QUERY_POOL.submit(
         run_timed, "demand_coverage", query_cartera_demanda_coverage,
@@ -1233,6 +1238,7 @@ def get_leads_dashboard_overview(
         timing["component_details"] = {
             "conversion": conversion_detail,
             "sources": sources_detail,
+            "funnel": funnel_detail,
         }
     current = trends.get("current", {})
     previous = trends.get("previous", {})

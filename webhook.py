@@ -4534,7 +4534,7 @@ async def captacion_daily_production_scheduler_loop():
     from chatbot.captacion_daily_report import run_scheduled_production_daily_report
     from chatbot.storage import get_db
     logger.info(
-        "[CAPTACION_DAILY_PRODUCTION] scheduler active=%s timezone=America/Santiago window=Tue-Fri 08:30",
+        "[CAPTACION_DAILY_PRODUCTION] scheduler active=%s timezone=America/Santiago window=Tue-Fri 08:30-12:00",
         Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE,
     )
     while True:
@@ -4543,16 +4543,10 @@ async def captacion_daily_production_scheduler_loop():
             background_tasks_status["captacion_daily_production"] = {
                 "status": "running" if Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE else "disabled",
                 "timezone": "America/Santiago",
-                "schedule": "Tuesday-Friday 08:30",
+                "schedule": "Tuesday-Friday 08:30-12:00 catch-up",
                 "last_heartbeat": now.isoformat(),
             }
-            if (
-                Config.CAPTACION_DAILY_PRODUCTION_ENABLED
-                and not Config.CAPTACION_TEST_MODE
-                and now.weekday() in (1, 2, 3, 4)
-                and now.hour == 8
-                and now.minute == 30
-            ):
+            if Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE:
                 result = await run_scheduled_production_daily_report(get_db(), run_at=now)
                 background_tasks_status["captacion_daily_production"]["last_result"] = result.get("status")
         except asyncio.CancelledError:

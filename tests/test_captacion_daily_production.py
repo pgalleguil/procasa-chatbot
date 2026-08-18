@@ -32,6 +32,49 @@ def test_scheduler_uses_chile_timezone():
     assert run_at.astimezone(daily.CHILE).minute == 30
 
 
+@pytest.mark.parametrize(
+    ("hour", "minute", "expected"),
+    [(8, 29, False), (8, 30, True), (8, 31, True), (9, 15, True), (11, 59, True), (12, 0, False)],
+)
+def test_daily_production_recovery_window(hour, minute, expected):
+    run_at = datetime(2026, 8, 18, hour, minute, tzinfo=daily.CHILE)
+    assert daily.daily_production_window_open(run_at) is expected
+
+
+def test_daily_production_recovery_window_excludes_monday_and_weekends():
+    for day in (17, 22, 23):
+        run_at = datetime(2026, 8, day, 9, 15, tzinfo=daily.CHILE)
+        assert daily.daily_production_window_open(run_at) is False
+
+
+def test_scheduler_recovers_monday_report_at_0915(monkeypatch):
+    calls = []
+
+    async def fake_send(db, report_date):
+        calls.append(report_date)
+        return {"status": "accepted"}
+
+    monkeypatch.setattr(daily, "send_production_daily_report", fake_send)
+    run_at = datetime(2026, 8, 18, 9, 15, tzinfo=daily.CHILE)
+    result = asyncio.run(daily.run_scheduled_production_daily_report(_db(), run_at=run_at))
+    assert result["status"] == "accepted"
+    assert calls == [date(2026, 8, 17)]
+
+
+def test_scheduler_does_not_recover_after_noon(monkeypatch):
+    calls = []
+
+    async def fake_send(db, report_date):
+        calls.append(report_date)
+        return {"status": "accepted"}
+
+    monkeypatch.setattr(daily, "send_production_daily_report", fake_send)
+    run_at = datetime(2026, 8, 18, 12, 0, tzinfo=daily.CHILE)
+    result = asyncio.run(daily.run_scheduled_production_daily_report(_db(), run_at=run_at))
+    assert result["status"] == "not_scheduled"
+    assert calls == []
+
+
 def _fake_report():
     return {
         "period_label": "17 de agosto",
@@ -151,3 +194,22 @@ def test_failed_provider_is_recorded_for_diagnosis(monkeypatch):
     assert result["status"] == "failed"
     assert db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-17"})["provider_http_status"] == 500
 
+
+def test_recent_failed_delivery_is_skipped_during_recovery_window(monkeypatch):
+    _patch_report(monkeypatch)
+    monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
+    calls = []
+
+    async def fake_send(recipient, message):
+        calls.append(1)
+        return {"success": False, "delivery_status": "failed", "http_status": 500}
+
+    monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
+    db = _db()
+    first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 17)))
+    second = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 17)))
+    assert first["status"] == "failed"
+    assert second["status"] == "already_claimed"
+    assert calls == [1]

@@ -29,6 +29,10 @@ CHILE = pytz.timezone("America/Santiago")
 DAILY_TARGET = 10
 COVERAGE_THRESHOLD_DAYS = 10
 DAILY_DELIVERY_COLLECTION = Config.CAPTACION_DAILY_DELIVERY_COLLECTION
+DAILY_PRODUCTION_START_HOUR = 8
+DAILY_PRODUCTION_START_MINUTE = 30
+DAILY_PRODUCTION_END_HOUR = 12
+DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS = 300
 
 
 def scheduled_period_for_run(run_date: date | str) -> tuple[date, date] | None:
@@ -41,6 +45,26 @@ def scheduled_period_for_run(run_date: date | str) -> tuple[date, date] | None:
         return previous_monday, previous_monday + timedelta(days=4)
     previous = run_date - timedelta(days=1)
     return previous, previous
+
+
+def daily_production_window_open(run_at: datetime | None = None) -> bool:
+    """True during the Tue-Fri 08:30 (inclusive) to 12:00 (exclusive) window."""
+    local_now = (run_at.astimezone(CHILE) if run_at else datetime.now(CHILE))
+    if local_now.weekday() not in (1, 2, 3, 4):
+        return False
+    start = local_now.replace(
+        hour=DAILY_PRODUCTION_START_HOUR,
+        minute=DAILY_PRODUCTION_START_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    end = local_now.replace(
+        hour=DAILY_PRODUCTION_END_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return start <= local_now < end
 
 
 def _utc(value: Any) -> datetime | None:
@@ -385,6 +409,9 @@ async def _claim_daily_delivery(db, key: str, report_date: date, recipient: str)
     if inserted and inserted.get("status") in {"accepted", "delivered", "read", "sending"}:
         return inserted, False
     if inserted and inserted.get("status") in {"failed", "delivery_unknown"}:
+        failed_at = _utc(inserted.get("failed_at")) or _utc(inserted.get("updated_at"))
+        if failed_at and (now - failed_at).total_seconds() < DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS:
+            return inserted, False
         claimed = collection.find_one_and_update(
             {"idempotency_key": key, "status": inserted.get("status")},
             {"$set": {"status": "sending", "generated_at": now}},
@@ -412,6 +439,7 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
         checks = validate_reconciliation(report, message)
         provider = await send_whatsapp_message_detailed(recipient, message)
         status = "accepted" if provider.get("success") else provider.get("delivery_status", "failed")
+        completed_at = datetime.now(timezone.utc)
         db[DAILY_DELIVERY_COLLECTION].update_one(
             {"idempotency_key": key},
             {"$set": {
@@ -419,7 +447,8 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
                 "provider_message_id": provider.get("provider_message_id"),
                 "provider_http_status": provider.get("http_status"),
                 "provider_result": provider,
-                "sent_at": datetime.now(timezone.utc) if provider.get("success") else None,
+                "sent_at": completed_at if provider.get("success") else None,
+                "failed_at": None if provider.get("success") else completed_at,
                 "checks": checks,
             }},
         )
@@ -433,8 +462,10 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
 
 
 async def run_scheduled_production_daily_report(db, run_at: datetime | None = None) -> dict:
-    """Run the Tuesday-Friday 08:30 Chile schedule for the closed prior day."""
+    """Run the Tue-Fri 08:30-12:00 Chile catch-up window for the closed prior day."""
     local_now = (run_at.astimezone(CHILE) if run_at else datetime.now(CHILE))
+    if not daily_production_window_open(local_now):
+        return {"status": "not_scheduled", "local_now": local_now.isoformat()}
     period = scheduled_period_for_run(local_now.date())
     if period is None:
         return {"status": "not_scheduled", "local_now": local_now.isoformat()}
@@ -442,4 +473,3 @@ async def run_scheduled_production_daily_report(db, run_at: datetime | None = No
     if report_date != report_end:
         return {"status": "weekly_reserved", "local_now": local_now.isoformat()}
     return await send_production_daily_report(db, report_date)
-

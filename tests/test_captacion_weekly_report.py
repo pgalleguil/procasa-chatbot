@@ -254,7 +254,7 @@ def test_manual_official_send_is_disabled(monkeypatch):
 
 def test_scheduler_is_permanently_automatic_at_0830():
     assert weekly.Config.CAPTACION_WEEKLY_PREVIEW_REQUIRED is False
-    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is True
+    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is False
     assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_HOUR == 8
     assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE == 30
 
@@ -377,7 +377,7 @@ def test_official_validation_blocks_other_review(monkeypatch):
         weekly.validate_official_report(snapshot, weekly.assemble_whatsapp_message(snapshot, _narrative()))
 
 
-def test_official_send_targets_group_never_admin(monkeypatch):
+def test_official_send_remains_blocked_until_weekly_approval(monkeypatch):
     db = _Db()
     monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
     snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
@@ -404,11 +404,6 @@ def test_official_send_targets_group_never_admin(monkeypatch):
     monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
     monkeypatch.setattr(weekly, "wait_for_whatsapp_delivery", fake_receipt)
     now = weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))
-    delivery = asyncio.run(weekly.send_official_report("r-group", now=now))
-    db[weekly.REPORT_COLLECTION].rows[0]["status"] = "ready_to_send"  # simula reinicio antes de persistir estado
-    second = asyncio.run(weekly.send_official_report("r-group", now=now))
-    assert recipients == ["56990152481-1598919271@g.us"]
-    assert weekly.ADMIN_RECIPIENT not in recipients
-    assert delivery["idempotency_key"].startswith("captacion_weekly_official:2026-07-13:2026-07-17:")
-    assert delivery["delivery_status"] == "delivered"
-    assert second["delivery_id"] == delivery["delivery_id"]
+    with pytest.raises(PermissionError, match="grupo bloqueado"):
+        asyncio.run(weekly.send_official_report("r-group", now=now))
+    assert recipients == []

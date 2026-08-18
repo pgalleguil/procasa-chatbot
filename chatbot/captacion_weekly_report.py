@@ -785,6 +785,8 @@ def _official_idempotency_key(report: dict, group_id: str) -> str:
 
 async def send_official_report(report_id: str, *, now=None) -> dict:
     """Envía al grupo con una sola entrega durable y reintentos acotados."""
+    if not Config.CAPTACION_WEEKLY_AUTOMATIC_SEND or Config.CAPTACION_TEST_MODE:
+        raise PermissionError("Envío al grupo bloqueado: Captación semanal permanece desactivada")
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
     report = await asyncio.to_thread(

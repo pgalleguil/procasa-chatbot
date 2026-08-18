@@ -271,6 +271,7 @@ async def lifespan(app: FastAPI):
     sla_c_task = asyncio.create_task(captacion_sla_release_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
+    captacion_daily_production_task = asyncio.create_task(captacion_daily_production_scheduler_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
@@ -4526,6 +4527,41 @@ async def daily_report_loop():
         
         # Revisar cada 5 minutos
         await asyncio.sleep(300)
+
+
+async def captacion_daily_production_scheduler_loop():
+    """Production Captación daily sender: Tue-Fri at 08:30 Chile time."""
+    from chatbot.captacion_daily_report import run_scheduled_production_daily_report
+    from chatbot.storage import get_db
+    logger.info(
+        "[CAPTACION_DAILY_PRODUCTION] scheduler active=%s timezone=America/Santiago window=Tue-Fri 08:30",
+        Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE,
+    )
+    while True:
+        try:
+            now = datetime.now(CHILE_TZ)
+            background_tasks_status["captacion_daily_production"] = {
+                "status": "running" if Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE else "disabled",
+                "timezone": "America/Santiago",
+                "schedule": "Tuesday-Friday 08:30",
+                "last_heartbeat": now.isoformat(),
+            }
+            if (
+                Config.CAPTACION_DAILY_PRODUCTION_ENABLED
+                and not Config.CAPTACION_TEST_MODE
+                and now.weekday() in (1, 2, 3, 4)
+                and now.hour == 8
+                and now.minute == 30
+            ):
+                result = await run_scheduled_production_daily_report(get_db(), run_at=now)
+                background_tasks_status["captacion_daily_production"]["last_result"] = result.get("status")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("[CAPTACION_DAILY_PRODUCTION] scheduler error: %s", exc)
+            background_tasks_status.setdefault("captacion_daily_production", {})["status"] = "error"
+            background_tasks_status["captacion_daily_production"]["error"] = str(exc)
+        await asyncio.sleep(30)
 
 if __name__ == "__main__":
     import pathlib

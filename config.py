@@ -54,10 +54,15 @@ class Config:
         "CAPTACION_WEEKLY_DELIVERY_COLLECTION", "captacion_weekly_deliveries"
     )
     CAPTACION_WEEKLY_PREVIEW_REQUIRED = False
+    # Weekly Captación production controls are intentionally independent from
+    # the daily report flags and fail closed until explicitly enabled.
+    CAPTACION_WEEKLY_PRODUCTION_ENABLED = os.getenv("CAPTACION_WEEKLY_PRODUCTION_ENABLED", "false").lower() == "true"
+    CAPTACION_WEEKLY_TEST_MODE = os.getenv("CAPTACION_WEEKLY_TEST_MODE", "true").lower() == "true"
+    # Legacy name retained for compatibility with older diagnostics only.
     CAPTACION_WEEKLY_AUTOMATIC_SEND = os.getenv("CAPTACION_WEEKLY_AUTOMATIC_SEND", "false").lower() == "true"
     CAPTACION_WEEKLY_SCHEDULE_HOUR = 8
     CAPTACION_WEEKLY_SCHEDULE_MINUTE = 30
-    CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR = 10
+    CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR = 12
     CAPTACION_WEEKLY_MAX_SEND_ATTEMPTS = 3
     CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v4"
     CRM_WEEKLY_REPORT_GROUP_ID = os.getenv("CRM_WEEKLY_REPORT_GROUP_ID", "").strip()

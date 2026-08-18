@@ -10,7 +10,7 @@ from .captacion_weekly_report import check_and_prepare_weekly_report
 async def check_and_run_meta_diaria_report(force: bool = False):
     """Nombre heredado; ejecuta el semanal oficial dentro de su ventana."""
     from config import Config
-    if not Config.CAPTACION_WEEKLY_AUTOMATIC_SEND or Config.CAPTACION_TEST_MODE:
+    if not Config.CAPTACION_WEEKLY_PRODUCTION_ENABLED or Config.CAPTACION_WEEKLY_TEST_MODE:
         return None
     return await check_and_prepare_weekly_report(force=force)
 

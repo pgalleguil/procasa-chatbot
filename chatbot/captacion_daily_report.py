@@ -426,7 +426,10 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
     report_date = date.fromisoformat(str(report_date)) if not isinstance(report_date, date) else report_date
     if not Config.CAPTACION_DAILY_PRODUCTION_ENABLED or Config.CAPTACION_TEST_MODE:
         return {"status": "disabled"}
-    recipient = normalize_whatsapp_recipient(Config.CAPTACION_PRODUCTION_GROUP)
+    configured_group = Config.resolve_daily_group_id()
+    if not configured_group:
+        raise PermissionError("PROCASA_COMMERCIAL_GROUP_ID/DAILY_REPORT_GROUP_ID no está configurado como grupo")
+    recipient = normalize_whatsapp_recipient(configured_group)
     if not recipient or recipient == normalize_whatsapp_recipient(Config.CAPTACION_TEST_RECIPIENT):
         raise PermissionError("PRODUCTION_GROUP no está configurado como destino productivo separado")
     key = f"daily:{report_date.isoformat()}:{recipient}"

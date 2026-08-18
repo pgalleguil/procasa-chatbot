@@ -261,6 +261,29 @@ def test_scheduler_is_permanently_automatic_at_0830():
     assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE == 30
 
 
+def test_canonical_commercial_group_has_priority_for_weekly(monkeypatch):
+    monkeypatch.setattr(weekly.Config, "PROCASA_COMMERCIAL_GROUP_ID", "canonical@g.us")
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "legacy-weekly@g.us")
+    monkeypatch.setattr(weekly.Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    assert weekly.Config.resolve_weekly_group_id() == "canonical@g.us"
+
+
+def test_weekly_group_falls_back_weekly_then_daily(monkeypatch):
+    monkeypatch.setattr(weekly.Config, "PROCASA_COMMERCIAL_GROUP_ID", "")
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "legacy-weekly@g.us")
+    monkeypatch.setattr(weekly.Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    assert weekly.Config.resolve_weekly_group_id() == "legacy-weekly@g.us"
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "")
+    assert weekly.Config.resolve_weekly_group_id() == "legacy-daily@g.us"
+
+
+def test_no_valid_group_blocks_resolution(monkeypatch):
+    for name in ("PROCASA_COMMERCIAL_GROUP_ID", "CAPTACION_WEEKLY_GROUP_ID", "DAILY_REPORT_GROUP_ID", "CAPTACION_PRODUCTION_GROUP"):
+        monkeypatch.setattr(weekly.Config, name, "")
+    assert weekly.Config.resolve_daily_group_id() == ""
+    assert weekly.Config.resolve_weekly_group_id() == ""
+
+
 @pytest.mark.parametrize(
     ("hour", "minute", "expected"),
     [(8, 29, False), (8, 30, True), (9, 15, True), (11, 59, True), (12, 0, False)],

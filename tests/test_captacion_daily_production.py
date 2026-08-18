@@ -32,6 +32,20 @@ def test_scheduler_uses_chile_timezone():
     assert run_at.astimezone(daily.CHILE).minute == 30
 
 
+def test_canonical_commercial_group_has_priority_for_daily(monkeypatch):
+    monkeypatch.setattr(Config, "PROCASA_COMMERCIAL_GROUP_ID", "canonical@g.us")
+    monkeypatch.setattr(Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "legacy-production@g.us")
+    assert Config.resolve_daily_group_id() == "canonical@g.us"
+
+
+def test_daily_group_falls_back_to_legacy_destination(monkeypatch):
+    monkeypatch.setattr(Config, "PROCASA_COMMERCIAL_GROUP_ID", "")
+    monkeypatch.setattr(Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "legacy-production@g.us")
+    assert Config.resolve_daily_group_id() == "legacy-daily@g.us"
+
+
 @pytest.mark.parametrize(
     ("hour", "minute", "expected"),
     [(8, 29, False), (8, 30, True), (8, 31, True), (9, 15, True), (11, 59, True), (12, 0, False)],

@@ -1086,6 +1086,8 @@ async def api_leads_dashboard_operations(
     request: Request,
     period_start: str = Query(None),
     period_end: str = Query(None),
+    compare: str = Query("auto"),
+    period_preset: str = Query(None),
     executive: str = Query(None),
     temperature: str = Query(None),
     stage: str = Query(None),
@@ -1108,7 +1110,8 @@ async def api_leads_dashboard_operations(
     payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_leads_operational_dashboard(
-            period_start=period_start, period_end=period_end,
+            period_start=period_start, period_end=period_end, compare=compare,
+            period_preset=period_preset,
             role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
         ),
     )

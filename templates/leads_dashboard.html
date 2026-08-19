@@ -2842,7 +2842,7 @@
         .team-matrix th,.team-performance th{padding:8px 7px;text-align:left;color:var(--text-secondary);font-size:9px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}.team-group-head{text-align:center!important;color:var(--text-primary)!important;background:rgba(139,92,246,.07)}.team-period-divider{border-left:1px solid var(--border-color)}
         .team-matrix td,.team-performance td{padding:9px 7px;border-top:1px solid var(--border-color);white-space:nowrap}.team-matrix td:last-child{white-space:normal;min-width:128px}.team-matrix .team-state-cell{display:grid;gap:5px}.team-action-link{border:0;background:transparent;color:var(--conversion-accent);font-size:9px;font-weight:780;padding:0;cursor:pointer;text-align:left}.team-sla-empty{color:var(--text-secondary);font-size:10px}.team-exec-cards{display:none}.team-exec-card{display:grid;gap:9px;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-elevated)}.team-exec-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.team-exec-card-name{font-size:12px;font-weight:800}.team-exec-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.team-exec-metric{display:grid;gap:3px}.team-exec-metric span{color:var(--text-secondary);font-size:9px}.team-exec-metric strong{font-size:15px;font-variant-numeric:tabular-nums}.team-exec-card-action{justify-self:start}
         .team-matrix td:not(:first-child),.team-performance td:not(:first-child){font-variant-numeric:tabular-nums}
-        .team-load-cell{display:flex;align-items:center;gap:7px;min-width:100px}.team-load-bar{height:7px;flex:1;min-width:35px;background:rgba(148,163,184,.18);border:1px solid rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.team-load-fill{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;box-shadow:0 0 8px rgba(139,92,246,.28);transition:width .55s ease}
+        .team-load-cell{display:flex;align-items:center;gap:7px;min-width:126px}.team-load-value{min-width:54px}.team-load-bar{height:7px;flex:1;min-width:35px;background:rgba(148,163,184,.18);border:1px solid rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.team-load-fill{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;box-shadow:0 0 8px rgba(139,92,246,.28);transition:width .55s ease}
         .team-individual-panel[hidden]{display:none}
         .team-individual-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
         .team-individual-metric{padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}
@@ -2850,12 +2850,26 @@
         .team-individual-subhead{margin:16px 0 8px;color:var(--conversion-accent);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
         .ops-individual-sheet[hidden]{display:none}
         .ops-individual-sheet{padding-top:18px}
+        .team-dashboard .team-portfolio-context{display:none!important}
+        .team-dashboard #opsRefresh{display:none}
+        .team-period-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+        .ops-period-card{min-height:116px!important}
+        .ops-period-card strong{font-size:25px!important}
+        .ops-compare-line{min-height:14px;margin-top:4px;color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}
+        .ops-compare-line.is-positive{color:#34d399}.ops-compare-line.is-negative{color:#fbbf24}.ops-compare-line.is-risk{color:#fb7185}
+        .ops-kpi-support{display:block;margin-top:3px;color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.ops-kpi-secondary{margin-top:7px;color:var(--text-secondary);font-size:8px;line-height:1.35;font-variant-numeric:tabular-nums}.ops-results-link{margin-top:5px;padding:0;border:0;font-size:9px}
+        .ops-microbar,.ops-progress-mini{display:block;height:5px;margin-top:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}
+        .ops-microbar:before{content:'';display:block;height:100%;width:var(--current,0%);background:#8b5cf6;border-radius:inherit}.ops-microbar:after{content:'';display:block;height:100%;width:var(--previous,0%);margin-top:-5px;background:#94a3b8;opacity:.45;border-radius:inherit}
+        .ops-progress-mini span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;transition:width .35s ease}
+        .ops-sla-mini{display:grid;gap:7px;margin-top:8px}.ops-sla-mini>span{display:grid;grid-template-columns:48px minmax(0,1fr) 42px 30px;align-items:center;gap:6px}.ops-sla-mini b,.ops-sla-mini em{font-size:8px;color:var(--text-secondary);font-style:normal}.ops-sla-mini i{height:5px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);width:var(--sla,0%)}.ops-sla-mini strong{font-size:12px!important;text-align:right}.ops-sla-mini em{text-align:right}
         .ops-individual-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)}
         .ops-individual-heading h2{margin:4px 0 0;font-size:22px;letter-spacing:-.02em}
         .ops-individual-heading p{margin:5px 0 0;color:var(--text-secondary);font-size:10px}
         .ops-individual-grid-main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:12px}
         .ops-individual-surface{min-width:0;padding:16px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px}
         .ops-summary-surface{grid-column:1 / -1}
+        .ops-speed-surface{grid-column:1 / -1}
+        .ops-sheet-context-line{margin-top:10px;color:var(--text-secondary);font-size:10px;font-variant-numeric:tabular-nums}
         .ops-surface-title{margin-bottom:13px;font-size:13px;font-weight:800;letter-spacing:-.01em}
         .ops-summary-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
         .ops-summary-columns h4,.ops-speed-columns h4{margin:0 0 7px;color:var(--conversion-accent);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
@@ -2879,20 +2893,61 @@
         .ops-flow-step{position:relative;display:grid;gap:5px;justify-items:center;text-align:center;padding:10px 8px;background:var(--bg-elevated);border:1px solid var(--border-color)}
         .ops-flow-step:first-child{border-radius:9px 0 0 9px}.ops-flow-step:last-child{border-radius:0 9px 9px 0}.ops-flow-step:not(:last-child)::after{content:'›';position:absolute;right:-7px;top:50%;z-index:2;transform:translateY(-50%);color:var(--conversion-accent);font-size:18px;font-weight:800}
         .ops-flow-step strong{font-size:22px;font-variant-numeric:tabular-nums}.ops-flow-step span{color:var(--text-secondary);font-size:8px;text-transform:uppercase;letter-spacing:.05em}.ops-effectiveness-rates{display:flex;justify-content:center;gap:24px;margin-top:13px;color:var(--text-secondary);font-size:10px}.ops-effectiveness-rates strong{color:var(--text-primary);font-size:13px}
+        .ops-speed-stat{border:0;background:transparent;border-radius:0;padding:9px 0;border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color)}
+        .ops-flow-step{background:transparent;border:0;border-right:1px solid var(--border-color)}.ops-flow-step:last-child{border-right:0}
+        .ops-sheet-compare{margin-top:5px;color:var(--text-secondary);font-size:10px}
+        .ops-flow-parallel{display:grid;grid-column:1 / -1;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;min-width:0}.ops-flow-parallel + .team-footnote{grid-column:1 / -1;margin-top:10px;line-height:1.4}
+        .ops-flow-parallel .ops-flow-step:not(:last-child)::after{display:none}
+        .ops-result-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color)}
+        .ops-result-row{display:grid;grid-template-columns:minmax(0,1fr) 1fr auto;align-items:center;gap:8px;color:var(--text-secondary);font-size:9px}.ops-result-row strong{color:var(--text-primary);font-size:12px;font-variant-numeric:tabular-nums}.ops-result-row i{height:5px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);width:var(--result-width,0%)}
+        .ops-surface-title{font-size:14px}
         .team-speed-section,.team-aging-section{padding-top:2px}.team-speed-table,.team-aging-table{width:100%;border-collapse:collapse;font-size:10px}.team-speed-table th,.team-aging-table th{padding:8px 7px;text-align:left;color:var(--text-secondary);font-size:9px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}.team-speed-table td,.team-aging-table td{padding:9px 7px;border-top:1px solid var(--border-color);white-space:nowrap;font-variant-numeric:tabular-nums}.team-sort-btn{border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;padding:0;cursor:pointer}.team-sort-btn:hover,.team-sort-btn:focus{color:var(--conversion-accent)}.team-speed-muted{color:var(--text-secondary)}.team-speed-breach{color:#fbbf24;font-weight:750}.team-speed-sla-breach{color:#fb7185;font-weight:800}.team-aging-bar{display:flex;height:12px;overflow:hidden;border-radius:99px;background:var(--bg-elevated);margin:4px 0 8px}.team-aging-segment{height:100%;min-width:0;transition:width .45s ease}.team-aging-segment.lt-24h{background:#38bdf8}.team-aging-segment.d-1-3{background:#60a5fa}.team-aging-segment.d-4-7{background:#fbbf24}.team-aging-segment.gt-7d{background:#fb7185}.team-aging-legend{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;color:var(--text-secondary);font-size:9px}.team-aging-legend span{display:inline-flex;align-items:center;gap:4px}.team-aging-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}.team-aging-table tbody tr:hover,.team-speed-table tbody tr:hover{background:rgba(139,92,246,.06)}
         .team-box-legend{display:flex;flex-wrap:wrap;gap:9px;margin:2px 0 7px;color:var(--text-secondary);font-size:8px}.team-box-legend span{display:inline-flex;align-items:center;gap:4px}.team-box-legend i{display:inline-block;width:13px;height:3px;border-radius:4px;background:#64748b}.team-box-legend .legend-box{height:9px;border:1px solid #38bdf8;background:rgba(56,189,248,.32)}.team-box-legend .legend-median{width:3px;height:11px;background:var(--text-primary)}.team-box-legend .legend-p90{width:7px;height:7px;border:2px solid var(--text-primary);border-radius:50%;background:var(--bg-card)}.team-box-legend .legend-sla{height:11px;border-left:1px dashed #fbbf24;background:transparent}
         .team-risk-num{color:#fb7185;font-weight:750}.team-warn-num{color:#fbbf24;font-weight:750}
+        /* Team view: reduce hierarchy noise without changing the operational contract. */
+        body.team-view-active .header-container{margin-bottom:18px}
+        body.team-view-active .dash-tabs{margin-bottom:10px}
+        body.team-view-active .period-filterbar{margin-bottom:6px}
+        body.team-view-active .dash-updated{display:none}
+        body.team-view-active #btnExportPdf{display:none}
+        body.team-view-active .team-dashboard{gap:13px}
+        body.team-view-active .team-title{margin-top:0}
+        @media(min-width:681px){
+            /* Keep the shared period bar aligned with Resumen Ejecutivo. */
+            body.team-view-active .header-container{margin-bottom:30px}
+            body.team-view-active .dash-tabs{margin-bottom:16px}
+            body.team-view-active .period-filterbar{margin-bottom:10px}
+            body.team-view-active .team-priority-grid{grid-template-columns:1fr;gap:0;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:var(--bg-elevated)}
+            body.team-view-active .team-priority-card,body.team-view-active .team-priority-card.is-critical{grid-column:auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border:0;border-bottom:1px solid var(--border-color);border-radius:0;background:transparent;padding:11px 12px}
+            body.team-view-active .team-priority-card:last-child{border-bottom:0}
+            body.team-view-active .team-priority-card.is-critical{border-left:3px solid rgba(251,113,133,.6);background:linear-gradient(90deg,rgba(244,63,94,.12),transparent 70%)}
+            body.team-view-active .team-priority-card.is-critical .team-priority-value{font-size:26px}
+            body.team-view-active .team-priority-card .team-priority-detail{margin-top:2px}
+            body.team-view-active .team-priority-card .team-priority-action{margin-top:0;align-self:center;white-space:nowrap}
+        }
         .team-median-row td{border-top:1px dashed var(--border-color);color:var(--text-secondary);font-size:9px}
-        .team-period-section{padding-top:8px}.team-period-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,.85fr);gap:12px}
+        .team-period-section{padding-top:8px}.team-period-grid{display:grid;grid-template-columns:1fr;gap:12px}
+        .ops-matrix-tabs,.ops-time-tabs{display:flex;align-items:center;gap:4px;padding:3px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}
+        .ops-matrix-tabs{margin:-2px 0 12px}.ops-matrix-tabs button,.ops-time-tabs button{border:0;border-radius:6px;padding:6px 9px;background:transparent;color:var(--text-secondary);font:700 10px 'Outfit',sans-serif;cursor:pointer;white-space:nowrap}.ops-matrix-tabs button.active,.ops-time-tabs button.active{background:var(--conversion-accent);color:#fff;box-shadow:0 2px 8px rgba(139,92,246,.22)}
+        .ops-portfolio-summary{margin:-3px 0 11px;padding:9px 11px;border-left:2px solid var(--conversion-accent);background:rgba(139,92,246,.06);color:var(--text-secondary);font-size:10px;line-height:1.45}.ops-portfolio-summary strong{color:var(--text-primary);font-size:12px}.ops-portfolio-summary small{display:block;margin-top:3px;color:var(--text-secondary);font-size:9px}
+        .ops-aging-compact{margin-top:12px;padding-top:11px;border-top:1px solid var(--border-color)}.ops-aging-compact .team-aging-bar{margin-top:6px}.ops-aging-compact .team-aging-legend{margin-top:6px}
+        .ops-time-tabs{margin-top:1px}.ops-time-executive-view{display:grid;gap:2px}.ops-time-row{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(180px,1.45fr) minmax(210px,1fr);align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--border-color)}.ops-time-row:first-child{border-top:0}.ops-time-name{font-size:11px;font-weight:780}.ops-time-track{position:relative;height:8px;border-radius:99px;background:var(--bg-elevated);overflow:visible}.ops-time-track i{display:block;height:100%;width:var(--hot-width,0%);border-radius:inherit;background:linear-gradient(90deg,#38bdf8,#8b5cf6)}.ops-time-track i::after{content:'';position:absolute;left:var(--normal-width,0%);top:0;height:100%;width:3px;border-radius:99px;background:#a78bfa;transform:translateX(-50%)}.ops-time-legend{display:flex;justify-content:space-between;gap:8px;color:var(--text-secondary);font-size:9px;white-space:nowrap}.ops-time-legend b{color:var(--text-primary);font-size:10px}.ops-time-muted{color:var(--text-secondary);font-size:9px}.ops-individual-grid-main{align-items:start}
+        .team-split{align-items:start}.team-matrix{table-layout:fixed}.team-matrix th,.team-matrix td{overflow:hidden;text-overflow:ellipsis}.team-matrix th:first-child,.team-matrix td:first-child{width:17%}.team-matrix th:not(:first-child),.team-matrix td:not(:first-child){width:auto}.team-matrix-panel .team-table-scroll{overflow-x:hidden}
+        .team-dashboard .team-priority-grid{grid-template-columns:1fr;gap:0;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:var(--bg-elevated)}.team-dashboard .team-priority-card,.team-dashboard .team-priority-card.is-critical{grid-column:auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border:0;border-bottom:1px solid var(--border-color);border-radius:0;background:transparent;padding:10px 12px}.team-dashboard .team-priority-card:last-child{border-bottom:0}.team-dashboard .team-priority-card.is-critical{border-left:3px solid rgba(251,113,133,.6);background:linear-gradient(90deg,rgba(244,63,94,.12),transparent 70%)}.team-dashboard .team-priority-card.is-critical .team-priority-value{font-size:26px}.team-dashboard .team-priority-card .team-priority-detail{margin-top:2px}.team-dashboard .team-priority-card .team-priority-action{margin-top:0;align-self:center;white-space:nowrap}
+        .team-dashboard .team-portfolio-context{display:none!important}
+        @media(max-width:900px){.team-matrix-panel .team-table-scroll{display:none}.ops-matrix-tabs{overflow:auto}.ops-matrix-tabs button{flex:1}.ops-time-row{grid-template-columns:minmax(120px,.7fr) minmax(120px,1fr) minmax(170px,1fr);gap:8px}}
+        @media(max-width:680px){.team-head{gap:8px}.team-head-actions{width:100%;justify-content:flex-start}.team-scope-control{width:100%;justify-content:space-between}.team-scope-control select{max-width:calc(100% - 76px)}.ops-matrix-tabs{width:100%}.ops-matrix-tabs button{padding-inline:5px;font-size:9px}.ops-time-tabs{width:100%}.ops-time-tabs button{flex:1}.ops-time-row{grid-template-columns:1fr;gap:5px;padding:10px 0}.ops-time-track{margin:2px 0}.ops-time-legend{white-space:normal}.ops-portfolio-summary{font-size:9px}}
+        .team-sla-open-cell,.team-backlog-cell,.team-period-sla-cell{display:grid;gap:3px;line-height:1.25;font-size:9px;white-space:nowrap}.team-sla-open-cell span,.team-period-sla-cell span{display:flex;justify-content:space-between;gap:8px}.team-sla-open-cell b,.team-period-sla-cell b{font-size:8px;color:var(--text-secondary);font-weight:700}.team-backlog-cell span{display:block}.team-backlog-cell small{display:block;color:var(--text-secondary);font-size:8px}.team-result-cell{display:grid;gap:2px;line-height:1.2;white-space:nowrap}.team-result-cell strong{font-size:11px;font-variant-numeric:tabular-nums}.team-result-cell small,.team-activity-gap{color:var(--text-secondary);font-size:8px}.team-activity-gap{white-space:nowrap}.team-matrix th,.team-matrix td{vertical-align:middle}
         .team-boxplot{display:grid;gap:22px;padding:9px 0 2px}.team-box-row{display:grid;grid-template-columns:54px minmax(0,1fr) 110px;align-items:center;gap:10px}.team-box-label{font-size:11px;font-weight:780}.team-box-track{position:relative;height:46px;border-bottom:1px solid var(--border-color);background:linear-gradient(to bottom,transparent 0,transparent 78%,rgba(148,163,184,.07) 78%,rgba(148,163,184,.07) 100%)}
         .team-box-line,.team-box-iqr,.team-box-median,.team-box-p90,.team-box-sla{position:absolute;display:block}.team-box-line{top:23px;height:3px;background:#64748b;border-radius:99px}.team-box-iqr{top:12px;height:22px;border:1px solid #38bdf8;border-radius:5px;background:rgba(56,189,248,.32)}.team-box-row.normal .team-box-iqr{border-color:#a78bfa;background:rgba(167,139,250,.32)}.team-box-median{top:8px;width:4px;height:30px;border-radius:2px;background:var(--text-primary)}.team-box-p90{top:18px;width:8px;height:8px;border:2px solid var(--text-primary);border-radius:50%;background:var(--bg-card);transform:translate(-50%,-50%)}.team-box-sla{top:0;bottom:0;border-left:1px dashed #fbbf24}.team-box-sla-label{position:absolute;top:-13px;transform:translateX(-50%);color:#fbbf24;font-size:8px;white-space:nowrap}.team-box-stats{color:var(--text-secondary);font-size:9px;line-height:1.45}.team-box-stats strong{color:var(--text-primary);font-size:10px}.team-box-axis{position:absolute;left:0;right:0;bottom:-1px;display:flex;justify-content:space-between;color:var(--text-secondary);font-size:8px}.team-box-row[data-tooltip]{position:relative}.team-box-row[data-tooltip]::after{content:attr(data-tooltip);position:absolute;z-index:25;left:64px;top:calc(100% - 2px);width:235px;padding:9px 11px;border:1px solid rgba(167,139,250,.5);border-radius:9px;background:var(--bg-card);box-shadow:0 12px 28px rgba(0,0,0,.25);color:var(--text-primary);font-size:9px;line-height:1.45;white-space:pre-line;opacity:0;pointer-events:none;transform:translateY(-3px);transition:opacity .16s ease,transform .16s ease}.team-box-row[data-tooltip]:hover::after,.team-box-row[data-tooltip]:focus-within::after{opacity:1;transform:translateY(0)}
         .team-compliance{display:grid;gap:18px}.team-compliance-item{display:grid;gap:6px}.team-compliance-head{display:flex;justify-content:space-between;gap:8px;font-size:11px}.team-compliance-head strong{font-size:18px}.team-progress{height:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}.team-progress span{display:block;height:100%;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit}.team-compliance-meta{display:flex;justify-content:space-between;color:var(--text-secondary);font-size:9px}
-        .team-footnote{margin-top:10px;color:var(--text-secondary);font-size:9px}.team-empty{padding:20px;text-align:center;color:var(--text-secondary);font-size:11px}.team-drawer{position:fixed;z-index:80;top:0;right:0;width:min(430px,92vw);height:100vh;padding:22px;background:var(--bg-card);border-left:1px solid var(--border-color);box-shadow:-16px 0 40px rgba(0,0,0,.28);overflow:auto}.team-drawer-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:14px}.team-drawer-head h3{margin:3px 0 0;font-size:15px}.team-drawer-head p{margin:5px 0;color:var(--text-secondary);font-size:10px}.team-drawer-close{border:0;background:transparent;color:var(--text-secondary);font-size:24px;line-height:1;cursor:pointer}.team-case-list{display:grid;gap:8px}.team-case{padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}.team-case-head{display:flex;justify-content:space-between;gap:8px;font-size:10px}.team-case-title{font-weight:780}.team-case-meta{margin-top:5px;color:var(--text-secondary);font-size:9px;line-height:1.5}.team-case-action{margin-top:8px}
-        @media(max-width:1100px){.team-kpis,.team-current-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.team-period-grid{grid-template-columns:1fr}.team-split{grid-template-columns:1fr}.team-matrix{min-width:980px}}
+        .team-footnote{margin-top:10px;color:var(--text-secondary);font-size:9px}.team-empty{padding:20px;text-align:center;color:var(--text-secondary);font-size:11px}.team-drawer{position:fixed;z-index:80;top:0;right:0;width:min(430px,92vw);height:100vh;padding:22px;background:var(--bg-card);border-left:1px solid var(--border-color);box-shadow:-16px 0 40px rgba(0,0,0,.28);overflow:auto}.team-drawer-head{display:flex;justify-content:space-between;gap:12px;margin-bottom:14px}.team-drawer-head h3{margin:3px 0 0;font-size:15px}.team-drawer-head p{margin:5px 0;color:var(--text-secondary);font-size:10px}.team-drawer-close{border:0;background:transparent;color:var(--text-secondary);font-size:24px;line-height:1;cursor:pointer}.team-case-list{display:grid;gap:8px}.team-case{padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}.team-case-head{display:flex;justify-content:space-between;gap:8px;font-size:10px}.team-case-title{font-weight:780}.team-case-meta{margin-top:5px;color:var(--text-secondary);font-size:9px;line-height:1.5}.team-case-action{margin-top:8px}.ops-result-drawer-bar{height:6px;margin-top:8px;border-radius:99px;background:var(--bg-card);overflow:hidden}.ops-result-drawer-bar i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#38bdf8)}
+        @media(max-width:1100px){.team-kpis,.team-current-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.team-period-grid{grid-template-columns:1fr}.team-split{grid-template-columns:1fr}.team-matrix{min-width:1120px}}
         @media(max-width:900px){.team-matrix-panel .team-table-scroll{display:none}.team-exec-cards{display:grid;gap:9px}}
         @media(max-width:680px){.team-head,.team-section-head{align-items:flex-start;flex-direction:column}.team-head-actions{width:100%;justify-content:space-between}.team-scope-control{flex:1}.team-scope-control select{min-width:0;flex:1}.team-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.team-current-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border:0;background:transparent;gap:8px;overflow:visible}.team-current-strip .team-kpi{border:1px solid var(--border-color);border-radius:9px;background:var(--bg-card);min-height:92px}.team-kpi{min-height:92px}.team-title{font-size:22px}.team-priority-grid{grid-template-columns:1fr}.team-priority-card.is-critical{grid-column:auto}.team-matrix-panel .team-table-scroll{display:none}.team-exec-cards{display:grid;gap:9px}.team-period-grid{gap:10px}.team-box-row{grid-template-columns:48px minmax(0,1fr);gap:7px}.team-box-stats{grid-column:2}.team-box-row[data-tooltip]::after{left:48px;max-width:calc(100vw - 90px)}.team-individual-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.team-speed-section{display:block}.team-speed-table{display:none}.team-speed-cards{display:grid;gap:8px}.team-speed-card{display:grid;grid-template-columns:minmax(0,1fr) 1fr 1fr;gap:8px;align-items:center;padding:10px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}.team-speed-card-name{font-size:11px;font-weight:800}.team-speed-card-segment{display:grid;gap:2px}.team-speed-card-segment b{font-size:8px;color:var(--text-secondary);letter-spacing:.06em}.team-speed-card-segment span{font-size:10px}.team-aging-bar{height:14px}.team-portfolio-context>div{display:grid;gap:4px}.team-sla-kpi-lines{gap:8px}.team-sla-kpi-lines strong{font-size:16px}}
 
         @media(max-width:680px){
+            .team-period-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
             .ops-individual-sheet{padding-top:12px}
             .ops-individual-heading{align-items:flex-start;flex-direction:column;gap:8px}
             .ops-individual-heading h2{font-size:19px}
@@ -2903,7 +2958,9 @@
             .ops-effectiveness-flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
             .ops-flow-step{border-radius:7px!important}
             .ops-flow-step:not(:last-child)::after{display:none}
+            .ops-flow-parallel{grid-template-columns:repeat(2,minmax(0,1fr));gap:0}
             .ops-effectiveness-rates{justify-content:space-between;gap:8px;font-size:9px}
+            .ops-result-breakdown{grid-template-columns:1fr}
             .ops-sheet-boxplot .team-box-row{grid-template-columns:44px minmax(0,1fr)}
             .ops-sheet-boxplot .team-box-stats{grid-column:2}
         }
@@ -3343,7 +3400,7 @@
 
             <div class="header-container">
                 <div class="d-flex align-items-center seq-el seq-static" id="seqHeader">
-                    <button type="button" class="hamburger-mobile" aria-controls="sidebar" aria-expanded="false" onclick="toggleMobileMenu()">
+                    <button type="button" class="hamburger-mobile" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false" onclick="toggleMobileMenu()">
                         <i class="fa-solid fa-bars"></i>
                     </button>
                     <div>
@@ -3366,7 +3423,7 @@
                 <button class="dash-tab" data-tab="channels"><span>Portales & ROI</span></button>
             </nav>
             <div class="mobile-tab-select seq-el seq-static" aria-label="Vista del dashboard">
-                <select id="mobileTabSelect">
+                <select id="mobileTabSelect" aria-label="Vista del dashboard">
                     <option value="executive">Resumen Ejecutivo</option>
                     <option value="leads">Gestión del Equipo Comercial</option>
                     <option value="properties">Propiedades & Inventario</option>
@@ -3661,41 +3718,39 @@
             <div id="viewLeads" hidden>
                 <div class="team-dashboard" id="opsDashboard">
                     <header class="team-head">
-                        <div><div class="team-kicker">CONTROL DE GESTIÓN COMERCIAL</div><h2 class="team-title">Gestión del Equipo Comercial</h2><p class="team-subtitle" id="opsScopeSummary">Equipo completo · Todas las carteras</p></div>
-                        <div class="team-head-actions"><label class="team-scope-control" for="opsExecutiveScope"><span>Ejecutivo</span><select id="opsExecutiveScope" aria-label="Ejecutivo analizado"><option value="">Equipo completo</option></select></label><button class="team-refresh" id="opsRefresh" type="button"><i class="fa-solid fa-rotate-right"></i><span>Actualizar</span></button></div>
+                        <div><h2 class="team-title">Gestión del Equipo Comercial</h2><p class="team-subtitle" id="opsScopeSummary" hidden></p></div>
+                        <div class="team-head-actions"><label class="team-scope-control" for="opsExecutiveScope"><span>Ejecutivo</span><select id="opsExecutiveScope" aria-label="Ejecutivo analizado"><option value="">Equipo completo</option></select></label></div>
                     </header>
                     <div class="team-portfolio-context" id="opsPortfolioContext" hidden aria-live="polite"></div>
                     <div class="team-error" id="opsError" hidden><span id="opsErrorText">No fue posible actualizar la gestión operativa.</span><button class="team-link-btn" id="opsRetry" type="button">Reintentar</button></div>
-                    <section class="team-section team-period-kpi-section"><div class="team-section-head"><div><div class="team-section-kicker">DESEMPEÑO DEL PERÍODO</div><h3>Resultados que sí cambian con las fechas</h3><p id="opsPeriodKpiMeta">Período seleccionado</p></div><span class="team-period-badge">Cohorte de asignación</span></div><div class="team-kpis team-period-kpis"><article class="team-kpi"><span class="team-kpi-label">Leads asignados</span><strong id="opsPeriodAssigned">—</strong><small>Ingresados al ejecutivo en el período</small></article><article class="team-kpi"><span class="team-kpi-label">Primera gestión</span><strong id="opsPeriodManaged">—</strong><small>Con gestión válida registrada</small></article><article class="team-kpi"><span class="team-kpi-label">Cobertura de gestión</span><strong id="opsPeriodCoverage">—</strong><small>Primera gestión / asignados</small></article><article class="team-kpi team-sla-kpi"><span class="team-kpi-label">Cumplimiento SLA</span><div class="team-sla-kpi-lines" id="opsPeriodSla"><span><b>HOT</b><strong id="opsPeriodSlaHot">—</strong><em id="opsPeriodSlaHotN">n=—</em></span><span><b>NORMAL</b><strong id="opsPeriodSlaNormal">—</strong><em id="opsPeriodSlaNormalN">n=—</em></span></div><small>HOT ≤60 min · NORMAL ≤180 min hábiles</small></article><article class="team-kpi"><span class="team-kpi-label">Visitas agendadas</span><strong id="opsPeriodVisits">—</strong><small id="opsPeriodVisitsMeta">Evento canónico · Lead → visita —</small></article></div></section>
+                    <section class="team-section team-period-kpi-section"><div class="team-kpis team-period-kpis"><article class="team-kpi ops-period-card"><span class="team-kpi-label">Asignados</span><strong id="opsPeriodAssigned">—</strong><div class="ops-compare-line" id="opsPeriodAssignedCompare">—</div><div class="ops-microbar" id="opsAssignedMicrobar"></div><small>Leads asignados en el período</small></article><article class="team-kpi ops-period-card"><span class="team-kpi-label">Resultado registrado</span><strong id="opsPeriodCoverage">—</strong><span class="ops-kpi-support" id="opsPeriodManaged">— de —</span><div class="ops-compare-line" id="opsPeriodManagedCompare">—</div><div class="ops-progress-mini"><span id="opsResultProgress"></span></div><div class="ops-kpi-secondary" id="opsPeriodActivityMeta">Actividad registrada: — · — con actividad sin resultado</div><button type="button" class="team-link-btn ops-results-link" id="opsTeamResultsButton" hidden>Ver resultados →</button><small title="Registro válido utilizado para resolver la primera gestión y evaluar SLA">Resultado de contacto válido</small></article><article class="team-kpi team-sla-kpi ops-period-card"><span class="team-kpi-label">Cumplimiento SLA</span><div class="ops-sla-mini" id="opsPeriodSla"><span><b>HOT</b><i id="opsSlaHotBar"></i><strong id="opsPeriodSlaHot">—</strong><em id="opsPeriodSlaHotN">n=—</em></span><span><b>NORMAL</b><i id="opsSlaNormalBar"></i><strong id="opsPeriodSlaNormal">—</strong><em id="opsPeriodSlaNormalN">n=—</em></span></div><div class="ops-compare-line" id="opsPeriodSlaCompare">—</div><small>HOT ≤60 · NORMAL ≤180 min hábiles</small></article><article class="team-kpi ops-period-card"><span class="team-kpi-label">Visitas agendadas</span><strong id="opsPeriodVisits">—</strong><span class="ops-kpi-support" id="opsPeriodVisitsMeta">Lead → visita —</span><div class="ops-compare-line" id="opsPeriodVisitsCompare">—</div><div class="ops-microbar" id="opsVisitsMicrobar"></div><small>Evento canónico del período</small></article></div></section>
                     <section class="ops-individual-sheet" id="opsIndividualSheet" hidden>
-                        <div class="ops-individual-heading"><div><div class="team-section-kicker">FICHA DE CONTROL INDIVIDUAL</div><h2 id="opsSheetTitle">—</h2><p id="opsSheetSubtitle">Control individual · período seleccionado</p></div><span id="opsSheetStatus" class="team-status">—</span></div>
+                        <div class="ops-individual-heading"><div><h2 id="opsSheetTitle">—</h2><p id="opsSheetSubtitle" hidden></p><div id="opsSheetContextLine" class="ops-sheet-context-line">—</div></div><span id="opsSheetStatus" class="team-status" hidden>—</span></div>
                         <div class="ops-individual-grid-main">
-                            <article class="ops-individual-surface ops-summary-surface"><div class="ops-surface-title">Resumen de gestión</div><div class="ops-summary-columns"><div><h4>Estado actual</h4><div id="opsSheetCurrentRows"></div></div><div><h4>Período</h4><div id="opsSheetPeriodRows"></div></div></div></article>
                             <article class="ops-individual-surface ops-priority-surface"><div class="ops-surface-title">Prioridad y backlog</div><div id="opsSheetPriorityRows"></div><div class="ops-aging-inline"><div class="ops-inline-label">Antigüedad del backlog</div><div id="opsSheetAgingBar" class="team-aging-bar"></div><div id="opsSheetAgingLegend" class="team-aging-legend"></div></div><button class="team-link-btn" id="opsSheetCasesButton" type="button">Ver casos prioritarios →</button></article>
+                            <article class="ops-individual-surface ops-activity-surface"><div class="ops-surface-title">Actividad y resultados</div><div id="opsSheetFlow" class="ops-effectiveness-flow"></div><div id="opsSheetResults" class="ops-result-breakdown"></div></article>
                             <article class="ops-individual-surface ops-speed-surface"><div class="ops-surface-title">Velocidad + SLA</div><div class="ops-speed-columns"><div><h4>HOT</h4><div id="opsSheetHotStats"></div></div><div><h4>NORMAL</h4><div id="opsSheetNormalStats"></div></div></div><div id="opsSheetBoxplot" class="team-boxplot ops-sheet-boxplot"></div></article>
-                            <article class="ops-individual-surface ops-effectiveness-surface"><div class="ops-surface-title">Efectividad comercial</div><div id="opsSheetFlow" class="ops-effectiveness-flow"></div><div id="opsSheetEffectivenessRates" class="ops-effectiveness-rates"></div></article>
                         </div>
                     </section>
                     <section class="team-split">
-                        <article class="team-panel team-intervention-panel"><div class="team-panel-head"><div><div class="team-section-kicker">PRIORIDAD DE INTERVENCIÓN</div><h3>Dónde debe intervenir el supervisor</h3><p>Problemas ordenados por urgencia, no por ejecutivo</p></div></div><div id="opsInterventionRank" class="team-priority-grid"><div class="team-empty">Cargando prioridades…</div></div></article>
-                        <article class="team-panel team-matrix-panel"><div class="team-panel-head"><div><div class="team-section-kicker">GESTIÓN POR EJECUTIVO</div><h3>Matriz única de gestión</h3><p>Estado actual y desempeño del período en una sola lectura</p></div><span id="opsMatrixMeta" class="team-panel-meta">—</span></div><div class="team-table-scroll"><table class="team-matrix"><thead><tr><th rowspan="2">Ejecutivo</th><th colspan="7" class="team-group-head">ESTADO ACTUAL</th><th colspan="3" class="team-group-head team-period-divider">DESEMPEÑO DEL PERÍODO</th></tr><tr><th>Carga</th><th>% equipo</th><th>Pend.</th><th>HOT venc.</th><th>NORMAL venc.</th><th>&gt;7 d</th><th>Más antiguo</th><th class="team-period-divider">SLA HOT</th><th>SLA NORMAL</th><th>Estado · acción</th></tr></thead><tbody id="opsExecMatrixBody"></tbody></table></div><div id="opsExecCards" class="team-exec-cards"></div></article>
+                        <article class="team-panel team-intervention-panel"><div class="team-panel-head"><div><div class="team-section-kicker">PRIORIDAD DE INTERVENCIÓN</div><h3>Dónde debe intervenir el supervisor</h3><p>Hechos ordenados por urgencia, no una calificación de personas</p></div></div><div id="opsInterventionRank" class="team-priority-grid"><div class="team-empty">Cargando prioridades…</div></div><div id="opsAgingCompact" class="ops-aging-compact" hidden><div class="ops-inline-label">Antigüedad del backlog actual</div><div id="opsAgingCompactBar" class="team-aging-bar"></div><div id="opsAgingCompactLegend" class="team-aging-legend"></div></div></article>
+                        <article class="team-panel team-matrix-panel"><div class="team-panel-head"><div><div class="team-section-kicker">GESTIÓN POR EJECUTIVO</div><h3>Matriz de supervisión</h3><p id="opsMatrixDescription">Estado actual para priorizar la intervención</p></div><span id="opsMatrixMeta" class="team-panel-meta">—</span></div><div class="ops-matrix-tabs" role="tablist" aria-label="Vista de gestión"><button type="button" class="active" data-matrix-view="current" role="tab" aria-selected="true">Operación actual</button><button type="button" data-matrix-view="period" role="tab" aria-selected="false">Gestión del período</button><button type="button" data-matrix-view="portfolio" role="tab" aria-selected="false">Cartera oficina</button></div><div id="opsPortfolioSummary" class="ops-portfolio-summary" hidden></div><div class="team-table-scroll"><table class="team-matrix"><thead id="opsExecMatrixHead"></thead><tbody id="opsExecMatrixBody"></tbody></table></div><div id="opsExecCards" class="team-exec-cards"></div></article>
                         <article class="team-panel team-individual-panel" id="opsIndividualPanel" hidden><div class="team-panel-head"><div><div class="team-section-kicker">CONTROL INDIVIDUAL</div><h3 id="opsIndividualTitle">Gestión del ejecutivo</h3><p>Stock actual, cobertura de gestión y desempeño del período</p></div></div><div class="team-individual-subhead">Estado actual</div><div id="opsIndividualCurrent" class="team-individual-grid"></div><div class="team-individual-subhead">Desempeño del período</div><div id="opsIndividualPeriod" class="team-individual-grid"></div></article>
                     </section>
-                    <section class="team-section team-speed-section" id="opsSpeedSection">
+                    <section class="team-section team-speed-section" id="opsSpeedSection" hidden>
                         <article class="team-panel"><div class="team-panel-head"><div><div class="team-section-kicker">COMPARACIÓN DEL EQUIPO</div><h3>Velocidad de primera gestión</h3><p>Comparación por ejecutivo · minutos hábiles · el SLA se consulta en la matriz</p></div><span class="team-panel-meta">N = muestra evaluable</span></div><div class="team-table-scroll"><table class="team-speed-table"><thead><tr><th rowspan="2">Ejecutivo</th><th colspan="3" class="team-group-head">HOT</th><th colspan="3" class="team-group-head team-period-divider">NORMAL</th></tr><tr><th><button type="button" class="team-sort-btn" data-speed-sort="hot_n">N</button></th><th><button type="button" class="team-sort-btn" data-speed-sort="p50_hot">P50</button></th><th><button type="button" class="team-sort-btn" data-speed-sort="p90_hot">P90</button></th><th class="team-period-divider"><button type="button" class="team-sort-btn" data-speed-sort="normal_n">N</button></th><th><button type="button" class="team-sort-btn" data-speed-sort="p50_normal">P50</button></th><th><button type="button" class="team-sort-btn" data-speed-sort="p90_normal">P90</button></th></tr></thead><tbody id="opsSpeedBody"></tbody></table></div><div id="opsSpeedCards" class="team-speed-cards"></div></article>
                     </section>
-                    <section class="team-section team-aging-section" id="opsAgingSection">
+                    <section class="team-section team-aging-section" id="opsAgingSection" hidden>
                         <article class="team-panel" id="opsAgingTeamPanel"><div class="team-panel-head"><div><div class="team-section-kicker">ESTADO ACTUAL</div><h3>Antigüedad del backlog</h3><p>Pendientes actuales sin primera gestión · no depende del período</p></div><span id="opsAgingMeta" class="team-panel-meta">—</span></div><div id="opsAgingTeamBar" class="team-aging-bar"></div><div id="opsAgingTeamLegend" class="team-aging-legend"></div><div class="team-table-scroll"><table class="team-aging-table"><thead><tr><th>Ejecutivo</th><th>&lt;24 h</th><th>1–3 d</th><th>4–7 d</th><th>&gt;7 d</th><th>Más antiguo</th></tr></thead><tbody id="opsAgingTeamBody"></tbody></table></div></article>
                         <article class="team-panel" id="opsAgingIndividualPanel" hidden><div class="team-panel-head"><div><div class="team-section-kicker">ESTADO ACTUAL · EJECUTIVO</div><h3>Antigüedad del backlog</h3><p>Pendientes actuales sin primera gestión</p></div></div><div id="opsAgingIndividualGrid" class="team-individual-grid"></div></article>
                     </section>
                     <section class="team-section" id="opsEffectivenessSection" hidden>
                         <article class="team-panel"><div class="team-panel-head"><div><div class="team-section-kicker">RESULTADOS DEL PERÍODO</div><h3>Efectividad comercial del período</h3><p>Solo métricas con trazabilidad canónica y denominador visible</p></div></div><div id="opsEffectivenessGrid" class="team-individual-grid"></div></article>
                     </section>
-                    <section class="team-section team-period-section">
-                        <div class="team-section-head"><div><div class="team-section-kicker">PERIOD</div><h3>Desempeño de primera respuesta</h3><p id="opsPeriodMeta">Período seleccionado</p></div><span class="team-period-badge">Sí depende del período</span></div>
-                        <div class="team-period-grid"><article class="team-panel team-boxplot-panel"><div class="team-panel-head"><div><h3>Distribución del tiempo a 1ª gestión</h3><p>P50, P90 y dispersión observada</p></div></div><div class="team-box-legend" aria-label="Leyenda del boxplot"><span><i></i> rango</span><span><i class="legend-box"></i> Q1–Q3</span><span><i class="legend-median"></i> P50</span><span><i class="legend-p90"></i> P90</span><span><i class="legend-sla"></i> umbral SLA</span></div><div id="opsAgeChart" class="team-boxplot"></div></article><article class="team-panel team-compliance-panel"><div class="team-panel-head"><div><h3>Cumplimiento SLA</h3><p>Solo gestiones evaluables del período</p></div></div><div id="opsPeriodCompliance" class="team-compliance"></div></article></div>
+                    <section class="team-section team-period-section" id="opsTimeSection">
+                        <article class="team-panel team-time-panel"><div class="team-panel-head"><div><div class="team-section-kicker">ANÁLISIS DE PRIMERA GESTIÓN</div><h3>Tiempo de primera gestión</h3><p>Velocidad, distribución y cumplimiento de los tiempos de respuesta</p></div><div class="ops-time-tabs" role="tablist" aria-label="Análisis de primera gestión"><button type="button" class="active" data-time-view="executive" role="tab" aria-selected="true">Por ejecutivo</button><button type="button" data-time-view="distribution" role="tab" aria-selected="false">Distribución</button></div></div><div id="opsTimeExecutiveView" class="ops-time-executive-view"></div><div id="opsTimeDistributionView" class="ops-time-distribution-view" hidden><div class="team-box-legend" aria-label="Leyenda de la distribución"><span><i></i> rango</span><span><i class="legend-box"></i> Q1–Q3</span><span><i class="legend-median"></i> P50</span><span><i class="legend-p90"></i> P90</span><span><i class="legend-sla"></i> umbral SLA</span></div><div id="opsAgeChart" class="team-boxplot"></div></div></article>
                     </section>
-                    <aside class="team-drawer" id="opsCasesDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">EVIDENCIA</div><h3 id="opsCasesTitle">Casos que requieren intervención</h3><p id="opsCasesMeta">—</p></div><button class="team-drawer-close" id="opsCasesClose" type="button" aria-label="Cerrar casos">×</button></div><div id="opsCasesList" class="team-case-list"></div></aside>
+                    <aside class="team-drawer" id="opsCasesDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">EVIDENCIA</div><h3 id="opsCasesTitle">Casos que requieren intervención</h3><p id="opsCasesMeta">—</p></div><button class="team-drawer-close" id="opsCasesClose" type="button" aria-label="Cerrar casos">×</button></div><div id="opsCasesList" class="team-case-list"></div></aside><aside class="team-drawer" id="opsResultsDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">RESULTADOS DEL PERÍODO</div><h3>Resultados de contacto</h3><p id="opsResultsMeta">—</p></div><button class="team-drawer-close" id="opsResultsClose" type="button" aria-label="Cerrar resultados">×</button></div><div id="opsResultsList" class="team-case-list"></div></aside>
                 </div>
             </div>
             <div id="viewProperties" hidden>
@@ -3761,6 +3816,8 @@
             // Estado de periodo (misma lógica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
             let COMPARE = 'auto';
+            let INITIAL_TAB = 'executive';
+            let INITIAL_EXECUTIVE = '';
 
             // Datos del endpoint de resumen (CARD 1 y siguientes)
             let OVERVIEW = null;
@@ -3950,6 +4007,9 @@
                 if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
                 if (COMPARE) p.set('compare', COMPARE);
                 if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
+                const activeTab = document.querySelector('#dashTabs .dash-tab.active')?.dataset.tab || INITIAL_TAB;
+                if (activeTab && activeTab !== 'executive') p.set('tab', activeTab);
+                if (OPS_SCOPE) p.set('executive', OPS_SCOPE);
                 history.replaceState(null, '', location.pathname + '?' + p.toString());
             }
 
@@ -3960,6 +4020,9 @@
                 const urlPreset = CommercialPeriods.validPreset(params.get('period_preset'));
                 COMPARE = CommercialPeriods.validComparison(params.get('compare')) || 'auto';
                 $('pCompare').value = COMPARE;
+                INITIAL_TAB = ['executive','leads','properties','channels'].includes(params.get('tab')) ? params.get('tab') : 'executive';
+                INITIAL_EXECUTIVE = (params.get('executive') || '').trim();
+                OPS_SCOPE = INITIAL_EXECUTIVE;
 
                 if (urlPreset && urlPreset !== 'custom') {
                     // El preset es la fuente de verdad: evita conservar un rango
@@ -4153,6 +4216,10 @@
             let OPS_PORTFOLIOS = [];
             let OPS_SPEED_SORT = 'executive';
             let OPS_SPEED_DESC = false;
+            let OPS_MATRIX_VIEW = 'current';
+            let OPS_TIME_VIEW = 'executive';
+            let OPS_PORTFOLIO_DATA = null;
+            const OPS_OFFICE_PORTFOLIO = 'Jorge Pablo Caro';
             let OPS_REQUEST_SEQ = 0;
             let OPS_LAST_PERIOD_KEY = '';
             let OVERVIEW_REQUEST_SEQ = 0;
@@ -4170,9 +4237,10 @@
                 if (!stats || !stats.n) return '<div class="team-empty">' + label + ': sin gestiones evaluables</div>';
                 const scale = Math.max(threshold * 1.35, Number(stats.max || threshold) * 1.08, 1);
                 const pos = value => Math.max(0, Math.min(100, Number(value || 0) / scale * 100));
+                const oneDecimal = value => value == null ? '—' : Number(value).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1});
                 const pct = compliance == null ? '—' : Number(compliance).toLocaleString('es-CL') + '%';
-                const tooltip = label + '\nP50: ' + Math.round(stats.p50) + ' min\nP90: ' + Math.round(stats.p90) + ' min\nSLA: ≤' + threshold + ' min\nCumplimiento: ' + pct + '\nP50: el 50% de las primeras gestiones ocurrió antes de este tiempo.\nP90: el 90% ocurrió antes de este tiempo.';
-                return '<div tabindex="0" class="team-box-row ' + klass + '" data-tooltip="' + opsEscape(tooltip) + '"><span class="team-box-label">' + label + '</span><div class="team-box-track"><span class="team-box-sla" style="left:' + pos(threshold) + '%"><span class="team-box-sla-label">SLA ' + threshold + 'm</span></span><span class="team-box-line" style="left:' + pos(stats.min) + '%;width:' + Math.max(0, pos(stats.max)-pos(stats.min)) + '%"></span><span class="team-box-iqr" style="left:' + pos(stats.q1) + '%;width:' + Math.max(1, pos(stats.q3)-pos(stats.q1)) + '%"></span><span class="team-box-median" style="left:' + pos(stats.p50) + '%"></span><span class="team-box-p90" style="left:' + pos(stats.p90) + '%"></span><div class="team-box-axis"><span>0</span><span>' + Math.round(scale) + ' min</span></div></div><span class="team-box-stats"><strong>P50 ' + Math.round(stats.p50) + 'm · P90 ' + Math.round(stats.p90) + 'm</strong><br>n=' + stats.n + ' · min ' + Math.round(stats.min) + ' · max ' + Math.round(stats.max) + '</span></div>';
+                const tooltip = label + '\nP50: ' + oneDecimal(stats.p50) + ' min\nP90: ' + oneDecimal(stats.p90) + ' min\nSLA: ≤' + threshold + ' min\nCumplimiento: ' + pct + '\nP50: el 50% de las primeras gestiones ocurrió antes de este tiempo.\nP90: el 90% ocurrió antes de este tiempo.';
+                return '<div tabindex="0" class="team-box-row ' + klass + '" data-tooltip="' + opsEscape(tooltip) + '"><span class="team-box-label">' + label + '</span><div class="team-box-track"><span class="team-box-sla" style="left:' + pos(threshold) + '%"><span class="team-box-sla-label">SLA ' + threshold + 'm</span></span><span class="team-box-line" style="left:' + pos(stats.min) + '%;width:' + Math.max(0, pos(stats.max)-pos(stats.min)) + '%"></span><span class="team-box-iqr" style="left:' + pos(stats.q1) + '%;width:' + Math.max(1, pos(stats.q3)-pos(stats.q1)) + '%"></span><span class="team-box-median" style="left:' + pos(stats.p50) + '%"></span><span class="team-box-p90" style="left:' + pos(stats.p90) + '%"></span><div class="team-box-axis"><span>0</span><span>' + Math.round(scale) + ' min</span></div></div><span class="team-box-stats"><strong>P50 ' + oneDecimal(stats.p50) + 'm · P90 ' + oneDecimal(stats.p90) + 'm</strong><br>n=' + stats.n + ' · min ' + oneDecimal(stats.min) + ' · max ' + oneDecimal(stats.max) + '</span></div>';
             }
             function opsRenderCompliance(period) {
                 const items = [['HOT', period.hot_sla_pct, period.hot_within_sla, period.hot_late], ['NORMAL', period.normal_sla_pct, period.normal_within_sla, period.normal_late]];
@@ -4198,11 +4266,18 @@
                 $('opsCasesList').innerHTML = cases.length ? cases.map(item => '<article class="team-case"><div class="team-case-head"><span class="team-case-title">' + opsEscape(item.executive) + '</span><span>Activo</span></div><div class="team-case-meta"><strong>' + opsEscape(item.client) + '</strong> · ' + opsEscape(item.property_reference) + '</div><div class="team-case-action"><button class="team-link-btn" data-lead-id="' + opsEscape(item.lead_id) + '">Abrir en CRM →</button></div></article>').join('') : '<div class="team-empty">No hay casos fuera del equipo.</div>';
                 drawer.hidden = false;
             }
+            function opsOpenResults() {
+                const drawer = $('opsResultsDrawer'), period = OPS_DATA?.period || {}, breakdown = Object.entries(period.result_breakdown || {}).sort((a,b) => b[1] - a[1]), total = Number(period.result_leads ?? period.managed ?? 0);
+                if (!drawer) return;
+                $('opsResultsMeta').textContent = opsNumber(total, '0') + ' leads con resultado · último resultado válido por lead';
+                $('opsResultsList').innerHTML = breakdown.length ? breakdown.map(([code,value]) => { const pct = total ? Number(value) / total * 100 : 0; return '<article class="team-case team-result-drawer-row"><div class="team-case-head"><span class="team-case-title">' + opsEscape(opsResultLabel(code)) + '</span><strong>' + opsNumber(value, '0') + '</strong></div><div class="ops-result-drawer-bar"><i style="width:' + pct + '%"></i></div><div class="team-case-meta">' + pct.toLocaleString('es-CL', {maximumFractionDigits:1}) + '% de los resultados registrados</div></article>'; }).join('') : '<div class="team-empty">Sin resultados registrados en el período.</div>';
+                drawer.hidden = false;
+            }
             function opsTopExecutive(execs, key) {
                 return (execs || []).slice().sort((a, b) => (Number(b.current?.[key] || 0) - Number(a.current?.[key] || 0)) || String(a.executive || '').localeCompare(String(b.executive || ''), 'es'))[0];
             }
             function opsPriorityCard(code, label, count, detail, tone, actionLabel) {
-                const title = code === 'hot_open_overdue' ? 'HOT vencidos' : code === 'normal_open_overdue' ? 'NORMAL vencidos' : code === 'hot_near_due' ? 'HOT próximos a vencer' : code === 'pending_first_management' ? 'Pendientes aún dentro de SLA' : 'Sin ejecutivo';
+                const title = code === 'hot_open_overdue' ? 'HOT vencidos' : code === 'normal_open_overdue' ? 'NORMAL vencidos' : code === 'hot_near_due' ? 'HOT próximos a vencer' : code === 'pending_first_management' ? 'Pendientes aún dentro de SLA' : code === 'activity_without_result' ? 'Actividad sin resultado' : code === 'unassigned' ? 'Sin ejecutivo' : code;
                 return '<article class="team-priority-card ' + tone + '"><div><span class="team-priority-label">' + label + '</span><div class="team-priority-title">' + title + '</div><div class="team-priority-value">' + opsNumber(count, '0') + '</div><span class="team-priority-detail">' + opsEscape(detail) + '</span></div><button class="team-link-btn team-priority-action" data-team-cases-priority="' + code + '" type="button">' + actionLabel + ' →</button></article>';
             }
             function opsMinutes(value) {
@@ -4211,6 +4286,12 @@
                 if (minutes < 60) return minutes + ' min';
                 const hours = Math.floor(minutes / 60);
                 return hours < 24 ? hours + ' h ' + (minutes % 60) + ' min' : Math.floor(hours / 24) + ' d ' + (hours % 24) + ' h';
+            }
+            function opsCalendarDuration(value) {
+                if (value == null) return '—';
+                const minutes = Math.max(0, Math.round(Number(value)));
+                const days = Math.floor(minutes / 1440), hours = Math.floor((minutes % 1440) / 60);
+                return days ? days + ' d ' + hours + ' h' : hours + ' h ' + (minutes % 60) + ' min';
             }
             function opsMetric(label, value, note) {
                 const tooltip = label === 'Pendiente más antiguo' ? 'Tiempo transcurrido desde que el lead quedó bajo responsabilidad del ejecutivo sin registrar primera gestión válida.' : '';
@@ -4241,58 +4322,66 @@
             function opsSheetMetric(label, value) {
                 return '<div class="ops-metric-row"><span>' + opsEscape(label) + '</span><strong>' + opsEscape(String(value == null ? '—' : value)) + '</strong></div>';
             }
-            function opsSheetSpeed(stats, sla) {
+            function opsResultLabel(value) {
+                return ({NO_INTERESADO:'No interesado',NO_RESPONDIO:'Sin respuesta',SOLICITA_SEGUIMIENTO:'Seguimiento',CONTACTADO:'Contactado',EFFECTIVE_CONTACT:'Contacto efectivo',MENSAJE_ENVIADO:'Mensaje enviado',MESSAGE_SENT_WAITING_RESPONSE:'Mensaje enviado · espera respuesta',CALL_NO_ANSWER:'Llamada sin respuesta',EMAIL_SENT:'Email enviado',NUMERO_INVALIDO:'Número inválido',INVALID_NUMBER:'Número inválido',OTRO:'Otro'}[String(value || '').toUpperCase()] || String(value || '').replaceAll('_',' ').toLowerCase().replace(/^./, char => char.toUpperCase()));
+            }
+            function opsSheetSpeed(stats, sla, threshold) {
                 if (!stats || !stats.n) return '<div class="team-empty">Sin muestra</div>';
-                return '<div class="ops-speed-stat"><span><b>N</b><strong>' + opsNumber(stats.n, '0') + '</strong></span><span><b>P50</b><strong>' + opsMinutes(stats.p50) + '</strong></span><span><b>P90</b><strong>' + opsMinutes(stats.p90) + '</strong></span></div><div class="team-footnote">SLA: ≤' + opsNumber(sla, '—') + ' min · cumplimiento ' + (sla == null ? '—' : Number(sla).toLocaleString('es-CL') + '%') + '</div>';
+                const precise = value => value == null ? '—' : Number(value).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' min';
+                return '<div class="ops-speed-stat"><span><b>N</b><strong>' + opsNumber(stats.n, '0') + '</strong></span><span><b>P50</b><strong>' + precise(stats.p50) + '</strong></span><span><b>P90</b><strong>' + precise(stats.p90) + '</strong></span></div><div class="team-footnote">SLA: ≤' + opsNumber(threshold, '—') + ' min hábiles · cumplimiento ' + (sla == null ? '—' : Number(sla).toLocaleString('es-CL') + '%') + '</div>';
             }
             function opsRenderIndividualSheet(item, current, period) {
                 const name = OPS_SCOPE || item?.executive || 'Ejecutivo';
-                const assigned = Number(period.assigned || 0), managed = Number(period.managed || 0), contact = Number(period.contact_effective || 0), visits = Number(period.visits_scheduled || 0);
-                const state = opsExecutiveState(current, period);
-                const status = $('opsSheetStatus');
+                const assigned = Number(period.assigned || 0), activity = Number(period.activity_attempts || 0), managed = Number(period.result_leads ?? period.managed ?? 0), contact = Number(period.contact_effective || 0), visits = Number(period.visits_scheduled || 0);
                 if ($('opsSheetTitle')) $('opsSheetTitle').textContent = name;
-                if ($('opsSheetSubtitle')) $('opsSheetSubtitle').textContent = 'Control individual · ' + opsPeriodLabel();
-                if (status) { status.textContent = state.label; status.className = 'team-status ' + state.klass; }
-                if ($('opsSheetCurrentRows')) $('opsSheetCurrentRows').innerHTML = [
-                    opsSheetMetric('Carga activa', opsNumber(current.active_load, '0')),
-                    opsSheetMetric('Pendientes', opsNumber(current.pending, '0')),
-                    opsSheetMetric('HOT vencidos', opsNumber(current.hot_overdue, '0')),
-                    opsSheetMetric('NORMAL vencidos', opsNumber(current.normal_overdue, '0')),
-                    opsSheetMetric('Más de 7 días', opsNumber(current.aging?.gt_7d, '0')),
-                    opsSheetMetric('Más antiguo', opsMinutes(current.oldest_pending_minutes))
-                ].join('');
-                if ($('opsSheetPeriodRows')) $('opsSheetPeriodRows').innerHTML = [
-                    opsSheetMetric('Asignados', opsNumber(assigned, '0')),
-                    opsSheetMetric('Gestionados', opsNumber(managed, '0')),
-                    opsSheetMetric('Cobertura', opsSheetRate(managed, assigned)),
-                    opsSheetMetric('Visitas agendadas', opsNumber(visits, '0')),
-                    opsSheetMetric('Lead → visita', opsSheetRate(visits, assigned))
-                ].join('');
+                if ($('opsSheetSubtitle')) $('opsSheetSubtitle').textContent = '';
+                const comparison = period.comparison || {};
+                const coverageDelta = comparison.deltas?.coverage_pp;
+                const hotDelta = comparison.deltas?.hot_sla_pp;
+                const normalDelta = comparison.deltas?.normal_sla_pp;
+                const compareLine = [coverageDelta == null ? null : 'Cobertura ' + (coverageDelta > 0 ? '+' : '') + Number(coverageDelta).toLocaleString('es-CL', {maximumFractionDigits:1}) + ' pp', hotDelta == null ? null : 'SLA HOT ' + (hotDelta > 0 ? '+' : '') + Number(hotDelta).toLocaleString('es-CL', {maximumFractionDigits:1}) + ' pp', normalDelta == null ? null : 'SLA NORMAL ' + (normalDelta > 0 ? '+' : '') + Number(normalDelta).toLocaleString('es-CL', {maximumFractionDigits:1}) + ' pp'].filter(Boolean).join(' · ');
+                const compareRange = comparison.start && comparison.end ? formatDisplayDateRange(comparison.start, comparison.end) : 'período comparable';
+                if ($('opsSheetContextLine')) $('opsSheetContextLine').innerHTML = opsNumber(current.active_load, '0') + ' activos · ' + opsNumber(current.pending, '0') + ' pendientes · resultado registrado ' + opsSheetRate(managed, assigned) + (compareLine ? '<div class="ops-sheet-compare">' + opsEscape(compareLine) + ' · vs ' + opsEscape(compareRange) + '</div>' : '');
                 if ($('opsSheetPriorityRows')) $('opsSheetPriorityRows').innerHTML = [
                     '<div class="ops-priority-row is-main"><span>HOT vencidos</span><strong>' + opsNumber(current.hot_overdue, '0') + '</strong></div>',
                     '<div class="ops-priority-row"><span>NORMAL vencidos</span><strong>' + opsNumber(current.normal_overdue, '0') + '</strong></div>',
                     '<div class="ops-priority-row"><span>HOT próximos a vencer</span><strong>' + opsNumber(current.hot_near_due, '0') + '</strong></div>',
-                    '<div class="ops-priority-row"><span>Backlog con más de 7 días</span><strong>' + opsNumber(current.aging?.gt_7d, '0') + '</strong></div>'
+                    '<div class="ops-priority-row"><span>Actividad sin resultado</span><strong>' + opsNumber(current.activity_without_result, '0') + '</strong></div>',
+                    '<div class="ops-priority-row"><span>Backlog con más de 7 días</span><strong>' + opsNumber(current.aging?.gt_7d, '0') + '</strong></div>',
+                    '<div class="ops-priority-row"><span>Pendiente más antiguo</span><strong>' + opsCalendarDuration(current.oldest_pending_calendar_minutes ?? current.oldest_pending_minutes) + '</strong></div>'
                 ].join('');
                 const aging = current.aging || {}, totalAging = ['lt_24h','d_1_3','d_4_7','gt_7d'].reduce((sum,key) => sum + Number(aging[key] || 0), 0);
                 const agingItems = [['lt_24h','<24 h','lt-24h'],['d_1_3','1–3 días','d-1-3'],['d_4_7','4–7 días','d-4-7'],['gt_7d','>7 días','gt-7d']];
                 if ($('opsSheetAgingBar')) $('opsSheetAgingBar').innerHTML = agingItems.map(([key,label,klass]) => '<span class="team-aging-segment ' + klass + '" style="width:' + (totalAging ? Number(aging[key] || 0) / totalAging * 100 : 0) + '%" title="' + label + ': ' + opsNumber(aging[key], '0') + '"></span>').join('');
                 if ($('opsSheetAgingLegend')) $('opsSheetAgingLegend').innerHTML = agingItems.map(([key,label,klass]) => '<span><i class="' + klass + '"></i>' + label + ' ' + opsNumber(aging[key], '0') + '</span>').join('');
-                if ($('opsSheetHotStats')) $('opsSheetHotStats').innerHTML = opsSheetSpeed(period.hot_stats, period.hot_sla_pct);
-                if ($('opsSheetNormalStats')) $('opsSheetNormalStats').innerHTML = opsSheetSpeed(period.normal_stats, period.normal_sla_pct);
+                if ($('opsSheetHotStats')) $('opsSheetHotStats').innerHTML = opsSheetSpeed(period.hot_stats, period.hot_sla_pct, 60);
+                if ($('opsSheetNormalStats')) $('opsSheetNormalStats').innerHTML = opsSheetSpeed(period.normal_stats, period.normal_sla_pct, 180);
                 if ($('opsSheetBoxplot')) $('opsSheetBoxplot').innerHTML = opsRenderBoxplot(period.hot_stats, 'HOT', 60, 'hot', period.hot_sla_pct) + opsRenderBoxplot(period.normal_stats, 'NORMAL', 180, 'normal', period.normal_sla_pct);
-                const flow = [['Asignados',assigned],['Gestionados',managed],['Contactos',contact],['Visitas',visits]];
-                if ($('opsSheetFlow')) $('opsSheetFlow').innerHTML = flow.map(([label,value]) => '<div class="ops-flow-step"><strong>' + opsNumber(value, '0') + '</strong><span>' + label + '</span></div>').join('');
-                if ($('opsSheetEffectivenessRates')) $('opsSheetEffectivenessRates').innerHTML = '<span>Cobertura <strong>' + opsSheetRate(managed, assigned) + '</strong></span><span>Lead → visita <strong>' + opsSheetRate(visits, assigned) + '</strong></span>';
+                const flow = [['Asignados',assigned],['Actividad registrada',activity],['Resultado registrado',managed],['Contacto efectivo',contact],['Visitas agendadas',visits]];
+                if ($('opsSheetFlow')) $('opsSheetFlow').innerHTML = '<div class="ops-flow-parallel" title="Estas métricas son paralelas; no representan una cadena secuencial de conversión.">' + flow.map(([label,value]) => '<div class="ops-flow-step"><strong>' + opsNumber(value, '0') + '</strong><span>' + label + '</span></div>').join('') + '</div>';
+                const breakdown = Object.entries(period.result_breakdown || {}).sort((a,b) => b[1] - a[1]);
+                if ($('opsSheetResults')) $('opsSheetResults').innerHTML = '<div class="ops-inline-label">Resultados de contacto</div>' + (breakdown.length ? breakdown.map(([label,value]) => '<div class="ops-result-row"><span>' + opsEscape(opsResultLabel(label)) + '</span><i style="--result-width:' + (managed ? Number(value) / managed * 100 : 0) + '%"></i><strong>' + opsNumber(value, '0') + '</strong></div>').join('') : '<div class="team-empty">Sin resultados registrados en el período.</div>');
             }
             function opsRenderPeriodKpis(period) {
-                const assigned = Number(period.assigned || 0), managed = Number(period.managed || 0), visits = Number(period.visits_scheduled || 0);
+                const assigned = Number(period.assigned || 0), managed = Number(period.result_leads ?? period.managed ?? 0), visits = Number(period.visits_scheduled || 0), comparison = period.comparison || {};
                 const coverage = assigned ? (managed / assigned * 100).toLocaleString('es-CL', {maximumFractionDigits:1}) + '%' : '—';
                 const put = (id, value) => { const el=$(id); if (el) el.textContent=value; };
                 const pct = value => value == null ? '—' : Number(value).toLocaleString('es-CL') + '%';
-                put('opsPeriodAssigned', opsNumber(assigned, '0')); put('opsPeriodManaged', opsNumber(managed, '0')); put('opsPeriodCoverage', coverage); put('opsPeriodSlaHot', pct(period.hot_sla_pct)); put('opsPeriodSlaNormal', pct(period.normal_sla_pct)); put('opsPeriodSlaHotN', 'n=' + (period.hot_n || 0)); put('opsPeriodSlaNormalN', 'n=' + (period.normal_n || 0)); put('opsPeriodVisits', opsNumber(visits, '0'));
-                if ($('opsPeriodVisitsMeta')) $('opsPeriodVisitsMeta').textContent = 'Evento canónico · Lead → visita ' + (assigned ? (visits / assigned * 100).toLocaleString('es-CL', {maximumFractionDigits:1}) + '%' : '—');
-                if ($('opsPeriodKpiMeta')) $('opsPeriodKpiMeta').textContent = opsPeriodLabel() + (OPS_DATA?.meta?.portfolio ? ' · Cartera: ' + OPS_DATA.meta.portfolio : '');
+                const compareLabel = comparison.start && comparison.end ? 'vs ' + formatDisplayDateRange(comparison.start, comparison.end) : 'vs comparable';
+                const unavailable = metric => comparison.eligibility && comparison.eligibility[metric] && !comparison.eligibility[metric].valid ? '— Sin base comparable' : '—';
+                const deltaText = (value, suffix='', metric) => value == null ? unavailable(metric) : (value > 0 ? '+' : '') + Number(value).toLocaleString('es-CL', {maximumFractionDigits:1}) + suffix + ' ' + compareLabel;
+                const setCompareTitle = (id, metric) => { const el=$(id); if (el) el.title = comparison.eligibility?.[metric]?.valid === false ? 'La medición equivalente no estaba instrumentada durante todo el período comparable.' : ''; };
+                put('opsPeriodAssigned', opsNumber(assigned, '0')); put('opsPeriodCoverage', coverage); put('opsPeriodManaged', opsNumber(managed, '0') + ' de ' + opsNumber(assigned, '0')); put('opsPeriodSlaHot', pct(period.hot_sla_pct)); put('opsPeriodSlaNormal', pct(period.normal_sla_pct)); put('opsPeriodSlaHotN', 'n=' + (period.hot_n || 0)); put('opsPeriodSlaNormalN', 'n=' + (period.normal_n || 0)); put('opsPeriodVisits', opsNumber(visits, '0'));
+                put('opsPeriodActivityMeta', 'Actividad registrada: ' + opsNumber(period.activity_attempts, '0') + ' · ' + opsNumber(period.activity_without_result, '0') + ' con actividad sin resultado');
+                const resultsButton = $('opsTeamResultsButton'); if (resultsButton) resultsButton.hidden = Boolean(OPS_SCOPE);
+                if ($('opsPeriodVisitsMeta')) $('opsPeriodVisitsMeta').textContent = 'Lead → visita ' + (assigned ? (visits / assigned).toLocaleString('es-CL', {style:'percent', maximumFractionDigits:1}) : '—');
+                if ($('opsResultProgress')) $('opsResultProgress').style.width = assigned ? Math.min(100, managed / assigned * 100) + '%' : '0%';
+                if ($('opsSlaHotBar')) $('opsSlaHotBar').style.setProperty('--sla', Math.max(0, Math.min(100, Number(period.hot_sla_pct || 0))) + '%');
+                if ($('opsSlaNormalBar')) $('opsSlaNormalBar').style.setProperty('--sla', Math.max(0, Math.min(100, Number(period.normal_sla_pct || 0))) + '%');
+                if ($('opsAssignedMicrobar')) { $('opsAssignedMicrobar').style.setProperty('--current', '100%'); $('opsAssignedMicrobar').style.setProperty('--previous', comparison.eligibility?.assigned?.valid && comparison.assigned != null ? Math.min(100, comparison.assigned / Math.max(assigned, comparison.assigned) * 100) + '%' : '0%'); }
+                if ($('opsVisitsMicrobar')) { $('opsVisitsMicrobar').style.setProperty('--current', assigned ? Math.min(100, visits / assigned * 100) + '%' : '0%'); $('opsVisitsMicrobar').style.setProperty('--previous', comparison.eligibility?.lead_to_visit?.valid && comparison.lead_to_visit != null ? Math.min(100, comparison.lead_to_visit) + '%' : '0%'); }
+                put('opsPeriodAssignedCompare', deltaText(comparison.deltas?.assigned, '', 'assigned')); put('opsPeriodManagedCompare', deltaText(comparison.deltas?.coverage_pp, ' pp', 'coverage')); put('opsPeriodSlaCompare', 'HOT ' + deltaText(comparison.deltas?.hot_sla_pp, ' pp', 'hot_sla_pct') + ' · NORMAL ' + deltaText(comparison.deltas?.normal_sla_pp, ' pp', 'normal_sla_pct')); const visitRateDelta = comparison.deltas?.lead_to_visit_pp == null ? null : deltaText(comparison.deltas.lead_to_visit_pp, ' pp', 'lead_to_visit'); put('opsPeriodVisitsCompare', deltaText(comparison.deltas?.visits, '', 'visits_scheduled') + (visitRateDelta == null ? '' : ' · ' + visitRateDelta));
+                setCompareTitle('opsPeriodAssignedCompare', 'assigned'); setCompareTitle('opsPeriodManagedCompare', 'coverage'); setCompareTitle('opsPeriodSlaCompare', 'hot_sla_pct'); setCompareTitle('opsPeriodVisitsCompare', 'visits_scheduled');
             }
             function opsPopulateScope(executives) {
                 const select = $('opsExecutiveScope');
@@ -4315,7 +4404,7 @@
                 opsPopulatePortfolios(data.portfolios || []);
             }
             function opsSpeedValue(value, suffix='') {
-                return value == null ? '<span class="team-speed-muted">—</span>' : opsEscape(String(Math.round(Number(value)))) + suffix;
+                return value == null ? '<span class="team-speed-muted">—</span>' : opsEscape(Number(value).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1})) + suffix;
             }
             function opsSpeedCell(value, type) {
                 if (value == null) return '<span class="team-speed-muted">—</span>';
@@ -4323,7 +4412,7 @@
                 let klass = '';
                 if (type === 'hot_sla_pct' || type === 'normal_sla_pct') klass = n < 100 ? 'team-speed-sla-breach' : '';
                 if ((type === 'p50_hot' && n > 60) || (type === 'p50_normal' && n > 180)) klass = 'team-speed-breach';
-                return '<span class="' + klass + '">' + opsEscape(String(Math.round(n))) + (type.includes('pct') ? '%' : ' min') + '</span>';
+                return '<span class="' + klass + '">' + opsEscape(Number(n).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1})) + (type.includes('pct') ? '%' : ' min') + '</span>';
             }
             function opsRenderSpeed(executives) {
                 const rows = (executives || []).slice().sort((a,b) => {
@@ -4335,7 +4424,7 @@
                 });
                 const tip = 'P50: la mitad de las primeras gestiones ocurrió antes de este tiempo.\\nP90: el 90% ocurrió antes de este tiempo.\\nn: cantidad de leads evaluados en el período.';
                 if ($('opsSpeedBody')) $('opsSpeedBody').innerHTML = rows.length ? rows.map(item => { const p=item.period || {}; const noSample = !Number(p.hot_n || 0) && !Number(p.normal_n || 0); return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td title="' + tip + '">' + opsSpeedValue(p.hot_n, '') + '</td><td title="' + tip + '">' + opsSpeedCell(p.p50_hot, 'p50_hot') + '</td><td title="' + tip + '">' + opsSpeedCell(p.p90_hot, 'p90_hot') + '</td><td class="team-period-divider" title="' + tip + '">' + opsSpeedValue(p.normal_n, '') + '</td><td title="' + tip + '">' + opsSpeedCell(p.p50_normal, 'p50_normal') + '</td><td title="' + tip + '">' + opsSpeedCell(p.p90_normal, 'p90_normal') + (noSample ? ' <span class="team-speed-muted">· Sin muestra válida</span>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="7" class="team-empty">Sin datos de velocidad.</td></tr>';
-                if ($('opsSpeedCards')) $('opsSpeedCards').innerHTML = rows.length ? rows.map(item => { const p=item.period || {}; const value = n => n == null ? '—' : Math.round(Number(n)) + ' min'; return '<article class="team-speed-card"><strong class="team-speed-card-name">' + opsEscape(item.executive) + '</strong><span class="team-speed-card-segment"><b>HOT</b><span>P50 ' + value(p.p50_hot) + ' · P90 ' + value(p.p90_hot) + ' · n=' + (p.hot_n || 0) + '</span></span><span class="team-speed-card-segment"><b>NORMAL</b><span>P50 ' + value(p.p50_normal) + ' · P90 ' + value(p.p90_normal) + ' · n=' + (p.normal_n || 0) + '</span></span></article>'; }).join('') : '<div class="team-empty">Sin datos de velocidad.</div>';
+                if ($('opsSpeedCards')) $('opsSpeedCards').innerHTML = rows.length ? rows.map(item => { const p=item.period || {}; const value = n => n == null ? '—' : Number(n).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' min'; return '<article class="team-speed-card"><strong class="team-speed-card-name">' + opsEscape(item.executive) + '</strong><span class="team-speed-card-segment"><b>HOT</b><span>P50 ' + value(p.p50_hot) + ' · P90 ' + value(p.p90_hot) + ' · n=' + (p.hot_n || 0) + '</span></span><span class="team-speed-card-segment"><b>NORMAL</b><span>P50 ' + value(p.p50_normal) + ' · P90 ' + value(p.p90_normal) + ' · n=' + (p.normal_n || 0) + '</span></span></article>'; }).join('') : '<div class="team-empty">Sin datos de velocidad.</div>';
             }
             function opsAgeLabel(key) { return ({lt_24h:'<24 h',d_1_3:'1–3 d',d_4_7:'4–7 d',gt_7d:'>7 d'})[key] || key; }
             function opsRenderAging(current, executives) {
@@ -4345,7 +4434,7 @@
                 if ($('opsAgingMeta')) $('opsAgingMeta').textContent = opsNumber(total, '0') + ' pendientes';
                 if ($('opsAgingTeamBar')) $('opsAgingTeamBar').innerHTML = keys.map(key => '<span class="team-aging-segment ' + key + '" style="width:' + (total ? Number(aging[key]||0)/total*100 : 0) + '%" title="' + opsAgeLabel(key) + ': ' + opsNumber(aging[key], '0') + '"></span>').join('');
                 if ($('opsAgingTeamLegend')) $('opsAgingTeamLegend').innerHTML = keys.map(key => '<span><i class="team-aging-segment ' + key + '"></i>' + opsAgeLabel(key) + ' · ' + opsNumber(aging[key], '0') + ' (' + (total ? (Number(aging[key]||0)/total*100).toLocaleString('es-CL',{maximumFractionDigits:1}) : '0') + '%)</span>').join('');
-                if ($('opsAgingTeamBody')) $('opsAgingTeamBody').innerHTML = (executives || []).map(item => { const a=item.current?.aging || {}; return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td>' + opsNumber(a.lt_24h,'0') + '</td><td>' + opsNumber(a.d_1_3,'0') + '</td><td>' + opsNumber(a.d_4_7,'0') + '</td><td>' + opsNumber(a.gt_7d,'0') + '</td><td>' + opsMinutes(item.current?.oldest_pending_minutes) + '</td></tr>'; }).join('');
+                if ($('opsAgingTeamBody')) $('opsAgingTeamBody').innerHTML = (executives || []).map(item => { const a=item.current?.aging || {}; return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td>' + opsNumber(a.lt_24h,'0') + '</td><td>' + opsNumber(a.d_1_3,'0') + '</td><td>' + opsNumber(a.d_4_7,'0') + '</td><td>' + opsNumber(a.gt_7d,'0') + '</td><td>' + opsCalendarDuration(item.current?.oldest_pending_calendar_minutes ?? item.current?.oldest_pending_minutes) + '</td></tr>'; }).join('');
                 const selected = (executives || []).find(item => item.executive === OPS_SCOPE);
                 if ($('opsAgingIndividualGrid') && selected) { const a=selected.current?.aging || {}; $('opsAgingIndividualGrid').innerHTML = [opsMetric('<24 h',opsNumber(a.lt_24h,'0'),'Pendientes actuales'),opsMetric('1–3 días',opsNumber(a.d_1_3,'0'),'Pendientes actuales'),opsMetric('4–7 días',opsNumber(a.d_4_7,'0'),'Pendientes actuales'),opsMetric('>7 días',opsNumber(a.gt_7d,'0'),'Pendientes actuales'),opsMetric('Pendiente más antiguo',opsMinutes(selected.current?.oldest_pending_minutes),'Desde assigned_at hasta ahora')].join(''); }
             }
@@ -4355,17 +4444,89 @@
                 if ($('opsEffectivenessGrid')) $('opsEffectivenessGrid').innerHTML = [opsMetric('Asignados',opsNumber(assigned,'0'),'Leads asignados en el período'),opsMetric('Gestionados',opsNumber(managed,'0'),'Primera gestión válida'),opsMetric('Contacto efectivo',opsNumber(contact,'0'),'Timestamp CRM canónico'),opsMetric('Visitas agendadas',opsNumber(visits,'0'),'Evento canónico de visita agendada'),opsMetric('Cobertura',rate(managed,assigned),'Gestionados / asignados'),opsMetric('Lead → visita',rate(visits,assigned),'Visitas agendadas / asignados')].join('');
             }
             function opsExecutiveState(current, period) {
-                if (Number(current.hot_overdue || 0) > 0) return {label:'Crítico', klass:'critical'};
-                if (Number(current.normal_overdue || 0) > 0 || Number(current.hot_near_due || 0) > 0 || Number(current.pending || 0) > 0) return {label:'Requiere atención', klass:'attention'};
-                if (!period || !Number(period.managed || 0)) return {label:'Sin muestra suficiente', klass:'insufficient'};
-                return {label:'Controlado', klass:'controlled'};
+                if (Number(current.hot_overdue || 0) > 0) return {label: Number(current.hot_overdue) + ' HOT vencidos', klass:'critical'};
+                if (Number(current.normal_overdue || 0) > 0) return {label: Number(current.normal_overdue) + ' NORMAL vencidos', klass:'attention'};
+                if (Number(current.hot_near_due || 0) > 0) return {label: Number(current.hot_near_due) + ' HOT próximos', klass:'attention'};
+                if (Number(current.pending || 0) > 0) return {label: Number(current.pending) + ' pendientes', klass:'attention'};
+                if (!period || !Number(period.assigned || 0)) return {label:'Sin muestra del período', klass:'insufficient'};
+                return {label:'Sin incidencias abiertas', klass:'controlled'};
             }
             function opsSlaCell(value) {
                 return value == null ? '<span class="team-sla-empty">— · Sin muestra</span>' : Number(value).toLocaleString('es-CL') + '%';
             }
             function opsExecutiveCard(item, state) {
-                const c = item.current || {}, p = item.period || {};
-                return '<article class="team-exec-card"><div class="team-exec-card-head"><strong class="team-exec-card-name">' + opsEscape(item.executive) + '</strong><span class="team-status ' + state.klass + '">' + state.label + '</span></div><div class="team-exec-card-grid"><div class="team-exec-metric"><span>Carga</span><strong>' + opsNumber(c.active_load, '0') + ' · ' + opsNumber(c.share_of_team_load_pct, '0') + '%</strong></div><div class="team-exec-metric"><span>Pendientes</span><strong>' + opsNumber(c.pending, '0') + '</strong></div><div class="team-exec-metric"><span>HOT vencidos</span><strong>' + opsNumber(c.hot_overdue, '0') + '</strong></div><div class="team-exec-metric"><span>NORMAL vencidos</span><strong>' + opsNumber(c.normal_overdue, '0') + '</strong></div><div class="team-exec-metric"><span>SLA HOT</span><strong>' + opsSlaCell(p.hot_sla_pct) + '</strong></div><div class="team-exec-metric"><span>SLA NORMAL</span><strong>' + opsSlaCell(p.normal_sla_pct) + '</strong></div></div><button class="team-action-link team-exec-card-action" data-team-cases-exec="' + opsEscape(item.executive) + '" type="button">Ver casos →</button></article>';
+                const c = item.current || {}, p = item.period || {}, assigned=Number(p.assigned||0), managed=Number(p.result_leads ?? p.managed ?? 0), coverage=assigned ? (managed/assigned*100).toLocaleString('es-CL',{maximumFractionDigits:1})+'%' : '—';
+                return '<article class="team-exec-card"><div class="team-exec-card-head"><strong class="team-exec-card-name">' + opsEscape(item.executive) + '</strong><span class="team-status ' + state.klass + '">' + state.label + '</span></div><div class="team-exec-card-grid"><div class="team-exec-metric"><span>Carga</span><strong>' + opsNumber(c.active_load, '0') + ' · ' + opsNumber(c.share_of_team_load_pct, '0') + '%</strong></div><div class="team-exec-metric"><span>Pendientes</span><strong>' + opsNumber(c.pending, '0') + '</strong></div><div class="team-exec-metric"><span>HOT / NORMAL venc.</span><strong>' + opsNumber(c.hot_overdue, '0') + ' / ' + opsNumber(c.normal_overdue, '0') + '</strong></div><div class="team-exec-metric"><span>Resultado</span><strong>' + opsNumber(managed,'0') + ' / ' + opsNumber(assigned,'0') + ' · ' + coverage + '</strong></div><div class="team-exec-metric"><span>Act. sin resultado</span><strong>' + opsNumber(p.activity_without_result,'0') + '</strong></div><div class="team-exec-metric"><span>Backlog &gt;7 días</span><strong>' + opsNumber(c.aging?.gt_7d,'0') + '</strong></div><div class="team-exec-metric"><span>SLA HOT / NORMAL</span><strong>' + opsSlaCell(p.hot_sla_pct) + ' / ' + opsSlaCell(p.normal_sla_pct) + '</strong></div></div><button class="team-action-link team-exec-card-action" data-team-cases-exec="' + opsEscape(item.executive) + '" type="button">Ver casos →</button></article>';
+            }
+            function opsSetMatrixHeaders(view) {
+                const head = $('opsExecMatrixHead');
+                if (!head) return;
+                if (view === 'portfolio') {
+                    head.innerHTML = '<tr><th>Ejecutivo</th><th>Activos relacionados</th><th>% cartera</th><th>Pendientes</th><th>Actividad período</th><th>Resultado registrado</th><th>Contacto efectivo</th><th>Visitas</th></tr>';
+                } else if (view === 'period') {
+                    head.innerHTML = '<tr><th>Ejecutivo</th><th>Asignados</th><th>Actividad</th><th>Resultado</th><th>Act. sin resultado</th><th>Contacto</th><th>Visitas</th><th>SLA período</th><th>Acción</th></tr>';
+                } else {
+                    head.innerHTML = '<tr><th>Ejecutivo</th><th>Carga · % equipo</th><th>Pendientes</th><th>SLA abiertos</th><th>Backlog</th><th>Acción</th></tr>';
+                }
+            }
+            function opsMatrixPeriodRow(item) {
+                const p = item.period || {}, assigned = Number(p.assigned || 0), result = Number(p.result_leads ?? p.managed ?? 0), coverage = assigned ? (result / assigned * 100).toLocaleString('es-CL',{maximumFractionDigits:1}) + '%' : '—';
+                const contact = Number(p.contact_effective || 0), visits = Number(p.visits_scheduled || 0), leadVisit = assigned ? (visits / assigned * 100).toLocaleString('es-CL',{maximumFractionDigits:1}) + '%' : '—';
+                return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td>' + opsNumber(assigned,'0') + '</td><td>' + opsNumber(p.activity_attempts,'0') + '</td><td><div class="team-result-cell"><strong>' + opsNumber(result,'0') + ' / ' + opsNumber(assigned,'0') + '</strong><small>' + coverage + '</small></div></td><td><span class="team-activity-gap">' + opsNumber(p.activity_without_result,'0') + '</span></td><td>' + opsNumber(contact,'0') + '</td><td><div class="team-result-cell"><strong>' + opsNumber(visits,'0') + '</strong><small>Lead → visita ' + leadVisit + '</small></div></td><td><div class="team-period-sla-cell"><span><b>HOT</b><strong>' + opsSlaCell(p.hot_sla_pct) + '</strong></span><span><b>NORMAL</b><strong>' + opsSlaCell(p.normal_sla_pct) + '</strong></span></div></td><td><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></td></tr>';
+            }
+            function opsMatrixCurrentRow(item, teamLoad) {
+                const c = item.current || {}, share = Number(c.share_of_team_load_pct || (teamLoad ? Number(c.active_load || 0) / teamLoad * 100 : 0));
+                return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td><div class="team-load-cell"><span class="team-load-value">' + opsNumber(c.active_load,'0') + ' · ' + share.toLocaleString('es-CL',{maximumFractionDigits:1}) + '%</span><span class="team-load-bar"><span class="team-load-fill" style="width:' + Math.max(0,Math.min(100,share)) + '%"></span></span></div></td><td>' + opsNumber(c.pending,'0') + '</td><td><div class="team-sla-open-cell"><span><b>HOT</b><strong>' + opsNumber(c.hot_overdue,'0') + '</strong></span><span><b>NORMAL</b><strong>' + opsNumber(c.normal_overdue,'0') + '</strong></span></div></td><td><div class="team-backlog-cell"><span>&gt;7 días <strong>' + opsNumber(c.aging?.gt_7d,'0') + '</strong></span><small>Más antiguo · ' + opsCalendarDuration(c.oldest_pending_calendar_minutes ?? c.oldest_pending_minutes) + '</small></div></td><td><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></td></tr>';
+            }
+            function opsMatrixPortfolioRow(item, totalActive) {
+                const c = item.current || {}, p = item.period || {}, active = Number(c.active_load || 0), share = totalActive ? (active / totalActive * 100).toLocaleString('es-CL',{maximumFractionDigits:1}) + '%' : '—';
+                const result = Number(p.result_leads ?? p.managed ?? 0), contact = Number(p.contact_effective || 0), visits = Number(p.visits_scheduled || 0);
+                return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td>' + opsNumber(active,'0') + '</td><td>' + share + '</td><td>' + opsNumber(c.pending,'0') + '</td><td>' + opsNumber(p.activity_attempts,'0') + '</td><td>' + opsNumber(result,'0') + '</td><td>' + opsNumber(contact,'0') + '</td><td><div class="team-result-cell"><strong>' + opsNumber(visits,'0') + '</strong><small><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></small></div></td></tr>';
+            }
+            function opsPortfolioCard(item, totalActive) {
+                const c=item.current||{}, p=item.period||{}, active=Number(c.active_load||0), share=totalActive ? (active/totalActive*100).toLocaleString('es-CL',{maximumFractionDigits:1})+'%' : '—';
+                return '<article class="team-exec-card"><div class="team-exec-card-head"><strong class="team-exec-card-name">' + opsEscape(item.executive) + '</strong><span class="team-status controlled">Cartera</span></div><div class="team-exec-card-grid"><div class="team-exec-metric"><span>Activos relacionados</span><strong>' + opsNumber(active,'0') + ' · ' + share + '</strong></div><div class="team-exec-metric"><span>Pendientes</span><strong>' + opsNumber(c.pending,'0') + '</strong></div><div class="team-exec-metric"><span>Actividad período</span><strong>' + opsNumber(p.activity_attempts,'0') + '</strong></div><div class="team-exec-metric"><span>Resultado registrado</span><strong>' + opsNumber(p.result_leads ?? p.managed,'0') + '</strong></div><div class="team-exec-metric"><span>Contacto efectivo</span><strong>' + opsNumber(p.contact_effective,'0') + '</strong></div><div class="team-exec-metric"><span>Visitas</span><strong>' + opsNumber(p.visits_scheduled,'0') + '</strong></div></div><button class="team-action-link team-exec-card-action" data-team-cases-exec="' + opsEscape(item.executive) + '" type="button">Ver casos →</button></article>';
+            }
+            function opsRenderMatrixView(view, data) {
+                const source = data || OPS_DATA || {}, execs = (source.executives || []).slice();
+                const current = source.current || {}, teamLoad = Number(current.active_assigned || 0);
+                opsSetMatrixHeaders(view);
+                const description = view === 'period' ? 'Actividad, resultados y visitas del período seleccionado' : view === 'portfolio' ? 'Estado de la cartera de oficina y su distribución' : 'Estado actual para priorizar la intervención';
+                if ($('opsMatrixDescription')) $('opsMatrixDescription').textContent = description;
+                const ordered = execs.sort((a,b) => String(a.executive||'').localeCompare(String(b.executive||''),'es'));
+                const portfolioTotal = Number(source.meta?.portfolio_context?.active_total || 0);
+                if ($('opsExecMatrixBody')) $('opsExecMatrixBody').innerHTML = ordered.length ? ordered.map(item => view === 'period' ? opsMatrixPeriodRow(item) : view === 'portfolio' ? opsMatrixPortfolioRow(item, portfolioTotal) : opsMatrixCurrentRow(item, teamLoad)).join('') : '<tr><td colspan="9" class="team-empty">Sin datos de ejecutivos.</td></tr>';
+                if ($('opsExecCards')) $('opsExecCards').innerHTML = ordered.length ? ordered.map(item => view === 'portfolio' ? opsPortfolioCard(item, portfolioTotal) : opsExecutiveCard(item, opsExecutiveState(item.current || {}, item.period || {}))).join('') : '<div class="team-empty">Sin ejecutivos con datos.</div>';
+                document.querySelectorAll('[data-matrix-view]').forEach(btn => { const active = btn.dataset.matrixView === view; btn.classList.toggle('active',active); btn.setAttribute('aria-selected',String(active)); });
+                const summary = source.meta?.portfolio_context;
+                const summaryEl = $('opsPortfolioSummary');
+                if (summaryEl) {
+                    if (view === 'portfolio' && summary) {
+                        summaryEl.innerHTML = '<strong>Cartera oficina · ' + opsEscape(source.meta?.portfolio || OPS_OFFICE_PORTFOLIO) + '</strong><br><span>' + opsNumber(summary.active_total,'0') + ' leads activos relacionados · ' + opsNumber(summary.active_team,'0') + ' en equipo · ' + opsNumber(summary.unassigned,'0') + ' sin asignar · ' + opsNumber(summary.outside_team,'0') + ' fuera del equipo</span><small>La vista permite separar la carga de la cartera entre equipo, sin asignar y fuera del equipo.</small>';
+                        summaryEl.hidden = false;
+                    } else { summaryEl.hidden = true; summaryEl.innerHTML = ''; }
+                }
+            }
+            function opsRenderCompactAging(current) {
+                const el = $('opsAgingCompact'), bar = $('opsAgingCompactBar'), legend = $('opsAgingCompactLegend');
+                if (!el || !bar || !legend) return;
+                const aging = current?.aging || {}, keys = ['lt_24h','d_1_3','d_4_7','gt_7d'], total = keys.reduce((s,k)=>s+Number(aging[k]||0),0);
+                bar.innerHTML = keys.map(k => '<span class="team-aging-segment ' + k + '" style="width:' + (total ? Number(aging[k]||0)/total*100 : 0) + '%" title="' + opsAgeLabel(k) + ': ' + opsNumber(aging[k],'0') + '"></span>').join('');
+                legend.innerHTML = keys.map(k => '<span><i class="team-aging-segment ' + k + '"></i>' + opsAgeLabel(k) + ' · ' + opsNumber(aging[k],'0') + '</span>').join('');
+                el.hidden = false;
+            }
+            function opsRenderTimeExecutive(executives) {
+                const rows = (executives || []).slice().sort((a,b)=>String(a.executive||'').localeCompare(String(b.executive||''),'es'));
+                const max = Math.max(180, ...rows.flatMap(item => [Number(item.period?.p90_hot||0), Number(item.period?.p90_normal||0)]));
+                const html = rows.length ? rows.map(item => { const p=item.period||{}, hot=Number(p.p90_hot||0), normal=Number(p.p90_normal||0), hotWidth=Math.min(100,hot/max*100), normalWidth=Math.min(100,normal/max*100); return '<div class="ops-time-row"><strong class="ops-time-name">' + opsEscape(item.executive) + '</strong><div class="ops-time-track" title="P90 HOT ' + (hot ? hot.toLocaleString('es-CL',{maximumFractionDigits:1}) : '—') + ' min · P90 NORMAL ' + (normal ? normal.toLocaleString('es-CL',{maximumFractionDigits:1}) : '—') + ' min"><i style="--hot-width:' + hotWidth + '%;--normal-width:' + normalWidth + '%"></i></div><div class="ops-time-legend"><span>HOT <b>' + opsSpeedValue(p.p50_hot,' min') + '</b> · P90 ' + opsSpeedValue(p.p90_hot,' min') + '</span><span>NORMAL <b>' + opsSpeedValue(p.p50_normal,' min') + '</b> · P90 ' + opsSpeedValue(p.p90_normal,' min') + '</span></div></div>'; }).join('') : '<div class="team-empty">Sin datos de velocidad.</div>';
+                if ($('opsTimeExecutiveView')) $('opsTimeExecutiveView').innerHTML = html;
+            }
+            async function opsLoadPortfolioMatrix() {
+                const params = new URLSearchParams({period_start:FILTERS.period_start || '', period_end:FILTERS.period_end || '', period_preset:FILTERS.period_preset || '', compare:COMPARE || 'auto', portfolio:OPS_OFFICE_PORTFOLIO});
+                const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}});
+                if (!response.ok) throw new Error('Cartera oficina ' + response.status);
+                OPS_PORTFOLIO_DATA = await response.json();
+                opsRenderMatrixView('portfolio', OPS_PORTFOLIO_DATA);
             }
             function opsRenderPortfolioContext(meta) {
                 const el = $('opsPortfolioContext');
@@ -4395,8 +4556,7 @@
                 const periodChanged = OPS_LAST_PERIOD_KEY && OPS_LAST_PERIOD_KEY !== periodKey;
                 OPS_LAST_PERIOD_KEY = periodKey;
                 const scopeLabel = OPS_SCOPE || 'Equipo completo';
-                const updatedLabel = new Date(OPS_DATA.meta?.as_of || Date.now()).toLocaleTimeString('es-CL', {hour:'2-digit', minute:'2-digit'});
-                if ($('opsScopeSummary')) $('opsScopeSummary').textContent = scopeLabel + ' · ' + opsPeriodLabel() + ' · Actualizado ' + updatedLabel;
+                if ($('opsScopeSummary')) $('opsScopeSummary').textContent = scopeLabel;
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-entered'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
                 const periodKpis = document.querySelector('.team-period-kpis');
                 if (periodChanged && periodKpis) { periodKpis.classList.remove('ops-period-update'); requestAnimationFrame(() => periodKpis.classList.add('ops-period-update')); }
@@ -4416,26 +4576,31 @@
                 if ($('opsAgeChart')) $('opsAgeChart').innerHTML = opsRenderBoxplot(period.hot_stats, 'HOT', 60, 'hot', period.hot_sla_pct) + opsRenderBoxplot(period.normal_stats, 'NORMAL', 180, 'normal', period.normal_sla_pct);
                 if ($('opsPeriodCompliance')) $('opsPeriodCompliance').innerHTML = opsRenderCompliance(period);
                 const execs = OPS_DATA.executives || [];
-                if (!OPS_SCOPE && execs.length) OPS_EXECUTIVES = execs.slice();
+                const roster = OPS_DATA.meta?.team_executives || [];
+                if (roster.length) OPS_EXECUTIVES = roster.map(executive => ({executive}));
+                else if (execs.length) OPS_EXECUTIVES = execs.slice();
                 opsPopulateScope(OPS_EXECUTIVES);
                 const summary = OPS_DATA.intervention_summary || {};
                 const hotTop = opsTopExecutive(execs, 'hot_overdue'), normalTop = opsTopExecutive(execs, 'normal_overdue'), nearTop = opsTopExecutive(execs, 'hot_near_due'), pendingTop = opsTopExecutive(execs, 'pending');
-                const pendingOpen = Number(summary.pending_first_management || 0);
+                const activityWithoutResult = Number(period.activity_without_result || 0);
                 const priorityHtml = [
-                    opsPriorityCard('hot_open_overdue', 'PRIORIDAD CRÍTICA', current.hot_overdue, OPS_SCOPE ? 'Vencidos del ejecutivo seleccionado' : 'Leads HOT que ya superaron su SLA', 'is-critical', 'Ver vencidos'),
-                    opsPriorityCard('normal_open_overdue', 'ATENCIÓN PRIORITARIA', current.normal_overdue, OPS_SCOPE ? 'Vencidos del ejecutivo seleccionado' : 'Leads NORMAL que ya superaron su SLA', current.normal_overdue ? 'is-attention' : 'is-neutral', 'Ver vencidos'),
-                    opsPriorityCard('hot_near_due', 'ATENCIÓN PRIORITARIA', current.hot_near_due, OPS_SCOPE ? 'HOT próximos del ejecutivo seleccionado' : 'Leads HOT cerca de vencer', current.hot_near_due ? 'is-attention' : 'is-neutral', 'Ver próximos'),
-                    opsPriorityCard('pending_first_management', 'GESTIÓN PENDIENTE', pendingOpen, 'Sin primera gestión · aún no vencidos', pendingOpen ? 'is-pending' : 'is-neutral', 'Ver pendientes')
+                    opsPriorityCard('hot_open_overdue', 'CASOS FUERA DE SLA', current.hot_overdue, OPS_SCOPE ? 'HOT vencidos del ejecutivo seleccionado' : 'Leads HOT que ya superaron su SLA', 'is-critical', 'Ver vencidos'),
+                    opsPriorityCard('normal_open_overdue', 'CASOS FUERA DE SLA', current.normal_overdue, OPS_SCOPE ? 'NORMAL vencidos del ejecutivo seleccionado' : 'Leads NORMAL que ya superaron su SLA', current.normal_overdue ? 'is-attention' : 'is-neutral', 'Ver vencidos'),
+                    opsPriorityCard('hot_near_due', 'PRÓXIMOS A VENCER', current.hot_near_due, OPS_SCOPE ? 'HOT próximos del ejecutivo seleccionado' : 'Leads HOT cerca de vencer', current.hot_near_due ? 'is-attention' : 'is-neutral', 'Ver próximos'),
+                    opsPriorityCard('activity_without_result', 'ACTIVIDAD SIN RESULTADO', activityWithoutResult, 'Hubo actividad registrada, pero falta el resultado obligatorio', activityWithoutResult ? 'is-pending' : 'is-neutral', 'Ver casos')
                 ];
                 if (!OPS_SCOPE) priorityHtml.push(opsPriorityCard('unassigned', 'ASIGNACIÓN', current.unassigned, 'Leads activos sin ejecutivo responsable', current.unassigned ? 'is-assignment' : 'is-neutral', 'Ver sin asignar'));
                 if ($('opsInterventionRank')) $('opsInterventionRank').innerHTML = priorityHtml.join('');
+                opsRenderCompactAging(current);
                 const teamLoad = current.active_assigned || 0;
                 const loadValues = execs.map(item => Number(item.current?.active_load || 0)).filter(Boolean).sort((a,b)=>a-b);
                 const median = loadValues.length ? loadValues[Math.floor(loadValues.length / 2)] : null;
                 if ($('opsMatrixMeta')) { const portfolioLabel = OPS_DATA.meta?.portfolio ? ' · Cartera: ' + OPS_DATA.meta.portfolio : ''; $('opsMatrixMeta').textContent = median == null ? (OPS_DATA.meta?.portfolio ? 'Cartera: ' + OPS_DATA.meta.portfolio : '—') : 'Total visible: ' + opsNumber(teamLoad, '0') + ' · Mediana: ' + median + portfolioLabel; }
                 const orderedExecs = execs.slice().sort((a,b) => { const ac=a.current||{}, bc=b.current||{}; return (Number(bc.hot_overdue||0)-Number(ac.hot_overdue||0)) || (Number(bc.normal_overdue||0)-Number(ac.normal_overdue||0)) || (Number(bc.hot_near_due||0)-Number(ac.hot_near_due||0)) || (Number(bc.pending||0)-Number(ac.pending||0)) || String(a.executive||'').localeCompare(String(b.executive||''), 'es'); });
-                if ($('opsExecMatrixBody')) $('opsExecMatrixBody').innerHTML = orderedExecs.length ? orderedExecs.map(item => { const c=item.current || {}, p=item.period || {}, state=opsExecutiveState(c,p), barExact = teamLoad ? Math.max(0, Math.min(100, (c.active_load || 0) / teamLoad * 100)) : 0, barLabel = Math.round(barExact); return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td><div class="team-load-cell"><span>' + (c.active_load || 0) + '</span><span class="team-load-bar" aria-label="' + barLabel + '% de la carga activa del equipo"><span class="team-load-fill" data-load-pct="' + barLabel + '" data-load-pct-exact="' + barExact.toFixed(4) + '" style="width:' + barExact + '%"></span></span></div></td><td>' + opsNumber(c.share_of_team_load_pct, '0') + '%</td><td>' + (c.pending || 0) + '</td><td class="' + (c.hot_overdue ? 'team-risk-num' : '') + '">' + (c.hot_overdue || 0) + '</td><td class="' + (c.normal_overdue ? 'team-risk-num' : '') + '">' + (c.normal_overdue || 0) + '</td><td>' + opsNumber(c.aging?.gt_7d, '0') + '</td><td>' + opsMinutes(c.oldest_pending_minutes) + '</td><td class="team-period-divider">' + opsSlaCell(p.hot_sla_pct) + '</td><td>' + opsSlaCell(p.normal_sla_pct) + '</td><td><div class="team-state-cell"><span class="team-status ' + state.klass + '">' + state.label + '</span><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></div></td></tr>'; }).join('') : '<tr><td colspan="11" class="team-empty">Sin datos de ejecutivos.</td></tr>';
+                if ($('opsExecMatrixBody')) $('opsExecMatrixBody').innerHTML = orderedExecs.length ? orderedExecs.map(item => { const c=item.current || {}, p=item.period || {}, state=opsExecutiveState(c,p), barExact = teamLoad ? Math.max(0, Math.min(100, (c.active_load || 0) / teamLoad * 100)) : 0, barLabel = Math.round(barExact), assigned=Number(p.assigned||0), managed=Number(p.result_leads ?? p.managed ?? 0), coverage=assigned ? (managed/assigned*100).toLocaleString('es-CL',{maximumFractionDigits:1})+'%' : '—', activityGap=Number(p.activity_without_result||0); return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td><div class="team-load-cell"><span class="team-load-value">' + (c.active_load || 0) + ' · ' + opsNumber(c.share_of_team_load_pct, '0') + '%</span><span class="team-load-bar" aria-label="' + barLabel + '% de la carga activa del equipo"><span class="team-load-fill" data-load-pct="' + barLabel + '" data-load-pct-exact="' + barExact.toFixed(4) + '" style="width:' + barExact + '%"></span></span></div></td><td>' + (c.pending || 0) + '</td><td><div class="team-sla-open-cell"><span><b>HOT</b><strong class="' + (c.hot_overdue ? 'team-risk-num' : '') + '">' + (c.hot_overdue || 0) + '</strong></span><span><b>NORMAL</b><strong class="' + (c.normal_overdue ? 'team-risk-num' : '') + '">' + (c.normal_overdue || 0) + '</strong></span></div></td><td><div class="team-backlog-cell"><span>&gt;7 d <strong>' + opsNumber(c.aging?.gt_7d, '0') + '</strong></span><small>Más antiguo · ' + opsCalendarDuration(c.oldest_pending_calendar_minutes ?? c.oldest_pending_minutes) + '</small></div></td><td class="team-period-divider"><div class="team-result-cell"><strong>' + opsNumber(managed,'0') + ' / ' + opsNumber(assigned,'0') + '</strong><small>' + coverage + '</small></div></td><td><span class="team-activity-gap">' + opsNumber(activityGap,'0') + '</span></td><td><div class="team-period-sla-cell"><span><b>HOT</b><strong>' + opsSlaCell(p.hot_sla_pct) + '</strong></span><span><b>NORMAL</b><strong>' + opsSlaCell(p.normal_sla_pct) + '</strong></span></div></td><td><div class="team-state-cell"><strong class="team-priority-fact">' + opsEscape(state.label) + '</strong><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></div></td></tr>'; }).join('') : '<tr><td colspan="9" class="team-empty">Sin datos de ejecutivos.</td></tr>';
                 if ($('opsExecCards')) $('opsExecCards').innerHTML = orderedExecs.length ? orderedExecs.map(item => opsExecutiveCard(item, opsExecutiveState(item.current || {}, item.period || {}))).join('') : '<div class="team-empty">Sin ejecutivos con datos.</div>';
+                opsRenderMatrixView(OPS_MATRIX_VIEW === 'portfolio' && OPS_PORTFOLIO_DATA ? 'portfolio' : OPS_MATRIX_VIEW, OPS_MATRIX_VIEW === 'portfolio' && OPS_PORTFOLIO_DATA ? OPS_PORTFOLIO_DATA : OPS_DATA);
+                opsRenderTimeExecutive(execs);
                 const individualSheet = $('opsIndividualSheet');
                 const periodKpiSection = document.querySelector('.team-period-kpi-section');
                 const teamSplit = document.querySelector('.team-split');
@@ -4457,24 +4622,28 @@
                 } else {
                     if (periodKpiSection) periodKpiSection.hidden = false;
                     if (teamSplit) teamSplit.hidden = false;
-                    if (speedSection) speedSection.hidden = false;
-                    if (agingSection) agingSection.hidden = false;
+                    if (speedSection) speedSection.hidden = true;
+                    if (agingSection) agingSection.hidden = true;
                     if (effectiveness) effectiveness.hidden = true;
                     if (periodSection) periodSection.hidden = false;
                     if (oldIndividual) oldIndividual.hidden = true;
                     if (individualSheet) individualSheet.hidden = true;
-                    opsRenderSpeed(OPS_EXECUTIVES);
-                    opsRenderAging(current, OPS_EXECUTIVES);
+                    // La tabla de velocidad necesita los objetos con métricas
+                    // de período; OPS_EXECUTIVES es solo el roster nominal.
+                    if ($('opsTimeDistributionView')) $('opsTimeDistributionView').hidden = OPS_TIME_VIEW !== 'distribution';
+                    if ($('opsTimeExecutiveView')) $('opsTimeExecutiveView').hidden = OPS_TIME_VIEW !== 'executive';
                 }
                 const error = $('opsError'); if (error) error.hidden = true;
             }
             async function loadOperationalData(periodSnapshot = null) {
-                const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO};
+                const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const requestId = ++OPS_REQUEST_SEQ;
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
                 if ($('opsPeriodMeta')) $('opsPeriodMeta').textContent = 'Actualizando · ' + (snapshot.start || '—') + ' – ' + (snapshot.end || '—');
                 try {
                     const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
+                    if (snapshot.compare) params.set('compare', snapshot.compare);
+                    if (snapshot.preset) params.set('period_preset', snapshot.preset);
                     if (snapshot.executive) params.set('executive', snapshot.executive);
                     if (snapshot.portfolio) params.set('portfolio', snapshot.portfolio);
                     const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}});
@@ -4482,10 +4651,10 @@
                     const data = await response.json();
                     // Evita mezclar stock/período de una respuesta vieja con el
                     // selector que ya muestra un rango más reciente.
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO) return;
+                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
                     opsRenderOperational(data);
                 } catch (error) {
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO) return;
+                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
                     const box = $('opsError'), text = $('opsErrorText');
                     if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
                     if (box) box.hidden = false;
@@ -4496,6 +4665,7 @@
             }
             document.addEventListener('click', event => {
                 if (event.target.closest('#opsPortfolioCasesButton')) opsOpenPortfolioCases();
+                if (event.target.closest('#opsTeamResultsButton')) opsOpenResults();
                 if (event.target.closest('#opsSheetCasesButton')) opsOpenCases(null, OPS_SCOPE);
                 const execButton = event.target.closest('[data-team-cases-exec]');
                 if (execButton) opsOpenCases(null, execButton.dataset.teamCasesExec);
@@ -4503,6 +4673,8 @@
                 if (priorityButton) opsOpenCases(priorityButton.dataset.teamCasesPriority);
                 const closeButton = event.target.closest('#opsCasesClose');
                 if (closeButton) $('opsCasesDrawer').hidden = true;
+                const resultsClose = event.target.closest('#opsResultsClose');
+                if (resultsClose) $('opsResultsDrawer').hidden = true;
             });
 
             function showOverviewError() {
@@ -4524,7 +4696,7 @@
 
             async function loadData(mode) {
                 const requestId = ++OVERVIEW_REQUEST_SEQ;
-                    const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO};
+                    const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const overlay = $('loadingOverlay');
                 const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
                 RENDER_MODE = seqMode;
@@ -4533,6 +4705,9 @@
                 if (upd) { upd.textContent = 'Actualizando indicadores…'; upd.classList.add('loading'); }
                 if (seqMode === 'refresh') prepareRefreshReveal();
                 try {
+                    const operationalPromise = ($('viewLeads') && !$('viewLeads').hidden)
+                        ? loadOperationalData(periodSnapshot).catch(e => console.error('Error cargando gestión operativa:', e))
+                        : null;
                     const p = new URLSearchParams();
                     if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
                     if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
@@ -4544,7 +4719,7 @@
                     const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
                     if (!res.ok) throw new Error('Error ' + res.status);
                     const overview = await res.json();
-                    if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end) return;
+                    if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return;
                     OVERVIEW = overview;
                     syncUrl();
                     renderPeriodMeta();
@@ -4558,7 +4733,6 @@
                     if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) {
                         requestAnimationFrame(animateFunnelCounts);
                     }
-                    if ($('viewLeads') && !$('viewLeads').hidden) loadOperationalData(periodSnapshot).catch(e=>console.error('Error cargando gestión operativa:',e));
                     const now = new Date();
                     LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
                     $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
@@ -5915,6 +6089,7 @@
 
                 // Navegación por pestañas
                 function switchTab(tabId) {
+                    document.body.classList.toggle('team-view-active', tabId === 'leads');
                     document.querySelectorAll('#dashTabs .dash-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
                     const enteringExecutive = tabId === 'executive' && OVERVIEW;
                     const execView = $('viewExecutive');
@@ -5930,6 +6105,7 @@
                     const msel = $('mobileTabSelect');
                     if (msel) msel.value = tabId;
                     if (tabId === 'leads') loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:', e));
+                    syncUrl();
                     const tabsNav = $('dashTabs');
                     const activeTab = tabsNav ? tabsNav.querySelector('.dash-tab[data-tab="' + tabId + '"]') : null;
                     if (tabsNav && activeTab && tabsNav.scrollWidth > tabsNav.clientWidth) {
@@ -5951,6 +6127,7 @@
                 document.querySelectorAll('#dashTabs .dash-tab').forEach(btn => {
                     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
                 });
+                if (INITIAL_TAB !== 'executive') switchTab(INITIAL_TAB);
                 const msel = $('mobileTabSelect');
                 if (msel) {
                     msel.addEventListener('change', () => switchTab(msel.value));
@@ -5959,18 +6136,33 @@
                 const opsScope = $('opsExecutiveScope');
                 if (opsScope) opsScope.addEventListener('change', () => {
                     OPS_SCOPE = opsScope.value || '';
-                    loadOperationalData({start:FILTERS.period_start, end:FILTERS.period_end, executive:OPS_SCOPE, portfolio:OPS_PORTFOLIO}).catch(e=>console.error(e));
+                    syncUrl();
+                    loadOperationalData({start:FILTERS.period_start, end:FILTERS.period_end, executive:OPS_SCOPE, portfolio:OPS_PORTFOLIO, compare:COMPARE, preset:FILTERS.period_preset}).catch(e=>console.error(e));
                 });
+                document.querySelectorAll('[data-matrix-view]').forEach(btn => btn.addEventListener('click', () => {
+                    OPS_MATRIX_VIEW = btn.dataset.matrixView || 'current';
+                    if (OPS_MATRIX_VIEW === 'portfolio') {
+                        if (OPS_PORTFOLIO_DATA) opsRenderMatrixView('portfolio', OPS_PORTFOLIO_DATA);
+                        else opsLoadPortfolioMatrix().catch(error => { console.error(error); if ($('opsPortfolioSummary')) { $('opsPortfolioSummary').hidden = false; $('opsPortfolioSummary').textContent = 'No fue posible cargar la cartera de oficina.'; } });
+                    } else opsRenderMatrixView(OPS_MATRIX_VIEW, OPS_DATA);
+                }));
+                document.querySelectorAll('[data-time-view]').forEach(btn => btn.addEventListener('click', () => {
+                    OPS_TIME_VIEW = btn.dataset.timeView || 'executive';
+                    document.querySelectorAll('[data-time-view]').forEach(item => { const active = item.dataset.timeView === OPS_TIME_VIEW; item.classList.toggle('active',active); item.setAttribute('aria-selected',String(active)); });
+                    if ($('opsTimeDistributionView')) $('opsTimeDistributionView').hidden = OPS_TIME_VIEW !== 'distribution';
+                    if ($('opsTimeExecutiveView')) $('opsTimeExecutiveView').hidden = OPS_TIME_VIEW !== 'executive';
+                }));
                 const opsPortfolio = $('opsPortfolioScope');
                 if (opsPortfolio) opsPortfolio.addEventListener('change', () => {
                     OPS_PORTFOLIO = opsPortfolio.value || '';
-                    loadOperationalData({start:FILTERS.period_start, end:FILTERS.period_end, executive:OPS_SCOPE, portfolio:OPS_PORTFOLIO}).catch(e=>console.error(e));
+                    syncUrl();
+                    loadOperationalData({start:FILTERS.period_start, end:FILTERS.period_end, executive:OPS_SCOPE, portfolio:OPS_PORTFOLIO, compare:COMPARE, preset:FILTERS.period_preset}).catch(e=>console.error(e));
                 });
                 document.querySelectorAll('[data-speed-sort]').forEach(btn => btn.addEventListener('click', () => {
                     const key = btn.dataset.speedSort;
                     if (OPS_SPEED_SORT === key) OPS_SPEED_DESC = !OPS_SPEED_DESC;
                     else { OPS_SPEED_SORT = key; OPS_SPEED_DESC = false; }
-                    opsRenderSpeed(OPS_EXECUTIVES);
+                    opsRenderSpeed((OPS_DATA && OPS_DATA.executives) || OPS_EXECUTIVES);
                 }));
                 const opsSearch=$('opsSearch'); if(opsSearch) opsSearch.addEventListener('input',()=>{ clearTimeout(window.__opsSearchTimer); window.__opsSearchTimer=setTimeout(()=>loadOperationalData().catch(e=>console.error(e)),250); });
                 const opsRefresh=$('opsRefresh'); if(opsRefresh) opsRefresh.addEventListener('click',()=>loadOperationalData().catch(e=>console.error(e)));
@@ -6006,6 +6198,8 @@
                 if (btnReset) {
                     btnReset.addEventListener('click', () => {
                         COMPARE = 'auto';
+                        OPS_SCOPE = '';
+                        INITIAL_EXECUTIVE = '';
                         $('pCompare').value = 'auto';
                         openCustomPanel(false);
                         const range = CommercialPeriods.presetRange('30d');
@@ -6014,6 +6208,7 @@
                         FILTERS.period_preset = '30d';
                         $('pStart').value = range.start;
                         $('pEnd').value = range.end;
+                        syncUrl();
                         document.querySelectorAll('#presetSeg button').forEach(b => b.classList.toggle('active', b.dataset.p === '30d'));
                         loadData('refresh');
                     });

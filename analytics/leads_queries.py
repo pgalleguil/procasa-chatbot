@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 import logging
+import hashlib
 import math
 import re
 import time
@@ -15,7 +17,11 @@ from chatbot.crm_metrics import (
     calculate_sla,
     coerce_utc_datetime,
     event_evidence,
+    INSTRUMENTATION_CUTOVER,
+    MANAGEMENT_ENFORCEMENT_CUTOVER,
     is_pre_visual_cutover,
+    normalize_result,
+    registered_outreach_evidence,
     resolve_hot_start_at,
 )
 from chatbot.utils import calculate_business_minutes
@@ -32,6 +38,72 @@ logger = logging.getLogger(__name__)
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
 OPS_PORTFOLIO_OFFICE = "PROCASA SUCRE"
+
+# These are contracts for interpretation, not filters over the data.  A
+# comparison is eligible only when the whole comparison window is covered by
+# the metric's reliable instrumentation period.
+OPS_COMPARABLE_METRIC_RULES = {
+    "assigned": {
+        "source": "lifecycle.assigned_at / crm_assignment_cycles",
+        "from": None,
+        "reason": "La asignación tiene timestamp de cohorte histórico independiente de la instrumentación de actividad/resultado.",
+    },
+    "activity_attempts": {
+        "source": "crm_events: REGISTERED_OUTREACH_EVENT_TYPES",
+        "from": INSTRUMENTATION_CUTOVER,
+        "reason": "La instrumentación de outreach se considera consistente desde INSTRUMENTATION_CUTOVER.",
+    },
+    "managed": {
+        "source": "lifecycle.first_valid_management_at + resultado válido",
+        "from": MANAGEMENT_ENFORCEMENT_CUTOVER,
+        "reason": "El contrato de resultado válido/SLA se aplica desde MANAGEMENT_ENFORCEMENT_CUTOVER.",
+    },
+    "coverage": {
+        "source": "resultado registrado / asignados",
+        "from": MANAGEMENT_ENFORCEMENT_CUTOVER,
+        "reason": "La cobertura depende del resultado registrado bajo el contrato vigente.",
+    },
+    "contact_effective": {
+        "source": "lifecycle.first_effective_contact_at",
+        "from": MANAGEMENT_ENFORCEMENT_CUTOVER,
+        "reason": "Se compara junto con el episodio y contrato de resultados vigente.",
+    },
+    "hot_sla_pct": {
+        "source": "first_valid_management_at + calculate_business_minutes",
+        "from": MANAGEMENT_ENFORCEMENT_CUTOVER,
+        "reason": "La evaluación HOT homogénea depende del enforcement de primera gestión válida.",
+    },
+    "normal_sla_pct": {
+        "source": "first_valid_management_at + calculate_business_minutes",
+        "from": MANAGEMENT_ENFORCEMENT_CUTOVER,
+        "reason": "La evaluación NORMAL homogénea depende del enforcement de primera gestión válida.",
+    },
+    "visits_scheduled": {
+        "source": "stage_history / lifecycle.visit_scheduled_at / crm_events resultado VISITA_AGENDADA",
+        "from": INSTRUMENTATION_CUTOVER,
+        "reason": "La evidencia canónica de visita se audita con cobertura de instrumentación CRM.",
+    },
+    "lead_to_visit": {
+        "source": "visitas agendadas / asignados",
+        "from": INSTRUMENTATION_CUTOVER,
+        "reason": "La tasa hereda la elegibilidad de visitas y de la cohorte asignada.",
+    },
+}
+
+
+def _ops_comparable_eligibility(start: Optional[datetime], end: Optional[datetime]) -> dict:
+    """Return metric-level comparability for a complete [start, end) window."""
+    result = {}
+    for metric, rule in OPS_COMPARABLE_METRIC_RULES.items():
+        cutoff = coerce_utc_datetime(rule["from"]) if rule.get("from") else None
+        valid = bool(start and end and (cutoff is None or start >= cutoff))
+        result[metric] = {
+            "valid": valid,
+            "from": cutoff.isoformat() if cutoff else None,
+            "source": rule["source"],
+            "reason": rule["reason"] if valid else "La ventana comparable completa es anterior al inicio de cobertura metodológica de esta métrica.",
+        }
+    return result
 
 
 def _effective_stage_expr() -> dict:
@@ -2960,7 +3032,7 @@ def _ops_portfolio_codes(db, captador: Optional[str]) -> list[str]:
     return sorted({str(doc.get("codigo")).strip() for doc in docs if doc.get("codigo") not in (None, "")})
 
 
-def _ops_projected_leads(db, match: dict) -> list[dict]:
+def _ops_projected_leads(db, match: dict, profile: Optional[dict] = None, operation: str = "aggregate_projected_leads") -> list[dict]:
     projection = {
         "_id": 1, "created_at": 1, "_created_normalized": 1,
         "phone": 1, "prospecto.nombre": 1, "prospecto.codigo": 1,
@@ -2973,7 +3045,7 @@ def _ops_projected_leads(db, match: dict) -> list[dict]:
         "lifecycle.visit_scheduled_at": 1,
         "stage_history": 1,
     }
-    return list(db["leads"].aggregate([
+    return _profile_query(profile, "leads", operation, lambda: db["leads"].aggregate([
         _normalized_created_at_stage(),
         {"$match": match},
         {"$project": projection},
@@ -2983,16 +3055,25 @@ def _ops_projected_leads(db, match: dict) -> list[dict]:
 def _ops_elapsed(start: Optional[datetime], end: datetime) -> int:
     if not start:
         return 0
-    return max(0, round(calculate_business_minutes(
+    # Keep the canonical fractional value for SLA decisions. Presentation
+    # rounds it later; rounding here can misclassify an exact boundary.
+    return max(0.0, float(calculate_business_minutes(
         start.astimezone(CHILE_TZ), end.astimezone(CHILE_TZ)
     )))
 
 
-def _ops_response_minutes(start: Optional[datetime], end: Optional[datetime]) -> Optional[int]:
+def _ops_elapsed_calendar_minutes(start: Optional[datetime], end: datetime) -> int:
+    """Calendar age for backlog presentation, independent from the SLA clock."""
+    if not start:
+        return 0
+    return max(0.0, (end - start).total_seconds() / 60)
+
+
+def _ops_response_minutes(start: Optional[datetime], end: Optional[datetime]) -> Optional[float]:
     """Diferencia de respuesta sin convertir intervalos negativos en cero."""
     if not start or not end:
         return None
-    return round(calculate_business_minutes(
+    return float(calculate_business_minutes(
         start.astimezone(CHILE_TZ), end.astimezone(CHILE_TZ)
     ))
 
@@ -3008,6 +3089,9 @@ def _ops_state(doc: dict, now: datetime, management_override=_OPS_MANAGEMENT_UNS
     temperature = str(doc.get("lead_temperature_effective") or "NORMAL").upper()
     threshold = 60 if temperature == "HOT" else 180
     elapsed = _ops_elapsed(assigned or coerce_utc_datetime(doc.get("_created_normalized")), now)
+    elapsed_calendar = _ops_elapsed_calendar_minutes(
+        assigned or coerce_utc_datetime(doc.get("_created_normalized")), now
+    )
     unassigned = _ops_unassigned(doc.get("ejecutivo_asignado"))
     if unassigned:
         code, label, rank = "unassigned", "Sin ejecutivo asignado", 4
@@ -3015,14 +3099,15 @@ def _ops_state(doc: dict, now: datetime, management_override=_OPS_MANAGEMENT_UNS
         code, label, rank = None, None, 6
     elif temperature == "HOT" and 45 <= elapsed < 60:
         code, label, rank = "hot_near_due", "HOT próximo a vencer", 3
-    elif elapsed >= threshold:
+    elif elapsed > threshold:
         code = "hot_open_overdue" if temperature == "HOT" else "normal_open_overdue"
         label = "HOT vencido" if temperature == "HOT" else "NORMAL vencido"
         rank = 1 if temperature == "HOT" else 2
     else:
         code, label, rank = "pending_first_management", "Pendiente de primera gestión", 5
     return {"assigned": assigned, "managed": managed, "temperature": temperature,
-            "threshold": threshold, "elapsed": elapsed, "unassigned": unassigned,
+            "threshold": threshold, "elapsed": elapsed, "elapsed_calendar": elapsed_calendar,
+            "unassigned": unassigned,
             "priority_code": code, "priority_label": label, "priority_rank": rank}
 
 
@@ -3030,17 +3115,22 @@ def _ops_exec_bucket(name: str) -> dict:
     return {"executive": name,
             "current": {"active_load": 0, "share_of_team_load_pct": None,
                         "pending": 0, "hot_overdue": 0, "normal_overdue": 0,
-                        "hot_near_due": 0, "oldest_pending_minutes": None,
+                        "hot_near_due": 0, "activity_without_result": 0,
+                        "oldest_pending_minutes": None, "oldest_pending_calendar_minutes": None,
                         "aging": {"lt_24h": 0, "d_1_3": 0, "d_4_7": 0, "gt_7d": 0}},
             "period": {"assigned": 0, "managed": 0, "managed_within_sla": 0,
                        "managed_late": 0, "hot_sla_pct": None, "normal_sla_pct": None,
                        "p50_hot": None, "p90_hot": None, "p50_normal": None,
                        "p90_normal": None, "hot_n": 0, "normal_n": 0,
+                       "activity_attempts": 0, "activity_without_result": 0,
+                       "result_breakdown": {}, "result_event_count": 0, "result_leads": 0,
                        "contact_effective": 0, "visits_scheduled": 0,
+                       "hot_stats": {}, "normal_stats": {},
                        "temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}},
             "_hot_managed": 0, "_hot_within": 0, "_normal_managed": 0,
             "_normal_within": 0, "_hot_times": [], "_normal_times": [],
-            "_temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}}
+            "_temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0},
+            "_activity_ids": set(), "_result_ids": set()}
 
 
 def _ops_finalize_execs(buckets: dict[str, dict], team_load: int) -> list[dict]:
@@ -3057,6 +3147,8 @@ def _ops_finalize_execs(buckets: dict[str, dict], team_load: int) -> list[dict]:
         period["normal_n"] = len(item["_normal_times"])
         period["p50_hot"], period["p90_hot"] = _ops_percentile(item["_hot_times"], 50), _ops_percentile(item["_hot_times"], 90)
         period["p50_normal"], period["p90_normal"] = _ops_percentile(item["_normal_times"], 50), _ops_percentile(item["_normal_times"], 90)
+        period["hot_stats"] = _ops_stats(item["_hot_times"])
+        period["normal_stats"] = _ops_stats(item["_normal_times"])
         period["temporal_inconsistent"] = dict(item["_temporal_inconsistent"])
         for key in ("_hot_managed", "_hot_within", "_normal_managed", "_normal_within", "_hot_times", "_normal_times"):
             item.pop(key, None)
@@ -3064,7 +3156,7 @@ def _ops_finalize_execs(buckets: dict[str, dict], team_load: int) -> list[dict]:
     return sorted(buckets.values(), key=lambda item: (-item["current"]["active_load"], item["executive"]))
 
 
-def _ops_active_executive_names(db) -> set[str]:
+def _ops_active_executive_names(db, profile: Optional[dict] = None) -> set[str]:
     """Nombres que representan al equipo comercial visible en la matriz.
 
     La matriz no debe mezclar administradores, supervisores ni ejecutivos
@@ -3072,12 +3164,12 @@ def _ops_active_executive_names(db) -> set[str]:
     """
     names = {
         str(user.get("nombre") or "").strip()
-        for user in db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1})
+        for user in _profile_query(profile, "usuarios", "find_active_executives", lambda: db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1}))
     }
     return {name for name in names if name and name.casefold() != "pablo galleguillos"}
 
 
-def _ops_assignment_episode_map(db, docs: list[dict]) -> dict[str, list[dict]]:
+def _ops_assignment_episode_map(db, docs: list[dict], profile: Optional[dict] = None) -> dict[str, list[dict]]:
     """Carga ciclos sospechosos en una sola lectura, nunca una por lead."""
     suspicious_ids = []
     for doc in docs:
@@ -3088,11 +3180,11 @@ def _ops_assignment_episode_map(db, docs: list[dict]) -> dict[str, list[dict]]:
             suspicious_ids.append(doc.get("_id"))
     if not suspicious_ids:
         return {}
-    cycles = db["crm_assignment_cycles"].find(
+    cycles = _profile_query(profile, "crm_assignment_cycles", "find_assignment_cycles", lambda: db["crm_assignment_cycles"].find(
         {"lead_id": {"$in": suspicious_ids}},
         {"lead_id": 1, "assignment_cycle_id": 1, "assigned_at": 1,
          "unassigned_at": 1, "cycle_status": 1},
-    )
+    ))
     result: dict[str, list[dict]] = {}
     for cycle in cycles:
         result.setdefault(str(cycle.get("lead_id")), []).append(cycle)
@@ -3124,20 +3216,100 @@ def _ops_temporal_assignment(doc: dict, assignment_cycles: Optional[dict[str, li
             "temporal_inconsistent": inconsistent}
 
 
-def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None, team_executives: Optional[set[str]] = None, scheduled_visit_ids: Optional[set[str]] = None, assignment_cycles: Optional[dict[str, list[dict]]] = None) -> dict:
+def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: list[dict],
+                                  period_start: datetime, period_cutoff: datetime,
+                                  assignment_cycles: Optional[dict[str, list[dict]]] = None,
+                                  profile: Optional[dict] = None) -> dict:
+    """Read auditable outreach/result events once for the operational contract.
+
+    Outreach is deliberately separate from a valid result. Opening/sending a
+    channel proves activity only; ``first_valid_management_at`` remains the
+    canonical result/SLA stop signal.
+    """
+    docs = {str(doc.get("_id")): doc for doc in [*current_docs, *period_docs] if doc.get("_id") is not None}
+    if not docs:
+        return {}
+    events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
+        {"lead_id": {"$in": [doc.get("_id") for doc in docs.values()]}},
+        {"lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
+         "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
+         "assignment_cycle_id": 1},
+    ))
+    period_ids = {str(doc.get("_id")) for doc in period_docs if doc.get("_id") is not None}
+    signals = defaultdict(lambda: {"current_activity": False, "period_activity": False,
+                                   "period_result": False, "result": None,
+                                   "result_events": [], "period_activity_events": [],
+                                   "period_effective": False, "last_event_at": None,
+                                   "last_event_type": None, "last_activity_at": None,
+                                   "last_activity_type": None})
+    for event in events:
+        lead_id = str(event.get("lead_id"))
+        doc = docs.get(lead_id)
+        if not doc:
+            continue
+        ts = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+        if not ts or ts >= period_cutoff:
+            continue
+        lifecycle = doc.get("lifecycle") or {}
+        episode = _ops_temporal_assignment(doc, assignment_cycles)
+        assigned = episode.get("assignment_start")
+        if assigned and ts < assigned:
+            continue
+        registered = registered_outreach_evidence(
+            event, assigned_at=assigned,
+            assignment_cycle_id=lifecycle.get("current_assignment_cycle_id"),
+        ).get("recognized")
+        evidence = event_evidence(event)
+        # Activity means a registered outreach action. A result event is kept
+        # in the result universe and must not silently become an outreach
+        # attempt just because it carries a normalized result.
+        activity = bool(registered)
+        result_valid = bool(evidence.get("management") and evidence.get("result"))
+        if not activity and not result_valid:
+            continue
+        if ts and (signals[lead_id]["last_event_at"] is None or ts > signals[lead_id]["last_event_at"]):
+            signals[lead_id]["last_event_at"] = ts
+            signals[lead_id]["last_event_type"] = str(event.get("type") or "").upper() or None
+        if activity:
+            signals[lead_id]["current_activity"] = True
+            if ts and (signals[lead_id]["last_activity_at"] is None or ts > signals[lead_id]["last_activity_at"]):
+                signals[lead_id]["last_activity_at"] = ts
+                signals[lead_id]["last_activity_type"] = str(event.get("type") or "").upper() or None
+        if activity and lead_id in period_ids and ts >= period_start:
+            signals[lead_id]["period_activity"] = True
+            signals[lead_id]["period_activity_events"].append(str(event.get("type") or "").upper())
+        if lead_id in period_ids and ts >= period_start and result_valid:
+            signals[lead_id]["period_result"] = True
+            normalized = normalize_result(evidence.get("result"))
+            signals[lead_id]["result_events"].append({"timestamp": ts, "result": normalized})
+    for signal in signals.values():
+        signal["result_events"].sort(key=lambda item: item["timestamp"])
+        if signal["result_events"]:
+            signal["result"] = signal["result_events"][-1]["result"]
+            signal["result_event_count"] = len(signal["result_events"])
+    return dict(signals)
+
+
+def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None, team_executives: Optional[set[str]] = None, scheduled_visit_ids: Optional[set[str]] = None, assignment_cycles: Optional[dict[str, list[dict]]] = None, activity_signals: Optional[dict[str, dict]] = None) -> dict:
     """Construye CURRENT (stock) y PERIOD (desempeño) sin mezclarlos."""
     now = coerce_utc_datetime(now) or datetime.now(timezone.utc)
     _, period_cutoff = _build_chile_period_bounds(period_start, period_end)
     period_cutoff = min(period_cutoff, now)
     current = {"active_assigned": 0, "pending_first_management": 0, "open_overdue": 0,
-               "hot_overdue": 0, "normal_overdue": 0, "hot_near_due": 0, "unassigned": 0,
+               "hot_overdue": 0, "normal_overdue": 0, "hot_near_due": 0,
+               "activity_without_result": 0, "unassigned": 0,
+               "oldest_pending_calendar_minutes": None,
                "aging": {"lt_24h": 0, "d_1_3": 0, "d_4_7": 0, "gt_7d": 0}}
     period = {"assigned": 0, "managed": 0, "managed_within_sla": 0, "managed_late": 0,
               "hot_managed": 0, "hot_within_sla": 0, "hot_late": 0,
               "normal_managed": 0, "normal_within_sla": 0, "normal_late": 0,
               "hot_sla_pct": None, "normal_sla_pct": None, "p50_hot": None, "p90_hot": None,
               "p50_normal": None, "p90_normal": None,
-              "hot_n": 0, "normal_n": 0, "contact_effective": 0, "visits_scheduled": 0,
+              "hot_n": 0, "normal_n": 0, "activity_attempts": 0,
+              "activity_without_result": 0, "result_breakdown": {},
+              "result_event_count": 0, "result_leads": 0, "result_duplicates": [],
+              "activity_event_breakdown": {}, "containment": {},
+              "contact_effective": 0, "visits_scheduled": 0,
               "hot_stats": {}, "normal_stats": {},
               "temporal_inconsistent": {"hot": 0, "normal": 0, "total": 0}}
     team_filter_enabled = team_executives is not None
@@ -3157,6 +3329,14 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
                "unassigned": 0, "pending_first_management": 0}
 
     scheduled_visit_ids = set(scheduled_visit_ids or set())
+    activity_signals = activity_signals or {}
+    containment_ids = {"assigned": set(), "activity": set(), "result": set(), "effective": set(), "visit": set()}
+    activity_type_leads = defaultdict(set)
+    activity_type_events = defaultdict(int)
+    audit_aging_extreme = {"lt_24h": 0, "d_1_3": 0, "d_4_7": 0,
+                           "d_8_30": 0, "d_31_60": 0, "d_61_90": 0, "gt_90d": 0}
+    audit_backlog_diagnosis = defaultdict(int)
+    audit_gt_90_sample = []
     for doc in current_docs:
         temporal = _ops_temporal_assignment(doc, assignment_cycles)
         state = _ops_state(doc, now, temporal["management"])
@@ -3175,16 +3355,67 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
             current["pending_first_management"] += 1
             bucket["current"]["pending"] += 1
             bucket["current"]["oldest_pending_minutes"] = max(bucket["current"]["oldest_pending_minutes"] or 0, state["elapsed"])
-            if state["elapsed"] < 1440:
+            bucket["current"]["oldest_pending_calendar_minutes"] = max(bucket["current"]["oldest_pending_calendar_minutes"] or 0, state["elapsed_calendar"])
+            current["oldest_pending_calendar_minutes"] = max(current["oldest_pending_calendar_minutes"] or 0, state["elapsed_calendar"])
+            if activity_signals.get(str(doc.get("_id")), {}).get("current_activity"):
+                current["activity_without_result"] += 1
+                bucket["current"]["activity_without_result"] += 1
+            if state["elapsed_calendar"] < 1440:
                 age_key = "lt_24h"
-            elif state["elapsed"] < 4320:
+            elif state["elapsed_calendar"] < 4320:
                 age_key = "d_1_3"
-            elif state["elapsed"] < 10080:
+            elif state["elapsed_calendar"] < 10080:
                 age_key = "d_4_7"
             else:
                 age_key = "gt_7d"
             current["aging"][age_key] += 1
             bucket["current"]["aging"][age_key] += 1
+            calendar_days = state["elapsed_calendar"] / 1440
+            if calendar_days < 1:
+                extreme_key = "lt_24h"
+            elif calendar_days < 3:
+                extreme_key = "d_1_3"
+            elif calendar_days < 8:
+                extreme_key = "d_4_7"
+            elif calendar_days <= 30:
+                extreme_key = "d_8_30"
+            elif calendar_days <= 60:
+                extreme_key = "d_31_60"
+            elif calendar_days <= 90:
+                extreme_key = "d_61_90"
+            else:
+                extreme_key = "gt_90d"
+            audit_aging_extreme[extreme_key] += 1
+            if extreme_key == "gt_90d":
+                lifecycle = doc.get("lifecycle") or {}
+                stages = {str(doc.get(field) or "").upper() for field in ("pipeline_stage", "stage")}
+                if stages & {"CLOSED_WON", "CLOSED_LOST", "ARCHIVED"}:
+                    diagnosis = "B_closed_functionally_pipeline_stale"
+                elif temporal.get("temporal_inconsistent"):
+                    diagnosis = "C_reassigned_without_new_management"
+                elif state.get("assigned"):
+                    diagnosis = "A_active_pending_first_result"
+                else:
+                    diagnosis = "D_legacy_or_unclassified"
+                audit_backlog_diagnosis[diagnosis] += 1
+                if len(audit_gt_90_sample) < 20:
+                    signal = activity_signals.get(str(doc.get("_id")), {})
+                    ref = "lead_" + hashlib.sha256(str(doc.get("_id")).encode("utf-8")).hexdigest()[:10]
+                    audit_gt_90_sample.append({
+                        "lead_ref": ref,
+                        "pipeline_stage": doc.get("pipeline_stage"),
+                        "stage": doc.get("stage"),
+                        "assigned_at": state["assigned"].isoformat() if state.get("assigned") else None,
+                        "assignment_cycle_id": (lifecycle.get("current_assignment_cycle_id") or None),
+                        "first_valid_management_at": state["managed"].isoformat() if state.get("managed") else None,
+                        "last_event_at": signal.get("last_event_at").isoformat() if signal.get("last_event_at") else None,
+                        "last_event_type": signal.get("last_event_type"),
+                        "last_activity_at": signal.get("last_activity_at").isoformat() if signal.get("last_activity_at") else None,
+                        "last_activity_type": signal.get("last_activity_type"),
+                        "executive": name,
+                        "temperature": state["temperature"],
+                        "diagnosis": diagnosis,
+                    })
         if state["priority_code"] in {"hot_open_overdue", "normal_open_overdue"}:
             current["open_overdue"] += 1
             current["hot_overdue" if state["temperature"] == "HOT" else "normal_overdue"] += 1
@@ -3198,7 +3429,8 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
             remaining = state["elapsed"] - state["threshold"]
             intervention.append({"lead_id": str(doc.get("_id")), "priority_code": state["priority_code"],
                 "priority_label": state["priority_label"], "temperature": state["temperature"],
-                "elapsed_minutes": state["elapsed"], "sla_limit_minutes": state["threshold"],
+                "elapsed_minutes": state["elapsed"], "elapsed_business_minutes": state["elapsed"],
+                "elapsed_calendar_minutes": state["elapsed_calendar"], "sla_limit_minutes": state["threshold"],
                 "remaining_or_overdue_minutes": remaining, "executive": name,
                 "client": prop.get("nombre") or "Sin nombre", "property_reference": prop.get("codigo") or "Sin propiedad",
                 "stage": doc.get("pipeline_stage") or doc.get("stage") or "Sin estado",
@@ -3217,6 +3449,19 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
         bucket = executives.setdefault(name, _ops_exec_bucket(name))
         period["assigned"] += 1
         bucket["period"]["assigned"] += 1
+        lead_key = str(doc.get("_id"))
+        containment_ids["assigned"].add(lead_key)
+        signal = activity_signals.get(str(doc.get("_id")), {})
+        if signal.get("period_activity"):
+            period["activity_attempts"] += 1
+            bucket["period"]["activity_attempts"] += 1
+            containment_ids["activity"].add(lead_key)
+            bucket["_activity_ids"].add(lead_key)
+            for activity_type in signal.get("period_activity_events", []):
+                activity_type_events[activity_type] += 1
+                activity_type_leads[activity_type].add(lead_key)
+        # Activity and result are parallel sets. The gap is reconciled after
+        # both sets have been collected, never by subtracting totals.
         if temporal["temporal_inconsistent"]:
             key = "hot" if state["temperature"] == "HOT" else "normal"
             bucket["_temporal_inconsistent"][key] += 1
@@ -3227,17 +3472,41 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
         if contact_at and temporal["assignment_start"] <= contact_at < period_cutoff:
             period["contact_effective"] += 1
             bucket["period"]["contact_effective"] += 1
+            containment_ids["effective"].add(lead_key)
         if str(doc.get("_id")) in scheduled_visit_ids:
             period["visits_scheduled"] += 1
             bucket["period"]["visits_scheduled"] += 1
+            containment_ids["visit"].add(lead_key)
         if not state["managed"] or state["managed"] >= period_cutoff:
             continue
+        # The management lifecycle is the validity gate for the KPI. A raw
+        # result event without the canonical lifecycle timestamp remains in
+        # the audit trail, but does not enter the gerencial distribution.
+        if signal.get("period_result") and signal.get("result"):
+            result = signal["result"]
+            event_count = int(signal.get("result_event_count") or 0)
+            period["result_event_count"] += event_count
+            period["result_leads"] += 1
+            containment_ids["result"].add(lead_key)
+            bucket["_result_ids"].add(lead_key)
+            bucket["period"]["result_event_count"] += event_count
+            bucket["period"]["result_leads"] += 1
+            period["result_breakdown"][result] = period["result_breakdown"].get(result, 0) + 1
+            bucket["period"]["result_breakdown"][result] = bucket["period"]["result_breakdown"].get(result, 0) + 1
+            if event_count > 1:
+                lead_ref = hashlib.sha256(str(doc.get("_id")).encode("utf-8")).hexdigest()[:10]
+                period["result_duplicates"].append({
+                    "lead_ref": "lead_" + lead_ref,
+                    "count": event_count,
+                    "sequence": [item["result"] for item in signal["result_events"]],
+                    "final_result": result,
+                })
         period["managed"] += 1
         bucket["period"]["managed"] += 1
         measured = _ops_response_minutes(temporal["assignment_start"], state["managed"])
         if measured is None or measured < 0:
             continue
-        within = measured < state["threshold"]
+        within = measured <= state["threshold"]
         period["managed_within_sla" if within else "managed_late"] += 1
         bucket["period"]["managed_within_sla" if within else "managed_late"] += 1
         key = "hot" if state["temperature"] == "HOT" else "normal"
@@ -3254,8 +3523,26 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
         period[key + "_n"] = len(values)
         period["p50_" + key], period["p90_" + key] = _ops_percentile(values, 50), _ops_percentile(values, 90)
         period[key + "_stats"] = _ops_stats(values)
+    period["activity_event_breakdown"] = {
+        key: {"events": activity_type_events[key], "leads": len(activity_type_leads[key])}
+        for key in sorted(activity_type_events)
+    }
+    period["containment"] = {
+        "activity_without_result": len(containment_ids["activity"] - containment_ids["result"]),
+        "result_without_activity": len(containment_ids["result"] - containment_ids["activity"]),
+        "effective_without_result": len(containment_ids["effective"] - containment_ids["result"]),
+        "visit_without_effective": len(containment_ids["visit"] - containment_ids["effective"]),
+        "visit_without_result": len(containment_ids["visit"] - containment_ids["result"]),
+        "sets": {key: len(value) for key, value in containment_ids.items()},
+    }
+    period["activity_without_result"] = len(containment_ids["activity"] - containment_ids["result"])
+    for bucket in executives.values():
+        bucket["period"]["activity_without_result"] = len(bucket["_activity_ids"] - bucket["_result_ids"])
+        bucket.pop("_activity_ids", None)
+        bucket.pop("_result_ids", None)
     intervention.sort(key=lambda item: ({"hot_open_overdue": 1, "normal_open_overdue": 2, "hot_near_due": 3, "unassigned": 4, "pending_first_management": 5}.get(item["priority_code"], 6), -max(item["remaining_or_overdue_minutes"], item["elapsed_minutes"])))
     total_active = current["active_assigned"] + current["unassigned"]
+    aging_total = sum(current["aging"].values())
     return {"meta": {"as_of": now.isoformat(), "period_start": period_start, "period_end": period_end,
             "timezone": "America/Santiago", "sla_hot_minutes": 60, "sla_normal_minutes": 180,
             "team_executives": sorted(team_executives, key=str.casefold),
@@ -3267,17 +3554,38 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
                           "total_evaluated": period_evaluated, "coincidences": period_evaluated,
                           "differences": 0, "lifecycle_present_canonical_absent": 0,
                           "lifecycle_absent_canonical_present": 0, "timestamp_differences": 0,
-                          "canonical_contract": "same persisted lifecycle field"}},
+                          "canonical_contract": "same persisted lifecycle field"},
+                      "backlog_audit": {
+                          "aging_extreme": audit_aging_extreme,
+                          "gt_90_count": audit_aging_extreme["gt_90d"],
+                          "diagnosis_counts": dict(audit_backlog_diagnosis),
+                          "sample_gt_90": audit_gt_90_sample,
+                          "note": "Auditoría informativa; no cambia el universo activo ni cierra leads automáticamente."}},
             "current": current, "period": period,
             "executives": _ops_finalize_execs(executives, current["active_assigned"]),
             "intervention_summary": summary, "intervention_cases": intervention[:20],
             "total_intervention_cases": len(intervention),
             "current_reconciliation": {"active_total": total_active, "active_assigned_plus_unassigned": total_active, "ok": True},
+            "aging_reconciliation": {"pending_total": current["pending_first_management"],
+                                     "aging_bucket_total": aging_total,
+                                     "ok": aging_total == current["pending_first_management"]},
             "updated_at": now.isoformat()}
 
 
-def query_leads_operational_dashboard(period_start: Optional[str] = None, period_end: Optional[str] = None, filters: Optional[dict] = None, timing: Optional[dict] = None) -> dict:
-    """Query operacional en dos universos explícitos y dos lecturas por lote."""
+def query_leads_operational_dashboard(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Optional[dict] = None,
+    timing: Optional[dict] = None,
+    period_only: bool = False,
+    team_executives_override: Optional[set[str]] = None,
+    shared_resources: Optional[dict] = None,
+) -> dict:
+    """Query operacional separando stock vigente de métricas de período.
+
+    ``period_only`` se usa para el comparable: ese universo solo necesita
+    métricas de cohorte y no debe volver a leer ni transformar el stock actual.
+    """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
     raw_filters = dict(filters or {})
@@ -3298,15 +3606,28 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
         period_parts.append(mongo_filters)
     period_match = {"$and": period_parts}
     started = time.perf_counter()
-    current_docs = _ops_projected_leads(db, active_match)
+    current_docs = (
+        _ops_projected_leads(db, active_match, timing, "aggregate_current_stock")
+        if not period_only else []
+    )
     current_ms = (time.perf_counter() - started) * 1000
     started = time.perf_counter()
-    period_docs = _ops_projected_leads(db, period_match)
+    period_docs = _ops_projected_leads(db, period_match, timing, "aggregate_period_cohort")
     period_ms = (time.perf_counter() - started) * 1000
-    assignment_cycles = _ops_assignment_episode_map(db, [*current_docs, *period_docs])
+    assignment_started = time.perf_counter()
+    assignment_cycles = _ops_assignment_episode_map(db, [*current_docs, *period_docs], timing)
+    assignment_ms = (time.perf_counter() - assignment_started) * 1000
+    period_cutoff = min(end_utc, datetime.now(timezone.utc))
+    activity_started = time.perf_counter()
+    activity_signals = _ops_collect_activity_signals(
+        db, current_docs, period_docs, start_utc, period_cutoff,
+        assignment_cycles,
+        timing,
+    )
+    activity_ms = (time.perf_counter() - activity_started) * 1000
     portfolio_context = None
     if portfolio:
-        team_names = {name.casefold() for name in _ops_active_executive_names(db)}
+        team_names = {name.casefold() for name in _ops_active_executive_names(db, timing)}
         outside_counts: dict[str, int] = {}
         outside_cases: list[dict] = []
         unassigned_cases: list[dict] = []
@@ -3336,23 +3657,44 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
             "outside_cases": outside_cases,
             "unassigned_cases": unassigned_cases,
         }
-    period_cutoff = min(end_utc, datetime.now(timezone.utc))
     period_lead_ids = {str(doc.get("_id")) for doc in period_docs}
+    signed_orders = None
+    if period_lead_ids:
+        if shared_resources is not None and shared_resources.get("signed_orders") is not None:
+            signed_orders = shared_resources["signed_orders"]
+        else:
+            signed_orders = _profile_query(
+                timing,
+                "visitas",
+                "find_signed_orders",
+                lambda: db["visitas"].find(
+                    {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+                    {"visita_code": 1, "phone": 1, "property_code": 1,
+                     "timeline": 1, "created_at": 1},
+                ),
+            )
+            if shared_resources is not None:
+                shared_resources["signed_orders"] = signed_orders
     scheduled_visit_ids = _scheduled_visit_lead_ids(
         period_docs,
         period_lead_ids,
         period_cutoff,
         timing,
+        signed_orders=signed_orders,
     ) if period_lead_ids else set()
+    transform_started = time.perf_counter()
+    team_executives = team_executives_override or _ops_active_executive_names(db, timing)
     result = build_operational_contract(
         current_docs,
         period_docs,
         period_start,
         period_end,
-        team_executives=_ops_active_executive_names(db),
+        team_executives=team_executives,
         scheduled_visit_ids=scheduled_visit_ids,
         assignment_cycles=assignment_cycles,
+        activity_signals=activity_signals,
     )
+    transform_ms = (time.perf_counter() - transform_started) * 1000
     if python_filters:
         cases = result["intervention_cases"]
         if python_filters.get("priority"):
@@ -3366,7 +3708,7 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
             cases = [case for case in cases if term in str(case.get("client") or "").lower()]
         result["intervention_cases"] = cases[:20]
         result["total_intervention_cases"] = len(cases)
-    actual_mongo_calls = (4 if period_lead_ids else 2) + (1 if assignment_cycles else 0)
+    actual_mongo_calls = len((timing or {}).get("mongo", [])) if timing is not None else (5 if period_lead_ids else 3) + (1 if assignment_cycles else 0)
     result["meta"]["mongo_calls"] = actual_mongo_calls
     result["meta"]["visit_evidence_leads"] = len(scheduled_visit_ids)
     result["meta"]["assignment_cycle_leads"] = len(assignment_cycles)
@@ -3374,7 +3716,7 @@ def query_leads_operational_dashboard(period_start: Optional[str] = None, period
     result["meta"]["portfolio_property_codes"] = len(portfolio_codes) if portfolio else None
     result["meta"]["portfolio_context"] = portfolio_context
     if timing is not None:
-        timing.update({"mongo_calls": actual_mongo_calls, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1), "visit_evidence_leads": len(scheduled_visit_ids), "assignment_cycle_leads": len(assignment_cycles)})
+        timing.update({"mongo_calls": actual_mongo_calls, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1), "assignment_cycles_ms": round(assignment_ms, 1), "activity_results_ms": round(activity_ms, 1), "transform_ms": round(transform_ms, 1), "visit_evidence_leads": len(scheduled_visit_ids), "assignment_cycle_leads": len(assignment_cycles)})
     return result
 
 

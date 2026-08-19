@@ -74,6 +74,7 @@ tests/*
 !tests/test_crm_sla_alert_repository.py
 !tests/test_crm_sla_alert_worker.py
 !tests/test_crm_sla_alert_sender.py
+!tests/test_team_management_p0_contract.py
 scraper*/
 reports/
 

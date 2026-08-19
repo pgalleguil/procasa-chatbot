@@ -82,11 +82,35 @@ def test_dashboard_contract_contains_lazy_properties_route_and_no_placeholder():
     assert "loadInventoryData" in template
     assert "/static/geo/chile-regiones.geojson" in template
     assert "/static/geo/chile-comunas.geojson" in template
-    assert "geoSelectTerritoryByCommune" in template
-    assert "geo-region-grid" in template
     assert "geoRenderNationalTiles" in template
     assert "data-geo-metric=\"gap\"" in template
-    assert "Top 5 ·" in template
+    assert "Ver las 16 regiones" in template
+
+
+def test_territorial_review_uses_d3_hybrid_national_and_communal_renderer():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "d3.geoMercator()" in template
+    assert "d3.geoPath(projection)" in template
+    assert "projection.fitExtent" in template
+    assert "d3.scaleSqrt()" in template
+    assert "path.centroid" in template
+    assert "geo-demand-symbol" in template
+    assert "rows.slice(0,8)" in template
+    assert "Mostrar Top 8" in template
+    assert "geoD3SelectRegion" in template
+    assert "geoD3EnterCommunes" in template
+    assert "data-geo-zoom=\"in\"" in template
+    assert "event.type==='wheel'?event.ctrlKey:true" in template
+    assert "domain([-maxAbs,0,maxAbs])" in template
+    assert "geoFoldPanelSvg" not in template
+    assert "geoPath(geometry,bounds" not in template
+    assert "--accent-primary" not in template
+    assert "--bg-input" not in template
+    assert "function geoD3RenderNational" in template
+    assert "function geoD3RenderCommunes" in template
+    assert "if(GEO_METRIC==='leads')" in template
+    assert "geo-territory-base" in template
+    assert "scaleDiverging" in template
 
 
 def demand_prop(code, office="PROCASA SUCRE", active=True, tipo="Casa", comuna="Santiago", venta=True):

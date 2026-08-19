@@ -254,9 +254,176 @@ def test_manual_official_send_is_disabled(monkeypatch):
 
 def test_scheduler_is_permanently_automatic_at_0830():
     assert weekly.Config.CAPTACION_WEEKLY_PREVIEW_REQUIRED is False
-    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is True
+    assert weekly.Config.CAPTACION_WEEKLY_PRODUCTION_ENABLED is False
+    assert weekly.Config.CAPTACION_WEEKLY_TEST_MODE is True
+    assert weekly.Config.CAPTACION_WEEKLY_AUTOMATIC_SEND is False
     assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_HOUR == 8
     assert weekly.Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE == 30
+
+
+def test_canonical_commercial_group_has_priority_for_weekly(monkeypatch):
+    monkeypatch.setattr(weekly.Config, "PROCASA_COMMERCIAL_GROUP_ID", "canonical@g.us")
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "legacy-weekly@g.us")
+    monkeypatch.setattr(weekly.Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    assert weekly.Config.resolve_weekly_group_id() == "canonical@g.us"
+
+
+def test_weekly_group_falls_back_weekly_then_daily(monkeypatch):
+    monkeypatch.setattr(weekly.Config, "PROCASA_COMMERCIAL_GROUP_ID", "")
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "legacy-weekly@g.us")
+    monkeypatch.setattr(weekly.Config, "DAILY_REPORT_GROUP_ID", "legacy-daily@g.us")
+    assert weekly.Config.resolve_weekly_group_id() == "legacy-weekly@g.us"
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_GROUP_ID", "")
+    assert weekly.Config.resolve_weekly_group_id() == "legacy-daily@g.us"
+
+
+def test_no_valid_group_blocks_resolution(monkeypatch):
+    for name in ("PROCASA_COMMERCIAL_GROUP_ID", "CAPTACION_WEEKLY_GROUP_ID", "DAILY_REPORT_GROUP_ID", "CAPTACION_PRODUCTION_GROUP"):
+        monkeypatch.setattr(weekly.Config, name, "")
+    assert weekly.Config.resolve_daily_group_id() == ""
+    assert weekly.Config.resolve_weekly_group_id() == ""
+
+
+@pytest.mark.parametrize(
+    ("hour", "minute", "expected"),
+    [(8, 29, False), (8, 30, True), (9, 15, True), (11, 59, True), (12, 0, False)],
+)
+def test_new_weekly_recovery_window(hour, minute, expected):
+    monday = weekly.CHILE.localize(datetime(2026, 8, 24, hour, minute))
+    assert weekly.weekly_production_window_open(monday) is expected
+
+
+def test_new_weekly_recovery_window_excludes_non_monday():
+    tuesday = weekly.CHILE.localize(datetime(2026, 8, 25, 9, 15))
+    assert weekly.weekly_production_window_open(tuesday) is False
+
+
+def _official_report_for_guard_tests():
+    panel = _panel()
+    snapshot = {
+        "team": {
+            "properties_managed_unique": panel["week_count"],
+            "properties_with_contact_attempt_unique": panel["contact_attempts"],
+            "effective_contacts_unique": panel["effective_contacts"],
+            "captured_properties_unique": panel["captures"],
+        },
+        "executives": panel["executives"],
+        "outcome_groups": panel["outcome_groups"],
+        "crm_parity": {"validated": True},
+        "snapshot_id": "snapshot-flags",
+    }
+    return {
+        "report_id": "r-flags", "report_type": "captacion_weekly_official",
+        "message_domain": weekly.MESSAGE_DOMAIN, "message_type": "weekly_report",
+        "recipient_role": "captacion_team", "period_start": "2026-07-13",
+        "period_end": "2026-07-17", "is_test": False, "status": "ready_to_send",
+        "snapshot": snapshot, "snapshot_id": snapshot["snapshot_id"], "snapshot_hash": "hash",
+        "crm_parity_validated": True, "message_original": "📊 *CAPTACIONES | INICIO DE SEMANA*",
+        "group_recipient": "56990152481-1598919271@g.us", "narrative": _narrative(),
+    }
+
+
+def test_weekly_production_disabled_blocks_without_provider(monkeypatch):
+    db = _Db(); db[weekly.REPORT_COLLECTION].rows.append(_official_report_for_guard_tests())
+    calls = []
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", lambda *args: calls.append(args))
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_PRODUCTION_ENABLED", False)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_TEST_MODE", False)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
+    with pytest.raises(PermissionError, match="grupo bloqueado"):
+        asyncio.run(weekly.send_official_report("r-flags"))
+    assert calls == []
+
+
+def test_weekly_test_mode_never_uses_group(monkeypatch):
+    db = _Db(); db[weekly.REPORT_COLLECTION].rows.append(_official_report_for_guard_tests())
+    calls = []
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", lambda *args: calls.append(args))
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_TEST_MODE", True)
+    with pytest.raises(PermissionError, match="grupo bloqueado"):
+        asyncio.run(weekly.send_official_report("r-flags"))
+    assert calls == []
+
+
+def test_weekly_flags_are_independent_and_valid_group_sends_once(monkeypatch):
+    db = _Db(); db[weekly.REPORT_COLLECTION].rows.append(_official_report_for_guard_tests())
+    calls = []
+
+    async def fake_send(recipient, text):
+        calls.append(recipient)
+        return {"success": True, "delivery_status": "accepted", "provider_message_id": "weekly-1"}
+
+    async def fake_receipt(message_id, timeout_seconds=30):
+        return {"delivery_status": "delivered", "provider_message_id": message_id}
+
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
+    monkeypatch.setattr(weekly, "wait_for_whatsapp_delivery", fake_receipt)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_TEST_MODE", False)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", False)
+    first = asyncio.run(weekly.send_official_report("r-flags", now=weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))))
+    assert first["delivery_status"] == "delivered"
+    assert calls == ["56990152481-1598919271@g.us"]
+
+
+def test_existing_weekly_delivery_is_skipped_without_provider(monkeypatch):
+    db = _Db(); report = _official_report_for_guard_tests(); report["status"] = "sent"; db[weekly.REPORT_COLLECTION].rows.append(report)
+    key = weekly._official_idempotency_key(report, report["group_recipient"])
+    db[weekly.DELIVERY_COLLECTION].rows.append({"idempotency_key": key, "delivery_status": "delivered", "provider_message_id": "old"})
+    calls = []
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", lambda *args: calls.append(args))
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_TEST_MODE", False)
+    result = asyncio.run(weekly.send_official_report("r-flags", now=weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))))
+    assert result["provider_message_id"] == "old"
+    assert calls == []
+
+
+def test_invalid_weekly_group_blocks_without_provider(monkeypatch):
+    db = _Db(); report = _official_report_for_guard_tests(); report["group_recipient"] = "not-a-group"; db[weekly.REPORT_COLLECTION].rows.append(report)
+    calls = []
+    monkeypatch.setattr(weekly, "get_db", lambda: db)
+    monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", lambda *args: calls.append(args))
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(weekly.Config, "CAPTACION_WEEKLY_TEST_MODE", False)
+    with pytest.raises(ValueError, match="Destinatario grupal oficial"):
+        asyncio.run(weekly.send_official_report("r-flags"))
+    assert calls == []
+
+
+def test_operational_weekly_message_is_deterministic_and_mobile_first():
+    snapshot = {
+        "report": {"period_label": "10 al 14 de agosto de 2026"},
+        "outcome_groups": {
+            "captured": {"total": 1},
+            "closed_without_capture": {"total": 2},
+            "management_in_progress": {"total": 3},
+            "pending_next_action": {"total": 0},
+            "other_review": {"total": 0},
+        },
+        "executives": [{
+            "name": "María Paz Galleguillos", "gestiones_semana": 42, "meta_semana": 50,
+            "cumplimiento_semana": 84.0, "dias_cumplidos": 4, "dias_aplicables": 5,
+            "total_gestionadas_acumuladas": 14, "total_asignadas": 317, "avance_cartera": 4.4,
+        }],
+        "weekly_operational": {
+            "team_done": 42, "team_goal": 50, "team_compliance": 84.0,
+            "pending": 303, "availability_pct": 93.8, "coverage_below_threshold_count": 0,
+        },
+    }
+    message = weekly.assemble_operational_weekly_message(snapshot)
+    assert "*Gestión Semanal de Captación" in message
+    assert "Semana: *42/50 · 84%* · Días cumplidos: *4/5*" in message
+    assert "Avance actual: 14 de 317 · 4,4%" in message
+    assert "*Resultados de la semana*" in message
+    assert "1 captadas · 2 cerradas\n3 en gestión" in message
+    assert "```" not in message
+    assert "¡Buen inicio" not in message
 
 
 @pytest.mark.parametrize(("result", "expected_group", "expected_detail"), [
@@ -377,7 +544,7 @@ def test_official_validation_blocks_other_review(monkeypatch):
         weekly.validate_official_report(snapshot, weekly.assemble_whatsapp_message(snapshot, _narrative()))
 
 
-def test_official_send_targets_group_never_admin(monkeypatch):
+def test_official_send_remains_blocked_until_weekly_approval(monkeypatch):
     db = _Db()
     monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: _panel())
     snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=False)
@@ -404,11 +571,6 @@ def test_official_send_targets_group_never_admin(monkeypatch):
     monkeypatch.setattr(weekly, "send_whatsapp_message_detailed", fake_send)
     monkeypatch.setattr(weekly, "wait_for_whatsapp_delivery", fake_receipt)
     now = weekly.CHILE.localize(datetime(2026, 7, 20, 8, 30))
-    delivery = asyncio.run(weekly.send_official_report("r-group", now=now))
-    db[weekly.REPORT_COLLECTION].rows[0]["status"] = "ready_to_send"  # simula reinicio antes de persistir estado
-    second = asyncio.run(weekly.send_official_report("r-group", now=now))
-    assert recipients == ["56990152481-1598919271@g.us"]
-    assert weekly.ADMIN_RECIPIENT not in recipients
-    assert delivery["idempotency_key"].startswith("captacion_weekly_official:2026-07-13:2026-07-17:")
-    assert delivery["delivery_status"] == "delivered"
-    assert second["delivery_id"] == delivery["delivery_id"]
+    with pytest.raises(PermissionError, match="grupo bloqueado"):
+        asyncio.run(weekly.send_official_report("r-group", now=now))
+    assert recipients == []

@@ -37,7 +37,17 @@ class Config:
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
     DAILY_REPORT_GROUP_ID = os.getenv("DAILY_REPORT_GROUP_ID")
     CAPTACION_WEEKLY_GROUP_ID = os.getenv("CAPTACION_WEEKLY_GROUP_ID", "").strip()
+    PROCASA_COMMERCIAL_GROUP_ID = os.getenv("PROCASA_COMMERCIAL_GROUP_ID", "").strip()
     CAPTACION_WEEKLY_ADMIN_PHONE = os.getenv("CAPTACION_WEEKLY_ADMIN_PHONE", "+56983219804")
+    CAPTACION_TEST_RECIPIENT = os.getenv("CAPTACION_TEST_RECIPIENT", "+56983219804").strip()
+    CAPTACION_PRODUCTION_GROUP = os.getenv(
+        "CAPTACION_PRODUCTION_GROUP", CAPTACION_WEEKLY_GROUP_ID or DAILY_REPORT_GROUP_ID or ""
+    ).strip()
+    CAPTACION_TEST_MODE = os.getenv("CAPTACION_TEST_MODE", "true").lower() == "true"
+    CAPTACION_DAILY_PRODUCTION_ENABLED = os.getenv("CAPTACION_DAILY_PRODUCTION_ENABLED", "false").lower() == "true"
+    CAPTACION_DAILY_DELIVERY_COLLECTION = os.getenv(
+        "CAPTACION_DAILY_DELIVERY_COLLECTION", "captacion_daily_deliveries"
+    )
     CAPTACION_WEEKLY_REPORT_COLLECTION = os.getenv(
         "CAPTACION_WEEKLY_REPORT_COLLECTION", "captacion_weekly_reports"
     )
@@ -45,12 +55,35 @@ class Config:
         "CAPTACION_WEEKLY_DELIVERY_COLLECTION", "captacion_weekly_deliveries"
     )
     CAPTACION_WEEKLY_PREVIEW_REQUIRED = False
-    CAPTACION_WEEKLY_AUTOMATIC_SEND = True
+    # Weekly Captación production controls are intentionally independent from
+    # the daily report flags and fail closed until explicitly enabled.
+    CAPTACION_WEEKLY_PRODUCTION_ENABLED = os.getenv("CAPTACION_WEEKLY_PRODUCTION_ENABLED", "false").lower() == "true"
+    CAPTACION_WEEKLY_TEST_MODE = os.getenv("CAPTACION_WEEKLY_TEST_MODE", "true").lower() == "true"
+    # Legacy name retained for compatibility with older diagnostics only.
+    CAPTACION_WEEKLY_AUTOMATIC_SEND = os.getenv("CAPTACION_WEEKLY_AUTOMATIC_SEND", "false").lower() == "true"
     CAPTACION_WEEKLY_SCHEDULE_HOUR = 8
     CAPTACION_WEEKLY_SCHEDULE_MINUTE = 30
-    CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR = 10
+    CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR = 12
     CAPTACION_WEEKLY_MAX_SEND_ATTEMPTS = 3
     CAPTACION_WEEKLY_PROMPT_VERSION = "captacion_weekly_writer_v4"
+
+    @staticmethod
+    def _valid_whatsapp_group(value):
+        return bool(str(value or "").strip().endswith("@g.us"))
+
+    @classmethod
+    def resolve_daily_group_id(cls):
+        for value in (cls.PROCASA_COMMERCIAL_GROUP_ID, cls.DAILY_REPORT_GROUP_ID, cls.CAPTACION_PRODUCTION_GROUP):
+            if cls._valid_whatsapp_group(value):
+                return str(value).strip()
+        return ""
+
+    @classmethod
+    def resolve_weekly_group_id(cls):
+        for value in (cls.PROCASA_COMMERCIAL_GROUP_ID, cls.CAPTACION_WEEKLY_GROUP_ID, cls.DAILY_REPORT_GROUP_ID, cls.CAPTACION_PRODUCTION_GROUP):
+            if cls._valid_whatsapp_group(value):
+                return str(value).strip()
+        return ""
     CRM_WEEKLY_REPORT_GROUP_ID = os.getenv("CRM_WEEKLY_REPORT_GROUP_ID", "").strip()
     CRM_WEEKLY_REPORT_COLLECTION = os.getenv("CRM_WEEKLY_REPORT_COLLECTION", "crm_weekly_reports")
     CRM_WEEKLY_DELIVERY_COLLECTION = os.getenv("CRM_WEEKLY_DELIVERY_COLLECTION", "crm_weekly_deliveries")

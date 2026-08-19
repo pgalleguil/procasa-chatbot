@@ -3450,13 +3450,14 @@
             <a href="/manual-lead-entry" class="nav-link"><i class="fa-solid fa-user-plus"></i> <span>Ingreso
                     Manual</span></a>
             {% endif %}
-            <a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
+            {% if not territorial_review|default(false) %}<a href="/crm" class="nav-link"><i class="fa-solid fa-list-ul"></i> <span>Listado Leads</span></a>
             {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
             {% endif %}
             <a href="/captacion" class="nav-link"><i class="fa-solid fa-house-circle-check"></i>
                 <span>Captaciones</span></a>
             <a href="/contracts/dashboard" class="nav-link"><i class="fa-solid fa-file-contract"></i> <span>Convenios</span></a>
             <a href="/visitas/dashboard" class="nav-link"><i class="fa-solid fa-map-location-dot"></i> <span>Órdenes de Visita</span></a>
+            {% endif %}
             </div>
 
             <div class="sidebar-footer">
@@ -3464,9 +3465,9 @@
                     onclick="toggleTheme(); return false;">
                     <i class="fa-solid fa-sun" id="themeIcon"></i> <span>Tema</span>
                 </a>
-                <a href="/logout" class="nav-link logout">
+                {% if not territorial_review|default(false) %}<a href="/logout" class="nav-link logout">
                     <i class="fa-solid fa-power-off"></i> <span>Cerrar Sesión</span>
-                </a>
+                </a>{% endif %}
             </div>
         </nav>
 
@@ -3551,7 +3552,7 @@
 
             <!-- Las tarjetas se irán agregando aquí una por una -->
             <!-- VISTA: RESUMEN EJECUTIVO -->
-            <div id="viewExecutive">
+            <div id="viewExecutive"{% if territorial_review|default(false) %} hidden{% endif %}>
 
             <div class="cards-container" id="cardsContainer">
                 <div class="cd-grid">
@@ -3827,7 +3828,7 @@
                     <aside class="team-drawer" id="opsCasesDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">EVIDENCIA</div><h3 id="opsCasesTitle">Casos que requieren intervención</h3><p id="opsCasesMeta">—</p></div><button class="team-drawer-close" id="opsCasesClose" type="button" aria-label="Cerrar casos">×</button></div><div id="opsCasesList" class="team-case-list"></div></aside><aside class="team-drawer" id="opsResultsDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">RESULTADOS DEL PERÍODO</div><h3>Resultados de contacto</h3><p id="opsResultsMeta">—</p></div><button class="team-drawer-close" id="opsResultsClose" type="button" aria-label="Cerrar resultados">×</button></div><div id="opsResultsList" class="team-case-list"></div></aside>
                 </div>
             </div>
-            <div id="viewProperties" hidden>
+            <div id="viewProperties"{% if not territorial_review|default(false) %} hidden{% endif %}>
                 <section class="inventory-dashboard" aria-labelledby="inventoryTitle">
                     <div class="inventory-heading"><div><span class="inventory-kicker">TERCERA PESTAÑA · INTELIGENCIA COMERCIAL</span><h2 id="inventoryTitle">Inteligencia de Demanda y Captación</h2><p>Demanda observada, brechas de cartera y oportunidades para orientar la captación.</p></div><div id="inventoryLoading" class="inventory-status" hidden>Cargando inteligencia…</div></div>
                     <div id="inventoryError" class="inventory-error" hidden></div>
@@ -3863,7 +3864,7 @@
 
         </div>
 
-        <!-- SESSION WARNING MODAL -->
+        {% if not territorial_review|default(false) %}<!-- SESSION WARNING MODAL -->
         <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
             data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
@@ -3886,7 +3887,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </div>{% endif %}
 
         <!-- LOADING OVERLAY (actualización atómica) -->
         <div class="loading-overlay" id="loadingOverlay" hidden role="status" aria-live="polite">
@@ -6483,6 +6484,7 @@
 
             // --- SMART SESSION CONTROL ---
             // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.
+            if (!REVIEW_MODE) {
             const SESSION_LIFETIME = 120 * 60 * 1000;
             const WARNING_THRESHOLD = 2 * 60 * 1000;
             const RENEWAL_INTERVAL = 10 * 60 * 1000;
@@ -6526,6 +6528,7 @@
                         .catch(err => console.error("Session renew failed", err));
                 }
             }, 5000);
+            }
         </script>
         <div id="sidebarOverlay"
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"

@@ -23,6 +23,7 @@ from jinja2 import Environment, FileSystemLoader
 templates = Environment(loader=FileSystemLoader(str(ROOT / "templates")))
 
 from analytics.leads_service import get_leads_dashboard_overview, get_leads_operational_dashboard, get_operational_executive_performance, get_operational_portfolios, get_properties_inventory_dashboard, get_capture_simulation
+from review_fixtures import territorial_review_payload
 
 app = FastAPI(title="Leads Dashboard - Preview local (solo lectura)")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
@@ -31,7 +32,43 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 @app.get("/leads-dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     template = templates.get_template("leads_dashboard.html")
-    return HTMLResponse(template.render(user_role="supervisor", user_name="Preview"))
+    review = request.query_params.get("territorial_review") == "1"
+    return HTMLResponse(template.render(user_role="supervisor", user_name="Preview", territorial_review=review))
+
+
+def _territorial_review_payload():
+    regions = [
+        ("Arica y Parinacota", 2), ("Tarapacá", 3), ("Antofagasta", 4), ("Atacama", 2),
+        ("Coquimbo", 17), ("Valparaíso", 53), ("Metropolitana", 175), ("Bernardo O'Higgins", 3),
+        ("Maule", 24), ("Ñuble", 0), ("Biobío", 14), ("La Araucanía", 0),
+        ("Los Ríos", 0), ("Los Lagos", 0), ("Aysén", 0), ("Magallanes", 0),
+    ]
+    total = sum(value for _, value in regions)
+    geography = [{
+        "name": name, "geo_key": name.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").replace("ñ", "n").replace(" ", " "),
+        "leads": value, "demand_share_pct": round(value / total * 100, 1) if total else 0,
+        "properties_with_demand": max(0, round(value * .44)), "leads_per_property": round(value / max(1, round(value * .44)), 2),
+        "stock_sucre": max(0, round(value * .55)), "supply_share_pct": round(value / total * 100 * .8, 1) if total else 0,
+        "gap_pp": round(value / total * 100 - value / total * 100 * .8, 1) if total else 0,
+        "top_segments": [],
+    } for name, value in regions]
+    return {
+        "inventory": {"active": 442}, "demand": {"leads": total, "properties_with_demand": 119, "coverage_pct": 26.9, "qualified_signals": {"contact_effective": 74}},
+        "meta": {"period_start": "2026-07-19", "period_end": "2026-08-17"},
+        "data_quality": {"price_dimension": {}, "bedrooms_dimension": {}}, "attribution": {"coverage_pct": 97.4, "leads_with_identifiable_office": total, "leads_total": total},
+        "demand_intelligence": {"dimensions": {key: [] for key in ("operation", "type", "zone_rm", "price_range", "bedrooms")}, "geography": {"region": geography, "commune": [], "metric_rule": {"default": "leads"}, "matching": {}}},
+        "opportunities": [], "benchmark": {}, "simulator_options": {"types": [], "communes": []}, "forecast": {"available": False},
+    }
+
+
+@app.get("/api/leads-dashboard/territorial-review")
+async def territorial_review():
+    return _territorial_review_payload()
+
+
+@app.get("/api/review/leads-dashboard")
+async def territorial_review_public():
+    return territorial_review_payload()
 
 
 @app.get("/api/leads-dashboard/overview")

@@ -11,6 +11,9 @@ from analytics.leads_queries import (
     build_capture_simulation_contract,
     build_properties_inventory_contract,
     _demand_capture_recent_band,
+    _demand_capture_profile,
+    _demand_capture_geo_key,
+    _demand_capture_zone_rm,
     _inventory_publications,
 )
 from analytics.demand_forecast import (
@@ -20,6 +23,7 @@ from analytics.demand_forecast import (
     forecast_metrics,
     naive_moving_average,
 )
+from review_fixtures import territorial_review_payload
 
 
 def prop(code, *, venta=True, arriendo=False, tipo="Casa", comuna="Santiago", responsable="Ana", leads=0):
@@ -76,6 +80,13 @@ def test_dashboard_contract_contains_lazy_properties_route_and_no_placeholder():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
     assert "/api/leads-dashboard/properties-inventory" in template
     assert "loadInventoryData" in template
+    assert "/static/geo/chile-regiones.geojson" in template
+    assert "/static/geo/chile-comunas.geojson" in template
+    assert "geoSelectTerritoryByCommune" in template
+    assert "geo-region-grid" in template
+    assert "geoRenderNationalTiles" in template
+    assert "data-geo-metric=\"gap\"" in template
+    assert "Top 5 ·" in template
 
 
 def demand_prop(code, office="PROCASA SUCRE", active=True, tipo="Casa", comuna="Santiago", venta=True):
@@ -243,6 +254,78 @@ def test_recent_demand_bands_are_descriptive_and_insufficient_is_not_no_capture(
     assert _demand_capture_recent_band(0, 8, 3) == "Demanda reciente baja"
     assert _demand_capture_recent_band(4, 4, 3) == "Sin evidencia suficiente"
     assert "probabilidad" not in _demand_capture_recent_band(4, 8, 3).lower()
+
+
+def test_demand_dimensions_exclude_incomplete_price_and_bedroom_records():
+    missing_price = demand_prop("missing-price", tipo="Casa", comuna="Santiago")
+    missing_price["tipo_operacion"]["precio_venta"] = {}
+    non_residential = demand_prop("land", tipo="Terreno", comuna="Santiago")
+    residential_without_bedrooms = demand_prop("no-bedrooms", tipo="Casa", comuna="Santiago")
+    residential_without_bedrooms["caracteristicas"] = {}
+    for item in (missing_price, non_residential, residential_without_bedrooms):
+        item["ubicacion"]["region"] = "Metropolitana"
+    payload = build_demand_capture_contract(
+        [missing_price, non_residential, residential_without_bedrooms],
+        [demand_lead("missing-price"), demand_lead("land"), demand_lead("no-bedrooms")],
+    )
+    assert all(row["segment"] is not None for row in payload["demand_intelligence"]["dimensions"]["price_range"])
+    assert all(row["segment"] is not None for row in payload["demand_intelligence"]["dimensions"]["bedrooms"])
+    quality = payload["data_quality"]
+    assert quality["price_dimension"]["excluded_missing_price"] == 1
+    assert quality["bedrooms_dimension"]["excluded_non_residential"] == 1
+    assert quality["bedrooms_dimension"]["excluded_missing_or_non_residential"] == 1
+
+
+def test_rm_zone_mapping_is_explicit_and_non_overlapping_for_common_communes():
+    assert _demand_capture_zone_rm("Metropolitana", "Providencia") == "Oriente"
+    assert _demand_capture_zone_rm("Metropolitana", "Maipú") == "Poniente"
+    assert _demand_capture_zone_rm("Valparaíso", "Providencia") is None
+    assert _demand_capture_profile({"ubicacion": {"region": "Metropolitana", "comuna": "Providencia"}, "tipo_operacion": {"tipo": "Casa", "venta": True}, "caracteristicas": {"dormitorios": 3}})["zone_rm"] == "Oriente"
+
+
+def test_geography_contract_aggregates_regions_communes_and_normalizes_names():
+    providencia = demand_prop("geo-1", comuna="Providencia")
+    providencia["ubicacion"]["region"] = "Metropolitana"
+    nunoa = demand_prop("geo-2", comuna="Ñuñoa")
+    nunoa["ubicacion"]["region"] = "Región Metropolitana de Santiago"
+    payload = build_demand_capture_contract(
+        [providencia, nunoa],
+        [demand_lead("geo-1"), demand_lead("geo-1"), demand_lead("geo-2")],
+        "2026-07-20", "2026-08-19",
+    )
+    geography = payload["demand_intelligence"]["geography"]
+    assert geography["region"][0]["geo_key"] == "metropolitana"
+    communes = {row["geo_key"]: row for row in geography["commune"]}
+    assert communes["providencia"]["leads"] == 2
+    assert communes["nunoa"]["leads"] == 1
+    assert geography["metric_rule"]["default"] == "leads"
+    assert geography["matching"]["unmatched_territories"] is None
+    assert _demand_capture_geo_key("O'Higgins") == "ohiggins"
+    assert _demand_capture_geo_key("San José de Maipo") == "san jose de maipo"
+    assert _demand_capture_geo_key("Viña del Mar") == "vina del mar"
+
+
+def test_official_geojson_reconciles_administrative_regions_and_communes():
+    regions = __import__("json").loads((Path(__file__).resolve().parents[1] / "static/geo/chile-regiones.geojson").read_text(encoding="utf-8"))["features"]
+    communes = __import__("json").loads((Path(__file__).resolve().parents[1] / "static/geo/chile-comunas.geojson").read_text(encoding="utf-8"))["features"]
+    administrative_regions = [row for row in regions if _demand_capture_geo_key(row["properties"].get("Region")) != "zona sin demarcar"]
+    administrative_communes = [row for row in communes if _demand_capture_geo_key(row["properties"].get("Region")) != "zona sin demarcar"]
+    assert len(administrative_regions) == 16
+    assert len(administrative_communes) == 345
+    assert sum(_demand_capture_geo_key(row["properties"].get("Region")) == "metropolitana" for row in administrative_communes) == 52
+    assert sum(_demand_capture_geo_key(row["properties"].get("Region")) == "valparaiso" for row in administrative_communes) == 38
+    assert len({row["properties"].get("Comuna") for row in administrative_communes}) == 345
+
+
+def test_public_review_fixture_is_sanitized_and_deterministic():
+    first = territorial_review_payload()
+    second = territorial_review_payload()
+    regions = first["demand_intelligence"]["geography"]["region"]
+    assert first == second
+    assert len(regions) == 16
+    assert sum(row["leads"] for row in regions) == 297
+    assert first["inventory"]["active"] == 442
+    assert all("phone" not in str(first).lower() and "email" not in str(first).lower() for _ in [0])
 
 
 def test_methodology_note_documents_backtest_and_no_visible_score():

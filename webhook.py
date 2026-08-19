@@ -98,6 +98,7 @@ from chatbot.captacion_weekly_report import (
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
+from review_fixtures import territorial_review_payload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -897,6 +898,29 @@ async def ver_leads(request: Request):
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
     })
+
+
+@app.get("/leads-dashboard-review", response_class=HTMLResponse)
+async def ver_leads_review(request: Request):
+    """Public, read-only visual review; never resolves a user or touches Mongo."""
+    response = templates.TemplateResponse("leads_dashboard.html", {
+        "request": request,
+        "user_role": "review",
+        "user_name": "Visual Review",
+        "territorial_review": True,
+    })
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/review/leads-dashboard")
+async def leads_dashboard_review_data():
+    """Sanitized fixture only. No request parameters and no database access."""
+    response = JSONResponse(territorial_review_payload())
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _public_executive_overview(payload: dict) -> dict:

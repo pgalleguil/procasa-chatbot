@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from collections import defaultdict
+from collections import Counter, defaultdict
 import logging
 import hashlib
 import math
@@ -2396,6 +2396,894 @@ def query_cartera_demanda_coverage(
         "propiedades_activas": activas,
         "pct_cartera_con_demanda": pct,
     }
+
+
+INVENTORY_PUBLICATION_PORTALS = ("procasa", "portal_inmobiliario", "toctoc", "yapo")
+
+
+def _inventory_code(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _inventory_responsible(doc: Mapping[str, Any]) -> str:
+    state = doc.get("estado") or {}
+    for key in ("ejecutivo", "captador", "responsable"):
+        value = state.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return "Sin responsable"
+
+
+def _inventory_operation(doc: Mapping[str, Any]) -> str:
+    operations = doc.get("tipo_operacion") or {}
+    venta = bool(operations.get("venta"))
+    arriendo = bool(operations.get("arriendo"))
+    if venta and arriendo:
+        return "Venta + Arriendo"
+    if venta:
+        return "Venta"
+    if arriendo:
+        return "Arriendo"
+    return "Otra situación"
+
+
+def _inventory_publications(publicaciones: Mapping[str, Any] | None) -> dict:
+    result = {}
+    publicaciones = publicaciones if isinstance(publicaciones, Mapping) else {}
+    for portal in INVENTORY_PUBLICATION_PORTALS:
+        source = publicaciones.get(portal)
+        source = source if isinstance(source, Mapping) else {}
+        records = [source]
+        nested = source.get("publicaciones")
+        if isinstance(nested, Mapping):
+            records.extend(value for value in nested.values() if isinstance(value, Mapping))
+        has_url = any(str(item.get("url") or item.get("url_publicacion") or "").strip() for item in records)
+        has_external_id = any(str(item.get("id") or item.get("codigo") or item.get("external_id") or "").strip() for item in records)
+        published_values = [item.get("publicada") for item in records if isinstance(item.get("publicada"), bool)]
+        published = True if any(published_values) else (False if published_values and not any(published_values) else None)
+        result[portal] = {
+            "has_evidence": bool(has_url or has_external_id or published is True),
+            "has_url": has_url,
+            "has_external_id": has_external_id,
+            "published": published,
+        }
+    return result
+
+
+def _inventory_price(doc: Mapping[str, Any]) -> dict:
+    operations = doc.get("tipo_operacion") or {}
+    result = {}
+    for operation, key in (("venta", "venta"), ("arriendo", "arriendo")):
+        raw = operations.get(f"precio_{operation}")
+        if isinstance(raw, Mapping):
+            result[f"{key}_uf"] = raw.get("uf") or raw.get("precio_uf")
+            result[f"{key}_clp"] = raw.get("clp") or raw.get("precio_clp") or raw.get("pesos")
+        else:
+            result[f"{key}_uf"] = raw if isinstance(raw, (int, float)) else None
+            result[f"{key}_clp"] = None
+    return result
+
+
+def _inventory_pct(value: int, total: int) -> float | None:
+    return round(value / total * 100, 1) if total else None
+
+
+def build_properties_inventory_contract(
+    inventory_docs: list[Mapping[str, Any]],
+    demand_counts: Mapping[str, int] | None = None,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    filters: Mapping[str, Any] | None = None,
+    top_n: int = 10,
+) -> dict:
+    """Build the read-only inventory payload from one inventory batch and one demand batch."""
+    filters = {key: str(value).strip() for key, value in (filters or {}).items() if value not in (None, "")}
+    demand_counts = {_inventory_code(key): int(value or 0) for key, value in (demand_counts or {}).items()}
+    unique = {}
+    duplicate_docs = 0
+    for doc in inventory_docs:
+        code = _inventory_code(doc.get("codigo"))
+        if not code:
+            continue
+        if code in unique:
+            duplicate_docs += 1
+            continue
+        unique[code] = doc
+
+    all_records = []
+    for code, doc in sorted(unique.items()):
+        operation = _inventory_operation(doc)
+        record = {
+            "code": code,
+            "type": str(doc.get("tipo_propiedad") or doc.get("tipo") or (doc.get("tipo_operacion") or {}).get("tipo") or "Sin tipo").strip() or "Sin tipo",
+            "operation": operation,
+            "commune": str(doc.get("comuna") or doc.get("comuna_nombre") or (doc.get("ubicacion") or {}).get("comuna") or "Sin comuna").strip() or "Sin comuna",
+            "responsible": _inventory_responsible(doc),
+            "price": _inventory_price(doc),
+            "leads_period": int(demand_counts.get(code, 0)),
+            "publications": _inventory_publications(doc.get("publicaciones")),
+        }
+        record["has_demand"] = record["leads_period"] > 0
+        all_records.append(record)
+
+    def matches(record):
+        aliases = {"property_type": "type"}
+        for key, expected in filters.items():
+            record_key = aliases.get(key, key)
+            if record_key in ("operation", "type", "commune", "responsible") and record.get(record_key) != expected:
+                return False
+        return True
+
+    records = [record for record in all_records if matches(record)]
+    stock = len(records)
+    with_demand = sum(record["has_demand"] for record in records)
+    without_demand = stock - with_demand
+
+    def distribution(key: str, limit: int | None = None):
+        counts = defaultdict(int)
+        for record in records:
+            counts[record[key]] += 1
+        ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0].lower()))
+        if limit and len(ordered) > limit:
+            visible = ordered[:limit]
+            other_count = sum(value for _, value in ordered[limit:])
+            if other_count:
+                visible.append(("Otros", other_count))
+            ordered = visible
+        return [{"label": label, "count": count, "pct": _inventory_pct(count, stock)} for label, count in ordered]
+
+    responsible_counts = defaultdict(lambda: {"active": 0, "with_demand": 0})
+    for record in records:
+        item = responsible_counts[record["responsible"]]
+        item["active"] += 1
+        item["with_demand"] += int(record["has_demand"])
+    responsibles = []
+    for label, item in sorted(responsible_counts.items(), key=lambda pair: (-pair[1]["active"], pair[0].lower())):
+        responsibles.append({
+            "responsible": label,
+            "active": item["active"],
+            "pct_inventory": _inventory_pct(item["active"], stock),
+            "with_demand": item["with_demand"],
+            "without_demand": item["active"] - item["with_demand"],
+            "coverage_pct": _inventory_pct(item["with_demand"], item["active"]),
+        })
+
+    intervention = [dict(record, reason="SIN_DEMANDA_PERIODO") for record in records if not record["has_demand"]]
+    intervention.sort(key=lambda record: (record["responsible"] == "Sin responsable", record["responsible"].lower(), record["commune"].lower(), record["code"]))
+    evidence = {portal: sum(bool(record["publications"][portal]["has_evidence"]) for record in records) for portal in INVENTORY_PUBLICATION_PORTALS}
+    coverage_pct = _inventory_pct(with_demand, stock)
+    return {
+        "meta": {"source": "universo_cartera_prop360", "period_start": period_start, "period_end": period_end, "stock_period_independent": True, "filters": filters, "mongo_reads": 2},
+        "inventory": {"active": stock, "with_demand": with_demand, "without_demand": without_demand, "coverage_pct": coverage_pct, "reconciliation": with_demand + without_demand == stock},
+        "demand_coverage": {"with_demand": {"count": with_demand, "pct": coverage_pct}, "without_demand": {"count": without_demand, "pct": _inventory_pct(without_demand, stock)}, "interpretation": "Cobertura de demanda baja" if coverage_pct is not None and coverage_pct < 25 else "Cobertura de demanda"},
+        "composition": {"operation": distribution("operation"), "type": distribution("type", top_n), "commune": distribution("commune", top_n)},
+        "responsibles": responsibles,
+        "intervention": intervention,
+        "properties": records,
+        "filter_options": {key: distribution(key, None) for key in ("operation", "type", "commune", "responsible")},
+        "data_quality": {"duplicate_source_docs": duplicate_docs, "publication_evidence": evidence, "missing_responsible": sum(record["responsible"] == "Sin responsable" for record in records)},
+    }
+
+
+def query_properties_inventory_dashboard(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Mapping[str, Any] | None = None,
+) -> dict:
+    """Read-only inventory snapshot plus period-scoped demand, in two batches."""
+    db = get_db()
+    docs = list(db["universo_cartera_prop360"].find(_active_cartera_filter(), {
+        "codigo": 1, "tipo_propiedad": 1, "tipo": 1, "comuna": 1, "comuna_nombre": 1,
+        "tipo_operacion": 1, "ubicacion.comuna": 1, "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
+        "publicaciones": 1,
+    }))
+    codes = {_inventory_code(doc.get("codigo")) for doc in docs if _inventory_code(doc.get("codigo"))}
+    start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+    demand_counts = defaultdict(int)
+    if codes:
+        pipeline = [
+            _cohort_indexed_prefilter(start_utc, end_utc),
+            _normalized_created_at_stage(),
+            {"$match": _build_commercial_cohort_match(start_utc, end_utc)},
+            {"$match": _build_test_lead_exclusion_match()},
+            {"$project": {"prospecto.codigo": 1}},
+        ]
+        for lead in db["leads"].aggregate(pipeline):
+            code = _inventory_code((lead.get("prospecto") or {}).get("codigo"))
+            if code in codes:
+                demand_counts[code] += 1
+    return build_properties_inventory_contract(docs, demand_counts, period_start, period_end, filters)
+
+
+DEMAND_CAPTURE_CANONICAL_OFFICE = "PROCASA SUCRE"
+DEMAND_CAPTURE_DIMENSIONS = ("operation", "type", "commune", "price_range", "bedrooms")
+
+
+def _demand_capture_operation(doc: Mapping[str, Any]) -> str:
+    operation = _inventory_operation(doc)
+    if operation != "Otra situación":
+        return operation
+    raw = str((doc.get("prospecto") or {}).get("operacion") or "").strip().lower()
+    if "arriend" in raw:
+        return "Arriendo"
+    if "venta" in raw:
+        return "Venta"
+    return "Otra situación"
+
+
+def _demand_capture_profile(doc: Mapping[str, Any], code: str = "") -> dict:
+    operations = doc.get("tipo_operacion") or {}
+    location = doc.get("ubicacion") or {}
+    features = doc.get("caracteristicas") or {}
+    prospect = doc.get("prospecto") or {}
+    operation = _demand_capture_operation(doc)
+    property_type = str(operations.get("tipo") or doc.get("tipo_propiedad") or doc.get("tipo") or prospect.get("tipo") or "Sin tipo").strip() or "Sin tipo"
+    commune = str(location.get("comuna") or doc.get("comuna") or doc.get("comuna_nombre") or prospect.get("comuna") or "Sin comuna").strip() or "Sin comuna"
+    raw_bedrooms = features.get("dormitorios", prospect.get("dormitorios"))
+    try:
+        bedrooms_value = int(float(raw_bedrooms)) if raw_bedrooms not in (None, "") else None
+    except (TypeError, ValueError):
+        bedrooms_value = None
+    bedrooms = "Sin dormitorios" if bedrooms_value is None else ("4+" if bedrooms_value >= 4 else str(max(0, bedrooms_value)))
+    price = operations.get("precio_venta" if operation == "Venta" else "precio_arriendo") or {}
+    if operation == "Venta":
+        price_value = price.get("precio_uf") or price.get("uf")
+        if price_value is None:
+            price_range = "Sin precio UF"
+        elif float(price_value) <= 2000:
+            price_range = "Venta · hasta 2.000 UF"
+        elif float(price_value) <= 5000:
+            price_range = "Venta · 2.001–5.000 UF"
+        elif float(price_value) <= 10000:
+            price_range = "Venta · 5.001–10.000 UF"
+        else:
+            price_range = "Venta · más de 10.000 UF"
+    elif operation == "Arriendo":
+        price_value = price.get("precio_clp") or price.get("clp")
+        if price_value is None:
+            price_range = "Arriendo · sin precio CLP"
+        elif float(price_value) <= 500000:
+            price_range = "Arriendo · hasta $500 mil"
+        elif float(price_value) <= 1000000:
+            price_range = "Arriendo · $500 mil–$1 millón"
+        elif float(price_value) <= 2000000:
+            price_range = "Arriendo · $1–2 millones"
+        else:
+            price_range = "Arriendo · más de $2 millones"
+    elif operation == "Venta + Arriendo":
+        price_range = "Venta + Arriendo · precios separados"
+    else:
+        price_range = "Sin operación"
+    return {
+        "code": code,
+        "responsible": _inventory_responsible(doc),
+        "operation": operation,
+        "type": property_type,
+        "commune": commune,
+        "price_range": price_range,
+        "bedrooms": bedrooms,
+        "bedrooms_value": bedrooms_value,
+    }
+
+
+def _demand_capture_median(values: list[float]) -> float | None:
+    values = sorted(values)
+    if not values:
+        return None
+    middle = len(values) // 2
+    return float(values[middle]) if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
+
+
+def _demand_capture_distribution(stock_records: list[dict], demand_records: list[dict], dimension: str, demand_total: int, stock_total: int) -> list[dict]:
+    demand = Counter(record[dimension] for record in demand_records)
+    demand_codes = defaultdict(set)
+    stock = Counter()
+    for record in stock_records:
+        key = record[dimension]
+        if record.get("is_active_sucre"):
+            stock[key] += 1
+    for record in demand_records:
+        if record.get("is_active_sucre"):
+            demand_codes[record[dimension]].add(record["code"])
+    labels = sorted(set(demand) | set(stock), key=lambda label: (-demand[label], -stock[label], label.lower()))
+    result = []
+    for label in labels:
+        leads = demand[label]
+        stock_count = stock[label]
+        demand_share = round(leads / demand_total * 100, 1) if demand_total else None
+        supply_share = round(stock_count / stock_total * 100, 1) if stock_total else None
+        result.append({
+            "dimension": dimension, "segment": label, "label": label,
+            "leads": leads, "demand_share_pct": demand_share,
+            "stock_sucre": stock_count, "supply_share_pct": supply_share,
+            "gap_pp": round(demand_share - supply_share, 1) if demand_share is not None and supply_share is not None else None,
+            "properties_with_demand": len(demand_codes[label]),
+            "leads_per_property": round(leads / len(demand_codes[label]), 2) if demand_codes[label] else None,
+        })
+    return result
+
+
+def _demand_capture_quadrant(rows: list[dict]) -> dict:
+    demand_cut = _demand_capture_median([row["leads"] for row in rows]) or 0
+    supply_cut = _demand_capture_median([row["stock_sucre"] for row in rows]) or 0
+    for row in rows:
+        high_demand = row["leads"] >= demand_cut if rows else False
+        high_supply = row["stock_sucre"] >= supply_cut if rows else False
+        if high_demand and not high_supply:
+            quadrant = "Oportunidad de captación"
+        elif high_demand and high_supply:
+            quadrant = "Segmento estratégico"
+        elif not high_demand and high_supply:
+            quadrant = "Sobreexposición relativa"
+        else:
+            quadrant = "Baja prioridad"
+        row["quadrant"] = quadrant
+    return {"demand_threshold": demand_cut, "supply_threshold": supply_cut, "rule": "mediana de la distribución visible por dimensión"}
+
+
+def _demand_capture_combined_rows(
+    stock_records: list[dict],
+    demand_records: list[dict],
+    dimensions: tuple[str, ...],
+    demand_total: int,
+    stock_total: int,
+) -> list[dict]:
+    """Build homogeneous segment rows; each row has the same attribute grain."""
+    demand = Counter(tuple(record.get(dimension) for dimension in dimensions) for record in demand_records)
+    demand_codes = defaultdict(set)
+    stock = Counter()
+    for record in demand_records:
+        demand_codes[tuple(record.get(dimension) for dimension in dimensions)].add(record["code"])
+    for record in stock_records:
+        if record.get("is_active_sucre"):
+            stock[tuple(record.get(dimension) for dimension in dimensions)] += 1
+    keys = sorted(set(demand) | set(stock), key=lambda key: (-demand[key], -stock[key], tuple(str(value).lower() for value in key)))
+    rows = []
+    for key in keys:
+        leads = demand[key]
+        stock_count = stock[key]
+        observed = len(demand_codes[key])
+        demand_share = round(leads / demand_total * 100, 1) if demand_total else None
+        supply_share = round(stock_count / stock_total * 100, 1) if stock_total else None
+        rows.append({
+            "dimension": "combined",
+            "segment_key": " · ".join(str(value) for value in key),
+            **dict(zip(dimensions, key)),
+            "leads": leads,
+            "properties_observed": observed,
+            "demand_share_pct": demand_share,
+            "stock_sucre": stock_count,
+            "supply_share_pct": supply_share,
+            "gap_pp": round(demand_share - supply_share, 1) if demand_share is not None and supply_share is not None else None,
+            "leads_per_property": round(leads / observed, 2) if observed else None,
+        })
+        for dimension in ("operation", "type", "commune", "price_range", "bedrooms"):
+            rows[-1].setdefault(dimension, None)
+    return rows
+
+
+def _demand_capture_support_rules(level1_rows: list[dict], min_observations: int) -> dict:
+    """Derive support gates from the observed level-1 distribution and expose them."""
+    positive = [row for row in level1_rows if row["leads"] > 0]
+    median_leads = _demand_capture_median([row["leads"] for row in positive]) or float(min_observations)
+    median_observed = _demand_capture_median([row["properties_observed"] for row in positive]) or float(min_observations)
+    median_stock = _demand_capture_median([row["stock_sucre"] for row in positive]) or float(min_observations)
+    lead_gate = max(min_observations, 5, int(math.ceil(median_leads * 0.25)))
+    observed_gate = max(3, int(math.ceil(median_observed * 0.25)))
+    stock_gate = max(3, int(math.ceil(median_stock * 0.10)))
+    return {
+        "level_1": {"min_leads": lead_gate, "min_properties_observed": observed_gate, "min_stock_sucre": stock_gate},
+        "level_2": {"min_leads": max(lead_gate, 8), "min_properties_observed": observed_gate, "min_stock_sucre": stock_gate},
+        "level_3": {"min_leads": max(lead_gate * 2, 10), "min_properties_observed": max(observed_gate + 1, 4), "min_stock_sucre": stock_gate},
+        "no_stock": {"min_leads": max(lead_gate * 2, 10), "min_properties_observed": observed_gate},
+        "derivation": "medianas de segmentos combinados operación+tipo+comuna; leads=max(5, ceil(25% mediana)); propiedades=max(3, ceil(25% mediana)); stock=max(3, ceil(10% mediana)). Nivel 2/3 exige mayor evidencia.",
+        "distribution": {"level_1_positive_segments": len(positive), "median_leads": median_leads, "median_properties_observed": median_observed, "median_stock_sucre": median_stock},
+    }
+
+
+def _demand_capture_supported(row: dict, rule: dict, allow_no_stock: bool = True) -> bool:
+    if row["leads"] < rule["min_leads"] or row["properties_observed"] < rule["min_properties_observed"]:
+        return False
+    return allow_no_stock and row["stock_sucre"] == 0 or row["stock_sucre"] >= rule["min_stock_sucre"]
+
+
+def _demand_capture_combined_opportunities(
+    stock_records: list[dict],
+    demand_records: list[dict],
+    demand_total: int,
+    stock_total: int,
+    min_observations: int,
+) -> tuple[list[dict], dict]:
+    level1_dimensions = ("operation", "type", "commune")
+    level1 = _demand_capture_combined_rows(stock_records, demand_records, level1_dimensions, demand_total, stock_total)
+    rules = _demand_capture_support_rules(level1, min_observations)
+    selected = []
+    for parent in level1:
+        if parent["gap_pp"] is None or parent["gap_pp"] <= 0 or not _demand_capture_supported(parent, rules["level_1"]):
+            continue
+        parent_key = tuple(parent[dimension] for dimension in level1_dimensions)
+        child_demand = [row for row in demand_records if tuple(row.get(dimension) for dimension in level1_dimensions) == parent_key]
+        child_stock = [row for row in stock_records if tuple(row.get(dimension) for dimension in level1_dimensions) == parent_key]
+        level2 = _demand_capture_combined_rows(child_stock, child_demand, level1_dimensions + ("price_range",), demand_total, stock_total)
+        qualified_level2 = [row for row in level2 if row["gap_pp"] is not None and row["gap_pp"] > 0 and _demand_capture_supported(row, rules["level_2"])]
+        if not qualified_level2:
+            parent["support_level"] = "level_1"
+            selected.append(parent)
+            continue
+        for candidate in qualified_level2:
+            candidate_key = tuple(candidate[dimension] for dimension in level1_dimensions + ("price_range",))
+            grandchild_demand = [row for row in child_demand if tuple(row.get(dimension) for dimension in level1_dimensions + ("price_range",)) == candidate_key]
+            grandchild_stock = [row for row in child_stock if tuple(row.get(dimension) for dimension in level1_dimensions + ("price_range",)) == candidate_key]
+            level3 = _demand_capture_combined_rows(grandchild_stock, grandchild_demand, level1_dimensions + ("price_range", "bedrooms"), demand_total, stock_total)
+            qualified_level3 = [row for row in level3 if row["gap_pp"] is not None and row["gap_pp"] > 0 and _demand_capture_supported(row, rules["level_3"])]
+            chosen = qualified_level3 or [candidate]
+            for row in chosen:
+                row["support_level"] = "level_3" if qualified_level3 else "level_2"
+                selected.append(row)
+    selected.sort(key=lambda row: (-row["gap_pp"], -row["leads"], -row["properties_observed"], -(row["leads_per_property"] or 0), row["segment_key"].lower()))
+    for row in selected:
+        row["recommendation"] = "Priorizar captación"
+        row["evidence"] = {"gap_pp": row["gap_pp"], "leads": row["leads"], "properties_observed": row["properties_observed"], "intensity": row["leads_per_property"], "support_level": row["support_level"]}
+    return selected, rules
+
+
+def _demand_capture_datetime(lead: Mapping[str, Any]) -> datetime | None:
+    value = lead.get("created_at")
+    if value in (None, ""):
+        return None
+    try:
+        return coerce_utc_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _demand_capture_period_metrics(
+    records: list[dict],
+    period_end: datetime,
+) -> dict:
+    by_window = [0, 0, 0]
+    for record in records:
+        dt = record.get("created_at")
+        if not dt:
+            continue
+        age = (period_end - dt).total_seconds() / 86400
+        if 0 <= age < 30:
+            by_window[0] += 1
+        elif 30 <= age < 60:
+            by_window[1] += 1
+        elif 60 <= age < 90:
+            by_window[2] += 1
+    w0, w1, w2 = by_window
+    if w0 >= 5 and w0 > w1 > w2:
+        trend = "Aceleración"
+    elif w0 >= 5 and w0 > w1 and w1 <= w2:
+        trend = "Reactivación"
+    elif w0 >= 5 and w0 < w1:
+        trend = "Desaceleración"
+    elif w0 >= 5 and max(by_window) - min(by_window) <= max(2, round(max(by_window) * 0.25)):
+        trend = "Estable"
+    else:
+        trend = "Insuficiente"
+    return {"w0_leads": w0, "w1_leads": w1, "w2_leads": w2, "trend": trend, "windows_with_signal": sum(value > 0 for value in by_window)}
+
+
+def _demand_capture_recent_band(w0_leads: int, historical_leads: int, historical_properties: int) -> str:
+    """Classify observed recent volume; this is not a probability or forecast."""
+    if historical_leads < 5 or historical_properties < 3:
+        return "Sin evidencia suficiente"
+    if w0_leads >= 5:
+        return "Demanda reciente alta"
+    if w0_leads >= 1:
+        return "Demanda reciente media"
+    return "Demanda reciente baja"
+
+
+def _demand_capture_historical_metrics(
+    row: dict,
+    records: list[dict],
+    first_global: datetime | None,
+    last_global: datetime | None,
+    period_end: datetime,
+) -> dict:
+    level_dimensions = {
+        "level_1": ("operation", "type", "commune"),
+        "level_2": ("operation", "type", "commune", "price_range"),
+        "level_3": ("operation", "type", "commune", "price_range", "bedrooms"),
+    }.get(row.get("support_level"), ("operation", "type", "commune"))
+    key = tuple(row.get(dimension) for dimension in level_dimensions)
+    matched = [record for record in records if tuple(record.get(dimension) for dimension in level_dimensions) == key and record.get("created_at")]
+    dates = [record["created_at"] for record in matched]
+    weeks = {(dt - timedelta(days=dt.weekday())).date().isoformat() for dt in dates}
+    months = {(dt.year, dt.month) for dt in dates}
+    total_weeks = ((last_global.date() - first_global.date()).days // 7 + 1) if first_global and last_global else 0
+    total_months = ((last_global.year - first_global.year) * 12 + last_global.month - first_global.month + 1) if first_global and last_global else 0
+    recent = _demand_capture_period_metrics(matched, period_end)
+    historical_total = len(matched)
+    observed = len({record["code"] for record in matched})
+    signal_months = len(months)
+    if historical_total < 5 or observed < 3:
+        persistence = "Insuficiente"
+    elif signal_months >= 3 and total_months and signal_months / total_months >= 0.5:
+        persistence = "Persistente"
+    elif signal_months >= 2 or len(weeks) >= 4:
+        persistence = "Recurrente"
+    elif recent["w0_leads"] > 0:
+        persistence = "Reciente"
+    else:
+        persistence = "Esporádica"
+    return {
+        "historical_leads_total": historical_total,
+        "historical_properties_with_demand": observed,
+        "first_demand_at": min(dates).isoformat() if dates else None,
+        "last_demand_at": max(dates).isoformat() if dates else None,
+        "weeks_with_demand": len(weeks),
+        "months_with_demand": signal_months,
+        "total_weeks_observable": total_weeks,
+        "total_months_observable": total_months,
+        "weeks_signal_pct": round(len(weeks) / total_weeks * 100, 1) if total_weeks else None,
+        "months_signal_pct": round(signal_months / total_months * 100, 1) if total_months else None,
+        "leads_avg_per_week_with_signal": round(historical_total / len(weeks), 2) if weeks else None,
+        "leads_avg_per_month_with_signal": round(historical_total / signal_months, 2) if signal_months else None,
+        "recent_30_share_of_recent_90_pct": round(recent["w0_leads"] / sum((recent["w0_leads"], recent["w1_leads"], recent["w2_leads"])) * 100, 1) if sum((recent["w0_leads"], recent["w1_leads"], recent["w2_leads"])) else None,
+        "persistence": persistence,
+        "persistence_definition": "Persistente: >=3 meses y >=50% de meses observables; Recurrente: >=2 meses o >=4 semanas; Reciente: señal actual sin profundidad; Esporádica: evidencia aislada; Insuficiente: <5 leads históricos o <3 propiedades.",
+        "recency": recent,
+    }
+
+
+def _capture_simulation_property_profile(doc: Mapping[str, Any], code: str) -> dict:
+    profile = _demand_capture_profile(doc, code)
+    operation_data = doc.get("tipo_operacion") or {}
+    features = doc.get("caracteristicas") or {}
+    operation = profile["operation"]
+    price_data = operation_data.get("precio_venta" if operation == "Venta" else "precio_arriendo") or {}
+    price = price_data.get("precio_uf" if operation == "Venta" else "precio_clp") or price_data.get("uf" if operation == "Venta" else "clp")
+    def number(value):
+        try:
+            return float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    return profile | {
+        "price_value": number(price),
+        "bathrooms": number(features.get("banos")),
+        "surface": number(features.get("superficie_util") or features.get("superficie_construida") or features.get("superficie_total")),
+        "is_active_sucre": bool(doc.get("disponible_prop360")) and (doc.get("estado") or {}).get("oficina") == DEMAND_CAPTURE_CANONICAL_OFFICE,
+    }
+
+
+def _capture_simulation_quantile(values: list[float], fraction: float) -> float | None:
+    values = sorted(value for value in values if value is not None)
+    if not values:
+        return None
+    position = (len(values) - 1) * fraction
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
+
+
+def _capture_simulation_match(property_profile: dict, simulation: dict, price_bands: dict) -> tuple[str | None, list[str]]:
+    reasons = []
+    if property_profile["operation"] != simulation["operation"]:
+        return None, reasons
+    if property_profile["type"].casefold() != simulation["type"].casefold():
+        return None, reasons
+    if property_profile["commune"].casefold() != simulation["commune"].casefold():
+        return None, reasons
+    price = simulation.get("price")
+    property_price = property_profile.get("price_value")
+    exact_band = price_bands.get("exact", 0)
+    close_band = price_bands.get("close", exact_band)
+    if price is not None and property_price is not None and abs(property_price - price) <= exact_band:
+        price_level = "exact"
+        reasons.append("precio dentro de banda exacta")
+    elif price is not None and property_price is not None and abs(property_price - price) <= close_band:
+        price_level = "close"
+        reasons.append("precio dentro de banda cercana")
+    elif price is None or property_price is None:
+        price_level = "segment"
+        reasons.append("precio no disponible")
+    else:
+        price_level = "segment"
+        reasons.append("segmento operativo compatible")
+    bedrooms = simulation.get("bedrooms")
+    property_bedrooms = property_profile.get("bedrooms_value")
+    bedroom_level = "exact"
+    if bedrooms is not None and property_bedrooms is not None:
+        if property_bedrooms == bedrooms:
+            reasons.append("dormitorios exactos")
+        elif abs(property_bedrooms - bedrooms) <= 1:
+            bedroom_level = "close"
+            reasons.append("dormitorios ±1")
+        else:
+            bedroom_level = "segment"
+    elif bedrooms is not None:
+        bedroom_level = "segment"
+        reasons.append("dormitorios no disponibles")
+    optional_level = "exact"
+    for field, tolerance, label in (("bathrooms", 1, "baños"), ("surface", max((simulation.get("surface") or 0) * 0.20, 20), "superficie")):
+        requested = simulation.get(field)
+        available = property_profile.get(field)
+        if requested is None:
+            continue
+        if available is None:
+            optional_level = "segment"
+            reasons.append(f"{label} no disponible")
+        elif abs(available - requested) > tolerance:
+            optional_level = "segment"
+        else:
+            reasons.append(f"{label} compatible")
+    levels = {"exact": 0, "close": 1, "segment": 2}
+    level = max(price_level, bedroom_level, optional_level, key=lambda item: levels[item])
+    return level, reasons
+
+
+def build_capture_simulation_contract(dataset: Mapping[str, Any], params: Mapping[str, Any]) -> dict:
+    """Build a read-only, explainable capture simulation from a cached batch dataset."""
+    operation = str(params.get("operation") or "").strip()
+    property_type = str(params.get("type") or "").strip()
+    commune = str(params.get("commune") or "").strip()
+    if operation not in ("Venta", "Arriendo") or not property_type or not commune:
+        return {"available": False, "error": "Operación, tipo y comuna son obligatorios.", "strategic_fit": {"status": "undefined"}, "predicted_demand_30d": None}
+    def numeric(value):
+        try:
+            return float(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    simulation = {"operation": operation, "type": property_type, "commune": commune, "price": numeric(params.get("price")), "bedrooms": int(numeric(params.get("bedrooms"))) if numeric(params.get("bedrooms")) is not None else None, "bathrooms": numeric(params.get("bathrooms")), "surface": numeric(params.get("surface"))}
+    properties = [_capture_simulation_property_profile(doc, code) for code, doc in dataset.get("properties", {}).items()]
+    historical_leads = dataset.get("leads", [])
+    candidate_properties = [item for item in properties if item["operation"] == operation and item["type"].casefold() == property_type.casefold() and item["commune"].casefold() == commune.casefold()]
+    optional_coverage = {field: round(sum(item.get(field) is not None for item in candidate_properties) / len(candidate_properties) * 100, 1) if candidate_properties else 0.0 for field in ("bathrooms", "surface")}
+    for field in ("bathrooms", "surface"):
+        if simulation.get(field) is not None and optional_coverage[field] < 60:
+            simulation[field] = None
+    prices = [item.get("price_value") for item in candidate_properties if item.get("price_value") is not None]
+    q1 = _capture_simulation_quantile(prices, 0.25)
+    q3 = _capture_simulation_quantile(prices, 0.75)
+    iqr = (q3 - q1) if q1 is not None and q3 is not None else 0
+    price = simulation.get("price")
+    exact_band = max((price or 0) * 0.10, iqr * 0.5)
+    close_band = max(exact_band, iqr)
+    match_levels = {}
+    reasons_by_code = {}
+    for item in candidate_properties:
+        level, reasons = _capture_simulation_match(item, simulation, {"exact": exact_band, "close": close_band})
+        if level:
+            match_levels[item["code"]] = level
+            reasons_by_code[item["code"]] = reasons
+    matched_codes = set(match_levels)
+    leads_by_code = Counter(lead["code"] for lead in historical_leads if lead["code"] in matched_codes)
+    matched_leads = [lead for lead in historical_leads if lead["code"] in matched_codes]
+    end = dataset.get("period_end")
+    period_end = end if isinstance(end, datetime) else datetime.now(timezone.utc)
+    windows = [[], [], []]
+    for lead in matched_leads:
+        if not lead.get("created_at"):
+            continue
+        age = (period_end - lead["created_at"]).total_seconds() / 86400
+        if 0 <= age < 30:
+            windows[0].append(lead)
+        elif 30 <= age < 60:
+            windows[1].append(lead)
+        elif 60 <= age < 90:
+            windows[2].append(lead)
+    w0, w1, w2 = (len(window) for window in windows)
+    if w0 >= 5 and w0 > w1 > w2:
+        trend = "Aceleración"
+    elif w0 >= 5 and w0 > w1 and w1 <= w2:
+        trend = "Reactivación"
+    elif w0 >= 5 and w0 < w1:
+        trend = "Desaceleración"
+    elif w0 >= 5 and max(w0, w1, w2) - min(w0, w1, w2) <= max(2, round(max(w0, w1, w2) * 0.25)):
+        trend = "Estable"
+    else:
+        trend = "Insuficiente"
+    historical_dates = [lead["created_at"] for lead in matched_leads if lead.get("created_at")]
+    weeks = {(dt - timedelta(days=dt.weekday())).date().isoformat() for dt in historical_dates}
+    months = {(dt.year, dt.month) for dt in historical_dates}
+    active_matched = [item for item in candidate_properties if item["code"] in matched_codes and item["is_active_sucre"]]
+    current_demand_codes = {lead["code"] for lead in windows[0]}
+    current_stock_total = dataset.get("active_sucre_total", 0)
+    recent_total = dataset.get("recent_leads_total", 0)
+    demand_share = round(w0 / recent_total * 100, 1) if recent_total else None
+    supply_share = round(len(active_matched) / current_stock_total * 100, 1) if current_stock_total else None
+    gap = round(demand_share - supply_share, 1) if demand_share is not None and supply_share is not None else None
+    coverage = round(len(current_demand_codes & {item["code"] for item in active_matched}) / len(active_matched) * 100, 1) if active_matched else None
+    intensity = round(w0 / len(current_demand_codes), 2) if current_demand_codes else None
+    classification = _demand_capture_recent_band(w0, len(matched_leads), len({lead["code"] for lead in matched_leads}))
+    comparables = []
+    for item in sorted(active_matched + [x for x in candidate_properties if x["code"] in matched_codes and not x["is_active_sucre"]], key=lambda x: (-leads_by_code[x["code"]], {"exact": 0, "close": 1, "segment": 2}[match_levels[x["code"]]], x["code"]))[:5]:
+        comparables.append({"code": item["code"], "type": item["type"], "commune": item["commune"], "operation": item["operation"], "price": item.get("price_value"), "price_unit": "UF" if operation == "Venta" else "CLP", "bedrooms": item.get("bedrooms_value"), "leads_historical": leads_by_code[item["code"]], "first_demand_at": min((lead["created_at"] for lead in matched_leads if lead["code"] == item["code"] and lead.get("created_at")), default=None).isoformat() if any(lead["code"] == item["code"] and lead.get("created_at") for lead in matched_leads) else None, "last_demand_at": max((lead["created_at"] for lead in matched_leads if lead["code"] == item["code"] and lead.get("created_at")), default=None).isoformat() if any(lead["code"] == item["code"] and lead.get("created_at") for lead in matched_leads) else None, "active_current": item["is_active_sucre"], "match_level": match_levels[item["code"]]})
+    evidence_text = (f"Se observaron {len(matched_leads)} leads históricos compatibles en {len({lead['code'] for lead in matched_leads})} propiedades, incluyendo {w0} en los últimos 30 días. La demanda reciente está {trend.lower()} y Procasa Sucre mantiene {len(active_matched)} comparables activos.") if matched_leads else "No se encontraron propiedades históricas compatibles con estos parámetros."
+    return {"available": True, "inputs": simulation, "matching": {"exact_properties": sum(level == "exact" for level in match_levels.values()), "close_properties": sum(level == "close" for level in match_levels.values()), "segment_properties": sum(level == "segment" for level in match_levels.values()), "optional_field_coverage_pct": optional_coverage, "price_tolerance": {"exact": exact_band, "close": close_band, "basis": "máximo entre 10% del precio simulado y IQR observado en la comuna/tipo/operación"}}, "evidence": {"classification": classification, "classification_definition": "Banda de demanda observada: alta >=5 leads W0; media 1-4 leads W0; baja 0 leads W0; sin evidencia suficiente si histórico <5 leads o <3 propiedades.", "historical_leads_compatible": len(matched_leads), "historical_properties_with_demand": len({lead["code"] for lead in matched_leads}), "leads_30d": w0, "leads_60d": w0 + w1, "leads_90d": w0 + w1 + w2, "w0": w0, "w1": w1, "w2": w2, "trend": trend, "first_demand_at": min(historical_dates).isoformat() if historical_dates else None, "last_demand_at": max(historical_dates).isoformat() if historical_dates else None, "weeks_with_demand": len(weeks), "months_with_demand": len(months), "intensity": intensity, "stock_active_comparable": len(active_matched), "coverage_pct": coverage, "demand_share_pct": demand_share, "supply_share_pct": supply_share, "gap_pp": gap, "text": evidence_text}, "potentially_compatible_leads": {"historical": len(matched_leads), "last_30_days": w0, "definition": "compatibilidad histórica observada; no implica intención de compra"}, "comparables": comparables, "strategic_fit": {"status": "undefined", "label": "No definido"}, "predicted_demand_30d": None, "forecast_status": "not_published", "no_write": True}
+
+
+def build_demand_capture_contract(
+    property_docs: list[Mapping[str, Any]],
+    lead_docs: list[Mapping[str, Any]],
+    period_start: str | None = None,
+    period_end: str | None = None,
+    filters: Mapping[str, Any] | None = None,
+    min_observations: int = 3,
+) -> dict:
+    """Deterministic demand/capture intelligence built from one property batch and one lead batch."""
+    filters = {key: str(value).strip() for key, value in (filters or {}).items() if value not in (None, "")}
+    period_start_utc, period_end_utc = _build_chile_period_bounds(period_start, period_end)
+    property_by_code = {}
+    records = []
+    duplicate_codes = 0
+    for doc in property_docs:
+        code = _inventory_code(doc.get("codigo"))
+        if not code:
+            continue
+        if code in property_by_code:
+            duplicate_codes += 1
+            continue
+        profile = _demand_capture_profile(doc, code)
+        state = doc.get("estado") or {}
+        property_by_code[code] = {"doc": doc, "profile": profile, "office": state.get("oficina"), "active": bool(doc.get("disponible_prop360")) and profile["operation"] in ("Venta", "Arriendo", "Venta + Arriendo")}
+    scope_active = {code for code, item in property_by_code.items() if item["office"] == DEMAND_CAPTURE_CANONICAL_OFFICE and item["active"]}
+    scope_records = []
+    for code, item in property_by_code.items():
+        profile = item["profile"]
+        if item["office"] == DEMAND_CAPTURE_CANONICAL_OFFICE:
+            record = dict(profile, is_active_sucre=code in scope_active, is_demand=False, code=code)
+            scope_records.append(record)
+
+    demand_leads = []
+    historical_demand_leads = []
+    attributed = 0
+    historical_attributed = 0
+    period_total_leads = 0
+    office_counts = Counter()
+    lead_counts_by_code = Counter()
+    signal_counts = Counter()
+    has_dated_leads = any(_demand_capture_datetime(lead) is not None for lead in lead_docs)
+    for lead in lead_docs:
+        raw_code = _inventory_code((lead.get("prospecto") or {}).get("codigo"))
+        lead_dt = _demand_capture_datetime(lead)
+        in_period = (not has_dated_leads) if lead_dt is None else period_start_utc <= lead_dt < period_end_utc
+        if in_period:
+            period_total_leads += 1
+        item = property_by_code.get(raw_code)
+        if not item or not item["office"]:
+            continue
+        historical_attributed += 1
+        if in_period:
+            office_counts[item["office"]] += 1
+        if item["office"] != DEMAND_CAPTURE_CANONICAL_OFFICE:
+            continue
+        profile = dict(item["profile"])
+        profile["code"] = raw_code
+        profile["created_at"] = lead_dt
+        historical_demand_leads.append(profile)
+        if not in_period:
+            continue
+        attributed += 1
+        profile["is_demand"] = True
+        profile["is_active_sucre"] = raw_code in scope_active
+        demand_leads.append(profile)
+        lead_counts_by_code[raw_code] += 1
+        lifecycle = lead.get("lifecycle") or {}
+        if lifecycle.get("first_effective_contact_at"):
+            signal_counts["contact_effective"] += 1
+        if lifecycle.get("visit_scheduled_at"):
+            signal_counts["visit"] += 1
+    total_leads = len(demand_leads)
+    for record in scope_records:
+        record["is_demand"] = lead_counts_by_code.get(record["code"], 0) > 0
+    stock_docs = [property_by_code[code]["doc"] for code in scope_active]
+    inventory = build_properties_inventory_contract(stock_docs, lead_counts_by_code, period_start, period_end, filters)
+    filtered_scope = []
+    aliases = {"property_type": "type"}
+    for record in scope_records:
+        if any(record.get(aliases.get(key, key)) != value for key, value in filters.items() if aliases.get(key, key) in DEMAND_CAPTURE_DIMENSIONS or key == "responsible"):
+            continue
+        filtered_scope.append(record)
+    # Recompute all demand/stock surfaces against the selected property filters.
+    filtered_codes = {record["code"] for record in filtered_scope}
+    filtered_demand = [record for record in demand_leads if record["code"] in filtered_codes]
+    filtered_historical_demand = [record for record in historical_demand_leads if record["code"] in filtered_codes]
+    demand_total = len(filtered_demand)
+    stock_total = sum(record.get("is_active_sucre") for record in filtered_scope)
+    dimensions = {}
+    all_dimension_rows = []
+    for dimension in DEMAND_CAPTURE_DIMENSIONS:
+        rows = _demand_capture_distribution(filtered_scope, filtered_demand, dimension, demand_total, stock_total)
+        dimensions[dimension] = rows
+        all_dimension_rows.extend(rows)
+    quadrant_rules = {}
+    for dimension in DEMAND_CAPTURE_DIMENSIONS:
+        quadrant_rules[dimension] = _demand_capture_quadrant(dimensions[dimension])
+    opportunities, support_rules = _demand_capture_combined_opportunities(
+        filtered_scope, filtered_demand, demand_total, stock_total, min_observations
+    )
+    historical_dates = [record["created_at"] for record in filtered_historical_demand if record.get("created_at")]
+    first_global = min(historical_dates) if historical_dates else None
+    last_global = max(historical_dates) if historical_dates else None
+    for row in opportunities:
+        row.update(_demand_capture_historical_metrics(row, filtered_historical_demand, first_global, last_global, period_end_utc))
+        row["strategic_fit"] = {"status": "undefined", "reason": "No existe configuración institucional explícita de Procasa Sucre."}
+        row["recommendation"] = _demand_capture_recent_band(row["recency"]["w0_leads"], row["historical_leads_total"], row["historical_properties_with_demand"])
+        row["analytical_recommendation"] = "Candidata a captación basada en evidencia"
+    active_network = [item["profile"] | {"office": item["office"]} for item in property_by_code.values() if item["active"] and item["office"] and item["office"] != DEMAND_CAPTURE_CANONICAL_OFFICE]
+    network_offices = Counter(item["office"] for item in active_network)
+    network_composition = {dimension: [{"segment": label, "count": count} for label, count in Counter(item[dimension] for item in active_network).most_common(10)] for dimension in ("operation", "type", "commune")}
+    filtered_active_codes = {record["code"] for record in filtered_scope if record.get("is_active_sucre")}
+    with_demand = sum(1 for code in filtered_active_codes if lead_counts_by_code.get(code, 0) > 0)
+    attribution_total = period_total_leads
+    attribution_coverage = round(attributed / attribution_total * 100, 1) if attribution_total else None
+    return {
+        "meta": {"source": "universo_cartera_prop360 + leads", "canonical_office_field": "estado.oficina", "canonical_office": DEMAND_CAPTURE_CANONICAL_OFFICE, "period_start": period_start, "period_end": period_end, "stock_period_independent": True, "filters": filters, "mongo_reads": 2},
+        "inventory": inventory["inventory"],
+        "inventory_context": inventory,
+        "attribution": {"leads_total": attribution_total, "leads_with_identifiable_office": attributed, "coverage_pct": attribution_coverage, "historical_leads_total": len(lead_docs), "historical_leads_with_identifiable_office": historical_attributed, "by_office": [{"office": office, "leads": count} for office, count in office_counts.most_common()], "method": "lead → prospecto.codigo → universo_cartera_prop360 → estado.oficina"},
+        "demand": {"definition": "Demanda = leads", "leads": demand_total, "properties_with_demand": with_demand, "properties_with_demand_observed": len({record["code"] for record in filtered_demand}), "coverage_pct": round(with_demand / len(filtered_active_codes) * 100, 1) if filtered_active_codes else None, "lead_counts_by_property": dict(lead_counts_by_code), "qualified_signals": {"available": bool(signal_counts), "counts": dict(signal_counts), "definition": "Se muestran separadas; no se mezclan con leads"}},
+        "demand_intelligence": {"dimensions": dimensions, "quadrant_rules": quadrant_rules, "support_rules": support_rules, "historical": {"first_lead_at": first_global.isoformat() if first_global else None, "last_lead_at": last_global.isoformat() if last_global else None, "total_weeks_observable": ((last_global.date() - first_global.date()).days // 7 + 1) if first_global and last_global else 0, "total_months_observable": ((last_global.year - first_global.year) * 12 + last_global.month - first_global.month + 1) if first_global and last_global else 0, "definition": "Demanda histórica = todos los leads atribuibles a códigos Procasa Sucre, activos o inactivos."}},
+        "simulator_options": {"operations": sorted({record["operation"] for record in scope_records if record.get("operation") in ("Venta", "Arriendo")}), "types": sorted({record["type"] for record in scope_records if record.get("type")}), "communes": sorted({record["commune"] for record in scope_records if record.get("commune")})},
+        "opportunities": opportunities[:20],
+        "benchmark": {"label": "Benchmark Red Procasa · oferta", "demand_comparison_available": bool(attribution_coverage is not None and attribution_coverage >= 95), "offices_active_stock": [{"office": office, "active": count} for office, count in network_offices.most_common()], "composition": network_composition, "note": "No mezcla stock de otras oficinas en los KPI de Procasa Sucre."},
+        "rotation": {"available": False, "label": "Tiempo observado hasta salida", "reason": "No existe first_seen persistido de forma completa; ultima_version_at no permite afirmar fecha de alta."},
+        "forecast": {"available": False, "reason": "Histórico real disponible desde 2026-01-02; se requiere mayor profundidad temporal y holdout posterior estable para publicar forecast de 30 días.", "status": "pipeline_not_published"},
+        "data_quality": {"duplicate_property_codes": duplicate_codes, "active_sucre": len(scope_active), "all_sucre_historical": sum(item["office"] == DEMAND_CAPTURE_CANONICAL_OFFICE for item in property_by_code.values())},
+    }
+
+
+def query_demand_capture_dashboard(
+    period_start: Optional[str] = None,
+    period_end: Optional[str] = None,
+    filters: Mapping[str, Any] | None = None,
+) -> dict:
+    """Read-only demand/capture payload in two batch reads."""
+    db = get_db()
+    property_projection = {
+        "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
+        "tipo_operacion": 1, "ubicacion.comuna": 1, "caracteristicas.dormitorios": 1,
+    }
+    property_docs = list(db["universo_cartera_prop360"].find({}, property_projection))
+    lead_pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"created_at": 1, "prospecto": 1, "lifecycle": 1, "stage": 1}},
+    ]
+    lead_docs = list(db["leads"].aggregate(lead_pipeline))
+    return build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
+
+
+def query_capture_simulation_dataset(period_end: Optional[str] = None) -> dict:
+    """Read the complete historical simulation batch; no writes and no per-property queries."""
+    db = get_db()
+    projection = {
+        "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        "tipo_operacion": 1, "tipo_propiedad": 1, "ubicacion.comuna": 1,
+        "caracteristicas": 1,
+    }
+    property_docs = list(db["universo_cartera_prop360"].find({}, projection))
+    lead_docs = list(db["leads"].aggregate([
+        _normalized_created_at_stage(),
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"created_at": 1, "prospecto.codigo": 1}},
+    ]))
+    properties = {}
+    for doc in property_docs:
+        code = _inventory_code(doc.get("codigo"))
+        if code and (doc.get("estado") or {}).get("oficina") == DEMAND_CAPTURE_CANONICAL_OFFICE:
+            properties[code] = doc
+    parsed_leads = []
+    for lead in lead_docs:
+        code = _inventory_code((lead.get("prospecto") or {}).get("codigo"))
+        dt = _demand_capture_datetime(lead)
+        if code in properties and dt:
+            parsed_leads.append({"code": code, "created_at": dt})
+    end_utc = _build_chile_period_bounds(None, period_end)[1] if period_end else datetime.now(timezone.utc)
+    recent_leads_total = sum(0 <= (end_utc - lead["created_at"]).total_seconds() / 86400 < 30 for lead in parsed_leads)
+    active_total = sum(bool(doc.get("disponible_prop360")) for doc in properties.values())
+    return {"properties": properties, "leads": parsed_leads, "period_end": end_utc, "active_sucre_total": active_total, "recent_leads_total": recent_leads_total, "mongo_reads": 2}
 
 
 def query_leads_dashboard_rescue(

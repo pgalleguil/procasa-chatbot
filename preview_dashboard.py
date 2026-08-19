@@ -22,7 +22,7 @@ from jinja2 import Environment, FileSystemLoader
 
 templates = Environment(loader=FileSystemLoader(str(ROOT / "templates")))
 
-from analytics.leads_service import get_leads_dashboard_overview, get_leads_operational_dashboard, get_operational_executive_performance, get_operational_portfolios
+from analytics.leads_service import get_leads_dashboard_overview, get_leads_operational_dashboard, get_operational_executive_performance, get_operational_portfolios, get_properties_inventory_dashboard, get_capture_simulation
 
 app = FastAPI(title="Leads Dashboard - Preview local (solo lectura)")
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
@@ -42,6 +42,25 @@ async def overview(period_start=None, period_end=None, compare=None, period_pres
         compare=compare,
         period_preset=period_preset,
     )
+
+
+@app.get("/api/leads-dashboard/properties-inventory")
+async def properties_inventory(period_start=None, period_end=None, operation=None,
+                               property_type=None, commune=None, responsible=None):
+    filters = {key: value for key, value in {
+        "operation": operation, "property_type": property_type,
+        "commune": commune, "responsible": responsible,
+    }.items() if value}
+    return await asyncio.to_thread(
+        get_properties_inventory_dashboard,
+        period_start=period_start, period_end=period_end, filters=filters,
+    )
+
+
+@app.get("/api/leads-dashboard/capture-simulator")
+async def capture_simulator(operation=None, property_type=None, commune=None, price=None, bedrooms=None, bathrooms=None, surface=None, period_end=None):
+    params = {"operation": operation, "type": property_type, "commune": commune, "price": price, "bedrooms": bedrooms, "bathrooms": bathrooms, "surface": surface}
+    return await asyncio.to_thread(get_capture_simulation, params=params, period_end=period_end)
 
 
 @app.get("/api/leads-dashboard/operations")

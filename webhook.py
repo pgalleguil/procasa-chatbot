@@ -61,6 +61,7 @@ from analytics.leads_service import (
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
     get_leads_dashboard_overview, get_leads_operational_dashboard,
     get_operational_executive_performance, get_operational_portfolios,
+    get_properties_inventory_dashboard, get_capture_simulation,
 )
 
 from api_captacion import (
@@ -1079,6 +1080,61 @@ async def api_leads_dashboard_overview(
             period_preset=period_preset,
         ),
     )
+
+
+@app.get("/api/leads-dashboard/properties-inventory")
+async def api_leads_dashboard_properties_inventory(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    operation: str = Query(None),
+    property_type: str = Query(None),
+    commune: str = Query(None),
+    responsible: str = Query(None),
+):
+    """Lazy, read-only inventory snapshot for the third dashboard tab."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    filters = {key: value for key, value in {
+        "operation": operation, "property_type": property_type,
+        "commune": commune, "responsible": responsible,
+    }.items() if value}
+    timing = {}
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_properties_inventory_dashboard(
+            period_start=period_start, period_end=period_end,
+            filters=filters, timing=timing,
+        ),
+    )
+    response = JSONResponse(payload)
+    response.headers["Cache-Control"] = "private, max-age=120"
+    response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    return response
+
+
+@app.get("/api/leads-dashboard/capture-simulator")
+async def api_leads_dashboard_capture_simulator(
+    request: Request,
+    operation: str = Query(None), property_type: str = Query(None), commune: str = Query(None),
+    price: str = Query(None), bedrooms: str = Query(None), bathrooms: str = Query(None),
+    surface: str = Query(None), period_end: str = Query(None),
+):
+    """Read-only what-if capture simulation; no CRM or Mongo writes."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    params = {"operation": operation, "type": property_type, "commune": commune, "price": price, "bedrooms": bedrooms, "bathrooms": bathrooms, "surface": surface}
+    timing = {}
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_capture_simulation(params=params, period_end=period_end, timing=timing))
+    response = JSONResponse(payload)
+    response.headers["Cache-Control"] = "private, max-age=120"
+    response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    response.headers["X-Analytics-N-Plus-One"] = "false"
+    return response
 
 
 @app.get("/api/leads-dashboard/operations")

@@ -36,6 +36,10 @@ from .leads_queries import (
     query_leads_dashboard_executives,
     query_property_commission_rows,
     query_cartera_demanda_coverage,
+    query_properties_inventory_dashboard,
+    query_demand_capture_dashboard,
+    query_capture_simulation_dataset,
+    build_capture_simulation_contract,
     _ops_comparable_eligibility,
 )
 
@@ -98,6 +102,53 @@ def _cache_set(key: str, value: dict):
         oldest = min(L1_CACHE, key=lambda k: L1_CACHE[k][0])
         del L1_CACHE[oldest]
     L1_CACHE[key] = (time.time(), value)
+
+
+def get_properties_inventory_dashboard(
+    period_start: str = None,
+    period_end: str = None,
+    filters: dict | None = None,
+    timing: dict | None = None,
+) -> dict:
+    """Cached read-only payload for the lazy Propiedades & Inventario tab."""
+    started = time.perf_counter()
+    filters = {key: value for key, value in (filters or {}).items() if value not in (None, "")}
+    key = _cache_key("leads-properties-inventory", ps=period_start, pe=period_end, **filters)
+    cached = _cache_get(key)
+    if cached is not None:
+        if timing is not None:
+            timing["cache"] = "HIT"
+            timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return cached
+    if timing is not None:
+        timing["cache"] = "MISS"
+    payload = query_demand_capture_dashboard(period_start, period_end, filters)
+    payload = _sanitize_non_finite(payload)
+    _cache_set(key, payload)
+    if timing is not None:
+        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        timing["mongo_calls"] = 2
+    return payload
+
+
+def get_capture_simulation(
+    params: dict | None = None,
+    period_end: str | None = None,
+    timing: dict | None = None,
+) -> dict:
+    """Cached read-only what-if simulation over one historical batch."""
+    started = time.perf_counter()
+    params = {key: value for key, value in (params or {}).items() if value not in (None, "")}
+    key = _cache_key("leads-capture-simulator-dataset", pe=period_end)
+    dataset = _cache_get(key)
+    cache = "HIT" if dataset is not None else "MISS"
+    if dataset is None:
+        dataset = query_capture_simulation_dataset(period_end)
+        _cache_set(key, dataset)
+    payload = _sanitize_non_finite(build_capture_simulation_contract(dataset, params))
+    if timing is not None:
+        timing.update({"cache": cache, "mongo_calls": 0 if cache == "HIT" else 2, "total_ms": round((time.perf_counter() - started) * 1000, 1), "n_plus_one": False})
+    return payload
 
 
 def get_summary(

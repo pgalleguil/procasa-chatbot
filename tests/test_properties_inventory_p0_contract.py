@@ -113,6 +113,32 @@ def test_territorial_review_uses_d3_hybrid_national_and_communal_renderer():
     assert "scaleDiverging" in template
 
 
+def test_review_fixture_contains_sanitized_rm_communal_demand():
+    payload = territorial_review_payload()
+    communes = payload["demand_intelligence"]["geography"]["commune"]
+    assert sum(row["leads"] for row in communes) == 175
+    assert all(row["region_geo_key"] == "metropolitana" for row in communes)
+    values = {row["name"]: row["leads"] for row in communes}
+    assert values["Santiago"] == 48
+    assert values["Puente Alto"] == 20
+    assert values["Quilicura"] == 19
+    assert values["Ñuñoa"] == 17
+    assert values["Providencia"] == 12
+    assert {row["name"] for row in communes if row["top_segments"]} == {"Santiago", "Ñuñoa", "Providencia"}
+
+
+def test_review_communal_frontend_merges_geojson_and_uses_regional_metric_contract():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert template.count("function geoKey(value)") == 1
+    assert "function geoD3CommuneRows(regionKey)" in template
+    assert "selected.leads/region.leads*100" in template
+    assert "data-geo-commune-count=\"${items.length}\"" in template
+    assert "rankingValue=row=>GEO_METRIC==='intensity'?row.leads_per_property:GEO_METRIC==='gap'?row.gap_pp:row.leads" in template
+    assert "COMUNAS CON MAYOR INTENSIDAD" in template
+    assert "COMUNAS CON MAYOR BRECHA POSITIVA" in template
+    assert "demandPP(region?.gap_pp)" in template
+
+
 def demand_prop(code, office="PROCASA SUCRE", active=True, tipo="Casa", comuna="Santiago", venta=True):
     return {
         "codigo": code,

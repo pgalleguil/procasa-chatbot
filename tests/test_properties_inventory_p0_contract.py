@@ -328,6 +328,15 @@ def test_public_review_fixture_is_sanitized_and_deterministic():
     assert all("phone" not in str(first).lower() and "email" not in str(first).lower() for _ in [0])
 
 
+def test_review_mode_isolated_from_private_navigation_and_overview_loads():
+    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
+    assert "territorial-review-mode" in template
+    assert "api/review/leads-dashboard" in template
+    assert "if (REVIEW_MODE)" in template
+    assert "territorial-review-mode .sidebar-main-nav" in template
+    assert "territorial-review-mode #sessionWarningModal" in template
+
+
 def test_methodology_note_documents_backtest_and_no_visible_score():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
     assert "Validación histórica" in template

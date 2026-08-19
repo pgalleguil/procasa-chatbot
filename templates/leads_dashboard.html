@@ -3387,6 +3387,7 @@
         body.territorial-review-mode #viewProperties { display:block !important; }
         body.territorial-review-mode #viewProperties > .inventory-dashboard > *:not(.geo-demand-panel) { display:none !important; }
         body.territorial-review-mode .geo-demand-panel { margin:28px auto; max-width:1180px; }
+        body.territorial-review-mode .sidebar-main-nav, body.territorial-review-mode .logout, body.territorial-review-mode #btnExportPdf, body.territorial-review-mode #sessionWarningModal { display:none !important; }
 
         .inventory-dashboard { color: var(--text-primary); max-width: 1480px; margin: 0 auto; }
         .inventory-heading, .inventory-panel-head { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }
@@ -4791,6 +4792,10 @@
             }
 
             async function loadData(mode) {
+                if (REVIEW_MODE) {
+                    if (!$('viewProperties')?.hidden) await loadInventoryData(true);
+                    return;
+                }
                 if (!$('viewProperties')?.hidden) loadInventoryData(true).catch(e=>console.error('Error actualizando inventario:', e));
                 const requestId = ++OVERVIEW_REQUEST_SEQ;
                     const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
@@ -6473,7 +6478,7 @@
             // Actualización silenciosa cada 15 min. No es una recarga de página
             // y se omite si la pestaña no está visible.
             setInterval(() => {
-                if (!document.hidden) loadData('refresh');
+                if (!REVIEW_MODE && !document.hidden) loadData('refresh');
             }, 900000);
 
             // --- SMART SESSION CONTROL ---
@@ -6489,6 +6494,7 @@
             ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
 
             setInterval(() => {
+                if (REVIEW_MODE) return;
                 const now = Date.now();
                 const idleTime = now - lastActivity;
 

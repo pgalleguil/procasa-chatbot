@@ -355,6 +355,26 @@ def test_geography_contract_aggregates_regions_communes_and_normalizes_names():
     assert _demand_capture_geo_key("Viña del Mar") == "vina del mar"
 
 
+def test_segment_geo_breakdown_groups_communes_by_region_without_changing_denominators():
+    providencia = demand_prop("geo-group-1", comuna="Providencia")
+    providencia["ubicacion"]["region"] = "Metropolitana"
+    valparaiso = demand_prop("geo-group-2", comuna="Valparaíso")
+    valparaiso["ubicacion"]["region"] = "Valparaíso"
+    maule = demand_prop("geo-group-3", comuna="Talca")
+    maule["ubicacion"]["region"] = "Maule"
+    payload = build_demand_capture_contract(
+        [providencia, valparaiso, maule],
+        [demand_lead("geo-group-1"), demand_lead("geo-group-2"), demand_lead("geo-group-3")],
+        "2026-07-20", "2026-08-19",
+    )
+    row = next(row for row in payload["demand_intelligence"]["dimensions"]["type"] if row["segment"] == "Casa")
+    grouped = row["geo_breakdown"]["communes_by_region"]
+    assert {"metropolitana", "valparaiso", "maule"} <= set(grouped)
+    assert all(item["geo_key"] for rows in grouped.values() for item in rows)
+    assert sum(item["leads"] for rows in grouped.values() for item in rows) == row["leads"]
+    assert row["geo_breakdown"]["communes"]
+
+
 def test_official_geojson_reconciles_administrative_regions_and_communes():
     regions = __import__("json").loads((Path(__file__).resolve().parents[1] / "static/geo/chile-regiones.geojson").read_text(encoding="utf-8"))["features"]
     communes = __import__("json").loads((Path(__file__).resolve().parents[1] / "static/geo/chile-comunas.geojson").read_text(encoding="utf-8"))["features"]
@@ -385,6 +405,48 @@ def test_review_mode_isolated_from_private_navigation_and_overview_loads():
     assert "if (REVIEW_MODE)" in template
     assert "territorial-review-mode .sidebar-main-nav" in template
     assert "territorial-review-mode #sessionWarningModal" in template
+
+
+def test_review_template_does_not_render_private_views_or_session_modal():
+    from jinja2 import Template
+
+    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
+    rendered = Template(template).render(territorial_review=True, public_demo=False, user_role="")
+    assert '<div id="viewExecutive"' not in rendered
+    assert '<div id="viewLeads"' not in rendered
+    assert '<div id="viewChannels"' not in rendered
+    assert '<div class="modal fade" id="sessionWarningModal"' not in rendered
+    assert 'Listado Leads' not in rendered
+    assert 'Captaciones</span>' not in rendered
+    assert 'Convenios</span>' not in rendered
+    assert 'Órdenes de Visita</span>' not in rendered
+    assert 'Cerrar Sesión' not in rendered
+    assert 'Sesión por' not in rendered
+
+
+def test_review_hardening_uses_production_responsive_css_and_generic_commune_contract():
+    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
+    assert ".geo-mobile-fold-select { display:flex" in template
+    assert "body.territorial-review-mode .geo-mobile-fold-select" not in template
+    assert "body.territorial-review-mode .geo-mobile-hero" not in template
+    assert ".geo-folded-panel .geo-feature { opacity:1; }" in template
+    assert ".attr('opacity',.55).transition().duration(240).attr('opacity',1)" in template
+    assert "communes_by_region" in template
+    assert "geo.communes_by_region?.[regionKey]" in template
+    assert "if(key!=='metropolitana')return" not in template
+    assert "DEMAND_BREAKDOWN_REGION=key" in template
+    assert "DEMAND_BREAKDOWN_REGION=null" in template
+
+
+def test_review_fixture_exposes_grouped_region_drilldown_examples():
+    payload = territorial_review_payload()
+    row = payload["demand_intelligence"]["dimensions"]["type"][0]
+    grouped = row["geo_breakdown"]["communes_by_region"]
+    assert "metropolitana" in grouped
+    assert "valparaiso" in grouped
+    assert "maule" in grouped
+    assert any(item["name"] == "Valparaíso" for item in grouped["valparaiso"])
+    assert any(item["name"] == "Talca" for item in grouped["maule"])
 
 
 def test_review_mode_exposes_complete_sanitized_demand_capture_surface():

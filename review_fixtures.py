@@ -41,6 +41,14 @@ RM_REVIEW_SEGMENTS = {
     ],
 }
 
+REGION_REVIEW_COMMUNES = {
+    "metropolitana": list(RM_REVIEW_LEADS.items()),
+    "valparaiso": [("Valparaíso", 20), ("Viña del Mar", 15), ("Concón", 8), ("Quilpué", 6), ("Villa Alemana", 4)],
+    "maule": [("Talca", 12), ("Curicó", 6), ("Linares", 4), ("Molina", 2)],
+    "coquimbo": [("Coquimbo", 10), ("La Serena", 7)],
+    "biobio": [("Concepción", 8), ("Talcahuano", 4), ("Los Ángeles", 2)],
+}
+
 REVIEW_DIMENSION_SPECS = {
     "operation": [
         ("Venta", 180, 278, "Cobertura estratégica"),
@@ -194,11 +202,21 @@ def territorial_review_payload():
                 labels = [(name, value) for name, value in region_values if value > 0]
                 regions = split_for_geo(leads, stock, labels)
             communes = split_for_geo(leads, stock, list(RM_REVIEW_LEADS.items())) if dimension == "zone_rm" else []
+            communes_by_region = {}
+            if dimension == "zone_rm":
+                communes_by_region["metropolitana"] = communes
+            else:
+                for region_name, region_leads in labels:
+                    region_key = key(region_name)
+                    commune_labels = REGION_REVIEW_COMMUNES.get(region_key, [(region_name, region_leads)])
+                    regional_leads = round(leads * region_leads / total) if total else 0
+                    regional_stock = round(stock * region_leads / total) if total else 0
+                    communes_by_region[region_key] = split_for_geo(regional_leads, regional_stock, commune_labels)
             complementary = "bedrooms" if dimension == "type" else "type"
             components = {complementary: [{"segment": label, "leads": max(1, round(leads * ratio)), "share_pct": round(ratio * 100, 1)} for label, ratio in (("2 dormitorios", .48), ("3 dormitorios", .34), ("4+ dormitorios", .18))]}
             if complementary == "type":
                 components = {"type": [{"segment": label, "leads": max(1, round(leads * ratio)), "share_pct": round(ratio * 100, 1)} for label, ratio in (("Departamento", .56), ("Casa", .32), ("Oficina", .12))]}
-            return {"regions": regions, "communes": communes, "components": components}
+            return {"regions": regions, "communes": communes, "communes_by_region": communes_by_region, "components": components}
 
         rows = []
         for segment, leads, stock, quadrant in REVIEW_DIMENSION_SPECS[dimension]:
@@ -258,7 +276,7 @@ def territorial_review_payload():
         "attribution": {"coverage_pct": 97.4, "leads_with_identifiable_office": total, "leads_total": total},
         "demand_intelligence": {
             "dimensions": {name: segment_rows(name) for name in ("operation", "type", "zone_rm", "price_range", "bedrooms")},
-            "geography": {"region": regions, "commune": communes, "metric_rule": {"default": "leads"}, "matching": {}},
+            "geography": {"region": regions, "commune": communes, "communes_by_region": {"metropolitana": communes}, "metric_rule": {"default": "leads"}, "matching": {}},
         },
         "opportunities": REVIEW_OPPORTUNITIES,
         "benchmark": {"note": "Benchmark interno de oferta de la red; no representa el mercado inmobiliario completo.", "offices_active_stock": [{"office": "Procasa Sucre", "active": 442}, {"office": "Procasa Centro", "active": 318}, {"office": "Procasa Oriente", "active": 267}, {"office": "Procasa Costa", "active": 194}], "composition": {"type": [{"segment": "Departamento", "count": 412}, {"segment": "Casa", "count": 356}, {"segment": "Oficina", "count": 88}, {"segment": "Local comercial", "count": 61}], "commune": [{"segment": "Santiago", "count": 148}, {"segment": "Puente Alto", "count": 121}, {"segment": "Ñuñoa", "count": 98}, {"segment": "Providencia", "count": 86}]}},

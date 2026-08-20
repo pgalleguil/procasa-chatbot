@@ -2843,14 +2843,15 @@ def _demand_capture_segment_geo_breakdown(
     demand = [record for record in demand_records if record.get(value_key) == value]
     stock = [record for record in stock_records if record.get(value_key) == value and record.get("is_active_sucre")]
 
-    def aggregate(field: str, records: list[dict]) -> list[dict]:
+    def aggregate(field: str, records: list[dict], stock_scope: list[dict] | None = None) -> list[dict]:
+        scoped_stock = stock if stock_scope is None else stock_scope
         counts = Counter(record.get(field) for record in records if record.get(field) not in (None, ""))
         codes = defaultdict(set)
         for record in records:
             label = record.get(field)
             if label not in (None, ""):
                 codes[label].add(record.get("code"))
-        stock_counts = Counter(record.get(field) for record in stock if record.get(field) not in (None, ""))
+        stock_counts = Counter(record.get(field) for record in scoped_stock if record.get(field) not in (None, ""))
         output = []
         for label, leads in counts.most_common():
             stock_count = stock_counts.get(label, 0)
@@ -2879,7 +2880,28 @@ def _demand_capture_segment_geo_breakdown(
         components[complementary] = [{"segment": label, "leads": count, "share_pct": round(count / total * 100, 1) if total else 0} for label, count in counts.most_common(5)]
         if components[complementary]:
             break
-    return {"regions": aggregate("region", demand), "communes": aggregate("commune", demand), "components": components}
+    regions = aggregate("region", demand)
+    communes = aggregate("commune", demand)
+    demand_by_region = defaultdict(list)
+    stock_by_region = defaultdict(list)
+    for record in demand:
+        region_key = record.get("region_geo_key") or _demand_capture_geo_key(record.get("region"))
+        if region_key:
+            demand_by_region[region_key].append(record)
+    for record in stock:
+        region_key = record.get("region_geo_key") or _demand_capture_geo_key(record.get("region"))
+        if region_key:
+            stock_by_region[region_key].append(record)
+    communes_by_region = {
+        region_key: aggregate("commune", region_records, stock_by_region.get(region_key, []))
+        for region_key, region_records in sorted(demand_by_region.items())
+    }
+    return {
+        "regions": regions,
+        "communes": communes,
+        "communes_by_region": communes_by_region,
+        "components": components,
+    }
 
 
 def _demand_capture_quadrant(rows: list[dict]) -> dict:

@@ -1963,7 +1963,7 @@ async def api_crm_management_result(request: Request):
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
             actor_user_id=actor_user_id, result_type=data.get("result_type"),
             occurred_at=None, source="crm_quick_action",
-            idempotency_key=str(data.get("idempotency_key") or ""),
+            idempotency_key=str(data.get("management_request_id") or data.get("idempotency_key") or ""),
             next_follow_up_at=data.get("next_follow_up_at"),
             details_json=data.get("details_json") if isinstance(data.get("details_json"), dict) else {},
             actor_can_manage_any_cycle=can_administer_leads(user.get("rol")),

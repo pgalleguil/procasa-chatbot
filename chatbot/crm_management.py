@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-import hashlib
-import json
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -14,8 +12,11 @@ RESULT_RULES = {
     "CALL_NO_ANSWER": {"attempt": True, "effective": False, "follow_up": True, "status": "managed_waiting_response"},
     "EMAIL_SENT": {"attempt": True, "effective": False, "follow_up": True, "status": "managed_waiting_response"},
     "EFFECTIVE_CONTACT": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
+    "VISIT_SCHEDULED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
     "FOLLOW_UP_REQUESTED": {"attempt": True, "effective": True, "follow_up": True, "status": "managed_follow_up"},
     "NOT_INTERESTED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
+    "CLOSED_WON": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
+    "CLOSED_LOST": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "INVALID_NUMBER": {"attempt": True, "effective": False, "follow_up": False, "status": "managed_closed"},
     "DISCARDED_VALID_REASON": {"attempt": False, "effective": False, "follow_up": False, "status": "managed_closed"},
     "SCHEDULE_FOLLOW_UP": {"attempt": False, "effective": False, "follow_up": True, "status": "managed_follow_up"},
@@ -36,7 +37,6 @@ _LEGACY_RESULT_MAP = {
     "CONTACTADO": "EFFECTIVE_CONTACT",
     "SOLICITA_SEGUIMIENTO": "FOLLOW_UP_REQUESTED",
     "NO_INTERESADO": "NOT_INTERESTED",
-    "OTRO": "DISCARDED_VALID_REASON",
 }
 
 
@@ -66,7 +66,8 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if not rule:
         raise ValueError("unsupported CRM management result")
     if not stage_override and rule["status"] == "managed_closed":
-        stage_override, legacy_stage = "CLOSED_LOST", "cerrado"
+        stage_override = "CLOSED_WON" if result_type == "CLOSED_WON" else "CLOSED_LOST"
+        legacy_stage = "cerrado"
     if not all(str(value or "").strip() for value in (lead_id, assignment_cycle_id, actor_user_id, source, idempotency_key)):
         raise ValueError("canonical management identity is incomplete")
     occurred = coerce_utc_datetime(occurred_at) or utc_now()
@@ -91,18 +92,24 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
 
     record = {
         "_id": f"crm_management:{idempotency_key}", "idempotency_key": idempotency_key,
+        "management_request_id": idempotency_key,
         "schema_version": "crm_management_result_v1", "lead_id": lead_id,
         "assignment_cycle_id": assignment_cycle_id, "actor_user_id": actor_user_id,
         "result_type": result_type, "occurred_at": occurred, "source": source,
         "details_json": details_json if isinstance(details_json, dict) else {},
+        "pipeline_stage_at_result": str(stage_override or "CONTACTED"),
+        "legacy_stage_at_result": str(legacy_stage or (stage_override or "CONTACTED")),
         "status": "processing",
     }
     try:
         db["crm_management_results"].insert_one(record)
     except DuplicateKeyError:
         existing = db["crm_management_results"].find_one({"_id": record["_id"]})
-        if existing:
+        if existing and existing.get("status") == "completed":
             return existing
+        if existing and any(existing.get(field) != record.get(field) for field in
+                            ("lead_id", "assignment_cycle_id", "actor_user_id", "result_type")):
+            raise ValueError("management_request_id was reused for a different management")
 
     follow_at = coerce_utc_datetime(next_follow_up_at)
     if rule["follow_up"] and not follow_at:
@@ -186,7 +193,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
              "assignment_cycle_id": assignment_cycle_id, "actor": actor_user_id,
              "actor_type": "human", "type": event_type, "result": result_type,
              "confirmed": True, "timestamp": occurred, "source": source,
-             "idempotency_key": idempotency_key}
+             "idempotency_key": idempotency_key, "management_request_id": idempotency_key}
     try:
         db["crm_events"].insert_one(event)
     except DuplicateKeyError:
@@ -200,21 +207,11 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     return db["crm_management_results"].find_one({"_id": record["_id"]}) or record
 
 
-def _legacy_idempotency_key(*, lead_id, assignment_cycle_id, actor_user_id, data):
-    supplied = data.get("idempotency_key") or data.get("request_id")
-    if supplied:
-        return str(supplied)
-    stable_payload = {
-        "lead_id": str(lead_id),
-        "assignment_cycle_id": str(assignment_cycle_id),
-        "actor_user_id": str(actor_user_id),
-        "result": data.get("resultado_gestion"),
-        "interaction_type": data.get("interaction_type"),
-        "next_action_date": data.get("next_action_date"),
-        "details_json": data.get("details_json") or {},
-    }
-    encoded = json.dumps(stable_payload, sort_keys=True, default=str).encode("utf-8")
-    return "legacy:" + hashlib.sha256(encoded).hexdigest()
+def _legacy_idempotency_key(*, data):
+    supplied = data.get("management_request_id") or data.get("idempotency_key") or data.get("request_id")
+    if not str(supplied or "").strip():
+        raise ValueError("management_request_id is required; retry the same action with the same key")
+    return str(supplied).strip()
 
 
 def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage_any_cycle,
@@ -224,8 +221,6 @@ def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage
 
     raw_result = data.get("resultado_gestion")
     result_type = canonical_result_type(raw_result)
-    if not result_type:
-        raise ValueError("canonical management result is required")
 
     next_date = data.get("next_action_date")
     if data.get("interaction_type") == "hable" and result_type != "NOT_INTERESTED" and not next_date:
@@ -235,19 +230,33 @@ def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage
     details = data.get("details_json") if isinstance(data.get("details_json"), dict) else {}
     stage_override = None
     legacy_stage = None
-    if result_type == "CALL_NO_ANSWER":
+    if raw_normalized in {"intento_fallido", "no_respondio", "ocupado"}:
+        result_type = "CALL_NO_ANSWER"
         stage_override, legacy_stage = PipelineStage.NEW.value, "new"
     elif raw_normalized == "visita_agendada":
+        result_type = "VISIT_SCHEDULED"
         stage_override, legacy_stage = PipelineStage.VISIT_SCHEDULED.value, "visita"
     elif raw_normalized in {"requiere_seguimiento", "lead_pausado"}:
         stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
     elif raw_normalized == "lead_cerrado":
-        close_stage = PipelineStage.CLOSED_WON if details.get("close_cat_radio") == "ganado" else PipelineStage.CLOSED_LOST
+        close_category = str(details.get("close_cat_radio") or "").strip().lower()
+        close_reason = str(details.get("close_reason") or "").strip().lower()
+        if close_category == "ganado":
+            result_type = "CLOSED_WON"
+        elif close_reason == "contacto_invalido":
+            result_type = "INVALID_NUMBER"
+        elif close_category in {"precio", "producto", "cliente", "competencia", "tecnico"}:
+            result_type = "CLOSED_LOST"
+        else:
+            raise ValueError("close category is required for lead_cerrado")
+        close_stage = PipelineStage.CLOSED_WON if result_type == "CLOSED_WON" else PipelineStage.CLOSED_LOST
         stage_override, legacy_stage = close_stage.value, "cerrado"
     elif result_type == "NOT_INTERESTED":
         stage_override, legacy_stage = PipelineStage.CLOSED_LOST.value, "cerrado"
     elif result_type:
         stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+    if not result_type:
+        raise ValueError(f"unsupported legacy management result: {raw_result}")
 
     result = record_management_result(
         db,
@@ -256,10 +265,7 @@ def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage
         actor_user_id=actor_user_id,
         result_type=result_type,
         source=str(data.get("source") or "crm_detail"),
-        idempotency_key=_legacy_idempotency_key(
-            lead_id=lead["_id"], assignment_cycle_id=assignment_cycle_id,
-            actor_user_id=actor_user_id, data=data,
-        ),
+        idempotency_key=_legacy_idempotency_key(data=data),
         next_follow_up_at=next_date,
         details_json={
             **details,

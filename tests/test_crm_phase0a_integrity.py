@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from api_crm import manage_crm_notes
 from chatbot.crm_management import (
     StaleAssignmentCycleError,
+    record_management_result,
     record_legacy_management_result,
 )
 from chatbot.crm_metrics import event_evidence
@@ -104,6 +105,7 @@ def test_detail_adapter_writes_only_canonical_result_and_is_idempotent():
         "interaction_type": "hable",
         "next_action_date": "2026-08-21T10:00:00-04:00",
         "notas": "Enviar ficha",
+        "management_request_id": "request-followup-1",
         "details_json": {"close_cat_radio": ""},
     }
     first = record_legacy_management_result(
@@ -139,7 +141,7 @@ def test_stale_cycle_rejected_without_any_write():
     with pytest.raises(StaleAssignmentCycleError) as exc:
         record_legacy_management_result(
             db, lead=lead, actor_user_id="user-1", actor_can_manage_any_cycle=False,
-            assignment_cycle_id="cycle-1", data={"resultado_gestion": "contactado"},
+            assignment_cycle_id="cycle-1", data={"resultado_gestion": "contactado", "management_request_id": "stale-1"},
         )
     assert str(exc.value) == "stale_assignment_cycle"
     assert db["crm_management_results"].docs == []
@@ -152,7 +154,7 @@ def test_wrong_owner_cannot_record_result():
     with pytest.raises(PermissionError):
         record_legacy_management_result(
             db, lead=lead, actor_user_id="user-2", actor_can_manage_any_cycle=False,
-            assignment_cycle_id=cycle["assignment_cycle_id"], data={"resultado_gestion": "contactado"},
+            assignment_cycle_id=cycle["assignment_cycle_id"], data={"resultado_gestion": "contactado", "management_request_id": "wrong-owner-1"},
         )
     assert db["crm_management_results"].docs == []
 
@@ -160,4 +162,85 @@ def test_wrong_owner_cannot_record_result():
 def test_detail_transports_cycle_and_stable_request_key():
     template = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
     assert "assignment_cycle_id: \"{{ lead.assignment_cycle_id or '' }}\"" in template
-    assert "idempotency_key: stableManagementRequestId" in template
+    assert "management_request_id: managementRequestId" in template
+    assert "managementRequestIdForCurrentIntent" in template
+    assert "pendingManagementFingerprint" not in template
+
+
+def _canonical_payload(result, request_id):
+    return {
+        "lead_id": "lead-1", "assignment_cycle_id": "cycle-1", "actor_user_id": "user-1",
+        "result_type": result, "source": "test", "idempotency_key": request_id,
+    }
+
+
+def test_same_management_request_id_is_one_result():
+    db, _, cycle = fixture()
+    payload = _canonical_payload("CALL_NO_ANSWER", "request-a")
+    first = record_management_result(db, **payload)
+    second = record_management_result(db, **payload)
+    assert first["_id"] == second["_id"]
+    assert len(db["crm_management_results"].docs) == 1
+
+
+def test_http_retry_is_one_result():
+    db, _, cycle = fixture()
+    payload = _canonical_payload("CALL_NO_ANSWER", "request-http-retry")
+    record_management_result(db, **payload)
+    record_management_result(db, **payload)
+    assert len(db["crm_management_results"].docs) == 1
+
+
+def test_two_real_call_no_answer_attempts_are_two_results():
+    db, _, cycle = fixture()
+    for request_id in ("request-a", "request-b"):
+        record_management_result(db, **_canonical_payload("CALL_NO_ANSWER", request_id))
+    assert sum(row["result_type"] == "CALL_NO_ANSWER" for row in db["crm_management_results"].docs) == 2
+
+
+def test_two_real_effective_contacts_are_two_results():
+    db, _, cycle = fixture()
+    for request_id in ("request-a", "request-b"):
+        record_management_result(db, **_canonical_payload("EFFECTIVE_CONTACT", request_id))
+    assert sum(row["result_type"] == "EFFECTIVE_CONTACT" for row in db["crm_management_results"].docs) == 2
+
+
+def test_missing_legacy_key_is_rejected_instead_of_hashed():
+    db, lead, cycle = fixture()
+    with pytest.raises(ValueError, match="management_request_id is required"):
+        record_legacy_management_result(
+            db, lead=lead, actor_user_id="user-1", actor_can_manage_any_cycle=False,
+            assignment_cycle_id=cycle["assignment_cycle_id"],
+            data={"resultado_gestion": "contactado"},
+        )
+
+
+def test_visit_and_closure_semantics_are_preserved():
+    db, lead, cycle = fixture()
+    visit = record_legacy_management_result(
+        db, lead=lead, actor_user_id="user-1", actor_can_manage_any_cycle=False,
+        assignment_cycle_id=cycle["assignment_cycle_id"],
+        data={"resultado_gestion": "visita_agendada", "management_request_id": "visit-1"},
+    )
+    assert visit["result_type"] == "VISIT_SCHEDULED"
+    assert visit["pipeline_stage_at_result"] == "VISIT_SCHEDULED"
+
+    # A new cycle is used only to test a separate historical close result.
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+        {"$set": {"cycle_status": "closed", "unassigned_at": "2026-08-20T12:00:00Z"}},
+    )
+    db["crm_assignment_cycles"].insert_one({
+        "_id": "cycle-doc-2", "lead_id": lead["_id"], "assignment_cycle_id": "cycle-2",
+        "assigned_to_user_id": "user-1", "assigned_at": cycle["assigned_at"],
+        "unassigned_at": None, "cycle_status": "active", "schema_version": "crm_assignment_cycle_v1",
+    })
+    won = record_legacy_management_result(
+        db, lead=lead, actor_user_id="user-1", actor_can_manage_any_cycle=False,
+        assignment_cycle_id="cycle-2",
+        data={"resultado_gestion": "lead_cerrado", "management_request_id": "won-1",
+              "details_json": {"close_cat_radio": "ganado", "close_reason": "venta_concretada"}},
+    )
+    assert won["result_type"] == "CLOSED_WON"
+    assert won["pipeline_stage_at_result"] == "CLOSED_WON"
+    assert won["result_type"] != "NOT_INTERESTED"

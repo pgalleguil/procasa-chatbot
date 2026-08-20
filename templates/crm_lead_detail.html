@@ -3899,11 +3899,9 @@
         let currentActionLabel = "";
         let currentResultLabel = "";
         let pendingManagementRequestId = null;
-        let pendingManagementFingerprint = null;
 
-        function stableManagementRequestId(fingerprint) {
-            if (pendingManagementFingerprint !== fingerprint || !pendingManagementRequestId) {
-                pendingManagementFingerprint = fingerprint;
+        function managementRequestIdForCurrentIntent() {
+            if (!pendingManagementRequestId) {
                 pendingManagementRequestId = crypto.randomUUID
                     ? crypto.randomUUID()
                     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -4487,11 +4485,14 @@
                 next_action_date: document.getElementById('fecha_global').value,
                 details_json: detailsJSON
             };
-            const managementFingerprint = JSON.stringify(managementPayload);
+            // The request id identifies this user action, not its commercial payload.
+            // Keep it stable for technical retries and discard it only after success.
+            const managementRequestId = managementRequestIdForCurrentIntent();
             const payload = {
                 ...managementPayload,
                 assignment_cycle_id: leadData.assignment_cycle_id,
-                idempotency_key: stableManagementRequestId(managementFingerprint)
+                management_request_id: managementRequestId,
+                idempotency_key: managementRequestId
             };
 
             try {
@@ -4517,7 +4518,6 @@
                     btn.classList.add('btn-success');
                     btn.innerHTML = '<i class="fa-solid fa-check me-2"></i> ¡Guardado!';
                     pendingManagementRequestId = null;
-                    pendingManagementFingerprint = null;
 
                     const actionLabel = currentActionLabel + (currentResultLabel ? " / " + currentResultLabel : "");
                     updateCanonicalBanner(resData.new_state, resData.next_action_date, actionLabel, "Recién");

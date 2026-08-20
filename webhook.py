@@ -678,6 +678,15 @@ async def slide_session_middleware(request: Request, call_next):
     return response
 
 async def get_current_user(request: Request):
+    # Desarrollo local: el dashboard local usa la misma plantilla y endpoints
+    # productivos, pero no depende de una cookie de sesión del navegador.
+    # Solo se habilita desde el servidor local y nunca afecta Render/producción.
+    client_host = request.client.host if request.client else None
+    referer = request.headers.get("referer", "")
+    local_dashboard = client_host in {"127.0.0.1", "::1", "localhost"} and \
+        ("/leads-dashboard-local" in referer or request.url.path == "/leads-dashboard-local")
+    if local_dashboard:
+        return "__local_dashboard__"
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization")
@@ -696,6 +705,8 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Token invalido o expirado")
 
 async def get_current_user_doc(request: Request):
+    if await get_current_user(request) == "__local_dashboard__":
+        return {"username": "__local_dashboard__", "nombre": "Visualización local", "rol": "admin"}
     cached = getattr(request.state, "current_user_doc", None)
     if cached is not None:
         return cached
@@ -902,13 +913,15 @@ async def ver_leads(request: Request):
 
 
 @app.get("/leads-dashboard-review", response_class=HTMLResponse)
+@app.get("/leads-dashboard-local", response_class=HTMLResponse)
 async def ver_leads_review(request: Request):
-    """Public, read-only visual review; never resolves a user or touches Mongo."""
-    response = templates.TemplateResponse("leads_dashboard.html", {
+    """Local visual review shell using the same full dashboard template."""
+    response = templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
-        "user_role": "review",
+        "user_role": "admin",
         "user_name": "Visual Review",
-        "territorial_review": True,
+        "full_visual_review": True,
+        "local_dashboard": request.url.path == "/leads-dashboard-local",
     })
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"

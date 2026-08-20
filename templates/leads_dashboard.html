@@ -271,6 +271,9 @@
                 transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
 
+            .sidebar:not(.mobile-open) { display:none; }
+            .sidebar.mobile-open { display:flex; }
+
             .sidebar.mobile-open {
                 width: min(280px, calc(100vw - 48px));
                 left: 0;

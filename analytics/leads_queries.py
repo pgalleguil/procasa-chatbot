@@ -23,6 +23,8 @@ from chatbot.crm_metrics import (
     normalize_result,
     registered_outreach_evidence,
     resolve_hot_start_at,
+    REGISTERED_OUTREACH_EVENT_TYPES,
+    VALID_MANAGEMENT_EVENT_TYPES,
 )
 from chatbot.utils import calculate_business_minutes
 from chatbot.storage import get_db
@@ -4383,12 +4385,50 @@ def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: lis
     docs = {str(doc.get("_id")): doc for doc in [*current_docs, *period_docs] if doc.get("_id") is not None}
     if not docs:
         return {}
-    events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
-        {"lead_id": {"$in": [doc.get("_id") for doc in docs.values()]}},
-        {"lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
-         "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
-         "assignment_cycle_id": 1},
-    ))
+    # crm_events also contains navigations, assignments and bot/system noise.
+    # Restrict the server-side read to event families that can contribute to
+    # either activity or a valid management result.  The Python evidence
+    # checks below remain authoritative (human actor, confirmation, result,
+    # assignment episode, etc.).
+    activity_types = sorted({
+        value
+        for event_type in REGISTERED_OUTREACH_EVENT_TYPES
+        for value in (event_type, event_type.lower())
+    })
+    management_types = sorted({
+        value
+        for event_type in (VALID_MANAGEMENT_EVENT_TYPES - {"CONTACT_RESULT"})
+        for value in (event_type, event_type.lower())
+    })
+    event_filter = {
+        "lead_id": {"$in": [doc.get("_id") for doc in docs.values()]},
+        "$or": [
+            {"type": {"$in": activity_types}},
+            {"type": {"$in": management_types}},
+        ],
+    }
+    try:
+        events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
+            event_filter,
+            {"lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
+             "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
+             "assignment_cycle_id": 1},
+        ))
+    except NetworkTimeout:
+        # Activity is complementary evidence; the lead/SLA contract can still
+        # be rendered without it.  A Mongo timeout must not turn the whole
+        # operational dashboard into a 500 response.
+        logger.warning(
+            "[OPS_DASHBOARD] crm_events timeout; continuing without activity evidence"
+        )
+        if profile is not None:
+            profile.setdefault("mongo", []).append({
+                "collection": "crm_events",
+                "operation": "find_activity_and_results",
+                "timeout": True,
+                "documents": 0,
+            })
+        return {}
     period_ids = {str(doc.get("_id")) for doc in period_docs if doc.get("_id") is not None}
     signals = defaultdict(lambda: {"current_activity": False, "period_activity": False,
                                    "period_result": False, "result": None,

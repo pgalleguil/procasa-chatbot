@@ -419,6 +419,11 @@ def test_review_fixture_uses_production_realistic_dimensions_and_bands():
     assert sum(row["leads"] for row in dimensions["zone_rm"]) == 175
     assert not any("Proyecto" in row["segment"] or "Temporada" in row["segment"] for row in dimensions["operation"])
     assert {row["recommendation"] for row in payload["opportunities"]} <= {"Demanda reciente alta", "Demanda reciente media", "Demanda reciente baja", "Sin evidencia suficiente"}
+    assert sum(row["leads"] for row in dimensions["operation"]) == payload["demand"]["leads"] == 297
+    assert sum(row["stock_sucre"] for row in dimensions["operation"]) == payload["inventory"]["active"] == 442
+    assert all((row["recommendation"] == "Sin evidencia suficiente" if row["historical_leads_total"] < 5 or row["historical_properties_with_demand"] < 3 else row["recommendation"] == ("Demanda reciente alta" if row["recency"]["w0_leads"] >= 5 else "Demanda reciente media" if row["recency"]["w0_leads"] >= 1 else "Demanda reciente baja")) for row in payload["opportunities"])
+    assert payload["opportunities"][2]["recommendation"] == "Demanda reciente alta"
+    assert payload["opportunities"][5]["recommendation"] == "Demanda reciente media"
 
 
 def test_review_half_upper_uses_explicit_tooltips_global_bubble_scale_and_real_scatter():
@@ -433,6 +438,23 @@ def test_review_half_upper_uses_explicit_tooltips_global_bubble_scale_and_real_s
     assert "scatter-bubble" in template
     assert "Matriz de oportunidad: participación de cartera y demanda" in template
     assert "--text-on-accent: #fff" in template
+
+
+def test_review_desktop_closure_contracts_are_dynamic_and_compact():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "function demandRenderCoverageStrip(data)" in template
+    assert "withDemand+withoutDemand===active" in template
+    assert "119 con demanda · 323 sin demanda" not in template
+    assert "demand-compare-values" in template
+    assert "<th>Demanda vs cartera</th>" in template
+    assert "visibleQuadrant(row,medianX,medianY)" in template
+    assert "[row.quadrant]" not in template[template.index("function demandRenderMatrixReal"):template.index("const DEMAND_INFO_TEXT")]
+    assert "Últimos 30 días, días 31–60 y días 61–90" in template
+    assert "forecast avanzado no publicado" in template.lower()
+    assert "simOptionalFields" in template
+    assert "opportunity-evidence-row" in template
+    assert "rows.slice(0,6)" in template
+    assert "intelligence-secondary" in template
 
 
 def test_methodology_note_documents_backtest_and_no_visible_score():

@@ -3535,11 +3535,7 @@ def query_demand_capture_dashboard(
     ]}
     if lead_codes:
         property_filter["$or"].append({"codigo": {"$in": sorted(lead_codes)}})
-    try:
-        property_docs = list(db["universo_cartera_prop360"].find(property_filter, property_projection))
-    except NetworkTimeout:
-        logger.warning("[DEMAND_CAPTURE] property inventory timeout; returning degraded inventory payload")
-        property_docs = []
+    property_docs = list(db["universo_cartera_prop360"].find(property_filter, property_projection))
     return build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
 
 
@@ -3568,11 +3564,7 @@ def query_capture_simulation_dataset(period_end: Optional[str] = None) -> dict:
     ]}
     if lead_codes:
         property_filter["$or"].append({"codigo": {"$in": sorted(lead_codes)}})
-    try:
-        property_docs = list(db["universo_cartera_prop360"].find(property_filter, projection))
-    except NetworkTimeout:
-        logger.warning("[CAPTURE_SIMULATION] property inventory timeout; returning empty property dataset")
-        property_docs = []
+    property_docs = list(db["universo_cartera_prop360"].find(property_filter, projection))
     properties = {}
     for doc in property_docs:
         code = _inventory_code(doc.get("codigo"))

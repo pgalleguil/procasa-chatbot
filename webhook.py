@@ -62,6 +62,7 @@ from analytics.leads_service import (
     get_leads_dashboard_overview, get_leads_operational_dashboard,
     get_operational_executive_performance, get_operational_portfolios,
     get_properties_inventory_dashboard, get_capture_simulation,
+    InventoryTemporarilyUnavailable,
 )
 
 from api_captacion import (
@@ -1176,13 +1177,16 @@ async def api_leads_dashboard_properties_inventory(
     }.items() if value}
     timing = {}
     loop = asyncio.get_running_loop()
-    payload = await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: get_properties_inventory_dashboard(
-            period_start=period_start, period_end=period_end,
-            filters=filters, timing=timing,
-        ),
-    )
+    try:
+        payload = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: get_properties_inventory_dashboard(
+                period_start=period_start, period_end=period_end,
+                filters=filters, timing=timing,
+            ),
+        )
+    except InventoryTemporarilyUnavailable:
+        raise HTTPException(status_code=503, detail="Inventario temporalmente no disponible")
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))

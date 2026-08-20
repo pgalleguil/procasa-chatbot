@@ -6,11 +6,14 @@ import math
 import time
 import calendar
 import json
+import copy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Optional
+
+from pymongo.errors import NetworkTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +48,15 @@ from .leads_queries import (
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
+STALE_IF_ERROR_MAX_AGE = 1800
 MAX_CACHE_ENTRIES = 200
 # El overview ejecuta diez consultas independientes. Mantener seis workers
 # dejaba cuatro consultas esperando en cola y alargaba cada carga del panel.
 _COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=10, thread_name_prefix="commercial_analytics")
+
+
+class InventoryTemporarilyUnavailable(RuntimeError):
+    """Mongo cannot serve the inventory and no usable stale payload exists."""
 
 
 def _load_commercial_macro_information():
@@ -104,6 +112,17 @@ def _cache_set(key: str, value: dict):
     L1_CACHE[key] = (time.time(), value)
 
 
+def _properties_inventory_cache_lookup(key: str):
+    """Return a copy and age without evicting an expired inventory payload."""
+    entry = L1_CACHE.get(key)
+    if not entry:
+        return None, None, None
+    age = max(0.0, time.time() - entry[0])
+    if age < CACHE_TTL:
+        return copy.deepcopy(entry[1]), age, entry
+    return None, age, entry
+
+
 def get_properties_inventory_dashboard(
     period_start: str = None,
     period_end: str = None,
@@ -114,7 +133,7 @@ def get_properties_inventory_dashboard(
     started = time.perf_counter()
     filters = {key: value for key, value in (filters or {}).items() if value not in (None, "")}
     key = _cache_key("leads-properties-inventory", ps=period_start, pe=period_end, **filters)
-    cached = _cache_get(key)
+    cached, cache_age, cache_entry = _properties_inventory_cache_lookup(key)
     if cached is not None:
         if timing is not None:
             timing["cache"] = "HIT"
@@ -122,7 +141,35 @@ def get_properties_inventory_dashboard(
         return cached
     if timing is not None:
         timing["cache"] = "MISS"
-    payload = query_demand_capture_dashboard(period_start, period_end, filters)
+    try:
+        payload = query_demand_capture_dashboard(period_start, period_end, filters)
+    except NetworkTimeout as exc:
+        if cache_entry is not None and cache_age is not None and cache_age <= STALE_IF_ERROR_MAX_AGE:
+            stale_payload = copy.deepcopy(cache_entry[1])
+            metadata = dict(stale_payload.get("meta") or {})
+            metadata.update(
+                {
+                    "data_status": "stale",
+                    "degraded": True,
+                    "degraded_reason": "mongo_timeout",
+                    "stale_age_seconds": round(cache_age, 1),
+                }
+            )
+            stale_payload["meta"] = metadata
+            logger.warning("[DEMAND_CAPTURE] mongo_timeout cache=STALE age_seconds=%.1f", cache_age)
+            if timing is not None:
+                timing["cache"] = "STALE"
+                timing["degraded"] = True
+                timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+            return stale_payload
+        if cache_entry is not None and key in L1_CACHE:
+            del L1_CACHE[key]
+        logger.warning("[DEMAND_CAPTURE] mongo_timeout cache=MISS response=503")
+        if timing is not None:
+            timing["cache"] = "MISS"
+            timing["degraded"] = True
+            timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        raise InventoryTemporarilyUnavailable from exc
     payload = _sanitize_non_finite(payload)
     _cache_set(key, payload)
     if timing is not None:

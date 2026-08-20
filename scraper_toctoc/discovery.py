@@ -462,6 +462,34 @@ def _gw_page_signature(ids: list[str]) -> str:
     return hashlib.sha256(",".join(ids).encode("utf-8")).hexdigest()
 
 
+def _structured_commune(prop: dict[str, Any]) -> tuple[str, str]:
+    """Return Toctoc's structured commune id and label from a BFF card."""
+    containers = [prop]
+    for key in ("territorial", "territory", "ubicacion", "location"):
+        if isinstance(prop.get(key), dict):
+            containers.append(prop[key])
+    if isinstance(prop.get("comuna"), dict):
+        containers.append(prop["comuna"])
+
+    commune_id = ""
+    label = ""
+    for item in containers:
+        if not commune_id:
+            for key in ("comuna_id", "commune_id", "idComuna", "id_comuna", "idCommune", "id"):
+                if item.get(key) not in (None, ""):
+                    commune_id = str(item[key])
+                    break
+        if not label:
+            for key in ("comuna", "commune", "label", "name", "nombre"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    label = value.strip()
+                    break
+    if not label and isinstance(prop.get("comuna"), str) and prop["comuna"].strip():
+        label = prop["comuna"].strip()
+    return commune_id, label
+
+
 def _gw_response_items(data: Any, page_num: int, requested_commune: str) -> tuple[list[dict], dict]:
     if not isinstance(data, dict):
         raise ValueError("INVALID_RESPONSE")
@@ -483,13 +511,18 @@ def _gw_response_items(data: Any, page_num: int, requested_commune: str) -> tupl
         lid = str(prop.get("idProperty", "") or listing_id_from_url(url_ficha)[0])
         if not lid:
             continue
+        commune_id, commune_label = _structured_commune(prop)
         rec = {
             "url": url_ficha,
             "listing_id": lid,
             "listing_id_source": "gw_lista_seo",
             "url_format": classify_url_format(url_ficha),
             "title": str(prop.get("titulo", "")),
-            "comuna": str(prop.get("comuna", "") or _extract_commune_slug(url_ficha)),
+            "comuna": commune_label or _extract_commune_slug(url_ficha),
+            "comuna_id": commune_id,
+            "comuna_structured_label": commune_label,
+            "comuna_structured": bool(commune_label),
+            "comuna_evidence_source": "toctoc_bff" if commune_label else "",
             "region": str(prop.get("region", "")),
             "operacion": "venta" if "venta" in str(prop.get("tipoOperacion", "")).lower() else "arriendo",
             "tipo_propiedad": str(prop.get("tipoPropiedad", "")).lower(),

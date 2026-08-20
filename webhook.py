@@ -61,6 +61,7 @@ from analytics.leads_service import (
     get_dashboard, get_commercial_dashboard, get_commercial_filter_options,
     get_leads_dashboard_overview, get_leads_operational_dashboard,
     get_operational_executive_performance, get_operational_portfolios,
+    get_properties_inventory_dashboard, get_capture_simulation,
 )
 
 from api_captacion import (
@@ -97,6 +98,7 @@ from chatbot.captacion_weekly_report import (
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
+from review_fixtures import territorial_review_payload
 
 logging.basicConfig(
     level=logging.INFO,
@@ -271,6 +273,7 @@ async def lifespan(app: FastAPI):
     sla_c_task = asyncio.create_task(captacion_sla_release_loop())
     r_task = asyncio.create_task(reassign_unassigned_leads_loop()) # Ahora es Productor
     d_task = asyncio.create_task(daily_report_loop())
+    captacion_daily_production_task = asyncio.create_task(captacion_daily_production_scheduler_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
@@ -898,6 +901,29 @@ async def ver_leads(request: Request):
     })
 
 
+@app.get("/leads-dashboard-review", response_class=HTMLResponse)
+async def ver_leads_review(request: Request):
+    """Public, read-only visual review; never resolves a user or touches Mongo."""
+    response = templates.TemplateResponse("leads_dashboard.html", {
+        "request": request,
+        "user_role": "review",
+        "user_name": "Visual Review",
+        "territorial_review": True,
+    })
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/review/leads-dashboard")
+async def leads_dashboard_review_data():
+    """Sanitized fixture only. No request parameters and no database access."""
+    response = JSONResponse(territorial_review_payload())
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _public_executive_overview(payload: dict) -> dict:
     """Allowlist only the aggregated fields needed by the public demo.
 
@@ -1081,11 +1107,68 @@ async def api_leads_dashboard_overview(
     )
 
 
+@app.get("/api/leads-dashboard/properties-inventory")
+async def api_leads_dashboard_properties_inventory(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    operation: str = Query(None),
+    property_type: str = Query(None),
+    commune: str = Query(None),
+    responsible: str = Query(None),
+):
+    """Lazy, read-only inventory snapshot for the third dashboard tab."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    filters = {key: value for key, value in {
+        "operation": operation, "property_type": property_type,
+        "commune": commune, "responsible": responsible,
+    }.items() if value}
+    timing = {}
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_properties_inventory_dashboard(
+            period_start=period_start, period_end=period_end,
+            filters=filters, timing=timing,
+        ),
+    )
+    response = JSONResponse(payload)
+    response.headers["Cache-Control"] = "private, max-age=120"
+    response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    return response
+
+
+@app.get("/api/leads-dashboard/capture-simulator")
+async def api_leads_dashboard_capture_simulator(
+    request: Request,
+    operation: str = Query(None), property_type: str = Query(None), commune: str = Query(None),
+    price: str = Query(None), bedrooms: str = Query(None), bathrooms: str = Query(None),
+    surface: str = Query(None), period_end: str = Query(None),
+):
+    """Read-only what-if capture simulation; no CRM or Mongo writes."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    params = {"operation": operation, "type": property_type, "commune": commune, "price": price, "bedrooms": bedrooms, "bathrooms": bathrooms, "surface": surface}
+    timing = {}
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_capture_simulation(params=params, period_end=period_end, timing=timing))
+    response = JSONResponse(payload)
+    response.headers["Cache-Control"] = "private, max-age=120"
+    response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    response.headers["X-Analytics-N-Plus-One"] = "false"
+    return response
+
+
 @app.get("/api/leads-dashboard/operations")
 async def api_leads_dashboard_operations(
     request: Request,
     period_start: str = Query(None),
     period_end: str = Query(None),
+    compare: str = Query("auto"),
+    period_preset: str = Query(None),
     executive: str = Query(None),
     temperature: str = Query(None),
     stage: str = Query(None),
@@ -1108,7 +1191,8 @@ async def api_leads_dashboard_operations(
     payload = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_leads_operational_dashboard(
-            period_start=period_start, period_end=period_end,
+            period_start=period_start, period_end=period_end, compare=compare,
+            period_preset=period_preset,
             role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
         ),
     )
@@ -4598,6 +4682,35 @@ async def daily_report_loop():
         
         # Revisar cada 5 minutos
         await asyncio.sleep(300)
+
+
+async def captacion_daily_production_scheduler_loop():
+    """Production Captación daily sender: Tue-Fri at 08:30 Chile time."""
+    from chatbot.captacion_daily_report import run_scheduled_production_daily_report
+    from chatbot.storage import get_db
+    logger.info(
+        "[CAPTACION_DAILY_PRODUCTION] scheduler active=%s timezone=America/Santiago window=Tue-Fri 08:30-12:00",
+        Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE,
+    )
+    while True:
+        try:
+            now = datetime.now(CHILE_TZ)
+            background_tasks_status["captacion_daily_production"] = {
+                "status": "running" if Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE else "disabled",
+                "timezone": "America/Santiago",
+                "schedule": "Tuesday-Friday 08:30-12:00 catch-up",
+                "last_heartbeat": now.isoformat(),
+            }
+            if Config.CAPTACION_DAILY_PRODUCTION_ENABLED and not Config.CAPTACION_TEST_MODE:
+                result = await run_scheduled_production_daily_report(get_db(), run_at=now)
+                background_tasks_status["captacion_daily_production"]["last_result"] = result.get("status")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("[CAPTACION_DAILY_PRODUCTION] scheduler error: %s", exc)
+            background_tasks_status.setdefault("captacion_daily_production", {})["status"] = "error"
+            background_tasks_status["captacion_daily_production"]["error"] = str(exc)
+        await asyncio.sleep(30)
 
 if __name__ == "__main__":
     import pathlib

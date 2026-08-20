@@ -15,10 +15,22 @@ import pytz
 from openai import OpenAI
 from pymongo.errors import DuplicateKeyError
 
-from captacion_goals import get_captacion_goal_dashboard
-from captacion_management import OUTCOME_COMMUNICATION_LABELS, OUTCOME_GROUPS
-from captacion_workforce import DEFAULT_TIMEZONE
+from captacion_goals import get_captacion_goal_dashboard, get_captacion_management_rows
+from captacion_management import (
+    OUTCOME_COMMUNICATION_LABELS,
+    OUTCOME_GROUPS,
+    summarize_grouped_outcomes,
+)
+from captacion_workforce import DEFAULT_TIMEZONE, get_active_captacion_team
 from config import Config
+from .captacion_daily_report import (
+    DAILY_TARGET,
+    _active_assignments,
+    _close_bounds,
+    _current_visible_assignments,
+    _name_key as daily_name_key,
+    calculate_period_report,
+)
 from .storage import get_db
 from .whatsapp_client import (
     mask_whatsapp_recipient,
@@ -38,6 +50,10 @@ REPORT_COLLECTION = Config.CAPTACION_WEEKLY_REPORT_COLLECTION
 DELIVERY_COLLECTION = Config.CAPTACION_WEEKLY_DELIVERY_COLLECTION
 MESSAGE_DOMAIN = "captacion_weekly_report"
 RESPONSIBLE_SERVICE = "captacion_weekly_report_scheduler"
+WEEKLY_SCHEDULE_HOUR = 8
+WEEKLY_SCHEDULE_MINUTE = 30
+WEEKLY_RECOVERY_DEADLINE_HOUR = 12
+WEEKDAYS = tuple(range(5))
 
 OUTCOME_LABELS = {
     "por_contactar": "Por contactar",
@@ -149,6 +165,16 @@ def _panel_now(period_end: date) -> datetime:
 def _validate_period(start: date, end: date) -> None:
     if start.weekday() != 0 or end.weekday() != 4 or end - start != timedelta(days=4):
         raise ValueError("El periodo semanal debe abarcar de lunes a viernes")
+
+
+def weekly_production_window_open(run_at: datetime | None = None) -> bool:
+    """Lunes 08:30 inclusive hasta antes de 12:00, hora de Chile."""
+    local_now = run_at.astimezone(CHILE) if run_at else datetime.now(CHILE)
+    if local_now.weekday() != 0:
+        return False
+    start = local_now.replace(hour=WEEKLY_SCHEDULE_HOUR, minute=WEEKLY_SCHEDULE_MINUTE, second=0, microsecond=0)
+    end = local_now.replace(hour=WEEKLY_RECOVERY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
+    return start <= local_now < end
 
 
 def _safe_executives(panel: dict) -> list[dict]:
@@ -291,6 +317,147 @@ def build_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dic
     return snapshot
 
 
+def _es_pct(value: float, *, trim_zero: bool = True) -> str:
+    text = f"{value:.1f}%".replace(".", ",")
+    return text.replace(",0%", "%") if trim_zero else text
+
+
+def _es_int(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
+
+
+def _weekly_bar(value: float) -> str:
+    filled = min(10, max(0, round(value / 10)))
+    return "█" * filled + "░" * (10 - filled)
+
+
+def _weekly_display_names(rows: list[dict]) -> dict[str, str]:
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        parts = str(row["name"]).split()
+        base = " ".join(parts[:2]) if parts[:1] == ["María"] else (parts[0] if parts else "")
+        grouped.setdefault(base.casefold(), []).append({"row": row, "base": base, "parts": parts})
+    result = {}
+    for entries in grouped.values():
+        for item in entries:
+            if len(entries) == 1:
+                result[item["row"]["name"]] = item["base"]
+            else:
+                suffix = next((part[0] for part in item["parts"][len(item["base"].split()):] if part), "")
+                result[item["row"]["name"]] = f"{item['base']} {suffix}." if suffix else item["base"]
+    return result
+
+
+def _weekly_applicability(db, start: date, end: date) -> dict[str, dict[str, int]]:
+    """Reconstruct applicable days from active membership and assignment history.
+
+    Limitation: historical classification visibility is not versioned. Applicability
+    therefore uses active assignment history at each day close, while the advance
+    denominator uses the current visible CRM population separately.
+    """
+    applicable: dict[str, dict[str, int]] = {}
+    current = start
+    while current <= end:
+        team = get_active_captacion_team(db, current)
+        close_utc = _close_bounds(current)[1]
+        assignments = _active_assignments(db, close_utc, {str(member["id"]) for member in team})
+        for member in team:
+            user_id = str(member["id"])
+            if assignments.get(user_id):
+                applicable.setdefault(user_id, {})[current.isoformat()] = len(assignments[user_id])
+        current += timedelta(days=1)
+    return applicable
+
+
+def build_operational_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dict:
+    """Build the deterministic weekly report using the approved daily semantics."""
+    start = _parse_date(period_start)
+    end = _parse_date(period_end)
+    _validate_period(start, end)
+    base = build_weekly_snapshot(db, start, end, is_test=is_test)
+
+    applicability = _weekly_applicability(db, start, end)
+    current_report = calculate_period_report(db, start, end)
+    current_rows = {str(row["user_id"]): row for row in current_report["executives"]}
+    current_team = get_active_captacion_team(db, end)
+    names = {str(member["id"]): member["name"] for member in current_team}
+
+    # The existing dashboard already resolves canonical outcomes from the ledger.
+    # Reuse those outcome groups, but calculate daily/week totals independently.
+    daily_sets: dict[str, dict[str, set[str]]] = {}
+    for row in get_captacion_management_rows_for_week(db, start, end):
+        actor = str(row.get("actor_user_id") or "").strip()
+        property_id = str(row.get("property_id") or "").strip()
+        local_date = str(row.get("local_date") or "")
+        if actor and property_id and local_date in {
+            (start + timedelta(days=index)).isoformat() for index in WEEKDAYS
+        } and row.get("credited"):
+            daily_sets.setdefault(actor, {}).setdefault(local_date, set()).add(property_id)
+            names.setdefault(actor, str(row.get("actor") or actor))
+
+    rows = []
+    for user_id, current in current_rows.items():
+        applicable_by_day = applicability.get(user_id, {})
+        applicable_days = sorted(applicable_by_day)
+        if not applicable_days:
+            continue
+        daily_counts = [len(daily_sets.get(user_id, {}).get(day.isoformat(), set())) for day in (start + timedelta(days=index) for index in WEEKDAYS)]
+        week_done = sum(daily_counts)
+        week_goal = DAILY_TARGET * len(applicable_days)
+        days_met = sum(1 for count, day in zip(daily_counts, (start + timedelta(days=index) for index in WEEKDAYS)) if day.isoformat() in applicable_days and count >= DAILY_TARGET)
+        rows.append({
+            "user_id": user_id,
+            "name": names.get(user_id, current["name"]),
+            "daily_counts": daily_counts,
+            "daily_assigned_counts": [applicable_by_day.get((start + timedelta(days=index)).isoformat(), 0) for index in WEEKDAYS],
+            "gestiones_semana": week_done,
+            "meta_semana": week_goal,
+            "cumplimiento_semana": week_done * 100 / week_goal if week_goal else 0.0,
+            "dias_cumplidos": days_met,
+            "dias_aplicables": len(applicable_days),
+            "propiedades_unicas_semana": len(set().union(*(daily_sets.get(user_id, {}).get(day.isoformat(), set()) for day in (start + timedelta(days=index) for index in WEEKDAYS)))),
+            "total_asignadas": current["total_asignadas"],
+            "total_gestionadas_acumuladas": current["total_gestionadas_acumuladas"],
+            "avance_cartera": current["avance_cartera"],
+            "pendientes": current["pendientes"],
+            "cobertura_dias": current["cobertura_dias"],
+        })
+
+    rows.sort(key=lambda row: (-row["gestiones_semana"], -row["dias_cumplidos"], -row["avance_cartera"], daily_name_key(row["name"])))
+    total_goal = sum(row["meta_semana"] for row in rows)
+    total_done = sum(row["gestiones_semana"] for row in rows)
+    total_assigned = sum(row["total_asignadas"] for row in rows)
+    total_managed = sum(row["total_gestionadas_acumuladas"] for row in rows)
+    pending = sum(row["pendientes"] for row in rows)
+    base["executives"] = rows
+    base["weekly_operational"] = {
+        "team_done": total_done,
+        "team_goal": total_goal,
+        "team_compliance": total_done * 100 / total_goal if total_goal else 0.0,
+        "team_days_met": sum(row["dias_cumplidos"] for row in rows),
+        "team_days_applicable": sum(row["dias_aplicables"] for row in rows),
+        "total_assigned": total_assigned,
+        "total_managed": total_managed,
+        "pending": pending,
+        "availability_pct": pending * 100 / total_assigned if total_assigned else 0.0,
+        "coverage_below_threshold_count": sum(row["cobertura_dias"] < 10 for row in rows),
+        "current_population_source": "GET /captacion -> origen toctoc/yapo + classification.state visible",
+        "applicability_source": "membership active by day + assignment history at daily close",
+        "deduplication": "property unique per executive per day; weekly total is sum of daily units",
+        "unique_week_properties": sum(row["propiedades_unicas_semana"] for row in rows),
+    }
+    base["schema_version"] = "captacion_weekly_mobile_v1"
+    base["snapshot_id"] = "cws_" + hashlib.sha256(json.dumps(base, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:24]
+    return base
+
+
+def get_captacion_management_rows_for_week(db, start: date, end: date) -> list[dict]:
+    """Read the same canonical weekly ledger rows used by the dashboard."""
+    rows = get_captacion_management_rows(db, now=_panel_now(end))
+    valid_dates = {(start + timedelta(days=index)).isoformat() for index in WEEKDAYS}
+    return [row for row in rows if str(row.get("local_date") or "") in valid_dates]
+
+
 def build_deepseek_payload(snapshot: dict) -> dict:
     payload = {
         key: deepcopy(snapshot[key])
@@ -401,7 +568,58 @@ def _deterministic_focus_message(snapshot: dict) -> str:
     return snapshot["operational_priority"]["label"] + ", registrando cada resultado en el CRM."
 
 
+def assemble_operational_weekly_message(snapshot: dict) -> str:
+    op = snapshot["weekly_operational"]
+    period = re.sub(r" de \d{4}$", "", snapshot["report"]["period_label"])
+    rows = snapshot["executives"]
+    display_names = _weekly_display_names(rows)
+    result_groups = snapshot["outcome_groups"]
+    result_parts = [
+        f"{_es_int(result_groups['captured']['total'])} captadas",
+        f"{_es_int(result_groups['closed_without_capture']['total'])} cerradas",
+        f"{_es_int(result_groups['management_in_progress']['total'])} en gestión",
+    ]
+    pending_total = result_groups["pending_next_action"]["total"]
+    if pending_total:
+        result_parts.append(f"{_es_int(pending_total)} pendientes")
+    other_total = result_groups["other_review"]["total"]
+    if other_total:
+        result_parts.append(f"{_es_int(other_total)} otros")
+    coverage = (
+        "Todos con ≥10 días de datos"
+        if not op["coverage_below_threshold_count"]
+        else f"{op['coverage_below_threshold_count']} ejecutivos con menos de 10 días de datos"
+    )
+    lines = [
+        f"👤 *Gestión Semanal de Captación | {period}*",
+        "",
+        "👥 *Equipo*",
+        f"Cumplimiento semanal: *{_es_int(op['team_done'])}/{_es_int(op['team_goal'])} · {_es_pct(op['team_compliance'])}*",
+        _weekly_bar(op["team_compliance"]),
+        "",
+        "*Resultados de la semana*",
+        " · ".join(result_parts[:2]),
+        " · ".join(result_parts[2:]),
+        "",
+    ]
+    for row in rows:
+        lines.extend([
+            f"*{display_names[row['name']]}* {_weekly_bar(row['cumplimiento_semana'])}",
+            f"Semana: *{_es_int(row['gestiones_semana'])}/{_es_int(row['meta_semana'])} · {_es_pct(row['cumplimiento_semana'])}* · "
+            f"Días cumplidos: *{row['dias_cumplidos']}/{row['dias_aplicables']}*",
+            f"Avance actual: {_es_int(row['total_gestionadas_acumuladas'])} de {_es_int(row['total_asignadas'])} · {_es_pct(row['avance_cartera'], trim_zero=False)}",
+            "",
+        ])
+    lines.extend([
+        f"*Disponibilidad actual:* {_es_int(op['pending'])} pendientes · {_es_pct(op['availability_pct'])}",
+        f"*Cobertura:* {coverage}",
+    ])
+    return "\n".join(lines)
+
+
 def assemble_whatsapp_message(snapshot: dict, narrative: dict) -> str:
+    if snapshot.get("weekly_operational"):
+        return assemble_operational_weekly_message(snapshot)
     narrative = validate_narrative(narrative, allow_digits=True)
     period = snapshot["report"]["period_label"]
     team = snapshot["team"]
@@ -473,6 +691,25 @@ def validate_test_preview(snapshot: dict, message: str, *, expected_snapshot_id:
 
 
 def validate_official_report(snapshot: dict, message: str) -> dict:
+    if snapshot.get("weekly_operational"):
+        op = snapshot["weekly_operational"]
+        rows = snapshot["executives"]
+        checks = {
+            "crm_parity": bool(snapshot.get("crm_parity", {}).get("validated")),
+            "daily_sum": op["team_done"] == sum(row["gestiones_semana"] for row in rows),
+            "goal_sum": op["team_goal"] == sum(row["meta_semana"] for row in rows),
+            "assigned_sum": op["total_assigned"] == sum(row["total_asignadas"] for row in rows),
+            "managed_sum": op["total_managed"] == sum(row["total_gestionadas_acumuladas"] for row in rows),
+            "pending_sum": op["pending"] == sum(row["pendientes"] for row in rows),
+            "no_zero_applicable": all(row["dias_aplicables"] > 0 and row["meta_semana"] > 0 for row in rows),
+            "no_other_review": snapshot["outcome_groups"]["other_review"]["total"] == 0,
+            "message_length": len(message) <= 1500,
+            "official_header": "GESTIÓN SEMANAL DE CAPTACIÓN" in message and "PRUEBA" not in message,
+        }
+        if not all(checks.values()):
+            failed = ", ".join(key for key, passed in checks.items() if not passed)
+            raise ValueError(f"Validación semanal móvil fallida: {failed}")
+        return checks
     groups = snapshot["outcome_groups"]
     checks = {
         "crm_parity": bool(snapshot.get("crm_parity", {}).get("validated")),
@@ -494,12 +731,14 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
     snapshot = await asyncio.to_thread(
-        build_weekly_snapshot, db, period_start, period_end, is_test=is_test
+        build_operational_weekly_snapshot, db, period_start, period_end, is_test=is_test
     )
     if not snapshot["crm_parity"]["validated"]:
         raise ValueError("Paridad CRM no validada")
-    narrative, model, narrative_source = await asyncio.to_thread(generate_narrative_with_fallback, snapshot)
-    message = assemble_whatsapp_message(snapshot, narrative)
+    narrative = {"intro": "", "insight": "", "weekly_focus": "", "closing": ""}
+    model = None
+    narrative_source = "deterministic"
+    message = assemble_operational_weekly_message(snapshot)
     now = datetime.now(timezone.utc)
     document = {
         "report_id": str(uuid.uuid4()),
@@ -520,7 +759,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
         "status": "ready_for_test" if is_test else "ready_to_send",
         "snapshot": snapshot,
         "crm_parity_validated": True,
-        "deepseek_payload": build_deepseek_payload(snapshot),
+        "deepseek_payload": None if snapshot.get("weekly_operational") else build_deepseek_payload(snapshot),
         "narrative": narrative,
         "narrative_history": [],
         "message_original": message,
@@ -540,7 +779,7 @@ async def create_weekly_report(period_start, period_end, *, is_test: bool, creat
             "recipient_masked": mask_whatsapp_recipient(ADMIN_RECIPIENT),
         })
     else:
-        document["group_recipient"] = Config.CAPTACION_WEEKLY_GROUP_ID
+        document["group_recipient"] = Config.resolve_weekly_group_id()
     await asyncio.to_thread(db[REPORT_COLLECTION].insert_one, document)
     document.pop("_id", None)
     return document
@@ -676,7 +915,7 @@ async def approve_and_send_report(report_id: str, actor: dict, edited_narrative:
     narrative = validate_narrative(edited_narrative or report["narrative"])
     final_message = assemble_whatsapp_message(report["snapshot"], narrative)
     idempotency_key = f"official:{report['period_start']}:{report['period_end']}"
-    group_id = str(report.get("group_recipient") or Config.CAPTACION_WEEKLY_GROUP_ID or "").strip()
+    group_id = str(report.get("group_recipient") or Config.resolve_weekly_group_id() or "").strip()
     if not group_id.endswith("@g.us"):
         raise ValueError("Destinatario grupal no configurado")
     approval_at = datetime.now(timezone.utc)
@@ -785,22 +1024,33 @@ def _official_idempotency_key(report: dict, group_id: str) -> str:
 
 async def send_official_report(report_id: str, *, now=None) -> dict:
     """Envía al grupo con una sola entrega durable y reintentos acotados."""
+    if not Config.CAPTACION_WEEKLY_PRODUCTION_ENABLED or Config.CAPTACION_WEEKLY_TEST_MODE:
+        raise PermissionError("Envío al grupo bloqueado: Captación semanal permanece desactivada")
     db = get_db()
     await asyncio.to_thread(ensure_weekly_report_indexes, db)
     report = await asyncio.to_thread(
         db[REPORT_COLLECTION].find_one,
         {"report_id": str(report_id), "is_test": False, "message_domain": MESSAGE_DOMAIN},
     )
-    if not report or report.get("status") not in {"ready_to_send", "send_retry_pending"}:
+    if not report:
         raise ValueError("El reporte oficial no está disponible para envío")
-    validate_official_report(report["snapshot"], report["message_original"])
-    group_id = str(report.get("group_recipient") or Config.CAPTACION_WEEKLY_GROUP_ID or "").strip()
+    group_id = str(report.get("group_recipient") or Config.resolve_weekly_group_id() or "").strip()
     if not group_id.endswith("@g.us") or normalize_whatsapp_recipient(group_id) == ADMIN_RECIPIENT:
         raise ValueError("Destinatario grupal oficial no configurado")
+    key = _official_idempotency_key(report, group_id)
+    existing_delivery = await asyncio.to_thread(
+        db[DELIVERY_COLLECTION].find_one,
+        {"idempotency_key": key},
+        {"_id": 0},
+    )
+    if existing_delivery and existing_delivery.get("delivery_status") in {"accepted", "sent", "delivered", "read"}:
+        return existing_delivery
+    if report.get("status") not in {"ready_to_send", "send_retry_pending", "sent"}:
+        raise ValueError("El reporte oficial no está disponible para envío")
+    validate_official_report(report["snapshot"], report["message_original"])
 
     local_now = now.astimezone(CHILE) if now and now.tzinfo else (CHILE.localize(now) if now else datetime.now(CHILE))
-    deadline = local_now.replace(hour=Config.CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
-    key = _official_idempotency_key(report, group_id)
+    deadline = local_now.replace(hour=WEEKLY_RECOVERY_DEADLINE_HOUR, minute=0, second=0, microsecond=0)
     delivery, claimed = await _claim_delivery(db, key, {
         "message_domain": MESSAGE_DOMAIN,
         "message_type": "weekly_report",
@@ -900,12 +1150,7 @@ async def send_official_report(report_id: str, *, now=None) -> dict:
 
 async def check_and_prepare_weekly_report(*, force: bool = False, now=None) -> dict | None:
     local_now = now.astimezone(CHILE) if now and now.tzinfo else (CHILE.localize(now) if now else datetime.now(CHILE))
-    scheduled_time_reached = (local_now.hour, local_now.minute) >= (
-        Config.CAPTACION_WEEKLY_SCHEDULE_HOUR,
-        Config.CAPTACION_WEEKLY_SCHEDULE_MINUTE,
-    )
-    retry_deadline = (local_now.hour, local_now.minute) <= (Config.CAPTACION_WEEKLY_RETRY_DEADLINE_HOUR, 0)
-    due = local_now.weekday() == 0 and scheduled_time_reached and retry_deadline
+    due = weekly_production_window_open(local_now)
     if not force and not due:
         return None
     period_end = local_now.date() - timedelta(days=3)

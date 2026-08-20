@@ -6,7 +6,7 @@ import math
 import time
 import calendar
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
@@ -36,6 +36,11 @@ from .leads_queries import (
     query_leads_dashboard_executives,
     query_property_commission_rows,
     query_cartera_demanda_coverage,
+    query_properties_inventory_dashboard,
+    query_demand_capture_dashboard,
+    query_capture_simulation_dataset,
+    build_capture_simulation_contract,
+    _ops_comparable_eligibility,
 )
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
@@ -97,6 +102,53 @@ def _cache_set(key: str, value: dict):
         oldest = min(L1_CACHE, key=lambda k: L1_CACHE[k][0])
         del L1_CACHE[oldest]
     L1_CACHE[key] = (time.time(), value)
+
+
+def get_properties_inventory_dashboard(
+    period_start: str = None,
+    period_end: str = None,
+    filters: dict | None = None,
+    timing: dict | None = None,
+) -> dict:
+    """Cached read-only payload for the lazy Propiedades & Inventario tab."""
+    started = time.perf_counter()
+    filters = {key: value for key, value in (filters or {}).items() if value not in (None, "")}
+    key = _cache_key("leads-properties-inventory", ps=period_start, pe=period_end, **filters)
+    cached = _cache_get(key)
+    if cached is not None:
+        if timing is not None:
+            timing["cache"] = "HIT"
+            timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        return cached
+    if timing is not None:
+        timing["cache"] = "MISS"
+    payload = query_demand_capture_dashboard(period_start, period_end, filters)
+    payload = _sanitize_non_finite(payload)
+    _cache_set(key, payload)
+    if timing is not None:
+        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        timing["mongo_calls"] = 2
+    return payload
+
+
+def get_capture_simulation(
+    params: dict | None = None,
+    period_end: str | None = None,
+    timing: dict | None = None,
+) -> dict:
+    """Cached read-only what-if simulation over one historical batch."""
+    started = time.perf_counter()
+    params = {key: value for key, value in (params or {}).items() if value not in (None, "")}
+    key = _cache_key("leads-capture-simulator-dataset", pe=period_end)
+    dataset = _cache_get(key)
+    cache = "HIT" if dataset is not None else "MISS"
+    if dataset is None:
+        dataset = query_capture_simulation_dataset(period_end)
+        _cache_set(key, dataset)
+    payload = _sanitize_non_finite(build_capture_simulation_contract(dataset, params))
+    if timing is not None:
+        timing.update({"cache": cache, "mongo_calls": 0 if cache == "HIT" else 2, "total_ms": round((time.perf_counter() - started) * 1000, 1), "n_plus_one": False})
+    return payload
 
 
 def get_summary(
@@ -235,6 +287,8 @@ def get_table(
 def get_leads_operational_dashboard(
     period_start: str = None,
     period_end: str = None,
+    compare: str = "auto",
+    period_preset: str = None,
     role: str = None,
     user_name: str = None,
     filters: dict = None,
@@ -244,7 +298,7 @@ def get_leads_operational_dashboard(
     filters = dict(filters or {})
     if role not in ("admin", "supervisor") and user_name:
         filters["executive"] = user_name
-    key = _cache_key("leads-operational", ps=period_start, pe=period_end, filters=repr(sorted(filters.items())))
+    key = _cache_key("leads-operational", ps=period_start, pe=period_end, compare=compare, preset=period_preset, filters=repr(sorted(filters.items())))
     started = time.perf_counter()
     cached = _cache_get(key)
     if cached:
@@ -253,7 +307,126 @@ def get_leads_operational_dashboard(
         return cached
     if timing is not None:
         timing["cache"] = "MISS"
-    data = query_leads_operational_dashboard(period_start=period_start, period_end=period_end, filters=filters, timing=timing)
+    shared_resources = {}
+    data = query_leads_operational_dashboard(
+        period_start=period_start,
+        period_end=period_end,
+        filters=filters,
+        timing=timing,
+        shared_resources=shared_resources,
+    )
+    # Operational comparison uses the same cohort contract and filters. Stock
+    # and backlog remain current-only; only period metrics receive deltas.
+    try:
+        from datetime import datetime as dt
+        from .commercial_periods import comparison_period, local_today, canonical_preset
+        today = local_today()
+        current_start = dt.strptime(period_start, "%Y-%m-%d").date()
+        current_end = dt.strptime(period_end, "%Y-%m-%d").date()
+        preset = canonical_preset(current_start, current_end, period_preset)
+        mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
+        compare_start, compare_end, compare_type = comparison_period(current_start, current_end, mode, preset)
+        comparable = None
+        if compare_start and compare_end:
+            comparable_timing = {}
+            comparable_started = time.perf_counter()
+            comparable = query_leads_operational_dashboard(
+                period_start=compare_start.strftime("%Y-%m-%d"),
+                period_end=compare_end.strftime("%Y-%m-%d"),
+                filters=filters,
+                timing=comparable_timing,
+                period_only=True,
+                team_executives_override=set((data.get("meta") or {}).get("team_executives") or []),
+                shared_resources=shared_resources,
+            )
+            comparable_timing["total_ms"] = round((time.perf_counter() - comparable_started) * 1000, 1)
+            if timing is not None:
+                timing["comparable"] = comparable_timing
+                timing["mongo_calls_total"] = len((timing.get("mongo") or [])) + len((comparable_timing.get("mongo") or []))
+        current_period = data.get("period") or {}
+        previous_period = (comparable or {}).get("period") or {}
+        previous_execs = {item.get("executive"): item for item in (comparable or {}).get("executives", [])}
+        # A period-only comparable naturally omits executives with zero
+        # assignments in that window. Preserve the stable team matrix shape
+        # by treating those missing period cohorts as explicit zeroes.
+        empty_previous_period = {
+            "assigned": 0, "managed": 0, "hot_sla_pct": None,
+            "normal_sla_pct": None, "visits_scheduled": 0,
+        }
+        for item in data.get("executives", []):
+            previous_execs.setdefault(
+                item.get("executive"),
+                {"period": dict(empty_previous_period)},
+            )
+        compare_start_utc = (datetime.combine(compare_start, datetime.min.time(), tzinfo=timezone.utc)
+                             if compare_start else None)
+        compare_end_utc = (datetime.combine(compare_end + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+                           if compare_end else None)
+        eligibility = _ops_comparable_eligibility(compare_start_utc, compare_end_utc)
+        def eligible(metric):
+            return bool(comparable and eligibility.get(metric, {}).get("valid"))
+        def delta_abs(key, metric=None):
+            metric = metric or key
+            return (current_period.get(key) or 0) - (previous_period.get(key) or 0) if eligible(metric) else None
+        def delta_pct(key, metric=None):
+            metric = metric or key
+            return round(delta_abs(key, metric) / previous_period[key] * 100, 1) if eligible(metric) and previous_period.get(key) else None
+        def delta_pp(key, metric=None):
+            metric = metric or key
+            return round((current_period.get(key) - previous_period.get(key)), 1) if eligible(metric) and current_period.get(key) is not None and previous_period.get(key) is not None else None
+        assigned = current_period.get("assigned") or 0
+        prev_assigned = previous_period.get("assigned") or 0
+        previous_values = {
+            "assigned": previous_period.get("assigned") if eligible("assigned") else None,
+            "managed": previous_period.get("managed") if eligible("managed") else None,
+            "coverage": round(previous_period.get("managed", 0) / prev_assigned * 100, 1) if eligible("coverage") and prev_assigned else None,
+            "hot_sla_pct": previous_period.get("hot_sla_pct") if eligible("hot_sla_pct") else None,
+            "normal_sla_pct": previous_period.get("normal_sla_pct") if eligible("normal_sla_pct") else None,
+            "visits_scheduled": previous_period.get("visits_scheduled") if eligible("visits_scheduled") else None,
+            "lead_to_visit": round(previous_period.get("visits_scheduled", 0) / prev_assigned * 100, 1) if eligible("lead_to_visit") and prev_assigned else None,
+            "activity_attempts": previous_period.get("activity_attempts") if eligible("activity_attempts") else None,
+            "contact_effective": previous_period.get("contact_effective") if eligible("contact_effective") else None,
+        }
+        current_period["comparison"] = {
+            "type": compare_type, "start": compare_start.strftime("%Y-%m-%d") if compare_start else None,
+            "end": compare_end.strftime("%Y-%m-%d") if compare_end else None,
+            **previous_values,
+            "eligibility": eligibility,
+            "deltas": {"assigned": delta_abs("assigned"), "assigned_pct": delta_pct("assigned"),
+                       "managed": delta_abs("managed"), "managed_pct": delta_pct("managed"),
+                       "coverage_pp": round((current_period.get("managed", 0) / assigned * 100 if assigned else 0) - (previous_period.get("managed", 0) / prev_assigned * 100 if prev_assigned else 0), 1) if eligible("coverage") else None,
+                       "hot_sla_pp": delta_pp("hot_sla_pct"), "normal_sla_pp": delta_pp("normal_sla_pct"),
+                       "visits": delta_abs("visits_scheduled"), "visits_pct": delta_pct("visits_scheduled"),
+                       "lead_to_visit_pp": round((current_period.get("visits_scheduled", 0) / assigned * 100 if assigned else 0) - (previous_period.get("visits_scheduled", 0) / prev_assigned * 100 if prev_assigned else 0), 1) if eligible("lead_to_visit") else None,
+                       "activity_attempts": delta_abs("activity_attempts"), "contact_effective": delta_abs("contact_effective")}
+        }
+        for executive in data.get("executives", []):
+            current_exec_period = executive.get("period") or {}
+            previous_exec_period = (previous_execs.get(executive.get("executive")) or {}).get("period") or {}
+            exec_assigned = current_exec_period.get("assigned") or 0
+            prev_exec_assigned = previous_exec_period.get("assigned") or 0
+            if not comparable:
+                current_exec_period["comparison"] = None
+                continue
+            current_exec_period["comparison"] = {
+                "assigned": previous_exec_period.get("assigned") if eligible("assigned") else None,
+                "managed": previous_exec_period.get("managed") if eligible("managed") else None,
+                "coverage": round(previous_exec_period.get("managed", 0) / prev_exec_assigned * 100, 1) if eligible("coverage") and prev_exec_assigned else None,
+                "hot_sla_pct": previous_exec_period.get("hot_sla_pct") if eligible("hot_sla_pct") else None,
+                "normal_sla_pct": previous_exec_period.get("normal_sla_pct") if eligible("normal_sla_pct") else None,
+                "visits_scheduled": previous_exec_period.get("visits_scheduled") if eligible("visits_scheduled") else None,
+                "eligibility": eligibility,
+                "deltas": {
+                    "assigned": exec_assigned - prev_exec_assigned if eligible("assigned") else None,
+                    "coverage_pp": round((current_exec_period.get("managed", 0) / exec_assigned * 100 if exec_assigned else 0) - (previous_exec_period.get("managed", 0) / prev_exec_assigned * 100 if prev_exec_assigned else 0), 1) if eligible("coverage") else None,
+                    "hot_sla_pp": round((current_exec_period.get("hot_sla_pct") or 0) - (previous_exec_period.get("hot_sla_pct") or 0), 1) if eligible("hot_sla_pct") and current_exec_period.get("hot_sla_pct") is not None and previous_exec_period.get("hot_sla_pct") is not None else None,
+                    "normal_sla_pp": round((current_exec_period.get("normal_sla_pct") or 0) - (previous_exec_period.get("normal_sla_pct") or 0), 1) if eligible("normal_sla_pct") and current_exec_period.get("normal_sla_pct") is not None and previous_exec_period.get("normal_sla_pct") is not None else None,
+                    "visits": (current_exec_period.get("visits_scheduled") or 0) - (previous_exec_period.get("visits_scheduled") or 0) if eligible("visits_scheduled") else None,
+                },
+            }
+        data["meta"]["comparison"] = current_period["comparison"]
+    except (TypeError, ValueError, AttributeError):
+        data.setdefault("meta", {})["comparison"] = None
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     _cache_set(key, data)

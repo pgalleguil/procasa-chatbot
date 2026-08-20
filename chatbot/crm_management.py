@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import hashlib
+import json
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -20,6 +22,34 @@ RESULT_RULES = {
 }
 
 
+class StaleAssignmentCycleError(ValueError):
+    """The client attempted to manage a cycle that is no longer active."""
+
+    code = "stale_assignment_cycle"
+
+
+_LEGACY_RESULT_MAP = {
+    "NO_RESPONDIO": "CALL_NO_ANSWER",
+    "OCUPADO": "CALL_NO_ANSWER",
+    "NUMERO_INVALIDO": "INVALID_NUMBER",
+    "MENSAJE_ENVIADO": "MESSAGE_SENT_WAITING_RESPONSE",
+    "CONTACTADO": "EFFECTIVE_CONTACT",
+    "SOLICITA_SEGUIMIENTO": "FOLLOW_UP_REQUESTED",
+    "NO_INTERESADO": "NOT_INTERESTED",
+    "OTRO": "DISCARDED_VALID_REASON",
+}
+
+
+def canonical_result_type(value):
+    """Translate supported legacy UI values to the existing domain taxonomy."""
+    from .crm_metrics import normalize_result
+
+    normalized = normalize_result(value)
+    if normalized in RESULT_RULES:
+        return normalized
+    return _LEGACY_RESULT_MAP.get(normalized)
+
+
 def _default_follow_up(occurred_at):
     from .lead_router import get_next_business_slot
     local = occurred_at.astimezone(__import__("chatbot.constants", fromlist=["CHILE_TZ"]).CHILE_TZ)
@@ -28,26 +58,35 @@ def _default_follow_up(occurred_at):
 
 def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                              result_type, source, idempotency_key, occurred_at=None,
-                             next_follow_up_at=None) -> dict:
-    result_type = str(result_type or "").upper()
+                             next_follow_up_at=None, details_json=None,
+                             stage_override=None, legacy_stage=None,
+                             actor_can_manage_any_cycle=False) -> dict:
+    result_type = canonical_result_type(result_type)
     rule = RESULT_RULES.get(result_type)
     if not rule:
         raise ValueError("unsupported CRM management result")
+    if not stage_override and rule["status"] == "managed_closed":
+        stage_override, legacy_stage = "CLOSED_LOST", "cerrado"
     if not all(str(value or "").strip() for value in (lead_id, assignment_cycle_id, actor_user_id, source, idempotency_key)):
         raise ValueError("canonical management identity is incomplete")
     occurred = coerce_utc_datetime(occurred_at) or utc_now()
-    # Try active cycle first, then fallback to any cycle for idempotent retries
+    # Try active cycle first, then fallback to any cycle for idempotent retries.
     cycle = db["crm_assignment_cycles"].find_one({
         "lead_id": lead_id, "assignment_cycle_id": assignment_cycle_id,
         "cycle_status": "active", "unassigned_at": None,
     })
     if not cycle:
-        # If the management result already exists, allow retry even if cycle is closed
         existing = db["crm_management_results"].find_one({"_id": f"crm_management:{idempotency_key}"})
         if existing:
             return existing
+        active_cycle = db["crm_assignment_cycles"].find_one({
+            "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
+        })
+        if active_cycle and str(active_cycle.get("assignment_cycle_id")) != str(assignment_cycle_id):
+            raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
         raise ValueError("active assignment cycle not found")
-    if str(cycle.get("assigned_to_user_id")) != str(actor_user_id):
+    if (not actor_can_manage_any_cycle and
+            str(cycle.get("assigned_to_user_id")) != str(actor_user_id)):
         raise PermissionError("management actor does not own the active cycle")
 
     record = {
@@ -55,13 +94,14 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         "schema_version": "crm_management_result_v1", "lead_id": lead_id,
         "assignment_cycle_id": assignment_cycle_id, "actor_user_id": actor_user_id,
         "result_type": result_type, "occurred_at": occurred, "source": source,
+        "details_json": details_json if isinstance(details_json, dict) else {},
         "status": "processing",
     }
     try:
         db["crm_management_results"].insert_one(record)
     except DuplicateKeyError:
         existing = db["crm_management_results"].find_one({"_id": record["_id"]})
-        if existing and existing.get("status") == "completed":
+        if existing:
             return existing
 
     follow_at = coerce_utc_datetime(next_follow_up_at)
@@ -72,16 +112,17 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         "management_status": rule["status"], "contact_attempted": rule["attempt"],
         "effective_contact": rule["effective"], "follow_up_required": rule["follow_up"],
         "follow_up_status": "pending" if rule["follow_up"] else "not_required",
+        "last_crm_update": occurred,
     }
+    if stage_override:
+        lead_updates["pipeline_stage"] = str(stage_override)
+        lead_updates["stage"] = str(legacy_stage or stage_override)
+    else:
+        lead_updates.update({"pipeline_stage": "CONTACTED", "stage": "gestion"})
     if rule["follow_up"]:
         lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
     db["leads"].update_one({"_id": lead_id}, {"$set": lead_updates})
-    db["leads"].update_one(
-        {"_id": lead_id, "$or": [{"pipeline_stage": {"$in": ["NEW", "new", "nuevo"]}},
-                                   {"pipeline_stage": {"$exists": False}}]},
-        {"$set": {"pipeline_stage": "CONTACTED", "stage": "gestion"}},
-    )
     # First timestamps use compare-and-set: duplicates and later results cannot replace them.
     db["leads"].update_one({"_id": lead_id, "lifecycle.first_valid_management_at": {"$exists": False}},
                             {"$set": {"lifecycle.first_valid_management_at": occurred}})
@@ -104,6 +145,27 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         {"assignment_cycle_id": assignment_cycle_id, "first_valid_management_at": {"$exists": False}},
         {"$set": first_cycle_updates},
     )
+    if rule["follow_up"] and follow_at:
+        lead_doc = db["leads"].find_one({"_id": lead_id}) or {}
+        task = {
+            "_id": f"crm_task:{follow_cycle_id}",
+            "task_id": follow_cycle_id,
+            "phone": lead_doc.get("phone"),
+            "lead_id": lead_id,
+            "assignment_cycle_id": assignment_cycle_id,
+            "idempotency_key": idempotency_key,
+            "lead_type": "crm",
+            "message_domain": "crm_management_follow_up",
+            "type": "REMINDER_WHATSAPP",
+            "status": "pending",
+            "execute_at": follow_at,
+            "created_at": occurred,
+            "note": details_json.get("notes") if isinstance(details_json, dict) else None,
+        }
+        try:
+            db["crm_tasks"].insert_one(task)
+        except DuplicateKeyError:
+            pass
     # If the result closes the lead (managed_closed), also close the cycle
     if rule["status"] == "managed_closed":
         cycle_updates["cycle_status"] = "closed"
@@ -129,12 +191,90 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         db["crm_events"].insert_one(event)
     except DuplicateKeyError:
         pass
+    completed_record = {key: value for key, value in record.items() if key != "_id"}
+    completed_record.update({"status": "completed", "follow_up_required": rule["follow_up"],
+                             "next_follow_up_at": follow_at})
     db["crm_management_results"].update_one(
-        {"_id": record["_id"]}, {"$set": {**record, "status": "completed",
-                                             "follow_up_required": rule["follow_up"],
-                                             "next_follow_up_at": follow_at}}, upsert=True,
+        {"_id": record["_id"]}, {"$set": completed_record}, upsert=True,
     )
     return db["crm_management_results"].find_one({"_id": record["_id"]}) or record
+
+
+def _legacy_idempotency_key(*, lead_id, assignment_cycle_id, actor_user_id, data):
+    supplied = data.get("idempotency_key") or data.get("request_id")
+    if supplied:
+        return str(supplied)
+    stable_payload = {
+        "lead_id": str(lead_id),
+        "assignment_cycle_id": str(assignment_cycle_id),
+        "actor_user_id": str(actor_user_id),
+        "result": data.get("resultado_gestion"),
+        "interaction_type": data.get("interaction_type"),
+        "next_action_date": data.get("next_action_date"),
+        "details_json": data.get("details_json") or {},
+    }
+    encoded = json.dumps(stable_payload, sort_keys=True, default=str).encode("utf-8")
+    return "legacy:" + hashlib.sha256(encoded).hexdigest()
+
+
+def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage_any_cycle,
+                                    assignment_cycle_id, data) -> dict:
+    """Adapt the existing detail payload into the one canonical result service."""
+    from .constants import PipelineStage
+
+    raw_result = data.get("resultado_gestion")
+    result_type = canonical_result_type(raw_result)
+    if not result_type:
+        raise ValueError("canonical management result is required")
+
+    next_date = data.get("next_action_date")
+    if data.get("interaction_type") == "hable" and result_type != "NOT_INTERESTED" and not next_date:
+        raise ValueError("next_action_date is required after effective contact")
+
+    raw_normalized = str(raw_result or "").strip().lower()
+    details = data.get("details_json") if isinstance(data.get("details_json"), dict) else {}
+    stage_override = None
+    legacy_stage = None
+    if result_type == "CALL_NO_ANSWER":
+        stage_override, legacy_stage = PipelineStage.NEW.value, "new"
+    elif raw_normalized == "visita_agendada":
+        stage_override, legacy_stage = PipelineStage.VISIT_SCHEDULED.value, "visita"
+    elif raw_normalized in {"requiere_seguimiento", "lead_pausado"}:
+        stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+    elif raw_normalized == "lead_cerrado":
+        close_stage = PipelineStage.CLOSED_WON if details.get("close_cat_radio") == "ganado" else PipelineStage.CLOSED_LOST
+        stage_override, legacy_stage = close_stage.value, "cerrado"
+    elif result_type == "NOT_INTERESTED":
+        stage_override, legacy_stage = PipelineStage.CLOSED_LOST.value, "cerrado"
+    elif result_type:
+        stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+
+    result = record_management_result(
+        db,
+        lead_id=lead["_id"],
+        assignment_cycle_id=assignment_cycle_id,
+        actor_user_id=actor_user_id,
+        result_type=result_type,
+        source=str(data.get("source") or "crm_detail"),
+        idempotency_key=_legacy_idempotency_key(
+            lead_id=lead["_id"], assignment_cycle_id=assignment_cycle_id,
+            actor_user_id=actor_user_id, data=data,
+        ),
+        next_follow_up_at=next_date,
+        details_json={
+            **details,
+            "interaction_type": data.get("interaction_type"),
+            "notes": data.get("notas"),
+            "action_label": data.get("action_label"),
+            "legacy_result": raw_result,
+        },
+        stage_override=stage_override,
+        legacy_stage=legacy_stage,
+        actor_can_manage_any_cycle=actor_can_manage_any_cycle,
+    )
+    result["new_state"] = result.get("pipeline_stage") or stage_override
+    result["next_action_date"] = result.get("next_follow_up_at")
+    return result
 
 
 def claim_sla_alert_if_still_eligible(db, *, assignment_cycle_id, level, recipient_user_id, claimed_at=None):

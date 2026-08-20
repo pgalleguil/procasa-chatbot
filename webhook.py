@@ -1943,12 +1943,21 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
 
     def _record():
-        from chatbot.crm_management import record_management_result
+        from chatbot.crm_management import record_management_result, StaleAssignmentCycleError
         from chatbot.crm_metrics import active_assignment_cycle
         from chatbot.storage import get_db
         db = get_db()
-        cycle = active_assignment_cycle(db, lead["_id"])
+        requested_cycle_id = str(data.get("assignment_cycle_id") or "").strip()
+        cycle = (
+            db["crm_assignment_cycles"].find_one({
+                "lead_id": lead["_id"], "assignment_cycle_id": requested_cycle_id,
+                "cycle_status": "active", "unassigned_at": None,
+            })
+            if requested_cycle_id else active_assignment_cycle(db, lead["_id"])
+        )
         if not cycle:
+            if requested_cycle_id and active_assignment_cycle(db, lead["_id"]):
+                raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
             raise ValueError("El lead no tiene un ciclo de asignación activo")
         return record_management_result(
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
@@ -1956,19 +1965,24 @@ async def api_crm_management_result(request: Request):
             occurred_at=None, source="crm_quick_action",
             idempotency_key=str(data.get("idempotency_key") or ""),
             next_follow_up_at=data.get("next_follow_up_at"),
+            details_json=data.get("details_json") if isinstance(data.get("details_json"), dict) else {},
+            actor_can_manage_any_cycle=can_administer_leads(user.get("rol")),
         )
     try:
         result = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, _record)
         return {"status": "ok", "result_type": result.get("result_type"),
                 "follow_up_required": result.get("follow_up_required")}
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as e:
+    except Exception as exc:
+        from chatbot.crm_management import StaleAssignmentCycleError
+        if isinstance(exc, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(exc, PermissionError):
+            raise HTTPException(status_code=403, detail=str(exc))
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc))
         logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
-                     phone, lead.get("_id"), data.get("result_type"), e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+                     phone, lead.get("_id"), data.get("result_type"), exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     data = None
@@ -1988,6 +2002,8 @@ async def api_crm_update_lead(request: Request):
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
         data["_actor_name"] = user.get("nombre") or user.get("username") or ""
+        data["_actor_user_id"] = str(user.get("_id") or "")
+        data["_actor_can_manage_any_cycle"] = can_administer_leads(user.get("rol"))
 
         # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
         # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.
@@ -2016,6 +2032,13 @@ async def api_crm_update_lead(request: Request):
         )
         raise
     except Exception as e:
+        from chatbot.crm_management import StaleAssignmentCycleError
+        if isinstance(e, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(e, PermissionError):
+            raise HTTPException(status_code=403, detail=str(e))
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail=str(e))
         logger.error(
             "CRM Update Error: phone=%s actor=%s result=%s -> %s",
             (data or {}).get("phone"), (data or {}).get("_actor_name"),
@@ -2104,11 +2127,23 @@ async def api_crm_admin_archive(request: Request):
 
 @app.post("/api/crm/notes")
 async def api_crm_notes(request: Request):
+    data = None
     try:
         data = await request.json()
         action = data.get("action", "add")
         phone = data.get("phone")
         note_data = data.get("note", {})
+        if not isinstance(note_data, dict):
+            raise HTTPException(status_code=400, detail="Datos de nota inválidos")
+        if action not in {"add", "delete"}:
+            raise HTTPException(status_code=400, detail="Acción de nota inválida")
+        user, lead = await _get_authorized_crm_lead(request, phone)
+        from chatbot.crm_metrics import active_assignment_cycle
+        from chatbot.storage import get_db
+        cycle = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: active_assignment_cycle(get_db(), lead["_id"]),
+        )
 
         # SOLUCIÓN HORA NOTAS: Forzar la hora de Chile en la creación
         if action == "add":
@@ -2119,14 +2154,24 @@ async def api_crm_notes(request: Request):
             note_data["timestamp_iso"] = now_cl.isoformat()
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: manage_crm_notes(phone, note_data, action))
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: manage_crm_notes(
+                phone, note_data, action,
+                lead_id=lead["_id"],
+                actor_user_id=str(user.get("_id") or ""),
+                assignment_cycle_id=(cycle or {}).get("assignment_cycle_id"),
+            ),
+        )
         if result:
             return {"status": "ok", "note": result}
         logger.warning("CRM notes rejected: action=%s phone=%s", action, phone)
-        return {"status": "error"}
+        raise HTTPException(status_code=404, detail="Nota o lead no encontrado")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("CRM notes error: phone=%s action=%s -> %s", data.get("phone") if data else None, (data or {}).get("action"), e, exc_info=True)
-        return {"status": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- BÚSQUEDA SEMÁNTICA ---
 @app.post("/api/crm/recommendations")

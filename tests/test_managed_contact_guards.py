@@ -29,10 +29,13 @@ def _base(listing_id="1000", estado="NUEVO", fecha_ultima_gestion=None, asignaci
         "title": "test",
         "description": "test descripcion suficiente",
         "classification": {
-            "state": "INCIERTO",
+            # INCIERTO is intentionally not assignable under the current
+            # assignment gate.  This test isolates the managed-contact guard,
+            # so the fresh fixture must be an otherwise assignable owner lead.
+            "state": "DUEÑO_SEGURO",
             "assignment_ready": True,
             "exclude_from_assignment": False,
-            "owner_probability": 0.6,
+            "owner_probability": 0.95,
             "source": "structural_rules",
         },
         "gestion": g,

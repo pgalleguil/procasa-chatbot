@@ -6880,7 +6880,13 @@
                     if (geometry.type === 'Polygon') {
                         geometry = keepsCommercialExtent(geometry.coordinates) ? geometry : null;
                     } else if (geometry.type === 'MultiPolygon') {
-                        geometry = {...geometry, coordinates: geometry.coordinates.filter(keepsCommercialExtent)};
+                        const commercial = geometry.coordinates.filter(keepsCommercialExtent);
+                        // The official Magallanes layer contains thousands of tiny
+                        // offshore fragments. Keep the principal commercial landmass
+                        // for the national/zone overview so it cannot determine the
+                        // projection scale for every other region.
+                        const principal = commercial.sort((a, b) => geoCoords({coordinates: b}).length - geoCoords({coordinates: a}).length).slice(0, 1);
+                        geometry = {...geometry, coordinates: principal};
                     }
                 }
                 return {...feature, geometry};

@@ -7,7 +7,7 @@ import threading
 from contextvars import ContextVar
 import inspect
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from config import Config
 from typing import List, Dict, Optional
@@ -77,7 +77,7 @@ def record_observability_event(event_type: str, payload: dict | None = None) -> 
         event = {
             "id": str(uuid4()),
             "event": event_type,
-            "timestamp": datetime.now(CHILE_TZ).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if payload:
             event.update(payload)
@@ -343,6 +343,56 @@ def obtener_prospecto(phone: str) -> dict:
     if not doc:
         return {}
     return doc.get("prospecto", {})
+
+
+VISIT_DATA_FIELDS = ("nombre", "rut", "email")
+
+
+def get_visit_data_state(phone: str) -> dict:
+    """Read the optional visit-enrichment state without exposing conversation content."""
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.visit_data": 1}
+    ) or {}
+    state = (doc.get("prospecto") or {}).get("visit_data") or {}
+    return dict(state)
+
+
+def update_visit_data_state(phone: str, updates: dict) -> dict:
+    """Merge auditable visit-data state into the lead document."""
+    if not updates:
+        return get_visit_data_state(phone)
+    db = get_db()
+    current = get_visit_data_state(phone)
+    merged = dict(current)
+    for key, value in updates.items():
+        if value is not None:
+            merged[key] = value
+    merged.setdefault("status", "not_offered")
+    merged["captured_fields"] = sorted(set(merged.get("captured_fields") or []).intersection(VISIT_DATA_FIELDS))
+    merged["requested_fields"] = sorted(set(merged.get("requested_fields") or []).intersection(VISIT_DATA_FIELDS))
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"prospecto.visit_data": merged}},
+        upsert=True,
+    )
+    return merged
+
+
+def mark_human_takeover(phone: str, *, source: str = "whatsapp_human_message") -> str:
+    """Record a human message as the cutoff for unsent automatic responses."""
+    now = datetime.now(timezone.utc)
+    db = get_db()
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {
+            "human_takeover_at": now,
+            "lifecycle.human_takeover_at": now,
+            "human_takeover_source": source,
+        }},
+        upsert=True,
+    )
+    return now.isoformat()
 
 def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
     if not datos:

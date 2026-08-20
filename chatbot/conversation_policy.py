@@ -2,15 +2,218 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 
 _PHONE_REQUEST = re.compile(
     r"(?:ind[ií]came|necesito|d[eé]jame|comparte|dame|p[aá]same|"
-    r"(?:me\s+)?puedes?\s+(?:compartir|dar|pasar)|cu[aá]l\s+es)"
+    r"(?:me\s+)?(?:puedes?|das?)\s+(?:(?:compartir|dar|pasar)\s+)?|cu[aá]l\s+es)"
     r".{0,80}(?:tu\s+)?(?:tel[eé]fono|n[uú]mero(?:\s+celular)?|celular|whatsapp|"
     r"n[uú]mero\s+de\s+contacto)",
     re.IGNORECASE | re.DOTALL,
 )
+
+_VISIT_INTENT_PATTERNS = (
+    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a)\s+(?:ver(?:la|lo|la\s+propiedad|el\s+inmueble)?|visitar(?:la|lo)?|conocer(?:la|lo)?)\b",
+    r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
+    r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
+    r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
+    r"\b(?:puedo|podr[ií]a)\s+ir\s+(?:ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
+    r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
+    r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
+    r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
+    r"\b(?:coordinar|agendar)\s+(?:una\s+)?visita\b",
+    r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la|el)\b",
+)
+_VISIT_INTENT_RE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _VISIT_INTENT_PATTERNS)
+
+_VISIT_ACCEPTANCE_RE = re.compile(
+    r"^(?:s[ií]|claro|dale|por\s+supuesto|perfecto|ok|okay|ya|obvio|"
+    r"me\s+encanta(?:r[ií]a)?|adelante|puedes|bueno|de\s+acuerdo)(?:[,.!\s].*)?$",
+    re.IGNORECASE,
+)
+_VISIT_DECLINE_RE = re.compile(
+    r"^(?:no|no\s+gracias|prefiero\s+(?:d[aá]rselos|coordinar|hablar)|"
+    r"no\s+quiero(?:\s+dar)?|despu[eé]s|m[aá]s\s+adelante|"
+    r"prefiero\s+dar(?:los|le)|mejor\s+con\s+el\s+ejecutivo)(?:[,.!\s].*)?$",
+    re.IGNORECASE,
+)
+
+_ALTERNATIVE_REQUEST_RE = re.compile(
+    r"\b(?:algo\s+parecido|otras?|otra\s+propiedad|qu[eé]\s+m[aá]s\s+tienen|"
+    r"mu[eé]strame\s+otras|mu[eé]strame\s+m[aá]s|busco\s+otra|tienen\s+algo\s+m[aá]s|"
+    r"otra\s+comuna|cambiar\s+de\s+comuna)\b",
+    re.IGNORECASE,
+)
+_PROPERTY_REJECTION_RE = re.compile(
+    r"\b(?:no\s+me\s+gust(?:a|o|ó)|no\s+me\s+sirve|no\s+me\s+acomoda|"
+    r"est[aá]\s+muy\s+(?:cara|caro|pequeñ[ao]|grande)|es\s+muy\s+pequeñ[ao]|"
+    r"esa\s+comuna\s+no|no\s+me\s+interesa)\b",
+    re.IGNORECASE,
+)
+
+_UNCONFIRMED_VISIT_RE = re.compile(
+    r"\b(?:tu\s+visita\s+(?:qued[oó]|est[aá])\s+(?:agendada|confirmada)|"
+    r"visita\s+(?:agendada|confirmada|est[aá]\s+confirmada)|te\s+esperamos|"
+    r"reserva\s+confirmada|horario\s+confirmado|disponible\s+a\s+esa\s+hora)\b",
+    re.IGNORECASE,
+)
+
+_PHONE_TARGET_RE = re.compile(
+    r"(?:tel[eé]fono|celular|whatsapp|n[uú]mero\s+(?:de\s+)?contacto|n[uú]mero\s+celular)",
+    re.IGNORECASE,
+)
+
+
+def _normalize_text(text: str) -> str:
+    value = unicodedata.normalize("NFKD", str(text or ""))
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def is_explicit_visit_intent(message: str) -> bool:
+    """Detect operational visit intent without treating generic interest as a visit."""
+    normalized = _normalize_text(message)
+    return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+
+
+def should_offer_visit_data(
+    message: str,
+    llm_intent: str | None = None,
+    *,
+    pending_visit_confirmation: bool = False,
+    visit_data_state: dict | None = None,
+) -> bool:
+    """Return whether optional visit-data enrichment may be offered this turn.
+
+    A broad LLM ``agendar_visita`` classification is intentionally insufficient;
+    it must be supported by an operational phrase or a pending affirmative reply.
+    """
+    state = visit_data_state or {}
+    if state.get("status") in {"declined", "completed"} or state.get("accepted_at"):
+        return False
+    normalized = _normalize_text(message)
+    explicit = is_explicit_visit_intent(normalized)
+    affirmative = bool(pending_visit_confirmation and _VISIT_ACCEPTANCE_RE.match(normalized))
+    return bool(explicit or affirmative)
+
+
+def classify_visit_data_reply(message: str, *, offer_pending: bool) -> str:
+    """Classify a response to the optional data offer as accept/decline/unknown."""
+    if not offer_pending:
+        return "none"
+    normalized = _normalize_text(message)
+    if _VISIT_DECLINE_RE.match(normalized):
+        return "declined"
+    if _VISIT_ACCEPTANCE_RE.match(normalized):
+        return "accepted"
+    return "unknown"
+
+
+def visit_data_fields_missing(state: dict, prospecto: dict | None = None) -> list[str]:
+    """Return allowed visit fields in the requested order, excluding captured ones."""
+    prospecto = prospecto or {}
+    captured = set(state.get("captured_fields") or [])
+    return [
+        field for field in ("nombre", "rut", "email")
+        if field not in captured and not prospecto.get(field)
+    ]
+
+
+def build_visit_data_prompt(field: str) -> str:
+    prompts = {
+        "nombre": "Si quieres, puedo dejar adelantados tus datos para que el ejecutivo encargado coordine la visita más rápido. Es opcional y la visita la coordina el ejecutivo. ¿Me compartes tu nombre completo?",
+        "rut": "Gracias. Para dejar el dato adelantado al ejecutivo, ¿me compartes tu RUT? Es opcional; si prefieres, puedes entregárselo directamente al ejecutivo.",
+        "email": "Gracias. ¿Me compartes tu correo electrónico para dejarlo adelantado al ejecutivo? Es opcional y puedes entregárselo directamente a él si prefieres.",
+    }
+    return prompts.get(field, "El ejecutivo podrá coordinar la visita directamente contigo.")
+
+
+def visit_data_declined_response() -> str:
+    return "Está bien. Dejé registrado tu interés y el ejecutivo podrá coordinar la visita directamente contigo."
+
+
+def alternative_requested(message: str) -> bool:
+    return bool(_ALTERNATIVE_REQUEST_RE.search(_normalize_text(message)))
+
+
+def property_rejected(message: str) -> bool:
+    return bool(_PROPERTY_REJECTION_RE.search(_normalize_text(message)))
+
+
+def filter_relaxation_accepted(message: str, *, offer_pending: bool) -> bool:
+    if not offer_pending:
+        return False
+    normalized = _normalize_text(message)
+    return bool(re.match(r"^(?:si|claro|dale|adelante|ok|bueno)\b", normalized)
+                or re.search(r"\b(?:ampl[ií]a|ampliar|flexibiliza)\b", normalized))
+
+
+def outbound_unconfirmed_visit_claim(text: str) -> bool:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+    # Negated/future claims are safe: they explicitly deny confirmation or defer it.
+    safe_prefixes = ("no esta confirmada", "el ejecutivo confirmara", "el ejecutivo coordinara")
+    if any(prefix in normalized for prefix in safe_prefixes):
+        return False
+    return bool(_UNCONFIRMED_VISIT_RE.search(normalized))
+
+
+def safe_visit_claim_free_response(original: str) -> str:
+    """Replace unsupported booking claims while retaining a useful response."""
+    text = str(original or "").strip()
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    retained = [sentence for sentence in sentences if not outbound_unconfirmed_visit_claim(sentence)]
+    useful = " ".join(retained).strip()
+    suffix = "Registré tu interés; el ejecutivo confirmará la disponibilidad y coordinará el horario contigo."
+    return f"{useful} {suffix}".strip() if useful else suffix
+
+
+def normalize_response(text: str) -> str:
+    value = _normalize_text(text)
+    return re.sub(r"[^a-z0-9@.]+", " ", value).strip()
+
+
+def is_substantial_duplicate(candidate: str, previous: list[str] | tuple[str, ...]) -> bool:
+    """Deterministic duplicate guard for recent bot messages."""
+    current = normalize_response(candidate)
+    if not current:
+        return False
+    return any(current == normalize_response(item) for item in previous if item)
+
+
+def extract_spontaneous_lead_signals(message: str) -> dict:
+    """Extract only high-confidence analytics signals already volunteered by the client."""
+    normalized = _normalize_text(message)
+    result = {}
+    if re.search(r"\b(?:reci[eé]n\s+(?:empec[eé]|comenc[eé])|acabo\s+de\s+empezar)\b", normalized):
+        result["search_duration_bucket"] = "just_started"
+    elif re.search(r"\b(?:hace|llevo)\s+(?:menos\s+de\s+)?(?:un\s+mes|1\s+mes)\b", normalized):
+        result["search_duration_bucket"] = "lt_1_month"
+    elif re.search(r"\b(?:[12]\s*(?:a|-|y)\s*3|dos\s+a\s+tres)\s+mes(?:es)?\b", normalized):
+        result["search_duration_bucket"] = "1_3_months"
+    elif re.search(r"\b(?:[3-5]\s*(?:a|-|y)\s*6|tres\s+a\s+seis|cuatro|cinco|seis)\s+mes(?:es)?\b", normalized):
+        result["search_duration_bucket"] = "3_6_months"
+    elif re.search(r"\b(?:m[aá]s\s+de\s+6|llevo\s+(?:varios|muchos)|m[aá]s\s+de\s+seis)\s+mes(?:es)?\b", normalized):
+        result["search_duration_bucket"] = "gt_6_months"
+
+    if re.search(r"\b(?:cr[eé]dito\s+)?pre\s*aprobado\b", normalized):
+        result["financing_status"] = "preapproved"
+    elif re.search(r"\bcr[eé]dito\b.{0,35}\b(?:evaluaci[oó]n|revisando|en\s+proceso)\b", normalized) or re.search(r"\b(?:evaluando|revisando)\b.{0,25}\bcr[eé]dito\b", normalized):
+        result["financing_status"] = "under_evaluation"
+    elif re.search(r"\b(?:necesito|tengo\s+que|debo)\b.{0,25}\b(?:pedir|gestionar|conseguir)\b.{0,20}\bcr[eé]dito\b", normalized):
+        result["financing_status"] = "needs_financing"
+    elif re.search(r"\b(?:al\s+contado|contado|efectivo)\b", normalized):
+        result["financing_status"] = "cash"
+
+    if re.search(r"\b(?:tengo|ya\s+tengo)\b.{0,35}\b(?:todos?\s+los\s+)?(?:documentos|papeles|antecedentes)\b", normalized):
+        result["rental_docs_readiness"] = "ready"
+    elif re.search(r"\b(?:me\s+faltan|tengo\s+algunos|parcialmente)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
+        result["rental_docs_readiness"] = "partially_ready"
+    elif re.search(r"\b(?:no\s+tengo|me\s+faltan\s+todos)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
+        result["rental_docs_readiness"] = "not_ready"
+    return result
 
 
 def outbound_phone_request(text: str) -> bool:
@@ -18,7 +221,18 @@ def outbound_phone_request(text: str) -> bool:
     normalized = str(text or "").casefold()
     if re.search(r"\bno\s+(?:necesito|quiero|hace falta).{0,80}(?:tel[eé]fono|n[uú]mero|celular|whatsapp)", normalized):
         return False
-    return bool(_PHONE_REQUEST.search(normalized))
+    if _PHONE_REQUEST.search(normalized):
+        return True
+    # Covers requests such as “para coordinar necesito tu número” and “envíame
+    # el celular”, while leaving executive/property contact references intact.
+    request_context = re.compile(
+        r"\b(?:necesito|requiero|dame|env[ií]ame|m[aá]ndame|comparte|ind[ií]came|"
+        r"p[aá]same|deja(?:me)?|puedes?\s+(?:darme|compartir)|cu[aá]l\s+es)\b"
+        r".{0,90}\b(?:tel[eé]fono|celular|whatsapp|n[uú]mero\s+(?:de\s+)?contacto|"
+        r"n[uú]mero\s+celular)\b",
+        re.IGNORECASE | re.DOTALL,
+    )
+    return bool(request_context.search(normalized))
 
 
 def safe_phone_free_response(original: str) -> str:

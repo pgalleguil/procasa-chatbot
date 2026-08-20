@@ -2281,6 +2281,34 @@ async def webhook(
             raise HTTPException(status_code=503, detail="Durable queue unavailable")
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
 
+    # An executive message invalidates any automatic response that has not
+    # reached WhatsApp yet.  The durable worker performs a second cutoff check
+    # immediately before provider delivery for batches already in processing.
+    if not (from_me and user_found and user_found.get("rol") in ["agente", "supervisor"]):
+        return JSONResponse({"ok": True, "status": "outbound_message_recorded"}, status_code=200)
+
+    try:
+        from chatbot.storage import mark_human_takeover, record_observability_event
+        from chatbot.chatbot_queue import cancel_pending_batches_for_human
+        takeover_at = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: mark_human_takeover(phone, source="whatsapp_human_message"),
+        )
+        cancelled = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: cancel_pending_batches_for_human(_sync_db(), phone=phone),
+        )
+        await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: record_observability_event(
+                "human_takeover_received",
+                {"conversation_id": None, "takeover_at": takeover_at,
+                 "cancelled_pending_batches": int(cancelled or 0)},
+            ),
+        )
+    except Exception:
+        logger.exception("[CHATBOT_QUEUE] no se pudo invalidar la respuesta automatica ante takeover humano")
+
     return JSONResponse({"ok": True, "status": "human_message_recorded"}, status_code=200)
 
 @app.get("/health")

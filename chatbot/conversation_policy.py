@@ -175,19 +175,29 @@ def filter_relaxation_accepted(message: str, *, offer_pending: bool) -> bool:
 
 
 def outbound_unconfirmed_visit_claim(text: str) -> bool:
-    normalized = _normalize_text(text)
-    if not normalized:
-        return False
-    # Negated/future claims are safe: they explicitly deny confirmation or defer it.
-    safe_patterns = (
-        r"\b(?:el\s+)?ejecutivo\b.{0,60}\b(?:confirmara|coordinara|revisara|avisara)\b",
-        r"\b(?:registre|anote|dej[eé]\s+registrado)\b.{0,70}\b(?:interes|prefieres|preferencia)\b",
-        r"\b(?:avise|avis[eé]|le\s+avise)\s+al\s+ejecutivo\b",
-        r"\b(?:no\s+esta\s+confirmada|no\s+esta\s+reservada)\b",
-    )
-    if any(re.search(pattern, normalized) for pattern in safe_patterns):
-        return False
-    return bool(_UNCONFIRMED_VISIT_RE.search(normalized))
+    # Evaluate each sentence independently. A safe sentence must never
+    # absolve a prohibited claim in another sentence of the same response.
+    segments = re.split(r"(?<=[.!?])\s+|;\s*", str(text or "").strip())
+    for segment in segments:
+        normalized = _normalize_text(segment)
+        if not normalized:
+            continue
+        # This is a bounded safe construction: it delegates the availability
+        # check to the executive. It must not suppress a second claim in the
+        # same sentence.
+        safe_future_check = re.search(
+            r"\b(?:el\s+)?ejecutivo\s+confirmara\s+si\s+existe\s+disponibilidad\b",
+            normalized,
+        )
+        if safe_future_check and not re.search(
+            r"\b(?:te\s+agend[eé]|agendada|confirmada|reservad[oa]|"
+            r"tenemos\s+disponibilidad|hay\s+disponibilidad|podemos\s+recibirte)\b",
+            normalized[safe_future_check.end():],
+        ):
+            continue
+        if _UNCONFIRMED_VISIT_RE.search(normalized):
+            return True
+    return False
 
 
 def safe_visit_claim_free_response(original: str) -> str:
@@ -267,11 +277,6 @@ def extract_spontaneous_lead_signals(message: str, operation: str | None = None)
 
 def outbound_phone_request(text: str) -> bool:
     """True only for an explicit request, never for ordinary contact mentions."""
-    normalized = str(text or "").casefold()
-    if re.search(r"\bno\s+(?:necesito|quiero|hace falta).{0,80}(?:tel[eé]fono|n[uú]mero|celular|whatsapp)", normalized):
-        return False
-    if _PHONE_REQUEST.search(normalized):
-        return True
     # Covers requests such as “para coordinar necesito tu número” and “envíame
     # el celular”, while leaving executive/property contact references intact.
     request_context = re.compile(
@@ -281,7 +286,28 @@ def outbound_phone_request(text: str) -> bool:
         r"n[uú]mero\s+celular)\b",
         re.IGNORECASE | re.DOTALL,
     )
-    return bool(request_context.search(normalized))
+
+    segments = re.split(r"(?<=[.!?])\s+|;\s*", str(text or "").strip())
+    for segment in segments:
+        normalized = _normalize_text(segment)
+        if not normalized:
+            continue
+        # A negative mention is safe only when that same clause does not also
+        # contain a later request. This prevents mixed messages from bypassing
+        # the guard through a global exception.
+        negative = re.match(
+            r"^no\s+(?:necesito|quiero|hace\s+falta)\b.*?"
+            r"(?:tel[eé]fono|n[uú]mero|celular|whatsapp)\b\s*",
+            normalized,
+            re.IGNORECASE,
+        )
+        if negative:
+            remainder = normalized[negative.end():]
+            if not (_PHONE_REQUEST.search(remainder) or request_context.search(remainder)):
+                continue
+        if _PHONE_REQUEST.search(normalized) or request_context.search(normalized):
+            return True
+    return False
 
 
 def safe_phone_free_response(original: str) -> str:

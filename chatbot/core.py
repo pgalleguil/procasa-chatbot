@@ -363,6 +363,89 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
     if not conversation_id:
         conversation_id = await _run_sync(ensure_conversation_id, phone)
+
+    async def _persist_generated_outbound(response: str, metadata: dict, *, intent: str | None = None,
+                                          lead_doc: dict | None = None) -> str:
+        """Persist every queue-bound response in the durable delivery state machine."""
+        generation_id = (telemetry_context or {}).get("generation_id") or str(uuid.uuid4())
+        batch_id = (telemetry_context or {}).get("batch_id")
+        effective_metadata = {
+            **(metadata or {}),
+            "delivery_status": "generated",
+            "batch_id": batch_id,
+            "generation_id": generation_id,
+        }
+        lead = lead_doc or lead_doc_full
+        lead_id = str(lead.get("_id")) if lead.get("_id") else None
+        try:
+            await _run_sync(log_event, phone, InteractionType.BOT_MSG, "bot", {
+                "text": response,
+                "intencion": intent,
+                "delivery_status": "generated",
+                "batch_id": batch_id,
+                "generation_id": generation_id,
+            })
+        except Exception as ex_log:
+            logger.error(f"Error logging bot event: {ex_log}")
+        await _run_sync(guardar_mensaje, phone, "assistant", response, effective_metadata)
+        await _run_sync(record_observability_event, "RESPONSE_GENERATED", {
+            "conversation_id": conversation_id,
+            "lead_id": lead_id,
+            "batch_id": batch_id,
+            "generation_id": generation_id,
+            "intent": intent,
+            "response_len": len(response or ""),
+        })
+        return response
+
+    async def _await_durable_handoff(*, alert_type: str, lead_score: int, criteria: dict,
+                                     last_response: str, last_user_msg: str,
+                                     full_history: list, window_minutes: int,
+                                     lead_type_label: str, alert_phone: str | None = None) -> dict:
+        """Wait for the canonical CRM handoff and record its durable outcome."""
+        event_base = {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "alert_type": alert_type,
+        }
+        await _run_sync(record_observability_event, "human_handoff_triggered", {
+            **event_base,
+            "property_id": criteria.get("codigo"),
+            "operation": criteria.get("operacion"),
+        })
+        try:
+            result = await send_alert_once(
+                phone=alert_phone or phone,
+                lead_type=alert_type,
+                lead_score=lead_score,
+                criteria=criteria,
+                last_response=last_response,
+                last_user_msg=last_user_msg,
+                full_history=full_history,
+                window_minutes=window_minutes,
+                lead_type_label=lead_type_label,
+            )
+        except Exception as exc:
+            await _run_sync(record_observability_event, "human_handoff_failed", {
+                **event_base, "reason": type(exc).__name__,
+            })
+            logger.error("[HANDOFF] durable handoff failed type=%s", alert_type, exc_info=True)
+            return {"status": "failed", "reason": type(exc).__name__}
+
+        result = result if isinstance(result, dict) else {"status": "enqueued"}
+        if result.get("status") in {"enqueued", "deduplicated"}:
+            await _run_sync(record_observability_event, "human_handoff_enqueued", {
+                **event_base,
+                "status": result.get("status"),
+                "durable": result.get("durable"),
+                "assignment_cycle_id": result.get("assignment_cycle_id"),
+                "delivery_id": result.get("delivery_id"),
+            })
+        else:
+            await _run_sync(record_observability_event, "human_handoff_failed", {
+                **event_base, "reason": result.get("reason") or result.get("status"),
+            })
+        return result
     visit_data_state = await _run_sync(get_visit_data_state, phone)
     pending_visit_data_reply = classify_visit_data_reply(
         original_message,
@@ -464,10 +547,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         respuesta = await _run_sync(
             generar_respuesta,
             [{"role": "system", "content": prompt_propietario}, *historial[-20:], {"role": "user", "content": original_message}],
-            "propietario"
+            "propietario",
+            telemetry_context=telemetry_context,
         )
-        await _run_sync(guardar_mensaje, phone, "assistant", respuesta, {"tipo": "propietario_atencion"})
-        return respuesta
+        return await _persist_generated_outbound(
+            respuesta, {"tipo": "propietario_atencion"}, intent="propietario"
+        )
 
     # =======================================================
     # 2b. FLUJO CORREDOR DE PROPIEDADES EXTERNO
@@ -495,8 +580,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             logger.info("[CORREDOR] Otro worker ya bloqueó la conversación; no se repite rechazo.")
             return ""
         logger.info(f"[CORREDOR] Respuesta de rechazo enviada a {phone}.")
-        await _run_sync(guardar_mensaje, phone, "assistant", respuesta_corredor, {"tipo": "rechazo_corredor"})
-        return respuesta_corredor
+        return await _persist_generated_outbound(
+            respuesta_corredor, {"tipo": "rechazo_corredor"}, intent="corredor_externo"
+        )
 
     # =======================================================
     # 3. ANÁLISIS PRELIMINAR DE DATOS Y EXTRACCIÓN PROACTIVA
@@ -520,6 +606,24 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         nombre_explicito = extraer_nombre_explicito(original_message)
         if nombre_explicito:
             updates_datos["nombre"] = nombre_explicito
+
+    # When optional visit enrichment is active, the requested field is a
+    # conversational slot. A plain answer such as "Juan Pérez" is valid even
+    # without an introductory phrase like "me llamo".
+    if visit_data_state.get("status") == "accepted":
+        requested_field = visit_data_state.get("last_requested_field")
+        if requested_field == "nombre" and not prospecto_actual.get("nombre") and "nombre" not in updates_datos:
+            candidate = str(original_message or "").strip()
+            if re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}){1,3}", candidate):
+                updates_datos["nombre"] = candidate
+        elif requested_field == "rut" and not prospecto_actual.get("rut") and "rut" not in updates_datos:
+            captured_rut = extraer_rut(original_message)
+            if captured_rut:
+                updates_datos["rut"] = captured_rut
+        elif requested_field == "email" and not prospecto_actual.get("email") and "email" not in updates_datos:
+            captured_email = extraer_email(original_message)
+            if captured_email:
+                updates_datos["email"] = captured_email
 
     # B) EXTRACCIÓN RÁPIDA DE INTENCIÓN DE BÚSQUEDA (Heurística)
     if not prospecto_actual.get("operacion"):
@@ -726,9 +830,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         # Enviar alerta silenciosa al admin sobre el link roto o propiedad faltante
         prospecto_temporal = dict(prospecto_actual)
         prospecto_temporal["link_pendiente"] = True
-        asyncio.create_task(send_alert_once(phone=phone, lead_type="MissingProperty", lead_score=0,
-                        criteria=prospecto_temporal, last_response="", last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="Propiedad No Encontrada"))
+        await _await_durable_handoff(
+            alert_type="MissingProperty", lead_score=0, criteria=prospecto_temporal,
+            last_response="", last_user_msg=original_message, full_history=historial,
+            window_minutes=60, lead_type_label="Propiedad No Encontrada",
+        )
 
         respuesta_link_pendiente = (
             "Gracias por compartir el enlace. En este momento no pude identificar la propiedad en nuestra base de datos, "
@@ -736,12 +842,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "Apenas actualicemos la información, un ejecutivo se pondrá en contacto contigo. "
             "Si lo prefieres, también puedes contarme qué tipo de propiedad buscas y te ayudaré con otras opciones."
         )
-        await _run_sync(guardar_mensaje, phone, "assistant", respuesta_link_pendiente, {
-            "tipo": "link_no_encontrado",
-            "intencion": "consulta_general",
-            "lead_intent": LeadIntent.ASK_INFO
-        })
-        return respuesta_link_pendiente
+        return await _persist_generated_outbound(
+            respuesta_link_pendiente,
+            {"tipo": "link_no_encontrado", "intencion": "consulta_general", "lead_intent": LeadIntent.ASK_INFO},
+            intent="consulta_general",
+        )
     elif propiedad:
         # NOTA: "codigo": None if hay_url else ... → el None es filtrado por actualizar_prospecto (storage.py:224)
         # Se mantiene el campo solo por completitud lógica, no escribe None a Mongo.
@@ -813,22 +918,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             f"pero no existe en `universo_cartera`.\n\n"
             f"El lead quedó sin propiedad confirmada. Favor revisar el enlace o actualizar la base."
         )
-        asyncio.create_task(send_alert_once(
-            phone=admin_phone,
-            lead_type="MissingProperty",
-            lead_score=0,
+        await _await_durable_handoff(
+            alert_type="MissingProperty", lead_score=0,
             criteria={
                 "nombre": "Admin Pablo",
                 "codigo_faltante": codigo_externo,
                 "link_pendiente": True,
                 "codigo": "",
             },
-            last_response=admin_msg,
-            last_user_msg=original_message,
-            full_history=[],
-            window_minutes=120,
-            lead_type_label="PROPIEDAD FALTANTE"
-        ))
+            last_response=admin_msg, last_user_msg=original_message,
+            full_history=[], window_minutes=120,
+            lead_type_label="PROPIEDAD FALTANTE", alert_phone=admin_phone,
+        )
         logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
 
     # =======================================================
@@ -1367,9 +1468,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "phone": phone,
             "alert_type": "EscaladoUrgente"
         })
-        asyncio.create_task(send_alert_once(phone=phone, lead_type="EscaladoUrgente", lead_score=lead_score,
-                        criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="ESCALADO URGENTE"))
+        await _await_durable_handoff(
+            alert_type="EscaladoUrgente", lead_score=lead_score, criteria=prospecto_actual,
+            last_response=respuesta, last_user_msg=original_message, full_history=historial,
+            window_minutes=60, lead_type_label="ESCALADO URGENTE",
+        )
         metadata_tipo = {"tipo": "escalado_urgente", "intencion": intencion}
 
     elif intencion == "agendar_visita":
@@ -1379,16 +1482,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "phone": phone,
             "alert_type": "InteresVisita"
         })
-        await _run_sync(record_observability_event, "human_handoff_triggered", {
-            "conversation_id": conversation_id,
-            "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
-            "property_id": prospecto_actual.get("codigo"),
-            "operation": prospecto_actual.get("operacion"),
-            "handoff_reason": "explicit_visit_intent",
-        })
-        asyncio.create_task(send_alert_once(phone=phone, lead_type="InteresVisita", lead_score=lead_score,
-                        criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="Interés de Visita"))
+        await _await_durable_handoff(
+            alert_type="InteresVisita", lead_score=lead_score, criteria=prospecto_actual,
+            last_response=respuesta, last_user_msg=original_message, full_history=historial,
+            window_minutes=60, lead_type_label="Interés de Visita",
+        )
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":
@@ -1398,9 +1496,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "phone": phone,
             "alert_type": "SolicitudContacto"
         })
-        asyncio.create_task(send_alert_once(phone=phone, lead_type="SolicitudContacto", lead_score=lead_score,
-                        criteria=prospecto_actual, last_response=respuesta, last_user_msg=original_message,
-                        full_history=historial, window_minutes=60, lead_type_label="Solicitud de Contacto"))
+        await _await_durable_handoff(
+            alert_type="SolicitudContacto", lead_score=lead_score, criteria=prospecto_actual,
+            last_response=respuesta, last_user_msg=original_message, full_history=historial,
+            window_minutes=60, lead_type_label="Solicitud de Contacto",
+        )
         metadata_tipo = {"tipo": "contacto_directo", "intencion": intencion}
 
     # The handoff is independent from enrichment. Offer data only after the
@@ -1468,45 +1568,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
-    generation_id = (telemetry_context or {}).get("generation_id") or str(uuid.uuid4())
-    try:
-        # Log del evento estructurado (Ya usa InteractionType.BOT_MSG)
-        await _run_sync(log_event, phone, InteractionType.BOT_MSG, "bot", {
-            "text": respuesta, 
-            "intencion": intencion,
-            "lead_intent": selected_intent,
-            "delivery_status": "generated",
-            "batch_id": (telemetry_context or {}).get("batch_id"),
-            "generation_id": generation_id,
-        })
-        
-        # No auto-promovemos a CONTACTED. El lead se queda en NEW (Rojo) hasta que el humano gestante lo tome.
-        pass
-            
-    except Exception as ex_log:
-        logger.error(f"Error logging bot event: {ex_log}")
-
     logger.info(
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")
     )
-    generated_metadata = {
-        **metadata_tipo,
-        "delivery_status": "generated",
-        "batch_id": (telemetry_context or {}).get("batch_id"),
-        "generation_id": generation_id,
-    }
-    await _run_sync(guardar_mensaje, phone, "assistant", respuesta, generated_metadata)
-    await _run_sync(record_observability_event, "RESPONSE_GENERATED", {
-        "conversation_id": conversation_id,
-        "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
-        "batch_id": (telemetry_context or {}).get("batch_id"),
-        "generation_id": generation_id,
-        "intent": intencion,
-        "response_len": len(respuesta or "")
-    })
-    
-    return respuesta
+    return await _persist_generated_outbound(
+        respuesta,
+        {**metadata_tipo, "lead_intent": selected_intent},
+        intent=intencion,
+        lead_doc=lead_doc,
+    )
 
 
 def process_user_message_sync(phone: str, message: str, telemetry_context: dict | None = None) -> str:

@@ -292,6 +292,22 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
     if metadata:
         message.update(metadata)
 
+    # A durable outbound response is not an effective customer interaction
+    # until the provider accepts it. Keep generated/attempted/suppressed/
+    # unknown messages in the audit trail, but do not promote them to the
+    # canonical lead snapshot used by CRM.
+    outbound_pending = (
+        role == "assistant"
+        and message.get("delivery_status") in {
+            "generated", "provider_attempt", "suppressed", "delivery_unknown",
+        }
+    )
+    snapshot_fields = {} if outbound_pending else {
+        "last_message_at": now.isoformat(),
+        "last_message_role": role,
+        "last_message_preview": str(content)[:160],
+    }
+
     if lead_id:
         from bson import ObjectId
         try:
@@ -302,11 +318,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
             {"_id": qid},
             {
                 "$push": {"messages": {"$each": [message], "$slice": -50}},
-                "$set": {
-                    "last_message_at": now.isoformat(),
-                    "last_message_role": role,
-                    "last_message_preview": str(content)[:160],
-                },
+                "$set": snapshot_fields,
             }
         )
     else:
@@ -314,11 +326,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
             {"phone": phone},
             {
                 "$push": {"messages": {"$each": [message], "$slice": -50}},
-                "$set": {
-                    "last_message_at": now.isoformat(),
-                    "last_message_role": role,
-                    "last_message_preview": str(content)[:160],
-                },
+                "$set": snapshot_fields,
                 "$setOnInsert": {
                     "created_at": now.isoformat(),
                     "lead_temperature_effective": "COLD",
@@ -445,6 +453,14 @@ def update_generated_response_delivery(
         fields["messages.$.content"] = str(content)
     if provider_message_id is not None:
         fields["messages.$.provider_message_id"] = str(provider_message_id)
+    if status == "accepted":
+        effective_content = str(content) if content is not None else None
+        if effective_content is not None:
+            fields.update({
+                "last_message_at": datetime.now(CHILE_TZ).isoformat(),
+                "last_message_role": "assistant",
+                "last_message_preview": effective_content[:160],
+            })
     result = (db or get_db())[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
     return bool(result.modified_count or result.matched_count)
 

@@ -133,7 +133,13 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
       - Responde preguntas técnicas con precisión usando la ficha.
       - Si el dato está → respóndelo natural y positivo.
       - Si no está → sé honesto.
-      - Siempre impulsa suavemente hacia la visita.
+      - Solo impulsa suavemente hacia la visita cuando el contexto determinístico
+        indique una señal concreta de interés; no agregues un CTA en cada turno.
+      - Responde primero la pregunta del cliente. Mantén la respuesta en 1 a 3
+        frases y formula como máximo una pregunta principal.
+      - Si el cliente plantea una objeción de precio, ubicación, tamaño o rechazo,
+        reconócela brevemente y ofrece alternativas sin insistir en la propiedad.
+      - Si dice que solo está mirando, ayuda sin presionar, pedir datos ni activar handoff.
       - Si hay PROPIEDADES ENCONTRADAS por búsqueda (RAG), ofrécelas amablemente.
 
     REGLA SUPREMA - USA LA FICHA COMO VERDAD ABSOLUTA:
@@ -161,7 +167,9 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         prospecto_actual.get("phone") or "",
         "VISIT_CONFIRMATION",
     ) if prospecto_actual.get("phone") else None
-    inject_visit_prompt = bool(property_code and not has_pending)
+    # CTA timing is decided deterministically by chatbot.core. Injecting this
+    # prompt for every property would bypass the cooldown and repeat the CTA.
+    inject_visit_prompt = False
 
     system_prompt_extraction = f"""
     [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]

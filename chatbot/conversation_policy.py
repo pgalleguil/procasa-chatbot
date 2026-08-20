@@ -15,6 +15,7 @@ _PHONE_REQUEST = re.compile(
 
 _VISIT_INTENT_PATTERNS = (
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a)\s+(?:ver(?:la|lo|la\s+propiedad|el\s+inmueble)?|visitar(?:la|lo)?|conocer(?:la|lo)?)\b",
+    r"\bpodemos\s+ver(?:la|lo)?(?:\s+(?:hoy|ma[nñ]ana|el\s+\w+))?\b",
     r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
@@ -49,6 +50,20 @@ _PROPERTY_REJECTION_RE = re.compile(
     r"\b(?:no\s+me\s+gust(?:a|o|ó)|no\s+me\s+sirve|no\s+me\s+acomoda|"
     r"est[aá]\s+muy\s+(?:cara|caro|pequeñ[ao]|grande)|es\s+muy\s+pequeñ[ao]|"
     r"esa\s+comuna\s+no|no\s+me\s+interesa)\b",
+    re.IGNORECASE,
+)
+
+_JUST_BROWSING_RE = re.compile(
+    r"\b(?:solo\s+estoy\s+mirando|solo\s+miro|solo\s+consultando|"
+    r"solo\s+consulto|estoy\s+cotizando|por\s+ahora\s+solo)\b",
+    re.IGNORECASE,
+)
+_INTEREST_SIGNAL_RE = re.compile(
+    r"\b(?:precio|cu[aá]nto|gasto(?:s)?\s+comunes?|ubicaci[oó]n|comuna|"
+    r"direcci[oó]n|estacionamiento|dormitorio(?:s)?|habitaci[oó]n(?:es)?|ba[nñ]o(?:s)?|"
+    r"disponib(?:le|ilidad)|caracter[ií]sticas?|condiciones?|financiamiento|"
+    r"cr[eé]dito|me\s+gusta|me\s+interesa|interesado|compar(?:ar|ando)|"
+    r"metros?|tama[nñ]o|superficie|terraza|bodega)\b",
     re.IGNORECASE,
 )
 
@@ -150,6 +165,99 @@ def alternative_requested(message: str) -> bool:
 
 def property_rejected(message: str) -> bool:
     return bool(_PROPERTY_REJECTION_RE.search(_normalize_text(message)))
+
+
+def is_just_browsing(message: str) -> bool:
+    """Detect a low-pressure browsing statement that should not trigger a CTA."""
+    return bool(_JUST_BROWSING_RE.search(_normalize_text(message)))
+
+
+def classify_objection(message: str) -> str | None:
+    """Classify common objections without inferring unstated preferences."""
+    normalized = _normalize_text(message)
+    if not normalized or is_just_browsing(normalized):
+        return "just_browsing" if normalized else None
+    if re.search(r"\b(?:car[oa]|muy\s+car[oa]|precio|presupuesto|costoso)\b", normalized):
+        return "price"
+    if re.search(r"\b(?:comuna|ubicaci[oó]n|sector|zona)\b", normalized) and (
+        property_rejected(normalized) or re.search(r"\b(?:no\s+me|otra|cambiar|busco)\b", normalized)
+    ):
+        return "location"
+    if re.search(r"\b(?:dormitorio|habitaci[oó]n|m[aá]s\s+grande|m[aá]s\s+peque[nñ]a|tama[nñ]o)\b", normalized):
+        return "size"
+    if re.search(r"\b(?:arrendada|vendida|no\s+disponible)\b", normalized):
+        return "unavailable"
+    if property_rejected(normalized):
+        return "property_rejected"
+    return None
+
+
+def has_reasonable_visit_interest(message: str) -> bool:
+    """Return true for a concrete property question or positive interest signal."""
+    normalized = _normalize_text(message)
+    return bool(normalized and _INTEREST_SIGNAL_RE.search(normalized))
+
+
+def visit_cta_reply(message: str, *, cta_shown: bool) -> str:
+    """Classify only a reply to a previously shown CTA."""
+    if not cta_shown:
+        return "none"
+    normalized = _normalize_text(message)
+    if is_explicit_visit_intent(normalized) or _VISIT_ACCEPTANCE_RE.fullmatch(normalized):
+        return "accepted"
+    if is_just_browsing(normalized) or _VISIT_DECLINE_RE.fullmatch(normalized):
+        return "declined"
+    return "none"
+
+
+def should_show_visit_cta(
+    message: str,
+    *,
+    cta_state: dict | None = None,
+    turn_index: int = 0,
+    property_id: str | None = None,
+    objection_type: str | None = None,
+) -> bool:
+    """Decide deterministically when a contextual visit CTA may be added."""
+    normalized = _normalize_text(message)
+    if not normalized or is_explicit_visit_intent(normalized):
+        return False
+    if objection_type in {"price", "location", "size", "unavailable", "property_rejected", "just_browsing"}:
+        return False
+    if is_just_browsing(normalized) or not has_reasonable_visit_interest(normalized):
+        return False
+    state = cta_state or {}
+    previous_property = str(state.get("property_id") or "")
+    current_property = str(property_id or "")
+    if previous_property and current_property and previous_property != current_property:
+        return True
+    last_shown_turn = state.get("last_shown_turn")
+    try:
+        if last_shown_turn is not None and int(turn_index) <= int(last_shown_turn) + 2:
+            return False
+    except (TypeError, ValueError):
+        pass
+    return True
+
+
+def visit_cta_text() -> str:
+    return "¿Te gustaría que el ejecutivo coordine una visita contigo?"
+
+
+def contains_visit_cta(text: str) -> bool:
+    normalized = _normalize_text(text)
+    return bool(re.search(
+        r"(?:te\s+gustaria|te\s+interesa|quieres|puedo\s+dejar\s+registrad[ao]|"
+        r"coordinar\s+una)\b.{0,100}\b(?:visita|ejecutivo|coordinar)\b",
+        normalized,
+    ))
+
+
+def remove_visit_cta(text: str) -> str:
+    """Remove an unapproved/repeated CTA while preserving the answer."""
+    parts = re.split(r"(?<=[.!?])\s+", str(text or "").strip())
+    retained = [part for part in parts if not contains_visit_cta(part)]
+    return " ".join(retained).strip() or "Claro, sigo atento a tu consulta."
 
 
 def alternative_offer_accepted(message: str, *, offer_pending: bool) -> bool:

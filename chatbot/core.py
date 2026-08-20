@@ -22,6 +22,8 @@ from .storage import (
     update_visit_data_state,
     update_rag_alternative_offer_state,
     update_rag_search_state,
+    get_visit_cta_state,
+    update_visit_cta_state,
     VISIT_DATA_FIELDS,
 )
 from .crm_service import CrmService
@@ -58,6 +60,13 @@ from .conversation_policy import (
     safe_visit_claim_free_response,
     is_substantial_duplicate,
     duplicate_response_fallback,
+    classify_objection,
+    is_just_browsing,
+    should_show_visit_cta,
+    visit_cta_reply,
+    visit_cta_text,
+    contains_visit_cta,
+    remove_visit_cta,
 )
 
 logger = logging.getLogger(__name__)
@@ -364,6 +373,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if not conversation_id:
         conversation_id = await _run_sync(ensure_conversation_id, phone)
 
+    conversion_batch_id = (telemetry_context or {}).get("batch_id")
+    conversion_generation_id = (telemetry_context or {}).get("generation_id")
+
+    async def _conversion_event(event_name: str, **payload):
+        """Append conversion telemetry without message content or PII."""
+        await _run_sync(record_observability_event, event_name, {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "property_id": payload.pop("property_id", None),
+            "batch_id": conversion_batch_id,
+            "generation_id": conversion_generation_id,
+            **payload,
+        })
+
     async def _persist_generated_outbound(response: str, metadata: dict, *, intent: str | None = None,
                                           lead_doc: dict | None = None) -> str:
         """Persist every queue-bound response in the durable delivery state machine."""
@@ -446,6 +469,28 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 **event_base, "reason": result.get("reason") or result.get("status"),
             })
         return result
+    visit_cta_state = await _run_sync(get_visit_cta_state, phone)
+    user_turn_index = sum(1 for item in historial if item.get("role") == "user")
+    cta_reply = visit_cta_reply(
+        original_message,
+        cta_shown=visit_cta_state.get("status") == "shown",
+    )
+    cta_acceptance_this_turn = cta_reply == "accepted"
+    if cta_reply in {"accepted", "declined"}:
+        visit_cta_state = await _run_sync(update_visit_cta_state, phone, {
+            "status": cta_reply,
+            f"{cta_reply}_at": datetime.now(CHILE_TZ).isoformat(),
+        })
+        await _conversion_event(f"visit_cta_{cta_reply}", property_id=visit_cta_state.get("property_id"))
+
+    objection_type = classify_objection(original_message)
+    if objection_type:
+        await _conversion_event(
+            "objection_detected",
+            property_id=prospecto_actual.get("codigo"),
+            objection_type=objection_type,
+        )
+
     visit_data_state = await _run_sync(get_visit_data_state, phone)
     pending_visit_data_reply = classify_visit_data_reply(
         original_message,
@@ -471,6 +516,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             rag_alternative_state = await _run_sync(update_rag_alternative_offer_state, phone, {
                 "status": "accepted", "accepted_at": datetime.now(CHILE_TZ).isoformat(),
             })
+            await _conversion_event(
+                "alternative_search_accepted",
+                property_id=rag_alternative_state.get("property_id"),
+            )
         elif alternative_offer_declined(original_message, offer_pending=True):
             alternative_reply = "declined"
             rag_alternative_state = await _run_sync(update_rag_alternative_offer_state, phone, {
@@ -995,6 +1044,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     stored_rag_criteria = dict(rag_search_state.get("criteria") or {})
     extracted_rag_filters, _ = extraer_filtros_estructurados(original_message)
     explicit_rag_criteria = {}
+    # Persist only criteria explicitly extracted from the current customer
+    # message. Never copy attributes from the active property into preferences.
     if extracted_rag_filters.get("operacion"):
         explicit_rag_criteria["operacion"] = extracted_rag_filters["operacion"]
     if extracted_rag_filters.get("tipo"):
@@ -1002,11 +1053,17 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if extracted_rag_filters.get("comunas"):
         explicit_rag_criteria["comuna"] = ", ".join(extracted_rag_filters["comunas"])
         explicit_rag_criteria["comunas"] = list(extracted_rag_filters["comunas"])
-    if extracted_rag_filters.get("dormitorios"):
-        explicit_rag_criteria["dormitorios"] = extracted_rag_filters["dormitorios"]
+    for field in (
+        "dormitorios", "banos", "estacionamientos", "bodegas", "orientacion",
+        "piso", "gastos_comunes_min", "gastos_comunes_max", "piso_dir",
+        "dormitorios_exacto", "banos_exacto", "estacionamientos_exacto", "bodegas_exacto",
+    ):
+        if extracted_rag_filters.get(field) is not None:
+            explicit_rag_criteria[field] = extracted_rag_filters[field]
     budget = extracted_rag_filters.get("precio_uf_max") or extracted_rag_filters.get("precio_clp_max")
     if budget:
         explicit_rag_criteria["presupuesto"] = budget
+        explicit_rag_criteria["presupuesto_tipo"] = "uf" if extracted_rag_filters.get("precio_uf_max") else "clp"
     if explicit_rag_criteria:
         stored_rag_criteria.update(explicit_rag_criteria)
         rag_search_state = await _run_sync(update_rag_search_state, phone, {
@@ -1014,6 +1071,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "criteria_updated_at": datetime.now(CHILE_TZ).isoformat(),
         })
         prospecto_actual["rag_search_state"] = rag_search_state
+        await _conversion_event(
+            "conversation_criteria_updated",
+            property_id=prospecto_actual.get("codigo"),
+            criteria_fields_changed=sorted(explicit_rag_criteria),
+        )
+    criteria_change_signal = bool(
+        explicit_rag_criteria
+        and re.search(r"\b(?:busco|necesito|quiero|prefiero)\b", msg_lower)
+    )
 
     # A property's original attributes are not copied as customer preferences.
     # Operation may still be used as transactional context for the existing RAG
@@ -1023,12 +1089,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "tipo": stored_rag_criteria.get("tipo"),
         "comuna": stored_rag_criteria.get("comuna"),
         "dormitorios": stored_rag_criteria.get("dormitorios"),
+        "banos": stored_rag_criteria.get("banos"),
+        "estacionamientos": stored_rag_criteria.get("estacionamientos"),
+        "bodegas": stored_rag_criteria.get("bodegas"),
+        "orientacion": stored_rag_criteria.get("orientacion"),
+        "piso": stored_rag_criteria.get("piso"),
+        "piso_dir": stored_rag_criteria.get("piso_dir"),
+        "gastos_comunes_min": stored_rag_criteria.get("gastos_comunes_min"),
+        "gastos_comunes_max": stored_rag_criteria.get("gastos_comunes_max"),
         "presupuesto": stored_rag_criteria.get("presupuesto"),
     }
 
     # CASO A: Propiedad Específica (Link o Código), salvo que el cliente pida
     # alternativas explícitamente.
-    if propiedad and not alternatives_requested_now and not rejection_without_alternative and alternative_reply != "accepted":
+    if propiedad and not alternatives_requested_now and not criteria_change_signal and not rejection_without_alternative and alternative_reply != "accepted":
         ficha_texto = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
         system_parts.append(f"""
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
@@ -1039,7 +1113,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     else:
         # LÓGICA RAG: la propiedad activa no impide buscar alternativas cuando
         # el cliente las solicita. Un rechazo sin solicitud solo ofrece ayuda.
-        is_search_intent = any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones", "más"])
+        is_search_intent = criteria_change_signal or any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones", "más"])
         is_initial_search = len(historial) <= 6 # Heurística para etapas tempranas
         rag_state = (prospecto_actual.get("rag_filter_relaxation") or {})
         relaxation_accepted = filter_relaxation_accepted(
@@ -1143,16 +1217,23 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                         "status": "consumed", "consumed_at": datetime.now(CHILE_TZ).isoformat(),
                     })
         
-        # Si faltan datos para buscar y parece que quiere buscar
-        elif any(x in msg_lower for x in ["busco", "necesito", "quiero", "tienen"]):
-            faltan_rag = []
-            if not criterios_rag["operacion"]: faltan_rag.append("si es Venta o Arriendo")
-            if not criterios_rag["comuna"]: faltan_rag.append("la Comuna")
-            
+        # Si faltan datos para buscar, ask only for the first essential
+        # criterion. This keeps a rejection/alternative flow conversational
+        # instead of turning it into a form.
+        elif alternative_reply == "accepted" or any(x in msg_lower for x in ["busco", "necesito", "quiero", "tienen"]):
+            if not criterios_rag["operacion"]:
+                missing_prompt = "¿Buscas comprar o arrendar?"
+            elif not criterios_rag["comuna"]:
+                missing_prompt = "¿En qué comuna o sector prefieres buscar?"
+            elif not criterios_rag["tipo"]:
+                missing_prompt = "¿Qué tipo de propiedad prefieres?"
+            else:
+                missing_prompt = "¿Qué característica es más importante para ti?"
             system_parts.append(f"""
             [ASISTENTE DE BÚSQUEDA]
-            Faltan datos para buscar propiedades: {', '.join(faltan_rag)}.
-            INSTRUCCIÓN: Pregunta amablemente por estos datos.
+            Falta un criterio esencial para buscar alternativas.
+            INSTRUCCIÓN: formula únicamente esta pregunta, sin pedir otros datos:
+            {missing_prompt}
             """)
         elif rejection_without_alternative:
             property_id = prospecto_actual.get("codigo") or (propiedad or {}).get("codigo")
@@ -1401,7 +1482,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         if should_offer_visit_data(
             original_message,
             intencion,
-            pending_visit_confirmation=bool(pending_visit_before),
+            pending_visit_confirmation=bool(pending_visit_before) or cta_acceptance_this_turn,
             # Intent detection is independent from whether enrichment was
             # previously declined; a later explicit visit request still
             # deserves a handoff.
@@ -1416,7 +1497,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     visit_intent_clear = should_offer_visit_data(
         original_message,
         intencion,
-        pending_visit_confirmation=bool(pending_visit_before),
+        pending_visit_confirmation=bool(pending_visit_before) or cta_acceptance_this_turn,
         visit_data_state={},
     )
     if intencion == "agendar_visita" and not visit_intent_clear:
@@ -1539,6 +1620,44 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                     "requested_fields": sorted(requested | {next_field}),
                     "last_requested_field": next_field,
                 })
+
+    # Contextual CTA: answer the customer's question first, then add one
+    # short invitation only when there is a concrete interest signal. A
+    # property rejection/objection is handled by the alternative flow above.
+    current_property_for_cta = str(prospecto_actual.get("codigo") or "") or None
+    cta_eligible = should_show_visit_cta(
+        original_message,
+        cta_state=visit_cta_state,
+        turn_index=user_turn_index,
+        property_id=current_property_for_cta,
+        objection_type=objection_type,
+    )
+    response_has_cta = contains_visit_cta(respuesta)
+    if cta_eligible and not response_has_cta:
+        respuesta = f"{respuesta.rstrip()}\n\n{visit_cta_text()}".strip()
+        visit_cta_state = await _run_sync(update_visit_cta_state, phone, {
+            "status": "shown",
+            "shown_at": datetime.now(CHILE_TZ).isoformat(),
+            "last_shown_turn": user_turn_index,
+            "property_id": current_property_for_cta,
+            "conversation_id": conversation_id,
+        })
+        await _conversion_event("visit_cta_shown", property_id=current_property_for_cta)
+    elif cta_eligible and response_has_cta:
+        # The model may have produced a valid contextual CTA. Persist the
+        # state so the deterministic cooldown applies on the next turns.
+        visit_cta_state = await _run_sync(update_visit_cta_state, phone, {
+            "status": "shown",
+            "shown_at": datetime.now(CHILE_TZ).isoformat(),
+            "last_shown_turn": user_turn_index,
+            "property_id": current_property_for_cta,
+            "conversation_id": conversation_id,
+        })
+        await _conversion_event("visit_cta_shown", property_id=current_property_for_cta)
+    elif response_has_cta and not visit_intent_clear:
+        # The model must not bypass the deterministic cooldown or create a
+        # mechanical CTA on a neutral turn.
+        respuesta = remove_visit_cta(respuesta)
 
     # Common final guard for every generation path, including structured JSON
     # recovery and the explicit ficha response.

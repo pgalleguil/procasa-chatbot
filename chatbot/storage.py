@@ -428,6 +428,25 @@ def update_rag_search_state(phone: str, updates: dict) -> dict:
     return merged
 
 
+def get_visit_cta_state(phone: str) -> dict:
+    """Read contextual visit-CTA state from the lead's conversational memory."""
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.visit_cta": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("visit_cta") or {})
+
+
+def update_visit_cta_state(phone: str, updates: dict) -> dict:
+    """Merge deterministic CTA state without introducing a collection/schema migration."""
+    current = get_visit_cta_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.visit_cta": merged}}, upsert=True
+    )
+    return merged
+
+
 def update_generated_response_delivery(
     phone: str,
     *,

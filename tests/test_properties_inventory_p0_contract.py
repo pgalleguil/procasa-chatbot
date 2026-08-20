@@ -113,6 +113,22 @@ def test_territorial_review_uses_d3_hybrid_national_and_communal_renderer():
     assert "scaleDiverging" in template
 
 
+def test_territorial_review_final_navigation_uses_one_map_and_preserves_zone_state():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "geoFinalRenderNational" in template
+    assert "geoFinalZoneKeys" in template
+    assert "zone.id = 'geoZoneSelect'" in template
+    assert "Todo Chile" in template
+    assert "geo-map-stage-national" in template
+    assert "geo-map-stage-commune" in template
+    assert "geo-map-layout.is-commune" in template
+    assert "geoBreadcrumbStage" in template
+    assert "geoD3EnterCommunes = function" in template
+    assert "GEO_ZONE = button.dataset.geoZone" in template
+    assert "projection = d3.geoMercator().fitExtent(extent, collection)" in template
+    assert "Escala comunal dentro de la región" in template
+
+
 def test_review_fixture_contains_sanitized_rm_communal_demand():
     payload = territorial_review_payload()
     communes = payload["demand_intelligence"]["geography"]["commune"]

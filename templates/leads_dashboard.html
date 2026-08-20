@@ -7351,6 +7351,319 @@
                 demandBindSegmentDrilldown();
             },0));
         </script>
+        <script>
+            /* Final territorial navigation: one cartographic surface, with zone state kept separate from analytics. */
+            (function () {
+                var GEO_ZONE = window.__procasaGeoZone || 'all';
+                window.__procasaGeoZone = GEO_ZONE;
+                var GEO_ZONE_LABELS = {all: 'Todo Chile', north: 'Norte', center: 'Centro', south: 'Sur'};
+
+                const geoFinalIsMobile = () => window.matchMedia?.('(max-width: 768px)').matches;
+                const geoFinalZoneKeys = zone => {
+                    if (zone === 'north') return [...GEO_FOLDS.north];
+                    if (zone === 'center') return [...GEO_FOLDS.center];
+                    if (zone === 'south') return [...GEO_FOLDS.south, ...GEO_FOLDS.austral];
+                    return null;
+                };
+                const geoFinalRows = () => geoRows('region');
+                const geoFinalZoneRows = zone => {
+                    const keys = geoFinalZoneKeys(zone);
+                    return keys ? geoFinalRows().filter(row => keys.includes(row.geo_key)) : geoFinalRows();
+                };
+                const geoFinalFeatures = zone => {
+                    const keys = geoFinalZoneKeys(zone);
+                    return (GEO_DATA?.regions?.features || [])
+                        .filter(feature => geoIsAdministrativeFeature(feature))
+                        .filter(feature => !keys || keys.includes(geoKey(geoFeatureName(feature))))
+                        .map(feature => typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature)
+                        .filter(feature => feature?.geometry);
+                };
+                const geoFinalReduced = () => typeof demandReducedMotion === 'function' && demandReducedMotion();
+                const geoFinalScaleRows = () => geoFinalRows();
+                const geoFinalMetricValue = row => GEO_METRIC === 'gap' ? Number(row?.gap_pp || 0) : GEO_METRIC === 'intensity' ? Number(row?.leads_per_property || 0) : Number(row?.leads || 0);
+                const geoFinalZoneTotal = rows => rows.reduce((sum, row) => sum + Number(row.leads || 0), 0);
+
+                function geoFinalEnsureZoneControl() {
+                    const controls = $('geoMetricSelect')?.parentElement;
+                    if (!controls) return;
+                    let zone = $('geoZoneSelect');
+                    if (!zone) {
+                        zone = document.createElement('div');
+                        zone.id = 'geoZoneSelect';
+                        zone.className = 'geo-zone-select';
+                        zone.setAttribute('role', 'tablist');
+                        zone.setAttribute('aria-label', 'Extensión territorial');
+                        controls.appendChild(zone);
+                    }
+                    zone.innerHTML = Object.entries(GEO_ZONE_LABELS).map(([key, label]) => `<button type="button" data-geo-zone="${key}" class="${GEO_ZONE === key ? 'active' : ''}">${label}</button>`).join('');
+                    zone.querySelectorAll('[data-geo-zone]').forEach(button => button.addEventListener('click', () => {
+                        GEO_ZONE = button.dataset.geoZone;
+                        window.__procasaGeoZone = GEO_ZONE;
+                        GEO_LEVEL = 'region';
+                        GEO_REGION_KEY = null;
+                        GEO_SELECTED_KEY = null;
+                        GEO_RANK_EXPANDED = false;
+                        geoRender();
+                    }));
+                }
+
+                function geoFinalSetLegend(values, communal) {
+                    const map = $('geoMap');
+                    if (!map) return;
+                    let legend = $('geoLegend');
+                    if (!legend || !map.contains(legend)) {
+                        legend?.remove();
+                        legend = document.createElement('div');
+                        legend.id = 'geoLegend';
+                        legend.className = 'geo-legend geo-legend-overlay';
+                        map.querySelector('.geo-map-stage')?.appendChild(legend);
+                    }
+                    const nationalValues = geoFinalScaleRows().map(geoValue);
+                    legend.innerHTML = (typeof geoD3Legend === 'function' ? geoD3Legend(communal ? values : nationalValues) : '') + (communal ? '<small class="geo-communal-scale">Escala comunal dentro de la región</small>' : '');
+                }
+
+                function geoFinalMapCanvas(map, options) {
+                    const stage = document.createElement('div');
+                    stage.className = `geo-map-stage ${options?.communal ? 'geo-map-stage-commune' : 'geo-map-stage-national'}`;
+                    stage.dataset.geoZone = GEO_ZONE;
+                    stage.dataset.geoLevel = options?.communal ? 'commune' : 'region';
+                    map.innerHTML = '';
+                    map.appendChild(stage);
+                    return stage;
+                }
+
+                function geoFinalDrawFeatures(stage, features, rows, allRows, height, communal) {
+                    const width = 760;
+                    const svg = d3.select(stage).append('svg')
+                        .attr('class', 'geo-main-svg')
+                        .attr('viewBox', `0 0 ${width} ${height}`)
+                        .attr('preserveAspectRatio', 'xMidYMid meet')
+                        .attr('role', 'img')
+                        .attr('aria-label', communal ? 'Mapa comunal' : `Mapa territorial ${GEO_ZONE_LABELS[GEO_ZONE]}`);
+                    const collection = {type: 'FeatureCollection', features};
+                    const padding = communal ? 18 : (GEO_ZONE === 'all' ? {x: Math.round(width * .27), y: 20} : {x: 22, y: 22});
+                    const extent = Array.isArray(padding) ? padding : [[padding.x, padding.y], [width - padding.x, height - padding.y]];
+                    const projection = d3.geoMercator().fitExtent(extent, collection);
+                    const path = d3.geoPath(projection);
+                    const rowMap = geoD3RowMap(rows);
+                    const items = features.map(feature => ({feature, row: rowMap.get(geoKey(geoFeatureName(feature)))})).filter(item => item.row);
+                    const scales = geoD3ColorScales(allRows);
+                    const radius = d3.scaleSqrt().domain([0, d3.max(allRows, item => Number(item.leads) || 0) || 1]).range([0, 17]);
+                    const baseLayer = svg.append('g').attr('class', 'geo-territories');
+                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path')
+                        .attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                        .attr('data-geo-feature', item => item.row.geo_key)
+                        .attr('d', item => path(item.feature))
+                        .style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                    const bubbles = svg.append('g').attr('class', 'geo-demand-symbols').selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle')
+                        .attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                        .attr('data-geo-symbol', item => item.row.geo_key)
+                        .attr('cx', item => path.centroid(item.feature)[0])
+                        .attr('cy', item => path.centroid(item.feature)[1])
+                        .attr('fill', 'var(--accent)')
+                        .attr('opacity', .82)
+                        .attr('r', 0);
+                    const selectRegion = item => { GEO_LEVEL = 'region'; GEO_SELECTED_KEY = item.row.geo_key; GEO_REGION_KEY = null; geoRender(); };
+                    base.on('click', (_, item) => selectRegion(item));
+                    bubbles.on('click', (_, item) => selectRegion(item));
+                    if (!geoFinalReduced()) {
+                        base.attr('opacity', .35).transition().duration(120).attr('opacity', 1);
+                        bubbles.transition().delay((_, index) => Math.min(index * 14, 120)).duration(260).attr('r', item => radius(item.row.leads));
+                    } else {
+                        base.attr('opacity', 1);
+                        bubbles.attr('r', item => radius(item.row.leads));
+                    }
+                    if (typeof geoD3BindTooltip === 'function') {
+                        geoD3BindTooltip(base, null);
+                        geoD3BindTooltip(bubbles, null);
+                    }
+                    geoD3BindHighlight(stage);
+                }
+
+                function geoFinalRenderNational(rows) {
+                    const map = $('geoMap');
+                    if (!map || !GEO_DATA?.regions) return;
+                    map.classList.remove('geo-commune-map');
+                    map.classList.add('geo-national-map');
+                    const stage = geoFinalMapCanvas(map, {communal: false});
+                    const features = geoFinalFeatures(GEO_ZONE);
+                    geoFinalDrawFeatures(stage, features, geoFinalZoneRows(GEO_ZONE), geoFinalScaleRows(), geoFinalIsMobile() ? (GEO_ZONE === 'all' ? 360 : 340) : 600, false);
+                    geoFinalSetLegend(geoFinalZoneRows(GEO_ZONE).map(geoValue), false);
+                }
+
+                function geoFinalRenderCommunes() {
+                    const map = $('geoMap');
+                    const regionKey = GEO_REGION_KEY;
+                    const region = geoFinalRows().find(row => row.geo_key === regionKey);
+                    const rows = geoD3CommuneRows(regionKey);
+                    const features = (GEO_DATA?.communes?.features || [])
+                        .filter(feature => geoIsAdministrativeFeature(feature) && geoFeatureRegionKey(feature) === regionKey)
+                        .map(feature => typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature)
+                        .filter(feature => feature?.geometry);
+                    const featureMap = new Map(features.map(feature => [geoKey(geoFeatureName(feature)), feature]));
+                    const items = rows.map(row => ({row, feature: featureMap.get(row.geo_key)})).filter(item => item.feature);
+                    const stage = geoFinalMapCanvas(map, {communal: true});
+                    const controls = document.createElement('div');
+                    controls.className = 'geo-zoom-controls';
+                    controls.innerHTML = '<button type="button" data-geo-zoom="in" title="Acercar" aria-label="Acercar">+</button><button type="button" data-geo-zoom="out" title="Alejar" aria-label="Alejar">−</button><button type="button" data-geo-zoom="reset" title="Ver región completa" aria-label="Ver región completa">⌂</button>';
+                    stage.appendChild(controls);
+                    const height = geoFinalIsMobile() ? 400 : 560;
+                    const featureCollection = {type: 'FeatureCollection', features: items.map(item => item.feature)};
+                    const width = 760;
+                    const svg = d3.select(stage).append('svg').attr('class', 'geo-main-svg').attr('viewBox', `0 0 ${width} ${height}`).attr('preserveAspectRatio', 'xMidYMid meet').attr('role', 'img').attr('aria-label', `Mapa comunal de ${region?.name || regionKey}`);
+                    const projection = d3.geoMercator().fitExtent([[18, 18], [width - 18, height - 18]], featureCollection);
+                    const path = d3.geoPath(projection);
+                    const scales = geoD3ColorScales(rows);
+                    const max = d3.max(rows, item => Number(item.leads) || 0) || 1;
+                    const radius = d3.scaleSqrt().domain([0, max]).range([0, 17]);
+                    const baseLayer = svg.append('g').attr('class', 'geo-commune-base-layer');
+                    const bubbleLayer = svg.append('g').attr('class', 'geo-commune-bubble-layer');
+                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path').attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-feature', item => item.row.geo_key).attr('d', item => path(item.feature)).style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                    const bubbles = bubbleLayer.selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle').attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-symbol', item => item.row.geo_key).attr('cx', item => path.centroid(item.feature)[0]).attr('cy', item => path.centroid(item.feature)[1]).attr('r', item => radius(item.row.leads)).attr('fill', 'var(--accent)').attr('opacity', .82);
+                    const setBubbleScale = k => bubbles.attr('r', item => radius(item.row.leads) / k);
+                    const zoom = d3.zoom().scaleExtent([1, 8]).filter(event => event.type === 'wheel' ? event.ctrlKey : true).on('zoom', event => { baseLayer.attr('transform', event.transform); bubbleLayer.attr('transform', event.transform); setBubbleScale(event.transform.k); });
+                    svg.call(zoom);
+                    controls.querySelector('[data-geo-zoom="in"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, 1.35);
+                    controls.querySelector('[data-geo-zoom="out"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, .74);
+                    controls.querySelector('[data-geo-zoom="reset"]').onclick = () => svg.transition().duration(180).call(zoom.transform, d3.zoomIdentity);
+                    const selectCommune = item => { GEO_SELECTED_KEY = item.row.geo_key; geoRender(); };
+                    base.on('click', (_, item) => selectCommune(item));
+                    bubbles.on('click', (_, item) => selectCommune(item));
+                    if (typeof geoD3BindTooltip === 'function') { geoD3BindTooltip(base, region); geoD3BindTooltip(bubbles, region); }
+                    geoD3BindHighlight(stage);
+                    geoFinalSetLegend(rows.map(geoValue), true);
+                }
+
+                function geoFinalDetailNational() {
+                    const summary = $('geoSummaryInsights');
+                    if (!summary) return;
+                    const rows = geoFinalZoneRows(GEO_ZONE);
+                    const allRows = geoFinalRows();
+                    const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                    const sorted = [...rows].sort((a, b) => (geoFinalMetricValue(b) - geoFinalMetricValue(a)) || String(a.name).localeCompare(String(b.name)));
+                    const visible = GEO_RANK_EXPANDED ? sorted : sorted.slice(0, 8);
+                    const totalNational = geoFinalZoneTotal(allRows);
+                    const totalZone = geoFinalZoneTotal(rows);
+                    const title = GEO_ZONE === 'all' ? (GEO_METRIC === 'intensity' ? 'MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'MAYOR BRECHA POSITIVA' : 'DEMANDA DEL PERÍODO') : `${GEO_METRIC === 'leads' ? 'DEMANDA' : GEO_METRIC === 'intensity' ? 'INTENSIDAD' : 'BRECHA'} · ZONA ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`;
+                    const heroValue = selected ? (GEO_METRIC === 'gap' ? demandPP(selected.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(selected.leads_per_property)} leads/prop.` : `${demandValue(selected.leads)} leads`) : (GEO_METRIC === 'gap' ? demandPP(sorted[0]?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(sorted[0]?.leads_per_property)} leads/prop.` : `${demandValue(totalZone)} leads`);
+                    const heroSubtitle = selected ? `${invEsc(selected.name)} · ${demandPct(totalNational ? Number(selected.leads || 0) / totalNational * 100 : null)} de la demanda nacional` : GEO_ZONE === 'all' ? `${invEsc(sorted[0]?.name || '—')} concentra ${demandPct(totalNational ? Number(sorted[0]?.leads || 0) / totalNational * 100 : null)}` : `${demandPct(totalNational ? totalZone / totalNational * 100 : null)} de la demanda nacional`;
+                    const rankTitle = GEO_ZONE === 'all' ? 'RANKING REGIONAL' : `REGIONES DE ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`;
+                    const denominator = GEO_METRIC === 'leads' ? Math.max(1, totalZone) : Math.max(1, Math.abs(geoFinalMetricValue(sorted[0] || {})));
+                    summary.innerHTML = `<div class="geo-hero-label inventory-kicker">${title}</div><div class="geo-hero-value">${heroValue}</div><p class="geo-hero-subtitle">${heroSubtitle}</p>${selected ? '<button type="button" class="geo-rank-more" id="geoViewCommunes">Ver comunas →</button>' : ''}<div class="geo-hero-label inventory-kicker" style="margin-top:16px">${rankTitle}</div><div class="geo-ranking">${visible.map(row => { const value = geoFinalMetricValue(row); const width = GEO_METRIC === 'gap' ? Math.min(50, Math.abs(value) / Math.max(1, Math.max(...sorted.map(item => Math.abs(geoFinalMetricValue(item))))) * 50) : Math.min(100, Math.max(2, Math.abs(value) / denominator * 100)); return `<div class="geo-ranking-row ${row.geo_key === GEO_SELECTED_KEY ? 'is-selected' : ''}" data-geo-rank="${invEsc(row.geo_key)}"><span>${invEsc(row.name)}</span><div class="geo-ranking-track ${GEO_METRIC === 'gap' ? 'geo-gap-track' : ''}">${GEO_METRIC === 'gap' ? '<i class="geo-gap-zero"></i>' : ''}<i class="geo-ranking-fill ${value >= 0 ? 'positive' : 'negative'}" style="width:${width}%"></i></div><b>${GEO_METRIC === 'gap' ? demandPP(value) : GEO_METRIC === 'intensity' ? `${demandValue(value)} leads/prop.` : `${demandValue(value)} leads`}</b></div>`; }).join('')}</div>${sorted.length > 8 ? `<button type="button" class="geo-rank-more" id="geoRankMore">${GEO_RANK_EXPANDED ? 'Mostrar Top 8' : `Ver las ${sorted.length} regiones`}</button>` : ''}<p class="geo-insight">${GEO_ZONE === 'all' ? `${invEsc(sorted[0]?.name || '—')} y ${invEsc(sorted[1]?.name || '—')} concentran ${demandPct(totalNational ? (Number(sorted[0]?.leads || 0) + Number(sorted[1]?.leads || 0)) / totalNational * 100 : null)} de la demanda reciente.` : `La zona ${invEsc(GEO_ZONE_LABELS[GEO_ZONE])} representa ${demandPct(totalNational ? totalZone / totalNational * 100 : null)} de la demanda nacional.`}</p>`;
+                    $('geoViewCommunes')?.addEventListener('click', () => geoD3EnterCommunes(selected.geo_key));
+                    $('geoRankMore')?.addEventListener('click', () => { GEO_RANK_EXPANDED = !GEO_RANK_EXPANDED; geoDetail(); });
+                    geoD3BindHighlight(summary);
+                }
+
+                function geoFinalDetailCommunes() {
+                    const summary = $('geoSummaryInsights');
+                    if (!summary) return;
+                    const region = geoFinalRows().find(row => row.geo_key === GEO_REGION_KEY);
+                    const rows = geoD3CommuneRows(GEO_REGION_KEY);
+                    const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                    const value = row => GEO_METRIC === 'gap' ? Number(row.gap_pp || 0) : GEO_METRIC === 'intensity' ? Number(row.leads_per_property || 0) : Number(row.leads || 0);
+                    const sorted = [...rows].sort((a, b) => value(b) - value(a) || String(a.name).localeCompare(String(b.name)));
+                    const title = GEO_METRIC === 'intensity' ? 'COMUNAS CON MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'COMUNAS CON MAYOR BRECHA POSITIVA' : 'COMUNAS CON MAYOR DEMANDA';
+                    const max = Math.max(1, ...sorted.map(item => Math.abs(value(item))));
+                    summary.innerHTML = `<div class="geo-hero-label inventory-kicker">REGIÓN ${invEsc((region?.name || GEO_REGION_KEY).toUpperCase())}</div><div class="geo-hero-value">${GEO_METRIC === 'gap' ? demandPP(region?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(region?.leads_per_property)} leads/prop.` : `${demandValue(region?.leads)} leads`}</div><p class="geo-hero-subtitle">${GEO_METRIC === 'gap' ? 'Brecha demanda vs cartera' : GEO_METRIC === 'intensity' ? 'Intensidad del período' : 'Últimos 30 días'}</p><div class="geo-hero-label inventory-kicker" style="margin-top:16px">${title}</div><div class="geo-ranking">${sorted.slice(0, 8).map(item => { const itemValue = value(item); const width = GEO_METRIC === 'gap' ? Math.min(50, Math.abs(itemValue) / max * 50) : Math.min(100, Math.max(2, Math.abs(itemValue) / max * 100)); return `<div class="geo-ranking-row ${item.geo_key === GEO_SELECTED_KEY ? 'is-selected' : ''}" data-geo-rank="${invEsc(item.geo_key)}"><span>${invEsc(item.name)}</span><div class="geo-ranking-track ${GEO_METRIC === 'gap' ? 'geo-gap-track' : ''}">${GEO_METRIC === 'gap' ? '<i class="geo-gap-zero"></i>' : ''}<i class="geo-ranking-fill ${itemValue >= 0 ? 'positive' : 'negative'}" style="width:${width}%"></i></div><b>${GEO_METRIC === 'gap' ? demandPP(itemValue) : GEO_METRIC === 'intensity' ? `${demandValue(itemValue)} leads/prop.` : `${demandValue(itemValue)} leads`}</b></div>`; }).join('')}</div>${selected ? `<div class="geo-selected-detail"><strong>${invEsc(selected.name)}</strong><span>Comuna · ${invEsc(region?.name || GEO_REGION_KEY)}</span><span>${demandValue(selected.leads)} leads últimos 30 días · ${demandPct(region?.leads > 0 ? Number(selected.leads || 0) / Number(region.leads) * 100 : null)} de la demanda regional</span><span>${demandValue(selected.properties_with_demand)} propiedades consultadas · ${demandValue(selected.leads_per_property)} leads/propiedad</span><span>Cartera activa ${demandValue(selected.stock_sucre)} · Brecha ${demandPP(selected.gap_pp)}</span><b>Qué están buscando</b><span>${(selected.top_segments || []).slice(0, 3).map(segment => `${invEsc(segment.segment)} · ${demandValue(segment.leads)} leads`).join(' · ') || 'Sin segmentos observados'}</span></div>` : ''}`;
+                    summary.querySelectorAll('[data-geo-rank]').forEach(item => item.addEventListener('click', () => { GEO_SELECTED_KEY = item.dataset.geoRank; geoRender(); }));
+                    geoD3BindHighlight(summary);
+                }
+
+                function geoFinalSyncMobileHero() {
+                    if (!geoFinalIsMobile()) return;
+                    const layout = document.querySelector('.geo-map-layout');
+                    const map = $('geoMap');
+                    if (!layout || !map || GEO_LEVEL !== 'region') return;
+                    let hero = $('geoMobileHero');
+                    if (!hero) { hero = document.createElement('div'); hero.id = 'geoMobileHero'; hero.className = 'geo-mobile-hero'; layout.querySelector(':scope > div:first-child')?.insertBefore(hero, map); }
+                    const rows = geoFinalZoneRows(GEO_ZONE), all = geoFinalRows(), total = geoFinalZoneTotal(rows), selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY), first = [...rows].sort((a, b) => geoFinalMetricValue(b) - geoFinalMetricValue(a))[0];
+                    const subject = selected || first;
+                    hero.innerHTML = `<span class="inventory-kicker">${selected ? 'REGIÓN SELECCIONADA' : GEO_ZONE === 'all' ? 'DEMANDA DEL PERÍODO' : `DEMANDA · ZONA ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`}</span><strong>${GEO_METRIC === 'gap' ? demandPP(subject?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(subject?.leads_per_property)} leads/prop.` : `${demandValue(selected ? subject?.leads : total)} leads`}</strong><p>${selected ? `${invEsc(subject.name)} · ${demandPct(geoFinalZoneTotal(all) ? Number(subject.leads || 0) / geoFinalZoneTotal(all) * 100 : null)} de la demanda nacional` : `${demandPct(geoFinalZoneTotal(all) ? total / geoFinalZoneTotal(all) * 100 : null)} de la demanda nacional`}</p>${selected ? '<button type="button" id="geoMobileViewCommunes">Ver comunas →</button>' : ''}`;
+                    $('geoMobileViewCommunes')?.addEventListener('click', () => geoD3EnterCommunes(selected.geo_key));
+                }
+
+                function geoFinalRender() {
+                    if (!GEO_DATA || typeof d3 === 'undefined') return;
+                    geoFinalEnsureZoneControl();
+                    const panel = document.querySelector('.geo-demand-panel');
+                    const layout = document.querySelector('.geo-map-layout');
+                    const map = $('geoMap');
+                    if (layout) layout.classList.toggle('is-commune', GEO_LEVEL === 'commune');
+                    if (panel) {
+                        let breadcrumb = panel.querySelector('#geoBreadcrumbStage');
+                        if (GEO_LEVEL === 'commune') {
+                            if (!breadcrumb) { breadcrumb = document.createElement('div'); breadcrumb.id = 'geoBreadcrumbStage'; breadcrumb.className = 'geo-breadcrumb-stage'; panel.insertBefore(breadcrumb, layout); }
+                            const region = geoFinalRows().find(row => row.geo_key === GEO_REGION_KEY);
+                            breadcrumb.innerHTML = `Chile › ${invEsc(region?.name || GEO_REGION_KEY)} <button type="button" id="geoBackRegionsFinal">← Volver a regiones</button>`;
+                            $('geoBackRegionsFinal').onclick = () => { GEO_LEVEL = 'region'; GEO_REGION_KEY = null; GEO_SELECTED_KEY = null; geoRender(); };
+                        } else breadcrumb?.remove();
+                    }
+                    if (map) map.dataset.geoMetric = GEO_METRIC;
+                    geoSetMetricCaption();
+                    $('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button => button.classList.toggle('active', button.dataset.geoMetric === GEO_METRIC));
+                    if (GEO_LEVEL === 'commune') {
+                        $('geoMobileHero')?.remove();
+                        geoFinalRenderCommunes();
+                        geoFinalDetailCommunes();
+                    } else {
+                        geoFinalRenderNational(geoFinalZoneRows(GEO_ZONE));
+                        geoFinalDetailNational();
+                        geoFinalSyncMobileHero();
+                    }
+                    $('geoMapStatus')?.remove();
+                }
+
+                geoD3RenderNational = geoFinalRenderNational;
+                geoRenderNationalTiles = geoFinalRenderNational;
+                geoD3RenderCommunes = geoFinalRenderCommunes;
+                geoD3DetailNational = geoFinalDetailNational;
+                geoD3DetailCommunes = geoFinalDetailCommunes;
+                geoSyncMobileHero = geoFinalSyncMobileHero;
+                geoRender = geoFinalRender;
+                geoD3SelectRegion = function (key) { GEO_LEVEL = 'region'; GEO_SELECTED_KEY = key; GEO_REGION_KEY = null; geoRender(); };
+                geoD3SelectCommune = function (key) { GEO_SELECTED_KEY = key; geoRender(); };
+                geoD3EnterCommunes = function (key) { GEO_LEVEL = 'commune'; GEO_REGION_KEY = key; GEO_SELECTED_KEY = null; GEO_RANK_EXPANDED = false; geoRender(); };
+            })();
+        </script>
+        <style>
+            .geo-demand-panel { width:100%; max-width:none; margin:0 0 14px; box-sizing:border-box; border-radius:14px; }
+            .geo-map-layout { grid-template-columns:minmax(0,60%) minmax(340px,40%); gap:32px; align-items:stretch; }
+            .geo-map-layout.is-commune { grid-template-columns:minmax(0,62%) minmax(0,38%); }
+            #geoMap.geo-national-map, #geoMap.geo-commune-map { height:clamp(560px,45vw,640px); min-height:560px; border-radius:14px; overflow:hidden; }
+            #geoMap.geo-commune-map { min-height:520px; }
+            .geo-map-stage { position:relative; width:100%; height:100%; overflow:hidden; background:var(--bg-elevated); }
+            .geo-map-stage .geo-main-svg { display:block; width:100%; height:100%; }
+            .geo-zone-select { display:flex; align-items:center; gap:4px; padding:3px; margin-top:6px; background:var(--bg-elevated); border:1px solid var(--border-color); border-radius:10px; }
+            .geo-zone-select button { border:0; background:transparent; color:var(--text-secondary); border-radius:7px; padding:6px 10px; cursor:pointer; font-size:.72rem; }
+            .geo-zone-select button.active { background:var(--accent-soft); color:var(--text-primary); font-weight:700; }
+            .geo-map-stage .geo-legend-overlay { position:absolute; left:12px; bottom:12px; z-index:4; margin:0; padding:8px 10px; max-width:min(310px,calc(100% - 24px)); background:color-mix(in srgb,var(--bg-card) 92%,transparent); border:1px solid var(--border-color); border-radius:10px; backdrop-filter:blur(5px); }
+            .geo-map-stage .geo-legend-overlay .geo-symbol-legend { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+            .geo-map-stage .geo-legend-overlay .geo-symbol-legend small, .geo-communal-scale { flex-basis:100%; color:var(--text-secondary); }
+            .geo-zoom-controls { position:absolute; top:12px; right:12px; z-index:5; display:flex; gap:5px; }
+            .geo-zoom-controls button { width:34px; height:34px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:1.1rem; }
+            .geo-breadcrumb-stage { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 12px; padding:0 2px; color:var(--text-secondary); font-size:.82rem; }
+            .geo-breadcrumb-stage button { border:0; background:transparent; color:var(--accent); cursor:pointer; font-size:.78rem; }
+            .geo-map-layout.is-commune .geo-detail { min-height:0; }
+            .geo-gap-track { position:relative; overflow:visible; }
+            .geo-gap-track .geo-gap-zero { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border-color); }
+            .geo-gap-track .geo-ranking-fill { position:absolute; top:0; height:100%; }
+            .geo-gap-track .geo-ranking-fill.positive { left:50%; }
+            .geo-gap-track .geo-ranking-fill.negative { right:50%; }
+            @media (prefers-reduced-motion:reduce) { .geo-map-stage *, .geo-map-stage *::before, .geo-map-stage *::after { transition:none!important; animation:none!important; } }
+            @media (max-width:1199px) and (min-width:769px) { .geo-map-layout { grid-template-columns:minmax(0,58%) minmax(320px,42%); gap:24px; } .geo-map-layout.is-commune { grid-template-columns:minmax(0,60%) minmax(0,40%); } }
+            @media (max-width:768px) {
+                .geo-map-layout, .geo-map-layout.is-commune { grid-template-columns:1fr; gap:14px; }
+                .geo-map-layout > div:first-child { display:block; }
+                #geoMap.geo-national-map { height:360px; min-height:340px; }
+                #geoMap.geo-commune-map { height:400px; min-height:360px; }
+                .geo-zone-select { width:100%; margin-top:7px; }
+                .geo-zone-select button { flex:1; min-width:0; padding:6px 2px; font-size:.68rem; }
+                .geo-map-stage .geo-legend-overlay { left:10px; bottom:10px; font-size:.66rem; }
+                .geo-breadcrumb-stage { font-size:.75rem; }
+                .geo-map-controls { align-items:stretch; }
+            }
+        </style>
         <div id="sidebarOverlay"
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             onclick="closeMobileMenu()"></div>

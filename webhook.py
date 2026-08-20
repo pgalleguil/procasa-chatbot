@@ -349,6 +349,27 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
 
+    # One-shot Prop360 historical-universe audit. It uses only the dedicated
+    # technical report collection and never calls the production sync runner.
+    prop360_audit_task = None
+    try:
+        if os.getenv("PROP360_HISTORICAL_AUDIT_ENABLED", "true").lower() in {"1", "true", "yes"}:
+            from scripts.audit_prop360_historical_universe import run_prop360_historical_audit
+
+            async def _run_prop360_historical_audit():
+                try:
+                    background_tasks_status["prop360_historical_audit"] = {"status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+                    result = await asyncio.to_thread(run_prop360_historical_audit)
+                    background_tasks_status["prop360_historical_audit"] = {"status": result.get("status", "completed"), "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+                except Exception as exc:
+                    logger.exception("[PROP360_AUDIT] one-shot audit failed")
+                    background_tasks_status["prop360_historical_audit"] = {"status": "failed", "error_type": type(exc).__name__, "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
+
+            prop360_audit_task = asyncio.create_task(_run_prop360_historical_audit())
+            logger.info("[PROP360_AUDIT] one-shot read-only audit scheduled")
+    except Exception:
+        logger.warning("[PROP360_AUDIT] import/scheduling failed — disabled", exc_info=True)
+
     # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
     uf_sync_task = None
     try:
@@ -934,6 +955,21 @@ async def leads_dashboard_review_data():
     response = JSONResponse(territorial_review_payload())
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/internal-review/prop360-historical-audit")
+async def prop360_historical_audit_report():
+    """Return only the aggregate one-shot report; never runs the audit."""
+    from chatbot.storage import get_db
+
+    document = get_db()["prop360_audit_reports"].find_one(
+        {"_id": "historical_universe_v1"},
+        {"_id": 0, "status": 1, "started_at": 1, "completed_at": 1, "sha": 1, "report": 1, "error_type": 1},
+    )
+    response = JSONResponse(document or {"status": "pending"})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
 

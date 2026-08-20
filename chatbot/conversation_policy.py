@@ -53,9 +53,18 @@ _PROPERTY_REJECTION_RE = re.compile(
 )
 
 _UNCONFIRMED_VISIT_RE = re.compile(
-    r"\b(?:tu\s+visita\s+(?:qued[oó]|est[aá])\s+(?:agendada|confirmada)|"
-    r"visita\s+(?:agendada|confirmada|est[aá]\s+confirmada)|te\s+esperamos|"
-    r"reserva\s+confirmada|horario\s+confirmado|disponible\s+a\s+esa\s+hora)\b",
+    r"(?:\b(?:tu\s+)?visita\s+(?:qued[oó]|est[aá])\s+(?:agendada|confirmada|reservada)\b|"
+    r"\bvisita\s+(?:agendada|confirmada|reservada|est[aá]\s+confirmada)\b|"
+    r"\b(?:te\s+esperamos|te\s+agend[eé]|est[aá]\s+reservad[oa]\s+para\s+ti|"
+    r"ya\s+qued[oó]\s+reservad[oa]|listo,?\s+quedamos)\b|"
+    r"\b(?:tenemos|hay|existe)\s+disponibilidad\b.{0,70}\b(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|"
+    r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|\d{1,2}\s*:\s*\d{2})\b|"
+    r"\b(?:tenemos|hay)\s+(?:horarios?|horas?)\s+disponibles?\b.{0,50}\b(?:hoy|ma[nñ]ana|"
+    r"pasado\s+ma[nñ]ana|esa\s+ma[nñ]ana|lunes|martes|mi[eé]rcoles|jueves|viernes|"
+    r"s[aá]bado|domingo)\b|"
+    r"\b(?:podemos\s+recibirte|te\s+puedo\s+recibir)\b.{0,50}\b(?:hoy|ma[nñ]ana|"
+    r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|\d{1,2}\s*:\s*\d{2})\b|"
+    r"\bhorario\s+confirmado\b)",
     re.IGNORECASE,
 )
 
@@ -83,6 +92,7 @@ def should_offer_visit_data(
     *,
     pending_visit_confirmation: bool = False,
     visit_data_state: dict | None = None,
+    property_id: str | None = None,
 ) -> bool:
     """Return whether optional visit-data enrichment may be offered this turn.
 
@@ -90,7 +100,8 @@ def should_offer_visit_data(
     it must be supported by an operational phrase or a pending affirmative reply.
     """
     state = visit_data_state or {}
-    if state.get("status") in {"declined", "completed"} or state.get("accepted_at"):
+    same_property = not state.get("property_id") or not property_id or str(state.get("property_id")) == str(property_id)
+    if same_property and (state.get("status") in {"declined", "completed"} or state.get("accepted_at")):
         return False
     normalized = _normalize_text(message)
     explicit = is_explicit_visit_intent(normalized)
@@ -141,6 +152,20 @@ def property_rejected(message: str) -> bool:
     return bool(_PROPERTY_REJECTION_RE.search(_normalize_text(message)))
 
 
+def alternative_offer_accepted(message: str, *, offer_pending: bool) -> bool:
+    if not offer_pending:
+        return False
+    normalized = _normalize_text(message)
+    return bool(_VISIT_ACCEPTANCE_RE.fullmatch(normalized))
+
+
+def alternative_offer_declined(message: str, *, offer_pending: bool) -> bool:
+    if not offer_pending:
+        return False
+    normalized = _normalize_text(message)
+    return bool(_VISIT_DECLINE_RE.fullmatch(normalized))
+
+
 def filter_relaxation_accepted(message: str, *, offer_pending: bool) -> bool:
     if not offer_pending:
         return False
@@ -154,8 +179,13 @@ def outbound_unconfirmed_visit_claim(text: str) -> bool:
     if not normalized:
         return False
     # Negated/future claims are safe: they explicitly deny confirmation or defer it.
-    safe_prefixes = ("no esta confirmada", "el ejecutivo confirmara", "el ejecutivo coordinara")
-    if any(prefix in normalized for prefix in safe_prefixes):
+    safe_patterns = (
+        r"\b(?:el\s+)?ejecutivo\b.{0,60}\b(?:confirmara|coordinara|revisara|avisara)\b",
+        r"\b(?:registre|anote|dej[eé]\s+registrado)\b.{0,70}\b(?:interes|prefieres|preferencia)\b",
+        r"\b(?:avise|avis[eé]|le\s+avise)\s+al\s+ejecutivo\b",
+        r"\b(?:no\s+esta\s+confirmada|no\s+esta\s+reservada)\b",
+    )
+    if any(re.search(pattern, normalized) for pattern in safe_patterns):
         return False
     return bool(_UNCONFIRMED_VISIT_RE.search(normalized))
 
@@ -183,7 +213,19 @@ def is_substantial_duplicate(candidate: str, previous: list[str] | tuple[str, ..
     return any(current == normalize_response(item) for item in previous if item)
 
 
-def extract_spontaneous_lead_signals(message: str) -> dict:
+def duplicate_response_fallback(original: str) -> str:
+    """Return a neutral fallback without inventing a visit handoff."""
+    if outbound_phone_request(original):
+        return safe_phone_free_response(original)
+    normalized = _normalize_text(original)
+    if re.search(r"\b(?:rut|correo|email|nombre|datos)\b", normalized):
+        return "Ya registré lo que me indicaste. ¿Qué otra información necesitas?"
+    if re.search(r"\b(?:visita|verla|verlo|coordinar|agendar)\b", normalized):
+        return "Ya registré tu interés. El ejecutivo confirmará la coordinación contigo."
+    return "Gracias, sigo atento a tu consulta."
+
+
+def extract_spontaneous_lead_signals(message: str, operation: str | None = None) -> dict:
     """Extract only high-confidence analytics signals already volunteered by the client."""
     normalized = _normalize_text(message)
     result = {}
@@ -198,20 +240,27 @@ def extract_spontaneous_lead_signals(message: str) -> dict:
     elif re.search(r"\b(?:m[aá]s\s+de\s+6|llevo\s+(?:varios|muchos)|m[aá]s\s+de\s+seis)\s+mes(?:es)?\b", normalized):
         result["search_duration_bucket"] = "gt_6_months"
 
-    if re.search(r"\b(?:cr[eé]dito\s+)?pre\s*aprobado\b", normalized):
+    explicit_operation = _normalize_text(operation or "")
+    if not explicit_operation:
+        if re.search(r"\b(?:comprar|compra|venta|vender)\b", normalized):
+            explicit_operation = "venta"
+        elif re.search(r"\b(?:arrendar|arriendo|alquilar|alquiler)\b", normalized):
+            explicit_operation = "arriendo"
+
+    if explicit_operation in {"venta", "comprar", "compra"} and re.search(r"\b(?:cr[eé]dito\s+)?pre\s*aprobado\b", normalized):
         result["financing_status"] = "preapproved"
-    elif re.search(r"\bcr[eé]dito\b.{0,35}\b(?:evaluaci[oó]n|revisando|en\s+proceso)\b", normalized) or re.search(r"\b(?:evaluando|revisando)\b.{0,25}\bcr[eé]dito\b", normalized):
+    elif explicit_operation in {"venta", "comprar", "compra"} and (re.search(r"\bcr[eé]dito\b.{0,35}\b(?:evaluaci[oó]n|revisando|en\s+proceso)\b", normalized) or re.search(r"\b(?:evaluando|revisando)\b.{0,25}\bcr[eé]dito\b", normalized)):
         result["financing_status"] = "under_evaluation"
-    elif re.search(r"\b(?:necesito|tengo\s+que|debo)\b.{0,25}\b(?:pedir|gestionar|conseguir)\b.{0,20}\bcr[eé]dito\b", normalized):
+    elif explicit_operation in {"venta", "comprar", "compra"} and re.search(r"\b(?:necesito|tengo\s+que|debo)\b.{0,25}\b(?:pedir|gestionar|conseguir)\b.{0,20}\bcr[eé]dito\b", normalized):
         result["financing_status"] = "needs_financing"
-    elif re.search(r"\b(?:al\s+contado|contado|efectivo)\b", normalized):
+    elif explicit_operation in {"venta", "comprar", "compra"} and re.search(r"\b(?:al\s+contado|contado|efectivo)\b", normalized):
         result["financing_status"] = "cash"
 
-    if re.search(r"\b(?:tengo|ya\s+tengo)\b.{0,35}\b(?:todos?\s+los\s+)?(?:documentos|papeles|antecedentes)\b", normalized):
+    if explicit_operation in {"arriendo", "arrendar", "alquilar", "alquiler"} and re.search(r"\b(?:tengo|ya\s+tengo)\b.{0,35}\b(?:todos?\s+los\s+)?(?:documentos|papeles|antecedentes)\b", normalized):
         result["rental_docs_readiness"] = "ready"
-    elif re.search(r"\b(?:me\s+faltan|tengo\s+algunos|parcialmente)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
+    elif explicit_operation in {"arriendo", "arrendar", "alquilar", "alquiler"} and re.search(r"\b(?:me\s+faltan|tengo\s+algunos|parcialmente)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
         result["rental_docs_readiness"] = "partially_ready"
-    elif re.search(r"\b(?:no\s+tengo|me\s+faltan\s+todos)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
+    elif explicit_operation in {"arriendo", "arrendar", "alquilar", "alquiler"} and re.search(r"\b(?:no\s+tengo|me\s+faltan\s+todos)\b.{0,35}\b(?:documentos|papeles|antecedentes)\b", normalized):
         result["rental_docs_readiness"] = "not_ready"
     return result
 

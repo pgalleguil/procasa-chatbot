@@ -128,12 +128,40 @@ def _recent_bot_response_is_duplicate(db, *, phone, response):
     assistant_messages = [
         str(item.get("content") or "") for item in (lead.get("messages") or [])
         if item.get("role") == "assistant"
+        and item.get("delivery_status") not in {"generated", "provider_attempt", "suppressed", "delivery_unknown"}
     ]
     # process_user_message persists the just-generated message before queue
     # delivery. Exclude that one instance and compare against prior responses.
     if assistant_messages and assistant_messages[-1].strip() == str(response or "").strip():
         assistant_messages = assistant_messages[:-1]
     return is_substantial_duplicate(response, assistant_messages[-5:])
+
+
+def _update_generated_response(db, *, phone, batch_id, status, content=None,
+                               generation_id=None, provider_message_id=None):
+    """Reconcile the generated lead message with the durable delivery state."""
+    try:
+        from .storage import update_generated_response_delivery
+    except ImportError:
+        from chatbot.storage import update_generated_response_delivery
+    try:
+        return update_generated_response_delivery(
+            phone, db=db, batch_id=batch_id, status=status, content=content,
+            generation_id=generation_id, provider_message_id=provider_message_id,
+        )
+    except (KeyError, AssertionError, AttributeError):
+        # Queue-only test doubles may not expose the leads collection.
+        return False
+
+
+def _lead_event_context(db, claimed):
+    # The batch carries canonical IDs when the producer has them. Do not add a
+    # synchronous lead lookup to the delivery critical path.
+    return {
+        "batch_id": claimed.get("_id"),
+        "lead_id": claimed.get("lead_id"),
+        "conversation_id": claimed.get("conversation_id"),
+    }
 
 
 def _batch_settings(max_wait_seconds=None):
@@ -179,6 +207,12 @@ def create_inbound_job(
 
     now = received_at or utc_now()
     coll = db[JOB_COLLECTION]
+    try:
+        lead = db["leads"].find_one({"phone": phone}, {"_id": 1, "conversation_id": 1}) or {}
+        lead_id = lead_id or (str(lead.get("_id")) if lead.get("_id") else None)
+        conversation_id = conversation_id or lead.get("conversation_id")
+    except (KeyError, AssertionError, AttributeError):
+        pass
     job_id = str(uuid.uuid4())
     job = {
         "_id": job_id,
@@ -590,20 +624,24 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         )
     max_regenerations = max(int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")), 0)
     regenerations = 0
+    generation_id = None
 
     async def _invoke_llm(current_text):
         params = inspect.signature(llm).parameters
-        accepts_context = "batch_id" in params or any(
+        accepts_kwargs = any(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in params.values()
         )
-        if accepts_context:
-            return await llm(
-                claimed["phone"], current_text,
-                batch_id=batch_id,
-                job_id=(claimed.get("job_ids") or [None])[0],
-            )
-        return await llm(claimed["phone"], current_text)
+        kwargs = {}
+        if accepts_kwargs or "batch_id" in params:
+            kwargs["batch_id"] = batch_id
+        if accepts_kwargs or "job_id" in params:
+            kwargs["job_id"] = (claimed.get("job_ids") or [None])[0]
+        nonlocal generation_id
+        generation_id = str(uuid.uuid4())
+        if accepts_kwargs or "generation_id" in params:
+            kwargs["generation_id"] = generation_id
+        return await llm(claimed["phone"], current_text, **kwargs)
 
     while True:
         try:
@@ -710,17 +748,17 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     if _human_takeover_after_batch_start(
         db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at")
     ):
+        await asyncio.to_thread(_update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="suppressed", content=response,
+        )
         await asyncio.to_thread(
             record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
             delivery_token=token, status="bot_response_suppressed_human_takeover",
             error="human_message_after_batch_start",
         )
-        await asyncio.to_thread(
-            record_observability_event,
-            "bot_response_suppressed_human_takeover",
-            {"batch_id": batch_id, "lead_id": claimed.get("lead_id"),
-             "conversation_id": claimed.get("conversation_id")},
-        )
+        await asyncio.to_thread(record_observability_event,
+            "bot_response_suppressed_human_takeover", _lead_event_context(db, claimed))
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
             error="suppressed_human_takeover", worker_id=worker_id,
@@ -733,14 +771,16 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             delivery_token=token, status="blocked_phone_request",
             error="outbound_explicit_phone_request",
         )
+        await asyncio.to_thread(record_observability_event, "phone_request_blocked", {
+            **_lead_event_context(db, claimed),
+        })
         response = safe_phone_free_response(response)
 
     if outbound_unconfirmed_visit_claim(response):
         await asyncio.to_thread(
             record_observability_event,
             "visit_claim_blocked",
-            {"batch_id": batch_id, "lead_id": claimed.get("lead_id"),
-             "conversation_id": claimed.get("conversation_id")},
+            _lead_event_context(db, claimed),
         )
         response = safe_visit_claim_free_response(response)
 
@@ -748,19 +788,52 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         await asyncio.to_thread(
             record_observability_event,
             "bot_response_duplicate_blocked",
-            {"batch_id": batch_id, "lead_id": claimed.get("lead_id"),
-             "conversation_id": claimed.get("conversation_id")},
+            _lead_event_context(db, claimed),
         )
-        response = "Tomé nota de tu solicitud. El ejecutivo podrá coordinarla directamente contigo."
+        from chatbot.conversation_policy import duplicate_response_fallback
+        response = duplicate_response_fallback(response)
+
+    await asyncio.to_thread(_update_generated_response,
+        db, phone=claimed["phone"], batch_id=batch_id,
+        generation_id=generation_id, status="generated", content=response,
+    )
 
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
         delivery_token=token,
         status="started",
     )
+    await asyncio.to_thread(_update_generated_response,
+        db, phone=claimed["phone"], batch_id=batch_id,
+        generation_id=generation_id, status="provider_attempt", content=response,
+    )
+    # Keep the original cutoff above, and perform a final cutoff after all
+    # guards and bookkeeping but immediately before the provider call.
+    if _human_takeover_after_batch_start(
+        db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at")
+    ):
+        await asyncio.to_thread(_update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="suppressed", content=response,
+        )
+        await asyncio.to_thread(record_delivery_attempt, db, batch_id=batch_id,
+            worker_id=worker_id, delivery_token=token,
+            status="bot_response_suppressed_human_takeover",
+            error="human_message_before_provider")
+        await asyncio.to_thread(record_observability_event,
+            "bot_response_suppressed_human_takeover", _lead_event_context(db, claimed))
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
+            error="suppressed_human_takeover", worker_id=worker_id,
+            delivery_token=token,
+        )
     try:
         receipt = await sender(claimed["phone"], response)
     except asyncio.CancelledError:
+        await asyncio.to_thread(_update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="delivery_unknown", content=response,
+        )
         await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_DELIVERY_UNKNOWN,
             error="send_cancelled_after_attempt_started", worker_id=worker_id,
@@ -768,6 +841,10 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         )
         raise
     except Exception as exc:
+        await asyncio.to_thread(_update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="delivery_unknown", content=response,
+        )
         await asyncio.to_thread(
             record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
             delivery_token=token,
@@ -784,11 +861,21 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     if receipt.get("provider_call_uncertain"):
         state, error, retry_at = ST_DELIVERY_UNKNOWN, "provider_call_uncertain", None
     elif receipt.get("success") and provider_id:
+        await asyncio.to_thread(_update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="accepted", content=response,
+            provider_message_id=provider_id,
+        )
         await asyncio.to_thread(
             record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
             delivery_token=token,
             status="accepted", provider_message_id=provider_id, http_status=http_status,
         )
+        await asyncio.to_thread(record_observability_event, "RESPONSE_SENT", {
+            **_lead_event_context(db, claimed),
+            "provider_message_id": provider_id,
+            "response_len": len(response or ""),
+        })
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
             outbound_provider_message_id=provider_id, worker_id=worker_id,
@@ -805,6 +892,10 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         retry_at = (now or utc_now()) + timedelta(seconds=retry_after)
     else:
         state, error, retry_at = ST_FAILED_RETRYABLE, f"http_{http_status or 'unknown'}", None
+    await asyncio.to_thread(_update_generated_response,
+        db, phone=claimed["phone"], batch_id=batch_id,
+        generation_id=generation_id, status="delivery_unknown", content=response,
+    )
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
         delivery_token=token,
@@ -853,10 +944,11 @@ async def chatbot_response_worker_loop():
                 status["health_snapshot_at"] = utc_now().isoformat()
                 last_health_refresh = time.monotonic()
 
-            async def llm(phone, text, batch_id=None, job_id=None):
+            async def llm(phone, text, batch_id=None, job_id=None, generation_id=None):
                 return await run_in_threadpool(
                     process_user_message_sync, phone, text,
-                    telemetry_context={"batch_id": batch_id, "job_id": job_id},
+                    telemetry_context={"batch_id": batch_id, "job_id": job_id,
+                                       "generation_id": generation_id},
                 )
 
             try:

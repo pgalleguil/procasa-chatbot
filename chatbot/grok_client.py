@@ -32,7 +32,7 @@ def _cached_tokens(usage):
 
 def _record_llm_telemetry(*, model, started_at, usage=None, context=None,
                           status="success", error=None, fallback_used=False,
-                          timeout=False, retries=0):
+                          timeout=False, retries=None):
     """Persist provider usage metadata only; never persist prompts or PII."""
     try:
         from .storage import record_observability_event
@@ -53,7 +53,9 @@ def _record_llm_telemetry(*, model, started_at, usage=None, context=None,
             "total_tokens": total_tokens,
             "cache_hit_tokens": cache_hit,
             "cache_miss_tokens": max(prompt_tokens - cache_hit, 0),
-            "retries": int(retries or 0),
+            "job_id": (context or {}).get("job_id"),
+            "retries": int(retries) if retries is not None else None,
+            "retries_observable": retries is not None,
             "timeout": bool(timeout),
             "error": error,
             "fallback_used": bool(fallback_used),
@@ -167,8 +169,10 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
     2. Si menciona explícitamente datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
        No infieras duración, financiamiento, documentos ni datos personales con baja confianza.
        Los únicos campos extraíbles son nombre, rut, email, search_duration_bucket,
-       financing_status y rental_docs_readiness. Nunca extraigas teléfono, celular,
+       financing_status y rental_docs_readiness. Solo captura financing_status si la operación contextual es Venta/Compra;
+       solo captura rental_docs_readiness si la operación contextual es Arriendo. Nunca extraigas teléfono, celular,
        WhatsApp o número de contacto.
+    OPERACIÓN CONTEXTUAL: {prospecto_actual.get("operacion") or "no informada"}
 
     CATEGORÍAS DE INTENCIÓN (elige UNA):
     - agendar_visita: El usuario quiere visitar, ver o conocer la propiedad.

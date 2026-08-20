@@ -335,7 +335,14 @@ def obtener_conversacion(phone: str) -> List[Dict]:
     doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"messages": 1})
     if not doc:
         return []
-    return doc.get("messages", [])
+    excluded_delivery_states = {"generated", "provider_attempt", "suppressed", "delivery_unknown"}
+    return [
+        message for message in (doc.get("messages", []) or [])
+        if not (
+            message.get("role") == "assistant"
+            and message.get("delivery_status") in excluded_delivery_states
+        )
+    ]
 
 def obtener_prospecto(phone: str) -> dict:
     db = get_db()
@@ -377,6 +384,89 @@ def update_visit_data_state(phone: str, updates: dict) -> dict:
         upsert=True,
     )
     return merged
+
+
+def get_rag_alternative_offer_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_alternative_offer": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_alternative_offer") or {})
+
+
+def update_rag_alternative_offer_state(phone: str, updates: dict) -> dict:
+    current = get_rag_alternative_offer_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_alternative_offer": merged}}, upsert=True
+    )
+    return merged
+
+
+def get_rag_search_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_search_state": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_search_state") or {})
+
+
+def update_rag_search_state(phone: str, updates: dict) -> dict:
+    current = get_rag_search_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_search_state": merged}}, upsert=True
+    )
+    return merged
+
+
+def update_generated_response_delivery(
+    phone: str,
+    *,
+    db=None,
+    batch_id: str,
+    status: str,
+    content: str | None = None,
+    generation_id: str | None = None,
+    provider_message_id: str | None = None,
+) -> bool:
+    """Update only the generated outbound message for one durable batch."""
+    if not phone or not batch_id:
+        return False
+    selector = {
+        "phone": phone,
+        "messages": {"$elemMatch": {
+            "role": "assistant", "batch_id": batch_id,
+            **({"generation_id": generation_id} if generation_id else {}),
+        }},
+    }
+    fields = {"messages.$.delivery_status": status}
+    if content is not None:
+        fields["messages.$.content"] = str(content)
+    if provider_message_id is not None:
+        fields["messages.$.provider_message_id"] = str(provider_message_id)
+    result = (db or get_db())[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
+    return bool(result.modified_count or result.matched_count)
+
+
+def find_bot_outbound_by_provider_id(provider_message_id: str) -> dict | None:
+    """Resolve a provider outbound ID to a chatbot-owned lead, if any."""
+    provider_id = str(provider_message_id or "").strip()
+    if not provider_id:
+        return None
+    db = get_db()
+    lead = db[COLLECTION_CONVERSATIONS].find_one(
+        {"messages": {"$elemMatch": {
+            "role": "assistant", "provider_message_id": provider_id,
+        }}},
+        {"_id": 1, "phone": 1, "conversation_id": 1},
+    )
+    if lead:
+        return lead
+    return db["chatbot_inbound_jobs"].find_one(
+        {"kind": "response_batch", "outbound_provider_message_id": provider_id},
+        {"phone": 1, "lead_id": 1, "conversation_id": 1},
+    )
 
 
 def mark_human_takeover(phone: str, *, source: str = "whatsapp_human_message") -> str:

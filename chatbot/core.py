@@ -20,6 +20,8 @@ from .storage import (
     ensure_conversation_id,
     get_visit_data_state,
     update_visit_data_state,
+    update_rag_alternative_offer_state,
+    update_rag_search_state,
     VISIT_DATA_FIELDS,
 )
 from .crm_service import CrmService
@@ -35,7 +37,7 @@ from .processing_service import LeadProcessingService
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 
 # RAG IMPORT
-from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
+from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente, extraer_filtros_estructurados
 # Importamos el prompt maestro con las reglas estrictas (No horarios, no inventar)
 from .prompts import SYSTEM_PROMPT_PROSPECTO 
 from .conversation_policy import (
@@ -45,6 +47,8 @@ from .conversation_policy import (
     build_visit_data_prompt,
     visit_data_declined_response,
     alternative_requested,
+    alternative_offer_accepted,
+    alternative_offer_declined,
     property_rejected,
     extract_spontaneous_lead_signals,
     filter_relaxation_accepted,
@@ -53,6 +57,7 @@ from .conversation_policy import (
     outbound_unconfirmed_visit_claim,
     safe_visit_claim_free_response,
     is_substantial_duplicate,
+    duplicate_response_fallback,
 )
 
 logger = logging.getLogger(__name__)
@@ -361,7 +366,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     visit_data_state = await _run_sync(get_visit_data_state, phone)
     pending_visit_data_reply = classify_visit_data_reply(
         original_message,
-        offer_pending=visit_data_state.get("status") == "offered",
+        offer_pending=visit_data_state.get("status") in {"offered", "accepted"},
     )
     if pending_visit_data_reply == "accepted":
         visit_data_state = await _run_sync(update_visit_data_state, phone, {
@@ -372,7 +377,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         visit_data_state = await _run_sync(update_visit_data_state, phone, {
             "status": "declined",
             "declined_at": datetime.now(CHILE_TZ).isoformat(),
+            "declined_property_id": visit_data_state.get("property_id") or prospecto_actual.get("codigo"),
         })
+
+    rag_alternative_state = dict(prospecto_actual.get("rag_alternative_offer") or {})
+    alternative_reply = "none"
+    if rag_alternative_state.get("status") == "offered":
+        if alternative_offer_accepted(original_message, offer_pending=True):
+            alternative_reply = "accepted"
+            rag_alternative_state = await _run_sync(update_rag_alternative_offer_state, phone, {
+                "status": "accepted", "accepted_at": datetime.now(CHILE_TZ).isoformat(),
+            })
+        elif alternative_offer_declined(original_message, offer_pending=True):
+            alternative_reply = "declined"
+            rag_alternative_state = await _run_sync(update_rag_alternative_offer_state, phone, {
+                "status": "declined", "declined_at": datetime.now(CHILE_TZ).isoformat(),
+            })
 
     async def _mark_visit_data_captured(field_names):
         nonlocal visit_data_state
@@ -481,7 +501,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 3. ANÁLISIS PRELIMINAR DE DATOS Y EXTRACCIÓN PROACTIVA
     # =======================================================
-    prospecto_actual = await _run_sync(obtener_prospecto, phone) or {} 
+    prospecto_actual = await _run_sync(obtener_prospecto, phone) or {}
     updates_datos = {}
     
     # A) EXTRACCIÓN PROACTIVA DE DATOS PERSONALES
@@ -519,7 +539,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # Optional analytics fields are captured only when volunteered by the
     # client. No question is generated for these fields in Phase 1.
-    spontaneous_signals = extract_spontaneous_lead_signals(original_message)
+    spontaneous_signals = extract_spontaneous_lead_signals(
+        original_message, prospecto_actual.get("operacion")
+    )
     if spontaneous_signals:
         await _run_sync(actualizar_prospecto, phone, spontaneous_signals)
         prospecto_actual.update(spontaneous_signals)
@@ -865,13 +887,47 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             prospecto_actual["ejecutivo"] = effective_exec
 
     # --- CONTEXTO 2: INFORMACIÓN DE PROPIEDADES (PRIORIDAD: ESPECÍFICA > BÚSQUEDA) ---
-    
+
     alternatives_requested_now = alternative_requested(original_message)
     rejection_without_alternative = property_rejected(original_message) and not alternatives_requested_now
+    rag_search_state = dict(prospecto_actual.get("rag_search_state") or {})
+    stored_rag_criteria = dict(rag_search_state.get("criteria") or {})
+    extracted_rag_filters, _ = extraer_filtros_estructurados(original_message)
+    explicit_rag_criteria = {}
+    if extracted_rag_filters.get("operacion"):
+        explicit_rag_criteria["operacion"] = extracted_rag_filters["operacion"]
+    if extracted_rag_filters.get("tipo"):
+        explicit_rag_criteria["tipo"] = extracted_rag_filters["tipo"]
+    if extracted_rag_filters.get("comunas"):
+        explicit_rag_criteria["comuna"] = ", ".join(extracted_rag_filters["comunas"])
+        explicit_rag_criteria["comunas"] = list(extracted_rag_filters["comunas"])
+    if extracted_rag_filters.get("dormitorios"):
+        explicit_rag_criteria["dormitorios"] = extracted_rag_filters["dormitorios"]
+    budget = extracted_rag_filters.get("precio_uf_max") or extracted_rag_filters.get("precio_clp_max")
+    if budget:
+        explicit_rag_criteria["presupuesto"] = budget
+    if explicit_rag_criteria:
+        stored_rag_criteria.update(explicit_rag_criteria)
+        rag_search_state = await _run_sync(update_rag_search_state, phone, {
+            "criteria": stored_rag_criteria,
+            "criteria_updated_at": datetime.now(CHILE_TZ).isoformat(),
+        })
+        prospecto_actual["rag_search_state"] = rag_search_state
+
+    # A property's original attributes are not copied as customer preferences.
+    # Operation may still be used as transactional context for the existing RAG
+    # query, while commune/budget/type/bedrooms come from explicit criteria.
+    criterios_rag = {
+        "operacion": stored_rag_criteria.get("operacion") or prospecto_actual.get("operacion"),
+        "tipo": stored_rag_criteria.get("tipo"),
+        "comuna": stored_rag_criteria.get("comuna"),
+        "dormitorios": stored_rag_criteria.get("dormitorios"),
+        "presupuesto": stored_rag_criteria.get("presupuesto"),
+    }
 
     # CASO A: Propiedad Específica (Link o Código), salvo que el cliente pida
     # alternativas explícitamente.
-    if propiedad and not alternatives_requested_now:
+    if propiedad and not alternatives_requested_now and not rejection_without_alternative and alternative_reply != "accepted":
         ficha_texto = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
         system_parts.append(f"""
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
@@ -880,15 +936,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # CASO B: Búsqueda / RAG (Solo si no hay propiedad específica activa)
     else:
-        # Definir criterios de búsqueda basados en el prospecto
-        criterios_rag = {
-            "operacion": prospecto_actual.get("operacion"),
-            "tipo": prospecto_actual.get("tipo"),
-            "comuna": prospecto_actual.get("comuna"),
-            "dormitorios": prospecto_actual.get("dormitorios"),
-            "presupuesto": prospecto_actual.get("presupuesto")
-        }
-
         # LÓGICA RAG: la propiedad activa no impide buscar alternativas cuando
         # el cliente las solicita. Un rechazo sin solicitud solo ofrece ayuda.
         is_search_intent = any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones", "más"])
@@ -896,7 +943,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         rag_state = (prospecto_actual.get("rag_filter_relaxation") or {})
         relaxation_accepted = filter_relaxation_accepted(
             original_message,
-            offer_pending=rag_state.get("status") == "offered",
+            offer_pending=rag_state.get("status") == "offered" and alternative_reply == "none",
         )
         if relaxation_accepted:
             await _run_sync(actualizar_prospecto, phone, {
@@ -906,8 +953,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 "conversation_id": conversation_id,
                 "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
             })
-        allow_rag = not rejection_without_alternative and (
-            alternatives_requested_now or is_search_intent or is_initial_search or relaxation_accepted
+        allow_rag = not rejection_without_alternative and alternative_reply != "declined" and (
+            alternatives_requested_now or alternative_reply == "accepted" or is_search_intent or is_initial_search or relaxation_accepted
         )
 
         if criterios_rag["operacion"] and criterios_rag["comuna"] and allow_rag:
@@ -967,6 +1014,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                     "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
                     "result_count": len(resultados_rag),
                 })
+                if alternative_reply == "accepted":
+                    await _run_sync(update_rag_alternative_offer_state, phone, {
+                        "status": "consumed", "consumed_at": datetime.now(CHILE_TZ).isoformat(),
+                    })
             else:
                 if not relaxation_accepted:
                     await _run_sync(actualizar_prospecto, phone, {
@@ -986,6 +1037,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 Buscamos con: {json.dumps(criterios_rag, ensure_ascii=False)} y NO hay más resultados nuevos con esos filtros.
                 INSTRUCCIÓN: Informa que no hay opciones exactas y pregunta si quiere ampliar un poco la búsqueda. No envíes propiedades todavía.
                 """)
+                if alternative_reply == "accepted":
+                    await _run_sync(update_rag_alternative_offer_state, phone, {
+                        "status": "consumed", "consumed_at": datetime.now(CHILE_TZ).isoformat(),
+                    })
         
         # Si faltan datos para buscar y parece que quiere buscar
         elif any(x in msg_lower for x in ["busco", "necesito", "quiero", "tienen"]):
@@ -999,6 +1054,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             INSTRUCCIÓN: Pregunta amablemente por estos datos.
             """)
         elif rejection_without_alternative:
+            property_id = prospecto_actual.get("codigo") or (propiedad or {}).get("codigo")
+            if property_id:
+                await _run_sync(registrar_propiedades_vistas, phone, [str(property_id)])
+            await _run_sync(update_rag_alternative_offer_state, phone, {
+                "status": "offered",
+                "property_id": str(property_id) if property_id else None,
+                "offered_at": datetime.now(CHILE_TZ).isoformat(),
+                "conversation_id": conversation_id,
+            })
+            await _run_sync(record_observability_event, "rag_alternative_offered", {
+                "conversation_id": conversation_id,
+                "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                "property_id": str(property_id) if property_id else None,
+                "result_count": 0,
+                "offer_only": True,
+            })
             system_parts.append("""
             [PROPIEDAD DESCARTADA]
             El cliente no quedó conforme con la propiedad y no pidió alternativas explícitamente.
@@ -1024,6 +1095,25 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # Canonical identity for the conversational pipeline.  Historical nested
     # phone variants remain read-compatible but are not used as a primary source.
     prospecto_actual["phone"] = lead_doc_full.get("phone") or phone
+    current_property_id = str(prospecto_actual.get("codigo") or "") or None
+    state_property_id = str(visit_data_state.get("property_id") or "") or None
+    if (
+        current_property_id
+        and state_property_id
+        and current_property_id != state_property_id
+        and visit_data_state.get("status") in {"declined", "completed"}
+    ):
+        # A decline belongs to one property/intention cycle, not to the lead
+        # forever. Previously captured fields remain known and are not requested again.
+        visit_data_state = await _run_sync(update_visit_data_state, phone, {
+            "status": "not_offered",
+            "cycle_id": str(uuid.uuid4()),
+            "property_id": current_property_id,
+            "cycle_started_at": datetime.now(CHILE_TZ).isoformat(),
+            "offered_at": "",
+            "declined_at": "",
+            "declined_property_id": "",
+        })
     logger.info(
         f"[PROPERTY_TRACE] origen=PRE_DEEPSEEK trace={trace_id} phone={phone} "
         f"prospecto.codigo={prospecto_actual.get('codigo')} prospecto.comuna={prospecto_actual.get('comuna')}"
@@ -1063,6 +1153,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion = resultado_grok["intencion"]
         respuesta = resultado_grok["respuesta_bot"]
         datos_extraidos = resultado_grok.get("datos_extraidos", {})
+        operacion_contextual = str(
+            prospecto_actual.get("operacion") or ""
+        ).casefold()
 
         # Guardar nuevos datos detectados por IA — SOLO campos permitidos
         if datos_extraidos:
@@ -1070,6 +1163,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 k: v for k, v in datos_extraidos.items()
                 if k in _CAMPOS_PERMITIDOS_IA
                 and (k not in _VALORES_ANALITICA or v in _VALORES_ANALITICA[k])
+                and not (
+                    k == "financing_status"
+                    and operacion_contextual not in {"venta", "comprar", "compra"}
+                )
+                and not (
+                    k == "rental_docs_readiness"
+                    and operacion_contextual not in {"arriendo", "arrendar", "alquilar", "alquiler"}
+                )
             }
             datos_bloqueados = {k: v for k, v in datos_extraidos.items() if k in _CAMPOS_BLOQUEADOS_IA}
             if datos_bloqueados:
@@ -1314,6 +1415,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         visit_data_state = await _run_sync(update_visit_data_state, phone, {
             "status": "offered",
             "offered_at": datetime.now(CHILE_TZ).isoformat(),
+            "property_id": current_property_id or prospecto_actual.get("codigo"),
+            "cycle_id": visit_data_state.get("cycle_id") or str(uuid.uuid4()),
+            "conversation_id": conversation_id,
         })
         await _run_sync(record_observability_event, "visit_data_offered", {
             "conversation_id": conversation_id,
@@ -1321,8 +1425,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "property_id": prospecto_actual.get("codigo"),
         })
     elif visit_data_state.get("status") == "declined":
-        if "ejecutivo" not in respuesta.lower():
-            respuesta = f"{respuesta.rstrip()}\n\n{visit_data_declined_response()}".strip()
+        # A decline closes this capture cycle; never let the model append the
+        # next personal-field question after the client said no.
+        respuesta = visit_data_declined_response()
     elif visit_data_state.get("status") == "accepted":
         missing_fields = visit_data_fields_missing(visit_data_state, prospecto_actual)
         if missing_fields:
@@ -1358,17 +1463,21 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "conversation_id": conversation_id,
             "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
         })
-        respuesta = "Tomé nota de tu solicitud. El ejecutivo podrá coordinarla directamente contigo."
+        respuesta = duplicate_response_fallback(respuesta)
 
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
+    generation_id = (telemetry_context or {}).get("generation_id") or str(uuid.uuid4())
     try:
         # Log del evento estructurado (Ya usa InteractionType.BOT_MSG)
         await _run_sync(log_event, phone, InteractionType.BOT_MSG, "bot", {
             "text": respuesta, 
             "intencion": intencion,
-            "lead_intent": selected_intent
+            "lead_intent": selected_intent,
+            "delivery_status": "generated",
+            "batch_id": (telemetry_context or {}).get("batch_id"),
+            "generation_id": generation_id,
         })
         
         # No auto-promovemos a CONTACTED. El lead se queda en NEW (Rojo) hasta que el humano gestante lo tome.
@@ -1381,11 +1490,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")
     )
-    await _run_sync(guardar_mensaje, phone, "assistant", respuesta, metadata_tipo)
-    await _run_sync(record_observability_event, "RESPONSE_SENT", {
+    generated_metadata = {
+        **metadata_tipo,
+        "delivery_status": "generated",
+        "batch_id": (telemetry_context or {}).get("batch_id"),
+        "generation_id": generation_id,
+    }
+    await _run_sync(guardar_mensaje, phone, "assistant", respuesta, generated_metadata)
+    await _run_sync(record_observability_event, "RESPONSE_GENERATED", {
         "conversation_id": conversation_id,
         "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
-        "phone": phone,
+        "batch_id": (telemetry_context or {}).get("batch_id"),
+        "generation_id": generation_id,
         "intent": intencion,
         "response_len": len(respuesta or "")
     })

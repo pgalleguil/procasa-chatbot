@@ -144,10 +144,10 @@ def test_relaxation_requires_explicit_acceptance():
 @pytest.mark.parametrize(("text", "expected"), [
     ("Recién empecé a buscar", {"search_duration_bucket": "just_started"}),
     ("Llevo cuatro meses buscando", {"search_duration_bucket": "3_6_months"}),
-    ("Tengo crédito preaprobado", {"financing_status": "preapproved"}),
-    ("Estoy evaluando el crédito", {"financing_status": "under_evaluation"}),
+    ("Voy a comprar con crédito preaprobado", {"financing_status": "preapproved"}),
+    ("Estoy evaluando el crédito para comprar", {"financing_status": "under_evaluation"}),
     ("Voy a comprar al contado", {"financing_status": "cash"}),
-    ("Ya tengo todos los documentos", {"rental_docs_readiness": "ready"}),
+    ("Para el arriendo ya tengo todos los documentos", {"rental_docs_readiness": "ready"}),
 ])
 def test_spontaneous_analytics_signals(text, expected):
     assert extract_spontaneous_lead_signals(text) == expected
@@ -228,7 +228,7 @@ def test_duplicate_response_is_replaced_before_delivery():
         database, worker_id="duplicate-worker", llm=llm, sender=sender,
         now=NOW + timedelta(seconds=15),
     ))
-    assert sent == ["Tomé nota de tu solicitud. El ejecutivo podrá coordinarla directamente contigo."]
+    assert sent == ["Gracias, sigo atento a tu consulta."]
 
 
 def test_llm_usage_telemetry_contains_no_prompt_or_pii(monkeypatch):

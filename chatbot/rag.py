@@ -1477,7 +1477,8 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
                           oficina_filtro: str = "PROCASA SUCRE",
                           exclude_codes: list = None,
                           include_neighbors: bool = False,
-                          criterios_estructurados: Dict = None) -> List[Dict]:
+                          criterios_estructurados: Dict = None,
+                          allow_filter_relaxation: bool = True) -> List[Dict]:
     """
     BÚSQUEDA HÍBRIDA:
     1) Extrae filtros duros del texto (tipo, operación, dormitorios, precio, comuna...)
@@ -1635,7 +1636,7 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
                     results.append((score, cand))
                     collected_codes.add(code)
             results.sort(key=lambda x: x[0], reverse=True)
-    if _unique_count() < limit:
+    if allow_filter_relaxation and _unique_count() < limit:
         logger.info("[RAG-HYBRID] Relajando filtros (sin dormitorios/precio)...")
         # Include target commune + neighbors for the relaxed search
         geo_scope = list(set((commune_scope or []) + neighbors))
@@ -1648,7 +1649,7 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
         results.sort(key=lambda x: x[0], reverse=True)
 
     # 5c. GLOBAL FALLBACK - PERO MANTENIENDO COMUNA (Si fue especificada)
-    if _unique_count() < limit:
+    if allow_filter_relaxation and _unique_count() < limit:
         # Si el usuario NO especificó comuna, el scope geográfico es None (Realmente global)
         # Si el usuario SÍ especificó comuna, seguimos restringidos a esa zona (o vecinos) pero en toda la red
         if extracted_communes:

@@ -1,6 +1,7 @@
 # chatbot/grok_client.py
 import json
 import logging
+import time
 from openai import OpenAI
 from config import Config
 
@@ -12,7 +13,67 @@ client = OpenAI(
 )
 
 
-def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
+def _usage_value(usage, name, default=0):
+    if usage is None:
+        return default
+    value = getattr(usage, name, None)
+    if value is None and isinstance(usage, dict):
+        value = usage.get(name)
+    return value if value is not None else default
+
+
+def _cached_tokens(usage):
+    details = getattr(usage, "prompt_tokens_details", None) if usage else None
+    if details is None and isinstance(usage, dict):
+        details = usage.get("prompt_tokens_details") or usage.get("prompt_token_details")
+    cached = _usage_value(details, "cached_tokens", None)
+    return int(cached or 0)
+
+
+def _record_llm_telemetry(*, model, started_at, usage=None, context=None,
+                          status="success", error=None, fallback_used=False,
+                          timeout=False, retries=None):
+    """Persist provider usage metadata only; never persist prompts or PII."""
+    try:
+        from .storage import record_observability_event
+        prompt_tokens = int(_usage_value(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(_usage_value(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(_usage_value(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+        cache_hit = _cached_tokens(usage)
+        payload = {
+            "provider": "deepseek",
+            "model": model,
+            "request_correlation_id": (context or {}).get("request_correlation_id") or (context or {}).get("trace_id"),
+            "lead_id": (context or {}).get("lead_id"),
+            "conversation_id": (context or {}).get("conversation_id"),
+            "batch_id": (context or {}).get("batch_id"),
+            "latency_ms": int((time.monotonic() - started_at) * 1000),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "cache_hit_tokens": cache_hit,
+            "cache_miss_tokens": max(prompt_tokens - cache_hit, 0),
+            "job_id": (context or {}).get("job_id"),
+            "retries": int(retries) if retries is not None else None,
+            "retries_observable": retries is not None,
+            "timeout": bool(timeout),
+            "error": error,
+            "fallback_used": bool(fallback_used),
+            "status": status,
+        }
+        # No prompt, response, phone, email or RUT is included here.
+        record_observability_event("LLM_CALL", payload)
+    except Exception:
+        logger.exception("[LLM_TELEMETRY] no se pudo persistir metadata de uso")
+
+
+def _is_timeout_error(error: Exception) -> bool:
+    return isinstance(error, TimeoutError) or "timeout" in type(error).__name__.casefold() or "timeout" in str(error).casefold()
+
+
+def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context: dict | None = None,
+                      fallback_used: bool = False) -> str:
+    started_at = time.monotonic()
     try:
         print(f"[DEEPSEEK] Enviando {len(messages)} mensajes al modelo...")
         response = client.chat.completions.create(
@@ -23,14 +84,26 @@ def generar_respuesta(messages: list, tipo: str = "prospecto") -> str:
             timeout=Config.DEEPSEEK_TIMEOUT_FAST,
         )
         contenido = response.choices[0].message.content.strip()
+        _record_llm_telemetry(
+            model=Config.DEEPSEEK_MODEL_FAST, started_at=started_at,
+            usage=getattr(response, "usage", None), context=telemetry_context,
+            fallback_used=fallback_used,
+        )
         print("[DEEPSEEK] Respuesta recibida correctamente")
         return contenido
     except Exception as e:
+        _record_llm_telemetry(
+            model=Config.DEEPSEEK_MODEL_FAST, started_at=started_at,
+            context=telemetry_context, status="error", error=type(e).__name__,
+            fallback_used=fallback_used,
+            timeout=_is_timeout_error(e),
+        )
         print(f"[ERROR DEEPSEEK] Fallo en la API: {e}")
         return "Lo siento, tengo un problema técnico en este momento. En un segundo vuelvo a estar disponible."
 
 
-def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None) -> dict:
+def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
+                                    telemetry_context: dict | None = None) -> dict:
     """
     Genera respuesta conversacional y extrae datos nuevos si el usuario los menciona.
     Combina el prompt de negocio + instrucciones de extracción.
@@ -70,9 +143,12 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
 
     REGLAS PARA COORDINAR VISITA:
     - Estamos en WhatsApp → nunca pidas teléfono.
-    - Pide nombre opcional solo si hay interés alto y no lo tenemos.
+    - Nunca pidas nombre, RUT o correo antes de una intención operacional clara de visita y una oferta opcional aceptada.
+    - Si el sistema indica que la oferta fue aceptada, solicita solo el siguiente campo faltante: nombre completo, RUT o correo.
+    - Si el cliente entrega varios campos espontáneamente, extráelos y no los vuelvas a pedir.
+    - Si el cliente rechaza entregar datos, continúa la atención y no insistas.
     - PROHIBIDO DAR DISPONIBILIDAD ESPECÍFICA (días o franjas horarias).
-    - Si el cliente muestra interés → confirma que tienes disponibilidad esta semana o horarios disponibles y di que un asesor confirmará el horario exacto por WhatsApp después de que el cliente sugiera un día.
+    - El bot registra el interés y avisa al ejecutivo; nunca confirma una visita, reserva, horario o disponibilidad concreta.
     """
 
     from .prompts import VISIT_CONFIRMATION_PROMPT
@@ -80,7 +156,6 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
 
     # Detect if we need to inject the visit confirmation prompt
     # (when a property has been described and there's no pending confirmation)
-    import re as _re
     property_code = prospecto_actual.get("codigo") or ""
     has_pending = get_pending_response(
         prospecto_actual.get("phone") or "",
@@ -91,7 +166,13 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
     system_prompt_extraction = f"""
     [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]
     1. Analiza el mensaje del usuario en el contexto de la conversación.
-    2. Si menciona datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
+    2. Si menciona explícitamente datos nuevos que NO están aquí: {json.dumps(datos_conocidos, ensure_ascii=False)}, extráelos.
+       No infieras duración, financiamiento, documentos ni datos personales con baja confianza.
+       Los únicos campos extraíbles son nombre, rut, email, search_duration_bucket,
+       financing_status y rental_docs_readiness. Solo captura financing_status si la operación contextual es Venta/Compra;
+       solo captura rental_docs_readiness si la operación contextual es Arriendo. Nunca extraigas teléfono, celular,
+       WhatsApp o número de contacto.
+    OPERACIÓN CONTEXTUAL: {prospecto_actual.get("operacion") or "no informada"}
 
     CATEGORÍAS DE INTENCIÓN (elige UNA):
     - agendar_visita: El usuario quiere visitar, ver o conocer la propiedad.
@@ -133,20 +214,19 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         approx_tokens,
         len(bloque_propiedad),
     )
-    logger.info("[DEEPSEEK PROMPT_HEAD] %s", prompt_completo[:1000])
-    logger.info("[DEEPSEEK PROMPT_TAIL] %s", prompt_completo[-1000:])
     if bloque_propiedad:
         logger.info(
-            "[DEEPSEEK PROPERTY_PAYLOAD] codigo=%s comuna=%s operacion=%s precio=%s ficha_preview=%s",
+            "[DEEPSEEK PROPERTY_PAYLOAD] codigo=%s comuna=%s operacion=%s precio=%s ficha_len=%s",
             prospecto_actual.get("codigo"),
             prospecto_actual.get("comuna"),
             prospecto_actual.get("operacion"),
             prospecto_actual.get("precio_uf"),
-            bloque_propiedad[:500],
+            len(bloque_propiedad),
         )
     else:
         logger.info("[DEEPSEEK PROPERTY_PAYLOAD] no_property_block_in_prompt")
 
+    started_at = time.monotonic()
     try:
         print(f"[DEEPSEEK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
         logger.info(
@@ -167,28 +247,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             **kwargs
         )
 
-        try:
-            logger.info(f"[DEEPSEEK RAW] {response.model_dump() if hasattr(response, 'model_dump') else response}")
-        except Exception as e:
-            logger.info(f"[DEEPSEEK RAW] unavailable: {e}")
-        try:
-            logger.info(f"[DEEPSEEK CHOICES] {response.choices}")
-        except Exception as e:
-            logger.info(f"[DEEPSEEK CHOICES] unavailable: {e}")
-
         msg = response.choices[0].message if getattr(response, "choices", None) else None
-        try:
-            logger.info(f"[DEEPSEEK CONTENT] {getattr(msg, 'content', None)}")
-        except Exception as e:
-            logger.info(f"[DEEPSEEK CONTENT] unavailable: {e}")
-        try:
-            logger.info(f"[DEEPSEEK FINISH] {getattr(response.choices[0], 'finish_reason', None) if getattr(response, 'choices', None) else None}")
-        except Exception as e:
-            logger.info(f"[DEEPSEEK FINISH] unavailable: {e}")
-        try:
-            logger.info(f"[DEEPSEEK MESSAGE META] tool_calls={getattr(msg, 'tool_calls', None)} refusal={getattr(msg, 'refusal', None)}")
-        except Exception as e:
-            logger.info(f"[DEEPSEEK MESSAGE META] unavailable: {e}")
 
         raw_content = response.choices[0].message.content if getattr(response, "choices", None) else None
         
@@ -213,9 +272,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             len(raw_content or "")
         )
 
-        logger.info("[DEEPSEEK RAW_CONTENT] %r", raw_content)
         contenido_json_str = (raw_content or "").strip()
-        logger.info(f"[DEEPSEEK PARSE_INPUT] {contenido_json_str}")
 
         if prospecto_actual and bloque_propiedad and raw_content:
             contenido_lower = raw_content.lower()
@@ -240,15 +297,28 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             raise ValueError("Respuesta vacia del modelo")
         datos = json.loads(contenido_json_str)
 
+        _record_llm_telemetry(
+            model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
+            usage=usage, context=telemetry_context,
+        )
+
         return {
             "intencion": datos.get("intencion", "consulta_general").lower().strip(),
             "datos_extraidos": datos.get("datos_extraidos", {}),
             "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
         }
     except Exception as e:
+        _record_llm_telemetry(
+            model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
+            context=telemetry_context, status="error", error=type(e).__name__,
+            timeout=_is_timeout_error(e),
+        )
         print(f"[ERROR DEEPSEEK] {e}")
         try:
-            texto = generar_respuesta(messages, tipo="prospecto")
+            texto = generar_respuesta(
+                messages, tipo="prospecto", telemetry_context=telemetry_context,
+                fallback_used=True,
+            )
             return {
                 "intencion": "consulta_general",
                 "datos_extraidos": {},

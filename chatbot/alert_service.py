@@ -86,7 +86,7 @@ def _send_alert_once_sync(
 ):
     if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
         logger.info("[ALERT] delivery suppressed flag=LEAD_HOT_NOTIFICATIONS_ENABLED")
-        return
+        return {"status": "failed", "reason": "hot_notifications_disabled"}
     """
     Gestiona el envío de la alerta (WhatsApp al ejecutivo) para evitar spam.
     window_minutes: Tiempo mínimo entre alertas del MISMO tipo.
@@ -96,7 +96,7 @@ def _send_alert_once_sync(
     msg_lower = last_user_msg.lower().strip()
     if len(msg_lower) < 10 and any(w in msg_lower for w in ["gracias", "ok", "bueno", "listo"]):
         logger.info(f"[ALERT] SKIPPED LOW VALUE MSG: {msg_lower}")
-        return
+        return {"status": "rejected", "reason": "low_value_message"}
 
     # EXCEPCIÓN: Si es un escalado urgente (ej: el cliente reclama que no lo llaman), 
     # saltamos el bloqueo de tiempo para asegurar que el ejecutivo se entere.
@@ -104,7 +104,7 @@ def _send_alert_once_sync(
     
     if not is_urgent and not should_send_alert(phone, lead_type, window_minutes):
         logger.info(f"[ALERT] SKIPPED DUPLICATE ALERT {lead_type} for {phone} (Wait {window_minutes}m)")
-        return
+        return {"status": "deduplicated", "reason": "alert_window"}
 
     try:
         # 1. Preparar datos del lead
@@ -131,7 +131,7 @@ def _send_alert_once_sync(
                 lead_type,
                 phone,
             )
-            return
+            return {"status": "rejected", "reason": "non_hot_alert"}
 
         # Buscamos quién es el responsable REAL (según reglas JPC, Región, etc.)
         raw_link_pendiente = criteria.get("link_pendiente")
@@ -159,7 +159,7 @@ def _send_alert_once_sync(
             lead_data["assignment_type"] = "MISSING_PROPERTY"
             logger.info(f"[ALERT] Missing property detected. Routing alert to admin only for phone={phone}")
             save_pending_notification(lead_data)
-            return
+            return {"status": "enqueued", "durable": "pending_notification", "reason": "missing_property"}
 
         from .constants import UNASSIGNED_LABEL
         assigned_exec = criteria.get("ejecutivo_asignado") or criteria.get("ejecutivo")
@@ -185,12 +185,12 @@ def _send_alert_once_sync(
              lead_data["assignment_type"] = assignment_type
              is_new_assignment = True
              if assignment_type in {"MISSING_PROPERTY", "NO_PROPERTY"} or exec_name == UNASSIGNED_LABEL:
-                 logger.info(
+                logger.info(
                      "[ALERT] Router no encontro propiedad valida para phone=%s property_code=%s. No se asigna ejecutivo.",
                      phone,
                      lead_data.get("property_code"),
-                 )
-                 return
+                )
+                return {"status": "failed", "reason": "unroutable_property"}
              logger.info(f"[ALERT] Ruteo: Ejecutivo determinado: {exec_name} | Teléfono: {exec_phone} | Es nuevo: {is_new_assignment}")
 
         # Canonical path: assignment cycle is persisted before the notification.
@@ -203,12 +203,12 @@ def _send_alert_once_sync(
         resolution = resolve_canonical_lead(db, lead_id=criteria.get("_id"), phone=phone)
         if not resolution.lead or resolution.status == "ambiguous_phone":
             logger.error("[ALERT] canonical Hot blocked identity_status=%s", resolution.status)
-            return
+            return {"status": "failed", "reason": f"identity_{resolution.status}"}
         due_local = get_next_business_slot(datetime.now(CHILE_TZ))
         recipient_user = db["usuarios"].find_one({"nombre": exec_name, "is_active": {"$ne": False}})
         if not recipient_user or recipient_user.get("_id") is None:
             logger.error("[ALERT] canonical Hot blocked unresolved recipient_user_id")
-            return
+            return {"status": "failed", "reason": "unresolved_recipient_user_id"}
         recipient_user_id = str(recipient_user["_id"])
         lead_data["target_name"] = exec_name
         lead_data["target_phone"] = exec_phone
@@ -222,7 +222,7 @@ def _send_alert_once_sync(
         )
         if not source_job:
             logger.error("[ALERT] canonical Hot blocked: no verified inbound source")
-            return
+            return {"status": "failed", "reason": "no_verified_inbound_source"}
         canonical = assign_and_enqueue_hot(
             db, lead=resolution.lead, recipient_user_id=recipient_user_id, recipient_name=exec_name,
             recipient_phone=exec_phone, payload=lead_data,
@@ -236,10 +236,16 @@ def _send_alert_once_sync(
             canonical["notification"]["delivery_id"],
         )
         mark_alert_sent(phone, lead_type)
-        return
+        return {
+            "status": "deduplicated" if canonical.get("dedup_suppressed") else "enqueued",
+            "assignment_cycle_id": canonical["cycle"].get("assignment_cycle_id"),
+            "delivery_id": canonical["notification"].get("delivery_id") or canonical["notification"].get("_id"),
+            "durable": "crm_hot_delivery",
+        }
 
     except Exception as e:
         logger.error(f"[ALERT] ERROR routing alert: {e}", exc_info=True)
+        return {"status": "failed", "reason": type(e).__name__}
 
     finally:
         # Liberar el lock siempre

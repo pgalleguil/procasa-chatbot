@@ -387,6 +387,31 @@ def test_review_mode_isolated_from_private_navigation_and_overview_loads():
     assert "territorial-review-mode #sessionWarningModal" in template
 
 
+def test_review_mode_exposes_complete_sanitized_demand_capture_surface():
+    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
+    payload = territorial_review_payload()
+    assert "#viewProperties > .inventory-dashboard > *:not(.geo-demand-panel)" not in template
+    assert all(marker in template for marker in ("CONTEXTO PROCASA SUCRE", "SEÑALES DE DEMANDA", "MATRIZ DEMANDA VS CARTERA", "Oportunidades de Captación", "Validación histórica", "Simulador de Captación", "BENCHMARK RED PROCASA", "inventory-secondary"))
+    assert len(payload["opportunities"]) >= 6
+    assert len(payload["demand_intelligence"]["dimensions"]["type"]) >= 5
+    assert len(payload["demand_intelligence"]["dimensions"]["operation"]) >= 5
+    assert {row["quadrant"] for row in payload["demand_intelligence"]["dimensions"]["type"]} == {"Oportunidad de captación", "Cobertura estratégica", "Sobreexposición relativa", "Menor señal actual"}
+    assert payload["review_simulator"]["available"] is True
+    assert payload["benchmark"]["note"].startswith("Benchmark interno")
+
+
+def test_review_info_controls_and_sur_austral_are_unified():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "dashboard-info-button" in template
+    assert "fa-circle-info" in template
+    assert "dashboard-info-popover" in template
+    assert "Escape" in template
+    assert "['SUR',GEO_FOLDS.south]" in template
+    assert "['AUSTRAL',GEO_FOLDS.austral]" in template
+    assert "data-geo-fold=\"AUSTRAL\"" in template
+    assert "SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA" in template
+
+
 def test_methodology_note_documents_backtest_and_no_visible_score():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
     assert "Validación histórica" in template

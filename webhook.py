@@ -2178,6 +2178,30 @@ async def api_crm_send_recommendation(request: Request):
 
 # ========================= 7. WEBHOOK & API ENDPOINTS =========================
 
+
+def _normalize_webhook_phone(value):
+    digits = "".join(filter(str.isdigit, str(value or "")))
+    if not digits:
+        return None
+    if digits.startswith("56") and len(digits) >= 11:
+        return "+" + digits
+    if len(digits) == 9 and digits.startswith("9"):
+        return "+56" + digits
+    return "+" + digits
+
+
+def _remote_peer_phone(key, msg_obj):
+    """Return the remote PN peer; never treat a LID as a phone number."""
+    candidates = [
+        key.get("remoteJid"), key.get("remoteJidAlt"),
+        msg_obj.get("from"), msg_obj.get("chatId"),
+    ]
+    for value in candidates:
+        raw = str(value or "")
+        if "@s.whatsapp.net" in raw:
+            return _normalize_webhook_phone(raw.split("@", 1)[0])
+    return None
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -2223,19 +2247,32 @@ async def webhook(
     msg_obj = messages_data if isinstance(messages_data, dict) else messages_data[0]
     key = msg_obj.get("key", {})
     from_me = key.get("fromMe", False)
+    provider_message_id = (
+        key.get("id") or msg_obj.get("id") or msg_obj.get("messageId")
+        or data.get("message_id") or data.get("id")
+    )
+    loop = asyncio.get_running_loop()
+    remote_peer_phone = _remote_peer_phone(key, msg_obj)
+    sender_phone = _normalize_webhook_phone(key.get("cleanedSenderPn") or key.get("senderPn"))
+    bot_outbound = None
+    if from_me and provider_message_id:
+        try:
+            from chatbot.storage import find_bot_outbound_by_provider_id
+            bot_outbound = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: find_bot_outbound_by_provider_id(str(provider_message_id)),
+            )
+        except Exception:
+            logger.exception("[CHATBOT_QUEUE] no se pudo resolver el outbound por provider ID")
 
-    # --- EXTRACCCIÓN ROBUSTA DE TELÉFONO (Movido arriba para evitar NameError) ---
-    phone = key.get("cleanedSenderPn") or key.get("senderPn")
-    if not phone:
-        remote_jid = key.get("remoteJid", "")
-        if "@s.whatsapp.net" in remote_jid and not "@lid" in remote_jid:
-            phone = remote_jid.split("@")[0]
-    if not phone:
-        msg_from = msg_obj.get("from", "")
-        if "@s.whatsapp.net" in msg_from and not "@lid" in msg_from:
-            phone = msg_from.split("@")[0]
-    if not phone:
-        phone = (key.get("remoteJid") or msg_obj.get("from") or "").split("@")[0]
+    # A client is the remote peer. For our outbound messages the provider
+    # sender/session number is not the lead; the canonical provider ID wins.
+    if from_me and bot_outbound:
+        phone = bot_outbound.get("phone") or remote_peer_phone
+    elif from_me:
+        phone = remote_peer_phone
+    else:
+        phone = remote_peer_phone or sender_phone
 
     # --- SEGURIDAD: FILTRO DE RECENCIA (ANTI-BURST) ---
     msg_ts = msg_obj.get("messageTimestamp")
@@ -2273,14 +2310,14 @@ async def webhook(
         group_name = msg_obj.get("pushName") or "Grupo Desconocido"
         logger.info(f"🔍 [GROUP_DISCOVERY] ID: {remote_jid} | Name: {group_name}")
     
-    phone = str(phone).strip()
+    phone = str(phone or "").strip()
 
     # --- FILTRO DE EJECUTIVOS (Solicitado por usuario) ---
     # Si quien escribe es un ejecutivo (excepto Pablo Galleguillos), 
     # forzamos from_me=True para que el bot no responda.
-    loop = asyncio.get_running_loop()
-    user_found = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_user_by_phone(phone))
-    if user_found and user_found.get("rol") in ["agente", "supervisor"]:
+    user_lookup_phone = sender_phone if from_me else (sender_phone or phone)
+    user_found = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_user_by_phone(user_lookup_phone))
+    if not from_me and user_found and user_found.get("rol") in ["agente", "supervisor"]:
         if user_found.get("nombre") != "Pablo Galleguillos":
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
             from_me = True
@@ -2302,18 +2339,22 @@ async def webhook(
 
     # Limpiamos el número: nos quedamos solo con dígitos
     phone_digits = "".join(filter(str.isdigit, phone))
+    if from_me and not bot_outbound and not phone_digits:
+        from chatbot.storage import record_observability_event
+        await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: record_observability_event("human_takeover_unresolved_peer", {
+                "provider_message_id": str(provider_message_id) if provider_message_id else None,
+                "remote_jid": str(key.get("remoteJid") or "")[:100],
+            }),
+        )
+        return JSONResponse({"ok": True, "status": "human_takeover_unresolved_peer"}, status_code=200)
     
     if not phone_digits:
         return JSONResponse({"status": "invalid phone"}, status_code=200)
 
     # Normalización para Chile (Casos comunes de entrada: 912345678, 56912345678, +56912345678)
-    if phone_digits.startswith("56") and len(phone_digits) >= 11:
-        phone = "+" + phone_digits
-    elif len(phone_digits) == 9 and phone_digits.startswith("9"):
-        phone = "+56" + phone_digits
-    else:
-        # Fallback genérico si no es Chile o ya tiene formato internacional
-        phone = "+" + phone_digits
+    phone = _normalize_webhook_phone(phone)
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:
@@ -2364,6 +2405,37 @@ async def webhook(
             logger.exception("[CHATBOT_QUEUE] persistence failed")
             raise HTTPException(status_code=503, detail="Durable queue unavailable")
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
+
+    if from_me and bot_outbound:
+        return JSONResponse({"ok": True, "status": "chatbot_outbound_recorded"}, status_code=200)
+
+    # A manual outbound message invalidates any automatic response that has not
+    # reached WhatsApp yet.  The durable worker performs a second cutoff check
+    # immediately before provider delivery for batches already in processing.
+    if not from_me:
+        return JSONResponse({"ok": True, "status": "outbound_message_recorded"}, status_code=200)
+
+    try:
+        from chatbot.storage import mark_human_takeover, record_observability_event
+        from chatbot.chatbot_queue import cancel_pending_batches_for_human
+        takeover_at = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: mark_human_takeover(phone, source="whatsapp_human_message"),
+        )
+        cancelled = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: cancel_pending_batches_for_human(_sync_db(), phone=phone),
+        )
+        await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: record_observability_event(
+                "human_takeover_received",
+                {"conversation_id": None, "takeover_at": takeover_at,
+                 "cancelled_pending_batches": int(cancelled or 0)},
+            ),
+        )
+    except Exception:
+        logger.exception("[CHATBOT_QUEUE] no se pudo invalidar la respuesta automatica ante takeover humano")
 
     return JSONResponse({"ok": True, "status": "human_message_recorded"}, status_code=200)
 

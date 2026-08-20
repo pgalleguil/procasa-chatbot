@@ -7,7 +7,7 @@ import threading
 from contextvars import ContextVar
 import inspect
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pytz
 from config import Config
 from typing import List, Dict, Optional
@@ -77,7 +77,7 @@ def record_observability_event(event_type: str, payload: dict | None = None) -> 
         event = {
             "id": str(uuid4()),
             "event": event_type,
-            "timestamp": datetime.now(CHILE_TZ).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if payload:
             event.update(payload)
@@ -292,6 +292,22 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
     if metadata:
         message.update(metadata)
 
+    # A durable outbound response is not an effective customer interaction
+    # until the provider accepts it. Keep generated/attempted/suppressed/
+    # unknown messages in the audit trail, but do not promote them to the
+    # canonical lead snapshot used by CRM.
+    outbound_pending = (
+        role == "assistant"
+        and message.get("delivery_status") in {
+            "generated", "provider_attempt", "suppressed", "delivery_unknown",
+        }
+    )
+    snapshot_fields = {} if outbound_pending else {
+        "last_message_at": now.isoformat(),
+        "last_message_role": role,
+        "last_message_preview": str(content)[:160],
+    }
+
     if lead_id:
         from bson import ObjectId
         try:
@@ -302,11 +318,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
             {"_id": qid},
             {
                 "$push": {"messages": {"$each": [message], "$slice": -50}},
-                "$set": {
-                    "last_message_at": now.isoformat(),
-                    "last_message_role": role,
-                    "last_message_preview": str(content)[:160],
-                },
+                "$set": snapshot_fields,
             }
         )
     else:
@@ -314,11 +326,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
             {"phone": phone},
             {
                 "$push": {"messages": {"$each": [message], "$slice": -50}},
-                "$set": {
-                    "last_message_at": now.isoformat(),
-                    "last_message_role": role,
-                    "last_message_preview": str(content)[:160],
-                },
+                "$set": snapshot_fields,
                 "$setOnInsert": {
                     "created_at": now.isoformat(),
                     "lead_temperature_effective": "COLD",
@@ -335,7 +343,14 @@ def obtener_conversacion(phone: str) -> List[Dict]:
     doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"messages": 1})
     if not doc:
         return []
-    return doc.get("messages", [])
+    excluded_delivery_states = {"generated", "provider_attempt", "suppressed", "delivery_unknown"}
+    return [
+        message for message in (doc.get("messages", []) or [])
+        if not (
+            message.get("role") == "assistant"
+            and message.get("delivery_status") in excluded_delivery_states
+        )
+    ]
 
 def obtener_prospecto(phone: str) -> dict:
     db = get_db()
@@ -343,6 +358,147 @@ def obtener_prospecto(phone: str) -> dict:
     if not doc:
         return {}
     return doc.get("prospecto", {})
+
+
+VISIT_DATA_FIELDS = ("nombre", "rut", "email")
+
+
+def get_visit_data_state(phone: str) -> dict:
+    """Read the optional visit-enrichment state without exposing conversation content."""
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.visit_data": 1}
+    ) or {}
+    state = (doc.get("prospecto") or {}).get("visit_data") or {}
+    return dict(state)
+
+
+def update_visit_data_state(phone: str, updates: dict) -> dict:
+    """Merge auditable visit-data state into the lead document."""
+    if not updates:
+        return get_visit_data_state(phone)
+    db = get_db()
+    current = get_visit_data_state(phone)
+    merged = dict(current)
+    for key, value in updates.items():
+        if value is not None:
+            merged[key] = value
+    merged.setdefault("status", "not_offered")
+    merged["captured_fields"] = sorted(set(merged.get("captured_fields") or []).intersection(VISIT_DATA_FIELDS))
+    merged["requested_fields"] = sorted(set(merged.get("requested_fields") or []).intersection(VISIT_DATA_FIELDS))
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"prospecto.visit_data": merged}},
+        upsert=True,
+    )
+    return merged
+
+
+def get_rag_alternative_offer_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_alternative_offer": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_alternative_offer") or {})
+
+
+def update_rag_alternative_offer_state(phone: str, updates: dict) -> dict:
+    current = get_rag_alternative_offer_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_alternative_offer": merged}}, upsert=True
+    )
+    return merged
+
+
+def get_rag_search_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_search_state": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_search_state") or {})
+
+
+def update_rag_search_state(phone: str, updates: dict) -> dict:
+    current = get_rag_search_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_search_state": merged}}, upsert=True
+    )
+    return merged
+
+
+def update_generated_response_delivery(
+    phone: str,
+    *,
+    db=None,
+    batch_id: str,
+    status: str,
+    content: str | None = None,
+    generation_id: str | None = None,
+    provider_message_id: str | None = None,
+) -> bool:
+    """Update only the generated outbound message for one durable batch."""
+    if not phone or not batch_id:
+        return False
+    selector = {
+        "phone": phone,
+        "messages": {"$elemMatch": {
+            "role": "assistant", "batch_id": batch_id,
+            **({"generation_id": generation_id} if generation_id else {}),
+        }},
+    }
+    fields = {"messages.$.delivery_status": status}
+    if content is not None:
+        fields["messages.$.content"] = str(content)
+    if provider_message_id is not None:
+        fields["messages.$.provider_message_id"] = str(provider_message_id)
+    if status == "accepted":
+        effective_content = str(content) if content is not None else None
+        if effective_content is not None:
+            fields.update({
+                "last_message_at": datetime.now(CHILE_TZ).isoformat(),
+                "last_message_role": "assistant",
+                "last_message_preview": effective_content[:160],
+            })
+    result = (db or get_db())[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
+    return bool(result.modified_count or result.matched_count)
+
+
+def find_bot_outbound_by_provider_id(provider_message_id: str) -> dict | None:
+    """Resolve a provider outbound ID to a chatbot-owned lead, if any."""
+    provider_id = str(provider_message_id or "").strip()
+    if not provider_id:
+        return None
+    db = get_db()
+    lead = db[COLLECTION_CONVERSATIONS].find_one(
+        {"messages": {"$elemMatch": {
+            "role": "assistant", "provider_message_id": provider_id,
+        }}},
+        {"_id": 1, "phone": 1, "conversation_id": 1},
+    )
+    if lead:
+        return lead
+    return db["chatbot_inbound_jobs"].find_one(
+        {"kind": "response_batch", "outbound_provider_message_id": provider_id},
+        {"phone": 1, "lead_id": 1, "conversation_id": 1},
+    )
+
+
+def mark_human_takeover(phone: str, *, source: str = "whatsapp_human_message") -> str:
+    """Record a human message as the cutoff for unsent automatic responses."""
+    now = datetime.now(timezone.utc)
+    db = get_db()
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {
+            "human_takeover_at": now,
+            "lifecycle.human_takeover_at": now,
+            "human_takeover_source": source,
+        }},
+        upsert=True,
+    )
+    return now.isoformat()
 
 def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
     if not datos:

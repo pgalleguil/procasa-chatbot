@@ -3463,6 +3463,7 @@ async def _render_crm_list(
         "temperatura": temperatura if temperatura != "Todos" else None,
         "estado": estado,
         "busqueda": busqueda,
+        "property_code": property_code,
         "orden": orden,
         "ejecutivo": ejecutivo,
     }

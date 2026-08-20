@@ -921,6 +921,7 @@
 
         .crm-table .col-type { width: 10%; min-width: 120px; }
         .crm-table .col-time { width: 13%; }
+        .crm-table .col-sent { width: 10%; min-width: 92px; }
         .crm-table .col-client { width: 25%; }
         .crm-table .col-property { width: 10%; }
         .crm-table .col-state { width: 10%; }
@@ -930,6 +931,7 @@
         @media (min-width: 769px) and (max-width: 1200px) {
             .crm-table .col-type { width: 12%; min-width: 130px; }
             .crm-table .col-time { width: 16%; }
+            .crm-table .col-sent { width: 12%; }
             .crm-table .col-client { width: 22%; }
             .crm-table .col-property { width: 11%; }
             .crm-table .col-state { width: 12%; }
@@ -1165,6 +1167,27 @@
         .col-time {
             position: relative;
         }
+        .sent-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+        .sent-time { display: inline-flex; flex-direction: column; line-height: 1.05; font-variant-numeric: tabular-nums; }
+        .sent-date { font-weight: 800; color: var(--text-primary); }
+        .sent-hour { color: var(--text-secondary); font-size: .78rem; }
+        .sent-source { color: var(--text-secondary); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
+        .sent-source.confirmed { color: #34d399; }
+        .sent-empty { color: var(--text-secondary); font-size: .78rem; font-style: italic; }
+        .quick-management-btn {
+            margin-top: 8px; border: 1px solid rgba(99,102,241,.45); border-radius: 8px;
+            background: rgba(99,102,241,.12); color: var(--text-primary); padding: 7px 9px;
+            font-size: .72rem; font-weight: 800; white-space: nowrap; cursor: pointer;
+        }
+        .quick-management-btn:hover, .quick-management-btn:focus-visible { background: rgba(99,102,241,.28); border-color: var(--accent); }
+        .quick-management-btn[disabled] { opacity: .7; cursor: wait; }
+        .quick-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .quick-result-btn { text-align: left; min-height: 52px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-primary); padding: 9px 10px; font-weight: 700; }
+        .quick-result-btn:hover, .quick-result-btn.is-selected { border-color: var(--accent); background: rgba(99,102,241,.16); }
+        .quick-extra { display: none; }
+        .quick-extra.is-visible { display: block; }
+        .quick-error { display: none; }
+        .quick-error.is-visible { display: block; }
         @media (max-width: 768px) {
             .sla-info-popup {
                 position: fixed;
@@ -1559,6 +1582,7 @@
 
             .crm-table .col-type,
             .crm-table .col-time,
+            .crm-table .col-sent,
             .crm-table .col-client,
             .crm-table .col-property,
             .crm-table .col-state,
@@ -1980,6 +2004,7 @@
                                     </div>
                                 </div>
                             </th>
+                            <th class="col-sent">Enviado</th>
                             <th class="col-client">Cliente</th>
                             <th class="col-property">Propiedad</th>
                             <th class="col-state">Estado</th>
@@ -1991,7 +2016,10 @@
                         {% for lead in leads %}
                         <tr class="clickable-row" tabindex="0" role="link"
                             aria-label="Abrir detalle de {{ lead.nombre }}"
-                            data-lead-url="{% if lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}">
+                            data-lead-url="{% if lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}"
+                            data-lead-id="{{ lead.lead_id }}"
+                            data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
+                            data-management-state="{{ lead.estado }}">
                             {% if show_priority %}
                             <td class="col-type" data-label="Tipo">
                                 <div class="mobile-cell-value fw-bold d-flex align-items-center" style="font-size: 0.95rem;">
@@ -2035,6 +2063,19 @@
                                     {% else %}
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="fw-bold ms-2">{{ lead.sla_label }}</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="col-sent" data-label="Enviado">
+                                <div class="mobile-cell-value sent-cell" title="{{ lead.effective_sent_source }}">
+                                    {% if lead.effective_sent_at %}
+                                    <time datetime="{{ lead.effective_sent_at.isoformat() }}" class="sent-time">
+                                        <span class="sent-date">{{ lead.effective_sent_date }}</span>
+                                        <span class="sent-hour">{{ lead.effective_sent_time }}</span>
+                                    </time>
+                                    {% if lead.effective_sent_confirmed %}<span class="sent-source confirmed">Entregado</span>{% else %}<span class="sent-source">Asignado</span>{% endif %}
+                                    {% else %}
+                                    <span class="sent-empty">Sin información</span>
                                     {% endif %}
                                 </div>
                             </td>
@@ -2084,6 +2125,16 @@
                                         {{ lead.ultima_accion_nota }}
                                     </div>
                                 </div>
+                                <button type="button" class="quick-management-btn"
+                                    data-quick-management
+                                    data-lead-id="{{ lead.lead_id }}"
+                                    data-phone="{{ lead.phone }}"
+                                    data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
+                                    data-lead-name="{{ lead.nombre }}"
+                                    data-sla-status="{{ lead.sla_status }}"
+                                    aria-label="Registrar gestión de {{ lead.nombre }}">
+                                    <i class="fa-solid fa-check-to-slot me-1"></i>Registrar gestión
+                                </button>
                             </td>
                             {% if show_executive %}
                             <td class="col-executive" data-label="Ejecutivo">
@@ -2159,6 +2210,59 @@
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             aria-hidden="true" onclick="closeMobileMenu()"></div>
 
+        <!-- QUICK MANAGEMENT: same canonical endpoint and result vocabulary as detail -->
+        <div class="modal fade" id="quickManagementModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-sm">
+                <div class="modal-content" style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
+                    <div class="modal-header border-bottom border-secondary">
+                        <div>
+                            <div class="small text-secondary">Registrar gestión</div>
+                            <h5 class="modal-title" id="quickManagementLeadName">Lead</h5>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="small text-secondary mb-2">Selecciona el resultado realizado</div>
+                        <div class="quick-result-grid" id="quickResultGrid">
+                            <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">No respondió</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="MESSAGE_SENT_WAITING_RESPONSE">Mensaje enviado / esperando respuesta</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT">Contactado</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="FOLLOW_UP_REQUESTED">Requiere seguimiento</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="VISIT_SCHEDULED">Visita agendada</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED">No interesado</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="CLOSED_WON">Cierre ganado</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="CLOSED_LOST">Cierre perdido</button>
+                            <button type="button" class="quick-result-btn" data-quick-result="DISCARDED_VALID_REASON">Descarte válido</button>
+                        </div>
+                        <div class="quick-extra mt-3" id="quickChannelField">
+                            <label class="form-label small mb-1" for="quickChannel">Canal</label>
+                            <select class="form-select form-select-sm" id="quickChannel">
+                                <option value="">Seleccionar canal (opcional)</option>
+                                <option value="phone">Llamada</option>
+                                <option value="whatsapp">WhatsApp</option>
+                                <option value="email">Email</option>
+                            </select>
+                        </div>
+                        <div class="quick-extra mt-3" id="quickDateField">
+                            <label class="form-label small mb-1" for="quickNextDate">Próxima acción</label>
+                            <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
+                        </div>
+                        <div class="quick-extra mt-3" id="quickReasonField">
+                            <label class="form-label small mb-1" for="quickReason">Motivo</label>
+                            <input class="form-control form-control-sm" type="text" id="quickReason" maxlength="180" placeholder="Indica el motivo">
+                        </div>
+                        <div class="quick-error alert alert-danger py-2 mt-3 mb-0 small" id="quickManagementError" role="alert"></div>
+                    </div>
+                    <div class="modal-footer border-top border-secondary">
+                        <span class="small text-secondary me-auto" id="quickManagementProgress" aria-live="polite"></span>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="quickManagementSave" disabled>Guardar gestión</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- SESSION WARNING MODAL -->
         <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
             data-bs-keyboard="false">
@@ -2186,6 +2290,142 @@
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
         <script>
+            const quickManagementState = {
+                leadId: null, phone: null, assignmentCycleId: null, resultType: null,
+                managementRequestId: null, row: null
+            };
+
+            function newManagementRequestId() {
+                return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+
+            function setQuickExtra(id, visible) {
+                document.getElementById(id)?.classList.toggle('is-visible', visible);
+            }
+
+            function configureQuickResult(resultType) {
+                quickManagementState.resultType = resultType;
+                document.querySelectorAll('[data-quick-result]').forEach(button => {
+                    button.classList.toggle('is-selected', button.dataset.quickResult === resultType);
+                });
+                const channelNeeded = ['CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(resultType);
+                const dateNeeded = ['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(resultType);
+                const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'CLOSED_WON', 'CLOSED_LOST', 'DISCARDED_VALID_REASON'].includes(resultType);
+                setQuickExtra('quickChannelField', channelNeeded);
+                setQuickExtra('quickDateField', dateNeeded);
+                setQuickExtra('quickReasonField', reasonNeeded);
+                const save = document.getElementById('quickManagementSave');
+                if (save) save.disabled = false;
+            }
+
+            function quickFormIsValid() {
+                if (!quickManagementState.resultType) return false;
+                if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
+                    && !document.getElementById('quickNextDate')?.value) return false;
+                if (['NOT_INTERESTED', 'INVALID_NUMBER', 'CLOSED_WON', 'CLOSED_LOST', 'DISCARDED_VALID_REASON'].includes(quickManagementState.resultType)
+                    && !document.getElementById('quickReason')?.value.trim()) return false;
+                return true;
+            }
+
+            function showQuickError(message) {
+                const error = document.getElementById('quickManagementError');
+                if (!error) return;
+                error.textContent = message;
+                error.classList.toggle('is-visible', Boolean(message));
+            }
+
+            function updateRowAfterQuickManagement(resultType) {
+                const row = quickManagementState.row;
+                if (!row) return;
+                const sla = row.querySelector('[data-label="SLA / Tiempo"] .mobile-cell-value');
+                if (sla) sla.innerHTML = '<i class="fa-solid fa-check-circle text-success"></i><span class="fw-bold text-success ms-2">Gestionado</span>';
+                const state = row.querySelector('[data-label="Estado"] .mobile-cell-value');
+                const labels = {
+                    CALL_NO_ANSWER: 'No respondió', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
+                    EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
+                    VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado',
+                    INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
+                    CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado'
+                };
+                if (state) state.innerHTML = `<span class="text-white fw-bold" style="font-size:.9rem">${labels[resultType] || 'Gestionado'}</span>`;
+                row.dataset.managementState = resultType;
+                row.classList.add('crm-row-just-managed');
+            }
+
+            function openQuickManagement(button) {
+                quickManagementState.leadId = button.dataset.leadId || null;
+                quickManagementState.phone = button.dataset.phone || null;
+                quickManagementState.assignmentCycleId = button.dataset.assignmentCycleId || null;
+                quickManagementState.resultType = null;
+                quickManagementState.managementRequestId = newManagementRequestId();
+                quickManagementState.row = button.closest('.clickable-row');
+                document.getElementById('quickManagementLeadName').textContent = button.dataset.leadName || 'Lead';
+                document.getElementById('quickManagementProgress').textContent = '';
+                document.getElementById('quickNextDate').value = '';
+                document.getElementById('quickReason').value = '';
+                document.getElementById('quickChannel').value = '';
+                showQuickError('');
+                document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
+                ['quickChannelField', 'quickDateField', 'quickReasonField'].forEach(id => setQuickExtra(id, false));
+                document.getElementById('quickManagementSave').disabled = true;
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('quickManagementModal')).show();
+            }
+
+            async function saveQuickManagement() {
+                const save = document.getElementById('quickManagementSave');
+                if (!quickFormIsValid() || save.disabled) {
+                    showQuickError('Completa el dato adicional solicitado antes de guardar.');
+                    return;
+                }
+                save.disabled = true;
+                document.getElementById('quickManagementProgress').textContent = 'Guardando…';
+                showQuickError('');
+                const details = {};
+                const channel = document.getElementById('quickChannel').value;
+                const reason = document.getElementById('quickReason').value.trim();
+                if (channel) details.channel = channel;
+                if (reason) details.reason = reason;
+                const payload = {
+                    lead_id: quickManagementState.leadId,
+                    phone: quickManagementState.phone,
+                    assignment_cycle_id: quickManagementState.assignmentCycleId,
+                    management_request_id: quickManagementState.managementRequestId,
+                    idempotency_key: quickManagementState.managementRequestId,
+                    result_type: quickManagementState.resultType,
+                    next_follow_up_at: document.getElementById('quickNextDate').value || null,
+                    details_json: details
+                };
+                try {
+                    const response = await fetch('/api/crm/management-result', {
+                        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+                    });
+                    if (response.status === 409) throw new Error('STALE_ASSIGNMENT_CYCLE');
+                    if (!response.ok) throw new Error('SERVER_ERROR');
+                    updateRowAfterQuickManagement(quickManagementState.resultType);
+                    quickManagementState.managementRequestId = null;
+                    document.getElementById('quickManagementProgress').textContent = 'Gestión registrada';
+                    bootstrap.Modal.getOrCreateInstance(document.getElementById('quickManagementModal')).hide();
+                    document.dispatchEvent(new CustomEvent('crm:mutation-complete'));
+                } catch (error) {
+                    save.disabled = false;
+                    document.getElementById('quickManagementProgress').textContent = '';
+                    showQuickError(error.message === 'STALE_ASSIGNMENT_CYCLE'
+                        ? 'Este lead cambió de asignación. Actualiza la información antes de registrar la gestión.'
+                        : 'No se pudo registrar la gestión. Puedes reintentarlo.');
+                    if (error.message === 'STALE_ASSIGNMENT_CYCLE') {
+                        document.dispatchEvent(new CustomEvent('crm:mutation-complete'));
+                    }
+                }
+            }
+
+            document.addEventListener('click', event => {
+                const quickButton = event.target.closest?.('[data-quick-management]');
+                if (quickButton) { event.preventDefault(); event.stopPropagation(); openQuickManagement(quickButton); return; }
+                const resultButton = event.target.closest?.('[data-quick-result]');
+                if (resultButton) { event.preventDefault(); configureQuickResult(resultButton.dataset.quickResult); }
+            });
+            document.getElementById('quickManagementSave')?.addEventListener('click', saveQuickManagement);
+
             function toggleMobileMenu() {
                 const sidebar = document.getElementById('sidebar');
                 const overlay = document.getElementById('sidebarOverlay');
@@ -2375,7 +2615,7 @@
 
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---
             const CRM_POLL_INTERVAL_MS = 20000;
-            const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|notes|log_action|send_recommendation|admin\/(reassign|mark-duplicate|archive))/;
+            const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|management-result|notes|log_action|send_recommendation|admin\/(reassign|mark-duplicate|archive))/;
             let crmVersion = Number(document.getElementById('crmDynamicContent')?.dataset.crmVersion || 0);
             let crmCheckInFlight = false;
             let crmRefreshInFlight = false;

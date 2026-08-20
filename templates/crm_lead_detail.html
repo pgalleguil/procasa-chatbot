@@ -2479,6 +2479,17 @@
 
             <div class="card-custom" style="border-top: 3px solid var(--accent);">
 
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <div>
+                        <div class="small text-secondary text-uppercase fw-bold" style="letter-spacing:.08em;">Gestión</div>
+                        <div class="fw-bold" style="color:var(--text-primary);">Registra el resultado de esta interacción</div>
+                    </div>
+                    <button type="button" class="btn btn-primary fw-bold px-3" id="primaryRegisterManagement"
+                        onclick="setActionMode('contact'); document.getElementById('contact-context')?.scrollIntoView({behavior:'smooth', block:'center'});">
+                        <i class="fa-solid fa-check-to-slot me-2"></i>Registrar gestión
+                    </button>
+                </div>
+
                 <!-- BOTONES DE MODO (TABS) -->
                 <div class="action-mode-grid">
                     <div class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
@@ -4556,6 +4567,7 @@
                     alert("⚠️ SU SESIÓN HA EXPIRADO\n\nNo se pudieron guardar los datos.");
                 } else if (err.message === "STALE_ASSIGNMENT_CYCLE") {
                     alert("Este lead cambió de ejecutivo o ciclo mientras estaba abierto. Recarga la página antes de registrar la gestión.");
+                    window.location.reload();
                 } else if (err.message.startsWith("SERVER_ERROR")) {
                     console.error("CRM update failed:", err.message);
                     const serverDetail = err.message.slice("SERVER_ERROR: ".length);

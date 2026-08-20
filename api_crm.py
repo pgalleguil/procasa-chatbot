@@ -1044,6 +1044,31 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         assigned_for_cycle = _coerce_crm_datetime(
             (current_cycle or {}).get("assigned_at") or lifecycle.get("assigned_at") or lead.get("fecha_asignacion")
         )
+        # Presentation-only "Enviado" timestamp. Never use created_at as a
+        # delivery timestamp. Assignment is the honest fallback until reliable
+        # delivery confirmation exists on the cycle.
+        confirmed_delivery_raw = None
+        if (current_cycle or {}).get("delivery_confirmed") is True:
+            confirmed_delivery_raw = ((current_cycle or {}).get("delivery_confirmed_at")
+                                      or (current_cycle or {}).get("delivered_at"))
+        effective_sent_at = _coerce_crm_datetime(
+            confirmed_delivery_raw
+            or (current_cycle or {}).get("assigned_at")
+            or lifecycle.get("assigned_at")
+            or lead.get("fecha_asignacion")
+        )
+        if confirmed_delivery_raw and effective_sent_at:
+            effective_sent_source = "Entrega confirmada"
+            effective_sent_confirmed = True
+        elif effective_sent_at and (current_cycle or {}).get("assigned_at"):
+            effective_sent_source = "Asignación"
+            effective_sent_confirmed = False
+        elif effective_sent_at:
+            effective_sent_source = "Asignación legacy"
+            effective_sent_confirmed = False
+        else:
+            effective_sent_source = "Sin información"
+            effective_sent_confirmed = False
         current_cycle_id = ((current_cycle or {}).get("assignment_cycle_id")
                             or lifecycle.get("current_assignment_cycle_id")
                             or lifecycle.get("assignment_cycle_id"))
@@ -1324,6 +1349,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
+            "effective_sent_at": effective_sent_at,
+            "effective_sent_date": effective_sent_at.strftime("%d/%m") if effective_sent_at else None,
+            "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,
+            "effective_sent_source": effective_sent_source,
+            "effective_sent_confirmed": effective_sent_confirmed,
             "stage": lead.get("stage") or "new",
             "sort_timestamp": sort_ts
         })

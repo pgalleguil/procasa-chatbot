@@ -47,8 +47,6 @@ REVIEW_DIMENSION_SPECS = {
         ("Arriendo", 67, 112, "Oportunidad de captación"),
         ("Venta + Arriendo", 25, 38, "Menor señal actual"),
         ("Otra situación", 12, 18, "Sobreexposición relativa"),
-        ("Venta · Proyecto", 8, 21, "Menor señal actual"),
-        ("Arriendo · Temporada", 5, 9, "Oportunidad de captación"),
     ],
     "type": [
         ("Casa", 96, 54, "Oportunidad de captación"),
@@ -59,10 +57,10 @@ REVIEW_DIMENSION_SPECS = {
         ("Sitio", 10, 15, "Menor señal actual"),
     ],
     "zone_rm": [
-        ("Zona RM", 175, 258, "Sobreexposición relativa"),
-        ("Costa central", 53, 44, "Oportunidad de captación"),
-        ("Valle central", 32, 68, "Menor señal actual"),
-        ("Norte", 20, 28, "Cobertura estratégica"),
+        ("Oriente", 58, 91, "Oportunidad de captación"),
+        ("Centro", 47, 85, "Cobertura estratégica"),
+        ("Poniente", 31, 57, "Menor señal actual"),
+        ("Norte", 22, 36, "Sobreexposición relativa"),
         ("Sur", 17, 19, "Oportunidad de captación"),
     ],
     "price_range": [
@@ -84,12 +82,12 @@ REVIEW_DIMENSION_SPECS = {
 
 
 REVIEW_OPPORTUNITIES = [
-    {"type": "Casa", "operation": "Venta", "commune": "Talca", "price_range": "≤ 3.000 UF", "bedrooms": "3D", "recommendation": "Señal fuerte", "analytical_recommendation": "Candidata a captación", "gap_pp": 11.2, "leads_per_property": 2.2, "stock_sucre": 7, "historical_leads_total": 31, "historical_properties_with_demand": 14, "months_with_demand": 6, "weeks_with_demand": 17, "first_demand_at": "2026-02-14", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 11, "w1_leads": 5, "w2_leads": 1, "trend": "Aceleración"}, "persistence": "Recurrente"},
-    {"type": "Departamento", "operation": "Venta", "commune": "Valparaíso", "price_range": "2.001–5.000 UF", "bedrooms": "2D", "recommendation": "Señal fuerte", "analytical_recommendation": "Candidata a captación", "gap_pp": 4.7, "leads_per_property": 2.21, "stock_sucre": 9, "historical_leads_total": 44, "historical_properties_with_demand": 20, "months_with_demand": 7, "weeks_with_demand": 19, "first_demand_at": "2026-01-31", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 11, "w1_leads": 1, "w2_leads": 9, "trend": "Reactivación"}, "persistence": "Persistente"},
-    {"type": "Departamento", "operation": "Venta", "commune": "Providencia", "price_range": "5.001–10.000 UF", "bedrooms": "2D", "recommendation": "Señal media", "analytical_recommendation": "Evaluar captación", "gap_pp": 3.8, "leads_per_property": 1.6, "stock_sucre": 12, "historical_leads_total": 27, "historical_properties_with_demand": 15, "months_with_demand": 5, "weeks_with_demand": 13, "first_demand_at": "2026-03-07", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 8, "w1_leads": 0, "w2_leads": 3, "trend": "Reactivación"}, "persistence": "Recurrente"},
-    {"type": "Casa", "operation": "Venta", "commune": "Puente Alto", "price_range": "2.001–3.000 UF", "bedrooms": "3D", "recommendation": "Señal media", "analytical_recommendation": "Evaluar captación", "gap_pp": 6.5, "leads_per_property": 1.9, "stock_sucre": 14, "historical_leads_total": 22, "historical_properties_with_demand": 12, "months_with_demand": 4, "weeks_with_demand": 11, "first_demand_at": "2026-04-12", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 7, "w1_leads": 3, "w2_leads": 2, "trend": "Estable"}, "persistence": "Recurrente"},
-    {"type": "Departamento", "operation": "Arriendo", "commune": "Ñuñoa", "price_range": "≤ 800.000 CLP", "bedrooms": "2D", "recommendation": "Señal emergente", "analytical_recommendation": "Observar evolución", "gap_pp": 2.4, "leads_per_property": 1.45, "stock_sucre": 18, "historical_leads_total": 15, "historical_properties_with_demand": 9, "months_with_demand": 3, "weeks_with_demand": 7, "first_demand_at": "2026-06-19", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 6, "w1_leads": 2, "w2_leads": 0, "trend": "Emergente"}, "persistence": "Reciente"},
-    {"type": "Casa", "operation": "Venta", "commune": "Quilicura", "price_range": "≤ 2.000 UF", "bedrooms": "3D", "recommendation": "Evidencia insuficiente", "analytical_recommendation": "No priorizar todavía", "gap_pp": -1.3, "leads_per_property": 1.0, "stock_sucre": 22, "historical_leads_total": 6, "historical_properties_with_demand": 5, "months_with_demand": 2, "weeks_with_demand": 3, "first_demand_at": "2026-07-21", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 3, "w1_leads": 0, "w2_leads": 0, "trend": "Insuficiente"}, "persistence": "Esporádica"},
+    {"type": "Casa", "operation": "Venta", "commune": "Talca", "price_range": "≤ 3.000 UF", "bedrooms": "3D", "recommendation": "Demanda reciente alta", "analytical_recommendation": "Candidata a captación", "gap_pp": 11.2, "leads_per_property": 2.2, "stock_sucre": 7, "historical_leads_total": 31, "historical_properties_with_demand": 14, "months_with_demand": 6, "weeks_with_demand": 17, "first_demand_at": "2026-02-14", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 11, "w1_leads": 5, "w2_leads": 1, "trend": "Aceleración"}, "persistence": "Recurrente"},
+    {"type": "Departamento", "operation": "Venta", "commune": "Valparaíso", "price_range": "2.001–5.000 UF", "bedrooms": "2D", "recommendation": "Demanda reciente alta", "analytical_recommendation": "Candidata a captación", "gap_pp": 4.7, "leads_per_property": 2.21, "stock_sucre": 9, "historical_leads_total": 44, "historical_properties_with_demand": 20, "months_with_demand": 7, "weeks_with_demand": 19, "first_demand_at": "2026-01-31", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 11, "w1_leads": 1, "w2_leads": 9, "trend": "Reactivación"}, "persistence": "Persistente"},
+    {"type": "Departamento", "operation": "Venta", "commune": "Providencia", "price_range": "5.001–10.000 UF", "bedrooms": "2D", "recommendation": "Demanda reciente media", "analytical_recommendation": "Evaluar captación", "gap_pp": 3.8, "leads_per_property": 1.6, "stock_sucre": 12, "historical_leads_total": 27, "historical_properties_with_demand": 15, "months_with_demand": 5, "weeks_with_demand": 13, "first_demand_at": "2026-03-07", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 8, "w1_leads": 0, "w2_leads": 3, "trend": "Reactivación"}, "persistence": "Recurrente"},
+    {"type": "Casa", "operation": "Venta", "commune": "Puente Alto", "price_range": "2.001–3.000 UF", "bedrooms": "3D", "recommendation": "Demanda reciente media", "analytical_recommendation": "Evaluar captación", "gap_pp": 6.5, "leads_per_property": 1.9, "stock_sucre": 14, "historical_leads_total": 22, "historical_properties_with_demand": 12, "months_with_demand": 4, "weeks_with_demand": 11, "first_demand_at": "2026-04-12", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 7, "w1_leads": 3, "w2_leads": 2, "trend": "Estable"}, "persistence": "Recurrente"},
+    {"type": "Departamento", "operation": "Arriendo", "commune": "Ñuñoa", "price_range": "≤ 800.000 CLP", "bedrooms": "2D", "recommendation": "Demanda reciente baja", "analytical_recommendation": "Observar evolución", "gap_pp": 2.4, "leads_per_property": 1.45, "stock_sucre": 18, "historical_leads_total": 15, "historical_properties_with_demand": 9, "months_with_demand": 3, "weeks_with_demand": 7, "first_demand_at": "2026-06-19", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 6, "w1_leads": 2, "w2_leads": 0, "trend": "Emergente"}, "persistence": "Reciente"},
+    {"type": "Casa", "operation": "Venta", "commune": "Quilicura", "price_range": "≤ 2.000 UF", "bedrooms": "3D", "recommendation": "Sin evidencia suficiente", "analytical_recommendation": "No priorizar todavía", "gap_pp": -1.3, "leads_per_property": 1.0, "stock_sucre": 22, "historical_leads_total": 6, "historical_properties_with_demand": 5, "months_with_demand": 2, "weeks_with_demand": 3, "first_demand_at": "2026-07-21", "last_demand_at": "2026-08-17", "recency": {"w0_leads": 3, "w1_leads": 0, "w2_leads": 0, "trend": "Insuficiente"}, "persistence": "Esporádica"},
 ]
 
 

@@ -394,7 +394,7 @@ def test_review_mode_exposes_complete_sanitized_demand_capture_surface():
     assert all(marker in template for marker in ("CONTEXTO PROCASA SUCRE", "SEÑALES DE DEMANDA", "MATRIZ DEMANDA VS CARTERA", "Oportunidades de Captación", "Validación histórica", "Simulador de Captación", "BENCHMARK RED PROCASA", "inventory-secondary"))
     assert len(payload["opportunities"]) >= 6
     assert len(payload["demand_intelligence"]["dimensions"]["type"]) >= 5
-    assert len(payload["demand_intelligence"]["dimensions"]["operation"]) >= 5
+    assert len(payload["demand_intelligence"]["dimensions"]["operation"]) == 4
     assert {row["quadrant"] for row in payload["demand_intelligence"]["dimensions"]["type"]} == {"Oportunidad de captación", "Cobertura estratégica", "Sobreexposición relativa", "Menor señal actual"}
     assert payload["review_simulator"]["available"] is True
     assert payload["benchmark"]["note"].startswith("Benchmark interno")
@@ -410,6 +410,29 @@ def test_review_info_controls_and_sur_austral_are_unified():
     assert "['AUSTRAL',GEO_FOLDS.austral]" in template
     assert "data-geo-fold=\"AUSTRAL\"" in template
     assert "SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA" in template
+
+
+def test_review_fixture_uses_production_realistic_dimensions_and_bands():
+    payload = territorial_review_payload()
+    dimensions = payload["demand_intelligence"]["dimensions"]
+    assert {row["segment"] for row in dimensions["zone_rm"]} == {"Oriente", "Centro", "Poniente", "Norte", "Sur"}
+    assert sum(row["leads"] for row in dimensions["zone_rm"]) == 175
+    assert not any("Proyecto" in row["segment"] or "Temporada" in row["segment"] for row in dimensions["operation"])
+    assert {row["recommendation"] for row in payload["opportunities"]} <= {"Demanda reciente alta", "Demanda reciente media", "Demanda reciente baja", "Sin evidencia suficiente"}
+
+
+def test_review_half_upper_uses_explicit_tooltips_global_bubble_scale_and_real_scatter():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "keyFor" not in template
+    assert "MutationObserver" not in template
+    assert "Información sobre ${invEsc(info.title)}" in template
+    assert "DEMANDA VS CARTERA" in template
+    assert "demand-compare" in template
+    assert "nationalDemandRadius=d3.scaleSqrt()" in template
+    assert "scatter-median" in template
+    assert "scatter-bubble" in template
+    assert "Matriz de oportunidad: participación de cartera y demanda" in template
+    assert "--text-on-accent: #fff" in template
 
 
 def test_methodology_note_documents_backtest_and_no_visible_score():

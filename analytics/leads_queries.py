@@ -2818,7 +2818,68 @@ def _demand_capture_distribution(stock_records: list[dict], demand_records: list
             "properties_with_demand": len(demand_codes[label]),
             "leads_per_property": round(leads / len(demand_codes[label]), 2) if demand_codes[label] else None,
         })
+        result[-1]["geo_breakdown"] = _demand_capture_segment_geo_breakdown(
+            result[-1], stock_records, demand_records, dimension, demand_total, stock_total
+        )
     return result
+
+
+def _demand_capture_segment_geo_breakdown(
+    row: Mapping[str, Any],
+    stock_records: list[dict],
+    demand_records: list[dict],
+    dimension: str,
+    demand_total: int,
+    stock_total: int,
+) -> dict:
+    """Return an auditable geographic drilldown for one homogeneous segment.
+
+    The segment row remains the primary contract.  This optional payload is only
+    a presentation drilldown and is computed from the same property/lead records,
+    so it cannot invent a second denominator.
+    """
+    value_key = "bedrooms_segment" if dimension == "bedrooms" else dimension
+    value = row.get("segment")
+    demand = [record for record in demand_records if record.get(value_key) == value]
+    stock = [record for record in stock_records if record.get(value_key) == value and record.get("is_active_sucre")]
+
+    def aggregate(field: str, records: list[dict]) -> list[dict]:
+        counts = Counter(record.get(field) for record in records if record.get(field) not in (None, ""))
+        codes = defaultdict(set)
+        for record in records:
+            label = record.get(field)
+            if label not in (None, ""):
+                codes[label].add(record.get("code"))
+        stock_counts = Counter(record.get(field) for record in stock if record.get(field) not in (None, ""))
+        output = []
+        for label, leads in counts.most_common():
+            stock_count = stock_counts.get(label, 0)
+            share = round(leads / demand_total * 100, 1) if demand_total else None
+            supply_share = round(stock_count / stock_total * 100, 1) if stock_total else None
+            output.append({
+                "name": label,
+                "geo_key": _demand_capture_geo_key(label),
+                "leads": leads,
+                "demand_share_pct": share,
+                "properties_with_demand": len(codes[label]),
+                "stock_sucre": stock_count,
+                "supply_share_pct": supply_share,
+                "gap_pp": round(share - supply_share, 1) if share is not None and supply_share is not None else None,
+                "leads_per_property": round(leads / len(codes[label]), 2) if codes[label] else None,
+            })
+        return output
+
+    components = {}
+    for complementary in ("bedrooms", "type", "operation", "price_range"):
+        if complementary == dimension:
+            continue
+        key = "bedrooms_segment" if complementary == "bedrooms" else complementary
+        counts = Counter(record.get(key) for record in demand if record.get(key) not in (None, ""))
+        total = sum(counts.values())
+        components[complementary] = [{"segment": label, "leads": count, "share_pct": round(count / total * 100, 1) if total else 0} for label, count in counts.most_common(5)]
+        if components[complementary]:
+            break
+    return {"regions": aggregate("region", demand), "communes": aggregate("commune", demand), "components": components}
 
 
 def _demand_capture_quadrant(rows: list[dict]) -> dict:
@@ -3179,7 +3240,38 @@ def build_capture_simulation_contract(dataset: Mapping[str, Any], params: Mappin
         if level:
             match_levels[item["code"]] = level
             reasons_by_code[item["code"]] = reasons
-    matched_codes = set(match_levels)
+    # Select the narrowest auditable evidence tier.  A territorial reference is
+    # only used when the requested commune has no compatible properties at all;
+    # it is never silently mixed with exact/close/segment matches.
+    quality = "exact" if any(level == "exact" for level in match_levels.values()) else "close" if any(level == "close" for level in match_levels.values()) else "segment" if match_levels else None
+    relaxation = []
+    if quality == "exact":
+        matched_codes = {code for code, level in match_levels.items() if level == "exact"}
+    elif quality == "close":
+        matched_codes = {code for code, level in match_levels.items() if level in ("exact", "close")}
+        relaxation.append("precio o característica opcional ampliada a una banda cercana")
+    elif quality == "segment":
+        matched_codes = set(match_levels)
+        relaxation.append("se relajó al segmento operación + tipo + comuna")
+    else:
+        context = next((item for item in properties if item["commune"].casefold() == commune.casefold()), None)
+        context_region = context.get("region") if context else None
+        context_zone = _demand_capture_zone_rm(context_region, commune)
+        territorial_candidates = [
+            item for item in properties
+            if item["operation"] == operation
+            and item["type"].casefold() == property_type.casefold()
+            and ((context_zone and item.get("zone_rm") == context_zone) or (context_region and item.get("region") == context_region) or not context_region)
+        ]
+        if territorial_candidates:
+            quality = "territorial"
+            relaxation.append("no hubo evidencia exacta en la comuna; se amplió a referencia territorial comparable")
+            match_levels = {item["code"]: "segment" for item in territorial_candidates}
+            reasons_by_code = {item["code"]: ["referencia territorial ampliada"] for item in territorial_candidates}
+            matched_codes = {item["code"] for item in territorial_candidates}
+        else:
+            matched_codes = set()
+    selected_properties = [item for item in properties if item["code"] in matched_codes]
     leads_by_code = Counter(lead["code"] for lead in historical_leads if lead["code"] in matched_codes)
     matched_leads = [lead for lead in historical_leads if lead["code"] in matched_codes]
     end = dataset.get("period_end")
@@ -3209,7 +3301,7 @@ def build_capture_simulation_contract(dataset: Mapping[str, Any], params: Mappin
     historical_dates = [lead["created_at"] for lead in matched_leads if lead.get("created_at")]
     weeks = {(dt - timedelta(days=dt.weekday())).date().isoformat() for dt in historical_dates}
     months = {(dt.year, dt.month) for dt in historical_dates}
-    active_matched = [item for item in candidate_properties if item["code"] in matched_codes and item["is_active_sucre"]]
+    active_matched = [item for item in selected_properties if item["is_active_sucre"]]
     current_demand_codes = {lead["code"] for lead in windows[0]}
     current_stock_total = dataset.get("active_sucre_total", 0)
     recent_total = dataset.get("recent_leads_total", 0)
@@ -3220,10 +3312,12 @@ def build_capture_simulation_contract(dataset: Mapping[str, Any], params: Mappin
     intensity = round(w0 / len(current_demand_codes), 2) if current_demand_codes else None
     classification = _demand_capture_recent_band(w0, len(matched_leads), len({lead["code"] for lead in matched_leads}))
     comparables = []
-    for item in sorted(active_matched + [x for x in candidate_properties if x["code"] in matched_codes and not x["is_active_sucre"]], key=lambda x: (-leads_by_code[x["code"]], {"exact": 0, "close": 1, "segment": 2}[match_levels[x["code"]]], x["code"]))[:5]:
+    for item in sorted(selected_properties, key=lambda x: (-leads_by_code[x["code"]], {"exact": 0, "close": 1, "segment": 2}[match_levels[x["code"]]], x["code"]))[:5]:
         comparables.append({"code": item["code"], "type": item["type"], "commune": item["commune"], "operation": item["operation"], "price": item.get("price_value"), "price_unit": "UF" if operation == "Venta" else "CLP", "bedrooms": item.get("bedrooms_value"), "leads_historical": leads_by_code[item["code"]], "first_demand_at": min((lead["created_at"] for lead in matched_leads if lead["code"] == item["code"] and lead.get("created_at")), default=None).isoformat() if any(lead["code"] == item["code"] and lead.get("created_at") for lead in matched_leads) else None, "last_demand_at": max((lead["created_at"] for lead in matched_leads if lead["code"] == item["code"] and lead.get("created_at")), default=None).isoformat() if any(lead["code"] == item["code"] and lead.get("created_at") for lead in matched_leads) else None, "active_current": item["is_active_sucre"], "match_level": match_levels[item["code"]]})
     evidence_text = (f"Se observaron {len(matched_leads)} leads históricos compatibles en {len({lead['code'] for lead in matched_leads})} propiedades, incluyendo {w0} en los últimos 30 días. La demanda reciente presenta una señal de {trend.lower()} y Procasa Sucre mantiene {len(active_matched)} comparables activos.") if matched_leads else "No se encontraron propiedades históricas compatibles con estos parámetros."
-    return {"available": True, "inputs": simulation, "matching": {"exact_properties": sum(level == "exact" for level in match_levels.values()), "close_properties": sum(level == "close" for level in match_levels.values()), "segment_properties": sum(level == "segment" for level in match_levels.values()), "optional_field_coverage_pct": optional_coverage, "price_tolerance": {"exact": exact_band, "close": close_band, "basis": "máximo entre 10% del precio simulado y IQR observado en la comuna/tipo/operación"}}, "evidence": {"classification": classification, "classification_definition": "Banda de demanda observada: alta >=5 leads W0; media 1-4 leads W0; baja 0 leads W0; sin evidencia suficiente si histórico <5 leads o <3 propiedades.", "historical_leads_compatible": len(matched_leads), "historical_properties_with_demand": len({lead["code"] for lead in matched_leads}), "leads_30d": w0, "leads_60d": w0 + w1, "leads_90d": w0 + w1 + w2, "w0": w0, "w1": w1, "w2": w2, "trend": trend, "first_demand_at": min(historical_dates).isoformat() if historical_dates else None, "last_demand_at": max(historical_dates).isoformat() if historical_dates else None, "weeks_with_demand": len(weeks), "months_with_demand": len(months), "intensity": intensity, "stock_active_comparable": len(active_matched), "coverage_pct": coverage, "demand_share_pct": demand_share, "supply_share_pct": supply_share, "gap_pp": gap, "text": evidence_text}, "potentially_compatible_leads": {"historical": len(matched_leads), "last_30_days": w0, "definition": "compatibilidad histórica observada; no implica intención de compra"}, "comparables": comparables, "strategic_fit": {"status": "undefined", "label": "No definido"}, "predicted_demand_30d": None, "forecast_status": "not_published", "no_write": True}
+    if quality == "territorial":
+        evidence_text += " La coincidencia corresponde a una referencia territorial ampliada y no a un comparable exacto."
+    return {"available": True, "inputs": simulation, "matching": {"quality": quality or "insufficient", "properties_used": len(matched_codes), "relaxation": relaxation, "exact_properties": sum(level == "exact" for level in match_levels.values()), "close_properties": sum(level == "close" for level in match_levels.values()), "segment_properties": sum(level == "segment" for level in match_levels.values()), "optional_field_coverage_pct": optional_coverage, "price_tolerance": {"exact": exact_band, "close": close_band, "basis": "máximo entre 10% del precio simulado y IQR observado en la comuna/tipo/operación"}}, "evidence": {"classification": classification, "classification_definition": "Banda de demanda observada: alta >=5 leads W0; media 1-4 leads W0; baja 0 leads W0; sin evidencia suficiente si histórico <5 leads o <3 propiedades.", "historical_leads_compatible": len(matched_leads), "historical_properties_with_demand": len({lead["code"] for lead in matched_leads}), "leads_30d": w0, "leads_60d": w0 + w1, "leads_90d": w0 + w1 + w2, "w0": w0, "w1": w1, "w2": w2, "trend": trend, "first_demand_at": min(historical_dates).isoformat() if historical_dates else None, "last_demand_at": max(historical_dates).isoformat() if historical_dates else None, "weeks_with_demand": len(weeks), "months_with_demand": len(months), "intensity": intensity, "stock_active_comparable": len(active_matched), "coverage_pct": coverage, "demand_share_pct": demand_share, "supply_share_pct": supply_share, "gap_pp": gap, "text": evidence_text}, "potentially_compatible_leads": {"historical": len(matched_leads), "last_30_days": w0, "definition": "compatibilidad histórica observada; no implica intención de compra", "quality": quality or "insufficient", "relaxation": relaxation}, "comparables": comparables, "strategic_fit": {"status": "undefined", "label": "No definido"}, "predicted_demand_30d": None, "forecast_status": "not_published", "no_write": True}
 
 
 def build_demand_capture_contract(

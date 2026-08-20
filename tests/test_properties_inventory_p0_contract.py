@@ -502,6 +502,42 @@ def test_capture_simulator_price_change_recalculates_and_empty_input_is_safe():
     assert first["forecast_status"] == "not_published"
 
 
+def test_capture_simulator_exposes_match_quality_and_explains_territorial_fallback():
+    from datetime import datetime, timezone
+    props = {
+        "1": demand_prop("1", comuna="Santiago"),
+        "2": demand_prop("2", comuna="Ñuñoa"),
+    }
+    leads = [
+        {"code": "1", "created_at": datetime(2026, 8, 1, tzinfo=timezone.utc)},
+        {"code": "2", "created_at": datetime(2026, 8, 2, tzinfo=timezone.utc)},
+    ]
+    payload = build_capture_simulation_contract(
+        {"properties": props, "leads": leads, "period_end": datetime(2026, 8, 19, tzinfo=timezone.utc), "active_sucre_total": 2, "recent_leads_total": 2},
+        {"operation": "Venta", "type": "Casa", "commune": "Providencia", "price": None},
+    )
+    assert payload["available"] is True
+    assert payload["matching"]["quality"] == "territorial"
+    assert payload["matching"]["properties_used"] == 2
+    assert payload["matching"]["relaxation"]
+    assert "referencia territorial ampliada" in payload["evidence"]["text"]
+
+
+def test_segment_breakdown_and_territorial_tooltips_are_explicit_and_reconciled():
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    payload = territorial_review_payload()
+    segment = payload["demand_intelligence"]["dimensions"]["type"][0]
+    assert segment["geo_breakdown"]["regions"]
+    assert segment["geo_breakdown"]["components"]
+    assert "data-segment-breakdown" in template
+    assert "Dónde se concentra este segmento" in template
+    assert "data-segment-geo-level" in template
+    assert "geoD3Tooltip(row,region)" in template
+    assert "regionalShare=region?.leads>0" in template
+    assert "setBubbleScale=k=>bubbles.attr('r',item=>radius(item.row.leads)/k)" in template
+    assert "prefers-reduced-motion: reduce" in template
+
+
 def test_attribution_reports_identifiable_office_coverage_separately():
     payload = build_demand_capture_contract([demand_prop("1")], [demand_lead("1"), demand_lead("missing")])
     assert payload["attribution"]["leads_total"] == 2

@@ -161,9 +161,48 @@ def territorial_review_payload():
         })
 
     def segment_rows(dimension):
+        def split_for_geo(leads, stock, labels):
+            if not leads or not labels:
+                return []
+            weights = [46, 27, 17, 10]
+            values = []
+            remaining = leads
+            for index, (name, _) in enumerate(labels[:4]):
+                amount = remaining if index == min(3, len(labels) - 1) else min(remaining, leads * weights[index] // 100)
+                values.append((name, amount))
+                remaining -= amount
+            if remaining and values:
+                values[0] = (values[0][0], values[0][1] + remaining)
+            total = max(1, sum(amount for _, amount in values))
+            return [{
+                "name": name,
+                "geo_key": key(name),
+                "leads": amount,
+                "demand_share_pct": round(amount / total * 100, 1),
+                "properties_with_demand": max(1, round(amount * 0.45)),
+                "stock_sucre": max(0, round(stock * amount / total)),
+                "supply_share_pct": round((stock * amount / total) / 442 * 100, 1),
+                "gap_pp": round(amount / total * 100 - (stock * amount / total) / 442 * 100, 1),
+                "leads_per_property": round(amount / max(1, round(amount * 0.45)), 2),
+            } for name, amount in values]
+
+        def breakdown_for(leads, stock, dimension):
+            if dimension == "zone_rm":
+                labels = list(RM_REVIEW_LEADS.items())
+                regions = []
+            else:
+                labels = [(name, value) for name, value in region_values if value > 0]
+                regions = split_for_geo(leads, stock, labels)
+            communes = split_for_geo(leads, stock, list(RM_REVIEW_LEADS.items())) if dimension == "zone_rm" else []
+            complementary = "bedrooms" if dimension == "type" else "type"
+            components = {complementary: [{"segment": label, "leads": max(1, round(leads * ratio)), "share_pct": round(ratio * 100, 1)} for label, ratio in (("2 dormitorios", .48), ("3 dormitorios", .34), ("4+ dormitorios", .18))]}
+            if complementary == "type":
+                components = {"type": [{"segment": label, "leads": max(1, round(leads * ratio)), "share_pct": round(ratio * 100, 1)} for label, ratio in (("Departamento", .56), ("Casa", .32), ("Oficina", .12))]}
+            return {"regions": regions, "communes": communes, "components": components}
+
         rows = []
         for segment, leads, stock, quadrant in REVIEW_DIMENSION_SPECS[dimension]:
-            rows.append({
+            row = {
                 "dimension": dimension,
                 "segment": segment,
                 "leads": leads,
@@ -174,7 +213,9 @@ def territorial_review_payload():
                 "properties_with_demand": max(1, round(leads * 0.45)),
                 "leads_per_property": round(leads / max(1, round(leads * 0.45)), 2),
                 "quadrant": quadrant,
-            })
+            }
+            row["geo_breakdown"] = breakdown_for(leads, stock, dimension)
+            rows.append(row)
         return rows
 
     composition_operation = [{"label": label, "count": count, "pct": round(count / 442 * 100, 1)} for label, count in (("Venta", 278), ("Arriendo", 121), ("Venta + Arriendo", 29), ("Otra situación", 14))]
@@ -204,7 +245,7 @@ def territorial_review_payload():
     review_simulator = {
         "available": True,
         "evidence": {"classification": "DEMANDA RECIENTE ALTA", "text": "Caso sanitizado de review para evaluar una captación en Talca.", "historical_leads_compatible": 31, "historical_properties_with_demand": 14, "w0": 11, "w1": 5, "w2": 1, "trend": "Aceleración", "months_with_demand": 6, "weeks_with_demand": 17, "stock_active_comparable": 7, "gap_pp": 11.2, "coverage_pct": 26.9, "intensity": 2.2},
-        "matching": {"exact_properties": 4, "close_properties": 6, "segment_properties": 14},
+        "matching": {"quality": "exacta", "properties_used": 14, "exact_properties": 4, "close_properties": 6, "segment_properties": 14, "relaxation": []},
         "comparables": [{"code": "REV-SIM-01", "match_level": "exact", "leads_historical": 11, "active_current": False, "first_demand_at": "2026-02-14", "last_demand_at": "2026-08-17"}, {"code": "REV-SIM-02", "match_level": "close", "leads_historical": 8, "active_current": True, "first_demand_at": "2026-04-12", "last_demand_at": "2026-08-17"}],
     }
 

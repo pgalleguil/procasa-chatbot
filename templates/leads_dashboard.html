@@ -7361,8 +7361,9 @@
                 const geoFinalIsMobile = () => window.matchMedia?.('(max-width: 768px)').matches;
                 const geoFinalCanonical = value => {
                     const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    const compact = raw.replace(/[^a-z]/g, '');
                     if (raw.includes('araucani')) return 'araucania';
-                    if (raw.includes('ohiggins') || raw.includes('o higgins')) return 'ohiggins';
+                    if (compact.includes('ohiggins')) return 'ohiggins';
                     return geoKey(value);
                 };
                 const geoFinalSameKey = (left, right) => geoFinalCanonical(left) === geoFinalCanonical(right);
@@ -7460,7 +7461,7 @@
                         .attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
                         .attr('data-geo-feature', item => item.row.geo_key)
                         .attr('d', item => path(item.feature))
-                        .style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                        .style('fill', item => GEO_METRIC === 'leads' ? 'color-mix(in srgb, var(--border-color) 24%, var(--bg-elevated))' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
                     const bubbles = svg.append('g').attr('class', 'geo-demand-symbols').selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle')
                         .attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
                         .attr('data-geo-symbol', item => item.row.geo_key)
@@ -7524,7 +7525,7 @@
                     const radius = d3.scaleSqrt().domain([0, max]).range([0, 17]);
                     const baseLayer = svg.append('g').attr('class', 'geo-commune-base-layer');
                     const bubbleLayer = svg.append('g').attr('class', 'geo-commune-bubble-layer');
-                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path').attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-feature', item => item.row.geo_key).attr('d', item => path(item.feature)).style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path').attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-feature', item => item.row.geo_key).attr('d', item => path(item.feature)).style('fill', item => GEO_METRIC === 'leads' ? 'color-mix(in srgb, var(--border-color) 24%, var(--bg-elevated))' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
                     const bubbles = bubbleLayer.selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle').attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-symbol', item => item.row.geo_key).attr('cx', item => path.centroid(item.feature)[0]).attr('cy', item => path.centroid(item.feature)[1]).attr('r', item => radius(item.row.leads)).attr('fill', 'var(--accent)').attr('opacity', .82);
                     const setBubbleScale = k => bubbles.attr('r', item => radius(item.row.leads) / k);
                     const zoom = d3.zoom().scaleExtent([1, 8]).filter(event => event.type === 'wheel' ? event.ctrlKey : true).on('zoom', event => { baseLayer.attr('transform', event.transform); bubbleLayer.attr('transform', event.transform); setBubbleScale(event.transform.k); });
@@ -7640,6 +7641,10 @@
             #geoMap.geo-commune-map { min-height:520px; }
             .geo-map-stage { position:relative; width:100%; height:100%; overflow:hidden; background:var(--bg-elevated); }
             .geo-map-stage .geo-main-svg { display:block; width:100%; height:100%; }
+            .geo-map-stage .geo-territory-base { stroke:color-mix(in srgb,var(--text-secondary) 58%,var(--border-color)); stroke-width:1.05; }
+            .geo-ranking-row .geo-ranking-track > .geo-ranking-fill { position:relative; inset:auto; display:block; height:100%; border-radius:99px; }
+            .geo-ranking-row .geo-ranking-track > .geo-ranking-fill.positive, .geo-ranking-row .geo-ranking-track > .geo-ranking-fill.negative { left:auto; right:auto; top:auto; bottom:auto; }
+            .geo-ranking-row .geo-gap-track > .geo-ranking-fill { position:absolute; top:0; bottom:auto; height:100%; }
             .geo-zone-select { display:flex; align-items:center; gap:4px; padding:3px; margin-top:6px; background:var(--bg-elevated); border:1px solid var(--border-color); border-radius:10px; }
             .geo-zone-select button { border:0; background:transparent; color:var(--text-secondary); border-radius:7px; padding:6px 10px; cursor:pointer; font-size:.72rem; }
             .geo-zone-select button.active { background:var(--accent-soft); color:var(--text-primary); font-weight:700; }

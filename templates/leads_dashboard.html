@@ -7359,6 +7359,13 @@
                 var GEO_ZONE_LABELS = {all: 'Todo Chile', north: 'Norte', center: 'Centro', south: 'Sur'};
 
                 const geoFinalIsMobile = () => window.matchMedia?.('(max-width: 768px)').matches;
+                const geoFinalCanonical = value => {
+                    const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    if (raw.includes('araucani')) return 'araucania';
+                    if (raw.includes('ohiggins') || raw.includes('o higgins')) return 'ohiggins';
+                    return geoKey(value);
+                };
+                const geoFinalSameKey = (left, right) => geoFinalCanonical(left) === geoFinalCanonical(right);
                 const geoFinalZoneKeys = zone => {
                     if (zone === 'north') return [...GEO_FOLDS.north];
                     if (zone === 'center') return [...GEO_FOLDS.center];
@@ -7368,13 +7375,13 @@
                 const geoFinalRows = () => geoRows('region');
                 const geoFinalZoneRows = zone => {
                     const keys = geoFinalZoneKeys(zone);
-                    return keys ? geoFinalRows().filter(row => keys.includes(row.geo_key)) : geoFinalRows();
+                    return keys ? geoFinalRows().filter(row => keys.some(key => geoFinalSameKey(row.geo_key, key))) : geoFinalRows();
                 };
                 const geoFinalFeatures = zone => {
                     const keys = geoFinalZoneKeys(zone);
                     return (GEO_DATA?.regions?.features || [])
                         .filter(feature => geoIsAdministrativeFeature(feature))
-                        .filter(feature => !keys || keys.includes(geoKey(geoFeatureName(feature))))
+                        .filter(feature => !keys || keys.some(key => geoFinalSameKey(geoFeatureName(feature), key)))
                         .map(feature => typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature)
                         .filter(feature => feature?.geometry);
                 };
@@ -7445,8 +7452,7 @@
                     const extent = Array.isArray(padding) ? padding : [[padding.x, padding.y], [width - padding.x, height - padding.y]];
                     const projection = d3.geoMercator().fitExtent(extent, collection);
                     const path = d3.geoPath(projection);
-                    const rowMap = geoD3RowMap(rows);
-                    const items = features.map(feature => ({feature, row: rowMap.get(geoKey(geoFeatureName(feature)))})).filter(item => item.row);
+                    const items = features.map(feature => ({feature, row: rows.find(row => geoFinalSameKey(row.geo_key, geoFeatureName(feature)))})).filter(item => item.row);
                     const scales = geoD3ColorScales(allRows);
                     const radius = d3.scaleSqrt().domain([0, d3.max(allRows, item => Number(item.leads) || 0) || 1]).range([0, 17]);
                     const baseLayer = svg.append('g').attr('class', 'geo-territories');

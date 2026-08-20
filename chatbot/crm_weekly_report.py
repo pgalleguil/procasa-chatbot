@@ -182,7 +182,7 @@ def validate_snapshot(snapshot, message=None, group_id=None, official=False):
 
 
 async def create_preview(*, period_start, period_end, priority_as_of, db=None):
-    db = db or get_db(); ensure_indexes(db)
+    db = db if db is not None else get_db(); ensure_indexes(db)
     snapshot = await asyncio.to_thread(build_weekly_crm_snapshot, db, period_start=period_start,
                                        period_end=period_end, priority_as_of=priority_as_of,
                                        executive_order=executive_order())
@@ -204,20 +204,20 @@ async def create_preview(*, period_start, period_end, priority_as_of, db=None):
 
 
 async def get_report(report_id, db=None):
-    db = db or get_db()
+    db = db if db is not None else get_db()
     report = await asyncio.to_thread(db[REPORT_COLLECTION].find_one, {"report_id": report_id}, {"_id": 0})
     if not report: raise ValueError("Reporte CRM no encontrado")
     return report
 
 
 async def list_reports(limit=20, db=None):
-    db = db or get_db()
+    db = db if db is not None else get_db()
     def load(): return list(db[REPORT_COLLECTION].find({}, {"_id": 0}).sort("created_at", -1).limit(limit))
     return await asyncio.to_thread(load)
 
 
 async def regenerate_narrative(report_id, actor, db=None):
-    db = db or get_db(); report = await get_report(report_id, db)
+    db = db if db is not None else get_db(); report = await get_report(report_id, db)
     if report["status"] != "pending_approval": raise ValueError("Solo se regenera un reporte pendiente")
     narrative, source = await generate_narrative(report["snapshot"])
     text = assemble_message(report["snapshot"], narrative)
@@ -229,7 +229,7 @@ async def regenerate_narrative(report_id, actor, db=None):
 
 
 async def cancel_report(report_id, actor, db=None):
-    db = db or get_db(); report = await get_report(report_id, db)
+    db = db if db is not None else get_db(); report = await get_report(report_id, db)
     if report["status"] == "sent": raise ValueError("Un reporte enviado no puede modificarse")
     await asyncio.to_thread(db[REPORT_COLLECTION].update_one, {"report_id": report_id},
                             {"$set": {"status": "cancelled", "cancelled_by": actor, "cancelled_at": utc_now(), "updated_at": utc_now()}})
@@ -243,7 +243,7 @@ def official_idempotency_key(report, group_id):
 async def approve_and_send(report_id, actor, final_text=None, db=None, sender=None):
     if not Config.CRM_WEEKLY_REPORT_SEND_ENABLED:
         raise ValueError("CRM weekly report sending is disabled")
-    db = db or get_db(); ensure_indexes(db)
+    db = db if db is not None else get_db(); ensure_indexes(db)
     report = await get_report(report_id, db)
     if report["status"] == "sent":
         existing = await asyncio.to_thread(db[DELIVERY_COLLECTION].find_one,
@@ -294,7 +294,7 @@ def previous_complete_week(now_local):
 async def scheduler_tick(now=None, db=None):
     if not Config.CRM_WEEKLY_REPORT_GENERATION_ENABLED:
         return None
-    db = db or get_db(); now_local = (now or datetime.now(CHILE)).astimezone(CHILE)
+    db = db if db is not None else get_db(); now_local = (now or datetime.now(CHILE)).astimezone(CHILE)
     if now_local.weekday() != 0: return None
     scheduled = CHILE.localize(datetime.combine(now_local.date(), time(Config.CRM_WEEKLY_SCHEDULE_HOUR, Config.CRM_WEEKLY_SCHEDULE_MINUTE)))
     if not (scheduled <= now_local < scheduled + timedelta(minutes=5)): return None

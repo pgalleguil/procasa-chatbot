@@ -3506,37 +3506,73 @@ def query_demand_capture_dashboard(
     period_end: Optional[str] = None,
     filters: Mapping[str, Any] | None = None,
 ) -> dict:
-    """Read-only demand/capture payload in two batch reads."""
+    """Read-only demand/capture payload in two batch reads.
+
+    The property collection can contain a large historical network.  The
+    contract only needs active network stock, all Sucre records, and records
+    referenced by leads, so avoid an unbounded collection scan.
+    """
     db = get_db()
-    property_projection = {
-        "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-        "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
-        "tipo_operacion": 1, "ubicacion.comuna": 1, "ubicacion.region": 1, "caracteristicas.dormitorios": 1,
-    }
-    property_docs = list(db["universo_cartera_prop360"].find({}, property_projection))
     lead_pipeline = [
         _normalized_created_at_stage(),
         {"$match": _build_test_lead_exclusion_match()},
         {"$project": {"created_at": 1, "prospecto": 1, "lifecycle": 1, "stage": 1}},
     ]
     lead_docs = list(db["leads"].aggregate(lead_pipeline))
+    lead_codes = {
+        _inventory_code((lead.get("prospecto") or {}).get("codigo"))
+        for lead in lead_docs
+    }
+    lead_codes.discard(None)
+    property_projection = {
+        "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
+        "tipo_operacion": 1, "ubicacion.comuna": 1, "ubicacion.region": 1, "caracteristicas.dormitorios": 1,
+    }
+    property_filter = {"$or": [
+        {"disponible_prop360": True},
+        {"estado.oficina": DEMAND_CAPTURE_CANONICAL_OFFICE},
+    ]}
+    if lead_codes:
+        property_filter["$or"].append({"codigo": {"$in": sorted(lead_codes)}})
+    try:
+        property_docs = list(db["universo_cartera_prop360"].find(property_filter, property_projection))
+    except NetworkTimeout:
+        logger.warning("[DEMAND_CAPTURE] property inventory timeout; returning degraded inventory payload")
+        property_docs = []
     return build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
 
 
 def query_capture_simulation_dataset(period_end: Optional[str] = None) -> dict:
     """Read the complete historical simulation batch; no writes and no per-property queries."""
     db = get_db()
+    lead_pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"created_at": 1, "prospecto.codigo": 1}},
+    ]
+    lead_docs = list(db["leads"].aggregate(lead_pipeline))
+    lead_codes = {
+        _inventory_code((lead.get("prospecto") or {}).get("codigo"))
+        for lead in lead_docs
+    }
+    lead_codes.discard(None)
     projection = {
         "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
         "tipo_operacion": 1, "tipo_propiedad": 1, "ubicacion.comuna": 1, "ubicacion.region": 1,
         "caracteristicas": 1,
     }
-    property_docs = list(db["universo_cartera_prop360"].find({}, projection))
-    lead_docs = list(db["leads"].aggregate([
-        _normalized_created_at_stage(),
-        {"$match": _build_test_lead_exclusion_match()},
-        {"$project": {"created_at": 1, "prospecto.codigo": 1}},
-    ]))
+    property_filter = {"$or": [
+        {"disponible_prop360": True},
+        {"estado.oficina": DEMAND_CAPTURE_CANONICAL_OFFICE},
+    ]}
+    if lead_codes:
+        property_filter["$or"].append({"codigo": {"$in": sorted(lead_codes)}})
+    try:
+        property_docs = list(db["universo_cartera_prop360"].find(property_filter, projection))
+    except NetworkTimeout:
+        logger.warning("[CAPTURE_SIMULATION] property inventory timeout; returning empty property dataset")
+        property_docs = []
     properties = {}
     for doc in property_docs:
         code = _inventory_code(doc.get("codigo"))

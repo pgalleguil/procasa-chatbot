@@ -745,8 +745,9 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     # A human message received after generation is a hard cutoff. The check is
     # deliberately immediately before delivery so it also covers a response
     # generated before the executive message but delayed by provider I/O.
-    if _human_takeover_after_batch_start(
-        db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at")
+    if await asyncio.to_thread(
+        _human_takeover_after_batch_start,
+        db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at"),
     ):
         await asyncio.to_thread(_update_generated_response,
             db, phone=claimed["phone"], batch_id=batch_id,
@@ -784,7 +785,10 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         )
         response = safe_visit_claim_free_response(response)
 
-    if _recent_bot_response_is_duplicate(db, phone=claimed["phone"], response=response):
+    if await asyncio.to_thread(
+        _recent_bot_response_is_duplicate,
+        db, phone=claimed["phone"], response=response,
+    ):
         await asyncio.to_thread(
             record_observability_event,
             "bot_response_duplicate_blocked",
@@ -809,8 +813,9 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     )
     # Keep the original cutoff above, and perform a final cutoff after all
     # guards and bookkeeping but immediately before the provider call.
-    if _human_takeover_after_batch_start(
-        db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at")
+    if await asyncio.to_thread(
+        _human_takeover_after_batch_start,
+        db, phone=claimed["phone"], started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at"),
     ):
         await asyncio.to_thread(_update_generated_response,
             db, phone=claimed["phone"], batch_id=batch_id,

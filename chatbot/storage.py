@@ -461,7 +461,8 @@ def update_generated_response_delivery(
                 "last_message_role": "assistant",
                 "last_message_preview": effective_content[:160],
             })
-    result = (db or get_db())[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
+    active_db = db if db is not None else get_db()
+    result = active_db[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
     return bool(result.modified_count or result.matched_count)
 
 

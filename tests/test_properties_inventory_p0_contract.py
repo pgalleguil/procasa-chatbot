@@ -462,15 +462,15 @@ def test_review_mode_exposes_complete_sanitized_demand_capture_surface():
     assert payload["benchmark"]["note"].startswith("Benchmark interno")
 
 
-def test_review_info_controls_and_sur_austral_are_unified():
+def test_review_info_controls_keep_sur_as_the_only_visible_zone():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
     assert "dashboard-info-button" in template
     assert "fa-circle-info" in template
     assert "dashboard-info-popover" in template
     assert "Escape" in template
     assert "['SUR',GEO_FOLDS.south]" in template
-    assert "['AUSTRAL',GEO_FOLDS.austral]" in template
-    assert "data-geo-fold=\"AUSTRAL\"" in template
+    assert "data-geo-fold=\"SUR_INSET\"" in template
+    assert "const labels = {north: 'Norte', center: 'Centro', south: 'Sur'}" in template
     assert "SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA" in template
 
 
@@ -598,6 +598,30 @@ def test_segment_breakdown_and_territorial_tooltips_are_explicit_and_reconciled(
     assert "regionalShare=region?.leads>0" in template
     assert "setBubbleScale=k=>bubbles.attr('r',item=>radius(item.row.leads)/k)" in template
     assert "prefers-reduced-motion: reduce" in template
+
+
+def test_review_visual_semantic_hardening_contracts():
+    from jinja2 import Template
+
+    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
+    rendered = Template(template).render(territorial_review=True, public_demo=False, user_role="")
+
+    assert ".geo-demand-panel {\n            width:100%;\n            max-width:none;" in template
+    assert "border-radius:14px;" in template
+    assert "geoD3PresentationFeature" in template
+    assert "meanLatitude > -60" in template
+    assert "islas · inset" not in rendered
+    assert "map.dataset.geoMetric = GEO_METRIC;" in template
+    assert ".style('fill', item => GEO_METRIC === 'leads'" in template
+    assert "function geoShowTooltip(event, row, region)" in template
+    assert "demandPP(selected.gap_pp)" in template
+    assert "geo-gap-track" in template
+    assert "data-target-width=\"${Math.max(0, Math.min(100, Number(row.demand_share_pct || 0)))}%\"" in template
+    assert "DEMAND_OPEN_SEGMENT" in template
+    assert "Ocultar desglose ⌃" in template
+    assert "output.hidden = true;" in template
+    for marker in ("Listado Leads", "Captaciones", "Cerrar Sesión", "Resumen Ejecutivo", "Gestión del Equipo", "sessionWarningModal"):
+        assert marker not in rendered
 
 
 def test_attribution_reports_identifiable_office_coverage_separately():

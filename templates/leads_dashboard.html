@@ -7383,7 +7383,10 @@
                     return (GEO_DATA?.regions?.features || [])
                         .filter(feature => geoIsAdministrativeFeature(feature))
                         .filter(feature => !keys || keys.some(key => geoFinalSameKey(geoFeatureName(feature), key)))
-                        .map(feature => typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature)
+                        .map(feature => {
+                            const presented = typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature;
+                            return presented?.geometry ? {...presented, geometry: geoFoldGeometry(presented.geometry, true)} : presented;
+                        })
                         .filter(feature => feature?.geometry);
                 };
                 const geoFinalReduced = () => typeof demandReducedMotion === 'function' && demandReducedMotion();
@@ -7480,10 +7483,8 @@
                         base.attr('opacity', 1);
                         bubbles.attr('r', item => radius(item.row.leads));
                     }
-                    if (typeof geoD3BindTooltip === 'function') {
-                        geoD3BindTooltip(base, null);
-                        geoD3BindTooltip(bubbles, null);
-                    }
+                    geoBindD3Tooltip(base, null);
+                    geoBindD3Tooltip(bubbles, null);
                     geoD3BindHighlight(stage);
                 }
 
@@ -7536,7 +7537,8 @@
                     const selectCommune = item => { GEO_SELECTED_KEY = item.row.geo_key; geoRender(); };
                     base.on('click', (_, item) => selectCommune(item));
                     bubbles.on('click', (_, item) => selectCommune(item));
-                    if (typeof geoD3BindTooltip === 'function') { geoD3BindTooltip(base, region); geoD3BindTooltip(bubbles, region); }
+                    geoBindD3Tooltip(base, region);
+                    geoBindD3Tooltip(bubbles, region);
                     geoD3BindHighlight(stage);
                     geoFinalSetLegend(rows.map(geoValue), true);
                 }
@@ -7635,6 +7637,10 @@
         </script>
         <style>
             .geo-demand-panel { width:100%; max-width:none; margin:0 0 14px; box-sizing:border-box; border-radius:14px; }
+            .geo-demand-panel .geo-header { display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,42%); align-items:start; gap:28px; }
+            .geo-demand-panel .geo-map-controls { flex-direction:column; align-items:flex-end; justify-content:flex-start; gap:9px; }
+            .geo-demand-panel .geo-map-controls > #geoMetricSelect, .geo-demand-panel .geo-map-controls > #geoZoneSelect { width:100%; max-width:370px; }
+            .geo-demand-panel .geo-map-controls > #geoZoneSelect { align-self:flex-end; }
             .geo-map-layout { grid-template-columns:minmax(0,60%) minmax(340px,40%); gap:32px; align-items:stretch; }
             .geo-map-layout.is-commune { grid-template-columns:minmax(0,62%) minmax(0,38%); }
             #geoMap.geo-national-map, #geoMap.geo-commune-map { height:clamp(560px,45vw,640px); min-height:560px; border-radius:14px; overflow:hidden; }
@@ -7676,6 +7682,10 @@
                 .geo-map-stage .geo-legend-overlay { left:10px; bottom:10px; font-size:.66rem; }
                 .geo-breadcrumb-stage { font-size:.75rem; }
                 .geo-map-controls { align-items:stretch; }
+                .geo-demand-panel .geo-header { display:block; }
+                .geo-demand-panel .geo-map-controls { align-items:stretch; }
+                .geo-demand-panel .geo-map-controls > #geoMetricSelect, .geo-demand-panel .geo-map-controls > #geoZoneSelect { max-width:none; }
+                .geo-demand-panel .geo-map-controls > #geoZoneSelect { align-self:stretch; }
             }
         </style>
         <div id="sidebarOverlay"

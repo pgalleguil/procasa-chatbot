@@ -172,11 +172,12 @@ def territorial_review_payload():
         def split_for_geo(leads, stock, labels):
             if not leads or not labels:
                 return []
-            weights = [46, 27, 17, 10]
+            weights = [46, 27, 17, 10] + [1] * max(0, len(labels) - 4)
+            weight_total = sum(weights) or 1
             values = []
             remaining = leads
-            for index, (name, _) in enumerate(labels[:4]):
-                amount = remaining if index == min(3, len(labels) - 1) else min(remaining, leads * weights[index] // 100)
+            for index, (name, _) in enumerate(labels):
+                amount = remaining if index == len(labels) - 1 else min(remaining, leads * weights[index] // weight_total)
                 values.append((name, amount))
                 remaining -= amount
             if remaining and values:

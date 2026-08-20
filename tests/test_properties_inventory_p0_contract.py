@@ -617,6 +617,7 @@ def test_review_visual_semantic_hardening_contracts():
     assert "demandPP(selected.gap_pp)" in template
     assert "geo-gap-track" in template
     assert "data-target-width=\"${Math.max(0, Math.min(100, Number(row.demand_share_pct || 0)))}%\"" in template
+    assert "const target=bar.dataset.targetWidth||bar.style.width" in template
     assert "DEMAND_OPEN_SEGMENT" in template
     assert "Ocultar desglose ⌃" in template
     assert "output.hidden = true;" in template

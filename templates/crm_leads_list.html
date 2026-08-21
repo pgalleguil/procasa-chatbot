@@ -718,11 +718,20 @@
         /* FILTERS (Homologados a captacion_list) */
         .filter-bar {
             display: grid;
-            grid-template-columns: minmax(230px, 1.35fr) minmax(112px, .7fr) repeat(4, minmax(122px, .82fr)) max-content;
+            grid-template-columns: minmax(250px, 1.5fr) repeat(4, minmax(130px, .9fr)) max-content;
             gap: 9px;
             margin-bottom: 8px;
             align-items: end;
         }
+
+        .filter-bar .advanced-filter { display: none; }
+        .btn-more-filters {
+            min-height: 36px; padding: 7px 12px; border: 1px solid var(--input-border);
+            border-radius: 10px; color: var(--text-secondary); background: transparent;
+            font-size: .78rem; font-weight: 600; white-space: nowrap;
+        }
+        .btn-more-filters.is-active, .btn-more-filters:hover { color: var(--text-primary); border-color: var(--accent); }
+        .filter-bar.is-expanded .advanced-filter { display: flex; }
 
         .filter-field {
             display: flex;
@@ -875,6 +884,22 @@
             padding: 2px 2px 5px;
         }
 
+        /* Operational summary: one compact state bar instead of four large cards. */
+        .temperature-cards, .operational-alerts { display: none !important; }
+        .management-panel { padding: 6px 10px; margin-bottom: 10px; }
+        .management-panel-heading { display: none; }
+        .management-panel-title { font-size: .82rem; }
+        .management-panel-context, .management-panel-formula { display: none; }
+        .management-panel-count { font-size: .68rem; margin-top: 2px; }
+        .management-panel-result { display: none; }
+        .segmented-progress { display: none; }
+        .state-metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 0; }
+        .state-metric { padding: 0; min-height: 0; }
+        .state-metric-main { padding: 4px 7px; gap: 6px; }
+        .state-metric-label { font-size: .68rem; font-weight: 600; }
+        .state-metric-value { font-size: .62rem; line-height: 1; }
+        .state-breakdown { display: none; }
+
         .results-count { font-weight: 650; color: var(--text-primary); }
         .results-description { color: var(--text-secondary); font-size: 0.76rem; margin-top: 1px; }
 
@@ -912,7 +937,7 @@
 
         .crm-table td {
             background: var(--bg-elevated);
-            padding: 9px 10px;
+            padding: 7px 10px;
             vertical-align: middle;
             border-bottom: 1px solid var(--border-color);
             box-shadow: none;
@@ -920,22 +945,18 @@
 
         .crm-table .col-sent { width: 10%; min-width: 82px; }
         .crm-table .col-priority { width: 13%; min-width: 118px; }
-        .crm-table .col-client { width: 19%; min-width: 150px; }
-        .crm-table .col-property { width: 12%; min-width: 100px; }
-        .crm-table .col-state { width: 12%; min-width: 105px; }
-        .crm-table .col-last-action { width: 17%; min-width: 145px; }
-        .crm-table .col-executive { width: 11%; min-width: 120px; }
-        .crm-table .col-response { width: 13%; min-width: 150px; }
+        .crm-table .col-lead { width: 25%; min-width: 190px; }
+        .crm-table .col-management { width: 22%; min-width: 170px; }
+        .crm-table .col-executive { width: 14%; min-width: 120px; }
+        .crm-table .col-response { width: 16%; min-width: 125px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
             .crm-table .col-sent { width: 10%; }
             .crm-table .col-priority { width: 13%; }
-            .crm-table .col-client { width: 19%; }
-            .crm-table .col-property { width: 10%; }
-            .crm-table .col-state { width: 11%; }
-            .crm-table .col-last-action { width: 19%; }
-            .crm-table .col-executive { width: 10%; }
-            .crm-table .col-response { width: 10%; }
+            .crm-table .col-lead { width: 25%; }
+            .crm-table .col-management { width: 22%; }
+            .crm-table .col-executive { width: 14%; }
+            .crm-table .col-response { width: 16%; }
         }
 
         @media (min-width: 769px) {
@@ -1181,7 +1202,12 @@
         .crm-table .col-response .mobile-cell-value { display: flex; justify-content: center; }
         .crm-table .col-response .quick-management-btn { display: inline-flex; align-items: center; justify-content: center; }
         .crm-table .col-executive .small { display: none; }
-        .crm-table td[data-label="Última Gestión"] { background: var(--bg-elevated); }
+        .crm-table td[data-label="Gestión"] { background: var(--bg-elevated); }
+        .lead-cell, .management-cell { min-width: 0; line-height: 1.15; }
+        .lead-cell .lead-name, .management-cell .management-main { font-size: .82rem; font-weight: 650; color: var(--text-primary); }
+        .lead-cell .lead-meta, .management-cell .management-meta { display: block; margin-top: 3px; color: var(--text-secondary); font-size: .68rem; }
+        .management-cell .management-meta { color: var(--text-secondary); }
+        .management-cell .management-status { color: var(--text-primary); font-weight: 600; }
         .quick-management-btn:hover, .quick-management-btn:focus-visible { background: rgba(99,102,241,.28); border-color: var(--accent); }
         .quick-management-btn[disabled] { opacity: .7; cursor: wait; }
         .quick-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -1511,6 +1537,9 @@
                 grid-column: 1 / -1;
             }
 
+            .filter-bar .advanced-filter { display: none; }
+            .filter-bar.is-expanded .advanced-filter { display: flex; }
+
             .filter-bar .search-box,
             .filter-bar .filter-field,
             .filter-bar select,
@@ -1586,21 +1615,17 @@
 
             .crm-table .col-priority,
             .crm-table .col-sent,
-            .crm-table .col-client,
-            .crm-table .col-property,
-            .crm-table .col-state,
-            .crm-table .col-last-action,
+            .crm-table .col-lead,
+            .crm-table .col-management,
             .crm-table .col-executive,
             .crm-table .col-response {
                 width: 100%;
             }
 
             .crm-table .col-priority { order: 1; grid-column: 1 / -1; }
-            .crm-table .col-client { order: 2; grid-column: 1 / -1; }
-            .crm-table .col-property { order: 3; }
+            .crm-table .col-lead { order: 2; grid-column: 1 / -1; }
             .crm-table .col-sent { order: 3; }
-            .crm-table .col-state { order: 4; }
-            .crm-table .col-last-action { order: 4; }
+            .crm-table .col-management { order: 4; grid-column: 1 / -1; }
             .crm-table .col-executive { order: 5; grid-column: 1 / -1; }
             .crm-table .col-response { order: 6; grid-column: 1 / -1; }
 
@@ -1634,12 +1659,11 @@
                 padding: 4px;
             }
 
-            .crm-table td[data-label="Prioridad"]::before,
-            .crm-table td[data-label="Última Gestión"]::before {
+            .crm-table td[data-label="Prioridad"]::before {
                 display: block;
             }
 
-            .crm-table td[data-label="Última Gestión"]::before { display: none; }
+            .crm-table td[data-label="Gestión"]::before { display: none; }
             .crm-table .col-executive { display: none; }
 
             .crm-table td[data-label="Prioridad"]::before {
@@ -1647,7 +1671,7 @@
             }
 
             /* CLIENTE: Nombre grande */
-            .crm-table td[data-label="Cliente"] .fw-bold {
+            .crm-table td[data-label="Lead"] .lead-name {
                 font-size: .9rem;
                 color: var(--text-primary);
             }
@@ -1658,16 +1682,16 @@
             }
 
             /* ESTADO: Badge visual */
-            .crm-table td[data-label="Estado"] {
+            .crm-table td[data-label="Gestión"] {
                 background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
             }
 
-            .crm-table td[data-label="Estado"]::before {
+            .crm-table td[data-label="Gestión"]::before {
                 margin-bottom: 0;
             }
 
             /* ÚLTIMA GESTIÓN: histórico separado de la acción operativa */
-            .crm-table td[data-label="Última Gestión"] {
+            .crm-table td[data-label="Gestión"] {
                 background: transparent;
                 border-top: 1px solid var(--border-color);
             }
@@ -1925,15 +1949,15 @@
             <div class="table-container">
             <form action="/crm" method="GET" class="filter-bar" id="crmFilterForm">
                 <label class="filter-field filter-search-field">
-                    <span class="filter-field-label">Teléfono</span>
+                    <span class="filter-field-label">Buscar lead</span>
                     <span class="search-box">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="search" name="busqueda" placeholder="Ej. 56912345678" autocomplete="off"
+                        <input type="search" name="busqueda" placeholder="Nombre o teléfono" autocomplete="off"
                             value="{{ request.query_params.get('busqueda', '') }}">
                     </span>
                 </label>
 
-                <label class="filter-field filter-search-field" style="max-width:130px">
+                <label class="filter-field filter-search-field advanced-filter" style="max-width:130px">
                     <span class="filter-field-label">Propiedad</span>
                     <span class="search-box">
                         <i class="fa-solid fa-building"></i>
@@ -1942,8 +1966,8 @@
                     </span>
                 </label>
 
-                <label class="filter-field">
-                    <span class="filter-field-label">Tipo de lead</span>
+                <label class="filter-field advanced-filter">
+                    <span class="filter-field-label">Prioridad</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
                         <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>{{ lead_temperature_option('HOT') }}</option>
@@ -1982,6 +2006,9 @@
                         <option value="oldest_unmanaged" {% if request.query_params.get('orden') in ['oldest_unmanaged', 'antiguos_sin_atender'] %}selected{% endif %}>Más antiguos sin atender</option>
                     </select>
                 </label>
+                <button type="button" class="btn-more-filters" id="btnMoreFilters" onclick="toggleAdvancedLeadFilters()" aria-expanded="false">
+                    <i class="fa-solid fa-sliders me-1"></i>Más filtros
+                </button>
                 <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar filtros</a>
             </form>
 
@@ -1998,13 +2025,15 @@
 
             <div class="results-context">
                 <div>
-                    <div class="results-count">{{ pagination.total_count }} leads encontrados</div>
-                    <div class="results-description">{{ temperature_label }}{% if selected_state %} · {{ state_labels.get(selected_state, selected_state) }}{% endif %} · {{ current_ejecutivo }}</div>
+                    <div class="results-count">{{ pagination.total_count }} leads</div>
+                    {% if selected_temperature != 'Todos' or selected_state or current_ejecutivo != 'Todos' or request.query_params.get('busqueda') or request.query_params.get('property_code') %}
+                    <div class="results-description">Filtros activos</div>
+                    {% endif %}
                 </div>
             </div>
 
             <!-- TABLA -->
-            {% set show_executive = current_ejecutivo == 'Todos' %}
+            {% set show_executive = true %}
             <div class="table-responsive">
                 <table class="crm-table">
                     <thead>
@@ -2052,11 +2081,9 @@
                                     </div>
                                 </div>
                             </th>
-                            <th class="col-client">Cliente</th>
-                            <th class="col-property">Propiedad</th>
-                            <th class="col-state">Estado</th>
-                            <th class="col-last-action">Última Gestión</th>
-                            {% if show_executive %}<th class="col-executive">Ejecutivo</th>{% endif %}
+                            <th class="col-lead">Lead</th>
+                            <th class="col-management">Gestión</th>
+                            <th class="col-executive">Ejecutivo</th>
                             <th class="col-response">Respuesta</th>
                         </tr>
                     </thead>
@@ -2121,57 +2148,35 @@
                                     {% endif %}
                                 </div>
                             </td>
-                            <td class="col-client" data-label="Cliente">
+                            <td class="col-lead" data-label="Lead">
                                 <div class="mobile-cell-value">
-                                    <div class="fw-bold">{{ lead.nombre }}</div>
-                                    {% if lead.phone_is_synthetic %}
-                                    <span class="small text-secondary fst-italic">{{ lead.whatsapp_display }}</span>
-                                    {% else %}
-                                    <a class="small phone-link" href="tel:{{ lead.phone }}">{{ lead.whatsapp_display }}</a>
-                                    {% endif %}
-                                </div>
-                            </td>
-                            <td class="col-property" data-label="Propiedad">
-                                <div class="mobile-cell-value">
-                                {% if lead.codigo_propiedad != "S/N" %}
-                                <a href="{{ lead.url_propiedad }}" target="_blank" rel="noopener" class="prop-code-link">
-                                    <i class="fa-solid fa-home me-1"></i>{{ lead.codigo_propiedad }}
-                                </a>
-                                {% else %}
-                                <span class="text-secondary small fst-italic">Sin Propiedad</span>
-                                {% endif %}
-                                </div>
-                            </td>
-                            <td class="col-state" data-label="Estado">
-                                <div class="mobile-cell-value d-flex align-items-center">
-                                    {% if lead.estado_resultado and lead.estado not in ['CLOSED_WON', 'CLOSED_LOST'] %}
-                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_resultado
-                                        }}</span>
-                                    {% else %}
-                                    <span class="text-white fw-bold" style="font-size: 0.9rem;">{{ lead.estado_badge
-                                        }}</span>
-                                    {% endif %}
-                                </div>
-                            </td>
-                            <td class="col-last-action" data-label="Última Gestión">
-                                <div class="mobile-cell-value">
-                                    {% if lead.gestionado %}
-                                    <div class="fw-bold text-accent" style="font-size: 0.86rem;">{{ lead.ultima_accion_titulo }}</div>
-                                    <div class="small text-secondary" style="font-size: 0.72rem;"><i class="fa-solid fa-clock me-1 opacity-50"></i>{{ lead.tiempo_relativo }}</div>
-                                    {% else %}
-                                    <div class="small text-secondary">Sin gestión</div>
-                                    {% endif %}
-                                </div>
-                            </td>
-                            {% if show_executive %}
-                            <td class="col-executive" data-label="Ejecutivo">
-                                <div class="mobile-cell-value">
-                                    <div class="fw-bold" style="font-size: 0.86rem;">
-                                        <i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{ lead.ejecutivo_nombre }}
+                                    <div class="lead-cell">
+                                        <div class="lead-name">{{ lead.nombre }}</div>
+                                        <span class="lead-meta"><a href="{{ lead.url_propiedad }}" class="prop-code-link">{{ lead.codigo_propiedad }}</a> · {{ lead.whatsapp_display }}</span>
                                     </div>
                                 </div>
                             </td>
-                            {% endif %}
+                            <td class="col-management" data-label="Gestión">
+                                <div class="mobile-cell-value">
+                                    <div class="management-cell">
+                                        {% if lead.estado_resultado and lead.estado not in ['CLOSED_WON', 'CLOSED_LOST'] %}
+                                        <div class="management-main">{{ lead.estado_resultado }}</div>
+                                        {% else %}
+                                        <div class="management-main">{{ lead.estado_badge }}</div>
+                                        {% endif %}
+                                        {% if lead.gestionado %}
+                                        <span class="management-meta">{{ lead.ultima_accion_titulo }} · {{ lead.tiempo_relativo }}</span>
+                                        {% else %}
+                                        <span class="management-meta">Sin gestión</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="col-executive" data-label="Ejecutivo">
+                                <div class="mobile-cell-value">
+                                    <div class="fw-bold" style="font-size: 0.78rem;"><i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{ lead.ejecutivo_nombre }}</div>
+                                </div>
+                            </td>
                             <td class="col-response" data-label="Respuesta">
                                 <div class="mobile-cell-value">
                                 <button type="button" class="quick-management-btn"
@@ -2181,15 +2186,15 @@
                                     data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
                                     data-lead-name="{{ lead.nombre }}"
                                     data-sla-status="{{ lead.sla_status }}"
-                                    aria-label="Registrar gestión de {{ lead.nombre }}">
-                                    <i class="fa-solid fa-check-to-slot me-1"></i>Registrar gestión
+                                    aria-label="Registrar gestión de {{ lead.nombre }}" title="Registrar gestión del lead">
+                                    <i class="fa-solid fa-check-to-slot me-1"></i>Gestionar
                                 </button>
                                 </div>
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-secondary py-5">
+                            <td colspan="6" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>
@@ -2321,7 +2326,6 @@
                 if (!row) return;
                 const priority = row.querySelector('[data-label="Prioridad"] .mobile-cell-value');
                 if (priority) priority.innerHTML = '<i class="fa-solid fa-check-circle text-success"></i><span class="priority-sla text-success">Gestionado</span><span class="priority-type">Normal</span>';
-                const state = row.querySelector('[data-label="Estado"] .mobile-cell-value');
                 const labels = {
                     CALL_NO_ANSWER: 'No respondió', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
                     EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
@@ -2329,10 +2333,9 @@
                     INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
                     CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado'
                 };
-                if (state) state.innerHTML = `<span class="text-white fw-bold" style="font-size:.9rem">${labels[resultType] || 'Gestionado'}</span>`;
-                const lastAction = row.querySelector('[data-label="Última Gestión"] .mobile-cell-value');
-                if (lastAction) {
-                    lastAction.innerHTML = `<div class="fw-bold text-accent" style="font-size:.86rem">${labels[resultType] || 'Gestionado'}</div><div class="small text-secondary" style="font-size:.72rem"><i class="fa-solid fa-clock me-1 opacity-50"></i>Recién</div>`;
+                const management = row.querySelector('[data-label="Gestión"] .management-cell');
+                if (management) {
+                    management.innerHTML = `<div class="management-main">${labels[resultType] || 'Gestionado'}</div><span class="management-meta">${labels[resultType] || 'Gestionado'} · Recién</span>`;
                 }
                 row.dataset.managementState = resultType;
                 row.classList.add('crm-row-just-managed');
@@ -2644,6 +2647,15 @@
                 document.querySelectorAll('#crmDynamicContent [data-target]').forEach(counter => {
                     counter.innerText = counter.getAttribute('data-target') || '0';
                 });
+            }
+
+            function toggleAdvancedLeadFilters() {
+                const form = document.getElementById('crmFilterForm');
+                const button = document.getElementById('btnMoreFilters');
+                if (!form || !button) return;
+                const expanded = form.classList.toggle('is-expanded');
+                button.classList.toggle('is-active', expanded);
+                button.setAttribute('aria-expanded', String(expanded));
             }
 
             async function refreshCrmList({ force = false } = {}) {

@@ -1610,6 +1610,56 @@
             animation: slideDown 0.4s ease-out;
         }
 
+        .detail-operational-header {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+        }
+        .canonical-banner { padding: 8px 14px; margin-bottom: 10px; border-radius: 8px; min-height: 50px; }
+        .canonical-banner .banner-label { font-size: .62rem; }
+        .canonical-banner .banner-value { font-size: .82rem; }
+        .detail-lead-title { color: var(--text-primary); font-size: 1.05rem; font-weight: 650; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+        .detail-lead-meta { color: var(--text-secondary); font-size: .76rem; margin-top: 4px; }
+        .detail-priority-badge { color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 999px; padding: 3px 7px; font-size: .63rem; font-weight: 650; }
+        .detail-priority-badge.hot { color: var(--danger-color); border-color: rgba(239,68,68,.35); }
+        .detail-priority-badge.sla { color: var(--owner-color); border-color: rgba(245,158,11,.35); }
+        .detail-work-card { padding: 14px; margin-bottom: 14px; }
+        .legacy-management-heading { display: none !important; }
+        .action-mode-grid { display: flex; gap: 5px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+        .action-btn { flex: 0 0 auto; flex-direction: row; gap: 6px; height: auto; padding: 6px 10px; border-radius: 7px; font-size: .75rem; }
+        .action-btn i { font-size: .8rem; margin-bottom: 0; }
+        .identity-box { padding: 12px; margin-bottom: 12px; border-radius: 8px; }
+        .identity-box.lead-theme .identity-header { display: none; }
+        .lead-info-grid { gap: 8px; margin-bottom: 8px; padding: 0; }
+        .info-row { gap: 10px; padding-bottom: 3px; }
+        .info-row.property-data { padding-top: 8px; }
+        .info-value { font-size: .82rem; }
+        .comm-grid { gap: 6px; margin-bottom: 6px; padding-top: 8px; }
+        .btn-comm { padding: 6px; font-size: .76rem; }
+        #crmForm { display: none !important; }
+        #crmForm.owner-mode-visible { display: block !important; }
+        .logic-section.owner-border .visual-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+        .logic-section.owner-border .visual-card { min-height: 44px; padding: 7px 4px; border-radius: 6px; flex-direction: row; gap: 5px; }
+        .logic-section.owner-border .visual-card i { font-size: .85rem; margin-bottom: 0; }
+        .logic-section.owner-border .visual-card span { font-size: .68rem; }
+        @media (max-width: 768px) {
+            .detail-operational-header { align-items: flex-start; flex-direction: column; gap: 8px; padding: 10px 12px; }
+            .detail-operational-header .btn { width: 100%; }
+            .detail-lead-title { font-size: .94rem; }
+            .detail-lead-meta { font-size: .68rem; line-height: 1.35; }
+            .canonical-banner { position: static; overflow-x: auto; gap: 12px; }
+            .canonical-banner .banner-stat { min-width: 110px; }
+            .detail-work-card { padding: 10px; }
+            .logic-section.owner-border .visual-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
         @keyframes slideDown {
             from {
                 transform: translateY(-20px);
@@ -2468,6 +2518,11 @@
                 </span>
             </div>
 
+            <div class="banner-stat d-none d-md-flex">
+                <span class="banner-label">SLA</span>
+                <span class="banner-value">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
+            </div>
+
             <div class="banner-actions">
                 <button class="btn-refresh-modern" onclick="window.location.reload()" title="Sincronizar Datos">
                     <i class="fa-solid fa-rotate"></i>
@@ -2475,24 +2530,34 @@
             </div>
         </div>
 
+        <section class="detail-operational-header" aria-label="Resumen operacional del lead">
+            <div>
+                <div class="detail-lead-title">
+                    {{ lead.nombre }}
+                    {% if lead.lead_temperature_effective == 'HOT' %}<span class="detail-priority-badge hot">HOT</span>{% else %}<span class="detail-priority-badge">Normal</span>{% endif %}
+                    <span class="detail-priority-badge sla">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
+                </div>
+                <div class="detail-lead-meta">{{ lead.datos_propiedad.codigo }} · {{ lead.datos_propiedad.comuna }} · Enviado {{ lead.effective_sent_date }} {{ lead.effective_sent_time }} · {{ lead.ejecutivo_nombre }}</div>
+            </div>
+            <button type="button" class="btn btn-primary fw-bold px-3" id="primaryRegisterManagement" onclick="openDetailQuickManagement();" title="Registrar gestión del lead">
+                <i class="fa-solid fa-check-to-slot me-2"></i>Registrar gestión
+            </button>
+        </section>
+
         <div class="left-column">
 
-            <div class="card-custom" style="border-top: 3px solid var(--accent);">
+            <div class="card-custom detail-work-card" style="border-top: 3px solid var(--accent);">
 
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 legacy-management-heading">
                     <div>
                         <div class="small text-secondary text-uppercase fw-bold" style="letter-spacing:.08em;">Gestión</div>
                         <div class="fw-bold" style="color:var(--text-primary);">Registra el resultado de esta interacción</div>
                     </div>
-                    <button type="button" class="btn btn-primary fw-bold px-3" id="primaryRegisterManagement"
-                        onclick="openDetailQuickManagement();">
-                        <i class="fa-solid fa-check-to-slot me-2"></i>Registrar gestión
-                    </button>
                 </div>
 
                 <!-- BOTONES DE MODO (TABS) -->
                 <div class="action-mode-grid">
-                    <div class="action-btn d-none" id="mode_contact" onclick="setActionMode('contact')">
+                    <div class="action-btn active" id="mode_contact" onclick="setActionMode('contact')">
                         <i class="fa-solid fa-user"></i>
                         Lead
                     </div>
@@ -4192,6 +4257,7 @@
             const btnClose = document.getElementById('mode_close');
             const recommendContainer = document.getElementById('mode-recommend-container');
             const contactContext = document.getElementById('contact-context');
+            const legacyForm = document.getElementById('crmForm');
 
             // LIMPIEZA TOTAL DE FORMULARIO AL CAMBIAR DE MODO
             resetGestionForm();
@@ -4207,17 +4273,19 @@
             // Ocultar todas las secciones de lógica
             document.querySelectorAll('.logic-section').forEach(s => s.classList.add('d-none'));
             contactContext.classList.add('d-none');
+            legacyForm?.classList.remove('owner-mode-visible');
 
             if (mode === 'prop') {
                 btnProp.classList.add('active-prop');
                 idOwner.classList.remove('d-none'); // Mostrar Propietario
                 toggleLogic('propietario');
                 currentActionLabel = "Gestión Propietario";
+                legacyForm?.classList.add('owner-mode-visible');
             } else {
                 if (mode === 'contact') {
                     btnContact.classList.add('active');
                     idLead.classList.remove('d-none'); // Mostrar Lead
-                    contactContext.classList.remove('d-none'); // Show Context Buttons by default
+                    contactContext.classList.add('d-none'); // El resultado se registra solo en el modal canónico
                     currentActionLabel = "Contactar Lead";
                 } else if (mode === 'close') {
                     btnClose.classList.add('active-close');

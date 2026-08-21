@@ -55,3 +55,31 @@ def test_review_has_fake_cases_and_independent_response_column():
     header = html[html.index("<thead>"):html.index("</thead>")]
     assert header.index("Enviado") < header.index("Respuesta")
     assert 'data-label="Respuesta"' in html
+
+
+def test_review_list_has_six_operational_columns_and_merged_cells():
+    with TestClient(app) as client:
+        html = client.get("/crm-leads-review?view=list").text
+    header = html[html.index("<thead>"):html.index("</thead>")]
+    expected = ("Enviado", "Prioridad", "Lead", "Gestión", "Ejecutivo", "Respuesta")
+    positions = [header.index(label) for label in expected]
+    assert positions == sorted(positions)
+    assert len(__import__("re").findall(r"<th\b", header)) == 6
+    assert 'data-label="Cliente"' not in html
+    assert 'data-label="Propiedad"' not in html
+    assert 'data-label="Estado"' not in html
+    assert 'data-label="Última Gestión"' not in html
+    assert 'Gestionar' in html
+
+
+def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():
+    with TestClient(app) as client:
+        html = client.get("/crm-leads-review?view=detail&lead=review-07").text
+    assert html.count('id="primaryRegisterManagement"') == 1
+    assert 'id="mode_prop"' in html
+    assert 'id="crmForm" class="d-none"' in html
+    assert '#crmForm { display: none !important; }' in html
+    assert '#crmForm.owner-mode-visible' in html
+    assert "legacy-management-heading" in html
+    for label in ("Autoriza", "Restricciones", "No Responde", "No Autoriza", "Legal / Tec", "No Disponible"):
+        assert label in html

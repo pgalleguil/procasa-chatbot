@@ -2210,58 +2210,7 @@
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             aria-hidden="true" onclick="closeMobileMenu()"></div>
 
-        <!-- QUICK MANAGEMENT: same canonical endpoint and result vocabulary as detail -->
-        <div class="modal fade" id="quickManagementModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered modal-sm">
-                <div class="modal-content" style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
-                    <div class="modal-header border-bottom border-secondary">
-                        <div>
-                            <div class="small text-secondary">Registrar gestión</div>
-                            <h5 class="modal-title" id="quickManagementLeadName">Lead</h5>
-                        </div>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="small text-secondary mb-2">Selecciona el resultado realizado</div>
-                        <div class="quick-result-grid" id="quickResultGrid">
-                            <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">No respondió</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="MESSAGE_SENT_WAITING_RESPONSE">Mensaje enviado / esperando respuesta</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT">Contactado</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="FOLLOW_UP_REQUESTED">Requiere seguimiento</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="VISIT_SCHEDULED">Visita agendada</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED">No interesado</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="CLOSED_WON">Cierre ganado</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="CLOSED_LOST">Cierre perdido</button>
-                            <button type="button" class="quick-result-btn" data-quick-result="DISCARDED_VALID_REASON">Descarte válido</button>
-                        </div>
-                        <div class="quick-extra mt-3" id="quickChannelField">
-                            <label class="form-label small mb-1" for="quickChannel">Canal</label>
-                            <select class="form-select form-select-sm" id="quickChannel">
-                                <option value="">Seleccionar canal (opcional)</option>
-                                <option value="phone">Llamada</option>
-                                <option value="whatsapp">WhatsApp</option>
-                                <option value="email">Email</option>
-                            </select>
-                        </div>
-                        <div class="quick-extra mt-3" id="quickDateField">
-                            <label class="form-label small mb-1" for="quickNextDate">Próxima acción</label>
-                            <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
-                        </div>
-                        <div class="quick-extra mt-3" id="quickReasonField">
-                            <label class="form-label small mb-1" for="quickReason">Motivo</label>
-                            <input class="form-control form-control-sm" type="text" id="quickReason" maxlength="180" placeholder="Indica el motivo">
-                        </div>
-                        <div class="quick-error alert alert-danger py-2 mt-3 mb-0 small" id="quickManagementError" role="alert"></div>
-                    </div>
-                    <div class="modal-footer border-top border-secondary">
-                        <span class="small text-secondary me-auto" id="quickManagementProgress" aria-live="polite"></span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-primary btn-sm" id="quickManagementSave" disabled>Guardar gestión</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        {% include 'partials/crm_quick_management_modal.html' %}
 
         <!-- SESSION WARNING MODAL -->
         <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
@@ -2289,6 +2238,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2348,11 +2298,24 @@
                     CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado'
                 };
                 if (state) state.innerHTML = `<span class="text-white fw-bold" style="font-size:.9rem">${labels[resultType] || 'Gestionado'}</span>`;
+                const lastAction = row.querySelector('[data-label="Última Acción"] .mobile-cell-value');
+                if (lastAction) {
+                    const title = lastAction.querySelector('.fw-bold.text-accent');
+                    const relative = lastAction.querySelector('.small.text-secondary');
+                    if (title) title.textContent = labels[resultType] || 'Gestionado';
+                    if (relative) relative.innerHTML = '<i class="fa-solid fa-clock me-1 opacity-50"></i>Recién';
+                }
                 row.dataset.managementState = resultType;
                 row.classList.add('crm-row-just-managed');
             }
 
             function openQuickManagement(button) {
+                if (window.CRMQuickManagement) return window.CRMQuickManagement.open({
+                    leadId: button.dataset.leadId, phone: button.dataset.phone,
+                    assignmentCycleId: button.dataset.assignmentCycleId, leadName: button.dataset.leadName,
+                    row: button.closest('.clickable-row'), onSuccess: updateRowAfterQuickManagement,
+                    onStale: () => document.dispatchEvent(new CustomEvent('crm:mutation-complete'))
+                });
                 quickManagementState.leadId = button.dataset.leadId || null;
                 quickManagementState.phone = button.dataset.phone || null;
                 quickManagementState.assignmentCycleId = button.dataset.assignmentCycleId || null;
@@ -2372,6 +2335,7 @@
             }
 
             async function saveQuickManagement() {
+                if (window.CRMQuickManagement) return window.CRMQuickManagement.save();
                 const save = document.getElementById('quickManagementSave');
                 if (!quickFormIsValid() || save.disabled) {
                     showQuickError('Completa el dato adicional solicitado antes de guardar.');

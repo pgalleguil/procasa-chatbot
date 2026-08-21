@@ -2485,14 +2485,14 @@
                         <div class="fw-bold" style="color:var(--text-primary);">Registra el resultado de esta interacción</div>
                     </div>
                     <button type="button" class="btn btn-primary fw-bold px-3" id="primaryRegisterManagement"
-                        onclick="setActionMode('contact'); document.getElementById('contact-context')?.scrollIntoView({behavior:'smooth', block:'center'});">
+                        onclick="openDetailQuickManagement();">
                         <i class="fa-solid fa-check-to-slot me-2"></i>Registrar gestión
                     </button>
                 </div>
 
                 <!-- BOTONES DE MODO (TABS) -->
                 <div class="action-mode-grid">
-                    <div class="action-btn" id="mode_contact" onclick="setActionMode('contact')">
+                    <div class="action-btn d-none" id="mode_contact" onclick="setActionMode('contact')">
                         <i class="fa-solid fa-user"></i>
                         Lead
                     </div>
@@ -2500,18 +2500,18 @@
                         <i class="fa-solid fa-house-user"></i>
                         Propietario
                     </div>
-                    <div class="action-btn" id="mode_close" onclick="setActionMode('close')">
+                    <div class="action-btn d-none" id="mode_close" onclick="setActionMode('close')">
                         <i class="fa-solid fa-door-closed"></i>
                         Cierre
                     </div>
                 </div> <!-- 2. EMPTY STATE (NUEVO - MENSAJE INICIAL) -->
-                <div id="empty-state" class="empty-state">
+                <div id="empty-state" class="empty-state d-none">
                     <i class="fa-solid fa-hand-pointer"></i>
                     <p class="m-0">Selecciona una acción arriba para cargar los detalles.</p>
                 </div>
 
                 <!-- 3. CONTENEDOR DE TRABAJO (OCULTO INICIALMENTE) -->
-                <div id="crm-work-area" class="d-none">
+                <div id="crm-work-area">
 
                     <!-- IDENTIDAD LEAD (MODIFICADO: Sin precio, con RUT, Grid limpio) -->
                     <!-- Solo visible en Contactar, se ocultará en Wait/Close -->
@@ -2786,7 +2786,7 @@
                     </div>
 
 
-                    <form id="crmForm" onsubmit="saveGestion(event)">
+                    <form id="crmForm" class="d-none" onsubmit="saveGestion(event)">
 
                         <input type="hidden" id="resultado_gestion" name="resultado_gestion">
                         <input type="radio" class="d-none" name="interaction_type" value="effective">
@@ -3438,7 +3438,9 @@
         </div>
     </div>
 
+    {% include 'partials/crm_quick_management_modal.html' %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', path='js/crm_quick_management.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script>
@@ -3704,6 +3706,39 @@
             param_auth_user: "{{ user_email }}",
             execName: "{{ lead.ejecutivo_asignado or user_name }}"
         };
+
+        async function refreshDetailManagementState() {
+            try {
+                const response = await fetch(`/api/crm/detail-state?phone=${encodeURIComponent(leadData.telefono)}`, {headers: {'Accept': 'application/json'}});
+                if (!response.ok) throw new Error('STATE_REFRESH_FAILED');
+                const data = await response.json();
+                leadData.assignment_cycle_id = data.assignment_cycle_id || '';
+                leadData.crm_estado = data.crm_estado || leadData.crm_estado;
+                leadData.next_action_date = data.next_action_date || '';
+                leadData.last_action_label = data.last_action_label || leadData.last_action_label;
+                leadData.last_action_relative = data.last_action_relative || leadData.last_action_relative;
+                if (window.CRMQuickManagement) window.CRMQuickManagement.state.assignmentCycleId = leadData.assignment_cycle_id;
+                updateCanonicalBanner(data.crm_estado, data.next_action_date, data.last_action_label, data.last_action_relative);
+                showStrongToast('Información actualizada', 'El lead cambió de asignación. Revisa el estado antes de registrar una nueva gestión.', 'info');
+            } catch (_error) {
+                showStrongToast('Información desactualizada', 'No pudimos actualizar el estado automáticamente. Recarga cuando sea posible.', 'error');
+            }
+        }
+
+        function openDetailQuickManagement() {
+            if (!window.CRMQuickManagement) return;
+            window.CRMQuickManagement.open({
+                phone: leadData.telefono,
+                leadName: leadData.nombre,
+                assignmentCycleId: leadData.assignment_cycle_id,
+                onSuccess: async (_resultType, label) => {
+                    await refreshDetailManagementState();
+                    showStrongToast('Gestión registrada', label || 'Resultado guardado correctamente.');
+                },
+                onStale: refreshDetailManagementState,
+                closeOnStale: true
+            });
+        }
 
         function toggleMobileMenu() {
             const sidebar = document.getElementById('sidebar');
@@ -4148,6 +4183,7 @@
             // 1. Ocultar Empty State y Mostrar Trabajo
             document.getElementById('empty-state').classList.add('d-none');
             document.getElementById('crm-work-area').classList.remove('d-none');
+            document.getElementById('crmForm')?.classList.remove('d-none');
 
             const idLead = document.getElementById('identity-lead');
             const idOwner = document.getElementById('identity-owner');

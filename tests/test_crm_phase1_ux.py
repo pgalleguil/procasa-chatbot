@@ -30,9 +30,10 @@ def test_quick_management_is_visible_and_uses_canonical_endpoint():
 
 
 def test_quick_management_has_progressive_disclosure_and_friendly_results():
+    shared_modal = (ROOT / "templates" / "partials" / "crm_quick_management_modal.html").read_text(encoding="utf-8")
     for label in ('No respondió', 'Mensaje enviado / esperando respuesta', 'Contactado',
                   'Requiere seguimiento', 'Visita agendada', 'No interesado', 'Número inválido'):
-        assert label in LIST_TEMPLATE
+        assert label in shared_modal
     assert 'quickChannelField' in LIST_TEMPLATE
     assert 'quickDateField' in LIST_TEMPLATE
     assert 'quickReasonField' in LIST_TEMPLATE
@@ -58,6 +59,51 @@ def test_detail_has_one_primary_management_action_and_separate_contact_tools():
     assert "openCommPanel('lead', 'phone')" in DETAIL_TEMPLATE
     assert "openCommPanel('lead', 'whatsapp')" in DETAIL_TEMPLATE
     assert "openCommPanel('lead', 'email')" in DETAIL_TEMPLATE
+
+
+def test_detail_uses_shared_quick_management_and_hides_legacy_main_form():
+    assert "partials/crm_quick_management_modal.html" in DETAIL_TEMPLATE
+    assert "js/crm_quick_management.js" in DETAIL_TEMPLATE
+    assert "onclick=\"openDetailQuickManagement();\"" in DETAIL_TEMPLATE
+    assert '<form id="crmForm" class="d-none"' in DETAIL_TEMPLATE
+    assert "setActionMode('contact')" not in DETAIL_TEMPLATE.split('id="primaryRegisterManagement"', 1)[1].split('</button>', 1)[0]
+
+
+def test_shared_component_uses_canonical_contract_and_progressive_fields():
+    shared_js = (ROOT / "static" / "js" / "crm_quick_management.js").read_text(encoding="utf-8")
+    shared_modal = (ROOT / "templates" / "partials" / "crm_quick_management_modal.html").read_text(encoding="utf-8")
+    assert "fetch('/api/crm/management-result'" in shared_js
+    assert "management_request_id: submittedId" in shared_js
+    assert "idempotency_key: submittedId" in shared_js
+    assert "Este lead cambió de asignación. Actualizamos su información." in shared_js
+    assert "closeOnStale" in shared_js
+    for label in ('No respondió', 'Mensaje enviado / esperando respuesta', 'Contactado',
+                  'Requiere seguimiento', 'Visita agendada', 'No interesado', 'Número inválido'):
+        assert label in shared_modal
+    assert "partials/crm_quick_management_modal.html" in LIST_TEMPLATE
+    assert "js/crm_quick_management.js" in LIST_TEMPLATE
+    assert "window.CRMQuickManagement.open" in LIST_TEMPLATE
+    assert "window.CRMQuickManagement.save" in LIST_TEMPLATE
+
+
+def test_list_refreshes_last_action_without_reload():
+    assert "Última Acción" in LIST_TEMPLATE
+    assert "Recién" in LIST_TEMPLATE
+    assert "updateRowAfterQuickManagement" in LIST_TEMPLATE
+
+
+def test_detail_stale_refreshes_state_without_resubmitting():
+    assert "/api/crm/detail-state?phone=" in DETAIL_TEMPLATE
+    assert "onStale: refreshDetailManagementState" in DETAIL_TEMPLATE
+    assert "GESTIÓN ANTIGUA" not in DETAIL_TEMPLATE
+    assert "closeOnStale: true" in DETAIL_TEMPLATE
+
+
+def test_detail_state_endpoint_exists_and_returns_cycle_fields():
+    assert '@app.get("/api/crm/detail-state")' in WEBHOOK_SOURCE
+    endpoint = WEBHOOK_SOURCE[WEBHOOK_SOURCE.index('@app.get("/api/crm/detail-state")'):]
+    for field in ('assignment_cycle_id', 'crm_estado', 'next_action_date', 'last_action_label'):
+        assert f'"{field}"' in endpoint
 
 
 def test_detail_and_list_share_canonical_result_vocabulary():

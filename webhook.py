@@ -1983,6 +1983,28 @@ async def api_crm_management_result(request: Request):
         logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
                      phone, lead.get("_id"), data.get("result_type"), exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/crm/detail-state")
+async def api_crm_detail_state(request: Request, phone: str):
+    """Return the minimal current state needed after a stale detail submit."""
+    phone = str(phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+    _user, lead = await _get_authorized_crm_lead(request, phone)
+    detail = await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, lead_doc=lead)
+    )
+    return {
+        "assignment_cycle_id": detail.get("assignment_cycle_id") or "",
+        "crm_estado": detail.get("crm_estado") or "",
+        "next_action_date": detail.get("next_action_date") or "",
+        "last_action_label": detail.get("last_action_label") or "",
+        "last_action_relative": detail.get("last_action_relative") or "",
+        "ejecutivo_asignado": detail.get("ejecutivo_asignado") or "",
+        "sla_status": detail.get("sla_status") or "",
+        "sla_label": detail.get("sla_label") or "",
+    }
+
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     data = None

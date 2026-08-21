@@ -1,0 +1,281 @@
+[
+  {
+    "innerWidth": 1440,
+    "innerHeight": 1000,
+    "dpr": 1,
+    "clientWidth": 1440,
+    "scrollWidth": 1440,
+    "bodyWidth": 1440,
+    "viewportMeta": [
+      "width=device-width, initial-scale=1.0"
+    ],
+    "ctaVisible": true,
+    "viewport": "1440x1000",
+    "sidebar": {
+      "x": 0,
+      "y": 0,
+      "width": 80,
+      "height": 1000,
+      "padding": "14px 0px 12px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "main": {
+      "x": 80,
+      "y": 0,
+      "width": 1360,
+      "height": 1004.109375,
+      "padding": "30px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "list": {
+      "x": 110,
+      "y": 82.796875,
+      "width": 1300,
+      "height": 861.3125,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "container": {
+      "x": 110,
+      "y": 141.21875,
+      "width": 1300,
+      "height": 802.890625,
+      "padding": "24px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "toolbar": {
+      "x": 135,
+      "y": 166.21875,
+      "width": 1250,
+      "height": 58.921875,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "table": {
+      "x": 135,
+      "y": 272.140625,
+      "width": 1250,
+      "height": 557.96875,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "listAncestors": [
+      {
+        "tag": "DIV",
+        "id": "crmDynamicContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "DIV",
+        "id": "mainContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "BODY",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "HTML",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      }
+    ]
+  },
+  {
+    "innerWidth": 1024,
+    "innerHeight": 768,
+    "dpr": 1,
+    "clientWidth": 1024,
+    "scrollWidth": 1024,
+    "bodyWidth": 1024,
+    "viewportMeta": [
+      "width=device-width, initial-scale=1.0"
+    ],
+    "ctaVisible": true,
+    "viewport": "1024x768",
+    "sidebar": {
+      "x": 0,
+      "y": 0,
+      "width": 80,
+      "height": 768,
+      "padding": "14px 0px 12px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "main": {
+      "x": 80,
+      "y": 0,
+      "width": 944,
+      "height": 1093.78125,
+      "padding": "30px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "list": {
+      "x": 110,
+      "y": 82.15625,
+      "width": 884,
+      "height": 951.625,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "container": {
+      "x": 110,
+      "y": 140.578125,
+      "width": 884,
+      "height": 893.203125,
+      "padding": "24px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "toolbar": {
+      "x": 135,
+      "y": 165.578125,
+      "width": 834,
+      "height": 125.234375,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "table": {
+      "x": 135,
+      "y": 337.8125,
+      "width": 834,
+      "height": 581.96875,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "listAncestors": [
+      {
+        "tag": "DIV",
+        "id": "crmDynamicContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "DIV",
+        "id": "mainContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "BODY",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "HTML",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      }
+    ]
+  },
+  {
+    "innerWidth": 390,
+    "innerHeight": 844,
+    "dpr": 1,
+    "clientWidth": 390,
+    "scrollWidth": 390,
+    "bodyWidth": 390,
+    "viewportMeta": [
+      "width=device-width, initial-scale=1.0"
+    ],
+    "ctaVisible": true,
+    "viewport": "390x844",
+    "sidebar": {
+      "x": -342,
+      "y": 0,
+      "width": 1,
+      "height": 844,
+      "padding": "14px 0px 12px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "main": {
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 2165.40625,
+      "padding": "12px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "list": {
+      "x": 12,
+      "y": 76,
+      "width": 366,
+      "height": 2047.40625,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "container": {
+      "x": 12,
+      "y": 134.421875,
+      "width": 366,
+      "height": 1988.984375,
+      "padding": "14px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "toolbar": {
+      "x": 27,
+      "y": 149.421875,
+      "width": 336,
+      "height": 115.3125,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "table": {
+      "x": 27,
+      "y": 311.734375,
+      "width": 336,
+      "height": 1663.0625,
+      "padding": "0px",
+      "transform": "none",
+      "zoom": "1"
+    },
+    "listAncestors": [
+      {
+        "tag": "DIV",
+        "id": "crmDynamicContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "DIV",
+        "id": "mainContent",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "BODY",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      },
+      {
+        "tag": "HTML",
+        "id": "",
+        "transform": "none",
+        "zoom": "1"
+      }
+    ]
+  }
+]

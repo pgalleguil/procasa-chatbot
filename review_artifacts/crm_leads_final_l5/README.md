@@ -11,3 +11,4 @@ Capturas locales generadas con DPR=1:
 - `07-list-l5-390.png`
 - `08-quick-final-390.png`
 - `09-quick-other-390.png`
+- `10-quick-final-light-1440.png`

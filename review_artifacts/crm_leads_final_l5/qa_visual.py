@@ -31,6 +31,13 @@ with sync_playwright() as p:
     page.locator('[data-quick-result="NOT_INTERESTED"]').click()
     page.wait_for_timeout(150)
     page.screenshot(path=str(OUT / "06-quick-reason-1440.png"), full_page=False)
+    light = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
+    light.goto(BASE, wait_until="networkidle")
+    light.wait_for_timeout(1500)
+    light.locator(".theme-toggle").click()
+    light.locator("[data-quick-management]").first.click()
+    light.wait_for_timeout(300)
+    light.screenshot(path=str(OUT / "10-quick-final-light-1440.png"), full_page=False)
 
     mobile = browser.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=1)
     mobile.goto(BASE, wait_until="networkidle")

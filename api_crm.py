@@ -590,10 +590,24 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             # cards; no se ejecuta una consulta por card ni por día.
             "assignment_series": [
                 {"$match": global_kpi_query},
+                {"$lookup": {
+                    "from": "crm_assignment_cycles",
+                    "let": {"lead_id": "$_id"},
+                    "pipeline": [
+                        {"$match": {"$expr": {"$eq": ["$lead_id", "$$lead_id"]}, "unassigned_at": None}},
+                        {"$sort": {"assigned_at": -1}}, {"$limit": 1},
+                    ],
+                    "as": "_series_cycle",
+                }},
+                {"$set": {"_series_assigned_at": {"$ifNull": [
+                    {"$arrayElemAt": ["$_series_cycle.assigned_at", 0]},
+                    {"$ifNull": ["$lifecycle.assigned_at", "$fecha_asignacion"]},
+                ]}}},
+                {"$match": {"_series_assigned_at": {"$ne": None}}},
                 {"$group": {
                     "_id": {"$dateToString": {
                         "format": "%Y-%m-%d",
-                        "date": {"$convert": {"input": {"$ifNull": ["$lifecycle.assigned_at", "$fecha_asignacion"]}, "to": "date", "onError": None, "onNull": None}}
+                        "date": {"$convert": {"input": "$_series_assigned_at", "to": "date", "onError": None, "onNull": None}}
                     }},
                     "total": {"$sum": 1},
                     "hot": {"$sum": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]}},

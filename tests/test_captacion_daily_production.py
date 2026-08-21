@@ -1,5 +1,6 @@
 import asyncio
-from datetime import date, datetime, timezone
+import threading
+from datetime import date, datetime, timedelta, timezone
 
 import mongomock
 import pytest
@@ -163,6 +164,8 @@ def test_concurrent_attempts_produce_one_message(monkeypatch):
 def test_production_never_uses_test_recipient(monkeypatch):
     monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
     monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
+    monkeypatch.setattr(Config, "PROCASA_COMMERCIAL_GROUP_ID", "")
+    monkeypatch.setattr(Config, "DAILY_REPORT_GROUP_ID", "")
     monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", Config.CAPTACION_TEST_RECIPIENT)
     with pytest.raises(PermissionError):
         asyncio.run(daily.send_production_daily_report(_db(), date(2026, 8, 17)))
@@ -188,9 +191,30 @@ def test_reconciliation_failure_blocks_provider(monkeypatch):
         return {"success": True}
 
     monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
+    db = _db()
     with pytest.raises(ValueError):
-        asyncio.run(daily.send_production_daily_report(_db(), date(2026, 8, 17)))
+        asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 17)))
     assert calls == []
+    delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-17"})
+    assert delivery["status"] == "failed"
+
+
+def test_provider_exception_is_recorded_as_failed(monkeypatch):
+    _patch_report(monkeypatch)
+    monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
+
+    async def fake_send(recipient, message):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
+    db = _db()
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 17)))
+    delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-17"})
+    assert delivery["status"] == "failed"
+    assert delivery["error"] == "provider unavailable"
 
 
 def test_failed_provider_is_recorded_for_diagnosis(monkeypatch):
@@ -227,3 +251,154 @@ def test_recent_failed_delivery_is_skipped_during_recovery_window(monkeypatch):
     assert first["status"] == "failed"
     assert second["status"] == "already_claimed"
     assert calls == [1]
+
+
+def _claim_key(day="2026-08-20"):
+    return f"daily:{day}:group@g.us"
+
+
+def _seed_delivery(db, *, status, age_seconds=0, **fields):
+    now = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
+    document = {
+        "idempotency_key": _claim_key(),
+        "report_type": "daily",
+        "report_date": "2026-08-20",
+        "recipient": "group@g.us",
+        "status": status,
+        "generated_at": now,
+        "updated_at": now,
+        **fields,
+    }
+    db[daily.DAILY_DELIVERY_COLLECTION].insert_one(document)
+    return document
+
+
+def _run_claim(db):
+    return asyncio.run(daily._claim_daily_delivery(db, _claim_key(), date(2026, 8, 20), "group@g.us"))
+
+
+def test_first_claim_is_atomic_and_claimed():
+    delivery, claimed = _run_claim(_db())
+    assert claimed is True
+    assert delivery["status"] == "sending"
+
+
+@pytest.mark.parametrize("status", ["accepted", "delivered", "read"])
+def test_terminal_delivery_states_are_never_retried(status):
+    db = _db()
+    _seed_delivery(db, status=status)
+    _, claimed = _run_claim(db)
+    assert claimed is False
+
+
+def test_recent_sending_delivery_is_not_retried():
+    db = _db()
+    _seed_delivery(db, status="sending", age_seconds=daily.DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS - 1)
+    _, claimed = _run_claim(db)
+    assert claimed is False
+
+
+def test_stale_sending_delivery_is_recovered():
+    db = _db()
+    _seed_delivery(db, status="sending", age_seconds=daily.DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS + 1)
+    delivery, claimed = _run_claim(db)
+    assert claimed is True
+    assert delivery["status"] == "sending"
+
+
+def test_concurrent_stale_sending_recovery_has_one_winner():
+    db = _db()
+    db[daily.DAILY_DELIVERY_COLLECTION].create_index("idempotency_key", unique=True)
+    _seed_delivery(db, status="sending", age_seconds=daily.DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS + 1)
+
+    async def run_both():
+        return await asyncio.gather(
+            daily._claim_daily_delivery(db, _claim_key(), date(2026, 8, 20), "group@g.us"),
+            daily._claim_daily_delivery(db, _claim_key(), date(2026, 8, 20), "group@g.us"),
+        )
+
+    results = asyncio.run(run_both())
+    assert sum(claimed for _, claimed in results) == 1
+
+
+@pytest.mark.parametrize("age_seconds, expected", [
+    (daily.DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS - 1, False),
+    (daily.DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS + 1, True),
+])
+def test_failed_delivery_respects_cooldown(age_seconds, expected):
+    db = _db()
+    failed_at = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
+    _seed_delivery(db, status="failed", age_seconds=age_seconds, failed_at=failed_at)
+    _, claimed = _run_claim(db)
+    assert claimed is expected
+
+
+def test_daily_scheduler_on_friday_processes_thursday(monkeypatch):
+    calls = []
+
+    async def fake_send(db, report_date):
+        calls.append(report_date)
+        return {"status": "accepted"}
+
+    monkeypatch.setattr(daily, "send_production_daily_report", fake_send)
+    run_at = datetime(2026, 8, 21, 9, 15, tzinfo=daily.CHILE)
+    result = asyncio.run(daily.run_scheduled_production_daily_report(_db(), run_at=run_at))
+    assert result["status"] == "accepted"
+    assert calls == [date(2026, 8, 20)]
+
+
+def test_daily_flow_delegates_all_sync_mongo_operations(monkeypatch):
+    class CheckingCollection:
+        def __init__(self):
+            self.collection = mongomock.MongoClient().db[daily.DAILY_DELIVERY_COLLECTION]
+            self.main_thread_calls = []
+
+        def _call(self, operation, *args, **kwargs):
+            self.main_thread_calls.append((operation, threading.current_thread() is threading.main_thread()))
+            return getattr(self.collection, operation)(*args, **kwargs)
+
+        def create_index(self, *args, **kwargs):
+            return self._call("create_index", *args, **kwargs)
+
+        def insert_one(self, *args, **kwargs):
+            return self._call("insert_one", *args, **kwargs)
+
+        def find_one(self, *args, **kwargs):
+            return self._call("find_one", *args, **kwargs)
+
+        def find_one_and_update(self, *args, **kwargs):
+            return self._call("find_one_and_update", *args, **kwargs)
+
+        def update_one(self, *args, **kwargs):
+            return self._call("update_one", *args, **kwargs)
+
+    class CheckingDB:
+        def __init__(self):
+            self.collection = CheckingCollection()
+
+        def __getitem__(self, name):
+            assert name == daily.DAILY_DELIVERY_COLLECTION
+            return self.collection
+
+    calculation_threads = []
+    monkeypatch.setattr(
+        daily,
+        "calculate_daily_report",
+        lambda db, period: (calculation_threads.append(threading.current_thread() is threading.main_thread()) or _fake_report()),
+    )
+    monkeypatch.setattr(daily, "build_whatsapp_message", lambda report: "mensaje")
+    monkeypatch.setattr(daily, "validate_reconciliation", lambda report, message: {"ok": True})
+    db = CheckingDB()
+    monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
+
+    async def fake_send(recipient, message):
+        return {"success": True, "delivery_status": "accepted", "provider_message_id": "p-thread", "http_status": 200}
+
+    monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
+    result = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
+    assert result["status"] == "accepted"
+    assert db.collection.main_thread_calls
+    assert all(not on_main for _, on_main in db.collection.main_thread_calls)
+    assert calculation_threads == [False]

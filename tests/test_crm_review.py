@@ -86,6 +86,12 @@ def test_review_cards_and_state_bar_keep_real_query_filters():
     assert 'estado=GRUPO_GESTION' in managed.text
 
 
+def test_review_oldest_assignment_order_uses_assigned_fixture_date():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list&orden=oldest_assigned').text
+    assert html.index('Cliente Demo 09') < html.index('Cliente Demo 01')
+
+
 def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=detail&lead=review-07").text

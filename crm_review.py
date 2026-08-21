@@ -159,6 +159,11 @@ def _list_context(request: Request) -> dict:
     elif state == "GRUPO_VISITA": leads = [lead for lead in leads if lead["estado"] == "GRUPO_VISITA"]
     elif state == "GRUPO_CERRADO": leads = [lead for lead in leads if lead["estado"] == "CLOSED_WON"]
     elif state == "UNASSIGNED": leads = []
+    order = params.get("orden", "recent_assigned")
+    if order in ("oldest_assigned", "antiguos"):
+        leads = sorted(leads, key=lambda lead: lead["effective_sent_at"])
+    else:
+        leads = sorted(leads, key=lambda lead: lead["effective_sent_at"], reverse=True)
     # KPI y barra representan el mismo universo base aunque se seleccione una
     # temperatura o un estado; solo las filas visibles cambian.
     scope = list(DEMO_LEADS)

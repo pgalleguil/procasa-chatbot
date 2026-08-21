@@ -12,6 +12,8 @@ def test_list_has_enviado_with_date_and_time():
     assert '<th class="col-sent">Enviado</th>' in LIST_TEMPLATE
     assert 'lead.effective_sent_date' in LIST_TEMPLATE
     assert 'lead.effective_sent_time' in LIST_TEMPLATE
+    assert 'sent-date' in LIST_TEMPLATE and 'sent-hour' in LIST_TEMPLATE
+    assert 'sent-source' in LIST_TEMPLATE
 
 
 def test_list_has_operational_column_order_and_independent_response():
@@ -43,6 +45,31 @@ def test_list_compact_density_and_filters_remain_available():
     assert 'border-collapse: collapse' in LIST_TEMPLATE
     assert 'name="property_code"' in LIST_TEMPLATE
     assert 'data-auto-filter' in LIST_TEMPLATE
+
+
+def test_list_toolbar_keeps_backend_search_contracts_separate():
+    assert 'placeholder="Nombre o teléfono"' in LIST_TEMPLATE
+    assert 'name="busqueda"' in LIST_TEMPLATE
+    assert 'name="property_code"' in LIST_TEMPLATE
+    assert 'placeholder="Nombre, teléfono o propiedad"' not in LIST_TEMPLATE
+
+
+def test_list_priority_and_management_have_single_operational_hierarchy():
+    assert 'priority-sla' in LIST_TEMPLATE
+    assert 'priority-type' in LIST_TEMPLATE
+    management_start = LIST_TEMPLATE.index('<td class="col-management" data-label="Gestión">')
+    management_block = LIST_TEMPLATE[management_start:LIST_TEMPLATE.index('<td class="col-executive"', management_start)]
+    assert '{{ lead.estado_badge }}' in management_block
+    assert 'lead.estado_resultado' not in management_block
+    assert 'Sin gestión' in management_block
+
+
+def test_list_mobile_toolbar_and_card_order_are_compact():
+    assert '.filter-bar .filter-field:not(.filter-search-field)' in LIST_TEMPLATE
+    assert '.filter-bar.is-expanded .filter-field:not(.filter-search-field)' in LIST_TEMPLATE
+    assert '.crm-table .col-priority { order: 1; grid-column: 1; }' in LIST_TEMPLATE
+    assert '.crm-table .col-sent { order: 1; grid-column: 2; }' in LIST_TEMPLATE
+    assert '<span class="mobile-only">Filtros</span>' in LIST_TEMPLATE
 
 
 def test_sent_timestamp_does_not_use_created_at_as_delivery():

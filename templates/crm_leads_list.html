@@ -718,7 +718,7 @@
         /* FILTERS (Homologados a captacion_list) */
         .filter-bar {
             display: grid;
-            grid-template-columns: minmax(250px, 1.5fr) repeat(4, minmax(130px, .9fr)) max-content;
+            grid-template-columns: minmax(220px, 1.45fr) repeat(4, minmax(112px, .9fr)) max-content max-content;
             gap: 9px;
             margin-bottom: 8px;
             align-items: end;
@@ -902,6 +902,9 @@
 
         .results-count { font-weight: 650; color: var(--text-primary); }
         .results-description { color: var(--text-secondary); font-size: 0.76rem; margin-top: 1px; }
+        .mobile-only { display: none; }
+        .desktop-only { display: inline; }
+        .executive-name { font-size: .76rem; font-weight: 400; white-space: nowrap; }
 
         .led-orange {
             background: var(--led-orange);
@@ -937,26 +940,26 @@
 
         .crm-table td {
             background: var(--bg-elevated);
-            padding: 7px 10px;
+            padding: 10px 10px;
             vertical-align: middle;
             border-bottom: 1px solid var(--border-color);
             box-shadow: none;
         }
 
-        .crm-table .col-sent { width: 10%; min-width: 82px; }
-        .crm-table .col-priority { width: 13%; min-width: 118px; }
-        .crm-table .col-lead { width: 25%; min-width: 190px; }
-        .crm-table .col-management { width: 22%; min-width: 170px; }
+        .crm-table .col-sent { width: 12%; min-width: 92px; }
+        .crm-table .col-priority { width: 15%; min-width: 118px; }
+        .crm-table .col-lead { width: 28%; min-width: 220px; }
+        .crm-table .col-management { width: 20%; min-width: 170px; }
         .crm-table .col-executive { width: 14%; min-width: 120px; }
-        .crm-table .col-response { width: 16%; min-width: 125px; }
+        .crm-table .col-response { width: 11%; min-width: 112px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
-            .crm-table .col-sent { width: 10%; }
-            .crm-table .col-priority { width: 13%; }
-            .crm-table .col-lead { width: 25%; }
-            .crm-table .col-management { width: 22%; }
+            .crm-table .col-sent { width: 12%; }
+            .crm-table .col-priority { width: 15%; }
+            .crm-table .col-lead { width: 28%; }
+            .crm-table .col-management { width: 20%; }
             .crm-table .col-executive { width: 14%; }
-            .crm-table .col-response { width: 16%; }
+            .crm-table .col-response { width: 11%; }
         }
 
         @media (min-width: 769px) {
@@ -1181,9 +1184,9 @@
             position: relative;
         }
         .sent-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-        .sent-time { display: inline-flex; flex-direction: column; line-height: 1.05; font-variant-numeric: tabular-nums; }
-        .sent-date { font-weight: 650; color: var(--text-primary); }
-        .sent-hour { color: var(--text-secondary); font-size: .78rem; }
+        .sent-time { display: inline-flex; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .sent-date { font-weight: 550; color: var(--text-primary); }
+        .sent-hour { color: var(--text-primary); font-size: .78rem; }
         .sent-source { color: var(--text-secondary); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
         .sent-source.confirmed { color: #34d399; }
         .sent-empty { color: var(--text-secondary); font-size: .78rem; font-style: italic; }
@@ -1192,7 +1195,7 @@
             background: rgba(99,102,241,.12); color: var(--text-primary); padding: 6px 8px;
             font-size: .72rem; font-weight: 650; white-space: nowrap; cursor: pointer;
         }
-        .priority-sla { display: block; font-size: .82rem; font-weight: 650; line-height: 1.15; white-space: nowrap; }
+        .priority-sla { display: inline-block; font-size: .78rem; font-weight: 600; line-height: 1.15; white-space: nowrap; }
         .priority-type { display: block; margin-top: 3px; font-size: .65rem; font-weight: 500; line-height: 1; color: var(--text-secondary); }
         .priority-type.lead-type-hot { color: var(--bs-danger) !important; }
         .priority-type.lead-type-normal { color: var(--text-secondary) !important; }
@@ -1204,7 +1207,7 @@
         .crm-table .col-executive .small { display: none; }
         .crm-table td[data-label="Gestión"] { background: var(--bg-elevated); }
         .lead-cell, .management-cell { min-width: 0; line-height: 1.15; }
-        .lead-cell .lead-name, .management-cell .management-main { font-size: .82rem; font-weight: 650; color: var(--text-primary); }
+        .lead-cell .lead-name, .management-cell .management-main { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
         .lead-cell .lead-meta, .management-cell .management-meta { display: block; margin-top: 3px; color: var(--text-secondary); font-size: .68rem; }
         .management-cell .management-meta { color: var(--text-secondary); }
         .management-cell .management-status { color: var(--text-primary); font-weight: 600; }
@@ -1537,8 +1540,15 @@
                 grid-column: 1 / -1;
             }
 
+            .filter-bar .filter-field:not(.filter-search-field) {
+                display: none;
+            }
+
             .filter-bar .advanced-filter { display: none; }
+            .filter-bar.is-expanded .filter-field:not(.filter-search-field) { display: flex; }
             .filter-bar.is-expanded .advanced-filter { display: flex; }
+            .filter-bar .btn-clear-filters { display: none; }
+            .filter-bar.is-expanded .btn-clear-filters { display: flex; }
 
             .filter-bar .search-box,
             .filter-bar .filter-field,
@@ -1586,11 +1596,11 @@
             .crm-table tbody tr {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-                margin-bottom: 10px;
+                margin-bottom: 8px;
                 background: var(--bg-card);
                 border: 1px solid var(--border-color);
                 border-radius: 12px;
-                padding: 6px 10px;
+                padding: 2px 8px;
                 box-shadow: 0 3px 12px rgba(0, 0, 0, .1);
                 position: relative;
                 overflow: hidden;
@@ -1604,7 +1614,7 @@
             /* Celdas del Lead */
             .crm-table td {
                 border: none;
-                padding: 3px 4px;
+                padding: 1px 4px;
                 display: grid;
                 grid-template-columns: minmax(0, 1fr);
                 gap: 3px;
@@ -1622,12 +1632,12 @@
                 width: 100%;
             }
 
-            .crm-table .col-priority { order: 1; grid-column: 1 / -1; }
+            .crm-table .col-priority { order: 1; grid-column: 1; }
+            .crm-table .col-sent { order: 1; grid-column: 2; }
             .crm-table .col-lead { order: 2; grid-column: 1 / -1; }
-            .crm-table .col-sent { order: 3; }
-            .crm-table .col-management { order: 4; grid-column: 1 / -1; }
-            .crm-table .col-executive { order: 5; grid-column: 1 / -1; }
-            .crm-table .col-response { order: 6; grid-column: 1 / -1; }
+            .crm-table .col-management { order: 3; grid-column: 1 / -1; }
+            .crm-table .col-executive { order: 4; grid-column: 1 / -1; }
+            .crm-table .col-response { order: 5; grid-column: 1 / -1; }
 
             /* Etiqueta flotante / Label */
             .crm-table td::before {
@@ -1655,13 +1665,11 @@
             /* SLA / TIEMPO: Destacado en el header de la tarjeta */
             .crm-table td[data-label="Prioridad"] {
                 background: rgba(255, 255, 255, 0.03);
-                border-bottom: 1px solid var(--border-color);
-                padding: 4px;
+                border-bottom: 0;
+                padding: 2px 4px;
             }
 
-            .crm-table td[data-label="Prioridad"]::before {
-                display: block;
-            }
+            .crm-table td[data-label="Prioridad"]::before { display: none; }
 
             .crm-table td[data-label="Gestión"]::before { display: none; }
             .crm-table .col-executive { display: none; }
@@ -1691,10 +1699,7 @@
             }
 
             /* ÚLTIMA GESTIÓN: histórico separado de la acción operativa */
-            .crm-table td[data-label="Gestión"] {
-                background: transparent;
-                border-top: 1px solid var(--border-color);
-            }
+            .crm-table td[data-label="Gestión"] { background: transparent; border-top: 1px solid var(--border-color); }
 
             /* EJECUTIVO: Discreto */
             .crm-table td[data-label="Ejecutivo"] {
@@ -1704,8 +1709,8 @@
 
             .crm-table td[data-label="Respuesta"] {
                 border-top: 1px solid var(--border-color);
-                padding-top: 9px;
-                padding-bottom: 10px;
+                padding-top: 6px;
+                padding-bottom: 6px;
             }
             .crm-table .col-response .mobile-cell-value { justify-content: flex-start; }
             .crm-table .col-response .quick-management-btn { width: auto; }
@@ -1730,6 +1735,19 @@
                 display: inline-block;
                 margin-top: 0;
             }
+
+            .state-metrics-grid {
+                display: flex;
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+            .state-metrics-grid::-webkit-scrollbar { display: none; }
+            .state-metric { flex: 0 0 auto; }
+            .desktop-only { display: none; }
+            .mobile-only { display: inline; }
+            .sent-cell { gap: 1px; }
+            .lead-cell .lead-meta, .management-cell .management-meta { margin-top: 2px; }
+            .quick-management-btn { padding: 5px 7px; }
 
             /* Toolbar y Filtros en móvil */
             .toolbar {
@@ -1931,7 +1949,7 @@
                             <span class="state-metric-dot segment-{{ key }}"></span>
                             <span>
                                 <span class="state-metric-label">{{ label }}</span>
-                                <span class="state-metric-value"><span data-target="{{ count }}">0</span> / {{ kpis.scope_total }} · {{ pct(percentage) }}%</span>
+                                <span class="state-metric-value"><span data-target="{{ count }}">0</span> leads</span>
                             </span>
                         </a>
                         {% if selected_temperature == 'Todos' %}
@@ -1947,7 +1965,8 @@
 
             <!-- TOOLBAR DE FILTROS -->
             <div class="table-container">
-            <form action="/crm" method="GET" class="filter-bar" id="crmFilterForm">
+            <form action="{{ '/crm-leads-review' if review_mode else '/crm' }}" method="GET" class="filter-bar" id="crmFilterForm">
+                {% if review_mode %}<input type="hidden" name="view" value="list">{% endif %}
                 <label class="filter-field filter-search-field">
                     <span class="filter-field-label">Buscar lead</span>
                     <span class="search-box">
@@ -1966,7 +1985,7 @@
                     </span>
                 </label>
 
-                <label class="filter-field advanced-filter">
+                <label class="filter-field">
                     <span class="filter-field-label">Prioridad</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
@@ -2007,9 +2026,9 @@
                     </select>
                 </label>
                 <button type="button" class="btn-more-filters" id="btnMoreFilters" onclick="toggleAdvancedLeadFilters()" aria-expanded="false">
-                    <i class="fa-solid fa-sliders me-1"></i>Más filtros
+                    <i class="fa-solid fa-sliders me-1"></i><span class="desktop-only">Más filtros</span><span class="mobile-only">Filtros</span>
                 </button>
-                <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar filtros</a>
+                <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar</a>
             </form>
 
             {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
@@ -2018,7 +2037,7 @@
                 {% if selected_temperature != 'Todos' %}<a class="filter-chip" href="{{ filter_urls.temperature }}">{{ lead_temperature_icon(selected_temperature) }}{{ lead_temperature_label(selected_temperature) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if selected_state %}<a class="filter-chip" href="{{ filter_urls.state }}">{{ state_labels.get(selected_state, selected_state) }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if current_ejecutivo != 'Todos' and can_administer_leads %}<a class="filter-chip" href="{{ filter_urls.executive }}">{{ current_ejecutivo }} <span aria-hidden="true">×</span></a>{% endif %}
-                {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Teléfono: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
+                {% if request.query_params.get('busqueda') %}<a class="filter-chip" href="{{ filter_urls.search }}">Búsqueda: {{ request.query_params.get('busqueda') }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('property_code') %}<a class="filter-chip" href="{{ filter_urls.search }}">Propiedad: {{ request.query_params.get('property_code') }} <span aria-hidden="true">×</span></a>{% endif %}
                 {% if request.query_params.get('orden') in order_labels %}<a class="filter-chip" href="{{ filter_urls.order }}">{{ order_labels[request.query_params.get('orden')] }} <span aria-hidden="true">×</span></a>{% endif %}
             </div>
@@ -2099,8 +2118,7 @@
                                 <div class="mobile-cell-value sent-cell" title="{{ lead.effective_sent_source }}">
                                     {% if lead.effective_sent_at %}
                                     <time datetime="{{ lead.effective_sent_at.isoformat() }}" class="sent-time">
-                                        <span class="sent-date">{{ lead.effective_sent_date }}</span>
-                                        <span class="sent-hour">{{ lead.effective_sent_time }}</span>
+                                        <span class="sent-date">{{ lead.effective_sent_date }}</span><span class="sent-hour"> · {{ lead.effective_sent_time }}</span>
                                     </time>
                                     {% if lead.effective_sent_confirmed %}<span class="sent-source confirmed">Entregado</span>{% else %}<span class="sent-source">Asignado</span>{% endif %}
                                     {% else %}
@@ -2159,11 +2177,7 @@
                             <td class="col-management" data-label="Gestión">
                                 <div class="mobile-cell-value">
                                     <div class="management-cell">
-                                        {% if lead.estado_resultado and lead.estado not in ['CLOSED_WON', 'CLOSED_LOST'] %}
-                                        <div class="management-main">{{ lead.estado_resultado }}</div>
-                                        {% else %}
                                         <div class="management-main">{{ lead.estado_badge }}</div>
-                                        {% endif %}
                                         {% if lead.gestionado %}
                                         <span class="management-meta">{{ lead.ultima_accion_titulo }} · {{ lead.tiempo_relativo }}</span>
                                         {% else %}
@@ -2174,7 +2188,7 @@
                             </td>
                             <td class="col-executive" data-label="Ejecutivo">
                                 <div class="mobile-cell-value">
-                                    <div class="fw-bold" style="font-size: 0.78rem;"><i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{ lead.ejecutivo_nombre }}</div>
+                                    <div class="executive-name"><i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{ lead.ejecutivo_nombre }}</div>
                                 </div>
                             </td>
                             <td class="col-response" data-label="Respuesta">

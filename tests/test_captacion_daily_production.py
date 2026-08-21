@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import mongomock
 import pytest
+from pymongo.errors import NetworkTimeout
 
 import chatbot.captacion_daily_report as daily
 from config import Config
@@ -433,3 +434,32 @@ def test_daily_flow_delegates_all_sync_mongo_operations(monkeypatch):
     assert db.collection.main_thread_calls
     assert all(not on_main for _, on_main in db.collection.main_thread_calls)
     assert calculation_threads == [False]
+
+
+def test_daily_calculation_retries_timeout_with_longer_read_client(monkeypatch):
+    calls = []
+
+    def fake_calculate(db, period):
+        calls.append(db)
+        if len(calls) == 1:
+            raise NetworkTimeout("short socket timeout")
+        return _fake_report()
+
+    class RetryClient:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            self.db = object()
+
+        def __getitem__(self, name):
+            assert name == Config.DB_NAME
+            return self.db
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(daily, "calculate_daily_report", fake_calculate)
+    monkeypatch.setattr(daily, "MongoClient", RetryClient)
+    result = daily._calculate_daily_report_with_retry(object(), date(2026, 8, 20))
+
+    assert result["team_size"] == 1
+    assert len(calls) == 2

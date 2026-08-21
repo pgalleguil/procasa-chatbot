@@ -22,8 +22,8 @@ from .whatsapp_client import (
     normalize_whatsapp_recipient,
     send_whatsapp_message_detailed,
 )
-from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo import MongoClient, ReadPreference, ReturnDocument
+from pymongo.errors import AutoReconnect, DuplicateKeyError, NetworkTimeout
 
 logger = logging.getLogger(__name__)
 CHILE = pytz.timezone("America/Santiago")
@@ -285,6 +285,31 @@ def calculate_daily_report(db, period: date | str) -> dict:
     return calculate_period_report(db, period, period)
 
 
+def _calculate_daily_report_with_retry(db, report_date: date) -> dict:
+    """Calculate with a longer-lived read client after a transient Mongo timeout."""
+    try:
+        return calculate_daily_report(db, report_date)
+    except (AutoReconnect, NetworkTimeout) as exc:
+        logger.warning(
+            "[CAPTACION_DAILY_PRODUCTION] retry_calculation report_date=%s reason=%s",
+            report_date.isoformat(),
+            type(exc).__name__,
+        )
+
+    retry_client = MongoClient(
+        Config.MONGO_URI,
+        socketTimeoutMS=30000,
+        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=20000,
+        maxIdleTimeMS=45000,
+        read_preference=ReadPreference.SECONDARY_PREFERRED,
+    )
+    try:
+        return calculate_daily_report(retry_client[Config.DB_NAME], report_date)
+    finally:
+        retry_client.close()
+
+
 def _bar(value: float) -> str:
     filled = min(10, max(0, int(value * 10 / 100)))
     return "█" * filled + "░" * (10 - filled)
@@ -493,7 +518,7 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
     if not claimed:
         return {"status": "already_claimed", "delivery": claim}
     try:
-        report = await asyncio.to_thread(calculate_daily_report, db, report_date)
+        report = await asyncio.to_thread(_calculate_daily_report_with_retry, db, report_date)
         if report.get("team_size") == 0:
             logger.warning(
                 "[CAPTACION_DAILY_PRODUCTION] status=skipped_no_data report_date=%s reason=no_applicable_executives",

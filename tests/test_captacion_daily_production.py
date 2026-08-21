@@ -93,6 +93,7 @@ def test_scheduler_does_not_recover_after_noon(monkeypatch):
 def _fake_report():
     return {
         "period_label": "17 de agosto",
+        "team_size": 1,
         "team_done": 18,
         "team_goal": 70,
         "team_compliance": 25.7,
@@ -215,6 +216,32 @@ def test_provider_exception_is_recorded_as_failed(monkeypatch):
     delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-17"})
     assert delivery["status"] == "failed"
     assert delivery["error"] == "provider unavailable"
+
+
+def test_empty_daily_report_is_not_sent_or_retried(monkeypatch):
+    monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
+    monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
+    monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
+    monkeypatch.setattr(
+        daily,
+        "calculate_daily_report",
+        lambda db, period: {"team_size": 0, "executives": []},
+    )
+    calls = []
+
+    async def fake_send(recipient, message):
+        calls.append(1)
+        return {"success": True}
+
+    monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
+    db = _db()
+    first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
+    second = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
+    delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-20"})
+    assert first["status"] == daily.DAILY_NO_DATA_STATUS
+    assert second["status"] == "already_claimed"
+    assert delivery["status"] == daily.DAILY_NO_DATA_STATUS
+    assert calls == []
 
 
 def test_failed_provider_is_recorded_for_diagnosis(monkeypatch):

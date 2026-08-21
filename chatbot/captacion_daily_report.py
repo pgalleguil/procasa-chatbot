@@ -34,6 +34,7 @@ DAILY_PRODUCTION_START_HOUR = 8
 DAILY_PRODUCTION_START_MINUTE = 30
 DAILY_PRODUCTION_END_HOUR = 12
 DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS = 300
+DAILY_NO_DATA_STATUS = "skipped_no_data"
 
 
 def scheduled_period_for_run(run_date: date | str) -> tuple[date, date] | None:
@@ -493,6 +494,19 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
         return {"status": "already_claimed", "delivery": claim}
     try:
         report = await asyncio.to_thread(calculate_daily_report, db, report_date)
+        if report.get("team_size") == 0:
+            await asyncio.to_thread(
+                _update_daily_delivery_sync,
+                db,
+                key,
+                {
+                    "status": DAILY_NO_DATA_STATUS,
+                    "error": "no_applicable_executives",
+                    "failed_at": None,
+                    "sent_at": None,
+                },
+            )
+            return {"status": DAILY_NO_DATA_STATUS, "delivery": claim}
         message = build_whatsapp_message(report)
         checks = validate_reconciliation(report, message)
         provider = await send_whatsapp_message_detailed(recipient, message)

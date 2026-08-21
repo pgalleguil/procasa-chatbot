@@ -719,9 +719,22 @@
         .filter-bar {
             display: grid;
             grid-template-columns: minmax(220px, 1.45fr) repeat(4, minmax(112px, .9fr)) max-content max-content;
-            gap: 9px;
+            gap: 7px;
             margin-bottom: 8px;
             align-items: end;
+        }
+
+        @media (min-width: 769px) {
+            .filter-bar .search-box input,
+            .filter-bar select,
+            .filter-bar .btn-more-filters,
+            .filter-bar .btn-clear-filters {
+                min-height: 33px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+            }
+            .filter-bar .search-box input,
+            .filter-bar select { font-size: .84rem; }
         }
 
         .filter-bar .advanced-filter { display: none; }
@@ -1525,7 +1538,7 @@
             }
 
             .table-container {
-                padding: 14px;
+                padding: 9px;
                 border-radius: 14px;
             }
 
@@ -1614,6 +1627,7 @@
             /* Celdas del Lead */
             .crm-table td {
                 border: none;
+                background: transparent !important;
                 padding: 1px 4px;
                 display: grid;
                 grid-template-columns: minmax(0, 1fr);
@@ -1632,12 +1646,12 @@
                 width: 100%;
             }
 
-            .crm-table .col-priority { order: 1; grid-column: 1; }
-            .crm-table .col-sent { order: 1; grid-column: 2; }
-            .crm-table .col-lead { order: 2; grid-column: 1 / -1; }
-            .crm-table .col-management { order: 3; grid-column: 1 / -1; }
-            .crm-table .col-executive { order: 4; grid-column: 1 / -1; }
-            .crm-table .col-response { order: 5; grid-column: 1 / -1; }
+            .crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }
+            .crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }
+            .crm-table .col-lead { order: 2; grid-column: 1 / -1; grid-row: 2; }
+            .crm-table .col-management { order: 3; grid-column: 1 / -1; grid-row: 3; }
+            .crm-table .col-executive { order: 4; grid-column: 1; grid-row: 4; }
+            .crm-table .col-response { order: 4; grid-column: 2; grid-row: 4; }
 
             /* Etiqueta flotante / Label */
             .crm-table td::before {
@@ -1664,7 +1678,7 @@
 
             /* SLA / TIEMPO: Destacado en el header de la tarjeta */
             .crm-table td[data-label="Prioridad"] {
-                background: rgba(255, 255, 255, 0.03);
+                background: transparent !important;
                 border-bottom: 0;
                 padding: 2px 4px;
             }
@@ -1672,7 +1686,7 @@
             .crm-table td[data-label="Prioridad"]::before { display: none; }
 
             .crm-table td[data-label="Gestión"]::before { display: none; }
-            .crm-table .col-executive { display: none; }
+            .crm-table .col-executive { display: grid; }
 
             .crm-table td[data-label="Prioridad"]::before {
                 margin-bottom: 0;
@@ -1690,30 +1704,21 @@
             }
 
             /* ESTADO: Badge visual */
-            .crm-table td[data-label="Gestión"] {
-                background: linear-gradient(90deg, rgba(99, 102, 241, 0.05), transparent);
-            }
+            .crm-table td[data-label="Gestión"]::before { margin-bottom: 0; }
 
-            .crm-table td[data-label="Gestión"]::before {
-                margin-bottom: 0;
-            }
-
-            /* ÚLTIMA GESTIÓN: histórico separado de la acción operativa */
-            .crm-table td[data-label="Gestión"] { background: transparent; border-top: 1px solid var(--border-color); }
-
-            /* EJECUTIVO: Discreto */
-            .crm-table td[data-label="Ejecutivo"] {
-                border-top: 1px dashed rgba(255, 255, 255, 0.1);
-                padding-bottom: 7px;
-            }
+            /* Footer operacional: metadata discreta + CTA táctil. */
+            .crm-table .col-executive { order: 4; grid-column: 1; grid-row: 4; padding-top: 5px; }
+            .crm-table td[data-label="Ejecutivo"] .executive-name { font-size: .72rem; color: var(--text-secondary); }
 
             .crm-table td[data-label="Respuesta"] {
-                border-top: 1px solid var(--border-color);
-                padding-top: 6px;
-                padding-bottom: 6px;
+                order: 4;
+                grid-column: 2;
+                grid-row: 4;
+                padding-top: 1px;
+                padding-bottom: 1px;
             }
-            .crm-table .col-response .mobile-cell-value { justify-content: flex-start; }
-            .crm-table .col-response .quick-management-btn { width: auto; }
+            .crm-table .col-response .mobile-cell-value { justify-content: flex-end; }
+            .crm-table .col-response .quick-management-btn { width: 116px; min-height: 42px; }
 
             .crm-table td,
             .crm-table .mobile-cell-value {
@@ -1735,6 +1740,14 @@
                 display: inline-block;
                 margin-top: 0;
             }
+
+            .crm-table td[data-label="Prioridad"] .mobile-cell-value { width: auto; }
+            .crm-table td[data-label="Enviado"] { justify-self: end; text-align: right; }
+            .crm-table td[data-label="Enviado"] .mobile-cell-value { width: auto; }
+            .crm-table td[data-label="Enviado"] .sent-cell { align-items: flex-end; }
+            .crm-table .lead-cell, .crm-table .management-cell { padding: 2px 0; }
+            .crm-table .lead-cell .lead-name { font-size: .92rem; }
+            .crm-table .management-cell .management-main { font-size: .8rem; }
 
             .state-metrics-grid {
                 display: flex;
@@ -1787,15 +1800,15 @@
 
             .crm-table td {
                 grid-template-columns: minmax(0, 1fr);
-                padding: 3px 4px;
+                padding: 1px 4px;
                 gap: 3px;
             }
 
             .crm-table td[data-label="Prioridad"] {
-                padding: 4px;
+                padding: 2px 4px;
             }
 
-            .crm-table td[data-label="Respuesta"] { padding: 3px 4px; }
+            .crm-table td[data-label="Respuesta"] { padding: 1px 4px; }
         }
     </style>
 </head>
@@ -2179,9 +2192,9 @@
                                     <div class="management-cell">
                                         <div class="management-main">{{ lead.estado_badge }}</div>
                                         {% if lead.gestionado %}
-                                        <span class="management-meta">{{ lead.ultima_accion_titulo }} · {{ lead.tiempo_relativo }}</span>
+                                        <span class="management-meta">Última: {{ lead.ultima_accion_titulo }} · {{ lead.tiempo_relativo }}</span>
                                         {% else %}
-                                        <span class="management-meta">Sin gestión</span>
+                                        <span class="management-meta">Última: Sin gestión</span>
                                         {% endif %}
                                     </div>
                                 </div>

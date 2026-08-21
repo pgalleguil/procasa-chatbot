@@ -67,9 +67,19 @@ def test_list_priority_and_management_have_single_operational_hierarchy():
 def test_list_mobile_toolbar_and_card_order_are_compact():
     assert '.filter-bar .filter-field:not(.filter-search-field)' in LIST_TEMPLATE
     assert '.filter-bar.is-expanded .filter-field:not(.filter-search-field)' in LIST_TEMPLATE
-    assert '.crm-table .col-priority { order: 1; grid-column: 1; }' in LIST_TEMPLATE
-    assert '.crm-table .col-sent { order: 1; grid-column: 2; }' in LIST_TEMPLATE
+    assert '.crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }' in LIST_TEMPLATE
+    assert '.crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }' in LIST_TEMPLATE
     assert '<span class="mobile-only">Filtros</span>' in LIST_TEMPLATE
+
+
+def test_mobile_list_is_one_uniform_card_with_operational_footer():
+    mobile_css = LIST_TEMPLATE[LIST_TEMPLATE.index('@media (max-width: 768px)'):]
+    assert 'background: transparent !important' in mobile_css
+    assert 'grid-row: 1' in mobile_css
+    assert 'grid-row: 4' in mobile_css
+    assert 'width: 116px; min-height: 42px' in mobile_css
+    assert 'Última: Sin gestión' in LIST_TEMPLATE
+    assert 'Última: {{ lead.ultima_accion_titulo }}' in LIST_TEMPLATE
 
 
 def test_sent_timestamp_does_not_use_created_at_as_delivery():

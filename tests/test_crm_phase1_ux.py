@@ -115,13 +115,14 @@ def test_quick_management_is_visible_and_uses_canonical_endpoint():
 
 def test_quick_management_has_progressive_disclosure_and_friendly_results():
     shared_modal = (ROOT / "templates" / "partials" / "crm_quick_management_modal.html").read_text(encoding="utf-8")
-    for label in ('No respondió', 'Mensaje enviado', 'Contactado', 'No interesado', 'Número inválido'):
+    for label in ('Contactado', 'Sin respuesta', 'No interesado', 'Número inválido', 'Otro'):
         assert label in shared_modal
+    assert 'Mensaje enviado' not in shared_modal
+    assert 'OTHER_EXPLICIT' in shared_modal
     assert 'Requiere seguimiento' not in shared_modal
     assert 'Visita agendada' not in shared_modal
-    assert 'quickChannelField' in LIST_TEMPLATE
-    assert 'quickDateField' in LIST_TEMPLATE
     assert 'quickReasonField' in LIST_TEMPLATE
+    assert 'quickOtherField' in LIST_TEMPLATE
     assert 'save.disabled = true' in LIST_TEMPLATE
 
 
@@ -162,8 +163,9 @@ def test_shared_component_uses_canonical_contract_and_progressive_fields():
     assert "idempotency_key: submittedId" in shared_js
     assert "Este lead cambió de asignación. Actualizamos su información." in shared_js
     assert "closeOnStale" in shared_js
-    for label in ('No respondió', 'Mensaje enviado', 'Contactado', 'No interesado', 'Número inválido'):
+    for label in ('Contactado', 'Sin respuesta', 'No interesado', 'Número inválido', 'Otro'):
         assert label in shared_modal
+    assert 'Mensaje enviado' not in shared_modal
     assert "partials/crm_quick_management_modal.html" in LIST_TEMPLATE
     assert "js/crm_quick_management.js" in LIST_TEMPLATE
     assert "window.CRMQuickManagement.open" in LIST_TEMPLATE

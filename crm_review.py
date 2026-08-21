@@ -78,6 +78,12 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
             "hot_near_critical": "Próximo · 24 min",
             "near_critical": "Próximo · 1h 42m",
         }.get(sla_status, "Gestionado" if sla_status == "fulfilled" else sla_label),
+        "sla_timing": {
+            "critical": "Venció hace 1 h",
+            "hot_near_critical": "Faltan 24 min",
+            "good": "Faltan 1 h 42 min",
+            "fulfilled": "Dentro de SLA · 42 min",
+        }.get(sla_status, "SLA no disponible"),
         "estado": "CLOSED_WON" if closed else state,
         "estado_badge": state_label,
         "estado_resultado": action if managed else None,
@@ -93,8 +99,9 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
         "ejecutivo_nombre": "Ejecutivo Demo",
         "assignment_cycle_id": f"review-cycle-{index:02d}",
         "effective_sent_at": sent_at,
-        "effective_sent_date": sent_at.strftime("%d/%m"),
+        "effective_sent_date": sent_at.strftime("%d/%m/%Y"),
         "effective_sent_time": sent_at.strftime("%H:%M"),
+        "assigned_relative": f"Hace {max(1, int(((_now() - sent_at).total_seconds()) // 3600))} h",
         "effective_sent_source": "Entrega confirmada" if sent_confirmed else "Asignación",
         "effective_sent_confirmed": sent_confirmed,
     }
@@ -172,6 +179,12 @@ def _list_context(request: Request) -> dict:
     total = len(scope)
     hot = sum(1 for lead in scope if lead["lead_temperature_effective"] == "HOT")
     cold = total - hot
+    assignment_series = {"total": [0] * 7, "hot": [0] * 7, "cold": [0] * 7}
+    for lead in DEMO_LEADS:
+        day_index = min(6, max(0, int((_now() - lead["effective_sent_at"]).total_seconds() // 86400)))
+        assignment_series["total"][6 - day_index] += 1
+        bucket = "hot" if lead["lead_temperature_effective"] == "HOT" else "cold"
+        assignment_series[bucket][6 - day_index] += 1
     def pct(value): return round(value * 100 / total, 1) if total else 0
     kpis = {"total": total, "hot": hot, "cold": cold, "hot_percent": pct(hot), "cold_percent": pct(cold),
             **{f"{key}_percent": pct(value) for key, value in counts.items()}, **counts,
@@ -182,6 +195,7 @@ def _list_context(request: Request) -> dict:
             "nuevo_cold": sum(1 for lead in scope if lead["estado"] == "NEW" and lead["lead_temperature_effective"] == "COLD"),
             "gestion_hot": 0, "gestion_cold": counts["gestion"], "visita_hot": 0, "visita_cold": counts["visita"],
             "cerrado_hot": counts["cerrado"], "cerrado_cold": 0}
+    kpis["assignment_series"] = assignment_series
     return {
         "request": request, "leads": leads, "kpis": kpis, "user_role": "supervisor",
         "user_name": "Supervisor Demo", "can_administer_leads": True, "executives": ["Ejecutivo Demo"],

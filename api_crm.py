@@ -150,6 +150,20 @@ def format_relative_time(dt_obj):
     elif minutes > 0: return f"Hace {minutes}m"
     else: return "Ahora"
 
+
+def format_relative_compact(dt_obj):
+    """Short assignment age for the list: minutes, hours or days only."""
+    text = format_relative_time(dt_obj)
+    if text.startswith("Hace "):
+        parts = text[5:].split()
+        if parts and parts[0].endswith("d"):
+            return f"Hace {parts[0]} días"
+        if parts and parts[0].endswith("h"):
+            return f"Hace {parts[0][:-1]} h"
+        if parts and parts[0].endswith("m"):
+            return f"Hace {parts[0][:-1]} min"
+    return text
+
 # --- HELPER: Datos de Propiedad ---
 def select_owner_phone(prop, owner):
     """Return the most usable owner phone stored by Prop360.
@@ -571,6 +585,21 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "cerrado": [
                 {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"])]}},
                 {"$count": "count"}
+            ],
+            # Una sola facet produce las siete cubetas diarias para las tres
+            # cards; no se ejecuta una consulta por card ni por día.
+            "assignment_series": [
+                {"$match": global_kpi_query},
+                {"$group": {
+                    "_id": {"$dateToString": {
+                        "format": "%Y-%m-%d",
+                        "date": {"$convert": {"input": {"$ifNull": ["$lifecycle.assigned_at", "$fecha_asignacion"]}, "to": "date", "onError": None, "onNull": None}}
+                    }},
+                    "total": {"$sum": 1},
+                    "hot": {"$sum": {"$cond": [{"$eq": ["$lead_temperature_effective", "HOT"]}, 1, 0]}},
+                    "cold": {"$sum": {"$cond": [{"$eq": ["$lead_temperature_effective", "COLD"]}, 1, 0]}},
+                }},
+                {"$sort": {"_id": 1}},
             ]
         }}
     ]
@@ -884,6 +913,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "cerrado": get_facet_count("cerrado"),
         "sin_asignar": get_facet_count("sin_asignar"),
         "sin_asignar_global": get_facet_count("sin_asignar_global"),
+    }
+    series_rows = facet_res.get("assignment_series") or []
+    series_by_day = {str(row.get("_id")): row for row in series_rows if row.get("_id")}
+    today_local = datetime.now(CHILE_TZ).date()
+    series_days = [(today_local - timedelta(days=offset)).isoformat() for offset in range(6, -1, -1)]
+    kpi_counts["assignment_series"] = {
+        "total": [series_by_day.get(day, {}).get("total", 0) for day in series_days],
+        "hot": [series_by_day.get(day, {}).get("hot", 0) for day in series_days],
+        "cold": [series_by_day.get(day, {}).get("cold", 0) for day in series_days],
     }
     from chatbot.crm_metrics import validate_list_parity
     # SLA priority fetches the full universe for Python-side business-minute
@@ -1278,6 +1316,18 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 sla_status = "unknown"
             
             sla_hours = (canonical_sla.get("minutes") or 0) / 60.0
+            measured_minutes = canonical_sla.get("hot_minutes") if temp == "HOT" and canonical_sla.get("hot_minutes") is not None else canonical_sla.get("minutes")
+            threshold_minutes = canonical_sla.get("threshold_minutes")
+            if measured_minutes is None or threshold_minutes is None:
+                sla_timing = "SLA no disponible"
+            elif canonical_sla.get("fulfilled"):
+                delta = int(measured_minutes)
+                sla_timing = (f"Dentro de SLA · {delta} min" if measured_minutes < threshold_minutes
+                              else f"Fuera de SLA · +{int(measured_minutes - threshold_minutes)} min")
+            elif measured_minutes >= threshold_minutes:
+                sla_timing = f"Venció hace {int(measured_minutes - threshold_minutes)} min"
+            else:
+                sla_timing = f"Faltan {int(threshold_minutes - measured_minutes)} min"
             
             # Build SLA info for row tooltip
             if not visual_pre:
@@ -1329,6 +1379,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "lead_id": str(lead.get("_id") or ""),
             "phone_is_synthetic": bool(lead.get("phone_is_synthetic")) or str(lead.get("phone", "")).startswith("no-phone-"),
             "sla_status": sla_status,
+            "sla_timing": sla_timing if assigned_at else "SLA no disponible",
             "sla_label": sla_label,
             "age_label": age_label,
             "whatsapp_display": ("Sin teléfono" if (str(lead.get("phone", "")).startswith("no-phone-")
@@ -1358,8 +1409,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
             "effective_sent_at": effective_sent_at,
-            "effective_sent_date": effective_sent_at.strftime("%d/%m") if effective_sent_at else None,
+            "effective_sent_date": effective_sent_at.strftime("%d/%m/%Y") if effective_sent_at else None,
             "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,
+            "assigned_relative": format_relative_compact(assigned_for_cycle),
             "effective_sent_source": effective_sent_source,
             "effective_sent_confirmed": effective_sent_confirmed,
             "stage": lead.get("stage") or "new",

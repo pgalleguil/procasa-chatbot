@@ -11,43 +11,34 @@
             <div class="modal-body">
                 <div class="small text-secondary mb-2">Selecciona el resultado realizado</div>
                 <div class="quick-result-grid" id="quickResultGrid">
-                    <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">No respondió</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="MESSAGE_SENT_WAITING_RESPONSE">Mensaje enviado</button>
                     <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT">Contactado</button>
+                    <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">Sin respuesta</button>
                     <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED">No interesado</button>
                     <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
-                </div>
-                <a class="quick-detail-link" id="quickGoDetail" href="#">Ir al detalle para seguimiento, visitas y cierres</a>
-                <div class="quick-extra mt-3" id="quickChannelField">
-                    <label class="form-label small mb-1" for="quickChannel">Canal</label>
-                    <select class="form-select form-select-sm" id="quickChannel">
-                        <option value="">Seleccionar canal (opcional)</option>
-                        <option value="phone">Llamada</option>
-                        <option value="whatsapp">WhatsApp</option>
-                        <option value="email">Email</option>
-                    </select>
-                </div>
-                <div class="quick-extra mt-3" id="quickDateField">
-                    <label class="form-label small mb-1" for="quickNextDate">Próxima acción</label>
-                    <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
+                    <button type="button" class="quick-result-btn" data-quick-result="OTHER_EXPLICIT">Otro</button>
                 </div>
                 <div class="quick-extra mt-3" id="quickReasonField">
                     <label class="form-label small mb-1" for="quickReason">Motivo</label>
                     <select class="form-select form-select-sm" id="quickReason">
                         <option value="">Seleccionar motivo (opcional)</option>
                         <option value="Ya no busca">Ya no busca</option>
-                        <option value="Propiedad no le interesa">Propiedad no le interesa</option>
-                        <option value="Precio/condiciones">Precio/condiciones</option>
+                        <option value="Esta propiedad no le interesa">Esta propiedad no le interesa</option>
+                        <option value="Precio o condiciones">Precio o condiciones</option>
                         <option value="Ya encontró otra propiedad">Ya encontró otra propiedad</option>
-                        <option value="Número no existe">Número no existe</option>
+                        <option value="Número inexistente">Número inexistente</option>
                         <option value="Número equivocado">Número equivocado</option>
                         <option value="No corresponde al cliente">No corresponde al cliente</option>
                     </select>
                 </div>
+                <div class="quick-extra mt-3" id="quickOtherField">
+                    <label class="form-label small mb-1" for="quickOtherOutcome">Describe brevemente el resultado</label>
+                    <input class="form-control form-control-sm" type="text" id="quickOtherOutcome" maxlength="180" placeholder="Describe el resultado...">
+                </div>
                 <div class="quick-error alert alert-danger py-2 mt-3 mb-0 small" id="quickManagementError" role="alert"></div>
             </div>
             <div class="modal-footer border-top border-secondary">
-                <span class="small text-secondary me-auto" id="quickManagementProgress" aria-live="polite"></span>
+                <a class="quick-detail-link me-auto" id="quickGoDetail" href="#">Ir al detalle →</a>
+                <span class="small text-secondary" id="quickManagementProgress" aria-live="polite"></span>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary btn-sm" id="quickManagementSave" disabled>Guardar gestión</button>
             </div>

@@ -18,6 +18,9 @@ RESULT_RULES = {
     "CLOSED_WON": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "CLOSED_LOST": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "INVALID_NUMBER": {"attempt": True, "effective": False, "follow_up": False, "status": "managed_closed"},
+    # Resultado explícito para un contacto cuyo desenlace no encaja en las
+    # categorías operativas; conserva el texto ingresado en details_json.
+    "OTHER_EXPLICIT": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
     "DISCARDED_VALID_REASON": {"attempt": False, "effective": False, "follow_up": False, "status": "managed_closed"},
     "SCHEDULE_FOLLOW_UP": {"attempt": False, "effective": False, "follow_up": True, "status": "managed_follow_up"},
 }

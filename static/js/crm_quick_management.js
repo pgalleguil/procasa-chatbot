@@ -5,16 +5,17 @@
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
     const dateResults = [];
     const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];
-    const channelResults = ['CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'];
+    const channelResults = [];
+    const otherResults = ['OTHER_EXPLICIT'];
     const $ = id => document.getElementById(id);
     const requestId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const setExtra = (id, visible) => $(id)?.classList.toggle('is-visible', visible);
     const resultLabel = {
-        CALL_NO_ANSWER: 'No respondió', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
+        CALL_NO_ANSWER: 'Sin respuesta', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
         EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
         VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado',
         INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
-        CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado'
+        CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado', OTHER_EXPLICIT: 'Otro'
     };
 
     function configure(resultType) {
@@ -24,9 +25,10 @@
         setExtra('quickChannelField', channelResults.includes(resultType));
         setExtra('quickDateField', dateResults.includes(resultType));
         setExtra('quickReasonField', reasonResults.includes(resultType));
+        setExtra('quickOtherField', otherResults.includes(resultType));
         const reason = $('quickReason');
         if (reason) {
-            const invalidReasons = new Set(['Número no existe', 'Número equivocado', 'No corresponde al cliente']);
+            const invalidReasons = new Set(['Número inexistente', 'Número equivocado', 'No corresponde al cliente']);
             [...reason.options].forEach(option => {
                 option.hidden = resultType === 'INVALID_NUMBER'
                     ? (!invalidReasons.has(option.value) && option.value !== '')
@@ -40,6 +42,7 @@
     function valid() {
         if (!state.resultType) return false;
         if (dateResults.includes(state.resultType) && !$('quickNextDate')?.value) return false;
+        if (otherResults.includes(state.resultType) && !$('quickOtherOutcome')?.value.trim()) return false;
         return true;
     }
 
@@ -62,12 +65,12 @@
         state.closeOnStale = Boolean(context.closeOnStale);
         $('quickManagementLeadName').textContent = context.leadName || 'Lead';
         $('quickManagementProgress').textContent = '';
-        $('quickNextDate').value = '';
+        if ($('quickNextDate')) $('quickNextDate').value = '';
         $('quickReason').value = '';
-        $('quickChannel').value = '';
+        if ($('quickOtherOutcome')) $('quickOtherOutcome').value = '';
         error('');
         document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
-        ['quickChannelField', 'quickDateField', 'quickReasonField'].forEach(id => setExtra(id, false));
+        ['quickChannelField', 'quickDateField', 'quickReasonField', 'quickOtherField'].forEach(id => setExtra(id, false));
         $('quickManagementSave').disabled = true;
         const detail = $('quickGoDetail');
         if (detail) {
@@ -85,12 +88,12 @@
         $('quickManagementProgress').textContent = 'Guardando…';
         error('');
         const details = {};
-        if ($('quickChannel').value) details.channel = $('quickChannel').value;
         if ($('quickReason').value.trim()) details.reason = $('quickReason').value.trim();
+        if ($('quickOtherOutcome').value.trim()) details.outcome = $('quickOtherOutcome').value.trim();
         const submittedId = state.managementRequestId;
         const payload = { lead_id: state.leadId, phone: state.phone, assignment_cycle_id: state.assignmentCycleId,
             management_request_id: submittedId, idempotency_key: submittedId, result_type: state.resultType,
-            next_follow_up_at: $('quickNextDate').value || null, details_json: details };
+            next_follow_up_at: $('quickNextDate')?.value || null, details_json: details };
         try {
             if (window.CRM_REVIEW_MODE) {
                 const result = state.resultType;

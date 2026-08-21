@@ -77,6 +77,15 @@
             management_request_id: submittedId, idempotency_key: submittedId, result_type: state.resultType,
             next_follow_up_at: $('quickNextDate').value || null, details_json: details };
         try {
+            if (window.CRM_REVIEW_MODE) {
+                const result = state.resultType;
+                state.managementRequestId = null;
+                $('quickManagementProgress').textContent = 'Gestión registrada';
+                bootstrap.Modal.getOrCreateInstance($('quickManagementModal')).hide();
+                state.onSuccess?.(result, resultLabel[result]);
+                window.CRM_REVIEW_NOTICE?.('Gestión registrada (simulada).');
+                return;
+            }
             const response = await fetch('/api/crm/management-result', { method: 'POST',
                 headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
             if (response.status === 409) throw new Error('STALE_ASSIGNMENT_CYCLE');

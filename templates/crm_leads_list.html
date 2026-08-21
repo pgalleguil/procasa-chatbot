@@ -2047,7 +2047,7 @@
                         {% for lead in leads %}
                         <tr class="clickable-row" tabindex="0" role="link"
                             aria-label="Abrir detalle de {{ lead.nombre }}"
-                            data-lead-url="{% if lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}"
+                            data-lead-url="{% if review_mode %}/crm-leads-review?view=detail&lead={{ lead.lead_id }}{% elif lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}"
                             data-lead-id="{{ lead.lead_id }}"
                             data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
                             data-management-state="{{ lead.estado }}">
@@ -2328,6 +2328,7 @@
             }
 
             function openQuickManagement(button) {
+                quickManagementState.row = button.closest('.clickable-row');
                 if (window.CRMQuickManagement) return window.CRMQuickManagement.open({
                     leadId: button.dataset.leadId, phone: button.dataset.phone,
                     assignmentCycleId: button.dataset.assignmentCycleId, leadName: button.dataset.leadName,

@@ -2,6 +2,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import sys
 import types
+import threading
+import time
 
 # Los contratos importan submódulos puros de chatbot, pero el paquete raíz
 # ejecuta chatbot.core y crea el cliente externo al importarse. Aislamos ese
@@ -12,9 +14,106 @@ _chatbot_package.__path__ = [str(Path(__file__).resolve().parents[1] / "chatbot"
 sys.modules.setdefault("chatbot", _chatbot_package)
 
 from analytics.leads_queries import (_ops_comparable_eligibility, _ops_exec_bucket,
-                                     _ops_finalize_execs, build_operational_contract)
+                                     _ops_finalize_execs, _ops_historical_base_match,
+                                     _ops_slice_historical_base, build_operational_contract)
 import analytics.leads_queries as operational_queries
 from chatbot.crm_metrics import event_evidence, registered_outreach_evidence
+
+
+def test_operations_reentry_uses_short_client_cache_without_touching_properties():
+    template = (Path(__file__).resolve().parents[1] / "templates" / "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "const OPS_CLIENT_CACHE_TTL_MS = 15000" in template
+    assert "const OPS_CLIENT_CACHE = new Map()" in template
+    assert "opsClientSnapshotKey(snapshot)" in template
+    assert "OPS_CLIENT_CACHE.set(clientKey" in template
+    assert "loadInventoryData().catch" in template
+
+
+def test_operations_historical_base_slices_with_the_same_half_open_interval():
+    docs = [
+        {"_id": "before", "lifecycle": {"assigned_at": "2026-07-31T23:59:59Z"}},
+        {"_id": "start", "lifecycle": {"assigned_at": "2026-08-01T00:00:00Z"}},
+        {"_id": "inside", "lifecycle": {"assigned_at": "2026-08-19T12:00:00Z"}},
+        {"_id": "end", "lifecycle": {"assigned_at": "2026-08-21T00:00:00Z"}},
+    ]
+    sliced = _ops_slice_historical_base(
+        docs,
+        datetime(2026, 8, 1, tzinfo=timezone.utc),
+        datetime(2026, 8, 20, tzinfo=timezone.utc),
+    )
+    assert [doc["_id"] for doc in sliced] == ["start", "inside"]
+
+
+def test_operations_historical_base_match_keeps_filters_but_removes_period_bounds():
+    match, base_start, base_end = _ops_historical_base_match({"stage": "NEW"})
+    assert "2026-01-01" in base_start
+    assert base_end > base_start
+    assert "$and" in match
+    assert any(part.get("stage") == "NEW" for part in match["$and"])
+    assert all("lifecycle.assigned_at" not in part for part in match["$and"] if "$expr" not in part)
+
+
+def test_operations_historical_base_is_single_flight(monkeypatch):
+    class Collection:
+        def __init__(self):
+            self.calls = 0
+
+        def aggregate(self, _pipeline):
+            self.calls += 1
+            time.sleep(0.03)
+            return [{"_id": "lead"}]
+
+    class Database:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def __getitem__(self, _name):
+            return self.collection
+
+    collection = Collection()
+    monkeypatch.setattr(operational_queries, "_OPS_HISTORICAL_BASE_CACHE", {})
+    monkeypatch.setattr(operational_queries, "_OPS_HISTORICAL_BASE_INFLIGHT", {})
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(
+        operational_queries._ops_historical_base(Database(collection), {}, {"_id": 1})
+    )) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert collection.calls == 1
+    assert results == [[{"_id": "lead"}], [{"_id": "lead"}]]
+
+
+def test_operations_historical_base_failure_is_not_cached(monkeypatch):
+    class Collection:
+        def __init__(self):
+            self.calls = 0
+            self.fail = True
+
+        def aggregate(self, _pipeline):
+            self.calls += 1
+            if self.fail:
+                raise RuntimeError("historical base failed")
+            return [{"_id": "lead"}]
+
+    class Database:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def __getitem__(self, _name):
+            return self.collection
+
+    collection = Collection()
+    monkeypatch.setattr(operational_queries, "_OPS_HISTORICAL_BASE_CACHE", {})
+    monkeypatch.setattr(operational_queries, "_OPS_HISTORICAL_BASE_INFLIGHT", {})
+    try:
+        operational_queries._ops_historical_base(Database(collection), {}, {"_id": 1})
+    except RuntimeError:
+        pass
+    collection.fail = False
+    assert operational_queries._ops_historical_base(Database(collection), {}, {"_id": 1}) == [{"_id": "lead"}]
+    assert collection.calls == 2
 
 
 def _lead(lead_id, executive, assigned_at, temperature="NORMAL"):
@@ -44,6 +143,25 @@ def test_aging_uses_calendar_time_and_reconciles_to_pending():
     assert result["aging_reconciliation"] == {
         "pending_total": 4, "aging_bucket_total": 4, "ok": True
     }
+
+
+def test_current_summary_preserves_stock_load_while_detail_drives_sla():
+    now = datetime(2026, 8, 17, 20, 0, tzinfo=timezone.utc)
+    detail = [_lead("pending", "Hernán Castro", datetime(2026, 8, 17, 10, 0, tzinfo=timezone.utc))]
+    result = build_operational_contract(
+        detail, [], "2026-08-01", "2026-08-18", now=now,
+        team_executives={"Hernán Castro"},
+        current_summary={
+            "active_total": 3,
+            "active_assigned": 2,
+            "unassigned": 1,
+            "by_executive": [{"executive": "Hernán Castro", "active": 2}],
+        },
+    )
+    assert result["current"]["active_assigned"] == 2
+    assert result["current"]["unassigned"] == 1
+    assert result["executives"][0]["current"]["active_load"] == 2
+    assert result["current"]["pending_first_management"] == 1
 
 
 def test_executive_bucket_exposes_stats_objects():

@@ -898,24 +898,37 @@
             padding: 2px 2px 5px;
         }
 
-        /* Operational summary: one compact state bar instead of four large cards. */
+        /* Executive KPI cards: compact hierarchy, one shared visual language. */
         .temperature-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0 0 12px; }
         .temperature-cards > .col { width: 100%; padding: 0; }
-        .temperature-cards .summary-card { min-height: 112px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: relative; transition: border-color .17s ease, box-shadow .17s ease, background-color .17s ease; }
-        .temperature-cards .summary-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.14); }
-        .temperature-cards .summary-card.is-active { background: rgba(99,102,241,.12); border-color: var(--accent-color); box-shadow: 0 0 0 1px rgba(99,102,241,.2); }
-        .temperature-cards .summary-card.is-active { outline: none !important; }
+        .temperature-cards .summary-card { min-height: 146px; height: 146px; padding: 17px 21px 15px; display: block; position: relative; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+        .temperature-cards .summary-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent-color) 62%, var(--border-color)); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+        .temperature-cards .summary-card.is-active { background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-card)); border: 2px solid var(--accent-color); box-shadow: none; outline: none; }
         .temperature-cards .summary-card:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
-        .temperature-cards .summary-card.is-active::after { content: ''; position: absolute; left: 16px; bottom: 9px; width: 24px; height: 3px; border-radius: 999px; background: var(--accent-color); }
-        .temperature-cards .summary-value { font-size: 1.72rem; line-height: 1; }
-        .temperature-cards .summary-label { font-size: .76rem; margin-top: 5px; text-transform: uppercase; letter-spacing: .04em; }
-        .temperature-cards .summary-meta { display: block; margin-top: 7px; color: var(--text-secondary); font-size: .72rem; font-weight: 600; }
-        .temperature-cards .summary-card > i { font-size: 1.25rem; opacity: .28; }
-        .summary-sparkline { display: flex; align-items: flex-end; gap: 3px; height: 26px; width: 82px; margin-top: 7px; opacity: .7; }
-        .summary-sparkline span { flex: 1; min-height: 3px; border-radius: 3px 3px 1px 1px; background: var(--accent-color); opacity: .8; }
-        .summary-sparkline.hot span { background: #ef6a79; }
-        .summary-sparkline.cold span { background: #94a3b8; }
-        .summary-footer { color: var(--text-secondary); font-size: .62rem; margin-top: 3px; letter-spacing: .01em; }
+        .temperature-cards .summary-card.is-active:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+        .temperature-cards .summary-label { display: block; font-size: .72rem; line-height: 1.1; margin: 0 0 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 650; color: var(--text-secondary); }
+        .temperature-cards .summary-value { font-size: 2.12rem; line-height: .95; font-weight: 700; }
+        .temperature-cards .summary-meta { display: block; margin-top: 7px; color: var(--text-secondary); font-size: .78rem; line-height: 1.2; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .temperature-cards .summary-value.text-danger { color: #e06472 !important; }
+        .summary-sparkline { position: absolute; left: 21px; right: 21px; bottom: 27px; height: 28px; width: auto; margin: 0; opacity: .72; }
+        .summary-sparkline svg { display: block; width: 100%; height: 28px; overflow: visible; }
+        .summary-sparkline polyline { fill: none; stroke: var(--accent-color); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+        .summary-sparkline.hot polyline { stroke: #d85e6d; }
+        .summary-sparkline.cold polyline { stroke: #8b98aa; }
+        .summary-footer { color: var(--text-secondary); font-size: .66rem; line-height: 1; margin-top: 6px; letter-spacing: .01em; }
+        .temperature-cards .summary-footer { position: absolute; left: 21px; bottom: 13px; margin: 0; }
+        .temperature-cards .summary-card > i,
+        .temperature-cards .summary-card .lead-type-icon { display: none !important; }
+        .temperature-cards .summary-label .lead-type-icon { display: none !important; }
+        @media (min-width: 769px) and (max-width: 1024px) {
+            .temperature-cards { gap: 12px; }
+            .temperature-cards .summary-card { min-height: 138px; height: 138px; padding: 16px 17px 14px; }
+            .temperature-cards .summary-label { font-size: .68rem; margin-bottom: 9px; }
+            .temperature-cards .summary-value { font-size: 1.85rem; }
+            .temperature-cards .summary-meta { font-size: .7rem; }
+            .summary-sparkline { left: 17px; right: 17px; }
+            .temperature-cards .summary-footer { left: 17px; }
+        }
         .operational-alerts { display: flex !important; margin: -4px 0 12px; }
         .operational-alert { padding: 6px 10px; }
         .operational-alert strong { font-size: .75rem; }
@@ -1813,13 +1826,14 @@
         @media (max-width: 480px) {
             .temperature-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
             .temperature-cards > .col:first-child { grid-column: auto; }
-            .temperature-cards .summary-card { min-height: 70px; padding: 8px; }
+            .temperature-cards .summary-card { min-height: 70px; height: 70px; padding: 8px; }
             .temperature-cards .summary-value { font-size: 1.15rem; }
-            .temperature-cards .summary-label { font-size: .6rem; }
+            .temperature-cards .summary-label { font-size: .6rem; margin-bottom: 5px; letter-spacing: .06em; }
             .temperature-cards .summary-meta { display: none; }
             .temperature-cards .summary-sparkline,
             .temperature-cards .summary-footer { display: none; }
             .temperature-cards .summary-card > i { display: none; }
+            .temperature-cards .summary-card.is-active { border-width: 1.5px; }
             .management-panel { padding: 7px 10px; margin-bottom: 10px; }
             .management-panel .segmented-progress { height: 9px; margin-top: 5px; }
             .management-panel .state-metrics-grid { margin-top: 3px; }
@@ -1922,47 +1936,47 @@
             <div class="row g-3 mb-4 row-cols-1 row-cols-md-3 temperature-cards">
                 <div class="col">
                     <a href="{{ card_urls.total }}" class="summary-card {{ 'is-active' if selected_temperature == 'Todos' }}"
-                        aria-current="{{ 'true' if selected_temperature == 'Todos' else 'false' }}">
+                        aria-current="{{ 'true' if selected_temperature == 'Todos' else 'false' }}" aria-pressed="{{ 'true' if selected_temperature == 'Todos' else 'false' }}" onkeydown="if(event.key===' ') { event.preventDefault(); this.click(); }">
+                        <div class="summary-label">Total leads</div>
+                        <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
+                        <div class="summary-meta">{{ kpis.managed }} gestionados · {{ kpis.nuevo }} sin atender</div>
                         <div>
-                            <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
-                            <div class="summary-label">Total leads</div>
-                            <div class="summary-meta">{{ kpis.managed }} gestionados · {{ kpis.nuevo }} sin atender</div>
                             <div class="summary-sparkline" aria-label="Asignaciones por día — últimos 7 días">
-                                {% for value in ((kpis.get('assignment_series') or {}).get('total') or [0,0,0,0,0,0,0]) %}<span style="height: {{ [3, value * 8]|max }}px" title="{{ value }} asignados"></span>{% endfor %}
+                                {% set series = ((kpis.get('assignment_series') or {}).get('total') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones por día — últimos 7 días"><title>Asignaciones por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
                             </div>
-                            <div class="summary-footer">Asignaciones por día · últimos 7 días</div>
+                            <div class="summary-footer">Últimos 7 días</div>
                         </div>
-                        <i class="fa-solid fa-users fa-2x text-primary opacity-25"></i>
                     </a>
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.hot }}" class="summary-card {{ 'is-active' if selected_temperature == 'HOT' }}"
-                        aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}">
+                        aria-current="{{ 'true' if selected_temperature == 'HOT' else 'false' }}" aria-pressed="{{ 'true' if selected_temperature == 'HOT' else 'false' }}" onkeydown="if(event.key===' ') { event.preventDefault(); this.click(); }">
+                        <div class="summary-label">{{ lead_temperature_label('HOT') }}</div>
+                        <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
+                        <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total · {{ kpis.nuevo_hot }} sin atender</div>
                         <div>
-                            <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
-                            <div class="summary-label">{{ lead_temperature_label('HOT') }} {{ lead_temperature_icon('HOT') }}</div>
-                            <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total · {{ kpis.nuevo_hot }} sin atender</div>
                             <div class="summary-sparkline hot" aria-label="Asignaciones Hot por día — últimos 7 días">
-                                {% for value in ((kpis.get('assignment_series') or {}).get('hot') or [0,0,0,0,0,0,0]) %}<span style="height: {{ [3, value * 8]|max }}px" title="{{ value }} asignados"></span>{% endfor %}
+                                {% set series = ((kpis.get('assignment_series') or {}).get('hot') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Hot por día — últimos 7 días"><title>Asignaciones Hot por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
                             </div>
-                            <div class="summary-footer">Asignaciones Hot · últimos 7 días</div>
+                            <div class="summary-footer">Últimos 7 días</div>
                         </div>
-                        {{ lead_temperature_icon('HOT') }}
                     </a>
                 </div>
                 <div class="col">
                     <a href="{{ card_urls.cold }}" class="summary-card {{ 'is-active' if selected_temperature == 'COLD' }}"
-                        aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}">
+                        aria-current="{{ 'true' if selected_temperature == 'COLD' else 'false' }}" aria-pressed="{{ 'true' if selected_temperature == 'COLD' else 'false' }}" onkeydown="if(event.key===' ') { event.preventDefault(); this.click(); }">
+                        <div class="summary-label">Leads</div>
+                        <div class="summary-value" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
+                        <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total · {{ kpis.nuevo_cold }} sin atender</div>
                         <div>
-                            <div class="summary-value" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
-                            <div class="summary-label">Leads</div>
-                            <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total · {{ kpis.nuevo_cold }} sin atender</div>
                             <div class="summary-sparkline cold" aria-label="Asignaciones Lead por día — últimos 7 días">
-                                {% for value in ((kpis.get('assignment_series') or {}).get('cold') or [0,0,0,0,0,0,0]) %}<span style="height: {{ [3, value * 8]|max }}px" title="{{ value }} asignados"></span>{% endfor %}
+                                {% set series = ((kpis.get('assignment_series') or {}).get('cold') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Lead por día — últimos 7 días"><title>Asignaciones Lead por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
                             </div>
-                            <div class="summary-footer">Asignaciones Lead · últimos 7 días</div>
+                            <div class="summary-footer">Últimos 7 días</div>
                         </div>
-                        <i class="fa-solid fa-user fa-2x text-secondary opacity-25"></i>
                     </a>
                 </div>
             </div>

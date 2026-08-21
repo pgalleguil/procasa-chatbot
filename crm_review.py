@@ -68,6 +68,11 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
           action: str = "", relative: str = "", sent_confirmed: bool = False,
           closed: bool = False, visit: bool = False) -> dict:
     sent_at = _now() - timedelta(minutes=15 * index + 10)
+    elapsed_minutes = max(1, int((_now() - sent_at).total_seconds() // 60))
+    elapsed_hours, remaining_minutes = divmod(elapsed_minutes, 60)
+    assigned_relative = (f"Hace {elapsed_hours} h" if elapsed_hours else "Hace")
+    if remaining_minutes:
+        assigned_relative += f" {remaining_minutes} min" if elapsed_hours else f" {remaining_minutes} min"
     return {
         "phone": f"+569000000{index:02d}",
         "lead_id": f"review-{index:02d}",
@@ -79,7 +84,7 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
             "near_critical": "Próximo · 1h 42m",
         }.get(sla_status, "Gestionado" if sla_status == "fulfilled" else sla_label),
         "sla_timing": {
-            "critical": "Venció hace 1 h",
+            "critical": "Venció hace 1 h 12 min",
             "hot_near_critical": "Faltan 24 min",
             "good": "Faltan 1 h 42 min",
             "fulfilled": "Dentro de SLA · 42 min",
@@ -101,7 +106,7 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
         "effective_sent_at": sent_at,
         "effective_sent_date": sent_at.strftime("%d/%m/%Y"),
         "effective_sent_time": sent_at.strftime("%H:%M"),
-        "assigned_relative": f"Hace {max(1, int(((_now() - sent_at).total_seconds()) // 3600))} h",
+        "assigned_relative": assigned_relative,
         "effective_sent_source": "Entrega confirmada" if sent_confirmed else "Asignación",
         "effective_sent_confirmed": sent_confirmed,
     }

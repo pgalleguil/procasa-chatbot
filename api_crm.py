@@ -151,15 +151,26 @@ def format_relative_time(dt_obj):
     else: return "Ahora"
 
 
+def format_duration_minutes(total_minutes):
+    """Render a duration with hours and remaining minutes when useful."""
+    total_minutes = max(0, int(total_minutes))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours} h" + (f" {minutes} min" if minutes else "")
+    return f"{minutes} min"
+
+
 def format_relative_compact(dt_obj):
-    """Short assignment age for the list: minutes, hours or days only."""
+    """Short assignment age for the list, preserving useful minutes."""
     text = format_relative_time(dt_obj)
     if text.startswith("Hace "):
         parts = text[5:].split()
         if parts and parts[0].endswith("d"):
             return f"Hace {parts[0]} días"
         if parts and parts[0].endswith("h"):
-            return f"Hace {parts[0][:-1]} h"
+            hours = parts[0][:-1]
+            minutes = parts[1][:-1] if len(parts) > 1 and parts[1].endswith("m") else "0"
+            return f"Hace {hours} h" + (f" {minutes} min" if int(minutes) > 0 else "")
         if parts and parts[0].endswith("m"):
             return f"Hace {parts[0][:-1]} min"
     return text
@@ -1335,13 +1346,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             if measured_minutes is None or threshold_minutes is None:
                 sla_timing = "SLA no disponible"
             elif canonical_sla.get("fulfilled"):
-                delta = int(measured_minutes)
-                sla_timing = (f"Dentro de SLA · {delta} min" if measured_minutes < threshold_minutes
-                              else f"Fuera de SLA · +{int(measured_minutes - threshold_minutes)} min")
+                delta = format_duration_minutes(measured_minutes)
+                over = format_duration_minutes(measured_minutes - threshold_minutes)
+                sla_timing = (f"Dentro de SLA · {delta}" if measured_minutes < threshold_minutes
+                              else f"Fuera de SLA · +{over}")
             elif measured_minutes >= threshold_minutes:
-                sla_timing = f"Venció hace {int(measured_minutes - threshold_minutes)} min"
+                sla_timing = f"Venció hace {format_duration_minutes(measured_minutes - threshold_minutes)}"
             else:
-                sla_timing = f"Faltan {int(threshold_minutes - measured_minutes)} min"
+                sla_timing = f"Faltan {format_duration_minutes(threshold_minutes - measured_minutes)}"
             
             # Build SLA info for row tooltip
             if not visual_pre:

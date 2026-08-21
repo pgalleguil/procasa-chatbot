@@ -14,7 +14,7 @@ def html(query="view=list"):
 
 def test_three_equal_kpi_columns_and_compact_height_contract():
     assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in TEMPLATE
-    assert "min-height: 112px" in TEMPLATE
+    assert "min-height: 146px" in TEMPLATE
     assert "gap: 18px" in TEMPLATE
 
 

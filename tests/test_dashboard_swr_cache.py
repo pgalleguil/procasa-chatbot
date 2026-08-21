@@ -120,17 +120,70 @@ def test_overview_and_operations_soft_expiry_is_single_flight(monkeypatch, funct
 def test_cache_ttl_contract():
     assert leads_service.CACHE_TTL == 120
     assert leads_service.CACHE_HARD_TTL == 600
+    assert leads_service.PINNED_REFRESH_AGE == 240
+    assert leads_service.PINNED_MAX_STALE == 1800
 
 
 def test_prewarmer_contract_is_single_initial_30d_pass():
     source = (Path(__file__).parents[1] / "webhook.py").read_text(encoding="utf-8")
     warmer = source[source.index("async def cache_prewarmer_loop"):source.index("async def event_loop_monitor_loop")]
-    assert 'preset_range("30d"' in warmer
-    assert 'period_preset="30d"' in warmer
-    assert 'warm_specs' not in warmer
+    assert "warm_pinned_dashboard_cache" in warmer
+    assert "keep_pinned_dashboard_cache" in warmer
+    assert "interval_seconds=60" in warmer
+    assert "refresh_age_seconds=240" in warmer
+    assert "await asyncio.sleep(30)" not in warmer
     assert '"today"' not in warmer
     assert '"week"' not in warmer
     assert '"month"' not in warmer
+
+
+def test_pinned_jobs_are_the_same_three_30d_request_keys(monkeypatch):
+    warm_ps, warm_pe = leads_service._dashboard_30d_period()
+    jobs = leads_service._pinned_dashboard_jobs()
+    assert [endpoint for endpoint, _, _ in jobs] == ["overview", "operations", "properties"]
+
+    monkeypatch.setattr(leads_service, "_compute_leads_dashboard_overview", lambda **kwargs: {"endpoint": "overview"})
+    monkeypatch.setattr(leads_service, "_compute_leads_operational_dashboard", lambda **kwargs: {"endpoint": "operations"})
+    monkeypatch.setattr(leads_service, "query_demand_capture_dashboard", lambda *a, **k: {"endpoint": "properties"})
+    leads_service.get_leads_dashboard_overview(period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d")
+    leads_service.get_leads_operational_dashboard(period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d")
+    leads_service.get_properties_inventory_dashboard(period_start=warm_ps, period_end=warm_pe, filters={})
+    assert set(leads_service.L1_CACHE) == {key for _, key, _ in jobs}
+
+
+@pytest.mark.parametrize(
+    "public_name,compute_name,payload",
+    [
+        ("get_leads_dashboard_overview", "_compute_leads_dashboard_overview", {"meta": {}, "endpoint": "overview"}),
+        ("get_leads_operational_dashboard", "_compute_leads_operational_dashboard", {"meta": {}, "endpoint": "operations"}),
+    ],
+)
+def test_pinned_hard_expiry_serves_stale_and_schedules_refresh(monkeypatch, public_name, compute_name, payload):
+    warm_ps, warm_pe = leads_service._dashboard_30d_period()
+    calls = []
+    monkeypatch.setattr(leads_service, compute_name, lambda **kwargs: calls.append(1) or payload)
+    public = getattr(leads_service, public_name)
+    kwargs = {"period_start": warm_ps, "period_end": warm_pe, "compare": "auto", "period_preset": "30d"}
+    if public_name == "get_leads_dashboard_overview":
+        public(**kwargs)
+    else:
+        public(**kwargs)
+    key = next(iter(leads_service.L1_CACHE))
+    _age_cache(key, leads_service.CACHE_HARD_TTL + 1)
+    result = public(**kwargs)
+    assert result["meta"]["data_status"] == "stale"
+    assert result["meta"]["degraded"] is True
+    assert result["meta"]["refresh"] == "scheduled"
+    time.sleep(0.05)
+    assert len(calls) == 2
+
+
+def test_pinned_keeper_warms_in_declared_order(monkeypatch):
+    order = []
+    jobs = tuple((name, f"key-{name}", lambda name=name: order.append(name) or {"name": name}) for name in ("overview", "operations", "properties"))
+    monkeypatch.setattr(leads_service, "_pinned_dashboard_jobs", lambda: jobs)
+    assert leads_service.warm_pinned_dashboard_cache() == ["overview", "operations", "properties"]
+    assert order == ["overview", "operations", "properties"]
 
 
 def test_refresh_scheduler_rejects_duplicate_key():

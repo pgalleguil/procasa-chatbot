@@ -28,7 +28,7 @@ from pymongo.errors import AutoReconnect, DuplicateKeyError, NetworkTimeout
 logger = logging.getLogger(__name__)
 CHILE = pytz.timezone("America/Santiago")
 DAILY_TARGET = 10
-COVERAGE_THRESHOLD_DAYS = 10
+COVERAGE_THRESHOLD_DAYS = 5
 DAILY_DELIVERY_COLLECTION = Config.CAPTACION_DAILY_DELIVERY_COLLECTION
 DAILY_PRODUCTION_START_HOUR = 8
 DAILY_PRODUCTION_START_MINUTE = 30
@@ -347,13 +347,29 @@ def _short_display_names(rows: list[dict]) -> dict[str, str]:
     return result
 
 
+def _coverage_status(report: dict) -> str:
+    below = []
+    for row in report["executives"]:
+        pending = max(int(row.get("pendientes", 0)), 0)
+        coverage_days = row.get("cobertura_dias", pending / DAILY_TARGET)
+        if coverage_days < COVERAGE_THRESHOLD_DAYS:
+            below.append((row, pending, coverage_days))
+    if not below:
+        return f"Cobertura de cartera: Todos con ≥{_int_es(COVERAGE_THRESHOLD_DAYS)} días disponibles"
+
+    display_names = _short_display_names([row for row, _, _ in below])
+    details = [
+        f"{display_names[row['name']]} bajo {_int_es(COVERAGE_THRESHOLD_DAYS)} días · "
+        f"{_int_es(pending)} pendientes ≈ {coverage_days:.1f}".replace(".", ",") + " días"
+        for row, pending, coverage_days in below
+    ]
+    if len(details) == 1:
+        return f"Cobertura de cartera: {details[0]}"
+    count_label = f"{len(details)} ejecutivo" if len(details) == 1 else f"{len(details)} ejecutivos"
+    return f"Cobertura de cartera: {count_label} bajo {_int_es(COVERAGE_THRESHOLD_DAYS)} días · " + "; ".join(details)
+
+
 def build_whatsapp_message(report: dict) -> str:
-    below_threshold = report["coverage_below_threshold_count"]
-    availability_status = (
-        "Todos con ≥10 días de datos"
-        if below_threshold == 0
-        else f"{below_threshold} ejecutivos con menos de 10 días de datos"
-    )
     lines = [
         f"👤 *Gestión Diaria de Captación | {report['period_label']}*",
         "",
@@ -373,7 +389,7 @@ def build_whatsapp_message(report: dict) -> str:
     lines.extend([
         f"*Disponibilidad:* {_int_es(report['pending_team'])} pendientes · "
         f"{_pct(report['availability_pct'], trim_zero=False)}",
-        f"*Cobertura:* {availability_status}",
+        _coverage_status(report),
     ])
     return "\n".join(lines)
 

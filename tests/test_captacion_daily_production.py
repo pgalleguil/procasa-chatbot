@@ -218,7 +218,7 @@ def test_provider_exception_is_recorded_as_failed(monkeypatch):
     assert delivery["error"] == "provider unavailable"
 
 
-def test_empty_daily_report_is_not_sent_or_retried(monkeypatch):
+def test_empty_daily_report_is_not_sent_or_retried(monkeypatch, caplog):
     monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
     monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
     monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
@@ -235,13 +235,17 @@ def test_empty_daily_report_is_not_sent_or_retried(monkeypatch):
 
     monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
     db = _db()
-    first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
+    with caplog.at_level("WARNING"):
+        first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
     second = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
     delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-20"})
     assert first["status"] == daily.DAILY_NO_DATA_STATUS
     assert second["status"] == "already_claimed"
     assert delivery["status"] == daily.DAILY_NO_DATA_STATUS
     assert calls == []
+    assert "status=skipped_no_data" in caplog.text
+    assert "report_date=2026-08-20" in caplog.text
+    assert "reason=no_applicable_executives" in caplog.text
 
 
 def test_failed_provider_is_recorded_for_diagnosis(monkeypatch):

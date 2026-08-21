@@ -495,6 +495,10 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
     try:
         report = await asyncio.to_thread(calculate_daily_report, db, report_date)
         if report.get("team_size") == 0:
+            logger.warning(
+                "[CAPTACION_DAILY_PRODUCTION] status=skipped_no_data report_date=%s reason=no_applicable_executives",
+                report_date.isoformat(),
+            )
             await asyncio.to_thread(
                 _update_daily_delivery_sync,
                 db,

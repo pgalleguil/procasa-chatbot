@@ -16,9 +16,11 @@ def test_list_has_enviado_with_date_and_time():
 
 def test_list_has_operational_column_order_and_independent_response():
     headers = LIST_TEMPLATE[LIST_TEMPLATE.index('<thead>'):LIST_TEMPLATE.index('</thead>')]
-    expected = ['Enviado', 'SLA', 'Tipo', 'Cliente', 'Propiedad', 'Estado', 'Última Gestión', 'Ejecutivo', 'Respuesta']
+    expected = ['Enviado', 'Prioridad', 'Cliente', 'Propiedad', 'Estado', 'Última Gestión', 'Ejecutivo', 'Respuesta']
     positions = [headers.index(label) for label in expected]
     assert positions == sorted(positions)
+    assert 'class="col-type"' not in headers
+    assert 'priority-type' in LIST_TEMPLATE
     assert 'class="col-response"' in LIST_TEMPLATE
     response_block = LIST_TEMPLATE[LIST_TEMPLATE.index('data-label="Respuesta"'):]
     assert 'Registrar gestión' in response_block
@@ -35,7 +37,7 @@ def test_last_management_is_history_only_and_no_fake_timestamp_without_managemen
 
 def test_list_compact_density_and_filters_remain_available():
     assert 'margin: 2px 0 8px' in LIST_TEMPLATE
-    assert 'border-spacing: 0 4px' in LIST_TEMPLATE
+    assert 'border-collapse: collapse' in LIST_TEMPLATE
     assert 'name="property_code"' in LIST_TEMPLATE
     assert 'data-auto-filter' in LIST_TEMPLATE
 

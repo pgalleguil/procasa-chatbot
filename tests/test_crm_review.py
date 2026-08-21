@@ -50,7 +50,7 @@ def test_review_app_does_not_import_production_data_or_mutation_services():
 def test_review_has_fake_cases_and_independent_response_column():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text
-    for value in ("Vencido", "Próximo a vencer", "Sin gestión", "No respondió", "Visita agendada", "Cerrado ganado"):
+    for value in ("Vencido", "Próximo · 24 min", "Sin gestión", "No respondió", "Visita agendada", "Cerrado ganado"):
         assert value in html
     header = html[html.index("<thead>"):html.index("</thead>")]
     assert header.index("Enviado") < header.index("Respuesta")

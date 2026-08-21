@@ -6,6 +6,7 @@ envío explícito solicitado por el operador en modo prueba.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -383,21 +384,34 @@ async def send_test_report(db, report: dict) -> dict:
     return {"recipient": recipient, "recipient_masked": mask_whatsapp_recipient(recipient), "message": message, "checks": checks, "provider": result}
 
 
-def ensure_daily_delivery_indexes(db) -> None:
+def _ensure_daily_delivery_indexes_sync(db) -> None:
     db[DAILY_DELIVERY_COLLECTION].create_index(
         "idempotency_key", unique=True, name="captacion_daily_delivery_idempotency"
     )
 
 
-async def _claim_daily_delivery(db, key: str, report_date: date, recipient: str) -> tuple[dict, bool]:
+async def ensure_daily_delivery_indexes(db) -> None:
+    await asyncio.to_thread(_ensure_daily_delivery_indexes_sync, db)
+
+
+def _has_provider_evidence(delivery: dict) -> bool:
+    provider = delivery.get("provider_result") or {}
+    return bool(delivery.get("provider_message_id")) or bool(provider.get("success")) or provider.get(
+        "delivery_status"
+    ) in {"accepted", "delivered", "read"}
+
+
+def _claim_daily_delivery_sync(
+    db, key: str, report_date: date, recipient: str
+) -> tuple[dict, bool]:
     collection = db[DAILY_DELIVERY_COLLECTION]
-    ensure_daily_delivery_indexes(db)
     now = datetime.now(timezone.utc)
     claim = {
         "idempotency_key": key,
         "report_type": "daily",
         "report_date": report_date.isoformat(),
         "generated_at": now,
+        "updated_at": now,
         "recipient": recipient,
         "status": "sending",
     }
@@ -406,19 +420,60 @@ async def _claim_daily_delivery(db, key: str, report_date: date, recipient: str)
         return claim, True
     except DuplicateKeyError:
         inserted = collection.find_one({"idempotency_key": key})
-    if inserted and inserted.get("status") in {"accepted", "delivered", "read", "sending"}:
+    if not inserted:
+        return claim, False
+    if inserted.get("status") in {"accepted", "delivered", "read"} or _has_provider_evidence(inserted):
         return inserted, False
-    if inserted and inserted.get("status") in {"failed", "delivery_unknown"}:
-        failed_at = _utc(inserted.get("failed_at")) or _utc(inserted.get("updated_at"))
-        if failed_at and (now - failed_at).total_seconds() < DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS:
-            return inserted, False
-        claimed = collection.find_one_and_update(
-            {"idempotency_key": key, "status": inserted.get("status")},
-            {"$set": {"status": "sending", "generated_at": now}},
-            return_document=ReturnDocument.AFTER,
-        )
-        return claimed or inserted, claimed is not None
-    return inserted, False
+
+    retryable_statuses = {"sending", "failed", "delivery_unknown"}
+    if inserted.get("status") not in retryable_statuses:
+        return inserted, False
+
+    cutoff = now - timedelta(seconds=DAILY_PRODUCTION_RETRY_COOLDOWN_SECONDS)
+    stale_conditions = [
+        {"status": "sending", "updated_at": {"$lte": cutoff}},
+        {"status": "sending", "updated_at": {"$exists": False}, "generated_at": {"$lte": cutoff}},
+        {"status": {"$in": ["failed", "delivery_unknown"]}, "failed_at": {"$lte": cutoff}},
+        {
+            "status": {"$in": ["failed", "delivery_unknown"]},
+            "failed_at": {"$exists": False},
+            "updated_at": {"$lte": cutoff},
+        },
+        {
+            "status": {"$in": ["failed", "delivery_unknown"]},
+            "failed_at": {"$exists": False},
+            "updated_at": {"$exists": False},
+            "generated_at": {"$lte": cutoff},
+        },
+    ]
+    claimed = collection.find_one_and_update(
+        {"idempotency_key": key, "$or": stale_conditions},
+        {
+            "$set": {
+                "status": "sending",
+                "generated_at": now,
+                "updated_at": now,
+                "failed_at": None,
+                "error": None,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if claimed is not None:
+        return claimed, True
+    # Another worker may have won the atomic stale-claim race.
+    current = collection.find_one({"idempotency_key": key})
+    return current or inserted, False
+
+
+async def _claim_daily_delivery(db, key: str, report_date: date, recipient: str) -> tuple[dict, bool]:
+    await ensure_daily_delivery_indexes(db)
+    return await asyncio.to_thread(_claim_daily_delivery_sync, db, key, report_date, recipient)
+
+
+def _update_daily_delivery_sync(db, key: str, fields: dict) -> None:
+    fields = {**fields, "updated_at": datetime.now(timezone.utc)}
+    db[DAILY_DELIVERY_COLLECTION].update_one({"idempotency_key": key}, {"$set": fields})
 
 
 async def send_production_daily_report(db, report_date: date | str) -> dict:
@@ -437,15 +492,17 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
     if not claimed:
         return {"status": "already_claimed", "delivery": claim}
     try:
-        report = calculate_daily_report(db, report_date)
+        report = await asyncio.to_thread(calculate_daily_report, db, report_date)
         message = build_whatsapp_message(report)
         checks = validate_reconciliation(report, message)
         provider = await send_whatsapp_message_detailed(recipient, message)
         status = "accepted" if provider.get("success") else provider.get("delivery_status", "failed")
         completed_at = datetime.now(timezone.utc)
-        db[DAILY_DELIVERY_COLLECTION].update_one(
-            {"idempotency_key": key},
-            {"$set": {
+        await asyncio.to_thread(
+            _update_daily_delivery_sync,
+            db,
+            key,
+            {
                 "status": status,
                 "provider_message_id": provider.get("provider_message_id"),
                 "provider_http_status": provider.get("http_status"),
@@ -453,13 +510,15 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
                 "sent_at": completed_at if provider.get("success") else None,
                 "failed_at": None if provider.get("success") else completed_at,
                 "checks": checks,
-            }},
+            },
         )
         return {"status": status, "delivery": claim, "provider": provider, "checks": checks}
     except Exception as exc:
-        db[DAILY_DELIVERY_COLLECTION].update_one(
-            {"idempotency_key": key},
-            {"$set": {"status": "failed", "error": str(exc), "failed_at": datetime.now(timezone.utc)}},
+        await asyncio.to_thread(
+            _update_daily_delivery_sync,
+            db,
+            key,
+            {"status": "failed", "error": str(exc), "failed_at": datetime.now(timezone.utc)},
         )
         raise
 

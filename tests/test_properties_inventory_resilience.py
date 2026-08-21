@@ -106,8 +106,8 @@ def test_timeout_returns_stale_payload_without_replacing_cache(monkeypatch):
 
     assert result["inventory"]["active"] == 3
     assert result["meta"]["data_status"] == "stale"
-    assert result["meta"]["degraded"] is True
-    assert result["meta"]["degraded_reason"] == "mongo_timeout"
+    assert result["meta"]["degraded"] is False
+    assert result["meta"]["refresh"] == "scheduled"
     assert result["meta"]["stale_age_seconds"] > leads_service.CACHE_TTL
     assert leads_service.L1_CACHE[key][0] == original_timestamp - leads_service.CACHE_TTL - 30
     assert leads_service.L1_CACHE[key][1] == original_payload

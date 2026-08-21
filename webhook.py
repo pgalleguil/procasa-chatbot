@@ -1011,6 +1011,27 @@ def _overview_server_timing(timing: dict) -> str:
     return ", ".join(parts)
 
 
+def _demand_capture_server_timing(timing: dict) -> str:
+    parts = []
+    if timing.get("cache"):
+        parts.append(f'cache;desc="{timing["cache"]}"')
+    for stage in ("base_leads", "base_properties", "base_network", "base_wall",
+                  "leads_aggregate", "lead_codes", "property_find", "contract_build"):
+        duration = timing.get(f"demand_capture.{stage}_ms")
+        if duration is not None:
+            parts.append(f"demand_capture.{stage};dur={duration}")
+    for metric in ("base_docs", "base_lead_bson_bytes", "base_property_bson_bytes"):
+        value = timing.get(f"demand_capture.{metric}")
+        if value is not None:
+            parts.append(f"demand_capture.{metric};desc=\"{value}\"")
+    total = timing.get("demand_capture.total_ms")
+    if total is not None:
+        parts.append(f"demand_capture.total;dur={total}")
+    if timing.get("demand_capture.timeout_stage"):
+        parts.append(f'demand_capture.timeout_stage;desc="{timing["demand_capture.timeout_stage"]}"')
+    return ", ".join(parts)
+
+
 @app.get("/demo/leads-intelligence", response_class=HTMLResponse)
 async def public_leads_intelligence_demo(request: Request):
     """Temporary, read-only public shell for the Executive Summary only."""
@@ -1190,6 +1211,7 @@ async def api_leads_dashboard_properties_inventory(
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    response.headers["Server-Timing"] = _demand_capture_server_timing(timing)
     return response
 
 
@@ -4540,31 +4562,45 @@ async def cache_prewarmer_loop():
             local_warm_in_progress = True
             loop = asyncio.get_running_loop()
             t0 = time.time()
-            # Warmer pool dedicado: evita competir con workers de procesamiento.
-            # Los nombres de preset generan la misma clave canónica que las
-            # peticiones del frontend, incluso cuando este envía fechas explícitas.
-            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"), ("30d", "30 días"))
-            for preset, label in warm_specs:
+            # Prewarm únicamente el preset operativo inicial (30 días). Las
+            # demás ventanas se calculan bajo demanda y quedan protegidas por
+            # SWR; recalcularlas aquí solo competía con el primer request real.
+            from analytics.commercial_periods import local_today, preset_range
+            warm_start, warm_end = preset_range("30d", local_today())
+            warm_ps = warm_start.strftime("%Y-%m-%d")
+            warm_pe = warm_end.strftime("%Y-%m-%d")
+            warm_jobs = (
+                ("overview", lambda: get_leads_dashboard_overview(
+                    period_start=warm_ps, period_end=warm_pe,
+                    compare="auto", period_preset="30d", timing={}
+                )),
+                ("operations", lambda: get_leads_operational_dashboard(
+                    period_start=warm_ps, period_end=warm_pe,
+                    compare="auto", period_preset="30d", timing={}
+                )),
+                ("properties", lambda: get_properties_inventory_dashboard(
+                    period_start=warm_ps, period_end=warm_pe, filters={}, timing={}
+                )),
+            )
+            for label, job in warm_jobs:
                 await asyncio.wait_for(
-                    loop.run_in_executor(
-                        _WARMER_THREAD_POOL,
-                        lambda p=preset: get_leads_dashboard_overview(
-                            compare="auto", period_preset=p,
-                        ),
-                    ),
-                    timeout=25.0,
+                    loop.run_in_executor(_WARMER_THREAD_POOL, job),
+                    timeout=35.0,
                 )
-                logger.info("[CACHE_WARMER] overview %s precalentado", label)
+                logger.info("[CACHE_WARMER] %s prewarmed preset=30d", label)
             elapsed_ms = (time.time() - t0) * 1000
             logger.debug(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
             # Liberar lock explícitamente tras warm exitoso.
             await loop_ref.run_in_executor(_WORKER_THREAD_POOL, lambda: db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}}))
+            return
         except asyncio.TimeoutError:
-            logger.warning("[CACHE_WARMER] Timeout >8s; se omite este ciclo para evitar jitter")
+            logger.warning("[CACHE_WARMER] Timeout >25s; se omite este ciclo para evitar jitter")
+            return
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.warning(f"[CACHE_WARMER] Error al pre-warm cache: {e}")
+            return
         finally:
             local_warm_in_progress = False
         await asyncio.sleep(60)

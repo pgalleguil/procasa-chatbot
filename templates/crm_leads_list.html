@@ -507,6 +507,7 @@
             outline-offset: -2px;
             z-index: 1;
         }
+        .progress-segment.is-active { filter: brightness(1.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
 
         .segment-nuevo { background: var(--state-unattended); }
         .segment-gestion { background: var(--state-management); }
@@ -693,15 +694,15 @@
             }
 
             .management-panel-heading {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
+                flex-direction: row;
+                align-items: center;
+                gap: 6px;
             }
 
-            .management-panel-result { align-self: flex-start; }
+            .management-panel-result { align-self: center; }
 
             .management-panel-percent {
-                font-size: 1.7rem;
+                font-size: 1.25rem;
             }
 
             .state-metrics-grid {
@@ -898,29 +899,32 @@
         }
 
         /* Operational summary: one compact state bar instead of four large cards. */
-        .temperature-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
-        .temperature-cards > .col { padding: 0; }
-        .temperature-cards .summary-card { min-height: 72px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
-        .temperature-cards .summary-value { font-size: 1.35rem; line-height: 1; }
-        .temperature-cards .summary-label { font-size: .72rem; margin-top: 4px; }
-        .temperature-cards .summary-meta { display: none; }
-        .temperature-cards .summary-card > i { font-size: 1.15rem; }
-        .operational-alerts { display: flex !important; margin: 0 0 8px; }
+        .temperature-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0 0 12px; }
+        .temperature-cards > .col { width: 100%; padding: 0; }
+        .temperature-cards .summary-card { min-height: 112px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: relative; transition: border-color .17s ease, box-shadow .17s ease, background-color .17s ease; }
+        .temperature-cards .summary-card:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,.14); }
+        .temperature-cards .summary-card.is-active { background: rgba(99,102,241,.12); border-color: var(--accent-color); box-shadow: 0 0 0 1px rgba(99,102,241,.2); }
+        .temperature-cards .summary-card.is-active::after { content: ''; position: absolute; left: 16px; bottom: 9px; width: 24px; height: 3px; border-radius: 999px; background: var(--accent-color); }
+        .temperature-cards .summary-value { font-size: 1.72rem; line-height: 1; }
+        .temperature-cards .summary-label { font-size: .76rem; margin-top: 5px; text-transform: uppercase; letter-spacing: .04em; }
+        .temperature-cards .summary-meta { display: block; margin-top: 7px; color: var(--text-secondary); font-size: .72rem; font-weight: 600; }
+        .temperature-cards .summary-card > i { font-size: 1.25rem; opacity: .28; }
+        .operational-alerts { display: flex !important; margin: -4px 0 12px; }
         .operational-alert { padding: 6px 10px; }
         .operational-alert strong { font-size: .75rem; }
-        .management-panel { padding: 8px 10px; margin-bottom: 10px; }
+        .management-panel { padding: 10px 14px; margin-bottom: 12px; }
         .management-panel-heading { display: flex; align-items: center; justify-content: space-between; }
         .management-panel-title { font-size: .78rem; }
         .management-panel-context, .management-panel-formula { display: none; }
         .management-panel-count { font-size: .68rem; margin-top: 2px; }
-        .management-panel-result { display: flex; align-items: baseline; gap: 5px; }
-        .management-panel-percent { font-size: 1.25rem; }
-        .segmented-progress { display: flex; height: 8px; margin-top: 7px; }
+        .management-panel-result { display: flex; align-items: baseline; gap: 5px; padding-right: 2px; }
+        .management-panel-percent { font-size: 1.35rem; }
+        .segmented-progress { display: flex; height: 11px; margin-top: 9px; }
         .state-metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 5px; }
         .state-metric { padding: 0; min-height: 0; }
         .state-metric-main { padding: 4px 7px; gap: 6px; }
         .state-metric-label { font-size: .68rem; font-weight: 600; }
-        .state-metric-value { font-size: .62rem; line-height: 1; }
+        .state-metric-value { font-size: .68rem; line-height: 1; }
         .state-breakdown { display: none; }
 
         .results-count { font-weight: 650; color: var(--text-primary); }
@@ -1792,10 +1796,15 @@
         @media (max-width: 480px) {
             .temperature-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
             .temperature-cards > .col:first-child { grid-column: auto; }
-            .temperature-cards .summary-card { min-height: 74px; padding: 9px 8px; }
+            .temperature-cards .summary-card { min-height: 70px; padding: 8px; }
             .temperature-cards .summary-value { font-size: 1.15rem; }
             .temperature-cards .summary-label { font-size: .6rem; }
+            .temperature-cards .summary-meta { display: none; }
             .temperature-cards .summary-card > i { display: none; }
+            .management-panel { padding: 7px 10px; margin-bottom: 10px; }
+            .management-panel .segmented-progress { height: 9px; margin-top: 5px; }
+            .management-panel .state-metrics-grid { margin-top: 3px; }
+            .management-panel .state-metric-main { padding: 2px 4px; }
             .filter-bar {
                 grid-template-columns: 1fr;
             }
@@ -1882,7 +1891,7 @@
             {% set selected_state = request.query_params.get('estado', '') %}
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
             {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads' if selected_temperature == 'COLD' else 'Todos los leads' %}
-            {% set management_title = 'Gestión de Leads Hot' if selected_temperature == 'HOT' else 'Gestión de Leads' if selected_temperature == 'COLD' else 'Gestión de todos los leads' %}
+            {% set management_title = 'Gestión de todos los leads' %}
             {% set state_metrics = [
                 ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
                 ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
@@ -1898,7 +1907,7 @@
                         <div>
                             <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
                             <div class="summary-label">Total leads</div>
-                            <div class="summary-meta">Universo completo de {{ executive_label }}</div>
+                            <div class="summary-meta">{{ kpis.managed }} gestionados · {{ kpis.nuevo }} sin atender</div>
                         </div>
                         <i class="fa-solid fa-users fa-2x text-primary opacity-25"></i>
                     </a>
@@ -1909,7 +1918,7 @@
                         <div>
                             <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
                             <div class="summary-label">{{ lead_temperature_label('HOT') }} {{ lead_temperature_icon('HOT') }}</div>
-                            <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total</div>
+                            <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total · {{ kpis.nuevo_hot }} sin atender</div>
                         </div>
                         {{ lead_temperature_icon('HOT') }}
                     </a>
@@ -1920,14 +1929,14 @@
                         <div>
                             <div class="summary-value" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
                             <div class="summary-label">Leads</div>
-                            <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total</div>
+                            <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total · {{ kpis.nuevo_cold }} sin atender</div>
                         </div>
                         <i class="fa-solid fa-user fa-2x text-secondary opacity-25"></i>
                     </a>
                 </div>
             </div>
 
-            {% if current_ejecutivo == 'Todos' %}
+            {% if current_ejecutivo == 'Todos' and kpis.sin_asignar_global > 0 %}
             <div class="operational-alerts" aria-label="Indicadores operativos">
                 <a href="{{ card_urls.unassigned }}" class="operational-alert {{ 'is-active' if selected_state == 'UNASSIGNED' }}">
                     <i class="fa-solid fa-user-slash text-warning"></i>
@@ -1955,8 +1964,8 @@
                 <div class="segmented-progress" role="group" aria-label="Distribución de estados">
                     {% for key, state, label, count, percentage, hot_count, cold_count in state_metrics %}
                     {% if count > 0 %}
-                    <a href="{{ card_urls[state|lower] }}"
-                        class="progress-segment segment-{{ key }}"
+                    <a href="{{ filter_urls.state if selected_state == state else card_urls[key] }}"
+                        class="progress-segment segment-{{ key }} {{ 'is-active' if selected_state == state }}"
                         style="width: {{ percentage }}%;" title="{{ label }}: {{ count }} de {{ kpis.scope_total }} ({{ pct(percentage) }}%)"
                         aria-label="Filtrar {{ label }}: {{ count }} de {{ kpis.scope_total }}"></a>
                     {% endif %}
@@ -1966,11 +1975,11 @@
                 <div class="state-metrics-grid">
                     {% for key, state, label, count, percentage, hot_count, cold_count in state_metrics %}
                     <div class="state-metric {{ 'is-active' if selected_state == state }}">
-                        <a href="{{ card_urls[state|lower] }}" class="state-metric-main">
+                        <a href="{{ filter_urls.state if selected_state == state else card_urls[key] }}" class="state-metric-main">
                             <span class="state-metric-dot segment-{{ key }}"></span>
                             <span>
                                 <span class="state-metric-label">{{ label }}</span>
-                                <span class="state-metric-value"><span data-target="{{ count }}">0</span> leads</span>
+                                <span class="state-metric-value"><span data-target="{{ count }}">0</span> · {{ pct(percentage) }}%</span>
                             </span>
                         </a>
                         {% if selected_temperature == 'Todos' %}

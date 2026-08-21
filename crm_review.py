@@ -118,29 +118,72 @@ def _review_url(**params: str) -> str:
     return "/crm-leads-review" + (f"?{urlencode(clean)}" if clean else "")
 
 
-def _list_urls() -> dict:
-    urls = {"clear": _review_url(view="list"), "temperature": _review_url(view="list"),
-            "state": _review_url(view="list"), "executive": _review_url(view="list"),
-            "search": _review_url(view="list"), "order": _review_url(view="list")}
+def _list_urls(request: Request, *, temperature=None, state=None, order=None) -> dict:
+    base = {key: value for key, value in request.query_params.items() if key not in {"view", "page", "temperatura", "estado", "orden", "ejecutivo", "busqueda", "property_code"}}
+    base["view"] = "list"
+    current = {key: value for key, value in request.query_params.items() if key in {"temperatura", "estado", "orden", "ejecutivo", "busqueda", "property_code"} and value}
+
+    def url(**changes):
+        values = {**base, **current}
+        for key, value in changes.items():
+            if value in (None, "", "Todos"):
+                values.pop(key, None)
+            else:
+                values[key] = value
+        return _review_url(**values)
+
+    urls = {"clear": _review_url(view="list"), "temperature": url(temperatura=None),
+            "state": url(estado=None), "executive": url(ejecutivo=None),
+            "search": url(busqueda=None, property_code=None), "order": url(orden=None)}
     for key in ("total", "hot", "cold", "unassigned", "nuevo", "gestion", "visita", "cerrado",
                 "nuevo_hot", "nuevo_cold", "gestion_hot", "gestion_cold", "visita_hot", "visita_cold",
                 "cerrado_hot", "cerrado_cold"):
-        urls[key] = _review_url(view="list")
+        if key == "total": urls[key] = url(temperatura=None)
+        elif key == "hot": urls[key] = url(temperatura="HOT")
+        elif key == "cold": urls[key] = url(temperatura="COLD")
+        elif key == "unassigned": urls[key] = url(estado="UNASSIGNED")
+        else:
+            state_key = {"nuevo": "NEW", "gestion": "GRUPO_GESTION", "visita": "GRUPO_VISITA", "cerrado": "GRUPO_CERRADO"}.get(key.split("_")[0])
+            urls[key] = url(estado=state_key) if state_key else url()
     return urls
 
 
 def _list_context(request: Request) -> dict:
-    kpis = {"total": len(DEMO_LEADS), "hot": 4, "cold": 5, "hot_percent": 44.4, "cold_percent": 55.6,
-            "nuevo": 5, "nuevo_percent": 55.6, "gestion": 2, "gestion_percent": 22.2,
-            "visita": 1, "visita_percent": 11.1, "cerrado": 1, "cerrado_percent": 11.1, "managed": 4,
-            "managed_percent": 44.4, "scope_total": len(DEMO_LEADS), "sin_asignar_global": 0}
+    params = request.query_params
+    temperature = params.get("temperatura", "Todos")
+    state = params.get("estado", "")
+    leads = [lead for lead in DEMO_LEADS
+             if temperature in ("", "Todos") or lead["lead_temperature_effective"] == temperature]
+    if state == "NEW": leads = [lead for lead in leads if lead["estado"] == "NEW"]
+    elif state == "GRUPO_GESTION": leads = [lead for lead in leads if lead["estado"] == "GRUPO_GESTION"]
+    elif state == "GRUPO_VISITA": leads = [lead for lead in leads if lead["estado"] == "GRUPO_VISITA"]
+    elif state == "GRUPO_CERRADO": leads = [lead for lead in leads if lead["estado"] == "CLOSED_WON"]
+    elif state == "UNASSIGNED": leads = []
+    # KPI y barra representan el mismo universo base aunque se seleccione una
+    # temperatura o un estado; solo las filas visibles cambian.
+    scope = list(DEMO_LEADS)
+    counts = {key: sum(1 for lead in scope if lead["estado"] == value) for key, value in {
+        "nuevo": "NEW", "gestion": "GRUPO_GESTION", "visita": "GRUPO_VISITA", "cerrado": "CLOSED_WON"}.items()}
+    total = len(scope)
+    hot = sum(1 for lead in scope if lead["lead_temperature_effective"] == "HOT")
+    cold = total - hot
+    def pct(value): return round(value * 100 / total, 1) if total else 0
+    kpis = {"total": total, "hot": hot, "cold": cold, "hot_percent": pct(hot), "cold_percent": pct(cold),
+            **{f"{key}_percent": pct(value) for key, value in counts.items()}, **counts,
+            "managed": counts["gestion"] + counts["visita"] + counts["cerrado"],
+            "managed_percent": pct(counts["gestion"] + counts["visita"] + counts["cerrado"]),
+            "scope_total": total, "sin_asignar_global": 0,
+            "nuevo_hot": sum(1 for lead in scope if lead["estado"] == "NEW" and lead["lead_temperature_effective"] == "HOT"),
+            "nuevo_cold": sum(1 for lead in scope if lead["estado"] == "NEW" and lead["lead_temperature_effective"] == "COLD"),
+            "gestion_hot": 0, "gestion_cold": counts["gestion"], "visita_hot": 0, "visita_cold": counts["visita"],
+            "cerrado_hot": counts["cerrado"], "cerrado_cold": 0}
     return {
-        "request": request, "leads": DEMO_LEADS, "kpis": kpis, "user_role": "supervisor",
+        "request": request, "leads": leads, "kpis": kpis, "user_role": "supervisor",
         "user_name": "Supervisor Demo", "can_administer_leads": True, "executives": ["Ejecutivo Demo"],
-        "current_ejecutivo": "Todos", "current_temperatura": "Todos", "crm_version": 0,
-        "partial": False, "review_mode": True, "card_urls": _list_urls(), "filter_urls": _list_urls(),
+        "current_ejecutivo": params.get("ejecutivo", "Todos"), "current_temperatura": temperature, "crm_version": 0,
+        "partial": False, "review_mode": True, "card_urls": _list_urls(request), "filter_urls": _list_urls(request),
         "pagination_base_url": _review_url(view="list") + "&", "pagination": {
-            "total_count": len(DEMO_LEADS), "current_page": 1, "total_pages": 1,
+            "total_count": len(leads), "current_page": 1, "total_pages": 1,
             "has_more": False, "has_prev": False, "limit": 15,
         },
     }

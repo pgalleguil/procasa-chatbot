@@ -3,8 +3,8 @@
 
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
-    const dateResults = ['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'];
-    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER', 'CLOSED_WON', 'CLOSED_LOST', 'DISCARDED_VALID_REASON'];
+    const dateResults = [];
+    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];
     const channelResults = ['CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'];
     const $ = id => document.getElementById(id);
     const requestId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -24,13 +24,22 @@
         setExtra('quickChannelField', channelResults.includes(resultType));
         setExtra('quickDateField', dateResults.includes(resultType));
         setExtra('quickReasonField', reasonResults.includes(resultType));
+        const reason = $('quickReason');
+        if (reason) {
+            const invalidReasons = new Set(['Número no existe', 'Número equivocado', 'No corresponde al cliente']);
+            [...reason.options].forEach(option => {
+                option.hidden = resultType === 'INVALID_NUMBER'
+                    ? (!invalidReasons.has(option.value) && option.value !== '')
+                    : invalidReasons.has(option.value);
+            });
+            reason.value = '';
+        }
         if ($('quickManagementSave')) $('quickManagementSave').disabled = false;
     }
 
     function valid() {
         if (!state.resultType) return false;
         if (dateResults.includes(state.resultType) && !$('quickNextDate')?.value) return false;
-        if (reasonResults.includes(state.resultType) && !$('quickReason')?.value.trim()) return false;
         return true;
     }
 
@@ -60,6 +69,12 @@
         document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
         ['quickChannelField', 'quickDateField', 'quickReasonField'].forEach(id => setExtra(id, false));
         $('quickManagementSave').disabled = true;
+        const detail = $('quickGoDetail');
+        if (detail) {
+            const returnUrl = `${window.location.pathname}${window.location.search}`;
+            const detailUrl = context.detailUrl || context.row?.dataset?.leadUrl || '#';
+            detail.href = detailUrl === '#' ? '#' : `${detailUrl}${detailUrl.includes('?') ? '&' : '?'}return_url=${encodeURIComponent(returnUrl)}`;
+        }
         bootstrap.Modal.getOrCreateInstance($('quickManagementModal')).show();
     }
 

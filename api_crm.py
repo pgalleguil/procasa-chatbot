@@ -594,7 +594,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # 3. TRAER LEADS DESDE MONGO CON PAGINACION REAL
     # ------------------------------------------------------------------
     # "Más Recientes" debe ordenar por fecha de asignación del ejecutivo.
-    # Usamos lifecycle.assigned_at como fuente principal y dejamos fallback a fecha_asignacion/created_at.
+    # La asignación comercial es la única fecha válida para este listado:
+    # ciclo activo, luego lifecycle.assigned_at y finalmente fecha_asignacion.
     # -----------------------------------------------------------------------
     # 3b. ORDENAMIENTO INTELIGENTE
     # El orden varía según el filtro activo:
@@ -616,6 +617,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     _sort_map = {
         "sla_urgente": "sla_priority",
         "recientes": "recent_assigned",
+        "antiguos": "oldest_assigned",
         "antiguos_sin_atender": "oldest_unmanaged",
         "sla_por_vencer": "sla_priority",
         "mayor_sin_gestion": "oldest_unmanaged",
@@ -624,6 +626,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # Canonical names
         "sla_priority": "sla_priority",
         "recent_assigned": "recent_assigned",
+        "oldest_assigned": "oldest_assigned",
         "oldest_unmanaged": "oldest_unmanaged",
     }
     ordenar_por = _sort_map.get(ordenar_por, "recent_assigned")
@@ -731,6 +734,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 {"$convert": {"input": "$fecha_asignacion", "to": "date", "onError": None, "onNull": None}},
             ]},
         }},
+        {"$set": {
+            "_assigned_at": {"$ifNull": ["$_cycle_assigned_at", "$_legacy_assigned_at"]},
+        }},
         # SLA overdue minutes computed in a separate $set stage.  Positive =
         # overdue, negative = in-plazo.  Assigned + unmanaged only.
         {"$set": {
@@ -752,7 +758,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # Build sort spec from the canonical cycle fields
     _use_python_sla_sort = False
     if ordenar_por == "recent_assigned":
-        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+        _sort_spec = {"_has_assigned": 1, "_assigned_at": -1, "_id": -1}
+    elif ordenar_por == "oldest_assigned":
+        _sort_spec = {"_has_assigned": 1, "_assigned_at": 1, "_id": 1}
     elif ordenar_por == "sla_priority":
         # Include all leads; business-minute sort in Python groups
         # unmanaged+overdue first, managed/closed last.
@@ -781,7 +789,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_id": 1,
         }
     else:
-        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+        _sort_spec = {"_has_assigned": 1, "_assigned_at": -1, "_id": -1}
 
     canonical_pipeline.extend([
         {"$sort": _sort_spec},
@@ -1168,7 +1176,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                      or lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo"))
         sort_ts = ((current_cycle or {}).get("assigned_at")
                    or lead.get("effective_assigned_at") or lifecycle.get("assigned_at")
-                   or lead.get("fecha_asignacion") or lead.get("created_at"))
+                   or lead.get("fecha_asignacion"))
         
         if last_ts:
             try: 

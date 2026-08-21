@@ -53,7 +53,7 @@ def test_review_has_fake_cases_and_independent_response_column():
     for value in ("Vencido", "Próximo · 24 min", "Sin gestión", "No respondió", "Visita agendada", "Cerrado ganado"):
         assert value in html
     header = html[html.index("<thead>"):html.index("</thead>")]
-    assert header.index("Enviado") < header.index("Respuesta")
+    assert header.index("Asignado") < header.index("Respuesta")
     assert 'data-label="Respuesta"' in html
 
 
@@ -61,8 +61,11 @@ def test_review_list_has_six_operational_columns_and_merged_cells():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text
     header = html[html.index("<thead>"):html.index("</thead>")]
-    expected = ("Enviado", "Prioridad", "Lead", "Gestión", "Ejecutivo", "Respuesta")
-    positions = [header.index(label) for label in expected]
+    expected = ("Asignado", "Prioridad", "Tipo", "Lead", "Gestión", "Respuesta")
+    positions = [header.index(fragment) for fragment in (
+        '<th class="col-sent">Asignado', '<th class="col-priority">',
+        '<th class="col-type">Tipo', '<th class="col-lead">Lead',
+        '<th class="col-management">Gestión', '<th class="col-response">Respuesta')]
     assert positions == sorted(positions)
     assert len(__import__("re").findall(r"<th\b", header)) == 6
     assert 'data-label="Cliente"' not in html
@@ -70,6 +73,17 @@ def test_review_list_has_six_operational_columns_and_merged_cells():
     assert 'data-label="Estado"' not in html
     assert 'data-label="Última Gestión"' not in html
     assert 'Gestionar' in html
+
+
+def test_review_cards_and_state_bar_keep_real_query_filters():
+    with TestClient(app) as client:
+        hot = client.get('/crm-leads-review?view=list&temperatura=HOT')
+        managed = client.get('/crm-leads-review?view=list&estado=GRUPO_GESTION')
+    assert hot.status_code == managed.status_code == 200
+    assert 'Cliente Demo 01' in hot.text and 'Cliente Demo 03' not in hot.text
+    assert 'Cliente Demo 05' in managed.text and 'Cliente Demo 01' not in managed.text
+    assert 'temperatura=HOT' in hot.text
+    assert 'estado=GRUPO_GESTION' in managed.text
 
 
 def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():

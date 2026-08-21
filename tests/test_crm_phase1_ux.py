@@ -9,23 +9,26 @@ WEBHOOK_SOURCE = (ROOT / "webhook.py").read_text(encoding="utf-8")
 
 
 def test_list_has_enviado_with_date_and_time():
-    assert '<th class="col-sent">Enviado</th>' in LIST_TEMPLATE
+    assert '<th class="col-sent">Asignado</th>' in LIST_TEMPLATE
     assert 'lead.effective_sent_date' in LIST_TEMPLATE
     assert 'lead.effective_sent_time' in LIST_TEMPLATE
     assert 'sent-date' in LIST_TEMPLATE and 'sent-hour' in LIST_TEMPLATE
-    assert 'sent-source' in LIST_TEMPLATE
+    assert 'sent-source' in LIST_TEMPLATE and 'display: none' in LIST_TEMPLATE
 
 
 def test_list_has_operational_column_order_and_independent_response():
     headers = LIST_TEMPLATE[LIST_TEMPLATE.index('<thead>'):LIST_TEMPLATE.index('</thead>')]
-    expected = ['Enviado', 'Prioridad', 'Lead', 'Gestión', 'Ejecutivo', 'Respuesta']
-    positions = [headers.index(label) for label in expected]
+    expected = ['Asignado', 'Prioridad', 'Tipo', 'Lead', 'Gestión', 'Respuesta']
+    positions = [headers.index(fragment) for fragment in (
+        '<th class="col-sent">Asignado', '<th class="col-priority">',
+        '<th class="col-type">Tipo', '<th class="col-lead">Lead',
+        '<th class="col-management">Gestión', '<th class="col-response">Respuesta')]
     assert positions == sorted(positions)
     assert 'class="col-client"' not in headers
     assert 'class="col-property"' not in headers
     assert 'class="col-state"' not in headers
     assert 'class="col-last-action"' not in headers
-    assert 'priority-type' in LIST_TEMPLATE
+    assert 'col-type' in LIST_TEMPLATE and 'Lead Hot' in LIST_TEMPLATE
     assert 'class="col-response"' in LIST_TEMPLATE
     response_block = LIST_TEMPLATE[LIST_TEMPLATE.index('data-label="Respuesta"'):]
     assert 'Gestionar' in response_block
@@ -34,7 +37,7 @@ def test_list_has_operational_column_order_and_independent_response():
 def test_last_management_is_history_only_and_no_fake_timestamp_without_management():
     assert 'data-label="Gestión"' in LIST_TEMPLATE
     history_start = LIST_TEMPLATE.index('<td class="col-management" data-label="Gestión">')
-    history_block = LIST_TEMPLATE[history_start:LIST_TEMPLATE.index('<td class="col-executive"', history_start)]
+    history_block = LIST_TEMPLATE[history_start:LIST_TEMPLATE.index('<td class="col-response"', history_start)]
     assert 'Registrar gestión' not in history_block
     assert '{% if lead.gestionado %}' in history_block
     assert 'Sin gestión' in history_block
@@ -42,7 +45,7 @@ def test_last_management_is_history_only_and_no_fake_timestamp_without_managemen
 
 def test_list_compact_density_and_filters_remain_available():
     assert 'margin: 2px 0 8px' in LIST_TEMPLATE
-    assert 'border-collapse: collapse' in LIST_TEMPLATE
+    assert 'border-collapse: separate' in LIST_TEMPLATE
     assert 'name="property_code"' in LIST_TEMPLATE
     assert 'data-auto-filter' in LIST_TEMPLATE
 
@@ -56,9 +59,9 @@ def test_list_toolbar_keeps_backend_search_contracts_separate():
 
 def test_list_priority_and_management_have_single_operational_hierarchy():
     assert 'priority-sla' in LIST_TEMPLATE
-    assert 'priority-type' in LIST_TEMPLATE
+    assert 'col-type' in LIST_TEMPLATE
     management_start = LIST_TEMPLATE.index('<td class="col-management" data-label="Gestión">')
-    management_block = LIST_TEMPLATE[management_start:LIST_TEMPLATE.index('<td class="col-executive"', management_start)]
+    management_block = LIST_TEMPLATE[management_start:LIST_TEMPLATE.index('<td class="col-response"', management_start)]
     assert '{{ lead.estado_badge }}' in management_block
     assert 'lead.estado_resultado' not in management_block
     assert 'Sin gestión' in management_block
@@ -76,7 +79,7 @@ def test_mobile_list_is_one_uniform_card_with_operational_footer():
     mobile_css = LIST_TEMPLATE[LIST_TEMPLATE.index('@media (max-width: 768px)'):]
     assert 'background: transparent !important' in mobile_css
     assert 'grid-row: 1' in mobile_css
-    assert 'grid-row: 4' in mobile_css
+    assert 'grid-row: 5' in mobile_css
     assert 'width: 116px; min-height: 42px' in mobile_css
     assert 'Última: Sin gestión' in LIST_TEMPLATE
     assert 'Última: {{ lead.ultima_accion_titulo }}' in LIST_TEMPLATE
@@ -89,6 +92,19 @@ def test_sent_timestamp_does_not_use_created_at_as_delivery():
     assert 'effective_sent_source = "Asignación"' in API_SOURCE
 
 
+def test_assignment_sort_contract_uses_cycle_then_legacy_and_never_created_at():
+    sort_block = API_SOURCE[API_SOURCE.index('_sort_map ='):API_SOURCE.index('NEW_STAGES =')]
+    assert 'oldest_assigned' in sort_block
+    assert 'recent_assigned' in sort_block
+    pipeline_block = API_SOURCE[API_SOURCE.index('canonical_pipeline ='):API_SOURCE.index('# Pagination appended')]
+    assert '"_assigned_at"' in pipeline_block
+    sort_specs = API_SOURCE[API_SOURCE.index('if ordenar_por == "recent_assigned"'):API_SOURCE.index('canonical_pipeline.extend')]
+    assert 'created_at' not in sort_specs
+    assert 'Asignados más recientes' in LIST_TEMPLATE
+    assert 'Asignados más antiguos' in LIST_TEMPLATE
+    assert 'Sin gestionar más antiguos' in LIST_TEMPLATE
+
+
 def test_quick_management_is_visible_and_uses_canonical_endpoint():
     assert 'data-quick-management' in LIST_TEMPLATE
     assert 'Registrar gestión' in LIST_TEMPLATE
@@ -99,9 +115,10 @@ def test_quick_management_is_visible_and_uses_canonical_endpoint():
 
 def test_quick_management_has_progressive_disclosure_and_friendly_results():
     shared_modal = (ROOT / "templates" / "partials" / "crm_quick_management_modal.html").read_text(encoding="utf-8")
-    for label in ('No respondió', 'Mensaje enviado / esperando respuesta', 'Contactado',
-                  'Requiere seguimiento', 'Visita agendada', 'No interesado', 'Número inválido'):
+    for label in ('No respondió', 'Mensaje enviado', 'Contactado', 'No interesado', 'Número inválido'):
         assert label in shared_modal
+    assert 'Requiere seguimiento' not in shared_modal
+    assert 'Visita agendada' not in shared_modal
     assert 'quickChannelField' in LIST_TEMPLATE
     assert 'quickDateField' in LIST_TEMPLATE
     assert 'quickReasonField' in LIST_TEMPLATE
@@ -145,8 +162,7 @@ def test_shared_component_uses_canonical_contract_and_progressive_fields():
     assert "idempotency_key: submittedId" in shared_js
     assert "Este lead cambió de asignación. Actualizamos su información." in shared_js
     assert "closeOnStale" in shared_js
-    for label in ('No respondió', 'Mensaje enviado / esperando respuesta', 'Contactado',
-                  'Requiere seguimiento', 'Visita agendada', 'No interesado', 'Número inválido'):
+    for label in ('No respondió', 'Mensaje enviado', 'Contactado', 'No interesado', 'Número inválido'):
         assert label in shared_modal
     assert "partials/crm_quick_management_modal.html" in LIST_TEMPLATE
     assert "js/crm_quick_management.js" in LIST_TEMPLATE

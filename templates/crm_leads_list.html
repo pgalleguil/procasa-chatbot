@@ -898,15 +898,25 @@
         }
 
         /* Operational summary: one compact state bar instead of four large cards. */
-        .temperature-cards, .operational-alerts { display: none !important; }
-        .management-panel { padding: 6px 10px; margin-bottom: 10px; }
-        .management-panel-heading { display: none; }
-        .management-panel-title { font-size: .82rem; }
+        .temperature-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
+        .temperature-cards > .col { padding: 0; }
+        .temperature-cards .summary-card { min-height: 72px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; }
+        .temperature-cards .summary-value { font-size: 1.35rem; line-height: 1; }
+        .temperature-cards .summary-label { font-size: .72rem; margin-top: 4px; }
+        .temperature-cards .summary-meta { display: none; }
+        .temperature-cards .summary-card > i { font-size: 1.15rem; }
+        .operational-alerts { display: flex !important; margin: 0 0 8px; }
+        .operational-alert { padding: 6px 10px; }
+        .operational-alert strong { font-size: .75rem; }
+        .management-panel { padding: 8px 10px; margin-bottom: 10px; }
+        .management-panel-heading { display: flex; align-items: center; justify-content: space-between; }
+        .management-panel-title { font-size: .78rem; }
         .management-panel-context, .management-panel-formula { display: none; }
         .management-panel-count { font-size: .68rem; margin-top: 2px; }
-        .management-panel-result { display: none; }
-        .segmented-progress { display: none; }
-        .state-metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 0; }
+        .management-panel-result { display: flex; align-items: baseline; gap: 5px; }
+        .management-panel-percent { font-size: 1.25rem; }
+        .segmented-progress { display: flex; height: 8px; margin-top: 7px; }
+        .state-metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 5px; }
         .state-metric { padding: 0; min-height: 0; }
         .state-metric-main { padding: 4px 7px; gap: 6px; }
         .state-metric-label { font-size: .68rem; font-weight: 600; }
@@ -928,8 +938,8 @@
         .crm-table {
             width: 100%;
             table-layout: fixed;
-            border-collapse: collapse;
-            border-spacing: 0;
+            border-collapse: separate;
+            border-spacing: 0 4px;
         }
 
         .crm-table th {
@@ -961,18 +971,18 @@
 
         .crm-table .col-sent { width: 12%; min-width: 92px; }
         .crm-table .col-priority { width: 15%; min-width: 118px; }
-        .crm-table .col-lead { width: 28%; min-width: 220px; }
-        .crm-table .col-management { width: 20%; min-width: 170px; }
-        .crm-table .col-executive { width: 14%; min-width: 120px; }
-        .crm-table .col-response { width: 11%; min-width: 112px; }
+        .crm-table .col-type { width: 10%; min-width: 86px; }
+        .crm-table .col-lead { width: 25%; min-width: 190px; }
+        .crm-table .col-management { width: 26%; min-width: 180px; }
+        .crm-table .col-response { width: 12%; min-width: 112px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
             .crm-table .col-sent { width: 12%; }
             .crm-table .col-priority { width: 15%; }
-            .crm-table .col-lead { width: 28%; }
-            .crm-table .col-management { width: 20%; }
-            .crm-table .col-executive { width: 14%; }
-            .crm-table .col-response { width: 11%; }
+            .crm-table .col-type { width: 10%; }
+            .crm-table .col-lead { width: 25%; }
+            .crm-table .col-management { width: 26%; }
+            .crm-table .col-response { width: 12%; }
         }
 
         @media (min-width: 769px) {
@@ -1199,9 +1209,8 @@
         .sent-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
         .sent-time { display: inline-flex; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .sent-date { font-weight: 550; color: var(--text-primary); }
-        .sent-hour { color: var(--text-primary); font-size: .78rem; }
-        .sent-source { color: var(--text-secondary); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
-        .sent-source.confirmed { color: #34d399; }
+        .sent-hour { color: var(--text-primary); font-size: inherit; font-weight: 550; }
+        .sent-source { display: none; }
         .sent-empty { color: var(--text-secondary); font-size: .78rem; font-style: italic; }
         .quick-management-btn {
             margin-top: 0; border: 1px solid rgba(99,102,241,.45); border-radius: 7px;
@@ -1209,7 +1218,7 @@
             font-size: .72rem; font-weight: 650; white-space: nowrap; cursor: pointer;
         }
         .priority-sla { display: inline-block; font-size: .78rem; font-weight: 600; line-height: 1.15; white-space: nowrap; }
-        .priority-type { display: block; margin-top: 3px; font-size: .65rem; font-weight: 500; line-height: 1; color: var(--text-secondary); }
+        .priority-type { display: none; }
         .priority-type.lead-type-hot { color: var(--bs-danger) !important; }
         .priority-type.lead-type-normal { color: var(--text-secondary) !important; }
         .crm-table .col-priority .led-indicator { width: 7px; height: 7px; margin-right: 4px; box-shadow: none; }
@@ -1229,6 +1238,10 @@
         .quick-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
         .quick-result-btn { text-align: left; min-height: 52px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-primary); padding: 9px 10px; font-weight: 700; }
         .quick-result-btn:hover, .quick-result-btn.is-selected { border-color: var(--accent); background: rgba(99,102,241,.16); }
+        .quick-detail-link { display: block; margin-top: 12px; color: var(--accent-color); font-size: .78rem; text-decoration: none; }
+        .quick-detail-link:hover { text-decoration: underline; }
+        .lead-type-label { font-size: .76rem; font-weight: 650; color: var(--text-secondary); white-space: nowrap; }
+        .lead-type-label .type-hot { color: var(--bs-danger); }
         .quick-extra { display: none; }
         .quick-extra.is-visible { display: block; }
         .quick-error { display: none; }
@@ -1639,19 +1652,19 @@
 
             .crm-table .col-priority,
             .crm-table .col-sent,
+            .crm-table .col-type,
             .crm-table .col-lead,
             .crm-table .col-management,
-            .crm-table .col-executive,
             .crm-table .col-response {
                 width: 100%;
             }
 
             .crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }
             .crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }
-            .crm-table .col-lead { order: 2; grid-column: 1 / -1; grid-row: 2; }
-            .crm-table .col-management { order: 3; grid-column: 1 / -1; grid-row: 3; }
-            .crm-table .col-executive { order: 4; grid-column: 1; grid-row: 4; }
-            .crm-table .col-response { order: 4; grid-column: 2; grid-row: 4; }
+            .crm-table .col-type { order: 2; grid-column: 1 / -1; grid-row: 2; }
+            .crm-table .col-lead { order: 3; grid-column: 1 / -1; grid-row: 3; }
+            .crm-table .col-management { order: 4; grid-column: 1 / -1; grid-row: 4; }
+            .crm-table .col-response { order: 5; grid-column: 1 / -1; grid-row: 5; }
 
             /* Etiqueta flotante / Label */
             .crm-table td::before {
@@ -1686,7 +1699,7 @@
             .crm-table td[data-label="Prioridad"]::before { display: none; }
 
             .crm-table td[data-label="Gestión"]::before { display: none; }
-            .crm-table .col-executive { display: grid; }
+            .crm-table .col-executive { display: none !important; }
 
             .crm-table td[data-label="Prioridad"]::before {
                 margin-bottom: 0;
@@ -1698,22 +1711,14 @@
                 color: var(--text-primary);
             }
 
-            .crm-table td[data-label="Ejecutivo"] .fw-bold {
-                font-size: .75rem !important;
-                white-space: nowrap;
-            }
-
             /* ESTADO: Badge visual */
             .crm-table td[data-label="Gestión"]::before { margin-bottom: 0; }
 
             /* Footer operacional: metadata discreta + CTA táctil. */
-            .crm-table .col-executive { order: 4; grid-column: 1; grid-row: 4; padding-top: 5px; }
-            .crm-table td[data-label="Ejecutivo"] .executive-name { font-size: .72rem; color: var(--text-secondary); }
-
             .crm-table td[data-label="Respuesta"] {
-                order: 4;
-                grid-column: 2;
-                grid-row: 4;
+                order: 5;
+                grid-column: 1 / -1;
+                grid-row: 5;
                 padding-top: 1px;
                 padding-bottom: 1px;
             }
@@ -1736,15 +1741,12 @@
             }
 
             .crm-table td[data-label="Prioridad"] .priority-sla,
-            .crm-table td[data-label="Prioridad"] .priority-type {
-                display: inline-block;
-                margin-top: 0;
-            }
+            .crm-table td[data-label="Prioridad"] .priority-type { display: none; }
 
             .crm-table td[data-label="Prioridad"] .mobile-cell-value { width: auto; }
-            .crm-table td[data-label="Enviado"] { justify-self: end; text-align: right; }
-            .crm-table td[data-label="Enviado"] .mobile-cell-value { width: auto; }
-            .crm-table td[data-label="Enviado"] .sent-cell { align-items: flex-end; }
+            .crm-table td[data-label="Asignado"] { justify-self: end; text-align: right; }
+            .crm-table td[data-label="Asignado"] .mobile-cell-value { width: auto; }
+            .crm-table td[data-label="Asignado"] .sent-cell { align-items: flex-end; }
             .crm-table .lead-cell, .crm-table .management-cell { padding: 2px 0; }
             .crm-table .lead-cell .lead-name { font-size: .92rem; }
             .crm-table .management-cell .management-main { font-size: .8rem; }
@@ -1788,6 +1790,12 @@
         }
 
         @media (max-width: 480px) {
+            .temperature-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+            .temperature-cards > .col:first-child { grid-column: auto; }
+            .temperature-cards .summary-card { min-height: 74px; padding: 9px 8px; }
+            .temperature-cards .summary-value { font-size: 1.15rem; }
+            .temperature-cards .summary-label { font-size: .6rem; }
+            .temperature-cards .summary-card > i { display: none; }
             .filter-bar {
                 grid-template-columns: 1fr;
             }
@@ -1999,7 +2007,7 @@
                 </label>
 
                 <label class="filter-field">
-                    <span class="filter-field-label">Prioridad</span>
+                    <span class="filter-field-label">Tipo</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
                         <option value="HOT" {% if selected_temperature == 'HOT' %}selected{% endif %}>{{ lead_temperature_option('HOT') }}</option>
@@ -2033,9 +2041,10 @@
                 <label class="filter-field">
                     <span class="filter-field-label">Orden</span>
                     <select name="orden" data-auto-filter>
-                        <option value="recent_assigned" {% if request.query_params.get('orden', 'recent_assigned') in ['recent_assigned', 'recientes'] or not request.query_params.get('orden') %}selected{% endif %}>Más recientes</option>
+                        <option value="recent_assigned" {% if request.query_params.get('orden', 'recent_assigned') in ['recent_assigned', 'recientes'] or not request.query_params.get('orden') %}selected{% endif %}>Asignados más recientes</option>
+                        <option value="oldest_assigned" {% if request.query_params.get('orden') in ['oldest_assigned', 'antiguos'] %}selected{% endif %}>Asignados más antiguos</option>
                         <option value="sla_priority" {% if request.query_params.get('orden') in ['sla_priority', 'sla_urgente'] %}selected{% endif %}>Prioridad SLA</option>
-                        <option value="oldest_unmanaged" {% if request.query_params.get('orden') in ['oldest_unmanaged', 'antiguos_sin_atender'] %}selected{% endif %}>Más antiguos sin atender</option>
+                        <option value="oldest_unmanaged" {% if request.query_params.get('orden') in ['oldest_unmanaged', 'antiguos_sin_atender'] %}selected{% endif %}>Sin gestionar más antiguos</option>
                     </select>
                 </label>
                 <button type="button" class="btn-more-filters" id="btnMoreFilters" onclick="toggleAdvancedLeadFilters()" aria-expanded="false">
@@ -2070,7 +2079,7 @@
                 <table class="crm-table">
                     <thead>
                         <tr>
-                            <th class="col-sent">Enviado</th>
+                            <th class="col-sent">Asignado</th>
                             <th class="col-priority">
                                 Prioridad
                                 <span class="sla-info-trigger" role="button" tabindex="0"
@@ -2113,9 +2122,9 @@
                                     </div>
                                 </div>
                             </th>
+                            <th class="col-type">Tipo</th>
                             <th class="col-lead">Lead</th>
                             <th class="col-management">Gestión</th>
-                            <th class="col-executive">Ejecutivo</th>
                             <th class="col-response">Respuesta</th>
                         </tr>
                     </thead>
@@ -2127,13 +2136,12 @@
                             data-lead-id="{{ lead.lead_id }}"
                             data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
                             data-management-state="{{ lead.estado }}">
-                            <td class="col-sent" data-label="Enviado">
+                            <td class="col-sent" data-label="Asignado">
                                 <div class="mobile-cell-value sent-cell" title="{{ lead.effective_sent_source }}">
                                     {% if lead.effective_sent_at %}
                                     <time datetime="{{ lead.effective_sent_at.isoformat() }}" class="sent-time">
                                         <span class="sent-date">{{ lead.effective_sent_date }}</span><span class="sent-hour"> · {{ lead.effective_sent_time }}</span>
                                     </time>
-                                    {% if lead.effective_sent_confirmed %}<span class="sent-source confirmed">Entregado</span>{% else %}<span class="sent-source">Asignado</span>{% endif %}
                                     {% else %}
                                     <span class="sent-empty">Sin información</span>
                                     {% endif %}
@@ -2172,11 +2180,11 @@
                                     <div class="led-indicator led-green" style="opacity: 0.8;"></div>
                                     <span class="priority-sla">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
                                     {% endif %}
-                                    {% if lead.lead_temperature_effective == 'HOT' %}
-                                    <span class="priority-type lead-type-hot" aria-label="Lead Hot">HOT</span>
-                                    {% else %}
-                                    <span class="priority-type lead-type-normal" aria-label="Lead normal">Normal</span>
-                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="col-type" data-label="Tipo">
+                                <div class="mobile-cell-value lead-type-label">
+                                    {% if lead.lead_temperature_effective == 'HOT' %}<span class="type-hot">Lead Hot</span>{% else %}<span>Lead</span>{% endif %}
                                 </div>
                             </td>
                             <td class="col-lead" data-label="Lead">
@@ -2197,11 +2205,6 @@
                                         <span class="management-meta">Última: Sin gestión</span>
                                         {% endif %}
                                     </div>
-                                </div>
-                            </td>
-                            <td class="col-executive" data-label="Ejecutivo">
-                                <div class="mobile-cell-value">
-                                    <div class="executive-name"><i class="fa-solid fa-user-tie me-1 opacity-75 text-accent"></i>{{ lead.ejecutivo_nombre }}</div>
                                 </div>
                             </td>
                             <td class="col-response" data-label="Respuesta">
@@ -2324,7 +2327,7 @@
                 });
                 const channelNeeded = ['CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(resultType);
                 const dateNeeded = ['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(resultType);
-                const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'CLOSED_WON', 'CLOSED_LOST', 'DISCARDED_VALID_REASON'].includes(resultType);
+                const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER'].includes(resultType);
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickDateField', dateNeeded);
                 setQuickExtra('quickReasonField', reasonNeeded);
@@ -2336,8 +2339,7 @@
                 if (!quickManagementState.resultType) return false;
                 if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
                     && !document.getElementById('quickNextDate')?.value) return false;
-                if (['NOT_INTERESTED', 'INVALID_NUMBER', 'CLOSED_WON', 'CLOSED_LOST', 'DISCARDED_VALID_REASON'].includes(quickManagementState.resultType)
-                    && !document.getElementById('quickReason')?.value.trim()) return false;
+                if (!quickManagementState.resultType) return false;
                 return true;
             }
 
@@ -2352,7 +2354,7 @@
                 const row = quickManagementState.row;
                 if (!row) return;
                 const priority = row.querySelector('[data-label="Prioridad"] .mobile-cell-value');
-                if (priority) priority.innerHTML = '<i class="fa-solid fa-check-circle text-success"></i><span class="priority-sla text-success">Gestionado</span><span class="priority-type">Normal</span>';
+                if (priority) priority.innerHTML = '<i class="fa-solid fa-check-circle text-success"></i><span class="priority-sla text-success">Gestionado</span>';
                 const labels = {
                     CALL_NO_ANSWER: 'No respondió', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
                     EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',

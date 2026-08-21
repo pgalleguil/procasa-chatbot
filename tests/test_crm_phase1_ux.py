@@ -14,6 +14,32 @@ def test_list_has_enviado_with_date_and_time():
     assert 'lead.effective_sent_time' in LIST_TEMPLATE
 
 
+def test_list_has_operational_column_order_and_independent_response():
+    headers = LIST_TEMPLATE[LIST_TEMPLATE.index('<thead>'):LIST_TEMPLATE.index('</thead>')]
+    expected = ['Enviado', 'SLA', 'Tipo', 'Cliente', 'Propiedad', 'Estado', 'Última Gestión', 'Ejecutivo', 'Respuesta']
+    positions = [headers.index(label) for label in expected]
+    assert positions == sorted(positions)
+    assert 'class="col-response"' in LIST_TEMPLATE
+    response_block = LIST_TEMPLATE[LIST_TEMPLATE.index('data-label="Respuesta"'):]
+    assert 'Registrar gestión' in response_block
+
+
+def test_last_management_is_history_only_and_no_fake_timestamp_without_management():
+    assert 'data-label="Última Gestión"' in LIST_TEMPLATE
+    history_start = LIST_TEMPLATE.index('<td class="col-last-action" data-label="Última Gestión">')
+    history_block = LIST_TEMPLATE[history_start:LIST_TEMPLATE.index('<td class="col-executive"', history_start)]
+    assert 'Registrar gestión' not in history_block
+    assert '{% if lead.gestionado %}' in history_block
+    assert 'Sin gestión' in history_block
+
+
+def test_list_compact_density_and_filters_remain_available():
+    assert 'margin: 2px 0 8px' in LIST_TEMPLATE
+    assert 'border-spacing: 0 4px' in LIST_TEMPLATE
+    assert 'name="property_code"' in LIST_TEMPLATE
+    assert 'data-auto-filter' in LIST_TEMPLATE
+
+
 def test_sent_timestamp_does_not_use_created_at_as_delivery():
     assert 'effective_sent_at' in API_SOURCE
     assert 'created_at' not in API_SOURCE[API_SOURCE.index('effective_sent_at'):API_SOURCE.index('effective_sent_at') + 1800]
@@ -87,7 +113,7 @@ def test_shared_component_uses_canonical_contract_and_progressive_fields():
 
 
 def test_list_refreshes_last_action_without_reload():
-    assert "Última Acción" in LIST_TEMPLATE
+    assert "Última Gestión" in LIST_TEMPLATE
     assert "Recién" in LIST_TEMPLATE
     assert "updateRowAfterQuickManagement" in LIST_TEMPLATE
 

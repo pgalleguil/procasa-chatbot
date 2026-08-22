@@ -3526,7 +3526,7 @@ def build_demand_capture_contract(
     }
 
 
-def _demand_capture_network_summary(db) -> dict:
+def _demand_capture_network_summary(db, profile: dict | None = None) -> dict:
     """Aggregate network benchmark dimensions without transporting properties."""
     pipeline = [{"$match": {
         "disponible_prop360": True,
@@ -3560,7 +3560,7 @@ def _demand_capture_network_summary(db) -> dict:
         "type": [{"$group": {"_id": "$tipo_operacion.tipo", "count": {"$sum": 1}}}],
         "commune": [{"$group": {"_id": "$ubicacion.comuna", "count": {"$sum": 1}}}],
     }}]
-    rows = list(db["universo_cartera_prop360"].aggregate(pipeline))
+    rows = _profile_query(profile, "universo_cartera_prop360", "aggregate_network_summary", lambda: db["universo_cartera_prop360"].aggregate(pipeline))
     result = rows[0] if rows and isinstance(rows[0], Mapping) else {}
     summary = {"offices": {}, "composition": {"operation": {}, "type": {}, "commune": {}}, "_rows": 0, "_bson_bytes": 0}
     for facet_rows in result.values():
@@ -3586,7 +3586,7 @@ def _demand_capture_network_summary(db) -> dict:
     return summary
 
 
-def _demand_capture_load_leads(db) -> tuple[list[Mapping[str, Any]], set[str]]:
+def _demand_capture_load_leads(db, profile: dict | None = None) -> tuple[list[Mapping[str, Any]], set[str]]:
     """Load the reusable lead projection and derive referenced property codes."""
     lead_pipeline = [
         _normalized_created_at_stage(),
@@ -3598,7 +3598,7 @@ def _demand_capture_load_leads(db) -> tuple[list[Mapping[str, Any]], set[str]]:
             "lifecycle.visit_scheduled_at": 1,
         }},
     ]
-    lead_docs = list(db["leads"].aggregate(lead_pipeline))
+    lead_docs = _profile_query(profile, "leads", "aggregate_demand_capture_leads", lambda: db["leads"].aggregate(lead_pipeline))
     lead_codes = {
         _inventory_code((lead.get("prospecto") or {}).get("codigo"))
         for lead in lead_docs
@@ -3627,9 +3627,9 @@ def _query_demand_capture_base(timing: dict | None = None) -> dict:
         if timing is not None:
             timing["demand_capture.timeout_stage"] = "leads_aggregate"
         with ThreadPoolExecutor(max_workers=2, thread_name_prefix="demand-capture") as executor:
-            leads_future = executor.submit(_demand_capture_load_leads, db)
+            leads_future = executor.submit(_demand_capture_load_leads, db, timing)
             benchmark_started = time.perf_counter()
-            benchmark_future = executor.submit(_demand_capture_network_summary, db)
+            benchmark_future = executor.submit(_demand_capture_network_summary, db, timing)
             lead_docs, lead_codes = leads_future.result()
             leads_finished = time.perf_counter()
             property_projection = {
@@ -3647,10 +3647,9 @@ def _query_demand_capture_base(timing: dict | None = None) -> dict:
             if timing is not None:
                 timing["demand_capture.timeout_stage"] = "property_find"
                 timing["demand_capture.property_find_ms"] = 0.0
-            property_docs = list(
-                db["universo_cartera_prop360"]
-                .find(property_filter, property_projection)
-                .batch_size(250)
+            property_docs = _profile_query(
+                timing, "universo_cartera_prop360", "find_demand_capture_properties",
+                lambda: db["universo_cartera_prop360"].find(property_filter, property_projection).batch_size(250),
             )
             detail_finished = time.perf_counter()
             if timing is not None:
@@ -3708,6 +3707,13 @@ def query_demand_capture_dashboard(
     lead_docs = base["lead_docs"]
     property_docs = base["property_docs"]
     if timing is not None:
+        timing["base_cache_state"] = timing.get("demand_capture.base_cache")
+        timing["base_cache_age"] = round(max(0.0, time.time() - _DEMAND_CAPTURE_BASE_CACHE["created_at"]), 1) if _DEMAND_CAPTURE_BASE_CACHE else None
+        timing["base_leads_ms"] = base["base_leads_ms"]
+        timing["base_properties_ms"] = base["base_properties_ms"]
+        timing["base_network_ms"] = base["base_network_ms"]
+        timing["base_wall_ms"] = base["base_wall_ms"]
+        timing["contract_build_ms"] = 0.0
         timing["demand_capture.leads_aggregate_ms"] = base["base_leads_ms"]
         timing["demand_capture.property_find_ms"] = base["base_properties_ms"]
         timing["demand_capture.network_aggregate_ms"] = base["base_network_ms"]
@@ -3729,6 +3735,9 @@ def query_demand_capture_dashboard(
         )
         raise
     record_stage("contract_build", stage_started)
+    if timing is not None:
+        timing["contract_build_ms"] = timing.get("demand_capture.contract_build_ms", 0.0)
+        timing["mongo_calls"] = len(timing.get("mongo") or [])
     record_total()
     logger.info(
         "[DEMAND_CAPTURE_TIMING] leads_aggregate_ms=%.1f lead_codes_ms=%.1f "

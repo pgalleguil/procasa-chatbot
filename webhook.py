@@ -65,6 +65,11 @@ from analytics.leads_service import (
     InventoryTemporarilyUnavailable, warm_pinned_dashboard_cache,
     keep_pinned_dashboard_cache,
 )
+from analytics.leads_service import _CACHE_REFRESH_POOL, _COMMERCIAL_QUERY_POOL
+from analytics.dashboard_forensics import emit as emit_dashboard_forensics
+from analytics.dashboard_forensics import emit_request as emit_dashboard_request
+from analytics.dashboard_forensics import process_facts as dashboard_process_facts
+from analytics.dashboard_forensics import request_id as dashboard_request_id
 
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
@@ -206,6 +211,11 @@ lead_processing_queue = None  # Se inicializará en lifespan
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
+        **dashboard_process_facts(), "event": "process_started", "endpoint": None,
+        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
+        "age_before": None, "duration_ms": 0.0,
+    })
     
     # Install phone redaction on all loggers
     from chatbot.storage import install_log_redaction
@@ -278,6 +288,11 @@ async def lifespan(app: FastAPI):
     captacion_daily_production_task = asyncio.create_task(captacion_daily_production_scheduler_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
+    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
+        **dashboard_process_facts(), "event": "prewarm_scheduled", "endpoint": "overview,operations,properties",
+        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
+        "age_before": None, "duration_ms": 0.0,
+    })
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
     tp_task = asyncio.create_task(threadpool_forensics_loop()) # MONITOR THREAD POOLS
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
@@ -1033,6 +1048,68 @@ def _demand_capture_server_timing(timing: dict) -> str:
     return ", ".join(parts)
 
 
+def _dashboard_mongo_items(value):
+    """Flatten only aggregate Mongo profiles already produced by analytics."""
+    items = []
+    if isinstance(value, dict):
+        mongo = value.get("mongo")
+        if isinstance(mongo, list):
+            items.extend(item for item in mongo if isinstance(item, dict))
+        for key, child in value.items():
+            if key not in {"mongo", "component_details"}:
+                items.extend(_dashboard_mongo_items(child))
+    elif isinstance(value, list):
+        for child in value:
+            items.extend(_dashboard_mongo_items(child))
+    return items
+
+
+def _dashboard_perf_log(*, endpoint: str, request_id: str, timing: dict,
+                        period_start: str | None, period_end: str | None,
+                        period_preset: str | None, request_started: float,
+                        serialization_ms: float, web_worker_thread: str | None = None):
+    mongo_items = _dashboard_mongo_items(timing)
+    mongo_total = round(sum(float(item.get("duration_ms") or 0) for item in mongo_items), 1)
+    total_ms = round((time.perf_counter() - request_started) * 1000, 1)
+    timing["serialization_ms"] = round(serialization_ms, 1)
+    timing["mongo_calls"] = len(mongo_items) if mongo_items else int(timing.get("mongo_calls") or 0)
+    timing["mongo_total_ms"] = mongo_total
+    timing["total_ms"] = total_ms
+    if timing.get("python_compute_ms") is None:
+        timing["python_compute_ms"] = round(max(0.0, float(timing.get("service_total_ms") or timing.get("total_ms") or 0) - mongo_total), 1)
+    payload = {
+        **dashboard_process_facts(),
+        "request_id": request_id,
+        "endpoint": endpoint,
+        "period_preset": period_preset or "date_range",
+        "period_start": period_start,
+        "period_end": period_end,
+        "cache_state": timing.get("cache"),
+        "cache_age_seconds": timing.get("cache_age_seconds", timing.get("stale_age_seconds")),
+        "cache_key_hash": timing.get("cache_key_hash"),
+        "cache_entries": len(__import__("analytics.leads_service", fromlist=["L1_CACHE"]).L1_CACHE),
+        "web_pool_queue_wait_ms": timing.get("web_pool_queue_wait_ms"),
+        "web_pool_execution_ms": timing.get("web_pool_execution_ms"),
+        "analytics_pool_queue_wait_ms": timing.get("analytics_pool_queue_wait_ms"),
+        "mongo_calls": timing.get("mongo_calls", 0),
+        "mongo_total_ms": mongo_total,
+        "mongo_slow_over_100_ms": [
+            {"collection": item.get("collection"), "operation": item.get("operation"), "duration_ms": item.get("duration_ms")}
+            for item in mongo_items if float(item.get("duration_ms") or 0) > 100
+        ],
+        "mongo_slow_over_300_ms": [
+            {"collection": item.get("collection"), "operation": item.get("operation"), "duration_ms": item.get("duration_ms")}
+            for item in mongo_items if float(item.get("duration_ms") or 0) > 300
+        ],
+        "python_compute_ms": timing.get("python_compute_ms"),
+        "serialization_ms": timing.get("serialization_ms"),
+        "total_ms": total_ms,
+        "worker_thread": web_worker_thread,
+        "timing": {key: value for key, value in timing.items() if key not in {"request_id"}},
+    }
+    emit_dashboard_request(payload)
+
+
 @app.get("/demo/leads-intelligence", response_class=HTMLResponse)
 async def public_leads_intelligence_demo(request: Request):
     """Temporary, read-only public shell for the Executive Summary only."""
@@ -1150,6 +1227,8 @@ async def api_leads_dashboard_overview(
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
+    request_started = time.perf_counter()
+    dashboard_id = dashboard_request_id()
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
@@ -1167,16 +1246,32 @@ async def api_leads_dashboard_overview(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
+    timing = {"request_id": dashboard_id}
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: get_leads_dashboard_overview(
-            period_start=period_start,
-            period_end=period_end,
-            compare=compare,
-            period_preset=period_preset,
-        ),
-    )
+    submitted_at = time.perf_counter()
+
+    def load_overview():
+        worker_started = time.perf_counter()
+        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
+        timing["worker_thread"] = threading.current_thread().name
+        try:
+            return get_leads_dashboard_overview(
+                period_start=period_start, period_end=period_end,
+                compare=compare, period_preset=period_preset, timing=timing,
+            )
+        finally:
+            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
+
+    payload = await loop.run_in_executor(_WEB_THREAD_POOL, load_overview)
+    timing["service_total_ms"] = timing.get("total_ms")
+    serialization_started = time.perf_counter()
+    response = JSONResponse(payload)
+    _dashboard_perf_log(endpoint="/api/leads-dashboard/overview", request_id=dashboard_id,
+                        timing=timing, period_start=period_start, period_end=period_end,
+                        period_preset=period_preset, request_started=request_started,
+                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
+                        web_worker_thread=timing.get("worker_thread"))
+    return response
 
 
 @app.get("/api/leads-dashboard/properties-inventory")
@@ -1189,6 +1284,8 @@ async def api_leads_dashboard_properties_inventory(
     commune: str = Query(None),
     responsible: str = Query(None),
 ):
+    request_started = time.perf_counter()
+    dashboard_id = dashboard_request_id()
     """Lazy, read-only inventory snapshot for the third dashboard tab."""
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
@@ -1197,22 +1294,36 @@ async def api_leads_dashboard_properties_inventory(
         "operation": operation, "property_type": property_type,
         "commune": commune, "responsible": responsible,
     }.items() if value}
-    timing = {}
+    timing = {"request_id": dashboard_id}
     loop = asyncio.get_running_loop()
-    try:
-        payload = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: get_properties_inventory_dashboard(
+    submitted_at = time.perf_counter()
+
+    def load_inventory():
+        worker_started = time.perf_counter()
+        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
+        timing["worker_thread"] = threading.current_thread().name
+        try:
+            return get_properties_inventory_dashboard(
                 period_start=period_start, period_end=period_end,
                 filters=filters, timing=timing,
-            ),
-        )
+            )
+        finally:
+            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
+    try:
+        payload = await loop.run_in_executor(_WEB_THREAD_POOL, load_inventory)
     except InventoryTemporarilyUnavailable:
         raise HTTPException(status_code=503, detail="Inventario temporalmente no disponible")
+    serialization_started = time.perf_counter()
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
     response.headers["Server-Timing"] = _demand_capture_server_timing(timing)
+    timing["service_total_ms"] = timing.get("total_ms")
+    _dashboard_perf_log(endpoint="/api/leads-dashboard/properties-inventory", request_id=dashboard_id,
+                        timing=timing, period_start=period_start, period_end=period_end,
+                        period_preset=None, request_started=request_started,
+                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
+                        web_worker_thread=timing.get("worker_thread"))
     return response
 
 
@@ -1231,6 +1342,7 @@ async def api_leads_dashboard_capture_simulator(
     timing = {}
     loop = asyncio.get_running_loop()
     payload = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_capture_simulation(params=params, period_end=period_end, timing=timing))
+    serialization_started = time.perf_counter()
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
@@ -1253,6 +1365,8 @@ async def api_leads_dashboard_operations(
     search: str = Query(None),
     portfolio: str = Query(None),
 ):
+    request_started = time.perf_counter()
+    dashboard_id = dashboard_request_id()
     """Datos operativos para la segunda pestaña del dashboard ejecutivo."""
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
@@ -1262,16 +1376,26 @@ async def api_leads_dashboard_operations(
         "priority": priority, "assignment": assignment, "search": search,
         "portfolio": portfolio,
     }.items() if value}
-    timing = {}
+    timing = {"request_id": dashboard_id}
     loop = asyncio.get_running_loop()
+    submitted_at = time.perf_counter()
+
+    def load_operations():
+        worker_started = time.perf_counter()
+        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
+        timing["worker_thread"] = threading.current_thread().name
+        try:
+            return get_leads_operational_dashboard(
+                period_start=period_start, period_end=period_end, compare=compare,
+                period_preset=period_preset,
+                role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
+            )
+        finally:
+            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
     payload = await loop.run_in_executor(
-        _WEB_THREAD_POOL,
-        lambda: get_leads_operational_dashboard(
-            period_start=period_start, period_end=period_end, compare=compare,
-            period_preset=period_preset,
-            role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
-        ),
+        _WEB_THREAD_POOL, load_operations,
     )
+    serialization_started = time.perf_counter()
     response = JSONResponse(payload)
     response.headers["Server-Timing"] = ", ".join(
         item for item in (
@@ -1283,6 +1407,12 @@ async def api_leads_dashboard_operations(
         ) if item
     )
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
+    timing["service_total_ms"] = timing.get("total_ms")
+    _dashboard_perf_log(endpoint="/api/leads-dashboard/operations", request_id=dashboard_id,
+                        timing=timing, period_start=period_start, period_end=period_end,
+                        period_preset=period_preset, request_started=request_started,
+                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
+                        web_worker_thread=timing.get("worker_thread"))
     return response
 
 
@@ -4613,6 +4743,8 @@ async def threadpool_forensics_loop():
                 ("WEB", _WEB_THREAD_POOL),
                 ("WORKER", _WORKER_THREAD_POOL),
                 ("WARMER", _WARMER_THREAD_POOL),
+                ("COMMERCIAL_ANALYTICS", _COMMERCIAL_QUERY_POOL),
+                ("CACHE_REFRESH", _CACHE_REFRESH_POOL),
             ]
             for name, pool in pools:
                 max_workers = getattr(pool, "_max_workers", -1)

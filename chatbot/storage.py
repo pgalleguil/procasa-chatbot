@@ -66,6 +66,28 @@ _observability_lock = threading.Lock()
 _observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
 _event_loop_blocked_ts = deque(maxlen=1000)
 _delegated_sync_mongo = ContextVar("delegated_sync_mongo", default=False)
+_dashboard_perf_context = ContextVar("dashboard_perf_context", default=None)
+
+
+def set_dashboard_perf_context(value):
+    """Attach an aggregate-only Mongo span sink to the current worker context."""
+    return _dashboard_perf_context.set(value)
+
+
+def reset_dashboard_perf_context(token):
+    _dashboard_perf_context.reset(token)
+
+
+def _dashboard_query_shape(name, args):
+    """Return filter/pipeline structure without values or document fields."""
+    try:
+        if name == "aggregate" and args and isinstance(args[0], list):
+            return {"pipeline_stages": [sorted(stage.keys()) for stage in args[0] if isinstance(stage, dict)]}
+        if args and isinstance(args[0], dict):
+            return {"filter_keys": sorted(str(key) for key in args[0])}
+    except Exception:
+        return {"shape_error": True}
+    return {}
 
 
 def record_observability_event(event_type: str, payload: dict | None = None) -> str:
@@ -207,6 +229,15 @@ def _patch_mongo_forensics():
                         return fn(self, *args, **kwargs)
                     finally:
                         dt_ms = (time.perf_counter() - t0) * 1000
+                        dashboard_context = _dashboard_perf_context.get()
+                        if dashboard_context is not None:
+                            dashboard_context.append({
+                                "collection": self.name,
+                                "operation": name,
+                                "duration_ms": round(dt_ms, 1),
+                                "thread": thread_name,
+                                **_dashboard_query_shape(name, args),
+                            })
                         # Reducir ruido: loggear siempre lo anómalo, y muestrear lo normal.
                         # 1) Siempre: operaciones lentas >=400ms
                         # 2) Siempre: sync real en event loop (no motor)

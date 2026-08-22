@@ -4598,6 +4598,15 @@
             let OPS_LAST_PERIOD_KEY = '';
             let OVERVIEW_REQUEST_SEQ = 0;
             const OPS_ENDPOINT = PRIVATE_OPERATIONS_ENDPOINT;
+            function dashboardFrontendPerf(endpoint, startedAt, responseAt, readyAt, requestSeq, status) {
+                console.info('[DASHBOARD_FRONTEND_PERF]', JSON.stringify({
+                    endpoint, request_seq: requestSeq, period_preset: FILTERS.period_preset,
+                    fetch_ms: Math.round((responseAt - startedAt) * 10) / 10,
+                    render_ms: Math.round((readyAt - responseAt) * 10) / 10,
+                    perceived_ms: Math.round((readyAt - startedAt) * 10) / 10,
+                    status,
+                }));
+            }
             function opsEscape(value) {
                 return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
             }
@@ -5010,6 +5019,7 @@
                 const error = $('opsError'); if (error) error.hidden = true;
             }
             async function loadOperationalData(periodSnapshot = null) {
+                const frontendStartedAt = performance.now();
                 const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const requestId = ++OPS_REQUEST_SEQ;
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
@@ -5023,10 +5033,12 @@
                     const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}});
                     if (!response.ok) throw new Error('Gestión operativa ' + response.status);
                     const data = await response.json();
+                    const frontendResponseAt = performance.now();
                     // Evita mezclar stock/período de una respuesta vieja con el
                     // selector que ya muestra un rango más reciente.
                     if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
                     opsRenderOperational(data);
+                    dashboardFrontendPerf('/api/leads-dashboard/operations', frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
                 } catch (error) {
                     if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
                     const box = $('opsError'), text = $('opsErrorText');
@@ -5069,6 +5081,7 @@
             }
 
             async function loadData(mode) {
+                const frontendStartedAt = performance.now();
                 // REVIEW solo conserva el fixture de Demanda & Captación.
                 // Las demás pestañas deben mantener la carga real del dashboard.
                 if (REVIEW_MODE && $('viewProperties') && !$('viewProperties').hidden) {
@@ -5100,6 +5113,7 @@
                     const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
                     if (!res.ok) throw new Error('Error ' + res.status);
                     const overview = await res.json();
+                    const frontendResponseAt = performance.now();
                     if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return;
                     OVERVIEW = overview;
                     syncUrl();
@@ -5119,6 +5133,7 @@
                     $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
                     hideOverviewError();
                     runRevealSequence(seqMode);
+                    dashboardFrontendPerf(PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview', frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
                 } catch (e) {
                     console.error("Error cargando datos:", e);
                     showOverviewError();
@@ -6542,6 +6557,14 @@
             function invRenderProperties(rows) { const visible=(rows||[]).slice(0,20), rest=(rows||[]).slice(20); $('invDetailBody').innerHTML=visible.map(invDetailRow).join(''); $('invDetailCards').innerHTML=visible.map(row=>invCard(row,true)).join(''); const more=$('invDetailMore'); more.hidden=!rest.length; if(rest.length){$('invDetailMoreLabel').textContent=`Ver ${invNum(rest.length)} propiedades restantes`; $('invDetailMoreContent').innerHTML=invDetailTable(rest);} }
             function invPopulateFilters(data) { const map={operation:'operation',type:'type',commune:'commune',responsible:'responsible'}; Object.entries(map).forEach(([id,key])=>{ const el=$('inventory'+id.charAt(0).toUpperCase()+id.slice(1)+'Filter'); if(!el) return; const selected=el.value; const options=data.filter_options?.[key]||[]; el.innerHTML=`<option value="">${id==='operation'?'Todas':id==='responsible'?'Todos':id==='type'?'Todos':'Todas'}</option>`+options.map(row=>`<option value="${invEsc(row.label)}">${invEsc(row.label)} (${invNum(row.count)})</option>`).join(''); if(options.some(row=>row.label===selected)) el.value=selected; }); }
             async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{const body=await response.json().catch(()=>({})); if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;} return body;}).then(data=>{const meta=data.meta||{}; const status=$('inventoryDataStatus'); if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;} invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data); if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);}).catch(error=>{$('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
+
+            const dashboardLoadInventoryOriginal = loadInventoryData;
+            loadInventoryData = async function(force=false) {
+                const frontendStartedAt = performance.now();
+                const result = await dashboardLoadInventoryOriginal(force);
+                dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), 'inventory', 'ok');
+                return result;
+            };
 
             // --- Territorial review renderer: D3 Geo folded national view ---
             let GEO_RANK_EXPANDED = false;

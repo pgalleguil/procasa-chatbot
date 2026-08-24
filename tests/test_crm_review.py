@@ -169,6 +169,9 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in html
     assert 'id="quickDateField"' in modal
     assert 'id="quickNotes"' in modal
+    assert 'id="quickFollowUpToggle"' in modal
+    assert 'Programar próximo contacto' in modal
+    assert "if ($('quickFollowUpToggle')) $('quickFollowUpToggle').checked = false;" in script
     assert "const dateResults = ['EFFECTIVE_CONTACT'];" in script
     assert "details.notes = $('quickNotes').value.trim()" in script
 

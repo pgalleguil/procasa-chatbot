@@ -2365,7 +2365,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup3"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup4"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2386,9 +2386,10 @@
                     button.classList.toggle('is-selected', button.dataset.quickResult === resultType);
                 });
                 const channelNeeded = false;
-                const dateNeeded = resultType === 'EFFECTIVE_CONTACT';
+                const dateNeeded = resultType === 'EFFECTIVE_CONTACT' && document.getElementById('quickFollowUpToggle')?.checked;
                 const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'].includes(resultType);
                 setQuickExtra('quickChannelField', channelNeeded);
+                setQuickExtra('quickFollowUpField', resultType === 'EFFECTIVE_CONTACT');
                 setQuickExtra('quickDateField', dateNeeded);
                 setQuickExtra('quickNotesField', dateNeeded);
                 setQuickExtra('quickReasonField', reasonNeeded);
@@ -2402,6 +2403,9 @@
                 if (quickManagementState.resultType === 'OTHER_EXPLICIT'
                     && !document.getElementById('quickOtherOutcome')?.value.trim()) return false;
                 if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
+                    && !document.getElementById('quickNextDate')?.value) return false;
+                if (quickManagementState.resultType === 'EFFECTIVE_CONTACT'
+                    && document.getElementById('quickFollowUpToggle')?.checked
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (!quickManagementState.resultType) return false;
                 return true;
@@ -2452,11 +2456,12 @@
                 document.getElementById('quickManagementProgress').textContent = '';
                 document.getElementById('quickNextDate').value = '';
                 document.getElementById('quickNotes').value = '';
+                document.getElementById('quickFollowUpToggle').checked = false;
                 document.getElementById('quickReason').value = '';
                 document.getElementById('quickChannel').value = '';
                 showQuickError('');
                 document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
-                ['quickChannelField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setQuickExtra(id, false));
+                ['quickChannelField', 'quickFollowUpField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setQuickExtra(id, false));
                 document.getElementById('quickManagementSave').disabled = true;
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('quickManagementModal')).show();
             }
@@ -2521,6 +2526,15 @@
             document.getElementById('quickNextDate')?.addEventListener('input', () => {
                 if (quickManagementState.resultType === 'EFFECTIVE_CONTACT') {
                     document.getElementById('quickManagementSave').disabled = false;
+                }
+            });
+            document.getElementById('quickFollowUpToggle')?.addEventListener('change', () => {
+                const enabled = document.getElementById('quickFollowUpToggle').checked;
+                setQuickExtra('quickDateField', enabled);
+                setQuickExtra('quickNotesField', enabled);
+                if (!enabled) {
+                    document.getElementById('quickNextDate').value = '';
+                    document.getElementById('quickNotes').value = '';
                 }
             });
 

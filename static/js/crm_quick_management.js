@@ -15,6 +15,7 @@
     const $ = id => document.getElementById(id);
     const requestId = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const setExtra = (id, visible) => $(id)?.classList.toggle('is-visible', visible);
+    const followUpEnabled = () => Boolean($('quickFollowUpToggle')?.checked);
     const resultLabel = {
         CALL_NO_ANSWER: 'Sin respuesta', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
         EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
@@ -28,8 +29,10 @@
         document.querySelectorAll('[data-quick-result]').forEach(button =>
             button.classList.toggle('is-selected', button.dataset.quickResult === resultType));
         setExtra('quickChannelField', channelResults.includes(resultType));
-        setExtra('quickDateField', dateResults.includes(resultType));
-        setExtra('quickNotesField', dateResults.includes(resultType));
+        const canScheduleFollowUp = resultType === 'EFFECTIVE_CONTACT';
+        setExtra('quickFollowUpField', canScheduleFollowUp);
+        setExtra('quickDateField', canScheduleFollowUp && followUpEnabled());
+        setExtra('quickNotesField', canScheduleFollowUp && followUpEnabled());
         setExtra('quickReasonField', reasonResults.includes(resultType));
         setExtra('quickOtherField', otherResults.includes(resultType));
         const reason = $('quickReason');
@@ -45,9 +48,7 @@
 
     function valid() {
         if (!state.resultType) return false;
-        if (dateResults.includes(state.resultType)
-            && state.resultType !== 'EFFECTIVE_CONTACT'
-            && !$('quickNextDate')?.value) return false;
+        if (state.resultType === 'EFFECTIVE_CONTACT' && followUpEnabled() && !$('quickNextDate')?.value) return false;
         if (otherResults.includes(state.resultType) && !$('quickOtherOutcome')?.value.trim()) return false;
         return true;
     }
@@ -73,11 +74,12 @@
         $('quickManagementProgress').textContent = '';
         if ($('quickNextDate')) $('quickNextDate').value = '';
         if ($('quickNotes')) $('quickNotes').value = '';
+        if ($('quickFollowUpToggle')) $('quickFollowUpToggle').checked = false;
         $('quickReason').value = '';
         if ($('quickOtherOutcome')) $('quickOtherOutcome').value = '';
         error('');
         document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
-        ['quickChannelField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setExtra(id, false));
+        ['quickChannelField', 'quickFollowUpField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setExtra(id, false));
         $('quickManagementSave').disabled = true;
         const detail = $('quickGoDetail');
         if (detail) {
@@ -143,8 +145,15 @@
     });
     $('quickManagementSave')?.addEventListener('click', save);
     $('quickNextDate')?.addEventListener('input', () => {
-        if (state.resultType === 'EFFECTIVE_CONTACT' && $('quickNextDate').value) {
-            $('quickManagementSave').disabled = false;
+        if (state.resultType === 'EFFECTIVE_CONTACT' && $('quickNextDate').value) $('quickManagementSave').disabled = false;
+    });
+    $('quickFollowUpToggle')?.addEventListener('change', () => {
+        const enabled = followUpEnabled();
+        setExtra('quickDateField', enabled);
+        setExtra('quickNotesField', enabled);
+        if (!enabled) {
+            if ($('quickNextDate')) $('quickNextDate').value = '';
+            if ($('quickNotes')) $('quickNotes').value = '';
         }
     });
     window.CRMQuickManagement = { open, save, configure, state, resultLabel };

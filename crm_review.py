@@ -57,17 +57,54 @@ document.addEventListener('click', function (event) {
 """
 
 
+FIXTURE_NOW = datetime(2026, 8, 20, 16, 10, tzinfo=timezone.utc)
+
+
 def _now() -> datetime:
-    # Fixed fixture date keeps the public review deterministic and clearly
-    # separate from any live CRM timeline.
-    return datetime(2026, 8, 20, 16, 10, tzinfo=timezone.utc)
+    """Use the live clock for relative labels in the local review."""
+    return datetime.now(timezone.utc)
+
+
+def _format_minutes(total_minutes: int) -> str:
+    total_minutes = max(0, int(total_minutes))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours} h" + (f" {minutes} min" if minutes else "")
+    return f"{minutes} min"
+
+
+def _refresh_demo_relative_times() -> None:
+    """Recalculate assignment and SLA timing labels on every list request."""
+    now = _now()
+    for lead in DEMO_LEADS:
+        elapsed_minutes = int(max(0, (now - lead["effective_sent_at"]).total_seconds()) // 60)
+        lead["assigned_relative"] = f"Hace {_format_minutes(elapsed_minutes)}"
+        due_at = lead.get("sla_due_at")
+        if not due_at or lead.get("sla_status") in {"fulfilled", "pending", "historical"}:
+            continue
+        delta_minutes = int((now - due_at).total_seconds() // 60)
+        lead["sla_timing"] = (
+            f"Venció hace {_format_minutes(delta_minutes)}"
+            if delta_minutes >= 0
+            else f"Faltan {_format_minutes(-delta_minutes)}"
+        )
 
 
 def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
           state: str, state_label: str, managed: bool = False,
           action: str = "", relative: str = "", sent_confirmed: bool = False,
           closed: bool = False, visit: bool = False) -> dict:
-    sent_at = _now() - timedelta(minutes=15 * index + 10)
+    created_at = _now()
+    sent_at = FIXTURE_NOW - timedelta(minutes=15 * index + 10)
+    sla_due_offsets = {
+        "critical": timedelta(minutes=-72),
+        "hot_critical": timedelta(minutes=-72),
+        "hot_near_critical": timedelta(minutes=24),
+        "near_critical": timedelta(minutes=102),
+        "warning": timedelta(minutes=60),
+        "hot_warning": timedelta(minutes=45),
+        "good": timedelta(minutes=102),
+    }
     elapsed_minutes = max(1, int((_now() - sent_at).total_seconds() // 60))
     elapsed_hours, remaining_minutes = divmod(elapsed_minutes, 60)
     assigned_relative = (f"Hace {elapsed_hours} h" if elapsed_hours else "Hace")
@@ -89,6 +126,7 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
             "good": "Faltan 1 h 42 min",
             "fulfilled": "Dentro de SLA · 42 min",
         }.get(sla_status, "SLA no disponible"),
+        "sla_due_at": created_at + sla_due_offsets.get(sla_status, timedelta(0)),
         "estado": "CLOSED_WON" if closed else state,
         "estado_badge": state_label,
         "estado_resultado": action if managed else None,
@@ -161,6 +199,7 @@ def _list_urls(request: Request, *, temperature=None, state=None, order=None) ->
 
 
 def _list_context(request: Request) -> dict:
+    _refresh_demo_relative_times()
     params = request.query_params
     temperature = params.get("temperatura", "Todos")
     state = params.get("estado", "")

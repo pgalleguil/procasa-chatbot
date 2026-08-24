@@ -2365,7 +2365,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup9"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup10"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2486,7 +2486,7 @@
                 const channel = document.getElementById('quickChannel').value;
                 const reason = document.getElementById('quickReason').value.trim();
                 if (channel) details.channel = channel;
-                if (reason) details.reason = reason;
+                if (reason && reason.toLocaleLowerCase() !== 'seleccionar motivo (opcional)') details.reason = reason;
                 const notes = document.getElementById('quickNotes')?.value.trim();
                 if (notes) details.notes = notes;
                 if (quickManagementState.resultType === 'VISIT_SCHEDULED') details.visit_at = document.getElementById('quickNextDate').value || null;

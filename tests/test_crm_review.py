@@ -165,10 +165,10 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     assert 'id="quickDateLabel"' in modal
     assert "const reasonResults = ['NOT_INTERESTED'];" in script
     assert 'PROPERTY_UNAVAILABLE: new Set' not in script
-    assert '<option value="">Seleccionar motivo (opcional)</option>' in modal
+    assert '<option value="" selected disabled>Seleccionar motivo (opcional)</option>' in modal
     assert 'value="Seleccionar motivo (opcional)"' not in modal
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in script
-    assert "if ($('quickReason').value.trim()) details.reason" in script
+    assert "toLocaleLowerCase() !== 'seleccionar motivo (opcional)'" in script
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in html
     assert 'id="quickDateField"' in modal
     assert 'id="quickNotes"' in modal

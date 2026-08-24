@@ -74,6 +74,8 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if not rule:
         raise ValueError("unsupported CRM management result")
     details = details_json if isinstance(details_json, dict) else {}
+    if str(details.get("reason") or "").strip().casefold() == "seleccionar motivo (opcional)":
+        details = {key: value for key, value in details.items() if key != "reason"}
     visit_at = None
     if result_type == "VISIT_SCHEDULED":
         visit_at = coerce_utc_datetime(details.get("visit_at") or next_follow_up_at)

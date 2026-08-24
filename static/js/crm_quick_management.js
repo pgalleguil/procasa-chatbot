@@ -100,7 +100,8 @@
         $('quickManagementProgress').textContent = 'Guardando…';
         error('');
         const details = {};
-        if ($('quickReason').value.trim()) details.reason = $('quickReason').value.trim();
+        const reason = $('quickReason').value.trim();
+        if (reason && reason.toLocaleLowerCase() !== 'seleccionar motivo (opcional)') details.reason = reason;
         if ($('quickOtherOutcome').value.trim()) details.outcome = $('quickOtherOutcome').value.trim();
         if ($('quickNotes')?.value.trim()) details.notes = $('quickNotes').value.trim();
         if (state.resultType === 'VISIT_SCHEDULED') details.visit_at = $('quickNextDate')?.value || null;

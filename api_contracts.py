@@ -968,7 +968,7 @@ async def view_contract_public(token: str, request: Request):
         expiry_chile = expiry.astimezone(chile_tz)
         token_expiry_iso = expiry_chile.isoformat()
         
-    return templates.TemplateResponse("contract_view.html", {
+    return templates.TemplateResponse(request, "contract_view.html", {
         "request": request,
         "contract": contract,
         "token": token,
@@ -1708,7 +1708,7 @@ async def verify_contract(contract_code: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Contrato no encontrado</h1>", status_code=404)
         
-    return templates.TemplateResponse("contract_verify.html", {
+    return templates.TemplateResponse(request, "contract_verify.html", {
         "request": request,
         "contract": contract
     })
@@ -1834,7 +1834,7 @@ async def contract_dashboard(request: Request):
         exec_username = (c.get("executive") or c.get("created_by") or "").strip()
         c["executive_display"] = user_name_map.get(exec_username, exec_username or "---")
 
-    return templates.TemplateResponse("contract_dashboard.html", {
+    return templates.TemplateResponse(request, "contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
         "user_role": user_role,

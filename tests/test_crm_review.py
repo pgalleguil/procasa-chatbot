@@ -175,7 +175,7 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     assert 'id="quickFollowUpToggle"' in modal
     assert 'Programar próximo contacto' in modal
     assert "if ($('quickFollowUpToggle')) $('quickFollowUpToggle').checked = false;" in script
-    assert "const dateResults = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'];" in script
+    assert "const dateResults = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'];" in script
     assert "details.notes = $('quickNotes').value.trim()" in script
 
 

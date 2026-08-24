@@ -719,7 +719,7 @@
         /* FILTERS (Homologados a captacion_list) */
         .filter-bar {
             display: grid;
-            grid-template-columns: minmax(220px, 1.45fr) repeat(4, minmax(112px, .9fr)) max-content max-content;
+            grid-template-columns: minmax(180px, 1.05fr) minmax(118px, .65fr) repeat(4, minmax(112px, .9fr)) max-content;
             gap: 7px;
             margin-bottom: 8px;
             align-items: end;
@@ -728,7 +728,6 @@
         @media (min-width: 769px) {
             .filter-bar .search-box input,
             .filter-bar select,
-            .filter-bar .btn-more-filters,
             .filter-bar .btn-clear-filters {
                 min-height: 33px;
                 padding-top: 6px;
@@ -753,6 +752,7 @@
             gap: 3px;
             min-width: 0;
         }
+        .filter-bar .lead-search-field { max-width: 230px; }
 
         .filter-field-label {
             color: var(--text-secondary);
@@ -1625,8 +1625,7 @@
             .filter-bar .advanced-filter { display: none; }
             .filter-bar.is-expanded .filter-field:not(.filter-search-field) { display: flex; }
             .filter-bar.is-expanded .advanced-filter { display: flex; }
-            .filter-bar .btn-clear-filters { display: none; }
-            .filter-bar.is-expanded .btn-clear-filters { display: flex; }
+            .filter-bar .btn-clear-filters { display: flex; }
 
             .filter-bar .search-box,
             .filter-bar .filter-field,
@@ -2042,7 +2041,7 @@
             <div class="table-container">
             <form action="{{ '/crm-leads-review' if review_mode else '/crm' }}" method="GET" class="filter-bar" id="crmFilterForm">
                 {% if review_mode %}<input type="hidden" name="view" value="list">{% endif %}
-                <label class="filter-field filter-search-field">
+                <label class="filter-field filter-search-field lead-search-field">
                     <span class="filter-field-label">Buscar lead</span>
                     <span class="search-box">
                         <i class="fa-solid fa-magnifying-glass"></i>
@@ -2051,7 +2050,7 @@
                     </span>
                 </label>
 
-                <label class="filter-field filter-search-field advanced-filter" style="max-width:130px">
+                <label class="filter-field filter-search-field property-filter" style="max-width:130px">
                     <span class="filter-field-label">Propiedad</span>
                     <span class="search-box">
                         <i class="fa-solid fa-building"></i>
@@ -2101,9 +2100,6 @@
                         <option value="oldest_unmanaged" {% if request.query_params.get('orden') in ['oldest_unmanaged', 'antiguos_sin_atender'] %}selected{% endif %}>Sin gestionar más antiguos</option>
                     </select>
                 </label>
-                <button type="button" class="btn-more-filters" id="btnMoreFilters" onclick="toggleAdvancedLeadFilters()" aria-expanded="false">
-                    <i class="fa-solid fa-sliders me-1"></i><span class="desktop-only">Más filtros</span><span class="mobile-only">Filtros</span>
-                </button>
                 <a href="{{ filter_urls['clear'] }}" class="btn-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Limpiar</a>
             </form>
 

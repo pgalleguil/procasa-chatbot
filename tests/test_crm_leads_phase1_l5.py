@@ -31,6 +31,8 @@ def test_assignment_date_has_full_year_and_relative_metadata():
 def test_priority_has_operational_timing_copy():
     html = page()
     assert 'class="sla-timing"' in html
+    assert 'td.col-priority .mobile-cell-value { display: flex; flex-wrap: wrap;' in html
+    assert 'flex: 0 0 calc(100% - 16px); margin-left: 16px' in html
     assert any(value in html for value in ('Venció hace', 'Faltan', 'Dentro de SLA'))
 
 

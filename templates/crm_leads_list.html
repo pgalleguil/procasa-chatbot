@@ -2386,7 +2386,7 @@
                     button.classList.toggle('is-selected', button.dataset.quickResult === resultType);
                 });
                 const channelNeeded = false;
-                const dateNeeded = false;
+                const dateNeeded = resultType === 'EFFECTIVE_CONTACT';
                 const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'].includes(resultType);
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickDateField', dateNeeded);
@@ -2394,14 +2394,14 @@
                 setQuickExtra('quickReasonField', reasonNeeded);
                 setQuickExtra('quickOtherField', resultType === 'OTHER_EXPLICIT');
                 const save = document.getElementById('quickManagementSave');
-                if (save) save.disabled = false;
+                if (save) save.disabled = dateNeeded;
             }
 
             function quickFormIsValid() {
                 if (!quickManagementState.resultType) return false;
                 if (quickManagementState.resultType === 'OTHER_EXPLICIT'
                     && !document.getElementById('quickOtherOutcome')?.value.trim()) return false;
-                if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
+                if (['EFFECTIVE_CONTACT', 'FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (!quickManagementState.resultType) return false;
                 return true;
@@ -2518,6 +2518,11 @@
                 if (resultButton) { event.preventDefault(); configureQuickResult(resultButton.dataset.quickResult); }
             });
             document.getElementById('quickManagementSave')?.addEventListener('click', saveQuickManagement);
+            document.getElementById('quickNextDate')?.addEventListener('input', () => {
+                if (quickManagementState.resultType === 'EFFECTIVE_CONTACT') {
+                    document.getElementById('quickManagementSave').disabled = false;
+                }
+            });
 
             function toggleMobileMenu() {
                 const sidebar = document.getElementById('sidebar');

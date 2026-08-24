@@ -40,7 +40,7 @@
             });
             reason.value = '';
         }
-        if ($('quickManagementSave')) $('quickManagementSave').disabled = false;
+        if ($('quickManagementSave')) $('quickManagementSave').disabled = resultType === 'EFFECTIVE_CONTACT';
     }
 
     function valid() {
@@ -140,5 +140,10 @@
         if (result) { event.preventDefault(); configure(result.dataset.quickResult); }
     });
     $('quickManagementSave')?.addEventListener('click', save);
+    $('quickNextDate')?.addEventListener('input', () => {
+        if (state.resultType === 'EFFECTIVE_CONTACT' && $('quickNextDate').value) {
+            $('quickManagementSave').disabled = false;
+        }
+    });
     window.CRMQuickManagement = { open, save, configure, state, resultLabel };
 }());

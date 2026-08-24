@@ -4,7 +4,12 @@
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
     const dateResults = [];
-    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];
+    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'];
+    const reasonOptions = {
+        NOT_INTERESTED: new Set(['Ya no busca', 'Esta propiedad no le interesa', 'Precio o condiciones', 'Ya encontró otra propiedad']),
+        INVALID_NUMBER: new Set(['Número inexistente', 'Número equivocado', 'No corresponde al cliente']),
+        PROPERTY_UNAVAILABLE: new Set(['Propiedad vendida', 'Propiedad arrendada', 'Propiedad retirada', 'Propiedad pausada o no disponible temporalmente'])
+    };
     const channelResults = [];
     const otherResults = ['OTHER_EXPLICIT'];
     const $ = id => document.getElementById(id);
@@ -13,7 +18,7 @@
     const resultLabel = {
         CALL_NO_ANSWER: 'Sin respuesta', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
         EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
-        VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado',
+        VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado', PROPERTY_UNAVAILABLE: 'Propiedad no disponible',
         INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
         CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado', OTHER_EXPLICIT: 'Otro'
     };
@@ -28,11 +33,9 @@
         setExtra('quickOtherField', otherResults.includes(resultType));
         const reason = $('quickReason');
         if (reason) {
-            const invalidReasons = new Set(['Número inexistente', 'Número equivocado', 'No corresponde al cliente']);
+            const allowedReasons = reasonOptions[resultType] || new Set();
             [...reason.options].forEach(option => {
-                option.hidden = resultType === 'INVALID_NUMBER'
-                    ? (!invalidReasons.has(option.value) && option.value !== '')
-                    : invalidReasons.has(option.value);
+                option.hidden = option.value !== '' && !allowedReasons.has(option.value);
             });
             reason.value = '';
         }

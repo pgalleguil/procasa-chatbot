@@ -155,6 +155,20 @@ def test_review_filter_script_keeps_sorting_inside_local_review_route():
     assert "const targetPath = window.CRM_REVIEW_MODE ? '/crm-leads-review' : '/crm';" in html
 
 
+def test_quick_management_includes_property_unavailable_and_keeps_reason_placeholder_empty():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list').text
+    modal = (ROOT / 'templates' / 'partials' / 'crm_quick_management_modal.html').read_text(encoding='utf-8')
+    script = (ROOT / 'static' / 'js' / 'crm_quick_management.js').read_text(encoding='utf-8')
+    assert 'data-quick-result="PROPERTY_UNAVAILABLE"' in modal
+    assert '<option value="">Seleccionar motivo (opcional)</option>' in modal
+    assert 'value="Seleccionar motivo (opcional)"' not in modal
+    assert "PROPERTY_UNAVAILABLE: new Set" in script
+    assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in script
+    assert "if ($('quickReason').value.trim()) details.reason" in script
+    assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in html
+
+
 def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=detail&lead=review-07").text

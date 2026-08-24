@@ -15,6 +15,7 @@ RESULT_RULES = {
     "VISIT_SCHEDULED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
     "FOLLOW_UP_REQUESTED": {"attempt": True, "effective": True, "follow_up": True, "status": "managed_follow_up"},
     "NOT_INTERESTED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
+    "PROPERTY_UNAVAILABLE": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "CLOSED_WON": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "CLOSED_LOST": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "INVALID_NUMBER": {"attempt": True, "effective": False, "follow_up": False, "status": "managed_closed"},

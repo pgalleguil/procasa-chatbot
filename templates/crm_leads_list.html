@@ -2387,7 +2387,7 @@
                 });
                 const channelNeeded = false;
                 const dateNeeded = false;
-                const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER'].includes(resultType);
+                const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'].includes(resultType);
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickDateField', dateNeeded);
                 setQuickExtra('quickReasonField', reasonNeeded);
@@ -2421,7 +2421,7 @@
                 const labels = {
                     CALL_NO_ANSWER: 'Sin respuesta', MESSAGE_SENT_WAITING_RESPONSE: 'Mensaje enviado',
                     EFFECTIVE_CONTACT: 'Contactado', FOLLOW_UP_REQUESTED: 'En seguimiento',
-                    VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado',
+                    VISIT_SCHEDULED: 'Visita agendada', NOT_INTERESTED: 'No interesado', PROPERTY_UNAVAILABLE: 'Propiedad no disponible',
                     INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
                     CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado'
                 };

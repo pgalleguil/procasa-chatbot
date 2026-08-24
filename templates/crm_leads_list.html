@@ -901,7 +901,7 @@
         /* Executive KPI cards: compact hierarchy, one shared visual language. */
         .temperature-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0 0 12px; }
         .temperature-cards > .col { width: 100%; padding: 0; }
-        .temperature-cards .summary-card { min-height: 146px; height: 146px; padding: 17px 21px 15px; display: block; position: relative; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+        .temperature-cards .summary-card { min-height: 126px; height: 126px; padding: 17px 21px 15px; display: block; position: relative; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
         .temperature-cards .summary-card:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent-color) 62%, var(--border-color)); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
         .temperature-cards .summary-card.is-active { background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-card)); border: 2px solid var(--accent-color); box-shadow: none; outline: none; }
         .temperature-cards .summary-card:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
@@ -910,20 +910,12 @@
         .temperature-cards .summary-value { font-size: 2.12rem; line-height: .95; font-weight: 700; }
         .temperature-cards .summary-meta { display: block; margin-top: 7px; color: var(--text-secondary); font-size: .78rem; line-height: 1.2; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .temperature-cards .summary-value.text-danger { color: #e06472 !important; }
-        .summary-sparkline { position: absolute; left: 21px; right: 21px; bottom: 27px; height: 28px; width: auto; margin: 0; opacity: .72; }
-        .summary-sparkline svg { display: block; width: 100%; height: 28px; overflow: visible; }
-        .summary-sparkline polyline { display: none; }
-        .summary-sparkline path { fill: none; stroke: var(--accent-color); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-        .summary-sparkline.hot path { stroke: #d85e6d; }
-        .summary-sparkline.cold path { stroke: #8b98aa; }
-        .summary-footer { color: var(--text-secondary); font-size: .66rem; line-height: 1; margin-top: 6px; letter-spacing: .01em; }
-        .temperature-cards .summary-footer { position: absolute; left: 21px; bottom: 13px; margin: 0; }
         .temperature-cards .summary-card > i,
         .temperature-cards .summary-card .lead-type-icon { display: none !important; }
         .temperature-cards .summary-label .lead-type-icon { display: none !important; }
         @media (min-width: 769px) and (max-width: 1024px) {
             .temperature-cards { gap: 12px; }
-            .temperature-cards .summary-card { min-height: 138px; height: 138px; padding: 16px 17px 14px; }
+            .temperature-cards .summary-card { min-height: 126px; height: 126px; padding: 16px 17px 14px; }
             .temperature-cards .summary-label { font-size: .68rem; margin-bottom: 9px; }
             .temperature-cards .summary-value { font-size: 1.85rem; }
             .temperature-cards .summary-meta { font-size: .7rem; }
@@ -1966,13 +1958,7 @@
                         <div class="summary-label">Total leads</div>
                         <div class="summary-value" id="kpi-total" data-target="{{ kpis.total }}">0</div>
                         <div class="summary-meta">{{ kpis.managed }} gestionados · {{ kpis.nuevo }} sin atender</div>
-                        <div>
-                            <div class="summary-sparkline" aria-label="Asignaciones por día — últimos 7 días">
-                                {% set series = ((kpis.get('assignment_series') or {}).get('total') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones por día — últimos 7 días"><title>Asignaciones por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
-                            </div>
-                            <div class="summary-footer">Últimos 7 días</div>
-                        </div>
+
                     </a>
                 </div>
                 <div class="col">
@@ -1981,13 +1967,7 @@
                         <div class="summary-label">{{ lead_temperature_label('HOT') }}</div>
                         <div class="summary-value text-danger" id="kpi-hot" data-target="{{ kpis.hot }}">0</div>
                         <div class="summary-meta temperature-share">{{ pct(kpis.hot_percent) }}% del total · {{ kpis.nuevo_hot }} sin atender</div>
-                        <div>
-                            <div class="summary-sparkline hot" aria-label="Asignaciones Hot por día — últimos 7 días">
-                                {% set series = ((kpis.get('assignment_series') or {}).get('hot') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Hot por día — últimos 7 días"><title>Asignaciones Hot por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
-                            </div>
-                            <div class="summary-footer">Últimos 7 días</div>
-                        </div>
+
                     </a>
                 </div>
                 <div class="col">
@@ -1996,13 +1976,7 @@
                         <div class="summary-label">Leads</div>
                         <div class="summary-value" id="kpi-cold" data-target="{{ kpis.cold }}">0</div>
                         <div class="summary-meta temperature-share">{{ pct(kpis.cold_percent) }}% del total · {{ kpis.nuevo_cold }} sin atender</div>
-                        <div>
-                            <div class="summary-sparkline cold" aria-label="Asignaciones Lead por día — últimos 7 días">
-                                {% set series = ((kpis.get('assignment_series') or {}).get('cold') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Lead por día — últimos 7 días"><title>Asignaciones Lead por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
-                            </div>
-                            <div class="summary-footer">Últimos 7 días</div>
-                        </div>
+
                     </a>
                 </div>
             </div>
@@ -2956,31 +2930,6 @@
                 });
             }
 
-            function renderSmoothSparklines() {
-                document.querySelectorAll('.summary-sparkline svg').forEach(function(svg) {
-                    const source = svg.querySelector('polyline');
-                    const path = svg.querySelector('.summary-sparkline-line');
-                    if (!source || !path) return;
-                    const points = (source.getAttribute('points') || '').trim().split(/\s+/).map(function(point) {
-                        const values = point.split(',').map(Number);
-                        return { x: values[0], y: values[1] };
-                    }).filter(function(point) { return Number.isFinite(point.x) && Number.isFinite(point.y); });
-                    if (points.length < 2) return;
-                    let d = `M ${points[0].x} ${points[0].y}`;
-                    for (let i = 1; i < points.length - 1; i += 1) {
-                        const midpoint = {
-                            x: (points[i].x + points[i + 1].x) / 2,
-                            y: (points[i].y + points[i + 1].y) / 2,
-                        };
-                        d += ` Q ${points[i].x} ${points[i].y} ${midpoint.x} ${midpoint.y}`;
-                    }
-                    const last = points[points.length - 1];
-                    d += ` Q ${last.x} ${last.y} ${last.x} ${last.y}`;
-                    path.setAttribute('d', d);
-                });
-            }
-
-            renderSmoothSparklines();
         </script>
     </body>
 

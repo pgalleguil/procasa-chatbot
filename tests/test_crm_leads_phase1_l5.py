@@ -8,17 +8,11 @@ def page(query="view=list"):
         return client.get(f"/crm-leads-review?{query}").text
 
 
-def test_cards_have_single_active_state_and_seven_sparkline_buckets():
+def test_cards_have_single_active_state_without_decorative_graphics():
     html = page()
     assert html.count('class="summary-card is-active"') == 1
-    assert html.count('class="summary-sparkline"') == 1
-    assert html.count('class="summary-sparkline hot"') == 1
-    assert html.count('class="summary-sparkline cold"') == 1
-    assert len(re.findall(r'<div class="summary-sparkline[^>]*>.*?</div>', html, re.S)) == 3
-    for block in re.findall(r'<div class="summary-sparkline[^>]*>(.*?)</div>', html, re.S):
-        assert block.count('<polyline ') == 1
-        assert block.count('summary-sparkline-line') == 1
-        assert len(re.search(r'points="([^"]+)"', block).group(1).split()) == 7
+    assert 'class="summary-sparkline' not in html
+    assert 'class="summary-footer"' not in html
 
 
 def test_assignment_date_has_full_year_and_relative_metadata():

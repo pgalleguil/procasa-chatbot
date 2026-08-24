@@ -17,24 +17,21 @@ def card_blocks(html):
 def test_cards_follow_executive_composition_and_shared_size_contract():
     html = page()
     assert html.count('class="summary-card') == 3
-    assert "min-height: 146px" in html and "height: 146px" in html
+    assert "min-height: 126px" in html and "height: 126px" in html
     assert "gap: 18px" in html
     assert "padding: 17px 21px 15px" in html
-    assert "Últimos 7 días" in html
+    assert "Últimos 7 días" not in html
     assert "Asignaciones por día · últimos 7 días" not in html
     assert "fa-users fa-2x" not in html and "fa-user fa-2x" not in html
 
 
-def test_secondary_copy_is_below_kpi_and_sparkline_has_seven_points():
+def test_secondary_copy_is_below_kpi_without_sparkline_content():
     html = page()
     for block in card_blocks(html):
         value = block.index("summary-value")
         meta = block.index("summary-meta")
-        sparkline = block.index("summary-sparkline")
-        assert value < meta < sparkline
-        assert block.count("<polyline ") == 1
-        assert block.count("summary-sparkline-line") == 1
-        assert len(re.search(r'points="([^"]+)"', block).group(1).split()) == 7
+        assert value < meta
+        assert "summary-sparkline" not in block
 
 
 def test_active_state_and_keyboard_contract_are_preserved():

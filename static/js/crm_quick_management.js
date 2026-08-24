@@ -21,6 +21,7 @@
         INVALID_NUMBER: 'Número inválido', CLOSED_WON: 'Cerrado ganado',
         CLOSED_LOST: 'Cerrado perdido', DISCARDED_VALID_REASON: 'Descartado', OTHER_EXPLICIT: 'Otro'
     };
+    const escapeHtml = value => String(value || '').replace(/[&<>'"]/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[character]));
 
     function configure(resultType) {
         state.resultType = resultType;
@@ -115,7 +116,7 @@
                 state.managementRequestId = null;
                 $('quickManagementProgress').textContent = 'Gestión registrada';
                 bootstrap.Modal.getOrCreateInstance($('quickManagementModal')).hide();
-                state.onSuccess?.(result, resultLabel[result]);
+                state.onSuccess?.(result, resultLabel[result], details);
                 window.CRM_REVIEW_NOTICE?.('Gestión registrada (simulada).');
                 return;
             }
@@ -127,7 +128,7 @@
             state.managementRequestId = null;
             $('quickManagementProgress').textContent = 'Gestión registrada';
             bootstrap.Modal.getOrCreateInstance($('quickManagementModal')).hide();
-            state.onSuccess?.(result, resultLabel[result]);
+            state.onSuccess?.(result, resultLabel[result], details);
         } catch (exception) {
             button.disabled = false;
             $('quickManagementProgress').textContent = '';

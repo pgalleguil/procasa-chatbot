@@ -170,6 +170,8 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in script
     assert "toLocaleLowerCase() !== 'seleccionar motivo (opcional)'" in script
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in html
+    assert 'lead.ultima_accion_nota' in html
+    assert 'details.reason' in script
     assert 'id="quickDateField"' in modal
     assert 'id="quickNotes"' in modal
     assert 'id="quickFollowUpToggle"' in modal

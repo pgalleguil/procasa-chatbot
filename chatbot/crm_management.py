@@ -237,6 +237,13 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
              "actor_type": "human", "type": event_type, "result": result_type,
              "confirmed": True, "timestamp": occurred, "source": source,
              "idempotency_key": idempotency_key, "management_request_id": idempotency_key}
+    event["meta"] = {
+        key: value for key, value in {
+            "reason": details.get("reason"),
+            "notes": details.get("notes"),
+            "visit_at": details.get("visit_at"),
+        }.items() if value not in (None, "")
+    }
     try:
         db["crm_events"].insert_one(event)
     except DuplicateKeyError:

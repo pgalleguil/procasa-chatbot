@@ -1190,7 +1190,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 or event_meta.get("action")
                 or "Sin gestión registrada"
             )
-            last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
+            last_action_note = event_meta.get("notes") or event_meta.get("note") or event_meta.get("reason") or ""
         else:
             persisted_action = (lead.get("last_action_label") or "").strip()
             last_action_text = (

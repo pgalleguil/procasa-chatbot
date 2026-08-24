@@ -3,7 +3,7 @@
 
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
-    const dateResults = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'];
+    const dateResults = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'];
     const reasonResults = ['NOT_INTERESTED'];
     const reasonOptions = {
         NOT_INTERESTED: new Set(['Ya no busca', 'Esta propiedad no le interesa', 'Precio o condiciones', 'Ya encontró otra propiedad']),
@@ -28,9 +28,11 @@
             button.classList.toggle('is-selected', button.dataset.quickResult === resultType));
         setExtra('quickChannelField', channelResults.includes(resultType));
         const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType);
+        const isVisit = resultType === 'VISIT_SCHEDULED';
         setExtra('quickFollowUpField', canScheduleFollowUp);
-        setExtra('quickDateField', canScheduleFollowUp && followUpEnabled());
-        setExtra('quickNotesField', canScheduleFollowUp && followUpEnabled());
+        setExtra('quickDateField', isVisit || (canScheduleFollowUp && followUpEnabled()));
+        setExtra('quickNotesField', isVisit || (canScheduleFollowUp && followUpEnabled()));
+        if ($('quickDateLabel')) $('quickDateLabel').textContent = isVisit ? 'Fecha y hora de la visita' : 'Próximo contacto';
         setExtra('quickReasonField', reasonResults.includes(resultType));
         setExtra('quickOtherField', otherResults.includes(resultType));
         const reason = $('quickReason');
@@ -48,6 +50,7 @@
         if (!state.resultType) return false;
         if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType)
             && followUpEnabled() && !$('quickNextDate')?.value) return false;
+        if (state.resultType === 'VISIT_SCHEDULED' && !$('quickNextDate')?.value) return false;
         if (otherResults.includes(state.resultType) && !$('quickOtherOutcome')?.value.trim()) return false;
         return true;
     }
@@ -74,6 +77,7 @@
         if ($('quickNextDate')) $('quickNextDate').value = '';
         if ($('quickNotes')) $('quickNotes').value = '';
         if ($('quickFollowUpToggle')) $('quickFollowUpToggle').checked = false;
+        if ($('quickDateLabel')) $('quickDateLabel').textContent = 'Próximo contacto';
         $('quickReason').value = '';
         if ($('quickOtherOutcome')) $('quickOtherOutcome').value = '';
         error('');
@@ -99,6 +103,7 @@
         if ($('quickReason').value.trim()) details.reason = $('quickReason').value.trim();
         if ($('quickOtherOutcome').value.trim()) details.outcome = $('quickOtherOutcome').value.trim();
         if ($('quickNotes')?.value.trim()) details.notes = $('quickNotes').value.trim();
+        if (state.resultType === 'VISIT_SCHEDULED') details.visit_at = $('quickNextDate')?.value || null;
         const submittedId = state.managementRequestId;
         const payload = { lead_id: state.leadId, phone: state.phone, assignment_cycle_id: state.assignmentCycleId,
             management_request_id: submittedId, idempotency_key: submittedId, result_type: state.resultType,

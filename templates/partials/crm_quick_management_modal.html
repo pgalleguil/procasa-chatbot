@@ -13,6 +13,7 @@
                 <div class="quick-result-grid" id="quickResultGrid">
                     <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT">Contactado</button>
                     <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">Sin respuesta</button>
+                    <button type="button" class="quick-result-btn" data-quick-result="VISIT_SCHEDULED">Visita agendada</button>
                     <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED">No interesado</button>
                     <button type="button" class="quick-result-btn" data-quick-result="PROPERTY_UNAVAILABLE">Propiedad no disponible</button>
                     <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
@@ -25,7 +26,7 @@
                     </div>
                 </div>
                 <div class="quick-extra mt-3" id="quickDateField">
-                    <label class="form-label small mb-1" for="quickNextDate">Próximo contacto</label>
+                    <label class="form-label small mb-1" for="quickNextDate" id="quickDateLabel">Próximo contacto</label>
                     <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
                 </div>
                 <div class="quick-extra mt-3" id="quickNotesField">

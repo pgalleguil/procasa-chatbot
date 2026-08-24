@@ -2365,7 +2365,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup7"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup8"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2387,12 +2387,14 @@
                 });
                 const channelNeeded = false;
                 const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType);
+                const isVisit = resultType === 'VISIT_SCHEDULED';
                 const dateNeeded = canScheduleFollowUp && document.getElementById('quickFollowUpToggle')?.checked;
                 const reasonNeeded = resultType === 'NOT_INTERESTED';
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickFollowUpField', canScheduleFollowUp);
-                setQuickExtra('quickDateField', dateNeeded);
-                setQuickExtra('quickNotesField', dateNeeded);
+                setQuickExtra('quickDateField', isVisit || dateNeeded);
+                setQuickExtra('quickNotesField', isVisit || dateNeeded);
+                document.getElementById('quickDateLabel').textContent = isVisit ? 'Fecha y hora de la visita' : 'Próximo contacto';
                 setQuickExtra('quickReasonField', reasonNeeded);
                 setQuickExtra('quickOtherField', resultType === 'OTHER_EXPLICIT');
                 const save = document.getElementById('quickManagementSave');
@@ -2407,6 +2409,8 @@
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(quickManagementState.resultType)
                     && document.getElementById('quickFollowUpToggle')?.checked
+                    && !document.getElementById('quickNextDate')?.value) return false;
+                if (quickManagementState.resultType === 'VISIT_SCHEDULED'
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (!quickManagementState.resultType) return false;
                 return true;
@@ -2458,6 +2462,7 @@
                 document.getElementById('quickNextDate').value = '';
                 document.getElementById('quickNotes').value = '';
                 document.getElementById('quickFollowUpToggle').checked = false;
+                document.getElementById('quickDateLabel').textContent = 'Próximo contacto';
                 document.getElementById('quickReason').value = '';
                 document.getElementById('quickChannel').value = '';
                 showQuickError('');
@@ -2484,6 +2489,7 @@
                 if (reason) details.reason = reason;
                 const notes = document.getElementById('quickNotes')?.value.trim();
                 if (notes) details.notes = notes;
+                if (quickManagementState.resultType === 'VISIT_SCHEDULED') details.visit_at = document.getElementById('quickNextDate').value || null;
                 const payload = {
                     lead_id: quickManagementState.leadId,
                     phone: quickManagementState.phone,
@@ -2525,7 +2531,7 @@
             });
             document.getElementById('quickManagementSave')?.addEventListener('click', saveQuickManagement);
             document.getElementById('quickNextDate')?.addEventListener('input', () => {
-                if (quickManagementState.resultType === 'EFFECTIVE_CONTACT') {
+                if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(quickManagementState.resultType)) {
                     document.getElementById('quickManagementSave').disabled = false;
                 }
             });

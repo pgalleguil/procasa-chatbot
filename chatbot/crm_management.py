@@ -73,6 +73,14 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     rule = RESULT_RULES.get(result_type)
     if not rule:
         raise ValueError("unsupported CRM management result")
+    details = details_json if isinstance(details_json, dict) else {}
+    visit_at = None
+    if result_type == "VISIT_SCHEDULED":
+        visit_at = coerce_utc_datetime(details.get("visit_at") or next_follow_up_at)
+        if not visit_at:
+            raise ValueError("visit date is required")
+        stage_override = "VISIT_SCHEDULED"
+        legacy_stage = "visita"
     if not stage_override and rule["status"] == "managed_closed":
         stage_override = "CLOSED_WON" if result_type == "CLOSED_WON" else "CLOSED_LOST"
         legacy_stage = "cerrado"
@@ -104,7 +112,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         "schema_version": "crm_management_result_v1", "lead_id": lead_id,
         "assignment_cycle_id": assignment_cycle_id, "actor_user_id": actor_user_id,
         "result_type": result_type, "occurred_at": occurred, "source": source,
-        "details_json": details_json if isinstance(details_json, dict) else {},
+        "details_json": details,
         "pipeline_stage_at_result": str(stage_override or "CONTACTED"),
         "legacy_stage_at_result": str(legacy_stage or (stage_override or "CONTACTED")),
         "status": "processing",
@@ -137,6 +145,8 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if rule["follow_up"]:
         lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
+    if result_type == "VISIT_SCHEDULED":
+        lead_updates.update({"visit_date": visit_at, "lifecycle.visit_scheduled_at": visit_at})
     db["leads"].update_one({"_id": lead_id}, {"$set": lead_updates})
     # First timestamps use compare-and-set: duplicates and later results cannot replace them.
     db["leads"].update_one({"_id": lead_id, "lifecycle.first_valid_management_at": {"$exists": False}},

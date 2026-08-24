@@ -138,6 +138,8 @@ def test_filter_bar_exposes_property_code_without_extra_filters_button():
     assert 'name="property_code"' in html
     assert '<span class="filter-field-label">Código</span>' in html
     assert 'fa-solid fa-building' not in html
+    assert '.filter-bar .property-code-input' in html
+    assert 'text-align: center;' in html
     assert 'id="btnMoreFilters"' not in html
     assert 'class="filter-field filter-search-field lead-search-field"' in html
     assert '.filter-bar .lead-search-field { max-width: 220px; }' in html

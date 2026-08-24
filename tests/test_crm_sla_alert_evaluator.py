@@ -839,6 +839,6 @@ def test_outreach_results_includes_mwr():
 def test_sla_stop_results_has_valid_types():
     for r in ("NO_RESPONDIO", "EFFECTIVE_CONTACT", "CALL_NO_ANSWER", "INVALID_NUMBER",
               "FOLLOW_UP_REQUESTED", "SCHEDULE_FOLLOW_UP",
-              "NOT_INTERESTED", "DISCARDED_VALID_REASON"):
+              "NOT_INTERESTED", "PROPERTY_UNAVAILABLE", "OTHER_EXPLICIT", "DISCARDED_VALID_REASON"):
         assert r in SLA_STOP_RESULTS
 

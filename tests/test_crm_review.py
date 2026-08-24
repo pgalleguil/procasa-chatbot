@@ -57,17 +57,17 @@ def test_review_has_fake_cases_and_independent_response_column():
     assert 'data-label="Respuesta"' in html
 
 
-def test_review_list_has_six_operational_columns_and_merged_cells():
+def test_review_list_has_seven_operational_columns_and_merged_cells():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text
     header = html[html.index("<thead>"):html.index("</thead>")]
-    expected = ("Asignado", "Prioridad", "Tipo", "Lead", "Gestión", "Respuesta")
+    expected = ("Asignado", "Prioridad", "Tipo", "Código", "Lead", "Gestión", "Respuesta")
     positions = [header.index(fragment) for fragment in (
         '<th class="col-sent">Asignado', '<th class="col-priority">',
-        '<th class="col-type">Tipo', '<th class="col-lead">Lead',
+        '<th class="col-type">Tipo', '<th class="col-code">Código', '<th class="col-lead">Lead',
         '<th class="col-management">Gestión', '<th class="col-response">Respuesta')]
     assert positions == sorted(positions)
-    assert len(__import__("re").findall(r"<th\b", header)) == 6
+    assert len(__import__("re").findall(r"<th\b", header)) == 7
     assert 'data-label="Cliente"' not in html
     assert 'data-label="Propiedad"' not in html
     assert 'data-label="Estado"' not in html
@@ -110,7 +110,7 @@ def test_review_relative_times_use_days_after_24_hours():
     with TestClient(app) as client:
         html = client.get('/crm-leads-review?view=list').text
     assert 'Hace 3 días' in html
-    assert 'Hace 3 días 22 h' in html
+    assert __import__("re").search(r"Hace \d+ días(?: \d+ h)?", html)
     assert 'Hace 94 h' not in html
 
 

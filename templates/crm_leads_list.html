@@ -1000,20 +1000,22 @@
             box-shadow: none;
         }
 
-        .crm-table .col-sent { width: 12%; min-width: 92px; }
+        .crm-table .col-sent { width: 12%; min-width: 116px; }
         .crm-table .col-priority { width: 15%; min-width: 118px; }
-        .crm-table .col-type { width: 10%; min-width: 86px; }
-        .crm-table .col-lead { width: 25%; min-width: 190px; }
-        .crm-table .col-management { width: 26%; min-width: 180px; }
-        .crm-table .col-response { width: 12%; min-width: 112px; }
+        .crm-table .col-type { width: 8%; min-width: 78px; }
+        .crm-table .col-code { width: 10%; min-width: 96px; }
+        .crm-table .col-lead { width: 22%; min-width: 170px; }
+        .crm-table .col-management { width: 23%; min-width: 180px; }
+        .crm-table .col-response { width: 10%; min-width: 112px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
             .crm-table .col-sent { width: 12%; }
             .crm-table .col-priority { width: 15%; }
-            .crm-table .col-type { width: 10%; }
-            .crm-table .col-lead { width: 25%; }
-            .crm-table .col-management { width: 26%; }
-            .crm-table .col-response { width: 12%; }
+            .crm-table .col-type { width: 8%; }
+            .crm-table .col-code { width: 10%; }
+            .crm-table .col-lead { width: 22%; }
+            .crm-table .col-management { width: 23%; }
+            .crm-table .col-response { width: 10%; }
         }
 
         @media (min-width: 769px) {
@@ -1713,6 +1715,7 @@
             .crm-table .col-priority,
             .crm-table .col-sent,
             .crm-table .col-type,
+            .crm-table .col-code,
             .crm-table .col-lead,
             .crm-table .col-management,
             .crm-table .col-response {
@@ -1722,9 +1725,10 @@
             .crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }
             .crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }
             .crm-table .col-type { order: 2; grid-column: 1 / -1; grid-row: 2; }
-            .crm-table .col-lead { order: 3; grid-column: 1 / -1; grid-row: 3; }
-            .crm-table .col-management { order: 4; grid-column: 1 / -1; grid-row: 4; }
-            .crm-table .col-response { order: 5; grid-column: 1 / -1; grid-row: 5; }
+            .crm-table .col-code { order: 3; grid-column: 1 / -1; grid-row: 3; }
+            .crm-table .col-lead { order: 4; grid-column: 1 / -1; grid-row: 4; }
+            .crm-table .col-management { order: 5; grid-column: 1 / -1; grid-row: 5; }
+            .crm-table .col-response { order: 6; grid-column: 1 / -1; grid-row: 6; }
 
             /* Etiqueta flotante / Label */
             .crm-table td::before {
@@ -2181,6 +2185,7 @@
                                 </div>
                             </th>
                             <th class="col-type">Tipo</th>
+                            <th class="col-code">Código</th>
                             <th class="col-lead">Lead</th>
                             <th class="col-management">Gestión</th>
                             <th class="col-response">Respuesta</th>
@@ -2247,11 +2252,16 @@
                                     {% if lead.lead_temperature_effective == 'HOT' %}<span class="type-hot">Lead Hot</span>{% else %}<span>Lead</span>{% endif %}
                                 </div>
                             </td>
+                            <td class="col-code" data-label="Código">
+                                <div class="mobile-cell-value">
+                                    <a href="{{ lead.url_propiedad }}" class="prop-code-link">{{ lead.codigo_propiedad }}</a>
+                                </div>
+                            </td>
                             <td class="col-lead" data-label="Lead">
                                 <div class="mobile-cell-value">
                                     <div class="lead-cell">
                                         <div class="lead-name">{{ lead.nombre }}</div>
-                                        <span class="lead-meta"><a href="{{ lead.url_propiedad }}" class="prop-code-link">{{ lead.codigo_propiedad }}</a> · {{ lead.whatsapp_display }}</span>
+                                        <span class="lead-meta">{{ lead.whatsapp_display }}</span>
                                     </div>
                                 </div>
                             </td>
@@ -2284,7 +2294,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="text-center text-secondary py-5">
+                            <td colspan="7" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>

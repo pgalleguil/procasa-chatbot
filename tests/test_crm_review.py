@@ -138,7 +138,9 @@ def test_filter_bar_exposes_property_code_without_extra_filters_button():
     assert 'name="property_code"' in html
     assert 'id="btnMoreFilters"' not in html
     assert 'class="filter-field filter-search-field lead-search-field"' in html
-    assert '.filter-bar .lead-search-field { max-width: 230px; }' in html
+    assert '.filter-bar .lead-search-field { max-width: 220px; }' in html
+    assert 'grid-template-columns: 220px 130px repeat(4, 186px) max-content;' in html
+    assert '.filter-bar .compact-select-filter { max-width: 186px; }' in html
     assert 'column-gap: 10px;' in html and 'row-gap: 10px;' in html
     assert 'justify-items: stretch;' in html
 

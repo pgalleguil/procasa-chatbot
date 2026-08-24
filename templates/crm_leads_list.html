@@ -719,7 +719,7 @@
         /* FILTERS (Homologados a captacion_list) */
         .filter-bar {
             display: grid;
-            grid-template-columns: minmax(180px, 1.05fr) minmax(118px, .65fr) repeat(4, minmax(112px, .9fr)) max-content;
+            grid-template-columns: 220px 130px repeat(4, 186px) max-content;
             column-gap: 10px;
             row-gap: 10px;
             margin-bottom: 8px;
@@ -755,7 +755,8 @@
             min-width: 0;
             width: 100%;
         }
-        .filter-bar .lead-search-field { max-width: 230px; }
+        .filter-bar .lead-search-field { max-width: 220px; }
+        .filter-bar .compact-select-filter { max-width: 186px; }
 
         .filter-field-label {
             color: var(--text-secondary);
@@ -2062,7 +2063,7 @@
                     </span>
                 </label>
 
-                <label class="filter-field">
+                <label class="filter-field compact-select-filter">
                     <span class="filter-field-label">Tipo</span>
                     <select name="temperatura" data-auto-filter>
                         <option value="Todos" {% if selected_temperature == 'Todos' %}selected{% endif %}>Todos</option>
@@ -2071,7 +2072,7 @@
                     </select>
                 </label>
 
-                <label class="filter-field">
+                <label class="filter-field compact-select-filter">
                     <span class="filter-field-label">Estado de gestión</span>
                     <select name="estado" data-auto-filter>
                         <option value="" {% if not selected_state %}selected{% endif %}>Todos</option>
@@ -2083,7 +2084,7 @@
                 </label>
 
                 {% if can_administer_leads %}
-                <label class="filter-field">
+                <label class="filter-field compact-select-filter">
                     <span class="filter-field-label">Ejecutivo</span>
                     <select name="ejecutivo" data-auto-filter>
                         <option value="Todos" {% if current_ejecutivo=='Todos' %}selected{% endif %}>Todos</option>
@@ -2094,7 +2095,7 @@
                 </label>
                 {% endif %}
 
-                <label class="filter-field">
+                <label class="filter-field compact-select-filter">
                     <span class="filter-field-label">Orden</span>
                     <select name="orden" data-auto-filter>
                         <option value="recent_assigned" {% if request.query_params.get('orden', 'recent_assigned') in ['recent_assigned', 'recientes'] or not request.query_params.get('orden') %}selected{% endif %}>Asignados más recientes</option>

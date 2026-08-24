@@ -92,6 +92,12 @@ def test_review_oldest_assignment_order_uses_assigned_fixture_date():
     assert html.index('Cliente Demo 09') < html.index('Cliente Demo 01')
 
 
+def test_review_filter_script_keeps_sorting_inside_local_review_route():
+    with TestClient(app) as client:
+        html = client.get("/crm-leads-review?view=list").text
+    assert "const targetPath = window.CRM_REVIEW_MODE ? '/crm-leads-review' : '/crm';" in html
+
+
 def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=detail&lead=review-07").text

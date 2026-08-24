@@ -2658,7 +2658,8 @@
                 if (params.get('ejecutivo') === 'Todos') params.delete('ejecutivo');
                 if (params.get('orden') === 'recent_assigned') params.delete('orden');
                 const query = params.toString();
-                window.location.assign('/crm' + (query ? '?' + query : ''));
+                const targetPath = window.CRM_REVIEW_MODE ? '/crm-leads-review' : '/crm';
+                window.location.assign(targetPath + (query ? '?' + query : ''));
             }
 
             document.addEventListener('change', event => {

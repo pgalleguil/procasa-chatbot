@@ -43,7 +43,7 @@
             });
             reason.value = '';
         }
-        if ($('quickManagementSave')) $('quickManagementSave').disabled = false;
+        if ($('quickManagementSave')) $('quickManagementSave').disabled = isVisit || (canScheduleFollowUp && followUpEnabled());
     }
 
     function valid() {
@@ -149,7 +149,7 @@
     });
     $('quickManagementSave')?.addEventListener('click', save);
     $('quickNextDate')?.addEventListener('input', () => {
-        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType) && $('quickNextDate').value) $('quickManagementSave').disabled = false;
+        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(state.resultType) && $('quickNextDate').value) $('quickManagementSave').disabled = false;
     });
     $('quickFollowUpToggle')?.addEventListener('change', () => {
         const enabled = followUpEnabled();

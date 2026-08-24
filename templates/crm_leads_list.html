@@ -1178,6 +1178,8 @@
             max-width: 90vw;
             max-height: min(520px, calc(100vh - 90px));
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: var(--accent) rgba(0, 0, 0, 0.05);
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 10px;
@@ -1190,6 +1192,16 @@
             color: var(--text-primary);
             text-align: left;
         }
+        .sla-info-popup::-webkit-scrollbar { width: 6px; }
+        .sla-info-popup::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+        }
+        .sla-info-popup::-webkit-scrollbar-thumb {
+            background: var(--accent);
+            border-radius: 10px;
+        }
+        .sla-info-popup::-webkit-scrollbar-thumb:hover { background: #4f46e5; }
         .sla-info-popup.show {
             display: block;
         }

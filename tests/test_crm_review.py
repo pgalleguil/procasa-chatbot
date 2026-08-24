@@ -128,6 +128,8 @@ def test_priority_info_control_has_compact_accessible_box():
     assert 'style="cursor: help; font-size: 0.85rem;"' in html
     assert 'max-height: min(520px, calc(100vh - 90px));' in html
     assert 'border-left: 3px solid var(--accent-color);' in html
+    assert '.sla-info-popup::-webkit-scrollbar { width: 6px; }' in html
+    assert 'scrollbar-color: var(--accent) rgba(0, 0, 0, 0.05);' in html
 
 
 def test_review_filter_script_keeps_sorting_inside_local_review_route():

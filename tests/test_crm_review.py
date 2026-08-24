@@ -125,9 +125,9 @@ def test_review_management_relative_times_are_dynamic_format():
 def test_priority_info_control_has_compact_accessible_box():
     with TestClient(app) as client:
         html = client.get('/crm-leads-review?view=list').text
-    assert '.sla-info-trigger {' in html
-    assert 'width: 19px;' in html and 'height: 19px;' in html
-    assert 'box-shadow: 0 0 0 2px' in html
+    assert 'style="cursor: help; font-size: 0.85rem;"' in html
+    assert 'max-height: min(520px, calc(100vh - 90px));' in html
+    assert 'border-left: 3px solid var(--accent-color);' in html
 
 
 def test_review_filter_script_keeps_sorting_inside_local_review_route():

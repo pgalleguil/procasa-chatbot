@@ -1174,14 +1174,16 @@
             display: none;
             position: absolute;
             z-index: 1060;
-            width: 360px;
+            width: 380px;
             max-width: 90vw;
+            max-height: min(520px, calc(100vh - 90px));
+            overflow-y: auto;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 10px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.25);
             padding: 16px;
-            top: 34px;
+            top: 30px;
             left: 0;
             font-size: 0.85rem;
             line-height: 1.5;
@@ -1190,37 +1192,6 @@
         }
         .sla-info-popup.show {
             display: block;
-        }
-        .sla-info-trigger {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 19px;
-            height: 19px;
-            margin-left: 5px;
-            border: 1px solid color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
-            border-radius: 5px;
-            background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-card));
-            color: var(--accent-color);
-            cursor: help;
-            vertical-align: -4px;
-            transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-        }
-        .sla-info-trigger:hover,
-        .sla-info-trigger:focus-visible {
-            border-color: var(--accent-color);
-            background: color-mix(in srgb, var(--accent-color) 20%, var(--bg-card));
-            color: var(--text-primary);
-            outline: none;
-        }
-        .sla-info-trigger:focus-visible {
-            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 30%, transparent);
-        }
-        .sla-info-trigger i {
-            margin: 0 !important;
-            font-size: .72rem !important;
-            opacity: 1 !important;
-            cursor: inherit !important;
         }
         .sla-info-header {
             display: flex;
@@ -1243,12 +1214,21 @@
         }
         .sla-info-body h4 {
             font-size: 0.85rem;
-            margin: 10px 0 4px;
-            color: var(--text-primary);
+            margin: 14px 0 6px;
+            padding-top: 9px;
+            border-top: 1px solid var(--border-color);
+            color: var(--accent-color);
         }
         .sla-info-body p {
             margin: 4px 0;
             color: var(--text-secondary);
+        }
+        .sla-info-body > p:first-child {
+            margin: 0 0 10px;
+            padding: 9px 10px;
+            border-left: 3px solid var(--accent-color);
+            border-radius: 0 6px 6px 0;
+            background: color-mix(in srgb, var(--accent-color) 8%, var(--bg-card));
         }
         .sla-info-body ul {
             margin: 4px 0 4px 16px;
@@ -1258,6 +1238,7 @@
         .sla-info-body li {
             margin: 2px 0;
         }
+        .sla-info-body li b { color: var(--text-primary); }
         .sla-info-note {
             font-style: italic;
             opacity: 0.8;

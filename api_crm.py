@@ -1444,7 +1444,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "effective_sent_at": effective_sent_at,
             "effective_sent_date": effective_sent_at.strftime("%d/%m/%Y") if effective_sent_at else None,
             "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,
-            "assigned_relative": format_relative_compact(assigned_for_cycle),
+            # Use the same timestamp that renders the visible assignment date.
+            # Legacy records can lack lifecycle.assigned_at while still having
+            # fecha_asignacion, which previously left the relative line empty.
+            "assigned_relative": format_relative_compact(assigned_for_cycle or effective_sent_at),
             "effective_sent_source": effective_sent_source,
             "effective_sent_confirmed": effective_sent_confirmed,
             "stage": lead.get("stage") or "new",

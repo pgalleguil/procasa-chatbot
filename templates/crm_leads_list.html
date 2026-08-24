@@ -2205,7 +2205,7 @@
                                     <time datetime="{{ lead.effective_sent_at.isoformat() }}" class="sent-time">
                                         <span class="sent-date">{{ lead.effective_sent_date }}</span><span class="sent-hour"> · {{ lead.effective_sent_time }}</span>
                                     </time>
-                                    <span class="sent-relative">{{ lead.assigned_relative }}</span>
+                                    <span class="sent-relative">{{ lead.assigned_relative or lead.fecha_asignacion_relativa or 'S/I' }}</span>
                                     {% else %}
                                     <span class="sent-empty">Sin información</span>
                                     {% endif %}

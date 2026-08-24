@@ -720,9 +720,11 @@
         .filter-bar {
             display: grid;
             grid-template-columns: minmax(180px, 1.05fr) minmax(118px, .65fr) repeat(4, minmax(112px, .9fr)) max-content;
-            gap: 7px;
+            column-gap: 10px;
+            row-gap: 10px;
             margin-bottom: 8px;
             align-items: end;
+            justify-items: stretch;
         }
 
         @media (min-width: 769px) {
@@ -751,6 +753,7 @@
             flex-direction: column;
             gap: 3px;
             min-width: 0;
+            width: 100%;
         }
         .filter-bar .lead-search-field { max-width: 230px; }
 

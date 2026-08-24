@@ -139,6 +139,8 @@ def test_filter_bar_exposes_property_code_without_extra_filters_button():
     assert 'id="btnMoreFilters"' not in html
     assert 'class="filter-field filter-search-field lead-search-field"' in html
     assert '.filter-bar .lead-search-field { max-width: 230px; }' in html
+    assert 'column-gap: 10px;' in html and 'row-gap: 10px;' in html
+    assert 'justify-items: stretch;' in html
 
 
 def test_review_filter_script_keeps_sorting_inside_local_review_route():

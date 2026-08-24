@@ -704,7 +704,7 @@ def validate_official_report(snapshot: dict, message: str) -> dict:
             "no_zero_applicable": all(row["dias_aplicables"] > 0 and row["meta_semana"] > 0 for row in rows),
             "no_other_review": snapshot["outcome_groups"]["other_review"]["total"] == 0,
             "message_length": len(message) <= 1500,
-            "official_header": "GESTIÓN SEMANAL DE CAPTACIÓN" in message and "PRUEBA" not in message,
+            "official_header": "gestión semanal de captación" in message.casefold() and "prueba" not in message.casefold(),
         }
         if not all(checks.values()):
             failed = ", ".join(key for key, passed in checks.items() if not passed)

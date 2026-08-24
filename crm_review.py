@@ -174,6 +174,11 @@ def _list_context(request: Request) -> dict:
     order = params.get("orden", "recent_assigned")
     if order in ("oldest_assigned", "antiguos"):
         leads = sorted(leads, key=lambda lead: lead["effective_sent_at"])
+    elif order in ("oldest_unmanaged", "antiguos_sin_atender"):
+        leads = sorted(leads, key=lambda lead: (
+            bool(lead.get("gestionado")),
+            lead["effective_sent_at"],
+        ))
     elif order in ("sla_priority", "sla_urgente"):
         # SLA priority keeps unresolved work above managed leads. Within each
         # SLA band, retain the assignment order as a stable tie-breaker.

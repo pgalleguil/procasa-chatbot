@@ -99,6 +99,13 @@ def test_review_sla_priority_puts_in_term_before_managed_leads():
     assert html.index('Cliente Demo 05') > html.index('Cliente Demo 01')
 
 
+def test_review_oldest_unmanaged_puts_unmanaged_leads_first_and_oldest():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list&orden=oldest_unmanaged').text
+    assert html.index('Cliente Demo 01') < html.index('Cliente Demo 05')
+    assert html.index('Cliente Demo 02') < html.index('Cliente Demo 05')
+
+
 def test_review_filter_script_keeps_sorting_inside_local_review_route():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text

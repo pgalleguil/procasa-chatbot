@@ -1174,14 +1174,14 @@
             display: none;
             position: absolute;
             z-index: 1060;
-            width: 340px;
+            width: 360px;
             max-width: 90vw;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 10px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.25);
             padding: 16px;
-            top: 28px;
+            top: 34px;
             left: 0;
             font-size: 0.85rem;
             line-height: 1.5;
@@ -1190,6 +1190,37 @@
         }
         .sla-info-popup.show {
             display: block;
+        }
+        .sla-info-trigger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 19px;
+            height: 19px;
+            margin-left: 5px;
+            border: 1px solid color-mix(in srgb, var(--accent-color) 58%, var(--border-color));
+            border-radius: 5px;
+            background: color-mix(in srgb, var(--accent-color) 10%, var(--bg-card));
+            color: var(--accent-color);
+            cursor: help;
+            vertical-align: -4px;
+            transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+        }
+        .sla-info-trigger:hover,
+        .sla-info-trigger:focus-visible {
+            border-color: var(--accent-color);
+            background: color-mix(in srgb, var(--accent-color) 20%, var(--bg-card));
+            color: var(--text-primary);
+            outline: none;
+        }
+        .sla-info-trigger:focus-visible {
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 30%, transparent);
+        }
+        .sla-info-trigger i {
+            margin: 0 !important;
+            font-size: .72rem !important;
+            opacity: 1 !important;
+            cursor: inherit !important;
         }
         .sla-info-header {
             display: flex;

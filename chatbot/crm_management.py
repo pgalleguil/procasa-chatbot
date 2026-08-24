@@ -191,6 +191,29 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             db["crm_tasks"].insert_one(task)
         except DuplicateKeyError:
             pass
+    if result_type == "VISIT_SCHEDULED" and visit_at:
+        lead_doc = db["leads"].find_one({"_id": lead_id}) or {}
+        visit_reminder_at = max(visit_at - timedelta(hours=1), occurred)
+        visit_task_id = f"visit:{assignment_cycle_id}:{idempotency_key}"
+        visit_task = {
+            "_id": f"crm_task:{visit_task_id}",
+            "task_id": visit_task_id,
+            "phone": lead_doc.get("phone"),
+            "lead_id": lead_id,
+            "assignment_cycle_id": assignment_cycle_id,
+            "idempotency_key": idempotency_key,
+            "lead_type": "crm",
+            "message_domain": "crm_scheduled_visit",
+            "type": "REMINDER_VISIT",
+            "status": "pending",
+            "execute_at": visit_reminder_at,
+            "created_at": occurred,
+            "note": f"Visita agendada para {visit_at.isoformat()}. " + str(details.get("notes") or ""),
+        }
+        try:
+            db["crm_tasks"].insert_one(visit_task)
+        except DuplicateKeyError:
+            pass
     # If the result closes the lead (managed_closed), also close the cycle
     if rule["status"] == "managed_closed":
         cycle_updates["cycle_status"] = "closed"

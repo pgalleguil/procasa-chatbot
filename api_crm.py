@@ -1303,10 +1303,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             
         # One SLA definition for cards, list, detail and monitor.
         from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover
-        assigned_at = ((current_cycle or {}).get("sla_started_at")
-                       or (current_cycle or {}).get("assigned_at")
-                       or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
-                       or lead.get("fecha_asignacion"))
+        assigned_at_raw = ((current_cycle or {}).get("sla_started_at")
+                           or (current_cycle or {}).get("assigned_at")
+                           or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
+                           or lead.get("fecha_asignacion"))
+        # The list date is already normalized for legacy records. Reuse that
+        # normalized value here so the SLA timing cannot disagree with the
+        # assignment date shown in the same row.
+        assigned_at = (_coerce_crm_datetime(assigned_at_raw)
+                       or assigned_for_cycle
+                       or effective_sent_at)
         visual_pre = is_pre_visual_cutover((current_cycle or {}).get("assigned_at") or assigned_at) if assigned_at else True
         
         sla_hours = 0

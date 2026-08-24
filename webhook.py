@@ -762,7 +762,7 @@ async def auth_google_callback(request: Request, code: str):
             token_data = token_resp.json()
             if "error" in token_data:
                 logger.error(f"Error Token Google: {token_data}")
-                return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
+                return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
 
             access_token = token_data.get("access_token")
             user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
@@ -779,7 +779,7 @@ async def auth_google_callback(request: Request, code: str):
         user = await usuarios.find_one({"$or": [{"email": email}, {"username": email}]}, {"username": 1, "rol": 1, "email": 1})
         if not user:
             logger.warning(f"Intento de acceso denegado: {email}")
-            return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
+            return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
 
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
@@ -794,7 +794,7 @@ async def auth_google_callback(request: Request, code: str):
         return response
     except Exception as e:
         logger.error(f"Error Google Auth Critical: {e}")
-        return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
+        return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
 
 # ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
 
@@ -803,6 +803,7 @@ async def auth_google_callback(request: Request, code: str):
 async def login_get(request: Request):
     next_url = _safe_login_next(request.query_params.get("next")) or _safe_login_next(request.cookies.get("login_next"))
     response = templates.TemplateResponse(
+        request,
         "login.html",
         {
             "request": request,
@@ -842,12 +843,12 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             response.delete_cookie("login_next")
             return response
         
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Usuario o contraseña incorrectos"
         })
     except Exception as e:
         logger.error(f"Error en login tradicional: {e}")
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Error del servidor"
         })
 
@@ -859,17 +860,17 @@ async def logout():
 
 @app.get("/forgot-password")
 async def forgot_password(request: Request):
-    return templates.TemplateResponse("forgot_password.html", {"request": request})
+    return templates.TemplateResponse(request, "forgot_password.html", {"request": request})
 
 @app.get("/reset-password/{token}")
 async def reset_password(request: Request, token: str):
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+    return templates.TemplateResponse(request, "reset_password.html", {"request": request, "token": token})
 
 # ========================= 5. DASHBOARD & REPORTES =========================
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def ver_campanas(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html", {"request": request})
 
 @app.get("/api/leads_reporte")
 async def api_leads_reporte(request: Request):
@@ -894,7 +895,7 @@ async def ver_leads(request: Request):
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
     
-    return templates.TemplateResponse("leads_dashboard.html", {
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
@@ -904,7 +905,7 @@ async def ver_leads(request: Request):
 @app.get("/leads-dashboard-review", response_class=HTMLResponse)
 async def ver_leads_review(request: Request):
     """Public, read-only visual review; never resolves a user or touches Mongo."""
-    response = templates.TemplateResponse("leads_dashboard.html", {
+    response = templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
         "user_role": "review",
         "user_name": "Visual Review",
@@ -1324,7 +1325,7 @@ async def analytics_leads_page(request: Request):
     user = await get_current_user_doc(request)
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
-    return templates.TemplateResponse("analytics/leads_dashboard.html", {
+    return templates.TemplateResponse(request, "analytics/leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", ""),
@@ -1586,7 +1587,7 @@ async def ver_detalle_chat(request: Request, phone: str):
     if not chat_data:
         chat_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_specific_lead_chat(phone))
         
-    return templates.TemplateResponse("chat_detail.html", {
+    return templates.TemplateResponse(request, "chat_detail.html", {
         "request": request, 
         "chat": chat_data,
         "phone": phone
@@ -1604,7 +1605,7 @@ async def view_manual_lead_entry(request: Request):
     email = user.get("email") or user.get("username")
     if email: email = email.strip()
 
-    return templates.TemplateResponse("manual_lead_entry.html", {
+    return templates.TemplateResponse(request, "manual_lead_entry.html", {
         "request": request,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
@@ -1789,7 +1790,7 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
 
     email = user.get("email") or user.get("username")
 
-    return templates.TemplateResponse("crm_lead_detail.html", {
+    return templates.TemplateResponse(request, "crm_lead_detail.html", {
         "request": request, 
         "lead": data,
         "user_email": email,
@@ -2801,7 +2802,7 @@ async def view_captaciones(
         app.state.captacion_goal_cache = goal_cache
     _perf["goal_done"] = time.perf_counter()
 
-    response = templates.TemplateResponse("captacion_list.html", {
+    response = templates.TemplateResponse(request, "captacion_list.html", {
         "request": request,
         "items": items,
         "total_count": total_count,
@@ -2889,7 +2890,7 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
 
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     
-    return templates.TemplateResponse("captacion_detail.html", {
+    return templates.TemplateResponse(request, "captacion_detail.html", {
         "request": request,
         "prop": data,
         "user_name": user_name,
@@ -3156,7 +3157,7 @@ async def view_captacion_weekly_report(request: Request, report_id: str = Query(
         )
 
     report = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, load_report)
-    return templates.TemplateResponse("captacion_weekly_report_preview.html", {
+    return templates.TemplateResponse(request, "captacion_weekly_report_preview.html", {
         "request": request,
         "report": report,
         "group_recipient": (report or {}).get("group_recipient") or Config.DAILY_REPORT_GROUP_ID,

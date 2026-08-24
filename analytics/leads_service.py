@@ -17,6 +17,7 @@ from typing import Optional
 from pymongo.errors import NetworkTimeout
 from .dashboard_forensics import (
     background_active,
+    background_count,
     begin_background,
     emit as emit_forensics,
     emit_cache_evict,
@@ -144,7 +145,7 @@ def _cache_state(key: str):
     return None, age, "hard"
 
 
-def _schedule_cache_refresh(key: str, loader) -> bool:
+def _schedule_cache_refresh(key: str, loader, *, source: str = "keeper") -> bool:
     """Schedule one best-effort refresh per key, preserving stale on failure."""
     with _CACHE_REFRESH_LOCK:
         if key in _CACHE_REFRESHING:
@@ -154,7 +155,8 @@ def _schedule_cache_refresh(key: str, loader) -> bool:
     def refresh():
         started = time.perf_counter()
         endpoint = key.split(":", 1)[0]
-        begin_background(key, "keeper_refresh_started", endpoint, _cache_entry_age(key))
+        age_before = _cache_entry_age(key)
+        begin_background(key, "background_refresh_started", endpoint, age_before, source=source)
         try:
             value = loader()
             if value is not None:
@@ -162,7 +164,7 @@ def _schedule_cache_refresh(key: str, loader) -> bool:
         except Exception:
             logger.warning("[CACHE_SWR] background refresh failed key=%s", key, exc_info=True)
         finally:
-            end_background(key, endpoint, "keeper_refresh_finished", started, _cache_entry_age(key))
+            end_background(key, endpoint, "background_refresh_finished", started, age_before, source=source)
             with _CACHE_REFRESH_LOCK:
                 _CACHE_REFRESHING.discard(key)
 
@@ -185,6 +187,7 @@ def _record_cache_diagnostics(timing: dict | None, key: str, age: float | None, 
         "cache_age_seconds": None if age is None else round(age, 1),
         "cache_entries": len(L1_CACHE),
         "prewarm_active_for_key": background_active(key),
+        "background_active_count": background_count(key),
     })
 
 
@@ -257,7 +260,7 @@ def warm_pinned_dashboard_cache() -> list[str]:
             logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=skip_fresh age_seconds=%.1f duration_ms=0 cache_key_hash=%s", endpoint, age, hashlib.sha256(key.encode()).hexdigest()[:12])
             continue
         started = time.perf_counter()
-        begin_background(key, "prewarm_job_started", endpoint, age)
+        begin_background(key, "prewarm_job_started", endpoint, age, source="startup_prewarm")
         try:
             value = loader()
             _cache_set(key, value)
@@ -265,11 +268,12 @@ def warm_pinned_dashboard_cache() -> list[str]:
             logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=prewarm age_seconds=%s duration_ms=%.1f cache_key_hash=%s", endpoint, "none" if age is None else f"{age:.1f}", duration_ms, key_hash(key))
             warmed.append(endpoint)
         finally:
-            end_background(key, endpoint, "prewarm_job_finished", started, age)
+            end_background(key, endpoint, "prewarm_job_finished", started, age, source="startup_prewarm")
     emit_forensics("[DASHBOARD_PREWARM]", {
         **process_facts(), "event": "prewarm_finished", "endpoint": ",".join(warmed),
         "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
         "age_before": None, "duration_ms": round((time.perf_counter() - prewarm_started) * 1000, 1),
+        "source": "startup_prewarm",
     })
     return warmed
 
@@ -281,9 +285,9 @@ def keep_pinned_dashboard_cache() -> list[str]:
         age = _cache_entry_age(key)
         if age is not None and age < PINNED_REFRESH_AGE:
             continue
-        if _schedule_cache_refresh(key, loader):
+        if _schedule_cache_refresh(key, loader, source="keeper"):
             action = "prewarm" if age is None else "refresh"
-            logger.info("[DASHBOARD_PREWARM] event=keeper_refresh_scheduled pid=%s endpoint=%s timestamp=%s cache_key_hash=%s age_before=%s duration_ms=0", process_facts()["pid"], endpoint, datetime.now(timezone.utc).isoformat(), key_hash(key), "none" if age is None else f"{age:.1f}")
+            logger.info("[DASHBOARD_PREWARM] event=keeper_refresh_scheduled source=keeper pid=%s endpoint=%s timestamp=%s cache_key_hash=%s age_before=%s duration_ms=0", process_facts()["pid"], endpoint, datetime.now(timezone.utc).isoformat(), key_hash(key), "none" if age is None else f"{age:.1f}")
             logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=%s age_seconds=%s duration_ms=0 cache_key_hash=%s", endpoint, action, "none" if age is None else f"{age:.1f}", hashlib.sha256(key.encode()).hexdigest()[:12])
             scheduled.append(endpoint)
     return scheduled
@@ -336,7 +340,7 @@ def get_properties_inventory_dashboard(
         return _compute_properties_inventory_dashboard(period_start, period_end, filters, timing=load_timing)
 
     if state == "soft":
-        _schedule_cache_refresh(key, load)
+        _schedule_cache_refresh(key, load, source="request_swr")
         stale_payload = cached
         metadata = dict(stale_payload.get("meta") or {})
         metadata.update({"data_status": "stale", "degraded": False,
@@ -352,7 +356,7 @@ def get_properties_inventory_dashboard(
         stale_entry = L1_CACHE.get(key)
         stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
         if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
+            _schedule_cache_refresh(key, load, source="request_swr")
             stale_payload = _stale_payload(stale_payload, age, degraded=True)
             if timing is not None:
                 timing.update({"cache": "STALE", "degraded": True,
@@ -731,7 +735,7 @@ def get_leads_operational_dashboard(
         )
 
     if state == "soft":
-        _schedule_cache_refresh(key, load)
+        _schedule_cache_refresh(key, load, source="request_swr")
         if timing is not None:
             timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
                            "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1),
@@ -742,7 +746,7 @@ def get_leads_operational_dashboard(
         stale_entry = L1_CACHE.get(key)
         stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
         if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
+            _schedule_cache_refresh(key, load, source="request_swr")
             stale_payload = _stale_payload(stale_payload, age, degraded=True)
             if timing is not None:
                 timing.update({"cache": "STALE", "degraded": True,
@@ -2102,7 +2106,7 @@ def get_leads_dashboard_overview(
         )
 
     if state == "soft":
-        _schedule_cache_refresh(key, load)
+        _schedule_cache_refresh(key, load, source="request_swr")
         if timing is not None:
             timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
                            "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1)})
@@ -2112,7 +2116,7 @@ def get_leads_dashboard_overview(
         stale_entry = L1_CACHE.get(key)
         stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
         if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
+            _schedule_cache_refresh(key, load, source="request_swr")
             stale_payload = _stale_payload(stale_payload, age, degraded=True)
             if timing is not None:
                 timing.update({"cache": "STALE", "degraded": True,

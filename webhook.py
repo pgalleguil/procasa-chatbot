@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI):
     emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
         **dashboard_process_facts(), "event": "process_started", "endpoint": None,
         "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
-        "age_before": None, "duration_ms": 0.0,
+        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
     })
     
     # Install phone redaction on all loggers
@@ -291,7 +291,7 @@ async def lifespan(app: FastAPI):
     emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
         **dashboard_process_facts(), "event": "prewarm_scheduled", "endpoint": "overview,operations,properties",
         "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
-        "age_before": None, "duration_ms": 0.0,
+        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
     })
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
     tp_task = asyncio.create_task(threadpool_forensics_loop()) # MONITOR THREAD POOLS
@@ -1087,6 +1087,8 @@ def _dashboard_perf_log(*, endpoint: str, request_id: str, timing: dict,
         "cache_state": timing.get("cache"),
         "cache_age_seconds": timing.get("cache_age_seconds", timing.get("stale_age_seconds")),
         "cache_key_hash": timing.get("cache_key_hash"),
+        "prewarm_active_for_key": timing.get("prewarm_active_for_key"),
+        "background_active_count": timing.get("background_active_count", 0),
         "cache_entries": len(__import__("analytics.leads_service", fromlist=["L1_CACHE"]).L1_CACHE),
         "web_pool_queue_wait_ms": timing.get("web_pool_queue_wait_ms"),
         "web_pool_execution_ms": timing.get("web_pool_execution_ms"),

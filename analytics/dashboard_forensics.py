@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 PROCESS_STARTED_MONOTONIC = time.monotonic()
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
 _STATE_LOCK = Lock()
-_ACTIVE_BACKGROUND: set[str] = set()
+_ACTIVE_BACKGROUND_COUNTS: dict[str, int] = {}
 _FIRST_REQUEST_LOGGED = False
+BACKGROUND_SOURCES = frozenset({"startup_prewarm", "keeper", "request_swr"})
 
 
 def key_hash(key: str) -> str:
@@ -72,32 +73,54 @@ def emit(prefix: str, payload: dict) -> None:
     logger.info("%s %s", prefix, json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
 
 
-def begin_background(key: str, event: str, endpoint: str, age_before: float | None = None) -> str:
+def _validate_source(source: str | None) -> str | None:
+    if source is not None and source not in BACKGROUND_SOURCES:
+        raise ValueError(f"invalid dashboard background source: {source}")
+    return source
+
+
+def begin_background(key: str, event: str = "background_started", endpoint: str = "unknown",
+                     age_before: float | None = None, source: str | None = None) -> str:
     token = f"{key_hash(key)}:{uuid4().hex}"
+    source = _validate_source(source)
     with _STATE_LOCK:
-        _ACTIVE_BACKGROUND.add(key)
+        count = _ACTIVE_BACKGROUND_COUNTS.get(key, 0) + 1
+        _ACTIVE_BACKGROUND_COUNTS[key] = count
     emit("[DASHBOARD_PREWARM]", {
         **process_facts(), "event": event, "endpoint": endpoint,
         "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": key_hash(key),
         "age_before": None if age_before is None else round(age_before, 1), "duration_ms": 0.0,
+        "source": source, "background_active_count": count,
     })
     return token
 
 
-def end_background(key: str, endpoint: str, event: str, started: float, age_before: float | None = None) -> None:
+def end_background(key: str, endpoint: str, event: str, started: float,
+                   age_before: float | None = None, source: str | None = None) -> None:
+    source = _validate_source(source)
     with _STATE_LOCK:
-        _ACTIVE_BACKGROUND.discard(key)
+        count = max(0, _ACTIVE_BACKGROUND_COUNTS.get(key, 0) - 1)
+        if count:
+            _ACTIVE_BACKGROUND_COUNTS[key] = count
+        else:
+            _ACTIVE_BACKGROUND_COUNTS.pop(key, None)
     emit("[DASHBOARD_PREWARM]", {
         **process_facts(), "event": event, "endpoint": endpoint,
         "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": key_hash(key),
         "age_before": None if age_before is None else round(age_before, 1),
         "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+        "source": source, "background_active_count": count,
     })
 
 
 def background_active(key: str) -> bool:
     with _STATE_LOCK:
-        return key in _ACTIVE_BACKGROUND
+        return _ACTIVE_BACKGROUND_COUNTS.get(key, 0) > 0
+
+
+def background_count(key: str) -> int:
+    with _STATE_LOCK:
+        return _ACTIVE_BACKGROUND_COUNTS.get(key, 0)
 
 
 def emit_cache_evict(entries_before: int, evicted_key: str, evicted_at: float,

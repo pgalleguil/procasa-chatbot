@@ -4,11 +4,10 @@
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
     const dateResults = ['EFFECTIVE_CONTACT'];
-    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'];
+    const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];
     const reasonOptions = {
         NOT_INTERESTED: new Set(['Ya no busca', 'Esta propiedad no le interesa', 'Precio o condiciones', 'Ya encontró otra propiedad']),
         INVALID_NUMBER: new Set(['Número inexistente', 'Número equivocado', 'No corresponde al cliente']),
-        PROPERTY_UNAVAILABLE: new Set(['Propiedad vendida', 'Propiedad arrendada', 'Propiedad retirada', 'Propiedad pausada o no disponible temporalmente'])
     };
     const channelResults = [];
     const otherResults = ['OTHER_EXPLICIT'];

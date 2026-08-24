@@ -161,6 +161,8 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     modal = (ROOT / 'templates' / 'partials' / 'crm_quick_management_modal.html').read_text(encoding='utf-8')
     script = (ROOT / 'static' / 'js' / 'crm_quick_management.js').read_text(encoding='utf-8')
     assert 'data-quick-result="PROPERTY_UNAVAILABLE"' in modal
+    assert "const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];" in script
+    assert 'PROPERTY_UNAVAILABLE: new Set' not in script
     assert '<option value="">Seleccionar motivo (opcional)</option>' in modal
     assert 'value="Seleccionar motivo (opcional)"' not in modal
     assert "PROPERTY_UNAVAILABLE: new Set" in script

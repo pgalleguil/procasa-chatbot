@@ -63,7 +63,9 @@ CACHE_HARD_TTL = 600
 STALE_IF_ERROR_MAX_AGE = CACHE_HARD_TTL
 PINNED_REFRESH_AGE = 240
 PINNED_MAX_STALE = 1800
-PINNED_DASHBOARD_CACHE = ("overview", "operations", "properties")
+PINNED_DASHBOARD_CACHE = ("overview", "operations")
+PINNED_STANDARD_PRESETS = ("today", "week", "month", "30d")
+UF_DASHBOARD_CACHE_TTL = 300
 MAX_CACHE_ENTRIES = 200
 # El overview ejecuta diez consultas independientes. Mantener seis workers
 # dejaba cuatro consultas esperando en cola y alargaba cada carga del panel.
@@ -73,6 +75,9 @@ _CACHE_REFRESH_LOCK = Lock()
 _CACHE_REFRESHING: set[str] = set()
 _SINGLEFLIGHT_LOCK = Lock()
 _SINGLEFLIGHT: dict[str, Future] = {}
+_DASHBOARD_UF_LOCK = Lock()
+_DASHBOARD_UF_CACHE: tuple[float, dict] | None = None
+_DASHBOARD_UF_INFLIGHT: Future | None = None
 
 
 class InventoryTemporarilyUnavailable(RuntimeError):
@@ -266,10 +271,23 @@ def _stale_payload(payload: dict, age: float | None, *, degraded: bool) -> dict:
     return stale
 
 
-def _dashboard_30d_period():
+def _dashboard_standard_periods():
+    """Return canonical standard preset ranges used by real dashboard requests."""
     from .commercial_periods import local_today, preset_range
-    start, end = preset_range("30d", local_today())
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+    today = local_today()
+    return tuple(
+        (
+            preset,
+            start.strftime("%Y-%m-%d"),
+            end.strftime("%Y-%m-%d"),
+        )
+        for preset in PINNED_STANDARD_PRESETS
+        for start, end in [preset_range(preset, today)]
+    )
+
+
+def _dashboard_30d_period():
+    return next((start, end) for preset, start, end in _dashboard_standard_periods() if preset == "30d")
 
 
 def _overview_request_key(period_start: str, period_end: str, compare: str, period_preset: str) -> str:
@@ -288,31 +306,29 @@ def _overview_request_key(period_start: str, period_end: str, compare: str, peri
 
 
 def _pinned_dashboard_jobs():
-    """Return the exact 30d keys and uncached loaders used by requests."""
-    warm_ps, warm_pe = _dashboard_30d_period()
-    overview_key = _overview_request_key(warm_ps, warm_pe, "auto", "30d")
-    operations_key = _cache_key(
-        "leads-operational", ps=warm_ps, pe=warm_pe, compare="auto", preset="30d",
-        filters=repr([]),
-    )
-    properties_key = _cache_key("leads-properties-inventory", ps=warm_ps, pe=warm_pe)
-    return (
-        ("overview", overview_key, lambda: _compute_leads_dashboard_overview(
-            period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d",
-            timing=None, _cache_bypass=True,
-        )),
-        ("operations", operations_key, lambda: _compute_leads_operational_dashboard(
-            period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d",
-            role=None, user_name=None, filters={}, timing=None, _cache_bypass=True,
-        )),
-        ("properties", properties_key, lambda: _compute_properties_inventory_dashboard(
-            period_start=warm_ps, period_end=warm_pe, filters={}, timing=None,
-        )),
-    )
+    """Return standard Overview/Operations jobs; Properties stays request-cached only."""
+    jobs = []
+    for preset, period_start, period_end in _dashboard_standard_periods():
+        overview_key = _overview_request_key(period_start, period_end, "auto", preset)
+        operations_key = _cache_key(
+            "leads-operational", ps=period_start, pe=period_end, compare="auto", preset=preset,
+            filters=repr([]),
+        )
+        jobs.extend((
+            ("overview", overview_key, lambda ps=period_start, pe=period_end, pp=preset: _compute_leads_dashboard_overview(
+                period_start=ps, period_end=pe, compare="auto", period_preset=pp,
+                timing=None, _cache_bypass=True,
+            )),
+            ("operations", operations_key, lambda ps=period_start, pe=period_end, pp=preset: _compute_leads_operational_dashboard(
+                period_start=ps, period_end=pe, compare="auto", period_preset=pp,
+                role=None, user_name=None, filters={}, timing=None, _cache_bypass=True,
+            )),
+        ))
+    return tuple(jobs)
 
 
 def warm_pinned_dashboard_cache() -> list[str]:
-    """Warm pinned 30d entries sequentially; intended for the dedicated pool."""
+    """Warm all standard Overview/Operations entries sequentially."""
     warmed = []
     prewarm_started = time.perf_counter()
     for endpoint, key, loader in _pinned_dashboard_jobs():
@@ -327,6 +343,8 @@ def warm_pinned_dashboard_cache() -> list[str]:
             duration_ms = (time.perf_counter() - started) * 1000
             logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=prewarm age_seconds=%s duration_ms=%.1f cache_key_hash=%s", endpoint, "none" if age is None else f"{age:.1f}", duration_ms, key_hash(key))
             warmed.append(endpoint)
+        except Exception:
+            logger.warning("[DASHBOARD_PREWARM] individual standard warm failed endpoint=%s key=%s; continuing", endpoint, key_hash(key), exc_info=True)
         finally:
             end_background(key, endpoint, "prewarm_job_finished", started, age, source="startup_prewarm")
     emit_forensics("[DASHBOARD_PREWARM]", {
@@ -339,18 +357,79 @@ def warm_pinned_dashboard_cache() -> list[str]:
 
 
 def keep_pinned_dashboard_cache() -> list[str]:
-    """Schedule due pinned refreshes, preserving the last successful payload."""
+    """Schedule at most two oldest standard refreshes per keeper cycle."""
     scheduled = []
+    due = []
     for endpoint, key, loader in _pinned_dashboard_jobs():
         age = _cache_entry_age(key)
         if age is not None and age < PINNED_REFRESH_AGE:
             continue
+        due.append((float("inf") if age is None else age, endpoint, key, loader, age))
+
+    selected = []
+    # Rotate one Overview and one Operations whenever both endpoint families
+    # have work, then fill any remaining slot by oldest age.
+    for endpoint in ("overview", "operations"):
+        candidates = [item for item in due if item[1] == endpoint]
+        if candidates:
+            selected.append(max(candidates, key=lambda item: item[0]))
+    selected_keys = {item[2] for item in selected}
+    remaining = sorted((item for item in due if item[2] not in selected_keys), key=lambda item: (-item[0], item[1], item[2]))
+    selected.extend(remaining[:max(0, 2 - len(selected))])
+
+    for _, endpoint, key, loader, age in selected[:2]:
         if _schedule_cache_refresh(key, loader, source="keeper"):
             action = "prewarm" if age is None else "refresh"
             logger.info("[DASHBOARD_PREWARM] event=keeper_refresh_scheduled source=keeper pid=%s endpoint=%s timestamp=%s cache_key_hash=%s age_before=%s duration_ms=0", process_facts()["pid"], endpoint, datetime.now(timezone.utc).isoformat(), key_hash(key), "none" if age is None else f"{age:.1f}")
-            logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=%s age_seconds=%s duration_ms=0 cache_key_hash=%s", endpoint, action, "none" if age is None else f"{age:.1f}", hashlib.sha256(key.encode()).hexdigest()[:12])
+            logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s action=%s age_seconds=%s duration_ms=0 cache_key_hash=%s", endpoint, action, "none" if age is None else f"{age:.1f}", hashlib.sha256(key.encode()).hexdigest()[:12])
             scheduled.append(endpoint)
     return scheduled
+
+
+def _read_dashboard_uf_source() -> dict | None:
+    from chatbot.uf_service import leer_uf_cache
+    return leer_uf_cache()
+
+
+def _get_dashboard_uf() -> dict | None:
+    """Short-lived in-process UF read cache, without changing uf_service semantics."""
+    global _DASHBOARD_UF_CACHE, _DASHBOARD_UF_INFLIGHT
+    now = time.time()
+    with _DASHBOARD_UF_LOCK:
+        if _DASHBOARD_UF_CACHE and now - _DASHBOARD_UF_CACHE[0] < UF_DASHBOARD_CACHE_TTL:
+            return copy.deepcopy(_DASHBOARD_UF_CACHE[1])
+        future = _DASHBOARD_UF_INFLIGHT
+        if future is None:
+            future = Future()
+            _DASHBOARD_UF_INFLIGHT = future
+            owner = True
+        else:
+            owner = False
+    if not owner:
+        return copy.deepcopy(future.result())
+    try:
+        value = _read_dashboard_uf_source()
+        normalized = (
+            {
+                "valor": value.get("valor"),
+                "fecha": value.get("fecha"),
+                "fuente": value.get("fuente"),
+            }
+            if isinstance(value, dict) and value.get("valor") else None
+        )
+        if normalized is not None:
+            with _DASHBOARD_UF_LOCK:
+                _DASHBOARD_UF_CACHE = (time.time(), normalized)
+        future.set_result(normalized)
+        return copy.deepcopy(normalized)
+    except Exception as exc:
+        logger.warning("[DASHBOARD_UF_CACHE] read failed; using existing Overview fallback: %s", exc)
+        future.set_result(None)
+        return None
+    finally:
+        with _DASHBOARD_UF_LOCK:
+            if _DASHBOARD_UF_INFLIGHT is future:
+                _DASHBOARD_UF_INFLIGHT = None
 
 
 def _properties_inventory_cache_lookup(key: str):
@@ -1786,8 +1865,7 @@ def _compute_leads_dashboard_overview(
     uf_value = uf_info.get("value")
     uf_asof = uf_info.get("as_of")
     try:
-        from chatbot.uf_service import leer_uf_cache
-        _uf = leer_uf_cache()
+        _uf = _get_dashboard_uf()
         if _uf and _uf.get("valor"):
             uf_value = _uf["valor"]
             uf_asof = _uf.get("fecha") or uf_asof

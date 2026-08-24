@@ -137,18 +137,25 @@ def test_prewarmer_contract_keeps_only_periodic_keeper_after_blocking_startup_wa
     assert '"month"' not in warmer
 
 
-def test_pinned_jobs_are_the_same_three_30d_request_keys(monkeypatch):
-    warm_ps, warm_pe = leads_service._dashboard_30d_period()
+def test_pinned_jobs_are_the_eight_standard_overview_operations_keys(monkeypatch):
     jobs = leads_service._pinned_dashboard_jobs()
-    assert [endpoint for endpoint, _, _ in jobs] == ["overview", "operations", "properties"]
+    assert len(jobs) == 8
+    assert [endpoint for endpoint, _, _ in jobs].count("overview") == 4
+    assert [endpoint for endpoint, _, _ in jobs].count("operations") == 4
+    assert all(endpoint != "properties" for endpoint, _, _ in jobs)
 
     monkeypatch.setattr(leads_service, "_compute_leads_dashboard_overview", lambda **kwargs: {"endpoint": "overview"})
     monkeypatch.setattr(leads_service, "_compute_leads_operational_dashboard", lambda **kwargs: {"endpoint": "operations"})
-    monkeypatch.setattr(leads_service, "query_demand_capture_dashboard", lambda *a, **k: {"endpoint": "properties"})
-    leads_service.get_leads_dashboard_overview(period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d")
-    leads_service.get_leads_operational_dashboard(period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d")
-    leads_service.get_properties_inventory_dashboard(period_start=warm_ps, period_end=warm_pe, filters={})
-    assert set(leads_service.L1_CACHE) == {key for _, key, _ in jobs}
+    for endpoint, key, _ in jobs:
+        if endpoint == "overview":
+            preset = next(p for p in ("today", "week", "month", "30d") if f"preset={p}" in key)
+            period_start, period_end = next((start, end) for p, start, end in leads_service._dashboard_standard_periods() if p == preset)
+            leads_service.get_leads_dashboard_overview(period_start=period_start, period_end=period_end, compare="auto", period_preset=preset)
+        else:
+            preset = next(p for p in ("today", "week", "month", "30d") if f"preset={p}" in key)
+            period_start, period_end = next((start, end) for p, start, end in leads_service._dashboard_standard_periods() if p == preset)
+            leads_service.get_leads_operational_dashboard(period_start=period_start, period_end=period_end, compare="auto", period_preset=preset)
+    assert {key for _, key, _ in jobs}.issubset(leads_service.L1_CACHE)
 
 
 @pytest.mark.parametrize(

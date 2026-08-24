@@ -4455,6 +4455,14 @@ _OPS_HISTORICAL_BASE_TTL = 120
 _OPS_HISTORICAL_BASE_CACHE = {}
 _OPS_HISTORICAL_BASE_INFLIGHT = {}
 _OPS_HISTORICAL_BASE_LOCK = Lock()
+_OPS_SHARED_RESOURCE_TTL = 120
+_OPS_SIGNED_ORDERS_CACHE = None
+_OPS_SIGNED_ORDERS_CACHE_AT = 0.0
+_OPS_SIGNED_ORDERS_INFLIGHT = None
+_OPS_SIGNED_ORDERS_LOCK = Lock()
+_OPS_ASSIGNMENT_EPISODE_CACHE = {}
+_OPS_ASSIGNMENT_EPISODE_INFLIGHT = {}
+_OPS_ASSIGNMENT_EPISODE_LOCK = Lock()
 
 
 def _ops_historical_base_match(mongo_filters: dict) -> tuple[dict, str, str]:
@@ -4797,6 +4805,66 @@ def _ops_assignment_episode_map(db, docs: list[dict], profile: Optional[dict] = 
     return result
 
 
+def _ops_assignment_resource_key(docs: list[dict]) -> tuple:
+    """Stable superset key; assignment cycles depend only on these lifecycle fields."""
+    rows = []
+    for doc in docs:
+        lifecycle = doc.get("lifecycle") or {}
+        rows.append((
+            str(doc.get("_id")),
+            str(lifecycle.get("assigned_at")),
+            str(lifecycle.get("first_valid_management_at")),
+            str(lifecycle.get("current_assignment_cycle_id")),
+        ))
+    return tuple(sorted(set(rows)))
+
+
+def _ops_assignment_episode_map_cached(db, docs: list[dict], profile: Optional[dict] = None) -> dict[str, list[dict]]:
+    """Cache the assignment-cycle map for the current+historical superset."""
+    cache_key = _ops_assignment_resource_key(docs)
+    now = time.time()
+    cached = _OPS_ASSIGNMENT_EPISODE_CACHE.get(cache_key)
+    if cached and now - cached["created_at"] < _OPS_SHARED_RESOURCE_TTL:
+        if profile is not None:
+            profile.setdefault("resource", []).append({"operation": "assignment_episode_map_cache_hit", "documents": len(docs)})
+        return cached["data"]
+
+    leader = False
+    with _OPS_ASSIGNMENT_EPISODE_LOCK:
+        now = time.time()
+        cached = _OPS_ASSIGNMENT_EPISODE_CACHE.get(cache_key)
+        if cached and now - cached["created_at"] < _OPS_SHARED_RESOURCE_TTL:
+            if profile is not None:
+                profile.setdefault("resource", []).append({"operation": "assignment_episode_map_cache_hit", "documents": len(docs)})
+            return cached["data"]
+        flight = _OPS_ASSIGNMENT_EPISODE_INFLIGHT.get(cache_key)
+        if flight is None:
+            flight = {"event": Event(), "error": None}
+            _OPS_ASSIGNMENT_EPISODE_INFLIGHT[cache_key] = flight
+            leader = True
+
+    if not leader:
+        flight["event"].wait()
+        if flight.get("error") is not None:
+            raise flight["error"]
+        if profile is not None:
+            profile.setdefault("resource", []).append({"operation": "assignment_episode_map_single_flight_wait", "documents": len(docs)})
+        return flight.get("data") or {}
+
+    try:
+        data = _ops_assignment_episode_map(db, docs, profile)
+        flight["data"] = data
+        _OPS_ASSIGNMENT_EPISODE_CACHE[cache_key] = {"created_at": time.time(), "data": data}
+        return data
+    except Exception as exc:
+        flight["error"] = exc
+        raise
+    finally:
+        with _OPS_ASSIGNMENT_EPISODE_LOCK:
+            _OPS_ASSIGNMENT_EPISODE_INFLIGHT.pop(cache_key, None)
+            flight["event"].set()
+
+
 def _ops_temporal_assignment(doc: dict, assignment_cycles: Optional[dict[str, list[dict]]] = None) -> dict:
     """Resuelve el episodio actual sin convertir gestión histórica en respuesta cero."""
     lifecycle = doc.get("lifecycle") or {}
@@ -4948,6 +5016,53 @@ def _ops_fetch_signed_orders(db, profile: Optional[dict] = None) -> list[dict]:
              "timeline": 1, "created_at": 1},
         ),
     )
+
+
+def _ops_fetch_signed_orders_cached(db, profile: Optional[dict] = None) -> list[dict]:
+    """Cache raw signed-order evidence across standard period requests."""
+    global _OPS_SIGNED_ORDERS_CACHE, _OPS_SIGNED_ORDERS_CACHE_AT, _OPS_SIGNED_ORDERS_INFLIGHT
+    now = time.time()
+    if _OPS_SIGNED_ORDERS_CACHE is not None and now - _OPS_SIGNED_ORDERS_CACHE_AT < _OPS_SHARED_RESOURCE_TTL:
+        if profile is not None:
+            profile.setdefault("resource", []).append({"operation": "signed_orders_cache_hit", "documents": len(_OPS_SIGNED_ORDERS_CACHE)})
+        return _OPS_SIGNED_ORDERS_CACHE
+
+    leader = False
+    with _OPS_SIGNED_ORDERS_LOCK:
+        now = time.time()
+        if _OPS_SIGNED_ORDERS_CACHE is not None and now - _OPS_SIGNED_ORDERS_CACHE_AT < _OPS_SHARED_RESOURCE_TTL:
+            if profile is not None:
+                profile.setdefault("resource", []).append({"operation": "signed_orders_cache_hit", "documents": len(_OPS_SIGNED_ORDERS_CACHE)})
+            return _OPS_SIGNED_ORDERS_CACHE
+        flight = _OPS_SIGNED_ORDERS_INFLIGHT
+        if flight is None:
+            flight = {"event": Event(), "error": None}
+            _OPS_SIGNED_ORDERS_INFLIGHT = flight
+            leader = True
+
+    if not leader:
+        flight["event"].wait()
+        if flight.get("error") is not None:
+            raise flight["error"]
+        if profile is not None:
+            profile.setdefault("resource", []).append({"operation": "signed_orders_single_flight_wait", "documents": len(flight.get("data") or [])})
+        return flight.get("data") or []
+
+    try:
+        data = _ops_fetch_signed_orders(db, profile)
+        with _OPS_SIGNED_ORDERS_LOCK:
+            _OPS_SIGNED_ORDERS_CACHE = data
+            _OPS_SIGNED_ORDERS_CACHE_AT = time.time()
+        flight["data"] = data
+        return data
+    except Exception as exc:
+        flight["error"] = exc
+        raise
+    finally:
+        with _OPS_SIGNED_ORDERS_LOCK:
+            if _OPS_SIGNED_ORDERS_INFLIGHT is flight:
+                _OPS_SIGNED_ORDERS_INFLIGHT = None
+            flight["event"].set()
 
 
 def _ops_fetch_scheduled_events(db, cohort_leads: list[dict], profile: Optional[dict] = None) -> list[dict]:
@@ -5429,21 +5544,31 @@ def query_leads_operational_dashboard(
     stage2_started = time.perf_counter()
     stage2_jobs = {}
     signed_orders = None
+    shared_assignment_cycles = (
+        shared_resources.get("assignment_cycles")
+        if shared_resources is not None else None
+    )
+    assignment_docs_by_id = {}
+    for doc in [*historical_base, *current_docs]:
+        if doc.get("_id") is not None:
+            assignment_docs_by_id[str(doc.get("_id"))] = doc
+    assignment_docs = list(assignment_docs_by_id.values())
     shared_signed_orders = (
         shared_resources.get("signed_orders")
         if shared_resources is not None else None
     )
     with ThreadPoolExecutor(max_workers=3) as executor:
-        stage2_jobs["assignment"] = executor.submit(
-            _timed_read,
-            lambda worker_profile: _ops_assignment_episode_map(
-                db, [*current_docs, *period_docs], worker_profile
-            ),
-        )
+        if shared_assignment_cycles is None:
+            stage2_jobs["assignment"] = executor.submit(
+                _timed_read,
+                lambda worker_profile: _ops_assignment_episode_map_cached(
+                    db, assignment_docs, worker_profile
+                ),
+            )
         if period_lead_ids and shared_signed_orders is None:
             stage2_jobs["signed"] = executor.submit(
                 _timed_read,
-                lambda worker_profile: _ops_fetch_signed_orders(db, worker_profile),
+                lambda worker_profile: _ops_fetch_signed_orders_cached(db, worker_profile),
             )
         if period_lead_ids:
             stage2_jobs["scheduled"] = executor.submit(
@@ -5452,7 +5577,11 @@ def query_leads_operational_dashboard(
             )
         stage2_results = {name: future.result() for name, future in stage2_jobs.items()}
 
-    assignment_cycles, assignment_ms, assignment_profile = stage2_results["assignment"]
+    if shared_assignment_cycles is not None:
+        assignment_cycles = shared_assignment_cycles
+        assignment_ms, assignment_profile = 0.0, {}
+    else:
+        assignment_cycles, assignment_ms, assignment_profile = stage2_results.get("assignment", ({}, 0.0, {}))
     if shared_signed_orders is not None:
         signed_orders = shared_signed_orders
         signed_ms = 0.0
@@ -5468,6 +5597,8 @@ def query_leads_operational_dashboard(
         timing["stage2_wall_ms"] = round((time.perf_counter() - stage2_started) * 1000, 1)
     if shared_resources is not None and shared_signed_orders is None and signed_orders is not None:
         shared_resources["signed_orders"] = signed_orders
+    if shared_resources is not None and shared_assignment_cycles is None:
+        shared_resources["assignment_cycles"] = assignment_cycles
 
     activity_started = time.perf_counter()
     activity_signals = _ops_collect_activity_signals(

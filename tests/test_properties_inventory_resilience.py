@@ -71,9 +71,19 @@ class FakeDatabase:
 def clear_inventory_cache():
     leads_service.L1_CACHE.clear()
     leads_queries._DEMAND_CAPTURE_BASE_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE_AT = 0.0
+    leads_queries._OPS_SIGNED_ORDERS_INFLIGHT = None
+    leads_queries._OPS_ASSIGNMENT_EPISODE_CACHE.clear()
+    leads_queries._OPS_ASSIGNMENT_EPISODE_INFLIGHT.clear()
     yield
     leads_service.L1_CACHE.clear()
     leads_queries._DEMAND_CAPTURE_BASE_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE_AT = 0.0
+    leads_queries._OPS_SIGNED_ORDERS_INFLIGHT = None
+    leads_queries._OPS_ASSIGNMENT_EPISODE_CACHE.clear()
+    leads_queries._OPS_ASSIGNMENT_EPISODE_INFLIGHT.clear()
 
 
 def test_normal_query_creates_valid_cache(monkeypatch):
@@ -461,7 +471,7 @@ def test_operations_parallel_reads_preserve_contract(monkeypatch):
     )
     assert comparable["period_ids"] == []
     assert len(historical_calls) - before_historical == 1
-    assert len(signed_order_calls) - before_signed == 1
+    assert len(signed_order_calls) == 1
     assert shared_resources["historical_base"] is period_docs
     assert shared_resources["signed_orders"] == []
 

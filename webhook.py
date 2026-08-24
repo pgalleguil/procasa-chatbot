@@ -3501,7 +3501,7 @@ async def _render_crm_list(
     else:
         card_query_params["temperatura"] = temperatura
 
-    response = templates.TemplateResponse("crm_leads_list.html", {
+    response = templates.TemplateResponse(request, "crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
         "kpis": kpis,

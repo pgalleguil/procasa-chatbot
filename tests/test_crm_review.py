@@ -92,6 +92,13 @@ def test_review_oldest_assignment_order_uses_assigned_fixture_date():
     assert html.index('Cliente Demo 09') < html.index('Cliente Demo 01')
 
 
+def test_review_sla_priority_puts_in_term_before_managed_leads():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list&orden=sla_priority').text
+    assert html.index('Cliente Demo 09') < html.index('Cliente Demo 05')
+    assert html.index('Cliente Demo 05') > html.index('Cliente Demo 01')
+
+
 def test_review_filter_script_keeps_sorting_inside_local_review_route():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text

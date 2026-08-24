@@ -174,6 +174,19 @@ def _list_context(request: Request) -> dict:
     order = params.get("orden", "recent_assigned")
     if order in ("oldest_assigned", "antiguos"):
         leads = sorted(leads, key=lambda lead: lead["effective_sent_at"])
+    elif order in ("sla_priority", "sla_urgente"):
+        # SLA priority keeps unresolved work above managed leads. Within each
+        # SLA band, retain the assignment order as a stable tie-breaker.
+        sla_rank = {
+            "critical": 0, "hot_critical": 0,
+            "near_critical": 1, "hot_near_critical": 1,
+            "warning": 2, "hot_warning": 2,
+            "good": 3, "pending": 4, "historical": 5, "fulfilled": 6,
+        }
+        leads = sorted(leads, key=lambda lead: (
+            sla_rank.get(lead.get("sla_status"), 5),
+            lead["effective_sent_at"],
+        ))
     else:
         leads = sorted(leads, key=lambda lead: lead["effective_sent_at"], reverse=True)
     # KPI y barra representan el mismo universo base aunque se seleccione una

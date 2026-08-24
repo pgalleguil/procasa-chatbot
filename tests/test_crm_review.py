@@ -167,6 +167,10 @@ def test_quick_management_includes_property_unavailable_and_keeps_reason_placeho
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in script
     assert "if ($('quickReason').value.trim()) details.reason" in script
     assert "PROPERTY_UNAVAILABLE: 'Propiedad no disponible'" in html
+    assert 'id="quickDateField"' in modal
+    assert 'id="quickNotes"' in modal
+    assert "const dateResults = ['EFFECTIVE_CONTACT'];" in script
+    assert "details.notes = $('quickNotes').value.trim()" in script
 
 
 def test_detail_has_one_canonical_cta_and_legacy_form_hidden_by_default():

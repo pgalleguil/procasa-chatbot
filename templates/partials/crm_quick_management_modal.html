@@ -18,6 +18,14 @@
                     <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
                     <button type="button" class="quick-result-btn" data-quick-result="OTHER_EXPLICIT">Otro</button>
                 </div>
+                <div class="quick-extra mt-3" id="quickDateField">
+                    <label class="form-label small mb-1" for="quickNextDate">Próximo contacto</label>
+                    <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
+                </div>
+                <div class="quick-extra mt-3" id="quickNotesField">
+                    <label class="form-label small mb-1" for="quickNotes">Nota breve (opcional)</label>
+                    <textarea class="form-control form-control-sm" id="quickNotes" rows="2" maxlength="240" placeholder="Ej. Llamar después de las 19:00"></textarea>
+                </div>
                 <div class="quick-extra mt-3" id="quickReasonField">
                     <label class="form-label small mb-1" for="quickReason">Motivo</label>
                     <select class="form-select form-select-sm" id="quickReason">

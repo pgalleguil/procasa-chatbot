@@ -66,6 +66,10 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                              stage_override=None, legacy_stage=None,
                              actor_can_manage_any_cycle=False) -> dict:
     result_type = canonical_result_type(result_type)
+    # A contact with an agreed next call is operationally a follow-up, so it
+    # must create the pending reminder instead of closing the management flow.
+    if result_type == "EFFECTIVE_CONTACT" and next_follow_up_at:
+        result_type = "FOLLOW_UP_REQUESTED"
     rule = RESULT_RULES.get(result_type)
     if not rule:
         raise ValueError("unsupported CRM management result")

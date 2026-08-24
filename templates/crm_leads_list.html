@@ -2390,6 +2390,7 @@
                 const reasonNeeded = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'].includes(resultType);
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickDateField', dateNeeded);
+                setQuickExtra('quickNotesField', dateNeeded);
                 setQuickExtra('quickReasonField', reasonNeeded);
                 setQuickExtra('quickOtherField', resultType === 'OTHER_EXPLICIT');
                 const save = document.getElementById('quickManagementSave');
@@ -2450,11 +2451,12 @@
                 document.getElementById('quickManagementLeadName').textContent = button.dataset.leadName || 'Lead';
                 document.getElementById('quickManagementProgress').textContent = '';
                 document.getElementById('quickNextDate').value = '';
+                document.getElementById('quickNotes').value = '';
                 document.getElementById('quickReason').value = '';
                 document.getElementById('quickChannel').value = '';
                 showQuickError('');
                 document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
-                ['quickChannelField', 'quickDateField', 'quickReasonField', 'quickOtherField'].forEach(id => setQuickExtra(id, false));
+                ['quickChannelField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setQuickExtra(id, false));
                 document.getElementById('quickManagementSave').disabled = true;
                 bootstrap.Modal.getOrCreateInstance(document.getElementById('quickManagementModal')).show();
             }
@@ -2474,6 +2476,8 @@
                 const reason = document.getElementById('quickReason').value.trim();
                 if (channel) details.channel = channel;
                 if (reason) details.reason = reason;
+                const notes = document.getElementById('quickNotes')?.value.trim();
+                if (notes) details.notes = notes;
                 const payload = {
                     lead_id: quickManagementState.leadId,
                     phone: quickManagementState.phone,

@@ -3,7 +3,7 @@
 
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
-    const dateResults = [];
+    const dateResults = ['EFFECTIVE_CONTACT'];
     const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER', 'PROPERTY_UNAVAILABLE'];
     const reasonOptions = {
         NOT_INTERESTED: new Set(['Ya no busca', 'Esta propiedad no le interesa', 'Precio o condiciones', 'Ya encontró otra propiedad']),
@@ -29,6 +29,7 @@
             button.classList.toggle('is-selected', button.dataset.quickResult === resultType));
         setExtra('quickChannelField', channelResults.includes(resultType));
         setExtra('quickDateField', dateResults.includes(resultType));
+        setExtra('quickNotesField', dateResults.includes(resultType));
         setExtra('quickReasonField', reasonResults.includes(resultType));
         setExtra('quickOtherField', otherResults.includes(resultType));
         const reason = $('quickReason');
@@ -69,11 +70,12 @@
         $('quickManagementLeadName').textContent = context.leadName || 'Lead';
         $('quickManagementProgress').textContent = '';
         if ($('quickNextDate')) $('quickNextDate').value = '';
+        if ($('quickNotes')) $('quickNotes').value = '';
         $('quickReason').value = '';
         if ($('quickOtherOutcome')) $('quickOtherOutcome').value = '';
         error('');
         document.querySelectorAll('[data-quick-result]').forEach(item => item.classList.remove('is-selected'));
-        ['quickChannelField', 'quickDateField', 'quickReasonField', 'quickOtherField'].forEach(id => setExtra(id, false));
+        ['quickChannelField', 'quickDateField', 'quickNotesField', 'quickReasonField', 'quickOtherField'].forEach(id => setExtra(id, false));
         $('quickManagementSave').disabled = true;
         const detail = $('quickGoDetail');
         if (detail) {
@@ -93,6 +95,7 @@
         const details = {};
         if ($('quickReason').value.trim()) details.reason = $('quickReason').value.trim();
         if ($('quickOtherOutcome').value.trim()) details.outcome = $('quickOtherOutcome').value.trim();
+        if ($('quickNotes')?.value.trim()) details.notes = $('quickNotes').value.trim();
         const submittedId = state.managementRequestId;
         const payload = { lead_id: state.leadId, phone: state.phone, assignment_cycle_id: state.assignmentCycleId,
             management_request_id: submittedId, idempotency_key: submittedId, result_type: state.resultType,

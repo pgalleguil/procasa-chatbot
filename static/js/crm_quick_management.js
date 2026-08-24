@@ -3,7 +3,7 @@
 
     const state = { leadId: null, phone: null, assignmentCycleId: null, resultType: null,
         managementRequestId: null, row: null, onSuccess: null, onStale: null, closeOnStale: false };
-    const dateResults = ['EFFECTIVE_CONTACT'];
+    const dateResults = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'];
     const reasonResults = ['NOT_INTERESTED', 'INVALID_NUMBER'];
     const reasonOptions = {
         NOT_INTERESTED: new Set(['Ya no busca', 'Esta propiedad no le interesa', 'Precio o condiciones', 'Ya encontró otra propiedad']),
@@ -28,7 +28,7 @@
         document.querySelectorAll('[data-quick-result]').forEach(button =>
             button.classList.toggle('is-selected', button.dataset.quickResult === resultType));
         setExtra('quickChannelField', channelResults.includes(resultType));
-        const canScheduleFollowUp = resultType === 'EFFECTIVE_CONTACT';
+        const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType);
         setExtra('quickFollowUpField', canScheduleFollowUp);
         setExtra('quickDateField', canScheduleFollowUp && followUpEnabled());
         setExtra('quickNotesField', canScheduleFollowUp && followUpEnabled());
@@ -47,7 +47,8 @@
 
     function valid() {
         if (!state.resultType) return false;
-        if (state.resultType === 'EFFECTIVE_CONTACT' && followUpEnabled() && !$('quickNextDate')?.value) return false;
+        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType)
+            && followUpEnabled() && !$('quickNextDate')?.value) return false;
         if (otherResults.includes(state.resultType) && !$('quickOtherOutcome')?.value.trim()) return false;
         return true;
     }
@@ -144,7 +145,7 @@
     });
     $('quickManagementSave')?.addEventListener('click', save);
     $('quickNextDate')?.addEventListener('input', () => {
-        if (state.resultType === 'EFFECTIVE_CONTACT' && $('quickNextDate').value) $('quickManagementSave').disabled = false;
+        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType) && $('quickNextDate').value) $('quickManagementSave').disabled = false;
     });
     $('quickFollowUpToggle')?.addEventListener('change', () => {
         const enabled = followUpEnabled();

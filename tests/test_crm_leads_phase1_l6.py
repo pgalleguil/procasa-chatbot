@@ -33,6 +33,7 @@ def test_secondary_copy_is_below_kpi_and_sparkline_has_seven_points():
         sparkline = block.index("summary-sparkline")
         assert value < meta < sparkline
         assert block.count("<polyline ") == 1
+        assert block.count("summary-sparkline-line") == 1
         assert len(re.search(r'points="([^"]+)"', block).group(1).split()) == 7
 
 

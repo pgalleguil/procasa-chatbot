@@ -912,9 +912,10 @@
         .temperature-cards .summary-value.text-danger { color: #e06472 !important; }
         .summary-sparkline { position: absolute; left: 21px; right: 21px; bottom: 27px; height: 28px; width: auto; margin: 0; opacity: .72; }
         .summary-sparkline svg { display: block; width: 100%; height: 28px; overflow: visible; }
-        .summary-sparkline polyline { fill: none; stroke: var(--accent-color); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-        .summary-sparkline.hot polyline { stroke: #d85e6d; }
-        .summary-sparkline.cold polyline { stroke: #8b98aa; }
+        .summary-sparkline polyline { display: none; }
+        .summary-sparkline path { fill: none; stroke: var(--accent-color); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+        .summary-sparkline.hot path { stroke: #d85e6d; }
+        .summary-sparkline.cold path { stroke: #8b98aa; }
         .summary-footer { color: var(--text-secondary); font-size: .66rem; line-height: 1; margin-top: 6px; letter-spacing: .01em; }
         .temperature-cards .summary-footer { position: absolute; left: 21px; bottom: 13px; margin: 0; }
         .temperature-cards .summary-card > i,
@@ -1968,7 +1969,7 @@
                         <div>
                             <div class="summary-sparkline" aria-label="Asignaciones por día — últimos 7 días">
                                 {% set series = ((kpis.get('assignment_series') or {}).get('total') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones por día — últimos 7 días"><title>Asignaciones por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones por día — últimos 7 días"><title>Asignaciones por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
                             </div>
                             <div class="summary-footer">Últimos 7 días</div>
                         </div>
@@ -1983,7 +1984,7 @@
                         <div>
                             <div class="summary-sparkline hot" aria-label="Asignaciones Hot por día — últimos 7 días">
                                 {% set series = ((kpis.get('assignment_series') or {}).get('hot') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Hot por día — últimos 7 días"><title>Asignaciones Hot por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Hot por día — últimos 7 días"><title>Asignaciones Hot por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
                             </div>
                             <div class="summary-footer">Últimos 7 días</div>
                         </div>
@@ -1998,7 +1999,7 @@
                         <div>
                             <div class="summary-sparkline cold" aria-label="Asignaciones Lead por día — últimos 7 días">
                                 {% set series = ((kpis.get('assignment_series') or {}).get('cold') or [0,0,0,0,0,0,0]) %}{% set peak = series|max %}
-                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Lead por día — últimos 7 días"><title>Asignaciones Lead por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline></svg>
+                                <svg viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Asignaciones Lead por día — últimos 7 días"><title>Asignaciones Lead por día — últimos 7 días</title><polyline points="{% for value in series %}{{ (loop.index0 * 100 / 6)|round(2) }},{{ (24 - ((value / peak) * 20))|round(2) if peak else 24 }}{% if not loop.last %} {% endif %}{% endfor %}"></polyline><path class="summary-sparkline-line" aria-hidden="true"></path></svg>
                             </div>
                             <div class="summary-footer">Últimos 7 días</div>
                         </div>
@@ -2954,6 +2955,32 @@
                     p.setAttribute('aria-hidden', 'true');
                 });
             }
+
+            function renderSmoothSparklines() {
+                document.querySelectorAll('.summary-sparkline svg').forEach(function(svg) {
+                    const source = svg.querySelector('polyline');
+                    const path = svg.querySelector('.summary-sparkline-line');
+                    if (!source || !path) return;
+                    const points = (source.getAttribute('points') || '').trim().split(/\s+/).map(function(point) {
+                        const values = point.split(',').map(Number);
+                        return { x: values[0], y: values[1] };
+                    }).filter(function(point) { return Number.isFinite(point.x) && Number.isFinite(point.y); });
+                    if (points.length < 2) return;
+                    let d = `M ${points[0].x} ${points[0].y}`;
+                    for (let i = 1; i < points.length - 1; i += 1) {
+                        const midpoint = {
+                            x: (points[i].x + points[i + 1].x) / 2,
+                            y: (points[i].y + points[i + 1].y) / 2,
+                        };
+                        d += ` Q ${points[i].x} ${points[i].y} ${midpoint.x} ${midpoint.y}`;
+                    }
+                    const last = points[points.length - 1];
+                    d += ` Q ${last.x} ${last.y} ${last.x} ${last.y}`;
+                    path.setAttribute('d', d);
+                });
+            }
+
+            renderSmoothSparklines();
         </script>
     </body>
 

@@ -17,6 +17,7 @@ def test_cards_have_single_active_state_and_seven_sparkline_buckets():
     assert len(re.findall(r'<div class="summary-sparkline[^>]*>.*?</div>', html, re.S)) == 3
     for block in re.findall(r'<div class="summary-sparkline[^>]*>(.*?)</div>', html, re.S):
         assert block.count('<polyline ') == 1
+        assert block.count('summary-sparkline-line') == 1
         assert len(re.search(r'points="([^"]+)"', block).group(1).split()) == 7
 
 

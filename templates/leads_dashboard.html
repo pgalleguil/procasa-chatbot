@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="{% if territorial_review|default(false) %}light{% else %}dark{% endif %}">
+{% set full_visual_review = full_visual_review|default(false) %}
+<html lang="es" data-theme="{% if territorial_review|default(false) or full_visual_review %}light{% else %}dark{% endif %}">
 
 <head>
     <meta charset="UTF-8">
@@ -232,7 +233,7 @@
             background: var(--sidebar-active-bg);
             border-left-color: var(--sidebar-active-color);
             color: var(--sidebar-active-color) !important;
-            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
+            box-shadow: none;
         }
 
         .nav-link.active i {
@@ -270,6 +271,9 @@
                 left: min(-280px, calc(-100vw + 48px));
                 transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             }
+
+            .sidebar:not(.mobile-open) { display:none; }
+            .sidebar.mobile-open { display:flex; }
 
             .sidebar.mobile-open {
                 width: min(280px, calc(100vw - 48px));
@@ -1596,7 +1600,7 @@
 
         .tc-grid > * { min-width: 0; }
 
-        /* Fila 1 del Resumen Ejecutivo: Embudo (~65%) | Origen (~35%).
+        /* Fila 1 de la vista ejecutiva: Embudo (~65%) | Origen (~35%).
            Fila 2 (Tendencia) queda en .tc-block con ancho completo. */
         .exec-zone-row {
             display: grid;
@@ -2190,6 +2194,19 @@
             font-weight: 600;
         }
 
+        /* El menú debe tener la misma entrada tanto si se llega por click
+           como si la vista se abre directamente mediante ?tab=. */
+        @keyframes dashTabMenuEnter {
+            from { opacity: .72; transform: translateY(3px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .dash-tab.menu-enter {
+            animation: dashTabMenuEnter 220ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .dash-tab.menu-enter { animation: none; }
+        }
+
         .dash-tab.active .t-ico { color: var(--conversion-accent); }
 
         .t-placeholder {
@@ -2661,7 +2678,7 @@
         [data-theme="light"] .nav-link.active {
             background: var(--sidebar-active-bg);
             border-left-color: var(--sidebar-active-color);
-            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
+            box-shadow: none;
         }
 
         [data-theme="light"] .ai-btn-primary:hover,
@@ -2794,7 +2811,7 @@
             border: 1px solid rgba(124, 58, 237, 0.35);
         }
 
-        /* --- Gestión del Equipo Comercial: consola supervisiva desktop --- */
+        /* --- Consola supervisiva desktop --- */
         .team-dashboard{display:flex;flex-direction:column;gap:18px;color:var(--text-primary)}
         .team-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
         .team-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
@@ -2915,7 +2932,7 @@
         body.team-view-active .team-dashboard{gap:13px}
         body.team-view-active .team-title{margin-top:0}
         @media(min-width:681px){
-            /* Keep the shared period bar aligned with Resumen Ejecutivo. */
+            /* Keep the shared period bar aligned with the executive view. */
             body.team-view-active .header-container{margin-bottom:30px}
             body.team-view-active .dash-tabs{margin-bottom:16px}
             body.team-view-active .period-filterbar{margin-bottom:10px}
@@ -3011,6 +3028,14 @@
             opacity: 0.65;
             filter: blur(3px);
             transform: translateY(4px);
+        }
+        /* La ruta local completa representa el dashboard publicable; no debe
+           dejar navegación ni filtros ocultos esperando una carga privada. */
+        body.full-visual-review .seq-el,
+        body.full-visual-review .seq-el:not(.seq-shown) {
+            opacity: 1;
+            filter: none;
+            transform: none;
         }
         /* Una vez revelado: visible de forma permanente */
         .seq-el.seq-shown {
@@ -3315,6 +3340,7 @@
         }
 
         /* Chrome: conserva la estética, pero evita capas costosas de composición GPU. */
+        html.chrome-performance .sidebar,
         html.chrome-performance .ai-briefing-inner,
         html.chrome-performance .tc-card,
         html.chrome-performance .exec-table-card,
@@ -3336,7 +3362,7 @@
             transition: background-color 0.3s ease, color 0.3s ease;
         }
 
-        /* La demo pública conserva únicamente el Resumen Ejecutivo. */
+        /* La demo pública conserva únicamente la vista principal. */
         body.public-demo #sidebar,
         body.public-demo #dashTabs,
         body.public-demo .mobile-tab-select,
@@ -3350,6 +3376,7 @@
         }
         body.public-demo .header-container { margin-top: 0; }
 
+        /* CONTEXTO PROCASA SUCRE: referencia semántica del bloque sin rótulo visual adicional. */
         .demand-context { background:var(--bg-card); border:1px solid var(--border-color); border-radius:14px; padding:16px 18px; margin-bottom:14px; }
         .demand-section-head { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; margin-bottom:12px; }
         .demand-section-head h3 { margin:3px 0 4px; font-size:1.05rem; }.demand-section-head p { margin:0; color:var(--text-secondary); font-size:.82rem; }
@@ -3413,19 +3440,19 @@
         .geo-insight i { color:var(--accent); margin-right:5px; }
         .geo-metric-caption { margin:0 0 6px; color:var(--text-secondary); font-size:.72rem; }
         body.territorial-review-mode { background:var(--bg-body) !important; color:var(--text-primary) !important; }
-        body.territorial-review-mode .geo-demand-panel { max-width:1180px; margin:20px auto; padding:24px 26px 26px; border-radius:20px; background:var(--bg-card); box-shadow:var(--shadow-card); }
-        body.territorial-review-mode .geo-demand-panel .geo-header { margin-bottom:22px; }
-        body.territorial-review-mode .geo-demand-panel .geo-header h3 { font-size:1.72rem; margin:4px 0 5px; }
-        body.territorial-review-mode .geo-demand-panel .geo-header p { white-space:nowrap; }
-        body.territorial-review-mode .geo-map-layout { grid-template-columns:minmax(0,48%) minmax(330px,52%); gap:36px; }
-        body.territorial-review-mode .geo-map { height:294px; }
-        body.territorial-review-mode .geo-detail { min-height:270px; padding:0; }
-        body.territorial-review-mode .geo-detail > h4 { display:none; }
-        body.territorial-review-mode .geo-top-wrap { display:none; }
-        body.territorial-review-mode .geo-legend { margin-top:10px; }
-        body.territorial-review-mode .geo-map-status { display:none; }
-        body.territorial-review-mode .geo-segmented [data-geo-metric="gap"] { font-size:0; }
-        body.territorial-review-mode .geo-segmented [data-geo-metric="gap"]::after { content:'Brecha'; font-size:.68rem; }
+        .geo-demand-panel { max-width:1180px; margin:20px auto; padding:24px 26px 26px; border-radius:20px; background:var(--bg-card); box-shadow:var(--shadow-card); }
+        .geo-demand-panel .geo-header { margin-bottom:22px; }
+        .geo-demand-panel .geo-header h3 { font-size:1.72rem; margin:4px 0 5px; }
+        .geo-demand-panel .geo-header p { white-space:nowrap; }
+        .geo-map-layout { grid-template-columns:minmax(0,48%) minmax(330px,52%); gap:36px; }
+        .geo-map { height:294px; }
+        .geo-detail { min-height:270px; padding:0; }
+        .geo-detail > h4 { display:none; }
+        .geo-top-wrap { display:none; }
+        .geo-legend { margin-top:10px; }
+        .geo-map-status { display:none; }
+        .geo-segmented [data-geo-metric="gap"] { font-size:0; }
+        .geo-segmented [data-geo-metric="gap"]::after { content:'Brecha'; font-size:.68rem; }
         .geo-demand-symbol { fill:var(--accent); opacity:.8; stroke:var(--accent); stroke-width:0; cursor:pointer; transition:opacity 180ms ease,stroke 180ms ease,stroke-width 180ms ease; }
         .geo-demand-symbol:hover { opacity:1; stroke:var(--text-primary); stroke-width:1.25; }
         .geo-demand-symbol.selected { opacity:1; stroke:var(--accent); stroke-width:2; }
@@ -3445,19 +3472,23 @@
         .geo-zoom-controls button:hover,.geo-zoom-controls button:focus-visible { border-color:var(--accent); color:var(--accent); outline:none; }
         .geo-selected-detail { display:grid; gap:4px; margin-top:14px; padding-top:10px; border-top:1px solid var(--border-color); color:var(--text-secondary); font-size:.72rem; }
         .geo-selected-detail strong,.geo-selected-detail b { color:var(--text-primary); }
-        @media (max-width:900px) { body.territorial-review-mode .geo-map-layout { grid-template-columns:1fr; } body.territorial-review-mode .geo-detail { min-height:0; } }
+        @media (max-width:900px) { .geo-map-layout { grid-template-columns:1fr; } .geo-detail { min-height:0; } }
         body.territorial-review-mode #dashTabs, body.territorial-review-mode #viewExecutive, body.territorial-review-mode #viewLeads, body.territorial-review-mode #viewChannels, body.territorial-review-mode .period-toolbar { display:none !important; }
         body.territorial-review-mode #viewProperties { display:block !important; }
-        body.territorial-review-mode .inventory-dashboard { max-width:1180px; padding:20px 26px 40px; }
+        body.territorial-review-mode .inventory-dashboard { max-width:1480px; padding:20px 26px 40px; }
         body.territorial-review-mode .inventory-dashboard > section, body.territorial-review-mode .inventory-dashboard > details { margin-left:0; margin-right:0; }
-        body.territorial-review-mode .geo-demand-panel { margin:28px auto; max-width:1180px; }
-        body.territorial-review-mode .sidebar-main-nav, body.territorial-review-mode .logout, body.territorial-review-mode #btnExportPdf, body.territorial-review-mode #sessionWarningModal { display:none !important; }
+        body.territorial-review-mode .geo-demand-panel { margin:0 0 14px; max-width:none; }
+        {% if not territorial_review|default(false) %}body.territorial-review-mode .sidebar-main-nav, body.territorial-review-mode .logout, body.territorial-review-mode #btnExportPdf, body.territorial-review-mode #sessionWarningModal { display:none !important; }{% endif %}
         .dashboard-info { position:relative; display:inline-flex; vertical-align:baseline; margin-left:4px; }
         .dashboard-info-button { width:16px; height:16px; border:0; padding:0; background:transparent; color:var(--text-secondary); cursor:pointer; display:inline-grid; place-items:center; }
         .dashboard-info-button:hover,.dashboard-info-button:focus-visible { color:var(--accent); outline:none; }
         .dashboard-info-button i { font-size:14px; }
         .dashboard-info-popover { position:fixed; z-index:1000; width:min(280px,calc(100vw - 16px)); padding:10px 12px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-card); color:var(--text-primary); box-shadow:var(--shadow-card); font-size:.72rem; line-height:1.45; white-space:normal; }
         .dashboard-info-popover strong { display:block; margin-bottom:6px; font-size:.76rem; }.dashboard-info-popover span { display:block; margin-top:4px; color:var(--text-secondary); }.dashboard-info-popover b { color:var(--text-primary); }
+        .geo-metric-help-popover { position:fixed; z-index:1000; display:block; box-sizing:border-box; max-width:calc(100vw - 16px); padding:9px 11px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-card); color:var(--text-primary); box-shadow:var(--shadow-card); font-size:.72rem; line-height:1.4; white-space:normal; pointer-events:none; overflow-wrap:anywhere; }
+        .geo-metric-help-popover[hidden] { display:none; }
+        .geo-metric-help-popover strong { display:block; margin-bottom:4px; font-size:.76rem; }
+        .geo-metric-help-popover span { display:block; color:var(--text-secondary); }
         body.territorial-review-mode .geo-feature { stroke:var(--border-color); }
         body.territorial-review-mode .inventory-bar-track { background:var(--bg-elevated); }
         body.territorial-review-mode .inventory-bar-fill { background:var(--accent); }
@@ -3508,6 +3539,8 @@
         .inventory-heading, .inventory-panel-head { display:flex; justify-content:space-between; gap:18px; align-items:flex-start; }
         .inventory-heading { margin-bottom:18px; }
         .inventory-heading h2 { margin:3px 0 5px; font-size:clamp(1.45rem,2.5vw,2.1rem); }
+        .inventory-heading h2.team-title { margin:4px 0 0; font-size:26px; font-weight:820; letter-spacing:-.02em; }
+        .inventory-heading p.team-subtitle { margin:5px 0 0; font-size:12px; }
         .inventory-heading p, .inventory-panel-head p { margin:0; color:var(--text-secondary); }
         .inventory-kicker { color:#8ea4c5; font-size:.68rem; font-weight:800; letter-spacing:.12em; }
         .inventory-status, .inventory-panel-meta { color:var(--text-secondary); font-size:.78rem; }
@@ -3539,7 +3572,7 @@
         @media (max-width: 480px) { .inventory-dashboard { padding:0 2px; }.inventory-heading, .inventory-panel-head, .demand-section-head { display:block; }.inventory-status, .inventory-panel-meta { display:block; margin-top:8px; }.inventory-filters { grid-template-columns:1fr; }.inventory-kpis strong { font-size:1.45rem; }.inventory-panel,.demand-panel,.demand-context { padding:14px; }.inventory-coverage-content { gap:14px; }.inventory-donut { width:112px; height:112px; }.inventory-donut:after { inset:15px; }.inventory-bar-row { grid-template-columns:92px 1fr auto; font-size:.72rem; }.opportunity-matrix,.demand-grid-mini { grid-template-columns:1fr; }.demand-kpis { grid-template-columns:1fr; }.demand-kpis strong { font-size:1.15rem; }.demand-card-grid { grid-template-columns:1fr; }.geo-header { display:block; }.geo-map-controls { margin-top:10px; width:100%; }.geo-segmented { width:100%; }.geo-segmented button { flex:1; padding:7px 5px; }.geo-map { height:300px; }.geo-region-grid { grid-template-columns:repeat(2,minmax(0,1fr)); grid-auto-rows:minmax(72px,1fr); gap:7px; }.geo-tile { padding:9px; }.geo-tile-value { font-size:1rem; }.geo-detail { min-height:0; }.geo-top-territories { grid-template-columns:1fr; } }
         @keyframes demandHeaderIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } } @keyframes demandBubbleIn { from { opacity:0; transform:scale(.6); } to { opacity:.82; transform:scale(1); } } body.territorial-review-mode #viewProperties .demand-context { animation:demandHeaderIn 280ms ease both; } body.territorial-review-mode #viewProperties .demand-kpis article { animation:demandHeaderIn 260ms ease both; } body.territorial-review-mode #viewProperties .geo-demand-symbol { transform-box:fill-box; transform-origin:center; animation:demandBubbleIn 340ms ease both; } @media (prefers-reduced-motion: reduce) { .demand-compare-line i,.segment-geo-bar i,.simulator-result,.geo-demand-symbol,.geo-feature,body.territorial-review-mode #viewProperties .demand-context,body.territorial-review-mode #viewProperties .demand-kpis article { transition:none!important; animation:none!important; } }
         /* Demanda & Captación: responsive territorial composition and motion polish. */
-        body.territorial-review-mode .geo-segmented {
+        .geo-segmented {
             display: inline-flex;
             align-items: stretch;
             gap: 2px;
@@ -3548,14 +3581,14 @@
             border-radius: 10px;
             background: var(--bg-elevated);
         }
-            body.territorial-review-mode .geo-segmented button {
+            .geo-segmented button {
             min-width: 88px;
             min-height: 32px;
             border-radius: 7px !important;
             color: var(--text-secondary);
             background: transparent;
         }
-        body.territorial-review-mode .geo-segmented button.active {
+        .geo-segmented button.active {
             color: var(--text-primary);
             background: color-mix(in srgb, var(--accent) 14%, var(--bg-card));
         }
@@ -3575,6 +3608,7 @@
             .inventory-dashboard { padding:12px 8px 28px; }
             .geo-demand-panel { padding:14px 15px 18px; margin:12px auto; }
             .geo-demand-panel .geo-header { margin-bottom:14px; }
+            .geo-demand-panel .geo-header { display:block; }
             .geo-demand-panel .geo-header h3 { font-size:1.25rem; }
             .geo-demand-panel .geo-header p { white-space:normal; line-height:1.45; }
             .geo-map-controls { width:100%; display:block; }
@@ -3616,6 +3650,46 @@
             .demand-motion-section,.demand-motion-item { opacity:1!important; transform:none!important; transition:none!important; }
             .demand-compare-line i,.segment-geo-bar i,.simulator-result,.geo-feature,.geo-demand-symbol,.scatter-bubbles circle { transition:none!important; animation:none!important; }
         }
+        /* Territorial view: same surface system as the rest of Demand & Capture. */
+        .geo-demand-panel {
+            width:100%;
+            max-width:none;
+            margin:0 0 14px;
+            box-sizing:border-box;
+            border-radius:14px;
+        }
+        .geo-folded-grid { height:294px; }
+        .geo-folded-stack { display:grid; grid-template-rows:18px minmax(0,1fr) 76px; gap:10px; }
+        .geo-folded-stack > svg[data-geo-fold="SUR"] { height:160px; }
+        .geo-folded-south-inset { min-height:0; overflow:hidden; }
+        .geo-folded-south-inset svg { height:76px; }
+        #geoMap[data-geo-metric="leads"] .geo-territory-base { fill:var(--bg-elevated); }
+        #geoMap[data-geo-metric="leads"] .geo-territory-base:hover,
+        #geoMap[data-geo-metric="leads"] .geo-territory-base.selected { fill:var(--input-bg); }
+        .geo-tooltip { position:fixed; z-index:1200; }
+        .geo-metric-caption { flex-basis:100%; margin:5px 0 0; }
+        .geo-legend-title { color:var(--text-primary); font-size:.68rem; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+        .geo-gap-track { position:relative; height:8px; flex:1; min-width:72px; overflow:hidden; background:color-mix(in srgb,var(--border-color) 28%,transparent); border-radius:99px; }
+        .geo-gap-zero { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--text-secondary); opacity:.72; }
+        .geo-gap-fill { position:absolute; top:1px; bottom:1px; border-radius:99px; }
+        .geo-gap-fill.positive { left:50%; background:var(--accent); }
+        .geo-gap-fill.negative { right:50%; background:var(--text-secondary); }
+        .demand-table tbody tr:not(.segment-breakdown-row) { transition:background-color 140ms ease; }
+        .demand-table tbody tr:not(.segment-breakdown-row):hover { background:color-mix(in srgb,var(--accent) 6%,transparent); }
+        .demand-compare { grid-template-columns:minmax(210px,1fr); }
+        .demand-compare-values { gap:5px; font-size:.72rem; }
+        .demand-compare-values span { display:grid; grid-template-columns:68px 1fr; gap:8px; align-items:center; }
+        .demand-compare-values b { font-size:.73rem; }
+        .segment-cell { display:grid; gap:4px; align-items:start; }
+        .segment-cell .segment-breakdown-toggle { width:max-content; font-size:.67rem; font-weight:650; }
+        .segment-breakdown-row td { overflow:hidden; }
+        .segment-breakdown { max-height:0; padding:0 14px; opacity:0; overflow:hidden; transition:max-height 210ms ease, opacity 190ms ease, padding 210ms ease; }
+        .segment-breakdown-row.is-open .segment-breakdown { max-height:560px; padding:12px 14px; opacity:1; }
+        @media (max-width:768px) {
+            .geo-folded-south-inset svg { height:62px; }
+            .geo-mobile-south-stack { display:grid; grid-template-rows:minmax(0,1fr) 64px; gap:8px; height:232px; }
+            .geo-mobile-south-stack > svg { height:auto!important; min-height:0; }
+        }
     </style>
 </head>
 
@@ -3627,7 +3701,7 @@
     })();
 </script>
 
-<body class="seq-pending{% if public_demo|default(false) %} public-demo{% endif %}{% if territorial_review|default(false) %} territorial-review-mode{% endif %}">
+<body class="seq-pending{% if public_demo|default(false) %} public-demo{% endif %}{% if territorial_review|default(false) %} territorial-review-mode{% endif %}{% if full_visual_review %} full-visual-review{% endif %}">
         <nav class="sidebar seq-el seq-static" id="sidebar">
             <button type="button" class="sidebar-close" aria-label="Cerrar menú" onclick="closeMobileMenu()"><i class="fa-solid fa-xmark"></i></button>
             <div class="brand">
@@ -3683,7 +3757,7 @@
                 </div>
             </div>
 
-            {% if not public_demo|default(false) %}
+            {% if not public_demo|default(false) and not territorial_review|default(false) %}
             <!-- NAVEGACIÓN DE PESTAÑAS -->
             <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
@@ -4024,10 +4098,10 @@
             </div>{% endif %}
             <div id="viewProperties"{% if not territorial_review|default(false) %} hidden{% endif %}>
                 <section class="inventory-dashboard" aria-labelledby="inventoryTitle">
-                    <div class="inventory-heading"><div><span class="inventory-kicker">TERCERA PESTAÑA · INTELIGENCIA COMERCIAL</span><h2 id="inventoryTitle">Inteligencia de Demanda y Captación</h2><p>Demanda observada, brechas de cartera y oportunidades para orientar la captación.</p></div><div id="inventoryLoading" class="inventory-status" hidden>Cargando inteligencia…</div></div>
+                    <div class="inventory-heading"><div><h2 id="inventoryTitle" class="team-title">Inteligencia de Demanda y Captación</h2><p class="team-subtitle">Demanda observada, brechas de cartera y oportunidades para orientar la captación.</p></div><div id="inventoryDataStatus" class="inventory-status" hidden></div><div id="inventoryLoading" class="inventory-status" hidden>Cargando inteligencia…</div></div>
                     <div id="inventoryError" class="inventory-error" hidden></div>
                     <div class="inventory-filters" aria-label="Filtros de demanda"><label>Operación<select id="inventoryOperationFilter"><option value="">Todas</option></select></label><label>Tipo<select id="inventoryTypeFilter"><option value="">Todos</option></select></label><label>Comuna<select id="inventoryCommuneFilter"><option value="">Todas</option></select></label><label>Responsable<select id="inventoryResponsibleFilter"><option value="">Todos</option></select></label></div>
-                    <section class="demand-context" aria-labelledby="demandContextTitle"><div class="demand-section-head"><div><span class="inventory-kicker">CONTEXTO PROCASA SUCRE</span><h3 id="demandContextTitle">Nuestra cartera y su demanda observada</h3><p id="demandDefinition">Demanda = leads del período · el período cambia la demanda, no la cartera activa.</p><p id="demandQualifiedMeta" class="inventory-panel-meta">Demanda calificada: —</p></div><span id="demandAttributionMeta" class="inventory-panel-meta">Atribución: —</span></div><div class="demand-kpis"><article title="Propiedades activas actuales de Procasa Sucre; no incorpora otras oficinas."><span>Cartera activa</span><strong id="demandActive">—</strong><small>Propiedades vigentes Procasa Sucre</small></article><article title="Propiedades con al menos un lead dentro del período seleccionado."><span>Con demanda</span><strong id="demandWithDemand">—</strong><small>— de la cartera</small></article><article title="Propiedades activas actuales sin leads dentro del período seleccionado."><span>Sin demanda reciente</span><strong id="demandWithoutDemand">—</strong><small>Sin leads en el período</small></article><article title="Propiedades actuales con demanda dividido por cartera activa actual."><span>Cobertura de demanda <span class="info-dot" aria-hidden="true">i</span></span><strong id="demandCoverage">—</strong><small>— de — propiedades</small></article></div></section>
+                    <section class="demand-context" aria-labelledby="demandContextTitle"><div class="demand-section-head"><div><h3 id="demandContextTitle">Nuestra cartera y su demanda observada <span class="info-dot" title="Resumen de la cartera activa vigente y de la demanda observada durante el período seleccionado. Incluye cobertura y señales calificadas sin mezclar sus denominadores.">i</span></h3><p id="demandDefinition">Demanda = leads del período · el período cambia la demanda, no la cartera activa.</p><p id="demandQualifiedMeta" class="inventory-panel-meta">Demanda calificada: —</p></div><span id="demandAttributionMeta" class="inventory-panel-meta">Atribución: —</span></div><div class="demand-kpis"><article title="Propiedades activas actuales de Procasa Sucre; no incorpora otras oficinas."><span>Cartera activa</span><strong id="demandActive">—</strong><small>Propiedades vigentes Procasa Sucre</small></article><article title="Propiedades con al menos un lead dentro del período seleccionado."><span>Con demanda</span><strong id="demandWithDemand">—</strong><small>— de la cartera</small></article><article title="Propiedades activas actuales sin leads dentro del período seleccionado."><span>Sin demanda reciente</span><strong id="demandWithoutDemand">—</strong><small>Sin leads en el período</small></article><article title="Propiedades actuales con demanda dividido por cartera activa actual."><span>Cobertura de demanda</span><strong id="demandCoverage">—</strong><small>— de — propiedades</small></article></div></section>
                     <section class="demand-panel geo-demand-panel" aria-labelledby="geoDemandTitle"><div class="demand-section-head geo-header"><div><span class="inventory-kicker">INTELIGENCIA TERRITORIAL</span>{% if territorial_review|default(false) %}<span class="review-badge">REVIEW</span>{% endif %}<h3 id="geoDemandTitle">Dónde está la demanda <span class="info-dot" title="Visualiza dónde se concentran los leads recientes y cómo se compara esa demanda con la presencia actual de propiedades Procasa Sucre.">i</span></h3><p>Explora qué territorios concentran los leads y cómo se compara esa demanda con nuestra cartera.</p></div><div class="geo-map-controls"><div id="geoMetricSelect" class="geo-segmented" role="tablist" aria-label="Métrica territorial"><button type="button" class="active" data-geo-metric="leads">Demanda</button><button type="button" data-geo-metric="intensity">Intensidad</button><button type="button" data-geo-metric="gap">Brecha</button></div><button type="button" id="geoBackButton" class="geo-back-button" hidden>← Todas las regiones</button></div></div><div class="geo-map-layout"><div><div id="geoMapStatus" class="inventory-panel-meta">Cargando geometrías oficiales…</div><div id="geoMap" class="geo-map" role="img" aria-label="Mapa territorial de demanda por región"></div><div id="geoTooltip" class="geo-tooltip" hidden></div><div id="geoLegend" class="geo-legend"></div></div><aside id="geoDetail" class="geo-detail"><h4>Resumen territorial</h4><div id="geoSummaryInsights"></div><div class="geo-top-wrap"><div class="demand-section-head"><h4>Top 5 territorios</h4><span id="geoTopMeta" class="inventory-panel-meta">Por leads últimos 30 días</span></div><div id="geoTopTerritories" class="geo-top-territories"></div></div></aside></div></section>
                     <section class="demand-panel" aria-labelledby="demandIntelligenceTitle"><div class="demand-section-head"><div><span class="inventory-kicker">SEÑALES DE DEMANDA</span><h3 id="demandIntelligenceTitle">¿Dónde se concentran nuestros leads?</h3><p>Señales univariadas por dimensión; sirven para diagnosticar la demanda, no son oportunidades finales.</p></div><span id="demandLeadsMeta" class="inventory-panel-meta">— leads</span></div><div id="demandDimensionTabs" class="demand-tabs" role="tablist" aria-label="Dimensiones de demanda"></div><div class="demand-table-wrap"><table class="demand-table"><thead><tr><th>Segmento</th><th>Leads 30d</th><th>% de leads</th><th>Stock Sucre</th><th>% del stock</th><th>Propiedades consultadas</th><th>Leads por propiedad consultada <span class="info-dot" title="Propiedades distintas que recibieron al menos un lead en el período; la intensidad divide los leads por ese denominador.">i</span></th></tr></thead><tbody id="demandSegmentBody"></tbody></table></div><div id="demandSegmentCards" class="demand-cards"></div><p id="demandSegmentQuality" class="inventory-panel-meta">Calidad de dimensión: —</p></section>
                     <section class="demand-panel" aria-labelledby="gapTitle"><div class="demand-section-head"><div><span class="inventory-kicker">GAP DEMANDA VS CARTERA</span><h3 id="gapTitle">Dónde estamos subrepresentados</h3><p>Gap = participación de demanda − participación de cartera Procasa Sucre.</p></div></div><div class="demand-table-wrap"><table class="demand-table"><thead><tr><th>Dimensión</th><th>Segmento</th><th>Leads</th><th>Demanda</th><th>Stock Sucre</th><th>Cartera</th><th>Gap</th><th>Intensidad</th></tr></thead><tbody id="gapBody"></tbody></table></div><div id="gapCards" class="demand-cards"></div></section>
@@ -4097,9 +4171,12 @@
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
             const PUBLIC_DEMO = {{ 'true' if public_demo|default(false) else 'false' }};
+            // full_visual_review conserva el HTML completo para localhost;
+            // solo territorial_review debe activar el modo sanitizado/fixture.
             const REVIEW_MODE = {{ 'true' if territorial_review|default(false) else 'false' }};
+            const LOCAL_DASHBOARD = {{ 'true' if local_dashboard|default(false) else 'false' }};
             const PRIVATE_OPERATIONS_ENDPOINT = {% if public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
-            const PROPERTIES_INVENTORY_ENDPOINT = REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory';
+            const PROPERTIES_INVENTORY_ENDPOINT = LOCAL_DASHBOARD ? '/api/leads-dashboard/properties-inventory' : (REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory');
             const CAPTURE_SIMULATOR_ENDPOINT = '/api/leads-dashboard/capture-simulator';
 
             // Estado de periodo (misma lógica del Dashboard Comercial)
@@ -4520,7 +4597,37 @@
             let OPS_REQUEST_SEQ = 0;
             let OPS_LAST_PERIOD_KEY = '';
             let OVERVIEW_REQUEST_SEQ = 0;
+            let PROPERTIES_REQUEST_SEQ = 0;
             const OPS_ENDPOINT = PRIVATE_OPERATIONS_ENDPOINT;
+            const DASHBOARD_REQUESTS = {
+                overview: {key: null, promise: null, controller: null},
+                operations: {key: null, promise: null, controller: null},
+                properties: {key: null, promise: null, controller: null},
+            };
+            function dashboardBeginRequest(kind, key) {
+                const state = DASHBOARD_REQUESTS[kind];
+                if (state.promise && state.key === key) return {state, controller: state.controller, reused: true};
+                if (state.controller) state.controller.abort();
+                state.promise = null;
+                state.controller = new AbortController();
+                state.key = key;
+                return {state, controller: state.controller, reused: false};
+            }
+            function dashboardFinishRequest(kind, state, promise) {
+                if (state !== DASHBOARD_REQUESTS[kind] || state.promise !== promise) return;
+                state.promise = null;
+                state.controller = null;
+                state.key = null;
+            }
+            function dashboardFrontendPerf(endpoint, startedAt, responseAt, readyAt, requestSeq, status) {
+                console.info('[DASHBOARD_FRONTEND_PERF]', JSON.stringify({
+                    endpoint, request_seq: requestSeq, period_preset: FILTERS.period_preset,
+                    fetch_ms: Math.round((responseAt - startedAt) * 10) / 10,
+                    render_ms: Math.round((readyAt - responseAt) * 10) / 10,
+                    perceived_ms: Math.round((readyAt - startedAt) * 10) / 10,
+                    status,
+                }));
+            }
             function opsEscape(value) {
                 return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
             }
@@ -4934,31 +5041,46 @@
             }
             async function loadOperationalData(periodSnapshot = null) {
                 const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
+                const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
+                if (snapshot.compare) params.set('compare', snapshot.compare);
+                if (snapshot.preset) params.set('period_preset', snapshot.preset);
+                if (snapshot.executive) params.set('executive', snapshot.executive);
+                if (snapshot.portfolio) params.set('portfolio', snapshot.portfolio);
+                const request = dashboardBeginRequest('operations', OPS_ENDPOINT + '?' + params.toString());
+                if (request.reused) return request.state.promise;
+                const frontendStartedAt = performance.now();
                 const requestId = ++OPS_REQUEST_SEQ;
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
                 if ($('opsPeriodMeta')) $('opsPeriodMeta').textContent = 'Actualizando · ' + (snapshot.start || '—') + ' – ' + (snapshot.end || '—');
-                try {
-                    const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
-                    if (snapshot.compare) params.set('compare', snapshot.compare);
-                    if (snapshot.preset) params.set('period_preset', snapshot.preset);
-                    if (snapshot.executive) params.set('executive', snapshot.executive);
-                    if (snapshot.portfolio) params.set('portfolio', snapshot.portfolio);
-                    const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}});
-                    if (!response.ok) throw new Error('Gestión operativa ' + response.status);
-                    const data = await response.json();
-                    // Evita mezclar stock/período de una respuesta vieja con el
-                    // selector que ya muestra un rango más reciente.
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
-                    opsRenderOperational(data);
-                } catch (error) {
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
-                    const box = $('opsError'), text = $('opsErrorText');
-                    if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
-                    if (box) box.hidden = false;
-                    throw error;
-                } finally {
-                    if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
-                }
+                const promise = (async () => {
+                    try {
+                        const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}, signal:request.controller.signal});
+                        if (!response.ok) throw new Error('Gestión operativa ' + response.status);
+                        const data = await response.json();
+                        const frontendResponseAt = performance.now();
+                        // Evita mezclar stock/período de una respuesta vieja con el
+                        // selector que ya muestra un rango más reciente.
+                        if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return null;
+                        opsRenderOperational(data);
+                        dashboardFrontendPerf(OPS_ENDPOINT, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return data;
+                    } catch (error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(OPS_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return null;
+                        const box = $('opsError'), text = $('opsErrorText');
+                        if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
+                        if (box) box.hidden = false;
+                        throw error;
+                    } finally {
+                        if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
+                    }
+                })();
+                request.state.promise = promise;
+                try { return await promise; }
+                finally { dashboardFinishRequest('operations', request.state, promise); }
             }
             document.addEventListener('click', event => {
                 if (event.target.closest('#opsPortfolioCasesButton')) opsOpenPortfolioCases();
@@ -4992,13 +5114,21 @@
             }
 
             async function loadData(mode) {
-                if (REVIEW_MODE) {
-                    if (!$('viewProperties')?.hidden) await loadInventoryData(true);
-                    return;
-                }
-                if (!$('viewProperties')?.hidden) loadInventoryData(true).catch(e=>console.error('Error actualizando inventario:', e));
+                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
+                if (activeTab === 'leads') return loadOperationalData();
+                if (activeTab === 'properties') return loadInventoryData(mode === 'refresh');
+                if (activeTab !== 'executive') return null;
+                const frontendStartedAt = performance.now();
+                const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, compare: COMPARE, preset: FILTERS.period_preset};
+                const p = new URLSearchParams();
+                if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
+                if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
+                if (COMPARE) p.set('compare', COMPARE);
+                if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
+                const overviewPath = PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview';
+                const request = dashboardBeginRequest('overview', overviewPath + '?' + p.toString());
+                if (request.reused) return request.state.promise;
                 const requestId = ++OVERVIEW_REQUEST_SEQ;
-                    const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const overlay = $('loadingOverlay');
                 const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
                 RENDER_MODE = seqMode;
@@ -5006,50 +5136,49 @@
                 const upd = $('dashUpdated');
                 if (upd) { upd.textContent = 'Actualizando indicadores…'; upd.classList.add('loading'); }
                 if (seqMode === 'refresh') prepareRefreshReveal();
-                try {
-                    const operationalPromise = ($('viewLeads') && !$('viewLeads').hidden)
-                        ? loadOperationalData(periodSnapshot).catch(e => console.error('Error cargando gestión operativa:', e))
-                        : null;
-                    const p = new URLSearchParams();
-                    if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
-                    if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
-                    if (COMPARE) p.set('compare', COMPARE);
-                    if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
-                    const overviewPath = PUBLIC_DEMO
-                        ? '/api/demo/leads-intelligence/overview'
-                        : '/api/leads-dashboard/overview';
-                    const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
-                    if (!res.ok) throw new Error('Error ' + res.status);
-                    const overview = await res.json();
-                    if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return;
-                    OVERVIEW = overview;
-                    syncUrl();
-                    renderPeriodMeta();
-                    renderDemandCard();
-                    renderConversionCard();
-                    renderPipelineCard();
-                    renderSlaCard();
-                    renderInsightsBlock();
-                    renderTrendsAndChannels();
-                    renderFunnel();
-                    if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) {
-                        requestAnimationFrame(animateFunnelCounts);
+                const promise = (async () => {
+                    try {
+                        const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' }, signal:request.controller.signal });
+                        if (!res.ok) throw new Error('Error ' + res.status);
+                        const overview = await res.json();
+                        const frontendResponseAt = performance.now();
+                        if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return null;
+                        OVERVIEW = overview;
+                        syncUrl();
+                        renderPeriodMeta();
+                        renderDemandCard();
+                        renderConversionCard();
+                        renderPipelineCard();
+                        renderSlaCard();
+                        renderInsightsBlock();
+                        renderTrendsAndChannels();
+                        renderFunnel();
+                        if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) requestAnimationFrame(animateFunnelCounts);
+                        const now = new Date();
+                        LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+                        $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
+                        hideOverviewError();
+                        runRevealSequence(seqMode);
+                        dashboardFrontendPerf(overviewPath, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return overview;
+                    } catch (error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(overviewPath, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        console.error("Error cargando datos:", error);
+                        if (requestId === OVERVIEW_REQUEST_SEQ) showOverviewError();
+                        return null;
+                    } finally {
+                        if (requestId === OVERVIEW_REQUEST_SEQ) {
+                            if (overlay) overlay.hidden = true;
+                            if (upd) upd.classList.remove('loading');
+                        }
                     }
-                    const now = new Date();
-                    LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-                    $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
-                    hideOverviewError();
-                    runRevealSequence(seqMode);
-                } catch (e) {
-                    console.error("Error cargando datos:", e);
-                    showOverviewError();
-                }
-                finally {
-                    if (requestId === OVERVIEW_REQUEST_SEQ) {
-                        if (overlay) overlay.hidden = true;
-                        if (upd) upd.classList.remove('loading');
-                    }
-                }
+                })();
+                request.state.promise = promise;
+                try { return await promise; }
+                finally { dashboardFinishRequest('overview', request.state, promise); }
             }
 
             // --- CARD 1: DEMANDA & META ---
@@ -6368,7 +6497,7 @@
     <h2>Resumen de indicadores</h2>
     <div class="cards">${cardsHtml}</div>
     ${executiveSummary}
-    <h2>Resumen Ejecutivo y Diagnóstico</h2>
+    <h2>{{ 'Resumen comercial y diagnóstico' if territorial_review|default(false) else 'Resumen Ejecutivo y Diagnóstico' }}</h2>
     <ul>${briefing}</ul>
     <h2>Embudo Comercial</h2>
     <ul>${funnelRows}</ul>
@@ -6407,10 +6536,11 @@
              function visibleQuadrant(row,medianX,medianY){const highDemand=Number(row.demand_share_pct)>=medianY,highSupply=Number(row.supply_share_pct)>=medianX;if(highDemand&&!highSupply)return 'opportunity';if(highDemand&&highSupply)return 'coverage';if(!highDemand&&highSupply)return 'overexposed';return 'low-signal';}
              function demandRenderMatrixReal(data){const root=$('opportunityMatrix');if(!root)return;const rows=(data.demand_intelligence?.dimensions?.[DEMAND_DIMENSION]||[]).filter(row=>row.leads>0&&row.demand_share_pct!=null&&row.supply_share_pct!=null),width=760,height=360,pad={left:54,right:22,top:20,bottom:42};if(!rows.length){root.innerHTML='<span class="inventory-status">Sin segmentos comparables.</span>';return;}const maxX=Math.max(1,d3.max(rows,row=>Number(row.supply_share_pct)||0)),maxY=Math.max(1,d3.max(rows,row=>Number(row.demand_share_pct)||0)),x=d3.scaleLinear().domain([0,maxX*1.08]).range([pad.left,width-pad.right]),y=d3.scaleLinear().domain([0,maxY*1.08]).range([height-pad.bottom,pad.top]),r=d3.scaleSqrt().domain([0,Math.max(1,d3.max(rows,row=>Number(row.leads)||0))]).range([5,18]),medianX=d3.median(rows,row=>Number(row.supply_share_pct)||0)||0,medianY=d3.median(rows,row=>Number(row.demand_share_pct)||0)||0,qClass=row=>visibleQuadrant(row,medianX,medianY),top=[...rows].filter(row=>row.gap_pp>0).sort((a,b)=>(b.gap_pp-a.gap_pp)||(b.leads-a.leads)).slice(0,3),labelPositions=[];const labelFor=(row,index)=>{let lx=Math.min(width-pad.right-100,x(row.supply_share_pct)+8),ly=Math.max(pad.top+12,y(row.demand_share_pct)-8-index*12);for(const prior of labelPositions){if(Math.abs(lx-prior.x)<108&&Math.abs(ly-prior.y)<14)ly=Math.min(height-pad.bottom-4,prior.y+16);}labelPositions.push({x:lx,y:ly});return `<text class="scatter-label" x="${lx}" y="${ly}">${invEsc(row.segment)}</text>`;};root.innerHTML=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Matriz de oportunidad: participación de cartera y demanda"><line class="scatter-axis" x1="${pad.left}" y1="${height-pad.bottom}" x2="${width-pad.right}" y2="${height-pad.bottom}"></line><line class="scatter-axis" x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height-pad.bottom}"></line><line class="scatter-median" x1="${x(medianX)}" y1="${pad.top}" x2="${x(medianX)}" y2="${height-pad.bottom}"></line><line class="scatter-median" x1="${pad.left}" y1="${y(medianY)}" x2="${width-pad.right}" y2="${y(medianY)}"></line><text class="scatter-label" x="${pad.left}" y="${height-10}">Baja presencia en cartera</text><text class="scatter-label" text-anchor="end" x="${width-pad.right}" y="${height-10}">Alta presencia en cartera</text><text class="scatter-label" transform="translate(13 ${height/2+42}) rotate(-90)">% demanda</text><text class="scatter-quadrant-label" x="${pad.left+8}" y="${pad.top+14}">Oportunidad de captación</text><text class="scatter-quadrant-label" text-anchor="end" x="${width-pad.right-8}" y="${pad.top+14}">Cobertura estratégica</text><text class="scatter-quadrant-label" text-anchor="end" x="${width-pad.right-8}" y="${height-pad.bottom-8}">Sobreexposición relativa</text><text class="scatter-quadrant-label" x="${pad.left+8}" y="${height-pad.bottom-8}">Menor señal actual</text>${rows.map(row=>`<circle class="scatter-bubble ${qClass(row)}" data-matrix-segment="${invEsc(row.segment)}" cx="${x(row.supply_share_pct)}" cy="${y(row.demand_share_pct)}" r="${r(row.leads)}"></circle>`).join('')}${top.map(labelFor).join('')}</svg><div id="scatterTooltip" class="scatter-tooltip" hidden></div>`;const tip=$('scatterTooltip');root.querySelectorAll('.scatter-bubble').forEach(circle=>{const row=rows.find(item=>item.segment===circle.dataset.matrixSegment),show=()=>{if(!row||!tip)return;tip.innerHTML=`<strong>${invEsc(row.segment)}</strong><span>Demanda ${demandPct(row.demand_share_pct)}</span><span>Cartera ${demandPct(row.supply_share_pct)}</span><span>Brecha ${demandPP(row.gap_pp)}</span><span>${demandValue(row.leads)} leads · ${demandValue(row.leads_per_property)} leads / propiedad</span>`;tip.hidden=false;const box=circle.getBoundingClientRect();tip.style.left=`${Math.min(window.innerWidth-260,Math.max(8,box.left+10))}px`;tip.style.top=`${Math.max(8,box.top-tip.offsetHeight-8)}px`;};circle.addEventListener('mouseenter',show);circle.addEventListener('mouseleave',()=>{if(tip)tip.hidden=true;});circle.addEventListener('click',()=>circle.classList.toggle('selected'));});}
              const DEMAND_INFO_TEXT={coverage:{title:'Cobertura de demanda',definition:'Porcentaje de la cartera activa actual que recibió al menos un lead durante el período seleccionado.',formula:'Propiedades activas con demanda / cartera activa actual.',interpretation:'Permite reconciliar cuánta cartera vigente está siendo consultada. El período cambia la demanda observada, no el stock.'},qualified:{title:'Demanda calificada y atribución',definition:'Señales de contacto efectivo o visita, separadas de la métrica principal de leads.',formula:'Conteos canónicos por señal y leads con oficina identificable / leads totales.',interpretation:'No mezcla etapas distintas ni representa todo el mercado inmobiliario.'},territorial:{title:'Inteligencia Territorial',definition:'Concentración de los leads observados y contraste con la cartera activa Procasa Sucre.',formula:'Leads por territorio; intensidad y brecha se muestran como métricas separadas.',interpretation:'Es una comparación descriptiva de demanda observada, no una medición del mercado completo.'},intensity:{title:'Intensidad',definition:'Concentración de leads en propiedades distintas consultadas.',formula:'Leads del período / propiedades distintas con demanda.',interpretation:'Ayuda a distinguir volumen de concentración. No es una tasa de conversión.'},gap:{title:'Brecha demanda vs cartera',definition:'Diferencia entre la participación de demanda y la participación de cartera activa.',formula:'Participación de demanda − participación de cartera Procasa Sucre.',interpretation:'Un valor positivo indica subrepresentación relativa de cartera en ese segmento.'},trend:{title:'Tendencia reciente',definition:'Lectura de la secuencia de demanda en tres ventanas consecutivas.',formula:'Últimos 30 días, días 31–60 y días 61–90.',interpretation:'Aceleración, reactivación, estabilidad o desaceleración describen la secuencia; no son un pronóstico.'},persistence:{title:'Persistencia',definition:'Continuidad histórica de la demanda observada en distintos períodos.',formula:'Semanas y meses con demanda dentro del histórico disponible.',interpretation:'No mide antigüedad de una propiedad ni fecha real de ingreso.'},history:{title:'Histórico de demanda',definition:'Evidencia acumulada en propiedades activas e históricas atribuibles.',formula:'Leads históricos, propiedades distintas y primera/última demanda observadas.',interpretation:'La carga inicial puede ser left-censored; no equivale a antigüedad de cartera.'},classification:{title:'Clasificación analítica',definition:'Banda descriptiva determinada por evidencia mínima y leads recientes.',formula:'Evidencia mínima: al menos 5 leads históricos y 3 propiedades con demanda. Luego: 5 o más leads en últimos 30 días = alta; 1–4 = media; 0 = baja.',interpretation:'Tendencia, persistencia, histórico, intensidad y brecha complementan la lectura, pero no modifican esta banda. No es probabilidad ni prioridad estratégica institucional.'},validation:{title:'Validación histórica',definition:'Evaluación retrospectiva del motor con cortes temporales y horizonte futuro.',formula:'Clasificación con información ≤ t y outcome observado entre t+1 y t+30.',interpretation:'La ausencia de leakage es obligatoria; la brecha actual de cartera no se valida históricamente.'}};
+             DEMAND_INFO_TEXT.context={title:'Contexto de demanda',definition:'Resumen de la cartera activa Procasa Sucre y de la demanda observada en el período seleccionado.',formula:'Cartera activa = propiedades vigentes; con demanda = propiedades con al menos un lead; cobertura = con demanda / cartera activa.',interpretation:'El período modifica la demanda observada, no el stock activo. Las señales calificadas y la atribución se muestran por separado.'};
              function dashboardInfoMarkup(key){const info=DEMAND_INFO_TEXT[key];if(!info){console.warn(`Ayuda no configurada para ${key}`);return '';}return `<span class="dashboard-info" data-info-key="${invEsc(key)}"><button type="button" class="dashboard-info-button" data-info-key="${invEsc(key)}" aria-label="Información sobre ${invEsc(info.title)}" aria-expanded="false"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button><span class="dashboard-info-popover" role="tooltip" hidden><strong>${invEsc(info.title)}</strong><span><b>Qué significa:</b> ${invEsc(info.definition)}</span><span><b>Cómo se calcula:</b> ${invEsc(info.formula)}</span><span><b>Cómo leerlo:</b> ${invEsc(info.interpretation)}</span></span></span>`;}
              function bindDemandInfo(){return bindDemandInfoExplicit();}
-             function demandReviewLabels(){if(!REVIEW_MODE)return;const setText=(el,value)=>{if(el&&el.textContent!==value)el.textContent=value;},active=$('demandActive')?.closest('article'),withDemand=$('demandWithDemand')?.closest('article'),without=$('demandWithoutDemand')?.closest('article'),coverage=$('demandCoverage')?.closest('article');if(active){setText(active.querySelector('span'),'Cartera activa');setText(active.querySelector('small'),'Propiedades vigentes Procasa Sucre');}if(withDemand){setText(withDemand.querySelector('span'),'Con demanda');setText(withDemand.querySelector('small'),`${$('demandCoverage')?.textContent||'—'} de la cartera`);}if(without){setText(without.querySelector('span'),'Sin demanda reciente');setText(without.querySelector('small'),'Sin leads en el período');}if(coverage){if(!coverage.querySelector('.dashboard-info'))coverage.querySelector('span').innerHTML=`Cobertura de demanda ${dashboardInfoMarkup('coverage')}`;const activeValue=$('demandActive')?.textContent||'—',demandValueText=$('demandWithDemand')?.textContent||'—';setText(coverage.querySelector('small'),`${demandValueText} de ${activeValue} propiedades`);}const gap=document.querySelector('[aria-labelledby="gapTitle"] .inventory-kicker'),sim=document.querySelector('[aria-labelledby="captureSimulatorTitle"] .inventory-kicker');setText(gap,'BRECHA DEMANDA VS CARTERA');setText(sim,'SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA');}
-             function bindDemandInfoExplicit(){const root=$('viewProperties');if(!root)return;const assign=(selector,key)=>root.querySelectorAll(selector).forEach(old=>old.dataset.infoKey=key);assign('.demand-kpis article:nth-child(4) .info-dot','coverage');assign('#opportunityMapTitle .info-dot','classification');assign('#captureTitle .info-dot','classification');assign('.methodology-note summary .info-dot','validation');root.querySelectorAll('.info-dot').forEach(old=>{const key=old.dataset.infoKey;if(!key){old.remove();return;}const wrap=document.createElement('span');wrap.innerHTML=dashboardInfoMarkup(key);old.replaceWith(wrap.firstElementChild);});root.querySelectorAll('.dashboard-info').forEach(wrapper=>{if(wrapper.dataset.bound)return;wrapper.dataset.bound='1';const button=wrapper.querySelector('.dashboard-info-button'),popover=wrapper.querySelector('.dashboard-info-popover');let pinned=false;const close=()=>{pinned=false;popover.hidden=true;button.setAttribute('aria-expanded','false');};const show=()=>{popover.hidden=false;button.setAttribute('aria-expanded','true');const r=button.getBoundingClientRect(),w=Math.min(290,window.innerWidth-16),h=popover.offsetHeight;popover.style.width=`${w}px`;popover.style.left=`${Math.max(8,Math.min(window.innerWidth-w-8,r.left))}px`;popover.style.top=`${r.bottom+h+8<window.innerHeight?r.bottom+8:Math.max(8,r.top-h-8)}px`;};wrapper.addEventListener('mouseenter',()=>{if(!window.matchMedia('(hover: none)').matches)show();});wrapper.addEventListener('mouseleave',()=>{if(!pinned)close();});button.addEventListener('focus',show);button.addEventListener('blur',()=>{if(!pinned)setTimeout(()=>{if(!wrapper.contains(document.activeElement))close();},0);});button.addEventListener('click',event=>{event.stopPropagation();pinned=!pinned;pinned?show():close();});document.addEventListener('pointerdown',event=>{if(!wrapper.contains(event.target))close();},true);button.addEventListener('keydown',event=>{if(event.key==='Escape'){close();button.blur();}});});}
+             function demandReviewLabels(){if(!REVIEW_MODE)return;const setText=(el,value)=>{if(el&&el.textContent!==value)el.textContent=value;},active=$('demandActive')?.closest('article'),withDemand=$('demandWithDemand')?.closest('article'),without=$('demandWithoutDemand')?.closest('article'),coverage=$('demandCoverage')?.closest('article');if(active){setText(active.querySelector('span'),'Cartera activa');setText(active.querySelector('small'),'Propiedades vigentes Procasa Sucre');}if(withDemand){setText(withDemand.querySelector('span'),'Con demanda');setText(withDemand.querySelector('small'),`${$('demandCoverage')?.textContent||'—'} de la cartera`);}if(without){setText(without.querySelector('span'),'Sin demanda reciente');setText(without.querySelector('small'),'Sin leads en el período');}if(coverage){const activeValue=$('demandActive')?.textContent||'—',demandValueText=$('demandWithDemand')?.textContent||'—';setText(coverage.querySelector('small'),`${demandValueText} de ${activeValue} propiedades`);}const gap=document.querySelector('[aria-labelledby="gapTitle"] .inventory-kicker'),sim=document.querySelector('[aria-labelledby="captureSimulatorTitle"] .inventory-kicker');setText(gap,'BRECHA DEMANDA VS CARTERA');setText(sim,'SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA');}
+             function bindDemandInfoExplicit(){const root=$('viewProperties');if(!root)return;const assign=(selector,key)=>root.querySelectorAll(selector).forEach(old=>old.dataset.infoKey=key);assign('.demand-context h3 .info-dot','context');assign('#opportunityMapTitle .info-dot','classification');assign('#captureTitle .info-dot','classification');assign('.methodology-note summary .info-dot','validation');root.querySelectorAll('.info-dot').forEach(old=>{const key=old.dataset.infoKey;if(!key){old.remove();return;}const wrap=document.createElement('span');wrap.innerHTML=dashboardInfoMarkup(key);old.replaceWith(wrap.firstElementChild);});root.querySelectorAll('.dashboard-info').forEach(wrapper=>{if(wrapper.dataset.bound)return;wrapper.dataset.bound='1';const button=wrapper.querySelector('.dashboard-info-button'),popover=wrapper.querySelector('.dashboard-info-popover');let pinned=false;const close=()=>{pinned=false;popover.hidden=true;button.setAttribute('aria-expanded','false');};const show=()=>{popover.hidden=false;button.setAttribute('aria-expanded','true');const r=button.getBoundingClientRect(),w=Math.min(290,window.innerWidth-16),h=popover.offsetHeight;popover.style.width=`${w}px`;popover.style.left=`${Math.max(8,Math.min(window.innerWidth-w-8,r.left))}px`;popover.style.top=`${r.bottom+h+8<window.innerHeight?r.bottom+8:Math.max(8,r.top-h-8)}px`;};wrapper.addEventListener('mouseenter',()=>{if(!window.matchMedia('(hover: none)').matches)show();});wrapper.addEventListener('mouseleave',()=>{if(!pinned)close();});button.addEventListener('focus',show);button.addEventListener('blur',()=>{if(!pinned)setTimeout(()=>{if(!wrapper.contains(document.activeElement))close();},0);});button.addEventListener('click',event=>{event.stopPropagation();pinned=!pinned;pinned?show():close();});document.addEventListener('pointerdown',event=>{if(!wrapper.contains(event.target))close();},true);button.addEventListener('keydown',event=>{if(event.key==='Escape'){close();button.blur();}});});}
              function bindDemandInfoExplicitFinal(){const root=$('viewProperties');if(!root)return;const assign=(selector,key)=>root.querySelectorAll(selector).forEach(old=>old.dataset.infoKey=key);assign('#captureCards .demand-card-grid span:nth-child(4) .info-dot','persistence');assign('#captureCards .demand-card-grid span:nth-child(8) .info-dot','intensity');assign('#captureSimulatorResult .simulator-result-grid span:nth-child(2) .info-dot','trend');demandFixUnifiedHelp();bindDemandInfoExplicit();}
             document.addEventListener('DOMContentLoaded',()=>{const root=$('viewProperties');if(root){bindDemandInfo=bindDemandInfoExplicitFinal;demandRenderSegments=demandRenderSegmentsWithDrilldown;demandRenderMatrix=demandRenderMatrixReal;simRender=simRenderFinal;const baseDemandRender=demandRender;demandRender=data=>{baseDemandRender(data);demandReviewLabels();demandContextLayout(data);demandSetupUnifiedSection();demandCompactMethodology();demandSetupSimulator();demandSetupSecondary();bindDemandInfo();};demandReviewLabels();demandContextLayout();demandSetupUnifiedSection();demandCompactMethodology();demandSetupSimulator();demandSetupSecondary();bindDemandInfo();setTimeout(()=>{if(REVIEW_MODE&&INVENTORY_DATA?.review_simulator){simRender(INVENTORY_DATA.review_simulator);bindDemandInfo();}},1800);}});
              function demandValue(value) { return value == null ? '—' : invNum(value); }
@@ -6461,7 +6591,56 @@
             function invDetailTable(rows) { return `<table class="inventory-table"><thead><tr><th>Código</th><th>Tipo</th><th>Operación</th><th>Comuna</th><th>Responsable</th><th>Precio</th><th>Leads período</th><th>Publicaciones</th></tr></thead><tbody>${(rows||[]).map(invDetailRow).join('')}</tbody></table>`; }
             function invRenderProperties(rows) { const visible=(rows||[]).slice(0,20), rest=(rows||[]).slice(20); $('invDetailBody').innerHTML=visible.map(invDetailRow).join(''); $('invDetailCards').innerHTML=visible.map(row=>invCard(row,true)).join(''); const more=$('invDetailMore'); more.hidden=!rest.length; if(rest.length){$('invDetailMoreLabel').textContent=`Ver ${invNum(rest.length)} propiedades restantes`; $('invDetailMoreContent').innerHTML=invDetailTable(rest);} }
             function invPopulateFilters(data) { const map={operation:'operation',type:'type',commune:'commune',responsible:'responsible'}; Object.entries(map).forEach(([id,key])=>{ const el=$('inventory'+id.charAt(0).toUpperCase()+id.slice(1)+'Filter'); if(!el) return; const selected=el.value; const options=data.filter_options?.[key]||[]; el.innerHTML=`<option value="">${id==='operation'?'Todas':id==='responsible'?'Todos':id==='type'?'Todos':'Todas'}</option>`+options.map(row=>`<option value="${invEsc(row.label)}">${invEsc(row.label)} (${invNum(row.count)})</option>`).join(''); if(options.some(row=>row.label===selected)) el.value=selected; }); }
-            async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{if(!response.ok) throw new Error(`HTTP ${response.status}`); return response.json();}).then(data=>{invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data);}).catch(error=>{$('inventoryError').textContent='No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
+            async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{const body=await response.json().catch(()=>({})); if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;} return body;}).then(data=>{const meta=data.meta||{}; const status=$('inventoryDataStatus'); if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;} invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data); if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);}).catch(error=>{$('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
+
+            loadInventoryData = async function(force=false) {
+                if ($('viewProperties')?.hidden) return null;
+                const params = new URLSearchParams();
+                if (FILTERS.period_start) params.set('period_start', FILTERS.period_start);
+                if (FILTERS.period_end) params.set('period_end', FILTERS.period_end);
+                [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);});
+                const key = params.toString();
+                if (!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY === key) return INVENTORY_DATA;
+                const request = dashboardBeginRequest('properties', PROPERTIES_INVENTORY_ENDPOINT + '?' + key);
+                if (request.reused) return request.state.promise;
+                const frontendStartedAt = performance.now();
+                const requestId = ++PROPERTIES_REQUEST_SEQ;
+                INVENTORY_REQUEST_KEY = key;
+                $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true;
+                const promise = (async () => {
+                    try {
+                        const response = await fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'},signal:request.controller.signal});
+                        const body = await response.json().catch(()=>({}));
+                        if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;}
+                        const frontendResponseAt = performance.now();
+                        const data = body;
+                        const meta=data.meta||{}; const status=$('inventoryDataStatus');
+                        if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;}
+                        invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data);
+                        if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);
+                        dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return data;
+                    } catch(error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        $('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.';
+                        $('inventoryError').hidden=false;
+                        if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);
+                        return null;
+                    } finally {
+                        $('inventoryLoading').hidden=true;
+                    }
+                })();
+                request.state.promise = promise;
+                INVENTORY_REQUEST = promise;
+                try { return await promise; }
+                finally {
+                    if (INVENTORY_REQUEST === promise) INVENTORY_REQUEST = null;
+                    dashboardFinishRequest('properties', request.state, promise);
+                }
+            };
 
             // --- Territorial review renderer: D3 Geo folded national view ---
             let GEO_RANK_EXPANDED = false;
@@ -6494,7 +6673,6 @@
                         const scale=GEO_METRIC==='gap'?scales.gap:scales.intensity;
                         base.attr('fill',item=>scale(geoValue(item.row)??0));
                     }
-                    if(label==='CENTRO'){svg.append('rect').attr('class','geo-island-inset').attr('x',202).attr('y',218).attr('width',38).attr('height',16).attr('rx',5);svg.append('text').attr('class','geo-island-inset-label').attr('x',207).attr('y',229).text('islas · inset');}
                 });
                 map.querySelectorAll('[data-geo-feature],[data-geo-symbol]').forEach(el=>{el.addEventListener('mouseenter',()=>{const row=byKey.get(el.dataset.geoFeature||el.dataset.geoSymbol),tip=$('geoTooltip');if(tip&&row){tip.innerHTML=geoD3Tooltip(row);tip.hidden=false;const box=el.getBoundingClientRect(),container=map.getBoundingClientRect();tip.style.left=`${Math.max(5,Math.min(container.width-215,box.left-container.left+8))}px`;tip.style.top=`${Math.max(4,box.top-container.top+8)}px`;}});el.addEventListener('mouseleave',()=>{if($('geoTooltip'))$('geoTooltip').hidden=true;});});
                 geoD3BindHighlight(map);
@@ -6514,7 +6692,7 @@
                 requestAnimationFrame(tick);
             }
             function demandRenderCoverageStrip(data){const inv=data?.inventory||{},active=Number(inv.active),withDemand=Number(inv.with_demand),withoutDemand=Number(inv.without_demand),bar=$('demandCoverageBar'),label=$('demandCoverageBarLabel'),withEl=$('demandCoverageBarWith'),withoutEl=$('demandCoverageBarWithout');if(!bar||!label||!withEl||!withoutEl)return;const valid=Number.isFinite(active)&&active>=0&&Number.isFinite(withDemand)&&Number.isFinite(withoutDemand)&&withDemand>=0&&withoutDemand>=0&&withDemand+withoutDemand===active;label.textContent=valid?`${invNum(withDemand)} con demanda · ${invNum(withoutDemand)} sin demanda`:'Distribución de cartera no reconciliada';bar.setAttribute('aria-label',valid?`${invNum(withDemand)} con demanda y ${invNum(withoutDemand)} sin demanda, de ${invNum(active)} propiedades activas`:'Distribución de cartera sin reconciliación');const withPct=valid&&active>0?withDemand/active*100:0,targetWith=`${withPct.toFixed(2)}%`,targetWithout=`${(valid&&active>0?100-withPct:0).toFixed(2)}%`;withEl.dataset.targetWidth=targetWith;withoutEl.dataset.targetWidth=targetWithout;if(demandReducedMotion()){withEl.style.width=targetWith;withoutEl.style.width=targetWithout;return;}withEl.style.width='0%';withoutEl.style.width='0%';requestAnimationFrame(()=>{withEl.style.transition='width 550ms cubic-bezier(.22,.61,.36,1)';withoutEl.style.transition='width 550ms cubic-bezier(.22,.61,.36,1)';withEl.style.width=targetWith;withoutEl.style.width=targetWithout;});}
-            function demandAnimateBars(){if(demandReducedMotion())return;document.querySelectorAll('.demand-compare-line i,.segment-geo-bar i').forEach(bar=>{const target=bar.style.width||bar.dataset.targetWidth;if(!target)return;bar.dataset.targetWidth=target;bar.style.width='0%';requestAnimationFrame(()=>{bar.style.width=target;});});}
+            function demandAnimateBars(){if(demandReducedMotion())return;document.querySelectorAll('.demand-compare-line i,.segment-geo-bar i').forEach(bar=>{const target=bar.dataset.targetWidth||bar.style.width;if(!target)return;bar.dataset.targetWidth=target;bar.style.width='0%';requestAnimationFrame(()=>{bar.style.width=target;});});}
             function demandSegmentFilterContext(){const operation=$('inventoryOperationFilter')?.value||'Todas las operaciones',type=$('inventoryTypeFilter')?.value||'Todos los tipos',commune=$('inventoryCommuneFilter')?.value||'Todo Chile';return `${type} · ${operation} · ${commune}`;}
             function demandSegmentGeoBreakdown(row){const geo=row?.geo_breakdown||{},regionKey=DEMAND_BREAKDOWN_REGION||(DEMAND_DIMENSION==='zone_rm'?'metropolitana':null),communeMode=Boolean(regionKey),items=communeMode?((geo.communes_by_region?.[regionKey])||((regionKey==='metropolitana'?geo.communes:[])||[])):(geo.regions||[]),components=geo.components||{},regionLabel=regionKey?String(regionKey).replace(/(^|[-_])([a-z])/g,(_,prefix,char)=>`${prefix}${char.toUpperCase()}`):'Regiones',primaryLabel=communeMode?`Dónde se concentra este segmento · Comunas de ${invEsc(regionLabel)}`:'Dónde se concentra este segmento · Regiones',rows=items.slice(0,6).map(item=>`<div class="segment-geo-row"><button type="button" class="segment-geo-link" data-segment-geo="${invEsc(item.geo_key||'')}" data-segment-geo-level="${communeMode?'commune':'region'}">${invEsc(item.name||'Sin nombre')}</button><span class="segment-geo-bar"><i data-target-width="${Math.min(100,Number(item.leads||0)/(Math.max(1,Number(row.leads||0)))*100)}%" style="width:0%"></i></span><b>${demandValue(item.leads)} leads</b><small>${demandPP(item.gap_pp)} · ${demandValue(item.leads_per_property)} leads/prop.</small></div>`).join('')||'<span class="inventory-status">Sin desglose geográfico disponible para este segmento.</span>';const component=Object.entries(components)[0],compRows=(component?.[1]||[]).map(item=>`<div class="segment-component-row"><span>${invEsc(item.segment)}</span><b>${demandValue(item.leads)} leads · ${demandPct(item.share_pct)}</b></div>`).join('')||'<span class="inventory-status">Disponible al solicitar una dimensión complementaria.</span>';return `<tr class="segment-breakdown-row" hidden><td colspan="4"><div class="segment-breakdown"><div class="segment-breakdown-head"><strong>Dónde se concentra este segmento</strong><span>Contexto: ${invEsc(demandSegmentFilterContext())}</span></div><div class="segment-breakdown-tabs"><button type="button" class="active" data-breakdown-view="geo">Dónde se concentra</button><button type="button" data-breakdown-view="components">Qué lo compone</button></div><div class="segment-breakdown-view" data-breakdown-panel="geo"><div class="segment-geo-list"><strong>${primaryLabel}</strong>${rows}</div></div><div class="segment-breakdown-view" data-breakdown-panel="components" hidden><strong>Dimensión complementaria</strong><div class="segment-components">${compRows}</div></div></div></td></tr>`;}
             function demandMotionEnter(data){const root=$('viewProperties');if(!root)return;const sections=[root.querySelector('.demand-context'),root.querySelector('.geo-demand-panel'),root.querySelector('[aria-labelledby="demandIntelligenceTitle"]'),root.querySelector('[aria-labelledby="captureTitle"]'),root.querySelector('[aria-labelledby="captureSimulatorTitle"]')].filter(Boolean);sections.forEach((section,index)=>{section.classList.add('demand-motion-section');setTimeout(()=>section.classList.add('is-visible'),index*35);});const inv=data?.inventory||{},demand=data?.demand||{},without=Math.max(0,Number(inv.active||0)-Number(demand.properties_with_demand||0));demandAnimateNumber($('demandActive'),Number(inv.active),value=>invNum(Math.round(value)));demandAnimateNumber($('demandWithDemand'),Number(demand.properties_with_demand),value=>invNum(Math.round(value)));demandAnimateNumber($('demandWithoutDemand'),without,value=>invNum(Math.round(value)));demandAnimateNumber($('demandCoverage'),Number(demand.coverage_pct),value=>invPct(value));demandAnimateBars();}
@@ -6538,7 +6716,9 @@
             function geoD3DetailCommunes() { const detail=$('geoDetail'),summary=$('geoSummaryInsights'),region=geoRows('region').find(row=>row.geo_key===GEO_REGION_KEY),rows=geoD3CommuneRows(GEO_REGION_KEY),rankingValue=row=>GEO_METRIC==='intensity'?row.leads_per_property:GEO_METRIC==='gap'?row.gap_pp:row.leads,ranked=[...rows].sort((a,b)=>(rankingValue(b)??-Infinity)-(rankingValue(a)??-Infinity)||String(a.name||'').localeCompare(String(b.name||''))),visible=ranked.slice(0,8),selected=rows.find(row=>row.geo_key===GEO_SELECTED_KEY),maxMetric=Math.max(0,d3.max(ranked,rankingValue)||0),rankingTitle=GEO_METRIC==='intensity'?'COMUNAS CON MAYOR INTENSIDAD':GEO_METRIC==='gap'?'COMUNAS CON MAYOR BRECHA POSITIVA':'COMUNAS CON MAYOR DEMANDA',regionValue=GEO_METRIC==='intensity'?demandValue(region?.leads_per_property):GEO_METRIC==='gap'?demandPP(region?.gap_pp):demandValue(region?.leads),regionUnit=GEO_METRIC==='intensity'?'leads / propiedad':GEO_METRIC==='gap'?'brecha demanda vs cartera':'leads',regionSubtitle=GEO_METRIC==='intensity'?'Intensidad del período':GEO_METRIC==='gap'?'Brecha demanda vs cartera':'Últimos 30 días';summary.innerHTML=`<div class="geo-breadcrumb">Chile › ${invEsc(region?.name||GEO_REGION_KEY)} <button type="button" id="geoBackRegions">← Volver a regiones</button></div><div class="geo-hero-label inventory-kicker">REGIÓN ${invEsc((region?.name||'').toUpperCase())}</div><div class="geo-hero-value">${regionValue} <small>${regionUnit}</small></div><p class="geo-hero-subtitle">${regionSubtitle}</p><div class="geo-hero-label inventory-kicker" style="margin-top:16px">${rankingTitle}</div><div class="geo-ranking">${visible.map(item=>{const value=rankingValue(item),width=maxMetric>0&&value>0?Math.max(2,value/maxMetric*100):2;return `<div class="geo-ranking-row" data-geo-rank="${invEsc(item.geo_key)}"><span>${invEsc(item.name)}</span><div class="geo-ranking-track"><div class="geo-ranking-fill" style="width:${Math.min(100,width)}%"></div></div><b>${GEO_METRIC==='gap'?demandPP(value):demandValue(value)}</b></div>`;}).join('')}</div>${selected?`<div class="geo-selected-detail"><strong>${invEsc(selected.name)}</strong><span>${demandValue(selected.leads)} leads últimos 30 días · ${demandPct(region?.leads>0?selected.leads/region.leads*100:null)} de la demanda de RM</span><span>${demandValue(selected.properties_with_demand)} propiedades consultadas · ${demandValue(selected.leads_per_property)} leads/propiedad</span><span>Stock Sucre ${demandValue(selected.stock_sucre)} · Brecha ${demandPP(selected.gap_pp)}</span><b>Qué están buscando</b><span>${(selected.top_segments||[]).slice(0,3).map(segment=>`${invEsc(segment.segment)} · ${demandValue(segment.leads)} leads`).join(' · ')||'Sin segmentos observados'}</span></div>`:''}`;$('geoBackRegions').onclick=()=>{GEO_LEVEL='region';GEO_REGION_KEY=null;GEO_SELECTED_KEY=null;geoRender();};geoD3BindHighlight(summary); }
             function geoD3DetailNational() { const detail=$('geoDetail'),summary=$('geoSummaryInsights'),rows=geoD3MetricRows(geoRows('region')),selected=rows.find(row=>row.geo_key===GEO_SELECTED_KEY),leader=rows[0],total=rows.reduce((sum,item)=>sum+(item.leads||0),0),visible=GEO_RANK_EXPANDED?rows:rows.slice(0,8),topTwo=[...rows].sort((a,b)=>(b.leads||0)-(a.leads||0)).slice(0,2),metricTitle=selected?'REGIÓN SELECCIONADA':GEO_METRIC==='intensity'?'MAYOR INTENSIDAD':GEO_METRIC==='gap'?'MAYOR BRECHA POSITIVA':'DEMANDA DEL PERÍODO',heroValue=selected?(GEO_METRIC==='gap'?demandPct(selected.gap_pp):GEO_METRIC==='intensity'?demandValue(selected.leads_per_property):`${demandValue(selected.leads)} leads`):(GEO_METRIC==='gap'?demandPct(leader?.gap_pp):GEO_METRIC==='intensity'?demandValue(leader?.leads_per_property):`${demandValue(total)} leads`),heroSub=selected?`${invEsc(selected.name)} · ${demandPct(selected.demand_share_pct)} de la demanda`:GEO_METRIC==='leads'?`${invEsc(leader?.name||'—')} concentra ${demandPct(leader?.demand_share_pct)}`:`${invEsc(leader?.name||'—')} · ${invEsc(geoFoldMetricText(leader||{}))}`;summary.innerHTML=`<div class="geo-hero-label inventory-kicker">${metricTitle}</div><div class="geo-hero-value">${heroValue}</div><p class="geo-hero-subtitle">${heroSub}</p>${selected?'<button type="button" class="geo-rank-more" id="geoViewCommunes">Ver comunas →</button>':''}<div class="geo-hero-label inventory-kicker" style="margin-top:16px">RANKING REGIONAL</div><div class="geo-ranking">${visible.map(item=>{const value=geoValue(item),width=GEO_METRIC==='leads'?(total?Math.max(2,(item.leads||0)/total*100):2):Math.max(2,(value??0)/Math.max(1,geoValue(leader)??1)*100);return `<div class="geo-ranking-row ${item.geo_key===GEO_SELECTED_KEY?'is-selected':''}" data-geo-rank="${invEsc(item.geo_key)}"><span>${invEsc(item.name)}</span><div class="geo-ranking-track"><div class="geo-ranking-fill" style="width:${Math.min(100,width)}%"></div></div><b>${GEO_METRIC==='gap'?demandPct(value):demandValue(value)}</b></div>`;}).join('')}</div>${rows.length>8?`<button type="button" class="geo-rank-more" id="geoRankMore">${GEO_RANK_EXPANDED?'Mostrar Top 8':'Ver las 16 regiones'}</button>`:''}<p class="geo-insight"><i class="fa-solid fa-chart-line"></i>${topTwo.length===2?`${invEsc(topTwo[0].name)} y ${invEsc(topTwo[1].name)} concentran ${demandPct((topTwo[0].leads+topTwo[1].leads)/Math.max(1,total)*100)} de la demanda reciente.`:'Sin demanda territorial observada.'}</p>`;$('geoViewCommunes')?.addEventListener('click',()=>geoD3EnterCommunes(selected.geo_key));$('geoRankMore')?.addEventListener('click',()=>{GEO_RANK_EXPANDED=!GEO_RANK_EXPANDED;geoDetail();});geoD3BindHighlight(summary); }
             function geoDetail(){ if(GEO_LEVEL==='commune')return geoD3DetailCommunes(); const detail=$('geoDetail');detail.querySelector('h4')?.remove();return geoD3DetailNational(); }
-             function geoRender(){ if(!GEO_DATA||typeof d3==='undefined')return; const rows=GEO_LEVEL==='region'?geoRows('region'):geoD3CommuneRows(GEO_REGION_KEY);$('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button=>button.classList.toggle('active',button.dataset.geoMetric===GEO_METRIC));if(GEO_LEVEL==='region'){geoRenderNationalTiles(rows);$('geoMapStatus')?.remove();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();geoSyncMobileHero();return;}geoD3RenderCommunes();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();}
+             function demandTerritorialPeriodLabel(){return FILTERS.period_preset==='today'?'hoy':FILTERS.period_preset==='week'?'últimos 7 días':FILTERS.period_preset==='month'?'mes seleccionado':FILTERS.period_preset==='30d'?'últimos 30 días':'período seleccionado';}
+             function demandRefreshTerritorialPeriodText(){const root=$('geoDemandTitle')?.closest('.geo-demand-panel');if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const replacements=[['últimos 30 días',demandTerritorialPeriodLabel()],['Últimos 30 días',demandTerritorialPeriodLabel()]];const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);nodes.forEach(node=>{let value=node.nodeValue;replacements.forEach(([from,to])=>{value=value.replaceAll(from,to);});node.nodeValue=value;});}
+             function geoRender(){ if(!GEO_DATA||typeof d3==='undefined')return; const rows=GEO_LEVEL==='region'?geoRows('region'):geoD3CommuneRows(GEO_REGION_KEY);$('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button=>button.classList.toggle('active',button.dataset.geoMetric===GEO_METRIC));if(GEO_LEVEL==='region'){geoRenderNationalTiles(rows);$('geoMapStatus')?.remove();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();geoSyncMobileHero();demandRefreshTerritorialPeriodText();return;}geoD3RenderCommunes();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();demandRefreshTerritorialPeriodText();}
             function geoInit(data){const geography=data.demand_intelligence?.geography;if(!geography||typeof d3==='undefined')return;GEO_DATA={payload:data};if(REVIEW_MODE){$('geoBackButton')?.remove();$('geoMapStatus')?.remove();$('geoDetail')?.querySelector('h4')?.remove();$('geoTopTerritories')?.closest('.geo-top-wrap')?.remove();}const load=Promise.all([fetch('/static/geo/chile-regiones.geojson').then(response=>response.json()),fetch('/static/geo/chile-comunas.geojson').then(response=>response.json())]).then(([regions,communes])=>{GEO_DATA.regions=regions;GEO_DATA.communes=communes;geoRender();}).catch(()=>{if($('geoMapStatus'))$('geoMapStatus').textContent='No fue posible cargar las geometrías oficiales.';});$('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button=>button.addEventListener('click',()=>{GEO_METRIC=button.dataset.geoMetric;GEO_RANK_EXPANDED=false;geoRender();}));return load;}
 
             // --- 5. INIT ---
@@ -6548,7 +6728,18 @@
                 // Navegación por pestañas
                 function switchTab(tabId) {
                     document.body.classList.toggle('team-view-active', tabId === 'leads');
-                    document.querySelectorAll('#dashTabs .dash-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+                    const menuTabs = document.querySelectorAll('#dashTabs .dash-tab');
+                    menuTabs.forEach(b => {
+                        b.classList.toggle('active', b.dataset.tab === tabId);
+                        b.classList.remove('menu-enter');
+                    });
+                    const selectedMenuTab = document.querySelector('#dashTabs .dash-tab[data-tab="' + tabId + '"]');
+                    if (selectedMenuTab && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                        requestAnimationFrame(() => {
+                            selectedMenuTab.classList.add('menu-enter');
+                            selectedMenuTab.addEventListener('animationend', () => selectedMenuTab.classList.remove('menu-enter'), {once:true});
+                        });
+                    }
                     const enteringExecutive = tabId === 'executive' && OVERVIEW;
                     const execView = $('viewExecutive');
                     if (enteringExecutive && execView) {
@@ -6564,6 +6755,7 @@
                     if (msel) msel.value = tabId;
                     if (tabId === 'leads') loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:', e));
                     if (tabId === 'properties') loadInventoryData().catch(e=>console.error('Error cargando inventario:', e));
+                    if (tabId === 'executive') loadData('full').catch(e=>console.error('Error cargando vista principal:', e));
                     syncUrl();
                     const tabsNav = $('dashTabs');
                     const activeTab = tabsNav ? tabsNav.querySelector('.dash-tab[data-tab="' + tabId + '"]') : null;
@@ -6764,7 +6956,7 @@
 
                 // Tooltip del BLOQUE 2 (AI Briefing) — sin tooltip en el diseño minimalista
 
-                loadData('full');
+                if (INITIAL_TAB === 'executive') loadData('full');
             });
 
             // Actualización silenciosa cada 15 min. No es una recarga de página
@@ -6773,9 +6965,9 @@
                 if (!REVIEW_MODE && !document.hidden) loadData('refresh');
             }, 900000);
 
+            {% if not territorial_review|default(false) %}
             // --- SMART SESSION CONTROL ---
             // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.
-            if (!REVIEW_MODE) {
             const SESSION_LIFETIME = 120 * 60 * 1000;
             const WARNING_THRESHOLD = 2 * 60 * 1000;
             const RENEWAL_INTERVAL = 10 * 60 * 1000;
@@ -6787,7 +6979,6 @@
             ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
 
             setInterval(() => {
-                if (REVIEW_MODE) return;
                 const now = Date.now();
                 const idleTime = now - lastActivity;
 
@@ -6819,7 +7010,521 @@
                         .catch(err => console.error("Session renew failed", err));
                 }
             }, 5000);
+            {% endif %}
+
+            // --- Final territorial and segment-view hardening ---
+            let DEMAND_OPEN_SEGMENT = null;
+
+            function geoD3PresentationFeature(feature) {
+                const key = geoKey(geoFeatureName(feature));
+                const regionKey = geoKey(feature?.properties?.Region || feature?.properties?.region || feature?.properties?.NAME_1 || '');
+                const isValparaiso = key === 'valparaiso' || regionKey === 'valparaiso';
+                let geometry = geoFoldGeometry(feature?.geometry, isValparaiso);
+                if (isValparaiso && geometry) {
+                    // Valparaíso incluye Juan Fernández e Isla de Pascua en el
+                    // mismo GeoJSON. No deben dominar el encuadre continental.
+                    const keepsContinentalExtent = polygon => {
+                        const coordinates = geoCoords({coordinates: polygon});
+                        return coordinates.length && coordinates.reduce((sum, point) => sum + Number(point[0] || 0), 0) / coordinates.length > -76.5;
+                    };
+                    if (geometry.type === 'Polygon') geometry = keepsContinentalExtent(geometry.coordinates) ? geometry : null;
+                    else if (geometry.type === 'MultiPolygon') geometry = {...geometry, coordinates: geometry.coordinates.filter(keepsContinentalExtent)};
+                }
+                if (key === 'magallanes' && geometry) {
+                    const keepsCommercialExtent = polygon => {
+                        const coordinates = geoCoords({coordinates: polygon});
+                        if (!coordinates.length) return false;
+                        const meanLatitude = coordinates.reduce((sum, point) => sum + Number(point[1] || 0), 0) / coordinates.length;
+                        return meanLatitude > -60;
+                    };
+                    if (geometry.type === 'Polygon') {
+                        geometry = keepsCommercialExtent(geometry.coordinates) ? geometry : null;
+                    } else if (geometry.type === 'MultiPolygon') {
+                        const commercial = geometry.coordinates.filter(keepsCommercialExtent);
+                        // The official Magallanes layer contains thousands of tiny
+                        // offshore fragments. Keep the principal commercial landmass
+                        // for the national/zone overview so it cannot determine the
+                        // projection scale for every other region.
+                        const principal = commercial.sort((a, b) => geoCoords({coordinates: b}).length - geoCoords({coordinates: a}).length).slice(0, 1);
+                        geometry = {...geometry, coordinates: principal};
+                    }
+                }
+                return {...feature, geometry};
             }
+
+            geoFoldMetricText = function(row) {
+                if (GEO_METRIC === 'intensity') return `${demandValue(row?.leads_per_property)} leads/propiedad`;
+                if (GEO_METRIC === 'gap') return demandPP(row?.gap_pp);
+                return `${demandValue(row?.leads)} leads`;
+            };
+
+            geoD3ColorScales = function(rows) {
+                const values = geoD3Values(rows);
+                const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4f46e5';
+                const dark = document.documentElement.dataset.theme === 'dark';
+                const intensity = d3.scaleSequential(d3.interpolateRgb(dark ? '#26364f' : '#edf1f6', dark ? '#a5b4fc' : accent))
+                    .domain([0, Math.max(1, d3.max(values) || 1)]);
+                const extent = d3.extent(values.length ? values : [0]);
+                const maxAbs = Math.max(Math.abs(extent[0] || 0), Math.abs(extent[1] || 0), 1);
+                const gap = d3.scaleDiverging(d3.interpolateRgbBasis([dark ? '#3b4a60' : '#d9e5f3', dark ? '#182235' : '#f8fafc', dark ? '#a5b4fc' : accent]))
+                    .domain([-maxAbs, 0, maxAbs]);
+                return {intensity, gap, maxAbs};
+            };
+
+            geoD3Legend = function(values) {
+                const usable = values.filter(value => value != null && Number.isFinite(value)).sort((a, b) => a - b);
+                if (GEO_METRIC === 'leads') {
+                    const max = usable.at(-1) || 0;
+                    const mid = d3.quantile(usable, .5) || 0;
+                    const low = usable.find(value => value > 0) || 0;
+                    const scale = d3.scaleSqrt().domain([0, max || 1]).range([0, 17]);
+                    const circle = value => Math.max(4, scale(value) * 2);
+                    return `<div class="geo-symbol-legend"><span><i style="width:${circle(low)}px;height:${circle(low)}px"></i>${demandValue(low)}</span><span><i style="width:${circle(mid)}px;height:${circle(mid)}px"></i>${demandValue(mid)}</span><span><i style="width:${circle(max)}px;height:${circle(max)}px"></i>${demandValue(max)}</span><small>leads últimos 30 días</small></div>`;
+                }
+                const min = usable[0] ?? 0;
+                const max = usable.at(-1) ?? 0;
+                const mid = d3.quantile(usable, .5) || 0;
+                if (GEO_METRIC === 'gap') {
+                    const maxAbs = Math.max(Math.abs(min), Math.abs(max), 1);
+                    const scale = geoD3ColorScales(usable.map(gap_pp => ({gap_pp}))).gap;
+                    return `<div class="geo-legend-title">Brecha</div><div class="geo-legend-labels"><span>más cartera</span><span>equilibrio</span><span>más demanda</span></div><span class="geo-legend-scale">${[0,.25,.5,.75,1].map(index => `<i style="background:${scale(-maxAbs + index * 2 * maxAbs)}"></i>`).join('')}</span><div class="geo-legend-labels"><span>${demandPP(-maxAbs)}</span><span>0 pp</span><span>${demandPP(maxAbs)}</span></div>`;
+                }
+                const scale = geoD3ColorScales(usable.map(leads_per_property => ({leads_per_property}))).intensity;
+                return `<div class="geo-legend-title">Intensidad</div><div class="geo-legend-labels"><span>${demandValue(min)} leads/prop.</span><span>${demandValue(mid)} leads/prop.</span><span>${demandValue(max)} leads/prop.</span></div><span class="geo-legend-scale">${[0,.25,.5,.75,1].map(index => `<i style="background:${scale(index * max)}"></i>`).join('')}</span>`;
+            };
+
+            function geoSetMetricCaption() {
+                const control = $('geoMetricSelect');
+                if (!control) return;
+                $('geoMetricCaption')?.remove();
+                const help = {
+                    leads: {
+                        title: 'Demanda',
+                        definition: 'Muestra dónde se concentra el interés observado de los potenciales clientes, medido por leads recibidos.',
+                        formula: 'Suma de leads del período seleccionado atribuidos a propiedades de cada región.',
+                        interpretation: 'Un círculo más grande indica mayor demanda observada. El tamaño no representa el tamaño geográfico de la región.'
+                    },
+                    intensity: {
+                        title: 'Intensidad',
+                        definition: 'Muestra cuánta demanda recibe, en promedio, cada propiedad consultada.',
+                        formula: 'Leads del período ÷ propiedades distintas que recibieron al menos un lead.',
+                        interpretation: 'Un valor alto indica demanda más concentrada. No representa conversión ni probabilidad de cierre.'
+                    },
+                    gap: {
+                        title: 'Brecha',
+                        definition: 'Compara el peso relativo de la demanda con el peso relativo de nuestra cartera activa.',
+                        formula: 'Participación de demanda − participación de cartera activa.',
+                        interpretation: 'Brecha positiva: hay más demanda relativa que cartera. Brecha negativa: existe más cartera relativa que demanda.'
+                    }
+                };
+                control.querySelectorAll('[data-geo-metric]').forEach(button => {
+                    if (button.dataset.metricHelpBound) return;
+                    button.dataset.metricHelpBound = '1';
+                    const popover = document.createElement('span');
+                    popover.className = 'geo-metric-help-popover';
+                    popover.setAttribute('role', 'tooltip');
+                    popover.hidden = true;
+                    document.body.appendChild(popover);
+                    const close = () => { popover.hidden = true; };
+                    const show = () => {
+                        const item = help[button.dataset.geoMetric] || help.leads;
+                        popover.innerHTML = `<strong>${item.title}</strong><span><b>Qué significa:</b> ${item.definition}</span><span><b>Cómo se calcula:</b> ${item.formula}</span><span><b>Cómo leerlo:</b> ${item.interpretation}</span>`;
+                        popover.hidden = false;
+                        const rect = button.getBoundingClientRect();
+                        const panel = button.closest('.geo-demand-panel')?.getBoundingClientRect();
+                        const bounds = panel || {left:8, right:window.innerWidth-8, top:8, bottom:window.innerHeight-8};
+                        const width = Math.min(280, Math.max(180, bounds.right - bounds.left - 16));
+                        popover.style.boxSizing = 'border-box';
+                        popover.style.width = `${width}px`;
+                        const left = Math.max(bounds.left + 8, Math.min(bounds.right - width - 8, rect.left));
+                        popover.style.left = `${left}px`;
+                        const height = popover.offsetHeight;
+                        const below = rect.bottom + 8;
+                        const top = below + height <= bounds.bottom - 8
+                            ? below
+                            : Math.max(bounds.top + 8, rect.top - height - 8);
+                        popover.style.top = `${top}px`;
+                    };
+                    button.addEventListener('mouseenter', show);
+                    button.addEventListener('mouseleave', close);
+                    button.addEventListener('focus', show);
+                    button.addEventListener('blur', close);
+                    button.addEventListener('click', show);
+                });
+            }
+
+            function geoTooltipMarkup(row, region) {
+                const regionalShare = region?.leads > 0 ? Number(row?.leads || 0) / Number(region.leads) * 100 : null;
+                const location = region ? `<span>Comuna · ${invEsc(region.name || region.geo_key || 'Región')}</span>` : '';
+                const share = region ? `${demandPct(regionalShare)} de la demanda regional` : `${demandPct(row?.demand_share_pct)} del total`;
+                return `<strong>${invEsc(row?.name || 'Territorio')}</strong>${location}<span>${demandValue(row?.leads)} leads · ${share}</span><span>${demandValue(row?.properties_with_demand)} propiedades consultadas</span><span>${demandValue(row?.leads_per_property)} leads / propiedad</span><span>Brecha ${demandPP(row?.gap_pp)}</span>`;
+            }
+
+            function geoShowTooltip(event, row, region) {
+                if (window.matchMedia?.('(hover: none)').matches) return;
+                const tooltip = $('geoTooltip');
+                if (!tooltip || !row) return;
+                tooltip.innerHTML = geoTooltipMarkup(row, region);
+                tooltip.hidden = false;
+                const margin = 10;
+                const width = tooltip.offsetWidth || 205;
+                const height = tooltip.offsetHeight || 112;
+                tooltip.style.left = `${Math.max(margin, Math.min(window.innerWidth - width - margin, event.clientX + 12))}px`;
+                tooltip.style.top = `${Math.max(margin, Math.min(window.innerHeight - height - margin, event.clientY + 12))}px`;
+            }
+
+            function geoHideTooltip() {
+                const tooltip = $('geoTooltip');
+                if (tooltip) tooltip.hidden = true;
+            }
+
+            function geoBindD3Tooltip(selection, region) {
+                selection
+                    .on('pointerenter', (event, item) => geoShowTooltip(event, item.row || item, region))
+                    .on('pointermove', (event, item) => geoShowTooltip(event, item.row || item, region))
+                    .on('pointerleave', geoHideTooltip);
+            }
+
+            function geoD3DrawFold(svgElement, sourceFeatures, byKey, allRows, height) {
+                const displayFeatures = sourceFeatures.map(geoD3PresentationFeature).filter(feature => feature.geometry);
+                const collection = {type: 'FeatureCollection', features: displayFeatures};
+                if (!collection.features.length) return;
+                const projection = d3.geoMercator().fitExtent([[12, 10], [248, height - 10]], collection);
+                const path = d3.geoPath(projection);
+                const scales = geoD3ColorScales(allRows);
+                const nationalDemandRadius = d3.scaleSqrt().domain([0, d3.max(allRows, item => Number(item.leads) || 0) || 1]).range([0, 17]);
+                const items = displayFeatures.map(feature => ({feature, row: byKey.get(geoKey(geoFeatureName(feature)))})).filter(item => item.row);
+                const svg = d3.select(svgElement);
+                const base = svg.append('g').attr('class', 'geo-territories').selectAll('path').data(items, item => item.row.geo_key).join('path')
+                    .attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                    .attr('data-geo-feature', item => item.row.geo_key)
+                    .attr('d', item => path(item.feature))
+                    .style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : (GEO_METRIC === 'gap' ? scales.gap(geoValue(item.row) ?? 0) : scales.intensity(geoValue(item.row) ?? 0)))
+                    .on('click', (_, item) => geoD3SelectRegion(item.row.geo_key));
+                if (!demandReducedMotion()) base.attr('opacity', .55).transition().duration(240).attr('opacity', 1);
+                else base.attr('opacity', 1);
+                geoBindD3Tooltip(base, null);
+                if (GEO_METRIC !== 'leads') return;
+                const bubbles = svg.append('g').attr('class', 'geo-demand-symbols').selectAll('circle')
+                    .data(items.filter(item => Number(item.row.leads) > 0), item => item.row.geo_key).join('circle')
+                    .attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                    .attr('data-geo-symbol', item => item.row.geo_key)
+                    .attr('cx', item => path.centroid(item.feature)[0]).attr('cy', item => path.centroid(item.feature)[1])
+                    .attr('r', demandReducedMotion() ? item => nationalDemandRadius(item.row.leads) : 0)
+                    .on('click', (_, item) => geoD3SelectRegion(item.row.geo_key));
+                if (!demandReducedMotion()) bubbles.transition().delay((_, index) => Math.min(index * 20, 120)).duration(360).attr('r', item => nationalDemandRadius(item.row.leads));
+                geoBindD3Tooltip(bubbles, null);
+            }
+
+            geoD3RenderNational = function(rows) {
+                geoD3Header();
+                const map = $('geoMap');
+                if (!map || !GEO_DATA?.regions) return;
+                map.dataset.geoMetric = GEO_METRIC;
+                const features = GEO_DATA.regions.features.filter(geoIsAdministrativeFeature);
+                const byKey = geoD3RowMap(rows);
+                map.innerHTML = `<div class="geo-folded-grid"><div class="geo-folded-panel"><div class="geo-folded-label">NORTE</div><svg data-geo-fold="NORTE" viewBox="0 0 260 250" preserveAspectRatio="xMidYMid meet" aria-label="Norte · mapa territorial"></svg></div><div class="geo-folded-panel"><div class="geo-folded-label">CENTRO</div><svg data-geo-fold="CENTRO" viewBox="0 0 260 250" preserveAspectRatio="xMidYMid meet" aria-label="Centro · mapa territorial"></svg></div><div class="geo-folded-panel geo-folded-stack"><div class="geo-folded-label">SUR</div><svg data-geo-fold="SUR" viewBox="0 0 260 160" preserveAspectRatio="xMidYMid meet" aria-label="Sur · mapa territorial"></svg><div class="geo-folded-south-inset"><svg data-geo-fold="SUR_INSET" viewBox="0 0 260 76" preserveAspectRatio="xMidYMid meet" aria-label="Extremo sur · mapa territorial"></svg></div></div></div>`;
+                [['NORTE', GEO_FOLDS.north, 250], ['CENTRO', GEO_FOLDS.center, 250], ['SUR', GEO_FOLDS.south, 160], ['SUR_INSET', GEO_FOLDS.austral, 76]].forEach(([label, keys, height]) => {
+                    const panelFeatures = features.filter(feature => keys.includes(geoKey(geoFeatureName(feature))));
+                    geoD3DrawFold(map.querySelector(`svg[data-geo-fold="${label}"]`), panelFeatures, byKey, rows, height);
+                });
+                geoD3BindHighlight(map);
+            };
+
+            geoD3RenderMobileFold = function(rows) {
+                const map = $('geoMap');
+                if (!map || !GEO_DATA?.regions) return;
+                map.dataset.geoMetric = GEO_METRIC;
+                const fold = GEO_MOBILE_FOLD.toLowerCase();
+                const labels = {north: 'Norte', center: 'Centro', south: 'Sur'};
+                const keys = fold === 'south' ? [...GEO_FOLDS.south, ...GEO_FOLDS.austral] : (GEO_FOLDS[fold] || GEO_FOLDS.center);
+                const all = geoRows('region');
+                const byKey = geoD3RowMap(all);
+                const features = GEO_DATA.regions.features.filter(feature => geoIsAdministrativeFeature(feature) && keys.includes(geoKey(geoFeatureName(feature))));
+                map.innerHTML = `<div class="geo-mobile-fold-select" role="tablist" aria-label="Foco territorial móvil">${Object.entries(labels).map(([key, label]) => `<button type="button" class="${key === fold ? 'active' : ''}" data-geo-mobile-fold="${key}">${label}</button>`).join('')}</div>${fold === 'south' ? '<div class="geo-mobile-south-stack"><svg data-geo-mobile-fold-svg="SUR" viewBox="0 0 260 164" preserveAspectRatio="xMidYMid meet" aria-label="Sur · mapa territorial"></svg><div class="geo-folded-south-inset"><svg data-geo-mobile-fold-svg="SUR_INSET" viewBox="0 0 260 64" preserveAspectRatio="xMidYMid meet" aria-label="Extremo sur · mapa territorial"></svg></div></div>' : `<svg data-geo-mobile-fold-svg="${fold.toUpperCase()}" viewBox="0 0 260 232" preserveAspectRatio="xMidYMid meet" aria-label="${labels[fold]} · mapa territorial"></svg>`}`;
+                map.querySelectorAll('[data-geo-mobile-fold]').forEach(button => button.addEventListener('click', () => { GEO_MOBILE_FOLD = button.dataset.geoMobileFold.toUpperCase(); geoRender(); }));
+                if (fold === 'south') {
+                    geoD3DrawFold(map.querySelector('[data-geo-mobile-fold-svg="SUR"]'), features.filter(feature => GEO_FOLDS.south.includes(geoKey(geoFeatureName(feature)))), byKey, all, 164);
+                    geoD3DrawFold(map.querySelector('[data-geo-mobile-fold-svg="SUR_INSET"]'), features.filter(feature => GEO_FOLDS.austral.includes(geoKey(geoFeatureName(feature)))), byKey, all, 64);
+                } else {
+                    geoD3DrawFold(map.querySelector('[data-geo-mobile-fold-svg]'), features, byKey, all, 232);
+                }
+                geoD3BindHighlight(map);
+            };
+
+            geoRenderNationalTiles = function(rows) {
+                if (window.matchMedia?.('(max-width: 768px)').matches) {
+                    geoD3RenderMobileFold(rows);
+                    return;
+                }
+                geoD3RenderNational(rows);
+            };
+
+            geoD3RenderCommunes = function() {
+                const map = $('geoMap');
+                const regionKey = GEO_REGION_KEY;
+                const communeRows = geoD3CommuneRows(regionKey);
+                const featureMap = new Map(GEO_DATA.communes.features.filter(feature => geoIsAdministrativeFeature(feature) && geoFeatureRegionKey(feature) === regionKey).map(feature => [geoKey(geoFeatureName(feature)), feature]));
+                const items = communeRows.map(row => ({feature: featureMap.get(row.geo_key), row})).filter(item => item.feature);
+                const byKey = geoD3RowMap(communeRows);
+                const region = geoRows('region').find(row => row.geo_key === regionKey);
+                const collection = {type: 'FeatureCollection', features: items.map(item => item.feature)};
+                const width = 720, height = 270;
+                map.dataset.geoMetric = GEO_METRIC;
+                map.innerHTML = `<div class="geo-commune-breadcrumb">Chile › ${invEsc(region?.name || regionKey)}</div><div class="geo-commune-map-wrap"><div class="geo-zoom-controls"><button type="button" data-geo-zoom="in" title="Acercar" aria-label="Acercar">+</button><button type="button" data-geo-zoom="out" title="Alejar" aria-label="Alejar">−</button><button type="button" data-geo-zoom="reset" title="Ver toda la región" aria-label="Ver toda la región">⌂</button></div><svg data-geo-commune-svg data-geo-commune-count="${items.length}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-label="Mapa comunal de la región"></svg></div>`;
+                const svg = d3.select(map.querySelector('[data-geo-commune-svg]'));
+                const projection = d3.geoMercator().fitExtent([[14, 12], [width - 14, height - 12]], collection);
+                const path = d3.geoPath(projection);
+                const baseLayer = svg.append('g').attr('class', 'geo-commune-base-layer');
+                const bubbleLayer = svg.append('g').attr('class', 'geo-commune-bubble-layer');
+                const scale = GEO_METRIC === 'gap' ? geoD3ColorScales(items.map(item => item.row)).gap : geoD3ColorScales(items.map(item => item.row)).intensity;
+                const base = baseLayer.selectAll('path').data(items).join('path')
+                    .attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                    .attr('data-geo-feature', item => item.row.geo_key)
+                    .attr('d', item => path(item.feature))
+                    .style('fill', item => GEO_METRIC === 'leads' ? 'var(--bg-elevated)' : scale(geoValue(item.row) ?? 0))
+                    .on('click', (_, item) => geoD3SelectCommune(item.row.geo_key));
+                geoBindD3Tooltip(base, region);
+                let setBubbleScale = () => {};
+                if (GEO_METRIC === 'leads') {
+                    const radius = d3.scaleSqrt().domain([0, d3.max(items, item => Number(item.row.leads) || 0) || 1]).range([0, 17]);
+                    const bubbles = bubbleLayer.selectAll('circle').data(items.filter(item => Number(item.row.leads) > 0)).join('circle')
+                        .attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                        .attr('data-geo-symbol', item => item.row.geo_key)
+                        .attr('cx', item => path.centroid(item.feature)[0]).attr('cy', item => path.centroid(item.feature)[1])
+                        .attr('r', item => radius(item.row.leads))
+                        .on('click', (_, item) => geoD3SelectCommune(item.row.geo_key));
+                    setBubbleScale = k => bubbles.attr('r', item => radius(item.row.leads) / k).attr('stroke-width', item => (item.row.geo_key === GEO_SELECTED_KEY ? 2 : 0) / k);
+                    geoBindD3Tooltip(bubbles, region);
+                }
+                const zoom = d3.zoom().scaleExtent([1, 8]).filter(event => event.type === 'wheel' ? event.ctrlKey : true).on('zoom', event => {
+                    baseLayer.attr('transform', event.transform);
+                    bubbleLayer.attr('transform', event.transform);
+                    setBubbleScale(event.transform.k);
+                });
+                svg.call(zoom);
+                map.querySelector('[data-geo-zoom="in"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, 1.35);
+                map.querySelector('[data-geo-zoom="out"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, .74);
+                map.querySelector('[data-geo-zoom="reset"]').onclick = () => svg.transition().duration(180).call(zoom.transform, d3.zoomIdentity);
+                geoD3BindHighlight(map);
+            };
+
+            function geoRankValue(row) {
+                return GEO_METRIC === 'intensity' ? Number(row.leads_per_property) : GEO_METRIC === 'gap' ? Number(row.gap_pp) : Number(row.leads);
+            }
+
+            function geoRankingMarkup(rows, total) {
+                const ordered = [...rows].sort((a, b) => (geoRankValue(b) ?? -Infinity) - (geoRankValue(a) ?? -Infinity) || String(a.name || '').localeCompare(String(b.name || '')));
+                const max = Math.max(1, ...ordered.map(row => Math.abs(geoRankValue(row) || 0)));
+                return ordered.slice(0, GEO_RANK_EXPANDED ? ordered.length : 8).map(row => {
+                    const value = geoRankValue(row);
+                    const valueText = GEO_METRIC === 'gap' ? demandPP(value) : GEO_METRIC === 'intensity' ? `${demandValue(value)} leads/prop.` : `${demandValue(value)} leads`;
+                    const graphic = GEO_METRIC === 'gap'
+                        ? `<div class="geo-gap-track"><i class="geo-gap-zero"></i><i class="geo-gap-fill ${value >= 0 ? 'positive' : 'negative'}" style="width:${Math.min(50, Math.abs(value || 0) / max * 50)}%"></i></div>`
+                        : `<div class="geo-ranking-track"><div class="geo-ranking-fill" style="width:${Math.min(100, Math.max(0, (GEO_METRIC === 'leads' ? Number(row.leads || 0) / Math.max(1, total) : value / max) * 100))}%"></div></div>`;
+                    return `<div class="geo-ranking-row ${row.geo_key === GEO_SELECTED_KEY ? 'is-selected' : ''}" data-geo-rank="${invEsc(row.geo_key)}"><span>${invEsc(row.name)}</span>${graphic}<b>${valueText}</b></div>`;
+                }).join('');
+            }
+
+            geoD3DetailNational = function() {
+                const summary = $('geoSummaryInsights');
+                const rows = geoD3MetricRows(geoRows('region'));
+                const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                const leader = rows[0];
+                const total = rows.reduce((sum, item) => sum + Number(item.leads || 0), 0);
+                const metricTitle = selected ? 'REGIÓN SELECCIONADA' : GEO_METRIC === 'intensity' ? 'MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'MAYOR BRECHA POSITIVA' : 'DEMANDA DEL PERÍODO';
+                const heroValue = selected
+                    ? (GEO_METRIC === 'gap' ? demandPP(selected.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(selected.leads_per_property)} leads/prop.` : `${demandValue(selected.leads)} leads`)
+                    : (GEO_METRIC === 'gap' ? demandPP(leader?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(leader?.leads_per_property)} leads/prop.` : `${demandValue(total)} leads`);
+                const heroSub = selected ? `${invEsc(selected.name)} · ${demandPct(selected.demand_share_pct)} de la demanda` : GEO_METRIC === 'leads' ? `${invEsc(leader?.name || '—')} concentra ${demandPct(leader?.demand_share_pct)}` : `${invEsc(leader?.name || '—')} · ${invEsc(geoFoldMetricText(leader || {}))}`;
+                const topTwo = [...rows].sort((a, b) => Number(b.leads || 0) - Number(a.leads || 0)).slice(0, 2);
+                summary.innerHTML = `<div class="geo-hero-label inventory-kicker">${metricTitle}</div><div class="geo-hero-value">${heroValue}</div><p class="geo-hero-subtitle">${heroSub}</p>${selected ? '<button type="button" class="geo-rank-more" id="geoViewCommunes">Ver comunas →</button>' : ''}<div class="geo-hero-label inventory-kicker" style="margin-top:16px">RANKING REGIONAL</div><div class="geo-ranking">${geoRankingMarkup(rows, total)}</div>${rows.length > 8 ? `<button type="button" class="geo-rank-more" id="geoRankMore">${GEO_RANK_EXPANDED ? 'Mostrar Top 8' : 'Ver las 16 regiones'}</button>` : ''}<p class="geo-insight"><i class="fa-solid fa-chart-line"></i>${topTwo.length === 2 ? `${invEsc(topTwo[0].name)} y ${invEsc(topTwo[1].name)} concentran ${demandPct((topTwo[0].leads + topTwo[1].leads) / Math.max(1, total) * 100)} de la demanda reciente.` : 'Sin demanda territorial observada.'}</p>`;
+                $('geoViewCommunes')?.addEventListener('click', () => geoD3EnterCommunes(selected.geo_key));
+                $('geoRankMore')?.addEventListener('click', () => { GEO_RANK_EXPANDED = !GEO_RANK_EXPANDED; geoDetail(); });
+                geoD3BindHighlight(summary);
+            };
+
+            geoD3DetailCommunes = function() {
+                const summary = $('geoSummaryInsights');
+                const region = geoRows('region').find(row => row.geo_key === GEO_REGION_KEY);
+                const rows = geoD3CommuneRows(GEO_REGION_KEY);
+                const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                const rankingTitle = GEO_METRIC === 'intensity' ? 'COMUNAS CON MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'COMUNAS CON MAYOR BRECHA POSITIVA' : 'COMUNAS CON MAYOR DEMANDA';
+                const regionValue = GEO_METRIC === 'intensity' ? `${demandValue(region?.leads_per_property)} leads/prop.` : GEO_METRIC === 'gap' ? demandPP(region?.gap_pp) : `${demandValue(region?.leads)} leads`;
+                const regionUnit = GEO_METRIC === 'intensity' ? 'Intensidad del período' : GEO_METRIC === 'gap' ? 'Brecha demanda vs cartera' : 'Últimos 30 días';
+                const regionalShare = region?.leads > 0 && selected ? Number(selected.leads || 0) / Number(region.leads) * 100 : null;
+                summary.innerHTML = `<div class="geo-breadcrumb">Chile › ${invEsc(region?.name || GEO_REGION_KEY)} <button type="button" id="geoBackRegions">← Volver a regiones</button></div><div class="geo-hero-label inventory-kicker">REGIÓN ${invEsc((region?.name || '').toUpperCase())}</div><div class="geo-hero-value">${regionValue}</div><p class="geo-hero-subtitle">${regionUnit}</p><div class="geo-hero-label inventory-kicker" style="margin-top:16px">${rankingTitle}</div><div class="geo-ranking">${geoRankingMarkup(rows, Number(region?.leads || 0))}</div>${selected ? `<div class="geo-selected-detail"><strong>${invEsc(selected.name)}</strong><span>Comuna · ${invEsc(region?.name || GEO_REGION_KEY)}</span><span>${demandValue(selected.leads)} leads últimos 30 días · ${demandPct(regionalShare)} de la demanda regional</span><span>${demandValue(selected.properties_with_demand)} propiedades consultadas · ${demandValue(selected.leads_per_property)} leads/propiedad</span><span>Cartera activa ${demandValue(selected.stock_sucre)} · Brecha ${demandPP(selected.gap_pp)}</span><b>Qué están buscando</b><span>${(selected.top_segments || []).slice(0, 3).map(segment => `${invEsc(segment.segment)} · ${demandValue(segment.leads)} leads`).join(' · ') || 'Sin segmentos observados'}</span></div>` : ''}`;
+                $('geoBackRegions').onclick = () => { GEO_LEVEL = 'region'; GEO_REGION_KEY = null; GEO_SELECTED_KEY = null; geoRender(); };
+                geoD3BindHighlight(summary);
+            };
+
+            geoRender = function() {
+                if (!GEO_DATA || typeof d3 === 'undefined') return;
+                const map = $('geoMap');
+                if (map) map.dataset.geoMetric = GEO_METRIC;
+                geoSetMetricCaption();
+                $('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button => button.classList.toggle('active', button.dataset.geoMetric === GEO_METRIC));
+                if (GEO_LEVEL === 'region') {
+                    const rows = geoRows('region');
+                    geoRenderNationalTiles(rows);
+                    $('geoMapStatus')?.remove();
+                    $('geoLegend').innerHTML = geoD3Legend(rows.map(geoValue));
+                    geoDetail();
+                    geoSyncMobileHero();
+                    return;
+                }
+                $('geoMobileHero')?.remove();
+                const rows = geoD3CommuneRows(GEO_REGION_KEY);
+                geoD3RenderCommunes();
+                $('geoLegend').innerHTML = geoD3Legend(rows.map(geoValue));
+                geoDetail();
+            };
+
+            function demandDimensionQuality(data) {
+                const quality = data?.data_quality || {};
+                const output = $('demandSegmentQuality');
+                if (!output) return;
+                const rows = data?.demand_intelligence?.dimensions?.[DEMAND_DIMENSION] || [];
+                output.hidden = false;
+                if (DEMAND_DIMENSION === 'price_range') {
+                    const price = quality.price_dimension || {};
+                    output.textContent = `Precios observables ${invNum(price.included)} · excluidos sin precio ${invNum(price.excluded_missing_price)}`;
+                } else if (DEMAND_DIMENSION === 'bedrooms') {
+                    const bedrooms = quality.bedrooms_dimension || {};
+                    output.textContent = `Residenciales comparables ${invNum(bedrooms.included)} · excluidos sin dormitorios ${invNum(bedrooms.excluded_missing_or_non_residential)}`;
+                } else if (DEMAND_DIMENSION === 'zone_rm') {
+                    output.textContent = `Universo RM: ${invNum(rows.reduce((sum, row) => sum + Number(row.leads || 0), 0))} leads · ${invNum(rows.reduce((sum, row) => sum + Number(row.stock_sucre || 0), 0))} propiedades activas.`;
+                } else {
+                    output.hidden = true;
+                    output.textContent = '';
+                }
+            }
+
+            var demandSetupUnifiedSectionBase = demandSetupUnifiedSection;
+            demandSetupUnifiedSection = function() {
+                demandSetupUnifiedSectionBase();
+                const head = document.querySelector('[aria-labelledby="demandIntelligenceTitle"] .demand-table thead');
+                if (head) head.innerHTML = `<tr><th>Segmento</th><th>Demanda vs cartera ${dashboardInfoMarkup('gap')}</th><th>Brecha ${dashboardInfoMarkup('gap')}</th><th>Intensidad ${dashboardInfoMarkup('intensity')}</th></tr>`;
+            };
+
+            demandSegmentFilterContext = function() {
+                const operation = $('inventoryOperationFilter')?.value || 'Todas las operaciones';
+                const type = $('inventoryTypeFilter')?.value || 'Todos los tipos';
+                const commune = $('inventoryCommuneFilter')?.value || 'Todo Chile';
+                return `${type} · ${operation} · ${commune}`;
+            };
+
+            function demandSegmentRegionName(row, key) {
+                return row?.geo_breakdown?.regions?.find(item => item.geo_key === key)?.name || geoRows('region').find(item => item.geo_key === key)?.name || key;
+            }
+
+            demandSegmentGeoBreakdown = function(row, index) {
+                const geo = row?.geo_breakdown || {};
+                const regionKey = DEMAND_BREAKDOWN_REGION || (DEMAND_DIMENSION === 'zone_rm' ? 'metropolitana' : null);
+                const communeMode = Boolean(regionKey);
+                const items = communeMode ? (geo.communes_by_region?.[regionKey] || (regionKey === 'metropolitana' ? geo.communes || [] : [])) : (geo.regions || []);
+                const components = geo.components || {};
+                const regionName = regionKey ? demandSegmentRegionName(row, regionKey) : '';
+                const title = communeMode ? `Comunas de ${invEsc(regionName)}` : 'Regiones';
+                const geoRowsMarkup = items.filter(item => Number(item.leads || 0) > 0).slice(0, 6).map(item => `<div class="segment-geo-row"><button type="button" class="segment-geo-link" data-segment-geo="${invEsc(item.geo_key || '')}" data-segment-geo-level="${communeMode ? 'commune' : 'region'}" data-segment-index="${index}">${invEsc(item.name || 'Sin nombre')}</button><span class="segment-geo-bar"><i data-target-width="${Math.min(100, Number(item.leads || 0) / Math.max(1, Number(row.leads || 0)) * 100)}%" style="width:0%"></i></span><b>${demandValue(item.leads)} leads</b><small>${demandPP(item.gap_pp)} · ${demandValue(item.leads_per_property)} leads/prop.</small></div>`).join('') || '<span class="inventory-status">Sin demanda observada.</span>';
+                const component = Object.entries(components)[0];
+                const componentRows = (component?.[1] || []).map(item => `<div class="segment-component-row"><span>${invEsc(item.segment)}</span><b>${demandValue(item.leads)} leads · ${demandPct(item.share_pct)}</b></div>`).join('') || '<span class="inventory-status">Sin evidencia complementaria.</span>';
+                return `<tr class="segment-breakdown-row" data-segment-detail="${index}" hidden><td colspan="4"><div class="segment-breakdown"><div class="segment-breakdown-head"><strong>Dónde se concentra este segmento</strong><span>Contexto: ${invEsc(demandSegmentFilterContext())}</span></div><div class="segment-breakdown-tabs"><button type="button" class="active" data-breakdown-view="geo">Dónde se concentra</button><button type="button" data-breakdown-view="components">Qué lo compone</button></div><div class="segment-breakdown-view" data-breakdown-panel="geo"><div class="segment-geo-list"><strong>${title}</strong>${geoRowsMarkup}</div></div><div class="segment-breakdown-view" data-breakdown-panel="components" hidden><strong>Dimensión complementaria</strong><div class="segment-components">${componentRows}</div></div></div></td></tr>`;
+            };
+
+            function demandHasBreakdown(row) {
+                const geo = row?.geo_breakdown || {};
+                return Number(row?.leads || 0) > 0 && ((geo.regions || []).some(item => Number(item.leads || 0) > 0) || Object.values(geo.components || {}).some(items => items?.length));
+            }
+
+            function demandAnimateDetailBars(detail) {
+                if (demandReducedMotion()) return;
+                detail.querySelectorAll('[data-target-width]').forEach(bar => requestAnimationFrame(() => { bar.style.width = bar.dataset.targetWidth; }));
+            }
+
+            function demandSetBreakdownOpen(section, index, open) {
+                section.querySelectorAll('.segment-breakdown-row').forEach(detail => {
+                    const match = Number(detail.dataset.segmentDetail) === index;
+                    if (match && open) {
+                        detail.hidden = false;
+                        requestAnimationFrame(() => { detail.classList.add('is-open'); demandAnimateDetailBars(detail); });
+                    } else {
+                        detail.classList.remove('is-open');
+                        if (!detail.hidden) setTimeout(() => { if (!detail.classList.contains('is-open')) detail.hidden = true; }, 220);
+                    }
+                });
+                section.querySelectorAll('.segment-breakdown-toggle').forEach(button => {
+                    const active = open && Number(button.dataset.segmentBreakdown) === index;
+                    button.setAttribute('aria-expanded', String(active));
+                    button.textContent = active ? 'Ocultar desglose ⌃' : 'Ver desglose ›';
+                });
+            }
+
+            demandRenderSegmentsWithDrilldown = function(rows) {
+                const body = $('demandSegmentBody');
+                const cards = $('demandSegmentCards');
+                const list = [...(rows || [])];
+                const metric = row => DEMAND_SORT === 'leads' ? Number(row.leads || 0) : DEMAND_SORT === 'intensity' ? Number(row.leads_per_property ?? -Infinity) : Number(row.gap_pp ?? -Infinity);
+                list.sort((a, b) => metric(b) - metric(a) || String(a.segment || '').localeCompare(String(b.segment || '')));
+                const compare = row => `<div class="demand-compare"><div class="demand-compare-bars"><div class="demand-compare-line demand"><i data-target-width="${Math.max(0, Math.min(100, Number(row.demand_share_pct || 0)))}%" style="width:0%"></i></div><div class="demand-compare-line supply"><i data-target-width="${Math.max(0, Math.min(100, Number(row.supply_share_pct || 0)))}%" style="width:0%"></i></div></div><div class="demand-compare-values"><span><b>Demanda</b><span>${demandPct(row.demand_share_pct)} · ${demandValue(row.leads)} leads</span></span><span><b>Cartera</b><span>${demandPct(row.supply_share_pct)} · ${demandValue(row.stock_sucre)} prop.</span></span></div></div>`;
+                body.innerHTML = list.map((row, index) => {
+                    const evidence = demandHasBreakdown(row);
+                    const action = evidence ? `<button type="button" class="segment-breakdown-toggle" data-segment-breakdown="${index}" aria-expanded="false">Ver desglose ›</button>` : '<small class="inventory-panel-meta">Sin demanda observada</small>';
+                    return `<tr><td><div class="segment-cell"><strong>${invEsc(row.segment)}</strong>${action}</div></td><td>${compare(row)}</td><td class="${Number(row.gap_pp) >= 0 ? 'positive' : 'negative'}">${demandPP(row.gap_pp)}</td><td>${demandValue(row.leads_per_property)} leads/prop.</td></tr>${evidence ? demandSegmentGeoBreakdown(row, index) : ''}`;
+                }).join('') || '<tr><td colspan="4">Sin observaciones para este filtro.</td></tr>';
+                cards.innerHTML = list.map(row => `<div class="demand-card"><strong>${invEsc(row.segment)}</strong><div class="demand-card-grid"><span>Demanda<b>${demandPct(row.demand_share_pct)} · ${demandValue(row.leads)} leads</b></span><span>Cartera<b>${demandPct(row.supply_share_pct)} · ${demandValue(row.stock_sucre)} prop.</b></span><span>Brecha<b>${demandPP(row.gap_pp)}</b></span><span>Intensidad<b>${demandValue(row.leads_per_property)} leads/prop.</b></span></div></div>`).join('') || '<div class="demand-card">Sin observaciones para este filtro.</div>';
+                const section = $('demandSegmentsPanel') || document;
+                section.querySelectorAll('.segment-breakdown-toggle').forEach(button => button.addEventListener('click', () => {
+                    const index = Number(button.dataset.segmentBreakdown);
+                    const closing = button.getAttribute('aria-expanded') === 'true';
+                    if (closing) {
+                        DEMAND_OPEN_SEGMENT = null;
+                        DEMAND_BREAKDOWN_REGION = null;
+                        demandSetBreakdownOpen(section, index, false);
+                    } else {
+                        DEMAND_OPEN_SEGMENT = index;
+                        demandSetBreakdownOpen(section, index, true);
+                    }
+                }));
+                section.querySelectorAll('[data-breakdown-view]').forEach(button => button.addEventListener('click', () => {
+                    const detail = button.closest('.segment-breakdown');
+                    detail.querySelectorAll('[data-breakdown-view]').forEach(item => item.classList.toggle('active', item === button));
+                    detail.querySelectorAll('[data-breakdown-panel]').forEach(panel => panel.hidden = panel.dataset.breakdownPanel !== button.dataset.breakdownView);
+                }));
+                section.querySelectorAll('[data-segment-geo-level="region"]').forEach(button => button.addEventListener('click', () => {
+                    DEMAND_BREAKDOWN_REGION = button.dataset.segmentGeo;
+                    DEMAND_OPEN_SEGMENT = Number(button.dataset.segmentIndex);
+                    demandRenderSegments(INVENTORY_DATA?.demand_intelligence?.dimensions?.[DEMAND_DIMENSION] || []);
+                    requestAnimationFrame(() => demandSetBreakdownOpen($('demandSegmentsPanel') || document, DEMAND_OPEN_SEGMENT, true));
+                }));
+                section.querySelectorAll('[data-segment-geo-level="commune"]').forEach(button => button.addEventListener('click', () => {
+                    if (!GEO_DATA) return;
+                    GEO_LEVEL = 'commune';
+                    GEO_REGION_KEY = DEMAND_BREAKDOWN_REGION;
+                    GEO_SELECTED_KEY = button.dataset.segmentGeo;
+                    geoRender();
+                    $('geoMap')?.scrollIntoView({behavior: 'smooth', block: 'start'});
+                }));
+                if (DEMAND_OPEN_SEGMENT != null) demandSetBreakdownOpen(section, DEMAND_OPEN_SEGMENT, true);
+                requestAnimationFrame(() => demandAnimateBars());
+                bindDemandInfo();
+            };
+
+            var demandRenderSemanticBaseFinal = demandRender;
+            demandRender = function(data) {
+                DEMAND_OPEN_SEGMENT = null;
+                DEMAND_BREAKDOWN_REGION = null;
+                demandRenderSemanticBaseFinal(data);
+                demandDimensionQuality(data);
+            };
+
+            demandBindSegmentDrilldown = function() {};
+            document.addEventListener('click', event => {
+                if (event.target.closest('[data-demand-sort], [data-demand-dimension]')) {
+                    DEMAND_OPEN_SEGMENT = null;
+                    DEMAND_BREAKDOWN_REGION = null;
+                }
+            }, true);
 
             function demandBindSegmentDrilldown(){
                 const section=$('demandSegmentsPanel')||document;
@@ -6855,9 +7560,423 @@
                 demandBindSegmentDrilldown();
             },0));
         </script>
+        <script>
+            /* Final territorial navigation: one cartographic surface, with zone state kept separate from analytics. */
+            (function () {
+                var GEO_ZONE = window.__procasaGeoZone || 'all';
+                window.__procasaGeoZone = GEO_ZONE;
+                var GEO_ZONE_LABELS = {all: 'Todo Chile', north: 'Norte', center: 'Centro', south: 'Sur'};
+
+                const geoFinalIsMobile = () => window.matchMedia?.('(max-width: 768px)').matches;
+                const geoFinalCanonical = value => {
+                    const raw = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    const compact = raw.replace(/[^a-z]/g, '');
+                    if (raw.includes('araucani')) return 'araucania';
+                    if (compact.includes('ohiggins')) return 'ohiggins';
+                    return geoKey(value);
+                };
+                const geoFinalSameKey = (left, right) => geoFinalCanonical(left) === geoFinalCanonical(right);
+                const geoFinalZoneKeys = zone => {
+                    if (zone === 'north') return [...GEO_FOLDS.north];
+                    if (zone === 'center') return ['valparaiso', 'metropolitana', 'ohiggins'];
+                    if (zone === 'south') return ['maule', 'nuble', ...GEO_FOLDS.south, ...GEO_FOLDS.austral];
+                    return null;
+                };
+                const geoFinalRows = () => geoRows('region');
+                const geoFinalZoneRows = zone => {
+                    const keys = geoFinalZoneKeys(zone);
+                    return keys ? geoFinalRows().filter(row => keys.some(key => geoFinalSameKey(row.geo_key, key))) : geoFinalRows();
+                };
+                const geoFinalFeatures = zone => {
+                    const keys = geoFinalZoneKeys(zone);
+                    return (GEO_DATA?.regions?.features || [])
+                        .filter(feature => geoIsAdministrativeFeature(feature))
+                        .filter(feature => !keys || keys.some(key => geoFinalSameKey(geoFeatureName(feature), key)))
+                        .map(feature => {
+                            const presented = typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature;
+                            return presented?.geometry ? {...presented, geometry: geoFoldGeometry(presented.geometry, true)} : presented;
+                        })
+                        .filter(feature => feature?.geometry);
+                };
+                const geoFinalReduced = () => typeof demandReducedMotion === 'function' && demandReducedMotion();
+                const geoFinalScaleRows = () => geoFinalRows();
+                const geoFinalMetricValue = row => GEO_METRIC === 'gap' ? Number(row?.gap_pp || 0) : GEO_METRIC === 'intensity' ? Number(row?.leads_per_property || 0) : Number(row?.leads || 0);
+                const geoFinalZoneTotal = rows => rows.reduce((sum, row) => sum + Number(row.leads || 0), 0);
+
+                function geoFinalEnsureZoneControl() {
+                    const controls = $('geoMetricSelect')?.parentElement;
+                    if (!controls) return;
+                    let zone = $('geoZoneSelect');
+                    if (!zone) {
+                        zone = document.createElement('div');
+                        zone.id = 'geoZoneSelect';
+                        zone.className = 'geo-zone-select';
+                        zone.setAttribute('role', 'tablist');
+                        zone.setAttribute('aria-label', 'Extensión territorial');
+                        controls.appendChild(zone);
+                    }
+                    zone.innerHTML = Object.entries(GEO_ZONE_LABELS).map(([key, label]) => `<button type="button" data-geo-zone="${key}" class="${GEO_ZONE === key ? 'active' : ''}" aria-selected="${GEO_ZONE === key ? 'true' : 'false'}">${label}</button>`).join('');
+                    // Read the geographic scope first, then choose the metric.
+                    controls.insertBefore(zone, controls.firstElementChild);
+                    zone.querySelectorAll('[data-geo-zone]').forEach(button => button.addEventListener('click', () => {
+                        GEO_ZONE = button.dataset.geoZone;
+                        window.__procasaGeoZone = GEO_ZONE;
+                        GEO_LEVEL = 'region';
+                        GEO_REGION_KEY = null;
+                        GEO_SELECTED_KEY = null;
+                        GEO_RANK_EXPANDED = false;
+                        geoRender();
+                    }));
+                }
+
+                function geoFinalSetLegend(values, communal) {
+                    const map = $('geoMap');
+                    if (!map) return;
+                    let legend = $('geoLegend');
+                    if (!legend || !map.contains(legend)) {
+                        legend?.remove();
+                        legend = document.createElement('div');
+                        legend.id = 'geoLegend';
+                        legend.className = 'geo-legend geo-legend-overlay';
+                        map.querySelector('.geo-map-stage')?.appendChild(legend);
+                    }
+                    const nationalValues = geoFinalScaleRows().map(geoValue);
+                    legend.innerHTML = (typeof geoD3Legend === 'function' ? geoD3Legend(communal ? values : nationalValues) : '') + (communal ? '<small class="geo-communal-scale">Escala comunal dentro de la región</small>' : '');
+                }
+
+                function geoFinalMapCanvas(map, options) {
+                    const stage = document.createElement('div');
+                    stage.className = `geo-map-stage ${options?.communal ? 'geo-map-stage-commune' : 'geo-map-stage-national'}`;
+                    stage.dataset.geoZone = GEO_ZONE;
+                    stage.dataset.geoLevel = options?.communal ? 'commune' : 'region';
+                    map.innerHTML = '';
+                    map.appendChild(stage);
+                    const zone = $('geoZoneSelect');
+                    if (zone) stage.appendChild(zone);
+                    return stage;
+                }
+
+                function geoFinalDrawFeatures(stage, features, rows, allRows, height, communal) {
+                    // El endpoint real puede omitir regiones sin leads. La geometría
+                    // nacional debe seguir mostrando Chile completo; esas regiones
+                    // se incorporan como filas de demanda cero solo para el mapa.
+                    rows = features.map(feature => rows.find(row => geoFinalSameKey(row.geo_key, geoFeatureName(feature))) || ({
+                        geo_key: geoFinalCanonical(geoFeatureName(feature)),
+                        name: geoFeatureName(feature),
+                        leads: 0,
+                        demand_share_pct: 0,
+                        leads_per_property: null,
+                        properties_with_demand: 0,
+                        stock_sucre: 0,
+                        supply_share_pct: 0,
+                        gap_pp: 0
+                    }));
+                    const width = 760;
+                    const svg = d3.select(stage).append('svg')
+                        .attr('class', 'geo-main-svg')
+                        .attr('viewBox', `0 0 ${width} ${height}`)
+                        .attr('preserveAspectRatio', 'xMidYMid meet')
+                        .attr('role', 'img')
+                        .attr('aria-label', communal ? 'Mapa comunal' : `Mapa territorial ${GEO_ZONE_LABELS[GEO_ZONE]}`);
+                    const collection = {type: 'FeatureCollection', features};
+                    const padding = communal ? 18 : (GEO_ZONE === 'all' ? {x: Math.round(width * .27), y: 50} : {x: 22, y: 94});
+                    const extent = Array.isArray(padding) ? padding : [[padding.x, padding.y], [width - padding.x, height - padding.y]];
+                    const projection = d3.geoMercator().fitExtent(extent, collection);
+                    const path = d3.geoPath(projection);
+                    const items = features.map(feature => ({feature, row: rows.find(row => geoFinalSameKey(row.geo_key, geoFeatureName(feature)))})).filter(item => item.row);
+                    const scales = geoD3ColorScales(allRows);
+                    const radius = d3.scaleSqrt().domain([0, d3.max(allRows, item => Number(item.leads) || 0) || 1]).range([0, 17]);
+                    const baseLayer = svg.append('g').attr('class', 'geo-territories');
+                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path')
+                        .attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                        .attr('data-geo-feature', item => item.row.geo_key)
+                        .attr('d', item => path(item.feature))
+                        .style('fill', item => GEO_METRIC === 'leads' ? 'color-mix(in srgb, var(--border-color) 24%, var(--bg-elevated))' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                    const bubbles = svg.append('g').attr('class', 'geo-demand-symbols').selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle')
+                        .attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`)
+                        .attr('data-geo-symbol', item => item.row.geo_key)
+                        .attr('cx', item => path.centroid(item.feature)[0])
+                        .attr('cy', item => path.centroid(item.feature)[1])
+                        .attr('fill', 'var(--accent)')
+                        .attr('opacity', .82)
+                        .attr('r', 0);
+                    const selectRegion = item => { geoD3EnterCommunes(item.row.geo_key); };
+                    base.on('click', (_, item) => selectRegion(item));
+                    bubbles.on('click', (_, item) => selectRegion(item));
+                    if (!geoFinalReduced()) {
+                        base.attr('opacity', .35).transition().duration(120).attr('opacity', 1);
+                        bubbles.transition().delay((_, index) => Math.min(index * 14, 120)).duration(260).attr('r', item => radius(item.row.leads));
+                    } else {
+                        base.attr('opacity', 1);
+                        bubbles.attr('r', item => radius(item.row.leads));
+                    }
+                    geoBindD3Tooltip(base, null);
+                    geoBindD3Tooltip(bubbles, null);
+                    geoD3BindHighlight(stage);
+                }
+
+                function geoFinalRenderNational(rows) {
+                    const map = $('geoMap');
+                    if (!map || !GEO_DATA?.regions) return;
+                    map.classList.remove('geo-commune-map');
+                    map.classList.add('geo-national-map');
+                    map.classList.toggle('geo-zone-all', GEO_ZONE === 'all');
+                    const stage = geoFinalMapCanvas(map, {communal: false});
+                    const features = geoFinalFeatures(GEO_ZONE);
+                    geoFinalDrawFeatures(stage, features, geoFinalZoneRows(GEO_ZONE), geoFinalScaleRows(), geoFinalIsMobile() ? (GEO_ZONE === 'all' ? 330 : 340) : (GEO_ZONE === 'all' ? 580 : 600), false);
+                    geoFinalSetLegend(geoFinalZoneRows(GEO_ZONE).map(geoValue), false);
+                    demandRefreshTerritorialPeriodText();
+                }
+
+                function geoFinalRenderCommunes() {
+                    const map = $('geoMap');
+                    const regionKey = GEO_REGION_KEY;
+                    const region = geoFinalRows().find(row => row.geo_key === regionKey);
+                    const rows = geoD3CommuneRows(regionKey);
+                    const features = (GEO_DATA?.communes?.features || [])
+                        .filter(feature => geoIsAdministrativeFeature(feature) && geoFeatureRegionKey(feature) === regionKey)
+                        .map(feature => typeof geoD3PresentationFeature === 'function' ? geoD3PresentationFeature(feature) : feature)
+                        .filter(feature => feature?.geometry);
+                    const featureMap = new Map(features.map(feature => [geoKey(geoFeatureName(feature)), feature]));
+                    const items = rows.map(row => ({row, feature: featureMap.get(row.geo_key)})).filter(item => item.feature);
+                    const stage = geoFinalMapCanvas(map, {communal: true});
+                    const controls = document.createElement('div');
+                    controls.className = 'geo-zoom-controls';
+                    controls.innerHTML = '<button type="button" data-geo-zoom="in" title="Acercar" aria-label="Acercar">+</button><button type="button" data-geo-zoom="out" title="Alejar" aria-label="Alejar">−</button><button type="button" data-geo-zoom="reset" title="Ver región completa" aria-label="Ver región completa">⌂</button>';
+                    stage.appendChild(controls);
+                    const height = geoFinalIsMobile() ? 400 : 560;
+                    const featureCollection = {type: 'FeatureCollection', features: items.map(item => item.feature)};
+                    const width = 760;
+                    const svg = d3.select(stage).append('svg').attr('class', 'geo-main-svg').attr('viewBox', `0 0 ${width} ${height}`).attr('preserveAspectRatio', 'xMidYMid meet').attr('role', 'img').attr('aria-label', `Mapa comunal de ${region?.name || regionKey}`);
+                    const projection = d3.geoMercator().fitExtent([[18, 18], [width - 18, height - 18]], featureCollection);
+                    const path = d3.geoPath(projection);
+                    const scales = geoD3ColorScales(rows);
+                    const max = d3.max(rows, item => Number(item.leads) || 0) || 1;
+                    const radius = d3.scaleSqrt().domain([0, max]).range([0, 17]);
+                    const baseLayer = svg.append('g').attr('class', 'geo-commune-base-layer');
+                    const bubbleLayer = svg.append('g').attr('class', 'geo-commune-bubble-layer');
+                    const base = baseLayer.selectAll('path').data(items, item => item.row.geo_key).join('path').attr('class', item => `geo-feature geo-territory-base ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-feature', item => item.row.geo_key).attr('d', item => path(item.feature)).style('fill', item => GEO_METRIC === 'leads' ? 'color-mix(in srgb, var(--border-color) 24%, var(--bg-elevated))' : (GEO_METRIC === 'gap' ? scales.gap(geoFinalMetricValue(item.row)) : scales.intensity(geoFinalMetricValue(item.row))));
+                    const bubbles = bubbleLayer.selectAll('circle').data(GEO_METRIC === 'leads' ? items.filter(item => Number(item.row.leads || 0) > 0) : [], item => item.row.geo_key).join('circle').attr('class', item => `geo-demand-symbol ${item.row.geo_key === GEO_SELECTED_KEY ? 'selected' : ''}`).attr('data-geo-symbol', item => item.row.geo_key).attr('cx', item => path.centroid(item.feature)[0]).attr('cy', item => path.centroid(item.feature)[1]).attr('r', item => radius(item.row.leads)).attr('fill', 'var(--accent)').attr('opacity', .82);
+                    const setBubbleScale = k => bubbles.attr('r', item => radius(item.row.leads) / k);
+                    const zoom = d3.zoom().scaleExtent([1, 8]).filter(event => event.type === 'wheel' ? event.ctrlKey : true).on('zoom', event => { baseLayer.attr('transform', event.transform); bubbleLayer.attr('transform', event.transform); setBubbleScale(event.transform.k); });
+                    svg.call(zoom);
+                    controls.querySelector('[data-geo-zoom="in"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, 1.35);
+                    controls.querySelector('[data-geo-zoom="out"]').onclick = () => svg.transition().duration(180).call(zoom.scaleBy, .74);
+                    controls.querySelector('[data-geo-zoom="reset"]').onclick = () => svg.transition().duration(180).call(zoom.transform, d3.zoomIdentity);
+                    const selectCommune = item => { GEO_SELECTED_KEY = item.row.geo_key; geoRender(); };
+                    base.on('click', (_, item) => selectCommune(item));
+                    bubbles.on('click', (_, item) => selectCommune(item));
+                    geoBindD3Tooltip(base, region);
+                    geoBindD3Tooltip(bubbles, region);
+                    geoD3BindHighlight(stage);
+                    geoFinalSetLegend(rows.map(geoValue), true);
+                    demandRefreshTerritorialPeriodText();
+                }
+
+                function geoFinalDetailNational() {
+                    const summary = $('geoSummaryInsights');
+                    if (!summary) return;
+                    const rows = geoFinalZoneRows(GEO_ZONE);
+                    const allRows = geoFinalRows();
+                    const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                    const sorted = [...rows].sort((a, b) => (geoFinalMetricValue(b) - geoFinalMetricValue(a)) || String(a.name).localeCompare(String(b.name)));
+                    const visible = GEO_RANK_EXPANDED ? sorted : sorted.slice(0, 8);
+                    const totalNational = geoFinalZoneTotal(allRows);
+                    const totalZone = geoFinalZoneTotal(rows);
+                    const title = GEO_ZONE === 'all' ? (GEO_METRIC === 'intensity' ? 'MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'MAYOR BRECHA POSITIVA' : 'DEMANDA DEL PERÍODO') : `${GEO_METRIC === 'leads' ? 'DEMANDA' : GEO_METRIC === 'intensity' ? 'INTENSIDAD' : 'BRECHA'} · ZONA ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`;
+                    const heroValue = selected ? (GEO_METRIC === 'gap' ? demandPP(selected.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(selected.leads_per_property)} leads/prop.` : `${demandValue(selected.leads)} leads`) : (GEO_METRIC === 'gap' ? demandPP(sorted[0]?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(sorted[0]?.leads_per_property)} leads/prop.` : `${demandValue(totalZone)} leads`);
+                    const heroSubtitle = selected ? `${invEsc(selected.name)} · ${demandPct(totalNational ? Number(selected.leads || 0) / totalNational * 100 : null)} de la demanda nacional` : GEO_ZONE === 'all' ? `${invEsc(sorted[0]?.name || '—')} concentra ${demandPct(totalNational ? Number(sorted[0]?.leads || 0) / totalNational * 100 : null)}` : `${demandPct(totalNational ? totalZone / totalNational * 100 : null)} de la demanda nacional`;
+                    const rankTitle = GEO_ZONE === 'all' ? 'RANKING REGIONAL' : `REGIONES DE ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`;
+                    const denominator = GEO_METRIC === 'leads' ? Math.max(1, totalZone) : Math.max(1, Math.abs(geoFinalMetricValue(sorted[0] || {})));
+                    summary.innerHTML = `<div class="geo-hero-label inventory-kicker">${title}</div><div class="geo-hero-value">${heroValue}</div><p class="geo-hero-subtitle">${heroSubtitle}</p>${selected ? '<button type="button" class="geo-rank-more" id="geoViewCommunes">Ver comunas →</button>' : ''}<div class="geo-hero-label inventory-kicker" style="margin-top:16px">${rankTitle}</div><div class="geo-ranking">${visible.map(row => { const value = geoFinalMetricValue(row); const width = GEO_METRIC === 'gap' ? Math.min(50, Math.abs(value) / Math.max(1, Math.max(...sorted.map(item => Math.abs(geoFinalMetricValue(item))))) * 50) : Math.min(100, Math.max(2, Math.abs(value) / denominator * 100)); return `<div class="geo-ranking-row ${row.geo_key === GEO_SELECTED_KEY ? 'is-selected' : ''}" data-geo-rank="${invEsc(row.geo_key)}"><span>${invEsc(row.name)}</span><div class="geo-ranking-track ${GEO_METRIC === 'gap' ? 'geo-gap-track' : ''}">${GEO_METRIC === 'gap' ? '<i class="geo-gap-zero"></i>' : ''}<i class="geo-ranking-fill ${value >= 0 ? 'positive' : 'negative'}" style="width:${width}%"></i></div><b>${GEO_METRIC === 'gap' ? demandPP(value) : GEO_METRIC === 'intensity' ? `${demandValue(value)} leads/prop.` : `${demandValue(value)} leads`}</b></div>`; }).join('')}</div>${sorted.length > 8 ? `<button type="button" class="geo-rank-more" id="geoRankMore">${GEO_RANK_EXPANDED ? 'Mostrar Top 8' : `Ver las ${sorted.length} regiones`}</button>` : ''}<p class="geo-insight">${GEO_ZONE === 'all' ? `${invEsc(sorted[0]?.name || '—')} y ${invEsc(sorted[1]?.name || '—')} concentran ${demandPct(totalNational ? (Number(sorted[0]?.leads || 0) + Number(sorted[1]?.leads || 0)) / totalNational * 100 : null)} de la demanda reciente.` : `La zona ${invEsc(GEO_ZONE_LABELS[GEO_ZONE])} representa ${demandPct(totalNational ? totalZone / totalNational * 100 : null)} de la demanda nacional.`}</p>`;
+                    $('geoRankMore')?.addEventListener('click', () => { GEO_RANK_EXPANDED = !GEO_RANK_EXPANDED; geoDetail(); });
+                    geoD3BindHighlight(summary);
+                }
+
+                function geoFinalDetailCommunes() {
+                    const summary = $('geoSummaryInsights');
+                    if (!summary) return;
+                    const region = geoFinalRows().find(row => row.geo_key === GEO_REGION_KEY);
+                    const rows = geoD3CommuneRows(GEO_REGION_KEY);
+                    const selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY);
+                    const value = row => GEO_METRIC === 'gap' ? Number(row.gap_pp || 0) : GEO_METRIC === 'intensity' ? Number(row.leads_per_property || 0) : Number(row.leads || 0);
+                    const sorted = [...rows].sort((a, b) => value(b) - value(a) || String(a.name).localeCompare(String(b.name)));
+                    const title = GEO_METRIC === 'intensity' ? 'COMUNAS CON MAYOR INTENSIDAD' : GEO_METRIC === 'gap' ? 'COMUNAS CON MAYOR BRECHA POSITIVA' : 'COMUNAS CON MAYOR DEMANDA';
+                    const max = Math.max(1, ...sorted.map(item => Math.abs(value(item))));
+                    summary.innerHTML = `<div class="geo-hero-label inventory-kicker">REGIÓN ${invEsc((region?.name || GEO_REGION_KEY).toUpperCase())}</div><div class="geo-hero-value">${GEO_METRIC === 'gap' ? demandPP(region?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(region?.leads_per_property)} leads/prop.` : `${demandValue(region?.leads)} leads`}</div><p class="geo-hero-subtitle">${GEO_METRIC === 'gap' ? 'Brecha demanda vs cartera' : GEO_METRIC === 'intensity' ? 'Intensidad del período' : 'Últimos 30 días'}</p><div class="geo-hero-label inventory-kicker" style="margin-top:16px">${title}</div><div class="geo-ranking">${sorted.slice(0, 8).map(item => { const itemValue = value(item); const width = GEO_METRIC === 'gap' ? Math.min(50, Math.abs(itemValue) / max * 50) : Math.min(100, Math.max(2, Math.abs(itemValue) / max * 100)); return `<div class="geo-ranking-row ${item.geo_key === GEO_SELECTED_KEY ? 'is-selected' : ''}" data-geo-rank="${invEsc(item.geo_key)}"><span>${invEsc(item.name)}</span><div class="geo-ranking-track ${GEO_METRIC === 'gap' ? 'geo-gap-track' : ''}">${GEO_METRIC === 'gap' ? '<i class="geo-gap-zero"></i>' : ''}<i class="geo-ranking-fill ${itemValue >= 0 ? 'positive' : 'negative'}" style="width:${width}%"></i></div><b>${GEO_METRIC === 'gap' ? demandPP(itemValue) : GEO_METRIC === 'intensity' ? `${demandValue(itemValue)} leads/prop.` : `${demandValue(itemValue)} leads`}</b></div>`; }).join('')}</div>${selected ? `<div class="geo-selected-detail"><strong>${invEsc(selected.name)}</strong><span>Comuna · ${invEsc(region?.name || GEO_REGION_KEY)}</span><span>${demandValue(selected.leads)} leads últimos 30 días · ${demandPct(region?.leads > 0 ? Number(selected.leads || 0) / Number(region.leads) * 100 : null)} de la demanda regional</span><span>${demandValue(selected.properties_with_demand)} propiedades consultadas · ${demandValue(selected.leads_per_property)} leads/propiedad</span><span>Cartera activa ${demandValue(selected.stock_sucre)} · Brecha ${demandPP(selected.gap_pp)}</span><b>Qué están buscando</b><span>${(selected.top_segments || []).slice(0, 3).map(segment => `${invEsc(segment.segment)} · ${demandValue(segment.leads)} leads`).join(' · ') || 'Sin segmentos observados'}</span></div>` : ''}`;
+                    summary.querySelectorAll('[data-geo-rank]').forEach(item => item.addEventListener('click', () => { GEO_SELECTED_KEY = item.dataset.geoRank; geoRender(); }));
+                    geoD3BindHighlight(summary);
+                }
+
+                function geoFinalSyncMobileHero() {
+                    if (!geoFinalIsMobile()) return;
+                    const layout = document.querySelector('.geo-map-layout');
+                    const map = $('geoMap');
+                    if (!layout || !map || GEO_LEVEL !== 'region') return;
+                    let hero = $('geoMobileHero');
+                    if (!hero) { hero = document.createElement('div'); hero.id = 'geoMobileHero'; hero.className = 'geo-mobile-hero'; layout.querySelector(':scope > div:first-child')?.insertBefore(hero, map); }
+                    const rows = geoFinalZoneRows(GEO_ZONE), all = geoFinalRows(), total = geoFinalZoneTotal(rows), selected = rows.find(row => row.geo_key === GEO_SELECTED_KEY), first = [...rows].sort((a, b) => geoFinalMetricValue(b) - geoFinalMetricValue(a))[0];
+                    const subject = selected || first;
+                    hero.innerHTML = `<span class="inventory-kicker">${selected ? 'REGIÓN SELECCIONADA' : GEO_ZONE === 'all' ? 'DEMANDA DEL PERÍODO' : `DEMANDA · ZONA ${GEO_ZONE_LABELS[GEO_ZONE].toUpperCase()}`}</span><strong>${GEO_METRIC === 'gap' ? demandPP(subject?.gap_pp) : GEO_METRIC === 'intensity' ? `${demandValue(subject?.leads_per_property)} leads/prop.` : `${demandValue(selected ? subject?.leads : total)} leads`}</strong><p>${selected ? `${invEsc(subject.name)} · ${demandPct(geoFinalZoneTotal(all) ? Number(subject.leads || 0) / geoFinalZoneTotal(all) * 100 : null)} de la demanda nacional` : `${demandPct(geoFinalZoneTotal(all) ? total / geoFinalZoneTotal(all) * 100 : null)} de la demanda nacional`}</p>`;
+                }
+
+                function geoFinalRender() {
+                    if (!GEO_DATA || typeof d3 === 'undefined') return;
+                    geoFinalEnsureZoneControl();
+                    const panel = document.querySelector('.geo-demand-panel');
+                    const layout = document.querySelector('.geo-map-layout');
+                    const map = $('geoMap');
+                    if (layout) layout.classList.toggle('is-commune', GEO_LEVEL === 'commune');
+                    if (panel) {
+                        let breadcrumb = panel.querySelector('#geoBreadcrumbStage');
+                        if (!breadcrumb) { breadcrumb = document.createElement('div'); breadcrumb.id = 'geoBreadcrumbStage'; breadcrumb.className = 'geo-breadcrumb-stage'; panel.insertBefore(breadcrumb, layout); }
+                        if (GEO_LEVEL === 'commune') {
+                            const region = geoFinalRows().find(row => row.geo_key === GEO_REGION_KEY);
+                            breadcrumb.innerHTML = `<button type="button" class="geo-breadcrumb-link" id="geoBreadcrumbHome">Chile</button><span aria-hidden="true">›</span><strong>${invEsc(region?.name || GEO_REGION_KEY)}</strong>`;
+                            breadcrumb.style.visibility = 'visible';
+                            $('geoBreadcrumbHome').onclick = () => { GEO_LEVEL = 'region'; GEO_REGION_KEY = null; GEO_SELECTED_KEY = null; geoRender(); };
+                        } else { breadcrumb.innerHTML = ''; breadcrumb.style.visibility = 'hidden'; }
+                    }
+                    if (map) map.dataset.geoMetric = GEO_METRIC;
+                    geoSetMetricCaption();
+                    $('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button => button.classList.toggle('active', button.dataset.geoMetric === GEO_METRIC));
+                    if (GEO_LEVEL === 'commune') {
+                        $('geoMobileHero')?.remove();
+                        geoFinalRenderCommunes();
+                        geoFinalDetailCommunes();
+                    } else {
+                        geoFinalRenderNational(geoFinalZoneRows(GEO_ZONE));
+                        geoFinalDetailNational();
+                        geoFinalSyncMobileHero();
+                    }
+                    // La lectura textual se actualiza después del detalle,
+                    // que es donde se genera el subtítulo de la región/comuna.
+                    demandRefreshTerritorialPeriodText();
+                    $('geoMapStatus')?.remove();
+                }
+
+                geoD3RenderNational = geoFinalRenderNational;
+                geoRenderNationalTiles = geoFinalRenderNational;
+                geoD3RenderCommunes = geoFinalRenderCommunes;
+                geoD3DetailNational = geoFinalDetailNational;
+                geoD3DetailCommunes = geoFinalDetailCommunes;
+                geoSyncMobileHero = geoFinalSyncMobileHero;
+                geoRender = geoFinalRender;
+                geoD3SelectRegion = function (key) { geoD3EnterCommunes(key); };
+                geoD3SelectCommune = function (key) { GEO_SELECTED_KEY = key; geoRender(); };
+                geoD3EnterCommunes = function (key) { GEO_LEVEL = 'commune'; GEO_REGION_KEY = key; GEO_SELECTED_KEY = null; GEO_RANK_EXPANDED = false; geoRender(); };
+            })();
+        </script>
+        <style>
+            .geo-demand-panel { width:100%; max-width:none; margin:0 0 14px; box-sizing:border-box; border-radius:14px; }
+            .geo-demand-panel .geo-header { display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,42%); align-items:start; gap:28px; }
+            .geo-demand-panel .geo-map-controls { flex-direction:column; align-items:flex-end; justify-content:flex-start; gap:9px; }
+            .geo-demand-panel .geo-map-controls > #geoMetricSelect, .geo-demand-panel .geo-map-controls > #geoZoneSelect { width:100%; max-width:320px; }
+            .geo-demand-panel .geo-map-controls > #geoMetricSelect { width:max-content; max-width:none; }
+            .geo-demand-panel .geo-map-controls > .geo-metric-caption { flex:0 0 auto; width:100%; max-width:320px; margin:0; text-align:left; line-height:1.35; }
+            .geo-demand-panel .geo-map-controls > #geoZoneSelect { align-self:flex-end; }
+            .geo-map-layout { grid-template-columns:minmax(0,60%) minmax(340px,40%); gap:32px; align-items:stretch; }
+            .geo-map-layout.is-commune { grid-template-columns:minmax(0,60%) minmax(340px,40%); }
+            #geoMap.geo-national-map, #geoMap.geo-commune-map { height:clamp(560px,45vw,640px); min-height:560px; border-radius:14px; overflow:hidden; }
+            #geoMap.geo-commune-map { min-height:520px; }
+            .geo-map-stage { position:relative; width:100%; height:100%; overflow:hidden; background:var(--bg-elevated); }
+            .geo-map-stage > .geo-zone-select { position:absolute; top:14px; right:14px; left:auto; transform:none; z-index:6; margin:0; width:max-content; max-width:calc(100% - 28px); }
+            .geo-map-stage .geo-main-svg { display:block; width:100%; height:100%; }
+            .geo-national-summary { position:absolute; inset:50% auto auto 50%; transform:translate(-50%,-50%); width:min(420px,calc(100% - 48px)); text-align:center; color:var(--text-secondary); }
+            .geo-national-summary strong { display:block; margin:10px 0 6px; color:var(--text-primary); font-size:1.1rem; }
+            .geo-national-summary p { margin:0; line-height:1.5; font-size:.82rem; }
+            .geo-map-stage .geo-territory-base { stroke:color-mix(in srgb,var(--text-secondary) 58%,var(--border-color)); stroke-width:1.05; }
+            .geo-ranking-row .geo-ranking-track > .geo-ranking-fill { position:relative; inset:auto; display:block; height:100%; border-radius:99px; }
+            .geo-ranking-row .geo-ranking-track > .geo-ranking-fill.positive, .geo-ranking-row .geo-ranking-track > .geo-ranking-fill.negative { left:auto; right:auto; top:auto; bottom:auto; }
+            .geo-ranking-row .geo-gap-track > .geo-ranking-fill { position:absolute; top:0; bottom:auto; height:100%; }
+            .geo-zone-select { display:flex; align-items:center; gap:2px; padding:3px; margin:0; background:color-mix(in srgb,var(--bg-card) 92%,transparent); border:1px solid var(--border-color); border-radius:10px; box-shadow:0 6px 18px rgba(15,23,42,.08); }
+            .geo-zone-select button { border:0; background:transparent; color:var(--text-secondary); border-radius:7px; padding:7px 12px; cursor:pointer; font-size:.72rem; transition:background .16s ease,color .16s ease; }
+            .geo-zone-select button:hover { color:var(--text-primary); background:var(--accent-soft); }
+            .geo-zone-select button.active { background:var(--accent); color:var(--text-on-accent,#fff); font-weight:800; }
+            .geo-map-stage .geo-legend-overlay { position:absolute; left:12px; bottom:12px; z-index:4; margin:0; padding:8px 10px; max-width:min(310px,calc(100% - 24px)); background:color-mix(in srgb,var(--bg-card) 92%,transparent); border:1px solid var(--border-color); border-radius:10px; backdrop-filter:blur(5px); }
+            .geo-map-stage .geo-legend-overlay .geo-symbol-legend { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+            .geo-map-stage .geo-legend-overlay .geo-symbol-legend small, .geo-communal-scale { flex-basis:100%; color:var(--text-secondary); }
+            .geo-zoom-controls { position:absolute; top:12px; left:12px; z-index:5; display:flex; gap:5px; }
+            .geo-zoom-controls button { width:34px; height:34px; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-card); color:var(--text-primary); cursor:pointer; font-size:1.1rem; }
+            .geo-breadcrumb-stage { height:26px; box-sizing:border-box; display:flex; align-items:center; gap:7px; margin:0 0 4px; padding:0 2px; color:var(--text-secondary); font-size:.76rem; }
+            .geo-breadcrumb-stage strong { color:var(--text-primary); font-weight:800; }
+            .geo-breadcrumb-link { border:0; padding:0; background:transparent; color:var(--accent); cursor:pointer; font-size:.76rem; text-decoration:underline; text-underline-offset:2px; }
+            .geo-map-layout.is-commune .geo-detail { min-height:0; }
+            .geo-gap-track { position:relative; overflow:visible; }
+            .geo-gap-track .geo-gap-zero { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--border-color); }
+            .geo-gap-track .geo-ranking-fill { position:absolute; top:0; height:100%; }
+            .geo-gap-track .geo-ranking-fill.positive { left:50%; }
+            .geo-gap-track .geo-ranking-fill.negative { right:50%; }
+            @media (prefers-reduced-motion:reduce) { .geo-map-stage *, .geo-map-stage *::before, .geo-map-stage *::after { transition:none!important; animation:none!important; } }
+            @media (max-width:768px) {
+                .geo-demand-panel .geo-map-controls > #geoMetricSelect { width:100%; max-width:none; }
+                .geo-demand-panel .geo-map-controls > .geo-metric-caption { max-width:none; }
+            }
+            @media (max-width:1199px) and (min-width:769px) { .geo-map-layout { grid-template-columns:minmax(0,58%) minmax(320px,42%); gap:24px; } .geo-map-layout.is-commune { grid-template-columns:minmax(0,58%) minmax(320px,42%); } }
+            @media (max-width:768px) {
+                body.territorial-review-mode .main-content { padding-left:10px!important; padding-right:10px!important; }
+                body.territorial-review-mode .inventory-dashboard { padding-left:10px!important; padding-right:10px!important; }
+                .territorial-review-mode .geo-demand-panel { padding-left:12px; padding-right:12px; }
+                .geo-map-layout, .geo-map-layout.is-commune { grid-template-columns:1fr; gap:14px; }
+                .geo-map-layout > div:first-child { display:block; }
+                #geoMap.geo-national-map { height:360px; min-height:340px; }
+                #geoMap.geo-national-map.geo-zone-all { height:330px; min-height:320px; }
+                #geoMap.geo-commune-map { height:400px; min-height:360px; }
+                .geo-zone-select { width:100%; margin-top:7px; }
+                .geo-zone-select button { flex:1; min-width:0; padding:6px 2px; font-size:.68rem; }
+                .geo-map-stage .geo-legend-overlay { left:10px; bottom:10px; font-size:.66rem; }
+                .geo-breadcrumb-stage { font-size:.75rem; }
+                .geo-map-controls { align-items:stretch; }
+                .geo-demand-panel .geo-header { display:block; }
+                .geo-demand-panel .geo-map-controls { align-items:stretch; }
+                .geo-demand-panel .geo-map-controls > #geoMetricSelect, .geo-demand-panel .geo-map-controls > #geoZoneSelect { max-width:none; }
+                .geo-demand-panel .geo-map-controls > #geoZoneSelect { align-self:stretch; }
+                .geo-map-stage > .geo-zone-select { top:10px; right:10px; left:auto; transform:none; width:max-content; }
+                .geo-zoom-controls { top:10px; left:10px; }
+            }
+        </style>
         <div id="sidebarOverlay"
             style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;"
             onclick="closeMobileMenu()"></div>
+        <script>
+            (function syncDemandContextSubtexts() {
+                const parseNumber = value => {
+                    const normalized = String(value || '').replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+                    const parsed = Number(normalized);
+                    return Number.isFinite(parsed) ? parsed : null;
+                };
+                const formatInteger = value => Number(value || 0).toLocaleString('es-CL');
+                const formatPercent = value => Number(value || 0).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+                const sync = () => {
+                    const activeEl = document.getElementById('demandActive');
+                    const withDemandEl = document.getElementById('demandWithDemand');
+                    const active = parseNumber(activeEl?.textContent);
+                    const withDemand = parseNumber(withDemandEl?.textContent);
+                    const withArticle = withDemandEl?.closest('article');
+                    const coverageArticle = document.getElementById('demandCoverage')?.closest('article');
+                    if (withArticle) {
+                        const small = withArticle.querySelector('small');
+                        if (small) small.textContent = active && withDemand != null ? `${formatPercent(withDemand / active * 100)} de la cartera` : 'Sin denominador de cartera';
+                    }
+                    if (coverageArticle) {
+                        const small = coverageArticle.querySelector('small');
+                        if (small) small.textContent = active && withDemand != null ? `${formatInteger(withDemand)} de ${formatInteger(active)} propiedades` : 'Sin propiedades activas';
+                    }
+                };
+                const bind = () => {
+                    ['demandActive', 'demandWithDemand', 'demandCoverage'].forEach(id => {
+                        const element = document.getElementById(id);
+                        if (element && !element.dataset.contextSyncBound) {
+                            element.dataset.contextSyncBound = '1';
+                        }
+                    });
+                    sync();
+                    window.setInterval(sync, 300);
+                };
+                if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true });
+                else bind();
+            })();
+        </script>
     </body>
 
 </html>

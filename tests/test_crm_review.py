@@ -114,6 +114,14 @@ def test_review_relative_times_use_days_after_24_hours():
     assert 'Hace 94 h' not in html
 
 
+def test_review_management_relative_times_are_dynamic_format():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list').text
+    assert 'Última: No respondió · Hace 25 min' in html
+    assert 'Última: Cierre ganado · Hace 1 día 2 h' in html
+    assert 'Ayer · 15:20' not in html
+
+
 def test_review_filter_script_keeps_sorting_inside_local_review_route():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text

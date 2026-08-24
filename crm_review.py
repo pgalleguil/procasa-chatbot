@@ -87,13 +87,18 @@ def _refresh_demo_relative_times() -> None:
         lead["assigned_relative"] = f"Hace {_format_minutes(elapsed_minutes)}"
         due_at = lead.get("sla_due_at")
         if not due_at or lead.get("sla_status") in {"fulfilled", "pending", "historical"}:
-            continue
-        delta_minutes = int((now - due_at).total_seconds() // 60)
-        lead["sla_timing"] = (
-            f"Venció hace {_format_minutes(delta_minutes)}"
-            if delta_minutes >= 0
-            else f"Faltan {_format_minutes(-delta_minutes)}"
-        )
+            pass
+        else:
+            delta_minutes = int((now - due_at).total_seconds() // 60)
+            lead["sla_timing"] = (
+                f"Venció hace {_format_minutes(delta_minutes)}"
+                if delta_minutes >= 0
+                else f"Faltan {_format_minutes(-delta_minutes)}"
+            )
+        management_at = lead.get("management_at")
+        if management_at:
+            managed_minutes = int(max(0, (now - management_at).total_seconds()) // 60)
+            lead["tiempo_relativo"] = f"Hace {_format_minutes(managed_minutes)}"
 
 
 def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
@@ -133,6 +138,12 @@ def _lead(index: int, *, temperature: str, sla_status: str, sla_label: str,
             "fulfilled": "Dentro de SLA · 42 min",
         }.get(sla_status, "SLA no disponible"),
         "sla_due_at": created_at + sla_due_offsets.get(sla_status, timedelta(0)),
+        "management_at": created_at - timedelta(minutes={
+            "No respondió": 25,
+            "Contactado": 60,
+            "Visita agendada": 1440,
+            "Cierre ganado": 1560,
+        }.get(action, 0)) if managed and action else None,
         "estado": "CLOSED_WON" if closed else state,
         "estado_badge": state_label,
         "estado_resultado": action if managed else None,

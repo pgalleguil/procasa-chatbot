@@ -256,6 +256,25 @@ async def lifespan(app: FastAPI):
     # Cliente HTTP compartido para OAuth (evita crear conexión por callback).
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
 
+    # El warmup inicial es parte de readiness: el proceso no publica su
+    # lifespan hasta haberlo completado o agotado el timeout defensivo.
+    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
+        **dashboard_process_facts(), "event": "prewarm_scheduled", "endpoint": "overview,operations,properties",
+        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
+        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
+    })
+    startup_loop = asyncio.get_running_loop()
+    try:
+        await asyncio.wait_for(
+            startup_loop.run_in_executor(_WARMER_THREAD_POOL, warm_pinned_dashboard_cache),
+            timeout=120.0,
+        )
+        logger.info("[DASHBOARD_PREWARM] startup warm completed before readiness")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.warning("[DASHBOARD_PREWARM] startup warm failed; continuing after defensive timeout", exc_info=True)
+
     # Iniciar tareas de fondo
     logger.info("[CRM_FLAGS] %s", {
         "lead_hot_notifications": Config.LEAD_HOT_NOTIFICATIONS_ENABLED,
@@ -288,11 +307,6 @@ async def lifespan(app: FastAPI):
     captacion_daily_production_task = asyncio.create_task(captacion_daily_production_scheduler_loop())
     nudge_task = asyncio.create_task(inactive_lead_nudge_loop())
     w_task = asyncio.create_task(cache_prewarmer_loop())  # PRE-WARMING de cache
-    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
-        **dashboard_process_facts(), "event": "prewarm_scheduled", "endpoint": "overview,operations,properties",
-        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
-        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
-    })
     el_task = asyncio.create_task(event_loop_monitor_loop()) # MONITOR EVENT LOOP
     tp_task = asyncio.create_task(threadpool_forensics_loop()) # MONITOR THREAD POOLS
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
@@ -4634,21 +4648,9 @@ async def reassign_unassigned_leads_loop():
             await asyncio.sleep(60)
 
 async def cache_prewarmer_loop():
-    """Prewarm and keep only the exact pinned 30d dashboard keys alive."""
+    """Keep only the exact pinned 30d dashboard keys alive after startup warm."""
     logger.info("[DASHBOARD_CACHE_KEEPER] start preset=30d interval_seconds=60 refresh_age_seconds=240")
     loop = asyncio.get_running_loop()
-    try:
-        # Runs in the dedicated single-worker pool and therefore never blocks
-        # /health or the event loop.
-        await asyncio.wait_for(
-            loop.run_in_executor(_WARMER_THREAD_POOL, warm_pinned_dashboard_cache),
-            timeout=120.0,
-        )
-    except asyncio.CancelledError:
-        return
-    except Exception:
-        logger.warning("[DASHBOARD_CACHE_KEEPER] startup prewarm failed", exc_info=True)
-
     while True:
         try:
             await asyncio.sleep(60)

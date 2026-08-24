@@ -32,7 +32,7 @@ def test_stale_paths_schedule_refresh_without_sync_compute():
     assert "if state == \"soft\":" in SERVICE
     assert '_schedule_cache_refresh(key, load, source="request_swr")' in SERVICE
     assert "if state == \"hard\" and pinned" in SERVICE
-    assert "result = load(timing)" in SERVICE
+    assert "result = _singleflight_compute(key, lambda: load(timing), timing=timing)" in SERVICE
 
 
 def test_web_pool_queue_and_execution_are_measured_inside_worker():
@@ -58,11 +58,12 @@ def test_cache_eviction_and_request_logs_use_hashes():
     assert '"request_id"' in WEBHOOK
 
 
-def test_frontend_perceived_latency_is_observable_without_abort_or_ux_changes():
+def test_frontend_perceived_latency_is_observable_with_abort_and_without_ux_changes():
     template = (ROOT / "templates" / "leads_dashboard.html").read_text(encoding="utf-8")
     assert "DASHBOARD_FRONTEND_PERF" in template
     assert "fetch_ms" in template and "render_ms" in template and "perceived_ms" in template
-    assert "AbortController" not in template
+    assert "AbortController" in template
+    assert "error?.name === 'AbortError'" in template
 
 
 def test_background_tracking_uses_refcount(monkeypatch):

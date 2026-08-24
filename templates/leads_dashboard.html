@@ -4597,7 +4597,28 @@
             let OPS_REQUEST_SEQ = 0;
             let OPS_LAST_PERIOD_KEY = '';
             let OVERVIEW_REQUEST_SEQ = 0;
+            let PROPERTIES_REQUEST_SEQ = 0;
             const OPS_ENDPOINT = PRIVATE_OPERATIONS_ENDPOINT;
+            const DASHBOARD_REQUESTS = {
+                overview: {key: null, promise: null, controller: null},
+                operations: {key: null, promise: null, controller: null},
+                properties: {key: null, promise: null, controller: null},
+            };
+            function dashboardBeginRequest(kind, key) {
+                const state = DASHBOARD_REQUESTS[kind];
+                if (state.promise && state.key === key) return {state, controller: state.controller, reused: true};
+                if (state.controller) state.controller.abort();
+                state.promise = null;
+                state.controller = new AbortController();
+                state.key = key;
+                return {state, controller: state.controller, reused: false};
+            }
+            function dashboardFinishRequest(kind, state, promise) {
+                if (state !== DASHBOARD_REQUESTS[kind] || state.promise !== promise) return;
+                state.promise = null;
+                state.controller = null;
+                state.key = null;
+            }
             function dashboardFrontendPerf(endpoint, startedAt, responseAt, readyAt, requestSeq, status) {
                 console.info('[DASHBOARD_FRONTEND_PERF]', JSON.stringify({
                     endpoint, request_seq: requestSeq, period_preset: FILTERS.period_preset,
@@ -5019,35 +5040,47 @@
                 const error = $('opsError'); if (error) error.hidden = true;
             }
             async function loadOperationalData(periodSnapshot = null) {
-                const frontendStartedAt = performance.now();
                 const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
+                const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
+                if (snapshot.compare) params.set('compare', snapshot.compare);
+                if (snapshot.preset) params.set('period_preset', snapshot.preset);
+                if (snapshot.executive) params.set('executive', snapshot.executive);
+                if (snapshot.portfolio) params.set('portfolio', snapshot.portfolio);
+                const request = dashboardBeginRequest('operations', OPS_ENDPOINT + '?' + params.toString());
+                if (request.reused) return request.state.promise;
+                const frontendStartedAt = performance.now();
                 const requestId = ++OPS_REQUEST_SEQ;
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
                 if ($('opsPeriodMeta')) $('opsPeriodMeta').textContent = 'Actualizando · ' + (snapshot.start || '—') + ' – ' + (snapshot.end || '—');
-                try {
-                    const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
-                    if (snapshot.compare) params.set('compare', snapshot.compare);
-                    if (snapshot.preset) params.set('period_preset', snapshot.preset);
-                    if (snapshot.executive) params.set('executive', snapshot.executive);
-                    if (snapshot.portfolio) params.set('portfolio', snapshot.portfolio);
-                    const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}});
-                    if (!response.ok) throw new Error('Gestión operativa ' + response.status);
-                    const data = await response.json();
-                    const frontendResponseAt = performance.now();
-                    // Evita mezclar stock/período de una respuesta vieja con el
-                    // selector que ya muestra un rango más reciente.
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
-                    opsRenderOperational(data);
-                    dashboardFrontendPerf('/api/leads-dashboard/operations', frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
-                } catch (error) {
-                    if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
-                    const box = $('opsError'), text = $('opsErrorText');
-                    if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
-                    if (box) box.hidden = false;
-                    throw error;
-                } finally {
-                    if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
-                }
+                const promise = (async () => {
+                    try {
+                        const response = await fetch(OPS_ENDPOINT + '?' + params.toString(), {headers:{Accept:'application/json'}, signal:request.controller.signal});
+                        if (!response.ok) throw new Error('Gestión operativa ' + response.status);
+                        const data = await response.json();
+                        const frontendResponseAt = performance.now();
+                        // Evita mezclar stock/período de una respuesta vieja con el
+                        // selector que ya muestra un rango más reciente.
+                        if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return null;
+                        opsRenderOperational(data);
+                        dashboardFrontendPerf(OPS_ENDPOINT, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return data;
+                    } catch (error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(OPS_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return null;
+                        const box = $('opsError'), text = $('opsErrorText');
+                        if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
+                        if (box) box.hidden = false;
+                        throw error;
+                    } finally {
+                        if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
+                    }
+                })();
+                request.state.promise = promise;
+                try { return await promise; }
+                finally { dashboardFinishRequest('operations', request.state, promise); }
             }
             document.addEventListener('click', event => {
                 if (event.target.closest('#opsPortfolioCasesButton')) opsOpenPortfolioCases();
@@ -5081,16 +5114,21 @@
             }
 
             async function loadData(mode) {
+                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
+                if (activeTab === 'leads') return loadOperationalData();
+                if (activeTab === 'properties') return loadInventoryData(mode === 'refresh');
+                if (activeTab !== 'executive') return null;
                 const frontendStartedAt = performance.now();
-                // REVIEW solo conserva el fixture de Demanda & Captación.
-                // Las demás pestañas deben mantener la carga real del dashboard.
-                if (REVIEW_MODE && $('viewProperties') && !$('viewProperties').hidden) {
-                    await loadInventoryData(true);
-                    return;
-                }
-                if (!$('viewProperties')?.hidden) loadInventoryData(true).catch(e=>console.error('Error actualizando inventario:', e));
+                const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, compare: COMPARE, preset: FILTERS.period_preset};
+                const p = new URLSearchParams();
+                if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
+                if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
+                if (COMPARE) p.set('compare', COMPARE);
+                if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
+                const overviewPath = PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview';
+                const request = dashboardBeginRequest('overview', overviewPath + '?' + p.toString());
+                if (request.reused) return request.state.promise;
                 const requestId = ++OVERVIEW_REQUEST_SEQ;
-                    const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const overlay = $('loadingOverlay');
                 const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
                 RENDER_MODE = seqMode;
@@ -5098,52 +5136,49 @@
                 const upd = $('dashUpdated');
                 if (upd) { upd.textContent = 'Actualizando indicadores…'; upd.classList.add('loading'); }
                 if (seqMode === 'refresh') prepareRefreshReveal();
-                try {
-                    const operationalPromise = ($('viewLeads') && !$('viewLeads').hidden)
-                        ? loadOperationalData(periodSnapshot).catch(e => console.error('Error cargando gestión operativa:', e))
-                        : null;
-                    const p = new URLSearchParams();
-                    if (FILTERS.period_start) p.set('period_start', FILTERS.period_start);
-                    if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
-                    if (COMPARE) p.set('compare', COMPARE);
-                    if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
-                    const overviewPath = PUBLIC_DEMO
-                        ? '/api/demo/leads-intelligence/overview'
-                        : '/api/leads-dashboard/overview';
-                    const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
-                    if (!res.ok) throw new Error('Error ' + res.status);
-                    const overview = await res.json();
-                    const frontendResponseAt = performance.now();
-                    if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return;
-                    OVERVIEW = overview;
-                    syncUrl();
-                    renderPeriodMeta();
-                    renderDemandCard();
-                    renderConversionCard();
-                    renderPipelineCard();
-                    renderSlaCard();
-                    renderInsightsBlock();
-                    renderTrendsAndChannels();
-                    renderFunnel();
-                    if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) {
-                        requestAnimationFrame(animateFunnelCounts);
+                const promise = (async () => {
+                    try {
+                        const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' }, signal:request.controller.signal });
+                        if (!res.ok) throw new Error('Error ' + res.status);
+                        const overview = await res.json();
+                        const frontendResponseAt = performance.now();
+                        if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return null;
+                        OVERVIEW = overview;
+                        syncUrl();
+                        renderPeriodMeta();
+                        renderDemandCard();
+                        renderConversionCard();
+                        renderPipelineCard();
+                        renderSlaCard();
+                        renderInsightsBlock();
+                        renderTrendsAndChannels();
+                        renderFunnel();
+                        if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) requestAnimationFrame(animateFunnelCounts);
+                        const now = new Date();
+                        LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+                        $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
+                        hideOverviewError();
+                        runRevealSequence(seqMode);
+                        dashboardFrontendPerf(overviewPath, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return overview;
+                    } catch (error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(overviewPath, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        console.error("Error cargando datos:", error);
+                        if (requestId === OVERVIEW_REQUEST_SEQ) showOverviewError();
+                        return null;
+                    } finally {
+                        if (requestId === OVERVIEW_REQUEST_SEQ) {
+                            if (overlay) overlay.hidden = true;
+                            if (upd) upd.classList.remove('loading');
+                        }
                     }
-                    const now = new Date();
-                    LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-                    $('dashUpdated').textContent = 'Actualizado ' + LAST_SUCCESS_AT;
-                    hideOverviewError();
-                    runRevealSequence(seqMode);
-                    dashboardFrontendPerf(PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview', frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
-                } catch (e) {
-                    console.error("Error cargando datos:", e);
-                    showOverviewError();
-                }
-                finally {
-                    if (requestId === OVERVIEW_REQUEST_SEQ) {
-                        if (overlay) overlay.hidden = true;
-                        if (upd) upd.classList.remove('loading');
-                    }
-                }
+                })();
+                request.state.promise = promise;
+                try { return await promise; }
+                finally { dashboardFinishRequest('overview', request.state, promise); }
             }
 
             // --- CARD 1: DEMANDA & META ---
@@ -6558,12 +6593,53 @@
             function invPopulateFilters(data) { const map={operation:'operation',type:'type',commune:'commune',responsible:'responsible'}; Object.entries(map).forEach(([id,key])=>{ const el=$('inventory'+id.charAt(0).toUpperCase()+id.slice(1)+'Filter'); if(!el) return; const selected=el.value; const options=data.filter_options?.[key]||[]; el.innerHTML=`<option value="">${id==='operation'?'Todas':id==='responsible'?'Todos':id==='type'?'Todos':'Todas'}</option>`+options.map(row=>`<option value="${invEsc(row.label)}">${invEsc(row.label)} (${invNum(row.count)})</option>`).join(''); if(options.some(row=>row.label===selected)) el.value=selected; }); }
             async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{const body=await response.json().catch(()=>({})); if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;} return body;}).then(data=>{const meta=data.meta||{}; const status=$('inventoryDataStatus'); if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;} invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data); if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);}).catch(error=>{$('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
 
-            const dashboardLoadInventoryOriginal = loadInventoryData;
             loadInventoryData = async function(force=false) {
+                if ($('viewProperties')?.hidden) return null;
+                const params = new URLSearchParams();
+                if (FILTERS.period_start) params.set('period_start', FILTERS.period_start);
+                if (FILTERS.period_end) params.set('period_end', FILTERS.period_end);
+                [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);});
+                const key = params.toString();
+                if (!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY === key) return INVENTORY_DATA;
+                const request = dashboardBeginRequest('properties', PROPERTIES_INVENTORY_ENDPOINT + '?' + key);
+                if (request.reused) return request.state.promise;
                 const frontendStartedAt = performance.now();
-                const result = await dashboardLoadInventoryOriginal(force);
-                dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), 'inventory', 'ok');
-                return result;
+                const requestId = ++PROPERTIES_REQUEST_SEQ;
+                INVENTORY_REQUEST_KEY = key;
+                $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true;
+                const promise = (async () => {
+                    try {
+                        const response = await fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'},signal:request.controller.signal});
+                        const body = await response.json().catch(()=>({}));
+                        if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;}
+                        const frontendResponseAt = performance.now();
+                        const data = body;
+                        const meta=data.meta||{}; const status=$('inventoryDataStatus');
+                        if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;}
+                        invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data);
+                        if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);
+                        dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
+                        return data;
+                    } catch(error) {
+                        if (error?.name === 'AbortError') {
+                            dashboardFrontendPerf(PROPERTIES_INVENTORY_ENDPOINT, frontendStartedAt, performance.now(), performance.now(), requestId, 'aborted');
+                            return null;
+                        }
+                        $('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.';
+                        $('inventoryError').hidden=false;
+                        if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);
+                        return null;
+                    } finally {
+                        $('inventoryLoading').hidden=true;
+                    }
+                })();
+                request.state.promise = promise;
+                INVENTORY_REQUEST = promise;
+                try { return await promise; }
+                finally {
+                    if (INVENTORY_REQUEST === promise) INVENTORY_REQUEST = null;
+                    dashboardFinishRequest('properties', request.state, promise);
+                }
             };
 
             // --- Territorial review renderer: D3 Geo folded national view ---
@@ -6880,7 +6956,7 @@
 
                 // Tooltip del BLOQUE 2 (AI Briefing) — sin tooltip en el diseño minimalista
 
-                loadData('full');
+                if (INITIAL_TAB === 'executive') loadData('full');
             });
 
             // Actualización silenciosa cada 15 min. No es una recarga de página

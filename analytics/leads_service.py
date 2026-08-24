@@ -10,11 +10,11 @@ import copy
 import hashlib
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 from typing import Optional
 
-from pymongo.errors import NetworkTimeout
+from pymongo.errors import NetworkTimeout, ServerSelectionTimeoutError
 from .dashboard_forensics import (
     background_active,
     background_count,
@@ -71,6 +71,8 @@ _COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=10, thread_name_prefix="
 _CACHE_REFRESH_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="analytics_cache_refresh")
 _CACHE_REFRESH_LOCK = Lock()
 _CACHE_REFRESHING: set[str] = set()
+_SINGLEFLIGHT_LOCK = Lock()
+_SINGLEFLIGHT: dict[str, Future] = {}
 
 
 class InventoryTemporarilyUnavailable(RuntimeError):
@@ -124,9 +126,23 @@ def _sanitize_non_finite(value):
 
 
 def _cache_set(key: str, value: dict):
+    if key in L1_CACHE:
+        L1_CACHE[key] = (time.time(), value)
+        return
     if len(L1_CACHE) >= MAX_CACHE_ENTRIES:
-        oldest = min(L1_CACHE, key=lambda k: L1_CACHE[k][0])
         pinned_keys = {pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs()}
+        candidates = [cache_key for cache_key in L1_CACHE if cache_key not in pinned_keys]
+        if candidates:
+            oldest = min(candidates, key=lambda cache_key: L1_CACHE[cache_key][0])
+        else:
+            # This is an exceptional capacity condition: keep the new result
+            # usable, but make the protected-key violation explicit.
+            oldest = min(L1_CACHE, key=lambda cache_key: L1_CACHE[cache_key][0])
+            logger.warning(
+                "[DASHBOARD_CACHE] all cache entries pinned; fallback eviction "
+                "oldest=%s incoming=%s",
+                key_hash(oldest), key_hash(key),
+            )
         emit_cache_evict(len(L1_CACHE), oldest, L1_CACHE[oldest][0], key, pinned_keys)
         del L1_CACHE[oldest]
     L1_CACHE[key] = (time.time(), value)
@@ -158,9 +174,7 @@ def _schedule_cache_refresh(key: str, loader, *, source: str = "keeper") -> bool
         age_before = _cache_entry_age(key)
         begin_background(key, "background_refresh_started", endpoint, age_before, source=source)
         try:
-            value = loader()
-            if value is not None:
-                _cache_set(key, value)
+            _singleflight_compute(key, loader)
         except Exception:
             logger.warning("[CACHE_SWR] background refresh failed key=%s", key, exc_info=True)
         finally:
@@ -188,7 +202,54 @@ def _record_cache_diagnostics(timing: dict | None, key: str, age: float | None, 
         "cache_entries": len(L1_CACHE),
         "prewarm_active_for_key": background_active(key),
         "background_active_count": background_count(key),
+        "singleflight_role": "none",
+        "singleflight_wait_ms": 0.0,
+        "singleflight_shared": False,
     })
+
+
+def _record_singleflight(timing: dict | None, role: str, wait_ms: float, shared: bool) -> None:
+    if timing is None:
+        return
+    timing.update({
+        "singleflight_role": role,
+        "singleflight_wait_ms": round(max(0.0, wait_ms), 1),
+        "singleflight_shared": bool(shared),
+    })
+
+
+def _singleflight_compute(key: str, loader, *, timing: dict | None = None):
+    """Compute one cache key once and fan out its exact result or exception."""
+    started = time.perf_counter()
+    with _SINGLEFLIGHT_LOCK:
+        future = _SINGLEFLIGHT.get(key)
+        if future is None:
+            future = Future()
+            _SINGLEFLIGHT[key] = future
+            owner = True
+        else:
+            owner = False
+
+    if not owner:
+        try:
+            return future.result()
+        finally:
+            _record_singleflight(timing, "waiter", (time.perf_counter() - started) * 1000, True)
+
+    _record_singleflight(timing, "owner", 0.0, False)
+    try:
+        value = loader()
+        if value is not None:
+            _cache_set(key, value)
+        future.set_result(value)
+        return value
+    except BaseException as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with _SINGLEFLIGHT_LOCK:
+            if _SINGLEFLIGHT.get(key) is future:
+                del _SINGLEFLIGHT[key]
 
 
 def _stale_payload(payload: dict, age: float | None, *, degraded: bool) -> dict:
@@ -262,8 +323,7 @@ def warm_pinned_dashboard_cache() -> list[str]:
         started = time.perf_counter()
         begin_background(key, "prewarm_job_started", endpoint, age, source="startup_prewarm")
         try:
-            value = loader()
-            _cache_set(key, value)
+            _singleflight_compute(key, loader)
             duration_ms = (time.perf_counter() - started) * 1000
             logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=prewarm age_seconds=%s duration_ms=%.1f cache_key_hash=%s", endpoint, "none" if age is None else f"{age:.1f}", duration_ms, key_hash(key))
             warmed.append(endpoint)
@@ -368,14 +428,13 @@ def get_properties_inventory_dashboard(
     if timing is not None:
         timing["cache"] = "MISS"
     try:
-        payload = load(timing)
-    except NetworkTimeout as exc:
+        payload = _singleflight_compute(key, lambda: load(timing), timing=timing)
+    except (NetworkTimeout, ServerSelectionTimeoutError) as exc:
         timeout_stage = (timing or {}).get("demand_capture.timeout_stage", "unknown")
         logger.warning("[DEMAND_CAPTURE] mongo_timeout timeout_stage=%s cache=MISS response=503", timeout_stage)
         if timing is not None:
             timing.update({"degraded": True, "total_ms": round((time.perf_counter() - started) * 1000, 1)})
         raise InventoryTemporarilyUnavailable from exc
-    _cache_set(key, payload)
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return payload
@@ -756,8 +815,7 @@ def get_leads_operational_dashboard(
 
     if timing is not None:
         timing["cache"] = "MISS"
-    result = load(timing)
-    _cache_set(key, result)
+    result = _singleflight_compute(key, lambda: load(timing), timing=timing)
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return result
@@ -2125,8 +2183,7 @@ def get_leads_dashboard_overview(
             return stale_payload
     if timing is not None:
         timing["cache"] = "MISS"
-    result = load(timing)
-    _cache_set(key, result)
+    result = _singleflight_compute(key, lambda: load(timing), timing=timing)
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return result

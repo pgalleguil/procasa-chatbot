@@ -124,10 +124,10 @@ def test_cache_ttl_contract():
     assert leads_service.PINNED_MAX_STALE == 1800
 
 
-def test_prewarmer_contract_is_single_initial_30d_pass():
+def test_prewarmer_contract_keeps_only_periodic_keeper_after_blocking_startup_warm():
     source = (Path(__file__).parents[1] / "webhook.py").read_text(encoding="utf-8")
     warmer = source[source.index("async def cache_prewarmer_loop"):source.index("async def event_loop_monitor_loop")]
-    assert "warm_pinned_dashboard_cache" in warmer
+    assert "warm_pinned_dashboard_cache" not in warmer
     assert "keep_pinned_dashboard_cache" in warmer
     assert "interval_seconds=60" in warmer
     assert "refresh_age_seconds=240" in warmer

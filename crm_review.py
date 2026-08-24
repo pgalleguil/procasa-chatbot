@@ -67,7 +67,13 @@ def _now() -> datetime:
 
 def _format_minutes(total_minutes: int) -> str:
     total_minutes = max(0, int(total_minutes))
-    hours, minutes = divmod(total_minutes, 60)
+    days, remainder = divmod(total_minutes, 1440)
+    hours, minutes = divmod(remainder, 60)
+    if days:
+        parts = [f"{days} día" + ("s" if days != 1 else "")]
+        if hours:
+            parts.append(f"{hours} h")
+        return " ".join(parts)
     if hours:
         return f"{hours} h" + (f" {minutes} min" if minutes else "")
     return f"{minutes} min"

@@ -106,6 +106,14 @@ def test_review_oldest_unmanaged_puts_unmanaged_leads_first_and_oldest():
     assert html.index('Cliente Demo 02') < html.index('Cliente Demo 05')
 
 
+def test_review_relative_times_use_days_after_24_hours():
+    with TestClient(app) as client:
+        html = client.get('/crm-leads-review?view=list').text
+    assert 'Hace 3 días' in html
+    assert 'Hace 3 días 22 h' in html
+    assert 'Hace 94 h' not in html
+
+
 def test_review_filter_script_keeps_sorting_inside_local_review_route():
     with TestClient(app) as client:
         html = client.get("/crm-leads-review?view=list").text

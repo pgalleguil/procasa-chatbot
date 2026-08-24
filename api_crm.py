@@ -145,7 +145,7 @@ def format_relative_time(dt_obj):
     hours = int((seconds % 86400) // 3600)
     minutes = int((seconds % 3600) // 60)
     
-    if days > 0: return f"Hace {days}d {hours}h"
+    if days > 0: return f"Hace {days}d {hours}h {minutes}m"
     elif hours > 0: return f"Hace {hours}h {minutes}m"
     elif minutes > 0: return f"Hace {minutes}m"
     else: return "Ahora"
@@ -166,7 +166,14 @@ def format_relative_compact(dt_obj):
     if text.startswith("Hace "):
         parts = text[5:].split()
         if parts and parts[0].endswith("d"):
-            return f"Hace {parts[0]} días"
+            days = int(parts[0][:-1])
+            hours = parts[1][:-1] if len(parts) > 1 and parts[1].endswith("h") else "0"
+            minutes = parts[2][:-1] if len(parts) > 2 and parts[2].endswith("m") else "0"
+            day_label = "día" if days == 1 else "días"
+            result = f"Hace {days} {day_label}"
+            if int(hours) > 0:
+                result += f" {hours} h"
+            return result
         if parts and parts[0].endswith("h"):
             hours = parts[0][:-1]
             minutes = parts[1][:-1] if len(parts) > 1 and parts[1].endswith("m") else "0"

@@ -1075,7 +1075,7 @@ async def view_visita_public(token: str, request: Request):
         expiry_chile = expiry.astimezone(chile_tz)
         token_expiry_iso = expiry_chile.isoformat()
         
-    return templates.TemplateResponse("visita_view.html", {
+    return templates.TemplateResponse(request, "visita_view.html", {
         "request": request,
         "contract": contract,
         "token": token,
@@ -1863,7 +1863,7 @@ async def verify_contract(visita_code: str, request: Request):
         except Exception as e:
             pass
         
-    return templates.TemplateResponse("visita_verify.html", {
+    return templates.TemplateResponse(request, "visita_verify.html", {
         "request": request,
         "contract": safe_contract,
         "signature_date_clt": formatted_date
@@ -1959,7 +1959,7 @@ async def visita_dashboard(request: Request):
         exec_username = (c.get("executive") or c.get("created_by") or "").strip()
         c["executive_display"] = user_name_map.get(exec_username, exec_username or "---")
 
-    return templates.TemplateResponse("visita_dashboard.html", {
+    return templates.TemplateResponse(request, "visita_dashboard.html", {
         "request": request,
         "contracts": contracts,
         "user_role": user_role,

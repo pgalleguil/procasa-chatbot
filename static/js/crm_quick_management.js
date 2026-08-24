@@ -40,12 +40,14 @@
             });
             reason.value = '';
         }
-        if ($('quickManagementSave')) $('quickManagementSave').disabled = resultType === 'EFFECTIVE_CONTACT';
+        if ($('quickManagementSave')) $('quickManagementSave').disabled = false;
     }
 
     function valid() {
         if (!state.resultType) return false;
-        if (dateResults.includes(state.resultType) && !$('quickNextDate')?.value) return false;
+        if (dateResults.includes(state.resultType)
+            && state.resultType !== 'EFFECTIVE_CONTACT'
+            && !$('quickNextDate')?.value) return false;
         if (otherResults.includes(state.resultType) && !$('quickOtherOutcome')?.value.trim()) return false;
         return true;
     }

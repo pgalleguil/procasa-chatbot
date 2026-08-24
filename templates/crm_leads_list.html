@@ -2365,7 +2365,7 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup2"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup3"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2401,7 +2401,7 @@
                 if (!quickManagementState.resultType) return false;
                 if (quickManagementState.resultType === 'OTHER_EXPLICIT'
                     && !document.getElementById('quickOtherOutcome')?.value.trim()) return false;
-                if (['EFFECTIVE_CONTACT', 'FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
+                if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (!quickManagementState.resultType) return false;
                 return true;

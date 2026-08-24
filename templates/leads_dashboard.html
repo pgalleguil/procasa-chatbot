@@ -232,7 +232,7 @@
             background: var(--sidebar-active-bg);
             border-left-color: var(--sidebar-active-color);
             color: var(--sidebar-active-color) !important;
-            box-shadow: none;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
         }
 
         .nav-link.active i {
@@ -2661,7 +2661,7 @@
         [data-theme="light"] .nav-link.active {
             background: var(--sidebar-active-bg);
             border-left-color: var(--sidebar-active-color);
-            box-shadow: none;
+            box-shadow: 0 0 16px color-mix(in srgb, var(--sidebar-active-color) 12%, transparent);
         }
 
         [data-theme="light"] .ai-btn-primary:hover,
@@ -3315,7 +3315,6 @@
         }
 
         /* Chrome: conserva la estética, pero evita capas costosas de composición GPU. */
-        html.chrome-performance .sidebar,
         html.chrome-performance .ai-briefing-inner,
         html.chrome-performance .tc-card,
         html.chrome-performance .exec-table-card,

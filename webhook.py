@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import uvicorn
 import json
+from copy import deepcopy
 import pytz # Importante para la hora local
 from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent, run_in_threadpool
 
@@ -380,27 +381,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
 
-    # One-shot Prop360 historical-universe audit. It uses only the dedicated
-    # technical report collection and never calls the production sync runner.
-    prop360_audit_task = None
-    try:
-        if os.getenv("PROP360_HISTORICAL_AUDIT_ENABLED", "true").lower() in {"1", "true", "yes"}:
-            from scripts.audit_prop360_historical_universe import run_prop360_historical_audit
-
-            async def _run_prop360_historical_audit():
-                try:
-                    background_tasks_status["prop360_historical_audit"] = {"status": "running", "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
-                    result = await asyncio.to_thread(run_prop360_historical_audit)
-                    background_tasks_status["prop360_historical_audit"] = {"status": result.get("status", "completed"), "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
-                except Exception as exc:
-                    logger.exception("[PROP360_AUDIT] one-shot audit failed")
-                    background_tasks_status["prop360_historical_audit"] = {"status": "failed", "error_type": type(exc).__name__, "last_heartbeat": datetime.now(CHILE_TZ).isoformat()}
-
-            prop360_audit_task = asyncio.create_task(_run_prop360_historical_audit())
-            logger.info("[PROP360_AUDIT] one-shot read-only audit scheduled")
-    except Exception:
-        logger.warning("[PROP360_AUDIT] import/scheduling failed — disabled", exc_info=True)
-
     # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
     uf_sync_task = None
     try:
@@ -419,9 +399,10 @@ async def lifespan(app: FastAPI):
     c1_task = asyncio.create_task(lead_consumer_worker(1))
     c2_task = asyncio.create_task(lead_consumer_worker(2))
     
-    # Crear admin y asegurar índices
-    crear_admin_si_no_existe()
-    asegurar_indices_db()
+    # Crear admin y asegurar índices fuera del event loop: ambas funciones
+    # usan PyMongo síncrono durante el startup.
+    await run_in_threadpool(crear_admin_si_no_existe)
+    await run_in_threadpool(asegurar_indices_db)
     
     # Invalidar cachés antiguos de captación (versiones pre-migración)
     try:
@@ -968,11 +949,13 @@ async def ver_leads(request: Request):
 @app.get("/leads-dashboard-local", response_class=HTMLResponse)
 async def ver_leads_review(request: Request):
     """Local visual review shell using the same full dashboard template."""
+    _require_public_leads_dashboard()
     response = templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
         "user_role": "admin",
         "user_name": "Visual Review",
         "full_visual_review": True,
+        "fixture_demo": True,
         "local_dashboard": request.url.path == "/leads-dashboard-local",
     })
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
@@ -983,24 +966,10 @@ async def ver_leads_review(request: Request):
 @app.get("/api/review/leads-dashboard")
 async def leads_dashboard_review_data():
     """Sanitized fixture only. No request parameters and no database access."""
+    _require_public_leads_dashboard()
     response = JSONResponse(territorial_review_payload())
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/internal-review/prop360-historical-audit")
-async def prop360_historical_audit_report():
-    """Return only the aggregate one-shot report; never runs the audit."""
-    from chatbot.storage import get_db
-
-    document = get_db()["prop360_audit_reports"].find_one(
-        {"_id": "historical_universe_v1"},
-        {"_id": 0, "status": 1, "started_at": 1, "completed_at": 1, "sha": 1, "report": 1, "error_type": 1},
-    )
-    response = JSONResponse(document or {"status": "pending"})
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
 
@@ -1129,11 +1098,252 @@ def _dashboard_perf_log(*, endpoint: str, request_id: str, timing: dict,
 @app.get("/demo/leads-intelligence", response_class=HTMLResponse)
 async def public_leads_intelligence_demo(request: Request):
     """Temporary, read-only public shell for the Executive Summary only."""
-    return templates.TemplateResponse(request, "leads_dashboard.html", {
-        "user_role": "public_demo",
+    _require_public_leads_dashboard()
+    response = templates.TemplateResponse(request, "leads_dashboard.html", {
+        "user_role": "demo",
         "user_name": "",
-        "public_demo": True,
+        "fixture_demo": True,
     })
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _require_public_leads_dashboard():
+    if not Config.PUBLIC_LEADS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="No encontrado")
+
+
+_DEMO_DASHBOARD_JSON = Path(__file__).with_name("demo_data") / "leads_dashboard_demo.json"
+
+
+def _load_demo_dashboard_data() -> dict:
+    with _DEMO_DASHBOARD_JSON.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _demo_json_response(key: str) -> JSONResponse:
+    response = JSONResponse(_load_demo_dashboard_data().get(key, {}))
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _demo_window(period_start=None, period_end=None):
+    base_start = datetime.strptime("2026-07-26", "%Y-%m-%d").date()
+    base_end = datetime.strptime("2026-08-24", "%Y-%m-%d").date()
+    try:
+        start = datetime.strptime(period_start, "%Y-%m-%d").date() if period_start else base_start
+        end = datetime.strptime(period_end, "%Y-%m-%d").date() if period_end else base_end
+    except (TypeError, ValueError):
+        start, end = base_start, base_end
+    if end < start:
+        start, end = end, start
+    days = max(1, (end - start).days + 1)
+    previous_end = start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=days - 1)
+    return start, end, previous_start, previous_end, days
+
+
+def _demo_factor(*values):
+    seed = "|".join(str(value or "") for value in values)
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return 0.92 + (int(digest[:4], 16) % 17) / 100
+
+
+def _demo_scale(value, factor, minimum=0):
+    if value is None:
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return max(minimum, round(value * factor, 1))
+    return value
+
+
+def _demo_transform_overview(period_start=None, period_end=None, compare=None):
+    start, end, previous_start, previous_end, days = _demo_window(period_start, period_end)
+    data = deepcopy(_load_demo_dashboard_data()["overview"])
+    factor = max(0.35, min(1.8, days / 30 * _demo_factor(period_start, period_end, compare)))
+    data["period"]["current"] = {"start": start.isoformat(), "end": end.isoformat()}
+    data["period"]["previous"] = {"start": previous_start.isoformat(), "end": previous_end.isoformat()}
+    data["period"]["compare_resolved"] = "none" if compare == "none" else "auto"
+    demand = data["demand"]
+    demand["total"] = _demo_scale(demand["total"], factor, 1)
+    demand["previous"] = _demo_scale(demand["previous"], factor * 0.96, 1)
+    demand["variation_pct"] = round((demand["total"] - demand["previous"]) / demand["previous"] * 100, 1)
+    for series_name in ("daily", "previous_daily", "daily_history"):
+        series = demand.get(series_name, {})
+        series["values"] = [_demo_scale(value, factor, 0) for value in series.get("values", [])]
+    for key in ("leads", "citas"):
+        data["conversion"][key] = _demo_scale(data["conversion"][key], factor, 0)
+    data["conversion"]["conversion_pct"] = round(data["conversion"]["citas"] / max(1, data["conversion"]["leads"]) * 100, 1)
+    data["conversion"]["ratio_leads_per_cita"] = round(data["conversion"]["leads"] / max(1, data["conversion"]["citas"]), 1)
+    for key in ("monto_venta_uf", "monto_arriendo_uf", "comision_potencial_uf", "comision_venta_uf", "comision_arriendo_uf", "propiedades_cartera", "propiedades_vinculadas"):
+        data["pipeline"][key] = _demo_scale(data["pipeline"][key], factor, 0)
+    for key in ("managed", "open", "open_breached", "not_evaluable"):
+        data["sla"][key] = _demo_scale(data["sla"][key], factor, 0)
+    for source in data["sources"].get("items", []):
+        source["cantidad"] = _demo_scale(source.get("cantidad"), factor, 0)
+        source["visitas"] = _demo_scale(source.get("visitas"), factor, 0)
+    source_total = max(1, sum(item.get("cantidad", 0) for item in data["sources"].get("items", [])))
+    for source in data["sources"].get("items", []):
+        source["pct"] = round(source.get("cantidad", 0) / source_total * 100, 1)
+        source["conversion_pct"] = round(source.get("visitas", 0) / max(1, source.get("cantidad", 0)) * 100, 1)
+    for stage in data["funnel"].get("stages", []):
+        if stage.get("key") != "received":
+            stage["count"] = _demo_scale(stage["count"], factor, 0)
+    data["funnel"]["stages"][0]["count"] = demand["total"]
+    return data
+
+
+def _demo_filter_match(item, operation=None, property_type=None, commune=None, responsible=None):
+    checks = (
+        (operation, item.get("operation")),
+        (property_type, item.get("type")),
+        (commune, item.get("commune")),
+        (responsible, item.get("responsible")),
+    )
+    return all(not wanted or str(value or "").casefold() == str(wanted).casefold() for wanted, value in checks)
+
+
+def _demo_transform_inventory(period_start=None, period_end=None, operation=None, property_type=None, commune=None, responsible=None):
+    start, end, _, _, days = _demo_window(period_start, period_end)
+    data = _demo_inventory_payload()
+    factor = max(0.35, min(1.8, days / 30 * _demo_factor(operation, property_type, commune, responsible)))
+    data["meta"]["period_start"] = start.isoformat()
+    data["meta"]["period_end"] = end.isoformat()
+    data["active_filters"] = {"operation": operation or "Todas", "property_type": property_type or "Todos", "commune": commune or "Todas", "responsible": responsible or "Todos"}
+    data["demand"]["leads"] = _demo_scale(data["demand"].get("leads"), factor, 0)
+    data["inventory"]["active"] = _demo_scale(data["inventory"].get("active"), factor, 1)
+    data["demand"]["properties_with_demand"] = min(data["inventory"]["active"], _demo_scale(data["demand"].get("properties_with_demand"), factor, 0))
+    data["demand"]["coverage_pct"] = round(data["demand"]["properties_with_demand"] / max(1, data["inventory"]["active"]) * 100, 1)
+    data["inventory"]["with_demand"] = data["demand"]["properties_with_demand"]
+    data["inventory"]["without_demand"] = max(0, data["inventory"]["active"] - data["inventory"]["with_demand"])
+    data["inventory"]["coverage_pct"] = data["demand"]["coverage_pct"]
+    for collection in ("properties", "intervention"):
+        data[collection] = [item for item in data.get(collection, []) if _demo_filter_match(item, operation, property_type, commune, responsible)]
+    for dimension, rows in data.get("demand_intelligence", {}).get("dimensions", {}).items():
+        filtered = rows
+        wanted = operation if dimension == "operation" else property_type if dimension == "type" else None
+        if wanted:
+            filtered = [row for row in rows if str(wanted).casefold() in str(row.get("segment", "")).casefold()]
+        for row in filtered:
+            row["leads"] = _demo_scale(row.get("leads"), factor, 0)
+            row["stock_sucre"] = _demo_scale(row.get("stock_sucre"), factor, 0)
+        data["demand_intelligence"]["dimensions"][dimension] = filtered
+    data["opportunities"] = [item for item in data.get("opportunities", []) if _demo_filter_match(item, operation, property_type, commune, None)]
+    return data
+
+
+def _demo_transform_operations(period_start=None, period_end=None, executive=None, portfolio=None):
+    start, end, _, _, days = _demo_window(period_start, period_end)
+    data = deepcopy(_load_demo_dashboard_data()["operations"])
+    factor = max(0.35, min(1.8, days / 30 * _demo_factor(executive, portfolio)))
+    data["meta"]["period_start"] = start.isoformat()
+    data["meta"]["period_end"] = end.isoformat()
+    data["meta"]["portfolio"] = portfolio or data["meta"].get("portfolio", "Demo")
+    for key in ("active_assigned", "pending_first_management", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "activity_without_result"):
+        data["current"][key] = _demo_scale(data["current"].get(key), factor, 0)
+    for key in ("assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
+        data["period"][key] = _demo_scale(data["period"].get(key), factor, 0)
+    if executive:
+        data["executives"] = [item for item in data["executives"] if item.get("executive") == executive]
+    for item in data["executives"]:
+        for section in ("current", "period"):
+            for key in ("active_load", "pending", "active_assigned", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
+                if key in item.get(section, {}):
+                    item[section][key] = _demo_scale(item[section][key], factor, 0)
+    return data
+
+
+@app.get("/api/demo/leads-dashboard/overview")
+async def demo_leads_dashboard_overview(
+    period_start: str = Query(None), period_end: str = Query(None),
+    compare: str = Query(None), period_preset: str = Query(None),
+):
+    _require_public_leads_dashboard()
+    response = JSONResponse(_demo_transform_overview(period_start, period_end, compare))
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/demo/leads-dashboard/operations")
+async def demo_leads_dashboard_operations(
+    period_start: str = Query(None), period_end: str = Query(None),
+    executive: str = Query(None), portfolio: str = Query(None),
+    compare: str = Query(None), period_preset: str = Query(None),
+):
+    _require_public_leads_dashboard()
+    response = JSONResponse(_demo_transform_operations(period_start, period_end, executive, portfolio))
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/demo/leads-dashboard/operations/portfolios")
+async def demo_leads_dashboard_operations_portfolios():
+    _require_public_leads_dashboard()
+    response = JSONResponse({"portfolios": [{"captador": "Demo", "active": 94}]})
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/demo/leads-dashboard/operations/executives")
+async def demo_leads_dashboard_operations_executives():
+    _require_public_leads_dashboard()
+    return _demo_json_response("operations")
+
+
+def _demo_inventory_payload() -> dict:
+    data = _load_demo_dashboard_data()
+    keys = (
+        "inventory", "demand", "meta", "data_quality", "attribution",
+        "demand_intelligence", "opportunities", "benchmark", "simulator_options",
+        "review_simulator", "composition", "demand_coverage", "responsibles",
+        "intervention", "properties", "filter_options", "forecast",
+    )
+    return {key: data[key] for key in keys if key in data}
+
+
+@app.get("/api/demo/leads-dashboard/properties-inventory")
+async def demo_leads_dashboard_properties_inventory(
+    period_start: str = Query(None), period_end: str = Query(None),
+    operation: str = Query(None), property_type: str = Query(None),
+    commune: str = Query(None), responsible: str = Query(None),
+):
+    _require_public_leads_dashboard()
+    response = JSONResponse(_demo_transform_inventory(
+        period_start, period_end, operation, property_type, commune, responsible
+    ))
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/demo/leads-dashboard/capture-simulator")
+async def demo_leads_dashboard_capture_simulator(
+    operation: str = Query(None), property_type: str = Query(None),
+    commune: str = Query(None), price: str = Query(None),
+    bedrooms: str = Query(None), bathrooms: str = Query(None),
+    surface: str = Query(None),
+):
+    _require_public_leads_dashboard()
+    payload = deepcopy(_load_demo_dashboard_data().get("review_simulator", {"available": False}))
+    seed = _demo_factor(operation, property_type, commune, price, bedrooms, bathrooms, surface)
+    evidence = payload.setdefault("evidence", {})
+    evidence["w0"] = _demo_scale(evidence.get("w0"), seed, 0)
+    evidence["w1"] = _demo_scale(evidence.get("w1"), seed, 0)
+    evidence["w2"] = _demo_scale(evidence.get("w2"), seed, 0)
+    evidence["intensity"] = round(float(evidence.get("intensity", 0)) * seed, 2)
+    evidence["text"] = "Escenario ficticio para " + " / ".join(value for value in (operation, property_type, commune) if value)
+    payload["matching"]["quality"] = "exacta" if seed >= 1.0 else "cercana"
+    response = JSONResponse(payload)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/demo/leads-intelligence/overview")
@@ -1145,6 +1355,8 @@ async def public_leads_intelligence_overview(
     period_preset: str = Query(None),
 ):
     """Aggregated read-only Overview API for external performance audits."""
+    _require_public_leads_dashboard()
+    return _demo_json_response("overview")
     from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
 
     for key in ("period_start", "period_end", "compare", "period_preset"):
@@ -1187,6 +1399,11 @@ async def public_leads_intelligence_overview(
 @app.get("/api/demo/leads-intelligence/mongo-latency")
 async def public_leads_intelligence_mongo_latency():
     """Temporary aggregate-only Mongo latency probe for infrastructure audit."""
+    _require_public_leads_dashboard()
+    response = JSONResponse({"available": False, "message": "Demo basada exclusivamente en JSON ficticio."})
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    response.headers["Cache-Control"] = "no-store"
+    return response
     def percentile(values, pct):
         ordered = sorted(values)
         if not ordered:

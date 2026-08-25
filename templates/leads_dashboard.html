@@ -3388,7 +3388,8 @@
         .simulator-layout { display:grid; grid-template-columns:minmax(280px, .8fr) minmax(0, 1.5fr); gap:18px; align-items:start; }.simulator-form { display:grid; grid-template-columns:1fr 1fr; gap:10px; }.simulator-form label { color:var(--text-secondary); font-size:.74rem; display:grid; gap:5px; }.simulator-form input,.simulator-form select { width:100%; box-sizing:border-box; background:var(--input-bg); color:var(--text-primary); border:1px solid var(--border-color); border-radius:7px; padding:9px; }.simulator-form small { color:var(--text-secondary); font-size:.65rem; }.simulator-form button { grid-column:1/-1; border:0; border-radius:7px; padding:10px 12px; background:var(--accent); color:var(--text-on-accent); font-weight:800; cursor:pointer; }.simulator-result { min-height:180px; border:1px solid var(--border-color); border-radius:10px; padding:14px; }.simulator-result h4 { margin:0 0 8px; }.simulator-result .simulator-classification { color:var(--accent); font-size:1.05rem; font-weight:850; }.simulator-result-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:12px; }.simulator-result-grid span { color:var(--text-secondary); font-size:.72rem; }.simulator-result-grid b { display:block; color:var(--text-primary); margin-top:3px; }.simulator-comparables { margin-top:12px; border-top:1px solid var(--border-color); padding-top:10px; font-size:.72rem; }.simulator-comparables li { margin:5px 0; color:var(--text-secondary); }.simulator-comparables strong { color:var(--text-primary); }
         .opportunity-matrix { display:grid; grid-template-columns:1fr 1fr; gap:10px; }.demand-quadrant { min-height:130px; border:1px solid var(--border-color); border-radius:10px; padding:12px; background:var(--bg-elevated); }.demand-quadrant h4 { margin:0 0 8px; font-size:.82rem; }.demand-quadrant.opportunity { border-color:color-mix(in srgb,var(--accent) 58%,var(--border-color)); }.demand-quadrant .matrix-item { display:flex; justify-content:space-between; gap:10px; color:var(--text-secondary); font-size:.75rem; padding:5px 0; border-top:1px solid color-mix(in srgb,var(--border-color) 42%,transparent); }.demand-quadrant .matrix-item b { color:var(--text-primary); }
         .opportunity-matrix.scatter-matrix { display:block; position:relative; min-height:330px; }.scatter-matrix svg { display:block; width:100%; height:auto; min-height:300px; overflow:visible; }.scatter-axis { stroke:var(--border-color); stroke-width:1; }.scatter-median { stroke:var(--text-secondary); stroke-width:1; stroke-dasharray:4 4; opacity:.7; }.scatter-label { fill:var(--text-secondary); font-size:10px; }.scatter-bubble { stroke:var(--bg-card); stroke-width:1.5; cursor:pointer; opacity:.84; }.scatter-bubble:hover,.scatter-bubble.selected { stroke:var(--text-primary); stroke-width:2.5; opacity:1; }.scatter-bubble.opportunity { fill:var(--accent); }.scatter-bubble.coverage { fill:var(--text-secondary); }.scatter-bubble.overexposed { fill:color-mix(in srgb,var(--text-secondary) 62%,var(--bg-card)); }.scatter-bubble.low-signal { fill:var(--border-color); }.scatter-tooltip { position:fixed; z-index:20; width:min(250px,calc(100vw - 20px)); padding:9px 11px; border:1px solid var(--border-color); border-radius:9px; background:var(--bg-card); color:var(--text-primary); box-shadow:var(--shadow-card); font-size:.7rem; line-height:1.4; pointer-events:none; }.scatter-tooltip strong,.scatter-tooltip span { display:block; }.scatter-tooltip span { color:var(--text-secondary); }
-         .inventory-secondary { margin-top:16px; }.inventory-secondary > summary { cursor:pointer; color:var(--accent); font-weight:800; padding:12px 2px; }.inventory-secondary > summary:hover { color:var(--accent-hover); }.benchmark-offices { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }.benchmark-office { border:1px solid var(--border-color); border-radius:8px; padding:8px 10px; min-width:150px; }.benchmark-office span { display:block; color:var(--text-secondary); font-size:.7rem; }.benchmark-office strong { font-size:1rem; }.demand-grid-mini { display:grid; grid-template-columns:1fr 1fr; gap:20px; }.demand-grid-mini h4 { margin:0 0 8px; font-size:.78rem; color:var(--text-secondary); text-transform:uppercase; }.mini-list { display:grid; gap:5px; }.mini-list div { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--border-color); font-size:.76rem; }.mini-list span { color:var(--text-secondary); }
+         .inventory-secondary { margin-top:16px; }.inventory-secondary > summary { cursor:pointer; color:var(--accent); font-weight:800; padding:12px 2px; }.inventory-secondary > summary:hover { color:var(--accent-hover); }.benchmark-offices { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+        .inventory-retry { margin:0 0 16px; padding:6px 10px; border:1px solid rgba(239,108,108,.45); border-radius:8px; background:transparent; color:#ffb4b4; cursor:pointer; }.benchmark-office { border:1px solid var(--border-color); border-radius:8px; padding:8px 10px; min-width:150px; }.benchmark-office span { display:block; color:var(--text-secondary); font-size:.7rem; }.benchmark-office strong { font-size:1rem; }.demand-grid-mini { display:grid; grid-template-columns:1fr 1fr; gap:20px; }.demand-grid-mini h4 { margin:0 0 8px; font-size:.78rem; color:var(--text-secondary); text-transform:uppercase; }.mini-list { display:grid; gap:5px; }.mini-list div { display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--border-color); font-size:.76rem; }.mini-list span { color:var(--text-secondary); }
          .geo-map-controls { display:flex; align-items:end; gap:10px; flex-wrap:wrap; }.geo-map-controls label { display:grid; gap:5px; color:var(--text-secondary); font-size:.72rem; }.geo-map-controls select { background:var(--input-bg); color:var(--text-primary); border:1px solid var(--border-color); border-radius:7px; padding:8px; max-width:260px; }.geo-back-button { border:1px solid var(--border-color); background:transparent; color:var(--text-primary); border-radius:7px; padding:8px 10px; cursor:pointer; }.geo-map-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr); gap:16px; align-items:start; }.geo-map { height:360px; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-elevated); overflow:hidden; position:relative; touch-action:pan-y; }.geo-map svg { display:block; width:100%; height:100%; }.geo-feature { stroke:color-mix(in srgb,var(--border-color) 78%,var(--text-secondary)); stroke-width:.65; cursor:pointer; transition:filter .12s ease,stroke-width .12s ease; }.geo-feature:hover,.geo-feature.selected { filter:brightness(1.18); stroke:var(--text-primary); stroke-width:1.5; }.geo-feature.no-data { fill:color-mix(in srgb,var(--border-color) 18%,transparent); }.geo-detail { border:1px solid var(--border-color); border-radius:10px; padding:14px; min-height:210px; }.geo-detail h4 { margin:0 0 6px; font-size:.9rem; }.geo-detail p { color:var(--text-secondary); font-size:.76rem; margin:0 0 10px; }.geo-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }.geo-detail-grid span { color:var(--text-secondary); font-size:.7rem; }.geo-detail-grid b { display:block; color:var(--text-primary); font-size:.82rem; margin-top:2px; }.geo-segments { margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--border-color); }.geo-segments strong { font-size:.75rem; }.geo-segments li { color:var(--text-secondary); font-size:.72rem; }.geo-legend { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--text-secondary); font-size:.68rem; }.geo-legend-scale { display:flex; height:8px; flex:1; max-width:220px; border-radius:4px; overflow:hidden; }.geo-legend-scale i { flex:1; }.geo-top-wrap { margin-top:14px; }.geo-top-wrap h4 { margin:0; font-size:.84rem; }.geo-top-territories { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }.geo-top-item { border:1px solid var(--border-color); border-radius:8px; padding:8px; cursor:pointer; background:transparent; color:var(--text-primary); text-align:left; }.geo-top-item:hover,.geo-top-item.selected { border-color:var(--accent); }.geo-top-item strong,.geo-top-item span { display:block; }.geo-top-item span { color:var(--text-secondary); font-size:.7rem; margin-top:3px; }
         .geo-map-label { display:none; }
         .geo-demand-panel { overflow:visible; }
@@ -3748,6 +3749,7 @@
                     </button>
                     <div>
                         <h2 class="fw-bold m-0" id="pageTitle">Leads Intelligence</h2>
+                        {% if fixture_demo|default(false) %}<span class="review-badge">DEMO - DATOS FICTICIOS</span>{% endif %}
                         <p class="text-secondary m-0 small" id="pageSubtitle">Control de Gestión Comercial & Business Analytics</p>
                     </div>
                 </div>
@@ -3757,7 +3759,7 @@
                 </div>
             </div>
 
-            {% if not public_demo|default(false) and not territorial_review|default(false) %}
+            {% if not territorial_review|default(false) and (not public_demo|default(false) or fixture_demo|default(false)) %}
             <!-- NAVEGACIÓN DE PESTAÑAS -->
             <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
@@ -4057,7 +4059,7 @@
 
             </div>{% endif %}
 
-            {% if not public_demo|default(false) %}
+            {% if not public_demo|default(false) or fixture_demo|default(false) %}
             {% if not territorial_review|default(false) %}<div id="viewLeads" hidden>
                 <div class="team-dashboard" id="opsDashboard">
                     <header class="team-head">
@@ -4132,7 +4134,7 @@
 
         </div>
 
-        {% if not territorial_review|default(false) %}<!-- SESSION WARNING MODAL -->
+        {% if not territorial_review|default(false) and not fixture_demo|default(false) %}<!-- SESSION WARNING MODAL -->
         <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
             data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
@@ -4171,13 +4173,14 @@
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
             const PUBLIC_DEMO = {{ 'true' if public_demo|default(false) else 'false' }};
+            const FIXTURE_DEMO = {{ 'true' if fixture_demo|default(false) else 'false' }};
             // full_visual_review conserva el HTML completo para localhost;
             // solo territorial_review debe activar el modo sanitizado/fixture.
             const REVIEW_MODE = {{ 'true' if territorial_review|default(false) else 'false' }};
             const LOCAL_DASHBOARD = {{ 'true' if local_dashboard|default(false) else 'false' }};
-            const PRIVATE_OPERATIONS_ENDPOINT = {% if public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
-            const PROPERTIES_INVENTORY_ENDPOINT = LOCAL_DASHBOARD ? '/api/leads-dashboard/properties-inventory' : (REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory');
-            const CAPTURE_SIMULATOR_ENDPOINT = '/api/leads-dashboard/capture-simulator';
+            const PRIVATE_OPERATIONS_ENDPOINT = {% if fixture_demo|default(false) %}'/api/demo/leads-dashboard/operations'{% elif public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
+            const PROPERTIES_INVENTORY_ENDPOINT = FIXTURE_DEMO ? '/api/demo/leads-dashboard/properties-inventory' : (LOCAL_DASHBOARD ? '/api/leads-dashboard/properties-inventory' : (REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory'));
+            const CAPTURE_SIMULATOR_ENDPOINT = FIXTURE_DEMO ? '/api/demo/leads-dashboard/capture-simulator' : '/api/leads-dashboard/capture-simulator';
 
             // Estado de periodo (misma lógica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
@@ -4599,6 +4602,9 @@
             let OVERVIEW_REQUEST_SEQ = 0;
             let PROPERTIES_REQUEST_SEQ = 0;
             const OPS_ENDPOINT = PRIVATE_OPERATIONS_ENDPOINT;
+            const OPS_CLIENT_CACHE_TTL_MS = 15000;
+            const OPS_CLIENT_CACHE = new Map();
+            function opsClientSnapshotKey(snapshot) { return [snapshot.start || '', snapshot.end || '', snapshot.executive || '', snapshot.portfolio || '', snapshot.compare || 'auto', snapshot.preset || '30d'].join('|'); }
             const DASHBOARD_REQUESTS = {
                 overview: {key: null, promise: null, controller: null},
                 operations: {key: null, promise: null, controller: null},
@@ -5050,6 +5056,9 @@
                 if (request.reused) return request.state.promise;
                 const frontendStartedAt = performance.now();
                 const requestId = ++OPS_REQUEST_SEQ;
+                const clientKey = opsClientSnapshotKey(snapshot);
+                const cachedClient = OPS_CLIENT_CACHE.get(clientKey);
+                if (cachedClient && (Date.now() - cachedClient.at) < OPS_CLIENT_CACHE_TTL_MS) { OPS_DATA = cachedClient.data; opsRenderOperational(cachedClient.data); return cachedClient.data; }
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
                 if ($('opsPeriodMeta')) $('opsPeriodMeta').textContent = 'Actualizando · ' + (snapshot.start || '—') + ' – ' + (snapshot.end || '—');
                 const promise = (async () => {
@@ -5061,6 +5070,7 @@
                         // Evita mezclar stock/período de una respuesta vieja con el
                         // selector que ya muestra un rango más reciente.
                         if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return null;
+                        OPS_CLIENT_CACHE.set(clientKey, {at: Date.now(), data});
                         opsRenderOperational(data);
                         dashboardFrontendPerf(OPS_ENDPOINT, frontendStartedAt, frontendResponseAt, performance.now(), requestId, 'ok');
                         return data;
@@ -5125,7 +5135,7 @@
                 if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
                 if (COMPARE) p.set('compare', COMPARE);
                 if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
-                const overviewPath = PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview';
+                const overviewPath = FIXTURE_DEMO ? '/api/demo/leads-dashboard/overview' : (PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview');
                 const request = dashboardBeginRequest('overview', overviewPath + '?' + p.toString());
                 if (request.reused) return request.state.promise;
                 const requestId = ++OVERVIEW_REQUEST_SEQ;

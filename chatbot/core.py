@@ -51,6 +51,10 @@ from .conversation_policy import (
     alternative_offer_declined,
     property_rejected,
     extract_spontaneous_lead_signals,
+    extract_visit_preference,
+    build_visit_progress_question,
+    replace_repeated_visit_question,
+    is_explicit_visit_intent,
     filter_relaxation_accepted,
     outbound_phone_request,
     safe_phone_free_response,
@@ -447,6 +451,41 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             })
         return result
     visit_data_state = await _run_sync(get_visit_data_state, phone)
+    recent_visit_context = any(
+        item.get("role") == "assistant"
+        and re.search(
+            r"(?:visita|visitar|coordinar|agendar|qu[eé]\s+d[ií]a|rango\s+horario|a\s+qu[eé]\s+hora)",
+            str(item.get("content") or item.get("text") or ""),
+            re.IGNORECASE,
+        )
+        for item in historial[-4:]
+    )
+    visit_preference = extract_visit_preference(
+        original_message,
+        visit_context=recent_visit_context or is_explicit_visit_intent(original_message),
+    )
+    stored_visit_preference = prospecto_actual.get("visit_preference") or {}
+    if not visit_preference and isinstance(stored_visit_preference, dict):
+        current_property = str(prospecto_actual.get("codigo") or "")
+        stored_property = str(stored_visit_preference.get("property_id") or "")
+        if not stored_property or not current_property or stored_property == current_property:
+            visit_preference = stored_visit_preference.get("text") or None
+    if visit_preference:
+        visit_preference_record = {
+            "text": visit_preference,
+            "property_id": prospecto_actual.get("codigo"),
+            "captured_at": datetime.now(CHILE_TZ).isoformat(),
+        }
+        await _run_sync(actualizar_prospecto, phone, {
+            "visit_preference": visit_preference_record,
+        })
+        prospecto_actual["visit_preference"] = visit_preference_record
+        await _run_sync(record_observability_event, "visit_preference_captured", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "property_id": prospecto_actual.get("codigo"),
+            "preference": visit_preference,
+        })
     pending_visit_data_reply = classify_visit_data_reply(
         original_message,
         offer_pending=visit_data_state.get("status") in {"offered", "accepted"},
@@ -967,6 +1006,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     Si corresponde hacer una pregunta de visita, formula solo una: día o rango horario
     preferido. No confirmes ni agendes una visita; el ejecutivo confirma disponibilidad.
     """)
+
+    operation_for_visit_follow_up = prospecto_actual.get("operacion") or (propiedad or {}).get("operacion")
+    if visit_preference:
+        next_visit_question = build_visit_progress_question(
+            operation_for_visit_follow_up,
+            financing_status=prospecto_actual.get("financing_status"),
+            rental_docs_readiness=prospecto_actual.get("rental_docs_readiness"),
+        )
+        system_parts.append(f"""
+        [PREFERENCIA DE VISITA YA ENTREGADA]
+        El cliente ya indicó esta preferencia de día/horario: "{visit_preference}".
+        No vuelvas a preguntar el día, la fecha, la hora ni el rango horario.
+        Confirma que registraste la preferencia y avanza con una sola pregunta útil.
+        La siguiente pregunta prioritaria es: "{next_visit_question}"
+        No digas que la visita está confirmada; el ejecutivo debe validar disponibilidad.
+        """)
 
     # --- CONTEXTO 1.5: EVALUAR EJECUTIVO HISTÓRICO EFECTIVO ---
     current_exec = lead_doc_full.get("ejecutivo_asignado") or prospecto_actual.get("ejecutivo")
@@ -1554,6 +1609,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
         })
         respuesta = safe_visit_claim_free_response(respuesta)
+    if visit_preference:
+        respuesta = replace_repeated_visit_question(
+            respuesta,
+            visit_preference=visit_preference,
+            next_question=build_visit_progress_question(
+                operation_for_visit_follow_up,
+                financing_status=prospecto_actual.get("financing_status"),
+                rental_docs_readiness=prospecto_actual.get("rental_docs_readiness"),
+            ),
+        )
     previous_bot_responses = [
         str(item.get("content") or "") for item in historial
         if item.get("role") == "assistant"

@@ -73,11 +73,114 @@ _PHONE_TARGET_RE = re.compile(
     re.IGNORECASE,
 )
 
+_VISIT_DAY_RE = re.compile(
+    r"\b(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|este\s+fin\s+de\s+semana|fin\s+de\s+semana|"
+    r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
+    r"\d{1,2}\s*(?:de\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+    r"septiembre|octubre|noviembre|diciembre)|\d{1,2}[/-]\d{1,2})\b",
+    re.IGNORECASE,
+)
+_VISIT_TIME_RE = re.compile(
+    r"\b(?:a\s+las?\s+\d{1,2}(?::\d{2})?|entre\s+\d{1,2}(?::\d{2})?\s+y\s+\d{1,2}(?::\d{2})?|"
+    r"de\s+\d{1,2}(?::\d{2})?\s+a\s+\d{1,2}(?::\d{2})?|"
+    r"\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas))\b",
+    re.IGNORECASE,
+)
+_VISIT_DAYPART_RE = re.compile(
+    r"\b(?:en|por)\s+la\s+(?:ma[nñ]ana|tarde|noche)\b|\b(?:ma[nñ]ana|tarde|noche)\b",
+    re.IGNORECASE,
+)
+_VISIT_QUESTION_RE = re.compile(
+    r"(?:qu[eé]\s+d[ií]a|rango\s+horario|a\s+qu[eé]\s+hora|cu[aá]ndo).*"
+    r"(?:visita|ir|ver|coordinar|agendar)|"
+    r"(?:horario|hora)\s+(?:te\s+)?acomoda|"
+    r"(?:coordinar|agendar)\s+(?:una\s+)?visita|"
+    r"(?:te\s+)?gustar[ií]a\s+(?:coordinar|agendar|visitar)",
+    re.IGNORECASE,
+)
+
 
 def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def extract_visit_preference(message: str, *, visit_context: bool = False) -> str | None:
+    """Extract a client-provided visit day/time without inventing availability.
+
+    ``visit_context`` allows short replies such as ``"jueves a las 17"`` to be
+    understood when the previous bot turn was already about a visit.  The
+    returned value is only a preference; it never means that the visit is
+    confirmed.
+    """
+    normalized = _normalize_text(message)
+    if not normalized:
+        return None
+    day = _VISIT_DAY_RE.search(normalized)
+    time = _VISIT_TIME_RE.search(normalized)
+    daypart = _VISIT_DAYPART_RE.search(normalized)
+    if not (day or time or daypart):
+        return None
+    if not visit_context and not is_explicit_visit_intent(normalized):
+        return None
+
+    parts = []
+    for match in (day, time, daypart):
+        if match:
+            value = match.group(0).strip()
+            if value not in parts:
+                parts.append(value)
+    return " ".join(parts) or None
+
+
+def build_visit_progress_question(
+    operation: str | None,
+    *,
+    financing_status: str | None = None,
+    rental_docs_readiness: str | None = None,
+) -> str:
+    """Choose the next useful qualification question after visit timing."""
+    operation_key = _normalize_text(operation)
+    if operation_key in {"venta", "comprar", "compra"} and not financing_status:
+        return (
+            "Para que el ejecutivo pueda orientarte mejor, ¿cuentas con un crédito "
+            "preaprobado, comprarías al contado o necesitas asesoría de financiamiento?"
+        )
+    if operation_key in {"arriendo", "arrendar", "alquilar", "alquiler"} and not rental_docs_readiness:
+        return (
+            "Para preparar mejor la visita, ¿ya tienes lista la documentación para el "
+            "arriendo o necesitas orientación sobre los antecedentes?"
+        )
+    if not operation_key:
+        return "Para orientar mejor la visita, ¿la propiedad la estás evaluando para compra o arriendo?"
+    return "¿Hay alguna característica de la propiedad que te gustaría revisar especialmente durante la visita?"
+
+
+def replace_repeated_visit_question(
+    response: str,
+    *,
+    visit_preference: str | None,
+    next_question: str | None = None,
+) -> str:
+    """Remove a repeated scheduling question after the client gave a preference."""
+    if not visit_preference or not response:
+        return response
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", str(response).strip())
+    removed = False
+    retained = []
+    for sentence in sentences:
+        normalized = _normalize_text(sentence)
+        if "?" in sentence and _VISIT_QUESTION_RE.search(normalized):
+            removed = True
+            continue
+        retained.append(sentence.strip())
+    if not removed:
+        return response
+    result = "\n".join(item for item in retained if item).strip()
+    if next_question and _normalize_text(next_question) not in _normalize_text(result):
+        result = f"{result}\n\n{next_question}".strip()
+    return result
 
 
 def is_explicit_visit_intent(message: str) -> bool:

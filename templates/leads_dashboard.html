@@ -3544,7 +3544,8 @@
         .inventory-heading p, .inventory-panel-head p { margin:0; color:var(--text-secondary); }
         .inventory-kicker { color:#8ea4c5; font-size:.68rem; font-weight:800; letter-spacing:.12em; }
         .inventory-status, .inventory-panel-meta { color:var(--text-secondary); font-size:.78rem; }
-        .inventory-error { padding:12px 14px; border:1px solid rgba(239,108,108,.45); color:#ffb4b4; background:rgba(130,30,30,.18); border-radius:10px; margin-bottom:16px; }
+        .inventory-error { padding:12px 14px; border:1px solid rgba(239,108,108,.45); color:#ffb4b4; background:rgba(130,30,30,.18); border-radius:10px; margin-bottom:10px; }
+        .inventory-retry { margin:0 0 16px; padding:6px 10px; border:1px solid rgba(239,108,108,.45); border-radius:8px; background:transparent; color:#ffb4b4; cursor:pointer; }
         .inventory-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:18px; }
         .inventory-filters label { color:var(--text-secondary); font-size:.75rem; font-weight:700; }
         .inventory-filters select { display:block; width:100%; margin-top:5px; border:1px solid var(--border-color); background:var(--bg-card); color:var(--text-primary); border-radius:8px; padding:9px 10px; }
@@ -3748,6 +3749,7 @@
                     </button>
                     <div>
                         <h2 class="fw-bold m-0" id="pageTitle">Leads Intelligence</h2>
+                        {% if fixture_demo|default(false) %}<span class="review-badge">DEMO - DATOS FICTICIOS</span>{% endif %}
                         <p class="text-secondary m-0 small" id="pageSubtitle">Control de Gestión Comercial & Business Analytics</p>
                     </div>
                 </div>
@@ -3757,7 +3759,7 @@
                 </div>
             </div>
 
-            {% if not public_demo|default(false) and not territorial_review|default(false) %}
+            {% if not territorial_review|default(false) and (not public_demo|default(false) or fixture_demo|default(false)) %}
             <!-- NAVEGACIÓN DE PESTAÑAS -->
             <nav class="dash-tabs seq-el seq-static" id="dashTabs" aria-label="Vistas del dashboard">
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
@@ -4057,7 +4059,7 @@
 
             </div>{% endif %}
 
-            {% if not public_demo|default(false) %}
+            {% if not public_demo|default(false) or fixture_demo|default(false) %}
             {% if not territorial_review|default(false) %}<div id="viewLeads" hidden>
                 <div class="team-dashboard" id="opsDashboard">
                     <header class="team-head">
@@ -4099,7 +4101,7 @@
             <div id="viewProperties"{% if not territorial_review|default(false) %} hidden{% endif %}>
                 <section class="inventory-dashboard" aria-labelledby="inventoryTitle">
                     <div class="inventory-heading"><div><h2 id="inventoryTitle" class="team-title">Inteligencia de Demanda y Captación</h2><p class="team-subtitle">Demanda observada, brechas de cartera y oportunidades para orientar la captación.</p></div><div id="inventoryDataStatus" class="inventory-status" hidden></div><div id="inventoryLoading" class="inventory-status" hidden>Cargando inteligencia…</div></div>
-                    <div id="inventoryError" class="inventory-error" hidden></div>
+                    <div id="inventoryError" class="inventory-error" hidden></div><button id="inventoryRetry" class="inventory-retry" type="button" hidden>Reintentar</button>
                     <div class="inventory-filters" aria-label="Filtros de demanda"><label>Operación<select id="inventoryOperationFilter"><option value="">Todas</option></select></label><label>Tipo<select id="inventoryTypeFilter"><option value="">Todos</option></select></label><label>Comuna<select id="inventoryCommuneFilter"><option value="">Todas</option></select></label><label>Responsable<select id="inventoryResponsibleFilter"><option value="">Todos</option></select></label></div>
                     <section class="demand-context" aria-labelledby="demandContextTitle"><div class="demand-section-head"><div><h3 id="demandContextTitle">Nuestra cartera y su demanda observada <span class="info-dot" title="Resumen de la cartera activa vigente y de la demanda observada durante el período seleccionado. Incluye cobertura y señales calificadas sin mezclar sus denominadores.">i</span></h3><p id="demandDefinition">Demanda = leads del período · el período cambia la demanda, no la cartera activa.</p><p id="demandQualifiedMeta" class="inventory-panel-meta">Demanda calificada: —</p></div><span id="demandAttributionMeta" class="inventory-panel-meta">Atribución: —</span></div><div class="demand-kpis"><article title="Propiedades activas actuales de Procasa Sucre; no incorpora otras oficinas."><span>Cartera activa</span><strong id="demandActive">—</strong><small>Propiedades vigentes Procasa Sucre</small></article><article title="Propiedades con al menos un lead dentro del período seleccionado."><span>Con demanda</span><strong id="demandWithDemand">—</strong><small>— de la cartera</small></article><article title="Propiedades activas actuales sin leads dentro del período seleccionado."><span>Sin demanda reciente</span><strong id="demandWithoutDemand">—</strong><small>Sin leads en el período</small></article><article title="Propiedades actuales con demanda dividido por cartera activa actual."><span>Cobertura de demanda</span><strong id="demandCoverage">—</strong><small>— de — propiedades</small></article></div></section>
                     <section class="demand-panel geo-demand-panel" aria-labelledby="geoDemandTitle"><div class="demand-section-head geo-header"><div><span class="inventory-kicker">INTELIGENCIA TERRITORIAL</span>{% if territorial_review|default(false) %}<span class="review-badge">REVIEW</span>{% endif %}<h3 id="geoDemandTitle">Dónde está la demanda <span class="info-dot" title="Visualiza dónde se concentran los leads recientes y cómo se compara esa demanda con la presencia actual de propiedades Procasa Sucre.">i</span></h3><p>Explora qué territorios concentran los leads y cómo se compara esa demanda con nuestra cartera.</p></div><div class="geo-map-controls"><div id="geoMetricSelect" class="geo-segmented" role="tablist" aria-label="Métrica territorial"><button type="button" class="active" data-geo-metric="leads">Demanda</button><button type="button" data-geo-metric="intensity">Intensidad</button><button type="button" data-geo-metric="gap">Brecha</button></div><button type="button" id="geoBackButton" class="geo-back-button" hidden>← Todas las regiones</button></div></div><div class="geo-map-layout"><div><div id="geoMapStatus" class="inventory-panel-meta">Cargando geometrías oficiales…</div><div id="geoMap" class="geo-map" role="img" aria-label="Mapa territorial de demanda por región"></div><div id="geoTooltip" class="geo-tooltip" hidden></div><div id="geoLegend" class="geo-legend"></div></div><aside id="geoDetail" class="geo-detail"><h4>Resumen territorial</h4><div id="geoSummaryInsights"></div><div class="geo-top-wrap"><div class="demand-section-head"><h4>Top 5 territorios</h4><span id="geoTopMeta" class="inventory-panel-meta">Por leads últimos 30 días</span></div><div id="geoTopTerritories" class="geo-top-territories"></div></div></aside></div></section>
@@ -4132,7 +4134,7 @@
 
         </div>
 
-        {% if not territorial_review|default(false) %}<!-- SESSION WARNING MODAL -->
+        {% if not territorial_review|default(false) and not fixture_demo|default(false) %}<!-- SESSION WARNING MODAL -->
         <div class="modal fade" id="sessionWarningModal" tabindex="-1" data-bs-backdrop="static"
             data-bs-keyboard="false">
             <div class="modal-dialog modal-dialog-centered">
@@ -4171,13 +4173,14 @@
             let CURRENT_THEME = 'dark';
             const $ = (id) => document.getElementById(id);
             const PUBLIC_DEMO = {{ 'true' if public_demo|default(false) else 'false' }};
+            const FIXTURE_DEMO = {{ 'true' if fixture_demo|default(false) else 'false' }};
             // full_visual_review conserva el HTML completo para localhost;
             // solo territorial_review debe activar el modo sanitizado/fixture.
             const REVIEW_MODE = {{ 'true' if territorial_review|default(false) else 'false' }};
             const LOCAL_DASHBOARD = {{ 'true' if local_dashboard|default(false) else 'false' }};
-            const PRIVATE_OPERATIONS_ENDPOINT = {% if public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
-            const PROPERTIES_INVENTORY_ENDPOINT = LOCAL_DASHBOARD ? '/api/leads-dashboard/properties-inventory' : (REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory');
-            const CAPTURE_SIMULATOR_ENDPOINT = '/api/leads-dashboard/capture-simulator';
+            const PRIVATE_OPERATIONS_ENDPOINT = {% if fixture_demo|default(false) %}'/api/demo/leads-dashboard/operations'{% elif public_demo|default(false) %}''{% else %}'/api/leads-dashboard/operations'{% endif %};
+            const PROPERTIES_INVENTORY_ENDPOINT = FIXTURE_DEMO ? '/api/demo/leads-dashboard/properties-inventory' : (LOCAL_DASHBOARD ? '/api/leads-dashboard/properties-inventory' : (REVIEW_MODE ? '/api/review/leads-dashboard' : '/api/leads-dashboard/properties-inventory'));
+            const CAPTURE_SIMULATOR_ENDPOINT = FIXTURE_DEMO ? '/api/demo/leads-dashboard/capture-simulator' : '/api/leads-dashboard/capture-simulator';
 
             // Estado de periodo (misma lógica del Dashboard Comercial)
             let FILTERS = { period_start: null, period_end: null, period_preset: '30d' };
@@ -4598,6 +4601,15 @@
             let OPS_LAST_PERIOD_KEY = '';
             let OVERVIEW_REQUEST_SEQ = 0;
             const OPS_ENDPOINT = PRIVATE_OPERATIONS_ENDPOINT;
+            // Reentrada rápida de la pestaña: conserva únicamente el último
+            // payload durante unos segundos. Las consultas de Mongo y la
+            // caché de servidor siguen siendo la fuente de verdad; este
+            // buffer evita repetir HTTP al volver desde otra pestaña.
+            const OPS_CLIENT_CACHE_TTL_MS = 15000;
+            const OPS_CLIENT_CACHE = new Map();
+            function opsClientSnapshotKey(snapshot) {
+                return [snapshot.start || '', snapshot.end || '', snapshot.executive || '', snapshot.portfolio || '', snapshot.compare || 'auto', snapshot.preset || '30d'].join('|');
+            }
             function opsEscape(value) {
                 return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
             }
@@ -5012,6 +5024,13 @@
             async function loadOperationalData(periodSnapshot = null) {
                 const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const requestId = ++OPS_REQUEST_SEQ;
+                const clientKey = opsClientSnapshotKey(snapshot);
+                const cachedClient = OPS_CLIENT_CACHE.get(clientKey);
+                if (cachedClient && (Date.now() - cachedClient.at) < OPS_CLIENT_CACHE_TTL_MS) {
+                    OPS_DATA = cachedClient.data;
+                    opsRenderOperational(cachedClient.data);
+                    return cachedClient.data;
+                }
                 if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'true'); }
                 if ($('opsPeriodMeta')) $('opsPeriodMeta').textContent = 'Actualizando · ' + (snapshot.start || '—') + ' – ' + (snapshot.end || '—');
                 try {
@@ -5026,6 +5045,7 @@
                     // Evita mezclar stock/período de una respuesta vieja con el
                     // selector que ya muestra un rango más reciente.
                     if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
+                    OPS_CLIENT_CACHE.set(clientKey, {at: Date.now(), data});
                     opsRenderOperational(data);
                 } catch (error) {
                     if (requestId !== OPS_REQUEST_SEQ || snapshot.start !== FILTERS.period_start || snapshot.end !== FILTERS.period_end || (snapshot.executive || '') !== OPS_SCOPE || (snapshot.portfolio || '') !== OPS_PORTFOLIO || (snapshot.compare || 'auto') !== COMPARE || (snapshot.preset || '30d') !== FILTERS.period_preset) return;
@@ -5094,9 +5114,9 @@
                     if (FILTERS.period_end) p.set('period_end', FILTERS.period_end);
                     if (COMPARE) p.set('compare', COMPARE);
                     if (FILTERS.period_preset) p.set('period_preset', FILTERS.period_preset);
-                    const overviewPath = PUBLIC_DEMO
-                        ? '/api/demo/leads-intelligence/overview'
-                        : '/api/leads-dashboard/overview';
+                    const overviewPath = FIXTURE_DEMO
+                        ? '/api/demo/leads-dashboard/overview'
+                        : (PUBLIC_DEMO ? '/api/demo/leads-intelligence/overview' : '/api/leads-dashboard/overview');
                     const res = await fetch(overviewPath + '?' + p.toString(), { headers: { Accept: 'application/json' } });
                     if (!res.ok) throw new Error('Error ' + res.status);
                     const overview = await res.json();
@@ -6541,7 +6561,7 @@
             function invDetailTable(rows) { return `<table class="inventory-table"><thead><tr><th>Código</th><th>Tipo</th><th>Operación</th><th>Comuna</th><th>Responsable</th><th>Precio</th><th>Leads período</th><th>Publicaciones</th></tr></thead><tbody>${(rows||[]).map(invDetailRow).join('')}</tbody></table>`; }
             function invRenderProperties(rows) { const visible=(rows||[]).slice(0,20), rest=(rows||[]).slice(20); $('invDetailBody').innerHTML=visible.map(invDetailRow).join(''); $('invDetailCards').innerHTML=visible.map(row=>invCard(row,true)).join(''); const more=$('invDetailMore'); more.hidden=!rest.length; if(rest.length){$('invDetailMoreLabel').textContent=`Ver ${invNum(rest.length)} propiedades restantes`; $('invDetailMoreContent').innerHTML=invDetailTable(rest);} }
             function invPopulateFilters(data) { const map={operation:'operation',type:'type',commune:'commune',responsible:'responsible'}; Object.entries(map).forEach(([id,key])=>{ const el=$('inventory'+id.charAt(0).toUpperCase()+id.slice(1)+'Filter'); if(!el) return; const selected=el.value; const options=data.filter_options?.[key]||[]; el.innerHTML=`<option value="">${id==='operation'?'Todas':id==='responsible'?'Todos':id==='type'?'Todos':'Todas'}</option>`+options.map(row=>`<option value="${invEsc(row.label)}">${invEsc(row.label)} (${invNum(row.count)})</option>`).join(''); if(options.some(row=>row.label===selected)) el.value=selected; }); }
-            async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{const body=await response.json().catch(()=>({})); if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;} return body;}).then(data=>{const meta=data.meta||{}; const status=$('inventoryDataStatus'); if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;} invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data); if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);}).catch(error=>{$('inventoryError').textContent=error.status===503?'Inventario temporalmente no disponible. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
+            async function loadInventoryData(force=false) { if($('viewProperties')?.hidden) return; const retry=$('inventoryRetry'); if(retry&&!retry.dataset.bound){retry.dataset.bound='1'; retry.addEventListener('click',()=>loadInventoryData(true));} const params=new URLSearchParams(); if(FILTERS.period_start) params.set('period_start',FILTERS.period_start); if(FILTERS.period_end) params.set('period_end',FILTERS.period_end); [['operation','inventoryOperationFilter'],['property_type','inventoryTypeFilter'],['commune','inventoryCommuneFilter'],['responsible','inventoryResponsibleFilter']].forEach(([key,id])=>{const value=$(id)?.value;if(value)params.set(key,value);}); const key=params.toString(); if(!force && INVENTORY_DATA && INVENTORY_REQUEST_KEY===key) return; if(INVENTORY_REQUEST && INVENTORY_REQUEST_KEY===key) return INVENTORY_REQUEST; INVENTORY_REQUEST_KEY=key; $('inventoryLoading').hidden=false; $('inventoryError').hidden=true; $('inventoryDataStatus').hidden=true; if(retry) retry.hidden=true; INVENTORY_REQUEST=fetch(`${PROPERTIES_INVENTORY_ENDPOINT}?${key}`,{headers:{Accept:'application/json'}}).then(async response=>{const body=await response.json().catch(()=>({})); if(!response.ok){const error=new Error(body.detail||`HTTP ${response.status}`); error.status=response.status; throw error;} return body;}).then(data=>{const meta=data.meta||{}; const status=$('inventoryDataStatus'); if(status){const stale=meta.data_status==='stale'&&meta.degraded===true; status.textContent=stale?'Mostrando último dato disponible':''; status.hidden=!stale;} invPopulateFilters(data.inventory_context||data); demandRender(data); invRender(data); if(typeof demandMotionEnter==='function' && !demandRender.__demandMotionWrapped) demandMotionEnter(data);}).catch(error=>{$('inventoryError').textContent=error.status===503?'No pudimos actualizar esta información. Reintentar.':'No fue posible cargar la inteligencia de demanda. Intenta nuevamente.'; $('inventoryError').hidden=false; if(retry) retry.hidden=error.status!==503; if(error.status===503) console.warn('Inventario temporalmente no disponible'); else console.error('Error cargando Demanda & Captación:',error);}).finally(()=>{ $('inventoryLoading').hidden=true; INVENTORY_REQUEST=null; }); return INVENTORY_REQUEST; }
 
             // --- Territorial review renderer: D3 Geo folded national view ---
             let GEO_RANK_EXPANDED = false;

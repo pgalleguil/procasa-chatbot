@@ -106,6 +106,12 @@ class Config:
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
+    # Public visual-review switch for the aggregated, read-only leads dashboard.
+    # Fail closed: enabling it must be an explicit Render environment setting.
+    PUBLIC_LEADS_DASHBOARD_ENABLED = os.getenv(
+        "PUBLIC_LEADS_DASHBOARD_ENABLED", "false"
+    ).strip().lower() == "true"
+
     # Chatbot inbound batching.  The quiet window is renewed for every inbound
     # message, but a bounded total wait keeps an active conversation deliverable.
     CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))

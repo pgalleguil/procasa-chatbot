@@ -4,6 +4,8 @@ from collections import OrderedDict
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
+from .phone_utils import normalize_phone_strict
+
 
 def unwrap_lead_data(item: Dict[str, Any]) -> Dict[str, Any]:
     """Return the lead payload from either a queue document or a raw payload."""
@@ -22,7 +24,8 @@ def lead_notification_identity(item: Dict[str, Any]) -> Optional[str]:
         or lead_data.get("whatsapp_phone")
         or ""
     )
-    phone = re.sub(r"\D", "", str(raw_phone))
+    normalized_phone = normalize_phone_strict(str(raw_phone))
+    phone = re.sub(r"\D", "", normalized_phone or str(raw_phone))
 
     raw_code = (
         lead_data.get("property_code")

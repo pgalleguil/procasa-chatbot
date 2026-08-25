@@ -38,6 +38,8 @@ def _state(db, event_id, state, reason, now):
 
 def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, is_test=False):
     """Persist one commercial event; property-less inbound never gets assigned."""
+    from .phone_utils import normalize_phone_strict
+    phone = normalize_phone_strict(phone) or phone
     now = _now()
     lead = db["leads"].find_one({"phone": phone})
     event = db[COLLECTION].find_one_and_update(

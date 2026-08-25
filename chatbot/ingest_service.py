@@ -30,7 +30,12 @@ from dataclasses import dataclass, field, asdict
 
 from .constants import CHILE_TZ, PipelineStage, UNASSIGNED_LABEL
 from .storage import get_db, COLLECTION_CONVERSATIONS, log_event
-from .phone_utils import normalize_phone_strict, is_synthetic_phone, build_synthetic_phone_key
+from .phone_utils import (
+    normalize_phone_strict,
+    phone_identity_variants,
+    is_synthetic_phone,
+    build_synthetic_phone_key,
+)
 from .lead_temperature import effective_temperature_set
 from .lead_router import find_responsible_executive, get_executive_phone, get_next_business_slot
 from .property_lookup import (
@@ -154,7 +159,11 @@ def _find_lead_by_id(phone: Optional[str], email: Optional[str]) -> Tuple[Option
     lead_by_email = None
 
     if phone:
-        lead_by_phone = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
+        # Include the legacy spelling with a duplicated Chile country code so
+        # old records converge when the contact speaks again or is re-polled.
+        lead_by_phone = db[COLLECTION_CONVERSATIONS].find_one({
+            "phone": {"$in": phone_identity_variants(phone)}
+        })
 
     if email:
         lead_by_email = db[COLLECTION_CONVERSATIONS].find_one({"prospecto.email": email})
@@ -378,6 +387,11 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             update_fields["prospecto.email"] = email
         if name and len(name) >= 2:
             update_fields["prospecto.nombre"] = name
+        if phone_normalized and target_lead.get("phone") != phone_normalized:
+            # Repair a legacy phone spelling while reusing the same lead.
+            update_fields["phone"] = phone_normalized
+            update_fields["contact_phone_normalized"] = phone_normalized
+            update_fields["prospecto.phone"] = phone_normalized
 
         if property_code and _is_valid_property_code(property_code):
             update_fields["prospecto.codigo"] = property_code
@@ -520,7 +534,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         "prospecto": {
             "nombre": name,
             "email": email or "",
-            "phone": phone_raw or "",
+            "phone": phone_normalized or phone_raw or "",
             "codigo": property_code,
             "codigo": property_code,
             "ejecutivo": exec_name,

@@ -171,6 +171,11 @@ class CrmService:
         )
         
         if result.modified_count > 0:
+            from .crm_metrics import sync_active_cycle_temperature
+            sync_active_cycle_temperature(
+                db, lead["_id"], temperature=effective_temperature,
+                transition_at=now_iso,
+            )
             log_event(phone, InteractionType.BOT_MSG, actor, {
                 "action": "intent_detected",
                 "intent": intent

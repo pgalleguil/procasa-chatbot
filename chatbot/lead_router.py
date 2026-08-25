@@ -744,6 +744,9 @@ def build_hot_lead_message(ctx: dict) -> str:
     hot_reason = ctx.get("hot_reason") or ""
     nombre_cliente = ctx.get("nombre_cliente") or ""
     url = ctx.get("secure_url") or ""
+    hot_context = ctx.get("hot_context") or HOT_CONTEXT_INITIAL
+    if hot_context not in VALID_HOT_CONTEXTS:
+        hot_context = HOT_CONTEXT_INITIAL
 
     # Build property line: Prop. CODIGO [· operacion] [· tipo] [· comuna]
     prop_parts = [f"\U0001F3E0 *Prop. {code}*"]
@@ -752,13 +755,25 @@ def build_hot_lead_message(ctx: dict) -> str:
             prop_parts.append(f"\u00B7 {part}")
     prop_line = " ".join(prop_parts)
 
-    lines = [
-        "\U0001F525 *NUEVO LEAD HOT*",
-        "",
-        f"Hola {exec_name}, tienes un lead prioritario pendiente de gesti\u00F3n.",
-        "",
-        prop_line,
-    ]
+    if hot_context == HOT_CONTEXT_ESCALATED:
+        header = "\U0001F525 *LEAD ASIGNADO PAS\u00D3 A HOT*"
+        intro = (
+            f"Hola {exec_name}, este lead ya estaba asignado a ti y acaba de pasar a HOT."
+        )
+        continuity = "No es una nueva asignaci\u00F3n; es una actualizaci\u00F3n prioritaria del mismo lead."
+    elif hot_context == HOT_CONTEXT_REASSIGNMENT:
+        header = "\U0001F525 *LEAD HOT \u2014 NUEVA ASIGNACI\u00D3N*"
+        intro = f"Hola {exec_name}, se te ha reasignado un lead HOT que requiere gesti\u00F3n inmediata."
+        continuity = ""
+    else:
+        header = "\U0001F525 *NUEVO LEAD HOT*"
+        intro = f"Hola {exec_name}, tienes un lead prioritario pendiente de gesti\u00F3n."
+        continuity = ""
+
+    lines = [header, "", intro]
+    if continuity:
+        lines.extend([continuity])
+    lines.extend(["", prop_line])
     if hot_reason:
         lines.append(f"\U0001F3AF Motivo: {hot_reason}")
     if nombre_cliente:

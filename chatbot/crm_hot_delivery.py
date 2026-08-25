@@ -12,6 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from .crm_metrics import (
+    active_assignment_cycle,
     coerce_utc_datetime,
     create_assignment_cycle,
     sync_active_cycle_temperature,
@@ -49,6 +50,7 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         raise ValueError("canonical lead_id is required")
     assigned = coerce_utc_datetime(assigned_at) or utc_now()
     due = coerce_utc_datetime(send_after) or assigned
+    previous_cycle = active_assignment_cycle(db, lead["_id"])
     cycle = create_assignment_cycle(
         db, lead=lead, assigned_to_user_id=recipient_user_id,
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
@@ -128,8 +130,28 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         )
     except Exception:
         pass
-    # Apply hot_context to payload for template selection at send time.
-    effective_context = hot_context or "initial_hot"
+    # Apply hot_context to payload for template selection at send time.  When
+    # the caller does not provide one, infer a temperature escalation from the
+    # existing assignment cycle.  This is the key distinction between a new
+    # HOT lead and the same lead becoming HOT after its normal alert: the
+    # executive must receive an update, not a second-looking assignment.
+    if hot_context:
+        effective_context = hot_context
+    else:
+        from .lead_router import (
+            HOT_CONTEXT_ESCALATED, HOT_CONTEXT_INITIAL, HOT_CONTEXT_REASSIGNMENT,
+        )
+        previous_recipient = str((previous_cycle or {}).get("assigned_to_user_id") or "")
+        current_recipient = str(recipient_user_id or "")
+        previous_temperature = str(
+            (previous_cycle or {}).get("temperature_at_assignment") or ""
+        ).upper()
+        if previous_cycle and previous_recipient != current_recipient:
+            effective_context = HOT_CONTEXT_REASSIGNMENT
+        elif previous_cycle and previous_temperature != "HOT":
+            effective_context = HOT_CONTEXT_ESCALATED
+        else:
+            effective_context = HOT_CONTEXT_INITIAL
     payload_with_context = dict(payload)
     payload_with_context["hot_context"] = effective_context
 
@@ -249,6 +271,12 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
         ctx = build_lead_notification_context(db, lead_id)
     else:
         ctx = {}
+    # The notification is the source of truth for why this HOT alert exists.
+    # Preserve it through the canonical context builder so the final WhatsApp
+    # template can say "this assigned lead became HOT" when applicable.
+    ctx["hot_context"] = notification.get("hot_context") or (
+        notification.get("payload") or {}
+    ).get("hot_context") or "initial_hot"
     message = build_hot_lead_message(ctx)
 
     logger.info("[HOT_SEND] notif=%s user=%s phone_end=%s",

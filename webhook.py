@@ -4307,10 +4307,10 @@ async def check_scheduled_tasks_loop():
                         link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
                         msg_text = (
                             f"*Recordatorio de seguimiento CRM*\n\n"
-                            f"Hola {ejecutivo}, tienes un seguimiento programado para *{lead_name}*.\n\n"
-                            f"*Fecha y hora:* {scheduled_display}\n"
-                            f"*Nota:* {note}\n\n"
-                            f"*{link_label}:*\n{crm_link}"
+                            f"Hola {ejecutivo}. Tienes un seguimiento pendiente para *{lead_name}*.\n\n"
+                            f"◷ *Fecha y hora:* {scheduled_display}\n"
+                            f"✎ *Nota:* {note}\n\n"
+                            f"↗ *{link_label}:*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(

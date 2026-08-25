@@ -4271,7 +4271,8 @@ async def check_scheduled_tasks_loop():
                                 continue
                             ejecutivo = lead.get("ejecutivo_asignado")
                             lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
-                            crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
+                            from chatbot.lead_router import build_secure_crm_url
+                            crm_link = build_secure_crm_url(lead)
                             
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
                             continue
@@ -4296,11 +4297,20 @@ async def check_scheduled_tasks_loop():
                                 )
                             )
                             
+                        scheduled_at = task.get("execute_at")
+                        if isinstance(scheduled_at, datetime):
+                            if scheduled_at.tzinfo is None:
+                                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y a las %H:%M")
+                        else:
+                            scheduled_display = "la fecha y hora programadas"
+                        link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
                         msg_text = (
-                            f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
-                            f"Tienes una acción programada para *{'la captación' if is_captacion else 'el lead'}* de *{lead_name}*.\n\n"
-                            f"📝 *Nota:* {note}\n"
-                            f"🔗 Gestionar: {crm_link}"
+                            f"*Recordatorio de seguimiento CRM*\n\n"
+                            f"Hola {ejecutivo}, tienes un seguimiento programado para *{lead_name}*.\n\n"
+                            f"*Fecha y hora:* {scheduled_display}\n"
+                            f"*Nota:* {note}\n\n"
+                            f"*{link_label}:*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(

@@ -4301,16 +4301,17 @@ async def check_scheduled_tasks_loop():
                         if isinstance(scheduled_at, datetime):
                             if scheduled_at.tzinfo is None:
                                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y a las %H:%M")
+                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y · %H:%M")
                         else:
                             scheduled_display = "la fecha y hora programadas"
-                        link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
+                        link_label = "Abrir captación" if is_captacion else "Abrir lead"
                         msg_text = (
-                            f"*Recordatorio de seguimiento CRM*\n\n"
-                            f"Hola {ejecutivo}. Tienes un seguimiento pendiente para *{lead_name}*.\n\n"
-                            f"◷ *Fecha y hora:* {scheduled_display}\n"
-                            f"✎ *Nota:* {note}\n\n"
-                            f"↗ *{link_label}:*\n{crm_link}"
+                            f"🔔 *Recordatorio de seguimiento*\n\n"
+                            f"Hola {ejecutivo}. Debes realizar seguimiento al lead de *{lead_name}*.\n\n"
+                            f"🕒 *Programado para:* {scheduled_display}\n"
+                            f"📝 *Seguimiento:* {note}\n"
+                            f"👉 *Contacta al lead y registra el resultado de la gestión en el CRM.*\n\n"
+                            f"*{link_label}*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(

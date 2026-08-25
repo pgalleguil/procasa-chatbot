@@ -113,7 +113,10 @@ def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
 
 
 def normalize_phone(value: Any) -> str:
-    return re.sub(r"\D", "", str(value or ""))
+    from .phone_utils import normalize_phone_strict
+
+    normalized = normalize_phone_strict(str(value or ""))
+    return re.sub(r"\D", "", normalized or str(value or ""))
 
 
 @dataclass(frozen=True)
@@ -339,9 +342,16 @@ def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=Non
         return None
     if str(cycle.get("temperature_at_assignment") or "").upper() == temp:
         return cycle
+    transition = coerce_utc_datetime(transition_at) or utc_now()
+    cycle_update = {"temperature_at_assignment": temp}
+    if temp == "HOT":
+        cycle_update.update({
+            "temperature_transitioned_at": transition,
+            "hot_started_at": transition,
+        })
     db["crm_assignment_cycles"].update_one(
         {"_id": cycle["_id"]},
-        {"$set": {"temperature_at_assignment": temp}},
+        {"$set": cycle_update},
     )
     return db["crm_assignment_cycles"].find_one({"_id": cycle["_id"]})
 

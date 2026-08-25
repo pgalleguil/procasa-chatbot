@@ -11,7 +11,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from .crm_metrics import coerce_utc_datetime, create_assignment_cycle, utc_now
+from .crm_metrics import (
+    coerce_utc_datetime,
+    create_assignment_cycle,
+    sync_active_cycle_temperature,
+    utc_now,
+)
 from .crm_notifications import (
     COLLECTION, DEDUP_ACTIVE_STATES, claim_next, create_pending, finalize_attempt,
     individual_identity, verified_commercial_source,
@@ -49,6 +54,15 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
         assigned_to_display_name=recipient_name or str(recipient_user_id),
     )
+    # A lead can become HOT after its normal assignment.  Reuse that same
+    # assignment cycle and update its temperature; never create a second
+    # commercial opportunity just because the temperature changed.
+    hot_since = (lead.get("lifecycle") or {}).get("hot_since")
+    synced_cycle = sync_active_cycle_temperature(
+        db, lead["_id"], temperature="HOT", transition_at=hot_since,
+    )
+    if synced_cycle:
+        cycle = synced_cycle
     source_id = str(
         source_event_id or lead.get("source_inbound_provider_id")
         or lead.get("source_event_id") or ""

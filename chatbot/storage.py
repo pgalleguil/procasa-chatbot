@@ -514,6 +514,7 @@ def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
             datos["nombre"] = nombre.title()
 
     db = get_db()
+    lead_snapshot = None
     update_fields = {
         "$set": {},
         "$setOnInsert": {"lead_temperature_effective": "COLD"},
@@ -552,6 +553,15 @@ def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
         if (result.modified_count or result.upserted_id) and visible_prospect_fields.intersection(datos):
             from .crm_updates import bump_crm_leads_version
             bump_crm_leads_version(db, reason="prospect_updated", phone=phone)
+        effective_temperature = update_fields["$set"].get("lead_temperature_effective")
+        if effective_temperature and lead_snapshot and lead_snapshot.get("_id"):
+            from .crm_metrics import sync_active_cycle_temperature
+            sync_active_cycle_temperature(
+                db,
+                lead_snapshot["_id"],
+                temperature=effective_temperature,
+                transition_at=datetime.now(CHILE_TZ),
+            )
 
 def establecer_nombre_usuario(phone: str, nombre: str):
     actualizar_prospecto(phone, {"nombre": nombre})

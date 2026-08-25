@@ -26,6 +26,7 @@ import json
 from copy import deepcopy
 import pytz # Importante para la hora local
 from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent, run_in_threadpool
+from chatbot.phone_utils import normalize_phone_strict
 
 # ========================= THREAD POOL CONTROLADO =========================
 # Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
@@ -2473,6 +2474,9 @@ async def api_crm_send_recommendation(request: Request):
 
 
 def _normalize_webhook_phone(value):
+    normalized = normalize_phone_strict(str(value or ""))
+    if normalized:
+        return normalized
     digits = "".join(filter(str.isdigit, str(value or "")))
     if not digits:
         return None

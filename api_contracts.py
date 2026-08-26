@@ -916,11 +916,19 @@ def ensure_document_valid(contract: dict):
             raise HTTPException(status_code=410, detail="DOCUMENT_EXPIRED")
 
 
+def active_token_query(token: str) -> dict:
+    """Find only non-deleted contracts addressed by a signing token."""
+    return {
+        "security.token": token,
+        "status": {"$ne": "deleted"},
+    }
+
+
 @router.get("/view/{token}", response_class=HTMLResponse)
 async def view_contract_public(token: str, request: Request):
     """Vista pública para el cliente"""
     db = get_db()
-    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, active_token_query(token))
     
     if not contract:
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
@@ -983,7 +991,7 @@ async def validate_rut(token: str, request: Request):
     rut_ingresado = data.get("rut", "").strip()
     
     db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    contract = db["contracts"].find_one(active_token_query(token))
     if not contract:
         raise HTTPException(status_code=403, detail="DOCUMENT_EXPIRED")
         
@@ -1011,7 +1019,7 @@ async def request_otp(token: str, request: Request, background_tasks: Background
     
     from chatbot.storage import get_async_db
     adb = get_async_db()
-    contract = await adb["contracts"].find_one({"security.token": token})
+    contract = await adb["contracts"].find_one(active_token_query(token))
     if not contract:
         raise HTTPException(status_code=404, detail="Token inv\u00e1lido")
         
@@ -1151,7 +1159,7 @@ async def verify_otp(token: str, request: Request):
     check_rate_limit(ip, verify_rate_limit, 10, window_seconds=60)
     
     db = get_db()
-    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, active_token_query(token))
     if not contract:
         raise HTTPException(status_code=404)
         
@@ -1221,7 +1229,7 @@ async def verify_otp(token: str, request: Request):
 @router.post("/api/{token}/accept_terms")
 async def accept_terms(token: str, request: Request):
     db = get_db()
-    contract = db["contracts"].find_one({"security.token": token})
+    contract = db["contracts"].find_one(active_token_query(token))
     if not contract: return {"status": "error"}
     
     ip = get_client_ip(request)
@@ -1247,7 +1255,7 @@ async def accept_terms(token: str, request: Request):
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
     db = get_db()
-    contract = await _db_call(db["contracts"].find_one, {"security.token": token})
+    contract = await _db_call(db["contracts"].find_one, active_token_query(token))
     if not contract:
         logger.error(f"[SERVER_ERROR] Token inválido intentado para {token}")
         raise HTTPException(status_code=403, detail="Token inválido")
@@ -1687,9 +1695,25 @@ Equipo Procasa Sucre"""
 async def delete_contract(contract_code: str):
     """Permite eliminar un contrato lógicamente (soft delete)."""
     db = get_db()
+    revoked_at = datetime.now(timezone.utc)
     result = db["contracts"].update_one(
         {"contract_code": contract_code},
-        {"$set": {"status": "deleted"}}
+        {
+            "$set": {
+                "status": "deleted",
+                "security.token": None,
+                "security.token_expiry": revoked_at,
+                "security.token_revoked_at": revoked_at,
+                "security.otp": None,
+                "security.otp_expiry": revoked_at,
+            },
+            "$push": {
+                "timeline": {
+                    "action": "document_deleted",
+                    "server_timestamp": revoked_at.isoformat(),
+                }
+            },
+        }
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")

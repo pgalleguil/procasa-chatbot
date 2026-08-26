@@ -615,7 +615,7 @@ def _build_executive_story(executive_summary, sla, period_info, contribution, fi
     }
 
 
-def build_executive_insights(demand, conversion, sla, sources, pipeline):
+def build_executive_insights(demand, conversion, sla, sources, pipeline, funnel=None):
     """Motor determinístico de Insights Ejecutivos (máx. 3).
 
     Solo usa métricas canónicas ya validadas del payload filtrado:
@@ -626,6 +626,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     - Cobertura SUCRE: ``pipeline`` (propiedades_con_demanda, cartera_activa,
       pct_cartera_con_demanda).
     - Tendencia: ``demand.variation_pct``.
+    - Embudo: pérdidas absolutas/proporcionales y respuestas resumidas por etapa.
 
     Cada insight conecta datos (no repite KPIs) y entrega título breve,
     interpretación y una acción concreta. No se afirma causalidad.
@@ -636,6 +637,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     vencidos = (sla or {}).get("open_breached", 0) or 0
     variacion = (demand or {}).get("variation_pct")
     items = ((sources or {}).get("items") or []) if sources else []
+    funnel = funnel or {}
 
     def _es(n):
         """Formato decimal es-CL (coma) para un porcentaje/pp con 1 decimal."""
@@ -648,7 +650,83 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     opportunities = []
     positives = []
 
-    # A. SLA / capacidad de gestión (sin afirmar causalidad con conversión).
+    # A. Fricción del embudo: no confundir la mayor pérdida en cantidad con
+    # la etapa de mayor caída porcentual. Ambas lecturas son útiles para tomar
+    # acción y se muestran juntas en el insight automatizado.
+    funnel_stages = {
+        stage.get("key"): stage
+        for stage in (funnel.get("stages") or [])
+        if stage.get("key")
+    }
+    funnel_counts = {
+        key: (funnel_stages.get(key) or {}).get("count", 0) or 0
+        for key in ("received", "gestionados", "contacto_efectivo", "visita_agendada", "cierre_negocio")
+    }
+    loss_specs = [
+        ("Recibidos → Gestionados", "received", "gestionados", "recibidos", "gestionados"),
+        ("Gestionados → Contacto efectivo", "gestionados", "contacto_efectivo", "gestionados", "contacto_efectivo"),
+        ("Contacto efectivo → Visita agendada", "contacto_efectivo", "visita_agendada", "contactos efectivos", "visita_agendada"),
+        ("Visitas agendadas → Negocio cerrado", "visita_agendada", "cierre_negocio", "visitas agendadas", "cierre_negocio"),
+    ]
+    funnel_losses = []
+    for label, from_key, to_key, denominator_label, response_key in loss_specs:
+        denominator = funnel_counts[from_key]
+        loss = max(0, funnel_counts[from_key] - funnel_counts[to_key])
+        funnel_losses.append({
+            "label": label,
+            "loss": loss,
+            "denominator": denominator,
+            "denominator_label": denominator_label,
+            "response_key": response_key,
+            "from_key": from_key,
+        })
+    if funnel_counts["received"] > 0:
+        absolute_loss = max(funnel_losses, key=lambda item: item["loss"])
+        proportional_candidates = [item for item in funnel_losses if item["denominator"] > 0]
+        proportional_loss = max(
+            proportional_candidates,
+            key=lambda item: item["loss"] / item["denominator"],
+        ) if proportional_candidates else absolute_loss
+
+        def _loss_sentence(item):
+            pct = item["loss"] / item["denominator"] * 100 if item["denominator"] else 0
+            return (f"{item['label']}: {item['loss']} leads ({_es(pct)}% de "
+                    f"{item['denominator_label']})")
+
+        response_summary = funnel.get("response_summary") or {}
+        response_rows = (response_summary.get(proportional_loss["response_key"]) or [])[:3]
+        response_stage_label = proportional_loss["response_key"]
+        if not response_rows:
+            # Un cierre ganado puede estar respaldado por stage_history sin una
+            # respuesta CRM con resultado CLOSED_WON. En ese caso mostramos las
+            # respuestas de la etapa inmediatamente anterior, sin inventar un
+            # resultado de cierre.
+            response_rows = (response_summary.get(proportional_loss["from_key"]) or [])[:3]
+            response_stage_label = proportional_loss["from_key"]
+        response_text = ""
+        if response_rows:
+            response_stage_label = {
+                "received": "Recibidos",
+                "gestionados": "Gestionados",
+                "contacto_efectivo": "Contacto efectivo",
+                "visita_agendada": "Visitas agendadas",
+                "cierre_negocio": "Negocio cerrado",
+            }.get(response_stage_label, response_stage_label)
+            response_text = " Respuestas más frecuentes registradas en " + response_stage_label + ": " + "; ".join(
+                f"{row.get('label', 'Otro resultado')} ({row.get('count', 0)})"
+                for row in response_rows
+            ) + "."
+        priorities.append({
+            "tipo": "prioridad",
+            "titulo": "Fricción crítica del embudo",
+            "texto": (f"La mayor pérdida absoluta es {_loss_sentence(absolute_loss)}. "
+                      f"La mayor caída proporcional es {_loss_sentence(proportional_loss)}."
+                      f"{response_text}"),
+            "accion": (f"Priorizar la etapa {proportional_loss['label']} y revisar los leads que no avanzaron; "
+                       "usar la pérdida absoluta para dimensionar el impacto operativo."),
+        })
+
+    # B. SLA / capacidad de gestión (sin afirmar causalidad con conversión).
     if in_sla is not None and in_sla < 50 and vencidos > 0:
         priorities.append({
             "tipo": "prioridad",
@@ -659,7 +737,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
             "accion": "Priorizar vencidos, especialmente Hot, y verificar capacidad de primera gestión.",
         })
 
-    # B. Origen con alto volumen y bajo resultado.
+    # C. Origen con alto volumen y bajo resultado.
     if global_conv is not None and global_conv > 0:
         low = [it for it in items
                if it.get("cantidad", 0) >= 20 and (it.get("pct", 0) or 0) >= 15
@@ -676,7 +754,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Revisar calidad, segmentación y gestión de los leads provenientes de ese origen.",
             })
 
-    # D. Volumen vs conversión temporal (en puntos porcentuales, CARD 2).
+    # E. Volumen vs conversión temporal (en puntos porcentuales, CARD 2).
     if variacion is not None and variacion > 0 and global_conv is not None and prev_conv is not None:
         pp = round(global_conv - prev_conv, 1)
         if pp < 0:
@@ -696,7 +774,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Consolidar el proceso actual y mantener el ritmo.",
             })
 
-    # C. Oportunidad por origen (lenguaje prudente si muestra pequeña).
+    # F. Oportunidad por origen (lenguaje prudente si muestra pequeña).
     if global_conv is not None and global_conv > 0:
         favorable = [it for it in items
                      if it.get("cantidad", 0) >= 20 and it.get("conversion_pct") is not None
@@ -722,7 +800,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Observar si el comportamiento se mantiene al acumular una muestra mayor.",
             })
 
-    # E. Cobertura de cartera (solo si señal material, no prioritaria).
+    # G. Cobertura de cartera (solo si señal material, no prioritaria).
     cov = (pipeline or {}).get("pct_cartera_con_demanda")
     if cov is not None and cov < 15:
         con_demanda = (pipeline or {}).get("propiedades_con_demanda", 0)
@@ -1588,6 +1666,7 @@ def get_leads_dashboard_overview(
                 "pct": s.get("pct", 0.0),
                 "prev": s.get("prev", 0),
                 "diff": s.get("cantidad", 0) - s.get("prev", 0),
+                "funnel": s.get("funnel", []),
             }
             for s in src_items
         ],
@@ -1601,6 +1680,7 @@ def get_leads_dashboard_overview(
         sla=sla_data,
         sources=sources_data,
         pipeline=pipeline,
+        funnel=funnel,
     )
 
     serialization_started = time.perf_counter()

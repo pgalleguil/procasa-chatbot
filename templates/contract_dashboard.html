@@ -668,6 +668,8 @@
             border-color: var(--bs-danger) !important;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -676,7 +678,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+                onerror="this.style.display='none'">
         </div>
         {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
@@ -736,7 +738,6 @@
                         <tr>
                             <th>Fecha</th>
                             {% if user_role in ['supervisor', 'admin', 'jefatura'] %}<th>Ejecutivo</th>{% endif %}
-                            <th>Código</th>
                             <th>Cliente</th>
                             <th>Propiedad / Rol</th>
                             <th>Estado</th>
@@ -750,7 +751,6 @@
                             {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
                             {% endif %}
-                            <td data-label="Código"><strong>{{ c.property_code or c.contract_code[:8] }}</strong></td>
                             <td data-label="Cliente">
                                 {{ c.client_data.get('nombre', 'S/I') }}<br>
                                 <small class="text-secondary">{{ c.client_data.get('rut', 'S/I') }}</small>
@@ -1178,8 +1178,6 @@
             sidebar.classList.toggle('mobile-open');
             overlay.style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
         }
-
-        if (localStorage.getItem('theme') === 'light') toggleTheme();
 
         /**
          * Gestiona la comisión según el tipo de convenio.

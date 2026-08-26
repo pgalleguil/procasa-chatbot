@@ -37,6 +37,28 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
+FUNNEL_RESPONSE_LABELS = {
+    "NO_RESPONDIO": "Sin respuesta",
+    "OCUPADO": "Ocupado",
+    "NUMERO_INVALIDO": "Número inválido",
+    "INVALID_NUMBER": "Número inválido",
+    "MENSAJE_ENVIADO": "Mensaje enviado",
+    "MESSAGE_SENT_WAITING_RESPONSE": "Mensaje enviado / pendiente",
+    "EMAIL_SENT": "Email enviado",
+    "CONTACTADO": "Contactado",
+    "EFFECTIVE_CONTACT": "Contacto efectivo",
+    "SOLICITA_SEGUIMIENTO": "En seguimiento",
+    "FOLLOW_UP_REQUESTED": "En seguimiento",
+    "SCHEDULE_FOLLOW_UP": "Seguimiento agendado",
+    "NO_INTERESADO": "No interesado",
+    "PROPERTY_UNAVAILABLE": "Propiedad no disponible",
+    "VISIT_SCHEDULED": "Visita agendada",
+    "OTHER_EXPLICIT": "Otro resultado",
+    "OTRO": "Otro resultado",
+    "CLOSED_WON": "Cierre ganado",
+    "CLOSED_LOST": "Cierre perdido",
+    "DISCARDED_VALID_REASON": "Descartado con motivo",
+}
 OPS_PORTFOLIO_OFFICE = "PROCASA SUCRE"
 
 # These are contracts for interpretation, not filters over the data.  A
@@ -3621,6 +3643,7 @@ def query_leads_dashboard_sources(
                 "prospecto.codigo_mercadolibre": 1, "prospecto.codigo_yapo": 1,
                 "prospecto.codigo": 1, "created_at": 1,
                 "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+                "lifecycle.first_valid_management_at": 1,
                 "lifecycle.visit_scheduled_at": 1,
             }},
         ]))
@@ -3633,15 +3656,71 @@ def query_leads_dashboard_sources(
         ))
     cohort = _load(start_utc, end_utc, "current")
     lead_ids = {str(l["_id"]) for l in cohort}
+
+    # Hitos del embudo por lead. Se usan las mismas reglas temporales y de
+    # evidencia del embudo principal para que un portal no parezca mejor o
+    # peor por una definición distinta.
+    created_utc = {
+        str(lead["_id"]): coerce_utc_datetime(lead.get("created_at"))
+        for lead in cohort
+    }
+    gestionados = set()
+    contacto_efectivo = set()
+    cierres = set()
+    for lead in cohort:
+        lid = str(lead["_id"])
+        created = created_utc.get(lid)
+        if created is None:
+            continue
+        lifecycle = lead.get("lifecycle") or {}
+        management_at = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if management_at is not None and created <= management_at < end_utc:
+            gestionados.add(lid)
+        for entry in lead.get("stage_history") or []:
+            stage = str((entry or {}).get("to") or "").upper()
+            timestamp = coerce_utc_datetime((entry or {}).get("timestamp"))
+            if stage == "CLOSED_WON" and timestamp is not None and created <= timestamp < end_utc:
+                cierres.add(lid)
+
+    if lead_ids:
+        for event in _profile_query(timing, "crm_events", "find_source_funnel_contact_events", lambda: db["crm_events"].find(
+            {
+                "lead_id": {"$in": [lead["_id"] for lead in cohort]},
+                "$or": [{"confirmed": True}, {"meta.confirmed": True}],
+            },
+            {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
+             "timestamp": 1, "occurred_at": 1, "confirmed": 1,
+             "actor": 1, "actor_type": 1},
+        )):
+            lid = str(event.get("lead_id"))
+            if lid not in lead_ids:
+                continue
+            created = created_utc.get(lid)
+            timestamp = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+            if created is None or timestamp is None or not (created <= timestamp < end_utc):
+                continue
+            if event_evidence(event).get("effective_contact"):
+                contacto_efectivo.add(lid)
+
     scheduled = _scheduled_visit_lead_ids(cohort, lead_ids, end_utc, timing, shared_orders)
 
     per_origin: dict = {}
     for lead in cohort:
         name = _normalize_source_name(_resolve_origin(lead))
-        entry = per_origin.setdefault(name, {"leads": 0, "visitas": 0})
+        lid = str(lead["_id"])
+        entry = per_origin.setdefault(name, {
+            "leads": 0, "gestionados": 0, "contacto_efectivo": 0,
+            "visitas": 0, "cierre_negocio": 0,
+        })
         entry["leads"] += 1
-        if str(lead["_id"]) in scheduled:
+        if lid in gestionados:
+            entry["gestionados"] += 1
+        if lid in contacto_efectivo:
+            entry["contacto_efectivo"] += 1
+        if lid in scheduled:
             entry["visitas"] += 1
+        if lid in cierres:
+            entry["cierre_negocio"] += 1
 
     prev_counts: dict = {}
     if prev_start:
@@ -3653,25 +3732,58 @@ def query_leads_dashboard_sources(
     total_visitas = sum(e["visitas"] for e in per_origin.values())
 
     ordered = sorted(per_origin.items(), key=lambda kv: -kv[1]["leads"])
+
+    def _make_item(name, source_names):
+        totals = {
+            "received": sum(per_origin[source]["leads"] for source in source_names),
+            "gestionados": sum(per_origin[source]["gestionados"] for source in source_names),
+            "contacto_efectivo": sum(per_origin[source]["contacto_efectivo"] for source in source_names),
+            "visita_agendada": sum(per_origin[source]["visitas"] for source in source_names),
+            "cierre_negocio": sum(per_origin[source]["cierre_negocio"] for source in source_names),
+        }
+        previous_key = None
+        stage_labels = {
+            "received": "Recibidos",
+            "gestionados": "Gestionados",
+            "contacto_efectivo": "Contacto",
+            "visita_agendada": "Visita",
+            "cierre_negocio": "Cierre",
+        }
+        funnel_stages = []
+        for key, label in stage_labels.items():
+            count = totals[key]
+            previous_count = totals.get(previous_key) if previous_key else None
+            funnel_stages.append({
+                "key": key,
+                "label": label,
+                "count": count,
+                "pct_of_source": round(count / totals["received"] * 100, 1) if totals["received"] else 0.0,
+                "transition_pct": round(count / previous_count * 100, 1)
+                if previous_count else None,
+            })
+            previous_key = key
+        return {
+            "nombre": name,
+            "cantidad": totals["received"],
+            "visitas": totals["visita_agendada"],
+            "prev": prev_counts.get(name, 0),
+            "funnel": funnel_stages,
+        }
+
     if len(ordered) > 6:
         top = ordered[:5]
         rest = ordered[5:]
-        items = [
-            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
-             "prev": prev_counts.get(name, 0)}
-            for name, e in top
-        ]
+        items = [_make_item(name, [name]) for name, _ in top]
         otros_leads = sum(e["leads"] for _, e in rest)
         otros_visitas = sum(e["visitas"] for _, e in rest)
         otros_prev = sum(prev_counts.get(name, 0) for name, _ in rest)
-        items.append({"nombre": "Otros", "cantidad": otros_leads,
-                      "visitas": otros_visitas, "prev": otros_prev})
+        otros = _make_item("Otros", [name for name, _ in rest])
+        otros["cantidad"] = otros_leads
+        otros["visitas"] = otros_visitas
+        otros["prev"] = otros_prev
+        items.append(otros)
     else:
-        items = [
-            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
-             "prev": prev_counts.get(name, 0)}
-            for name, e in ordered
-        ]
+        items = [_make_item(name, [name]) for name, _ in ordered]
 
     for it in items:
         it["pct"] = round(it["cantidad"] / current_total * 100, 1) if current_total else 0.0
@@ -3902,13 +4014,15 @@ def query_leads_dashboard_funnel(
     signed_orders: Optional[list] = None,
     signed_orders_future=None,
 ) -> dict:
-    """Embudo comercial (Recibidos → Gestionados → Contacto efectivo → Visita).
+    """Embudo comercial hasta el cierre de negocio.
 
     - Recibidos: cohorte (created_at ∈ [period_start, period_end)).
     - Gestionados: lifecycle.first_valid_management_at con corte as-of.
     - Contacto efectivo: event_evidence()["effective_contact"] con corte as-of
       (misma clasificación canónica que usa SLA).
     - Visita agendada: MISMA definición de CARD 2 (reconcilia exactamente).
+    - Negocio cerrado: lead con transición histórica confirmada a CLOSED_WON
+      dentro del período; representa una venta o arriendo ganado.
     - Transiciones por conjuntos de lead_id (intersecciones), nunca restas de
       cantidades. Se entregan excepciones de trazabilidad y hitos avanzados.
     Todas las etapas respetan: lead.created_at <= evidencia < period_end.
@@ -3950,42 +4064,40 @@ def query_leads_dashboard_funnel(
         if mgmt is not None and c <= mgmt < end_utc:
             gestionados.add(lid)
 
-    # ---- Contacto efectivo (as-of, clasificación canónica) ----
+    # ---- Respuestas de gestión + contacto efectivo (as-of) ----
+    # Se conserva solo la última respuesta humana confirmada por lead. Así el
+    # resumen explica qué ocurrió sin contar varias veces una misma gestión.
     contacto_efectivo = set()
+    latest_response_by_lead = {}
     if ids:
-        effective_results = [
-            "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
-            "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
-            "REQUIERE_SEGUIMIENTO",
-            "VISITA_AGENDADA", "visita_agendada",
-            "contactado", "solicita_seguimiento", "no_interesado",
-            "effective_contact", "follow_up_requested",
-            "requiere_seguimiento",
-        ]
-        for event in _profile_query(timing, "crm_events", "find_funnel_contact_events", lambda: db["crm_events"].find(
+        for event in _profile_query(timing, "crm_events", "find_funnel_response_events", lambda: db["crm_events"].find(
             {
                 "lead_id": {"$in": [l["_id"] for l in cohort]},
                 "confirmed": True,
-                "$or": [
-                    {"result": {"$in": effective_results}},
-                    {"meta.result": {"$in": effective_results}},
-                    {"meta.contact_result": {"$in": effective_results}},
-                ],
             },
             {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
-            "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1},
+             "timestamp": 1, "occurred_at": 1, "confirmed": 1,
+             "actor": 1, "actor_type": 1},
         )):
-            if not event_evidence(event).get("effective_contact"):
-                continue
             eid = str(event.get("lead_id"))
             if eid not in ids:
                 continue
             c = created_utc.get(eid)
             if c is None:
                 continue
-            ts = coerce_utc_datetime(event.get("timestamp"))
-            if ts is not None and c <= ts < end_utc:
+            ts = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+            if ts is None or not (c <= ts < end_utc):
+                continue
+            evidence = event_evidence(event)
+            if evidence.get("effective_contact"):
                 contacto_efectivo.add(eid)
+            if evidence.get("management") and evidence.get("result"):
+                previous = latest_response_by_lead.get(eid)
+                if previous is None or ts > previous["timestamp"]:
+                    latest_response_by_lead[eid] = {
+                        "result": evidence["result"],
+                        "timestamp": ts,
+                    }
 
     # ---- Visita agendada (definición CARD 2, reconcilia exactamente) ----
     visita_agendada = _scheduled_visit_lead_ids(
@@ -4018,22 +4130,59 @@ def query_leads_dashboard_funnel(
     rec_gestion = len(gestionados & ids)          # = gestionados (⊆ cohort)
     gest_contacto = len(contacto_efectivo & gestionados)
     contacto_visita = len(contacto_efectivo & visita_agendada)
+    visita_cierre = len(visita_agendada & cierres)
 
     def _pct(num, den):
         return round(num / den * 100, 1) if den else None
 
+    def _response_summary(lead_ids):
+        counts = Counter()
+        for lid in lead_ids:
+            response = latest_response_by_lead.get(str(lid))
+            if response and response.get("result"):
+                result = response["result"]
+                counts[result] += 1
+        return [
+            {
+                "key": result,
+                "label": FUNNEL_RESPONSE_LABELS.get(result, result.replace("_", " ").title()),
+                "count": count,
+            }
+            for result, count in counts.most_common()
+        ]
+
+    response_summary = {
+        "received": _response_summary(ids),
+        "gestionados": _response_summary(gestionados),
+        "contacto_efectivo": _response_summary(contacto_efectivo),
+        "visita_agendada": _response_summary(visita_agendada),
+        "cierre_negocio": _response_summary(cierres),
+    }
+
+    # ``transition_pct`` conserva la tasa estrictamente trazable para no
+    # perder el control de excepciones. ``stage_pct`` es la tasa que debe
+    # acompañar al número visible de la etapa: total de la etapa actual /
+    # total de la etapa anterior. Antes se mostraba la primera con el segundo
+    # cálculo y eso hacía que el porcentaje no coincidiera con los números.
     stages = [
         {"key": "received", "label": "Recibidos", "count": received,
-         "pct_of_received": 100.0, "transition_pct": None},
+         "pct_of_received": 100.0, "transition_pct": None, "stage_pct": None},
         {"key": "gestionados", "label": "Gestionados", "count": len(gestionados),
          "pct_of_received": _pct(len(gestionados), received),
-         "transition_pct": _pct(rec_gestion, received)},
+         "transition_pct": _pct(rec_gestion, received),
+         "stage_pct": _pct(len(gestionados), received)},
         {"key": "contacto_efectivo", "label": "Contacto efectivo", "count": len(contacto_efectivo),
          "pct_of_received": _pct(len(contacto_efectivo), received),
-         "transition_pct": _pct(gest_contacto, len(gestionados))},
+         "transition_pct": _pct(gest_contacto, len(gestionados)),
+         "stage_pct": _pct(len(contacto_efectivo), len(gestionados))},
         {"key": "visita_agendada", "label": "Visita agendada", "count": len(visita_agendada),
          "pct_of_received": _pct(len(visita_agendada), received),
-         "transition_pct": _pct(contacto_visita, len(contacto_efectivo))},
+         "transition_pct": _pct(contacto_visita, len(contacto_efectivo)),
+         "stage_pct": _pct(len(visita_agendada), len(contacto_efectivo))},
+        {"key": "cierre_negocio", "label": "Negocio cerrado", "count": len(cierres),
+         "pct_of_received": _pct(len(cierres), received),
+         "transition_pct": _pct(visita_cierre, len(visita_agendada)),
+         "stage_pct": _pct(len(cierres), len(visita_agendada))},
     ]
 
     return {
@@ -4043,10 +4192,12 @@ def query_leads_dashboard_funnel(
             "received_to_gestionados": rec_gestion,
             "gestionados_to_contacto_efectivo": gest_contacto,
             "contacto_efectivo_to_visita_agendada": contacto_visita,
+            "visita_agendada_to_cierre_negocio": visita_cierre,
         },
         "exceptions": {
             "visitas_sin_contacto_efectivo": len(visita_agendada - contacto_efectivo),
             "visitas_sin_gestion": len(visita_agendada - gestionados),
+            "cierres_sin_visita": len(cierres - visita_agendada),
         },
         "hitos_excepcionales": {
             "avanzados_sin_visita": len(avanzados - visita_agendada),
@@ -4054,6 +4205,8 @@ def query_leads_dashboard_funnel(
             "avanzados": len(avanzados),
             "cierres": len(cierres),
         },
+        "response_summary": response_summary,
+        "response_basis": "Última respuesta de gestión humana confirmada por lead dentro del período.",
     }
 
 

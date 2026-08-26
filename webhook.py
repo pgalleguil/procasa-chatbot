@@ -724,6 +724,26 @@ def _safe_login_next(value: str | None) -> str | None:
         return None
     return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
+
+def _default_post_login_url(user_role: str | None) -> str:
+    """Return the first module shown after login for each role."""
+    role = str(user_role or "").strip().lower()
+    return "/leads-dashboard" if role in {"admin", "supervisor", "administrador"} else "/crm"
+
+
+def _is_local_auth_request(request: Request) -> bool:
+    """Identify the local development host without affecting Render redirects."""
+    return (request.url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+
+
+def _post_login_target(request: Request, user_role: str | None, explicit_next: str | None = None) -> str:
+    """Choose a role default, avoiding stale local redirect cookies after a restart."""
+    default_url = _default_post_login_url(user_role)
+    requested_url = _safe_login_next(explicit_next)
+    if _is_local_auth_request(request):
+        return requested_url or default_url
+    return requested_url or _safe_login_next(request.cookies.get("login_next")) or default_url
+
 @app.get("/login/google")
 async def login_google(request: Request, next: str = Query(None)):
     params = {
@@ -737,7 +757,9 @@ async def login_google(request: Request, next: str = Query(None)):
     }
     url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     response = RedirectResponse(url)
-    next_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(next)
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     if next_url:
         response.set_cookie("login_next", next_url, httponly=True, secure=True, samesite="lax", max_age=600)
     return response
@@ -783,8 +805,7 @@ async def auth_google_callback(request: Request, code: str):
 
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
-        default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-        target_url = _safe_login_next(request.cookies.get("login_next")) or default_url
+        target_url = _post_login_target(request, user_rol)
         access_token_jwt = create_access_token({"sub": user_sub})
         response = RedirectResponse(target_url, status_code=303)
         response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=7200)
@@ -800,8 +821,11 @@ async def auth_google_callback(request: Request, code: str):
 
 @app.head("/")
 @app.get("/")
+@app.get("/login")
 async def login_get(request: Request):
-    next_url = _safe_login_next(request.query_params.get("next")) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(request.query_params.get("next"))
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     response = templates.TemplateResponse(
         request,
         "login.html",
@@ -826,8 +850,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         
         if user and verify_password(password, user.get("hashed_password", "")):
             user_rol = user.get("rol", "agente")
-            default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-            target_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next")) or default_url
+            target_url = _post_login_target(request, user_rol, next)
 
             token = create_access_token({"sub": username})
             
@@ -1944,7 +1967,11 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
 
     def _record():
-        from chatbot.crm_management import record_management_result, StaleAssignmentCycleError
+        from chatbot.crm_management import (
+            record_management_result,
+            ScheduledTimeTooSoonError,
+            StaleAssignmentCycleError,
+        )
         from chatbot.crm_metrics import active_assignment_cycle
         from chatbot.storage import get_db
         db = get_db()
@@ -1974,9 +2001,13 @@ async def api_crm_management_result(request: Request):
         return {"status": "ok", "result_type": result.get("result_type"),
                 "follow_up_required": result.get("follow_up_required")}
     except Exception as exc:
-        from chatbot.crm_management import StaleAssignmentCycleError
+        from chatbot.crm_management import ScheduledTimeTooSoonError, StaleAssignmentCycleError
         if isinstance(exc, StaleAssignmentCycleError):
             raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(exc, ScheduledTimeTooSoonError):
+            raise HTTPException(status_code=400, detail=ScheduledTimeTooSoonError.code)
+        if isinstance(exc, ValueError) and str(exc) == "active assignment cycle not found":
+            raise HTTPException(status_code=409, detail="closed_lead")
         if isinstance(exc, PermissionError):
             raise HTTPException(status_code=403, detail=str(exc))
         if isinstance(exc, ValueError):
@@ -3837,6 +3868,7 @@ async def check_scheduled_tasks_loop():
     from chatbot.storage import get_db
     from chatbot.lead_router import get_executive_phone
     from chatbot.notification_service import NotificationService
+    task_worker_id = f"crm_task_monitor_{os.getpid()}"
     
     logger.info("[TASK_MONITOR] Iniciando monitor de tareas agendadas...")
     
@@ -3850,7 +3882,13 @@ async def check_scheduled_tasks_loop():
             
             tasks = await run_db(
                 "crm_tasks.find_due",
-                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now},
+                lambda: list(db["crm_tasks"].find({"$or": [
+                    {"status": "pending", "execute_at": {"$lte": now}, "$or": [
+                        {"next_attempt_at": {"$exists": False}},
+                        {"next_attempt_at": {"$lte": now}},
+                    ]},
+                    {"status": "processing", "lease_until": {"$lte": now}},
+                ],
                     "lead_type": {"$ne": "captacion"}}))
             )
             
@@ -3858,6 +3896,28 @@ async def check_scheduled_tasks_loop():
                 logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
                 for task in tasks:
                     try:
+                        claimed_task = await run_db(
+                            "crm_tasks.claim_due",
+                            lambda: db["crm_tasks"].find_one_and_update(
+                                {"_id": task["_id"], "$or": [
+                                    {"status": "pending", "$or": [
+                                        {"next_attempt_at": {"$exists": False}},
+                                        {"next_attempt_at": {"$lte": now}},
+                                    ]},
+                                    {"status": "processing", "lease_until": {"$lte": now}},
+                                ]},
+                                {"$set": {
+                                    "status": "processing",
+                                    "claimed_at": now,
+                                    "lease_until": now + timedelta(minutes=10),
+                                    "worker_id": task_worker_id,
+                                }},
+                                return_document=ReturnDocument.AFTER,
+                            )
+                        )
+                        if not claimed_task:
+                            continue
+                        task = claimed_task
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
                         
@@ -3897,13 +3957,36 @@ async def check_scheduled_tasks_loop():
                                 continue
                             ejecutivo = lead.get("ejecutivo_asignado")
                             lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
-                            crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
+                            from chatbot.lead_router import build_secure_crm_url
+                            crm_link = build_secure_crm_url(lead)
                             
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
+                            await run_db(
+                                "crm_tasks.release_no_executive",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_not_available",
+                                    }}
+                                )
+                            )
                             continue
                             
                         exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
+                            await run_db(
+                                "crm_tasks.release_no_executive_phone",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_phone_not_available",
+                                    }}
+                                )
+                            )
                             continue
 
                         if is_captacion:
@@ -3922,18 +4005,28 @@ async def check_scheduled_tasks_loop():
                                 )
                             )
                             
+                        scheduled_at = task.get("execute_at")
+                        if isinstance(scheduled_at, datetime):
+                            if scheduled_at.tzinfo is None:
+                                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y a las %H:%M")
+                        else:
+                            scheduled_display = "la fecha y hora programadas"
+                        link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
                         msg_text = (
-                            f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
-                            f"Tienes una acción programada para *{'la captación' if is_captacion else 'el lead'}* de *{lead_name}*.\n\n"
-                            f"📝 *Nota:* {note}\n"
-                            f"🔗 Gestionar: {crm_link}"
+                            f"*Recordatorio de seguimiento CRM*\n\n"
+                            f"Hola {ejecutivo}, tienes un seguimiento programado para *{lead_name}*.\n\n"
+                            f"*Fecha y hora:* {scheduled_display}\n"
+                            f"*Nota:* {note}\n\n"
+                            f"*{link_label}:*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(
                             phone=exec_phone,
                             message=msg_text,
                             alert_type="TASK_REMINDER",
-                            meta={"task_id": str(task["_id"]), "to": ejecutivo},
+                            meta={"task_id": str(task["_id"]), "to": ejecutivo,
+                                  "lead_id": str(lead.get("_id") or "")},
                             dedup_window_minutes=60 
                         )
                         
@@ -3970,9 +4063,32 @@ async def check_scheduled_tasks_loop():
                                     )
                             # Sleep breve para tareas
                             await asyncio.sleep(6)
+                        else:
+                            await run_db(
+                                "crm_tasks.release_send_failure",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "whatsapp_send_failed",
+                                    }}
+                                )
+                            )
                             
                     except Exception as e:
                         logger.error(f"[TASK_MONITOR] Error procesando tarea {task.get('_id')}: {e}")
+                        await run_db(
+                            "crm_tasks.release_exception",
+                            lambda: db["crm_tasks"].update_one(
+                                {"_id": task.get("_id"), "status": "processing"},
+                                {"$set": {
+                                    "status": "pending",
+                                    "next_attempt_at": now + timedelta(minutes=1),
+                                    "last_error": type(e).__name__,
+                                }}
+                            )
+                        )
             
         except Exception as e:
             logger.error(f"[TASK_MONITOR] Error en loop de tareas: {e}")

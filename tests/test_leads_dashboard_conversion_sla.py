@@ -521,7 +521,7 @@ def test_period_comparison_previous_zero_leads_is_none():
 # 3. EMBUDO COMERCIAL (Recibidos → Gestionados → Contacto efectivo → Visita)
 # =============================================================================
 
-from analytics.leads_queries import query_leads_dashboard_funnel
+from analytics.leads_queries import query_leads_dashboard_funnel, query_leads_dashboard_sources
 
 
 def build_funnel_result(db):
@@ -598,7 +598,75 @@ def test_funnel_calificados_desaparece():
     res = build_funnel_result(make_db(leads=docs))
     keys = [s["key"] for s in res["stages"]]
     assert "calificados" not in keys
-    assert keys == ["received", "gestionados", "contacto_efectivo", "visita_agendada"]
+    assert keys == ["received", "gestionados", "contacto_efectivo", "visita_agendada", "cierre_negocio"]
+
+
+def test_funnel_cierre_negocio_reconoce_closed_won_historico():
+    docs = [{
+        "_id": "l1",
+        "created_at": LEAD_CREATED,
+        "stage_history": [{"to": "CLOSED_WON", "timestamp": "2026-07-15T10:00:00Z"}],
+    }]
+    events = [{
+        "_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+        "timestamp": "2026-07-14T10:00:00Z", "actor": "Mariela", "actor_type": "agent", "confirmed": True,
+    }]
+    res = build_funnel_result(make_db(leads=docs, events=events))
+    cierre = next(stage for stage in res["stages"] if stage["key"] == "cierre_negocio")
+    assert cierre["count"] == 1
+    assert cierre["transition_pct"] == 100.0
+    assert res["transitions"]["visita_agendada_to_cierre_negocio"] == 1
+
+
+def test_funnel_response_summary_uses_latest_confirmed_management_result():
+    docs = [{
+        "_id": "l1",
+        "created_at": LEAD_CREATED,
+        "lifecycle": {"first_valid_management_at": "2026-07-11T10:00:00Z"},
+    }]
+    events = [
+        {"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "NO_RESPONDIO",
+         "timestamp": "2026-07-12T10:00:00Z", "actor": "Mariela", "actor_type": "agent", "confirmed": True},
+        {"_id": "e2", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "CONTACTADO",
+         "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela", "actor_type": "agent", "confirmed": True},
+    ]
+    res = build_funnel_result(make_db(leads=docs, events=events))
+    rows = res["response_summary"]["gestionados"]
+    assert rows == [{"key": "CONTACTADO", "label": "Contactado", "count": 1}]
+    assert res["response_basis"].startswith("Última respuesta")
+
+
+def test_sources_include_progression_by_portal():
+    docs = [
+        {"_id": "l1", "created_at": LEAD_CREATED,
+         "prospecto": {"origen": "Portal Inmobiliario"},
+         "lifecycle": {"first_valid_management_at": "2026-07-11T10:00:00Z"},
+         "stage_history": [{"to": "CLOSED_WON", "timestamp": "2026-07-18T10:00:00Z"}]},
+        {"_id": "l2", "created_at": "2026-07-11T14:00:00Z",
+         "prospecto": {"origen": "Portal Inmobiliario"}},
+        {"_id": "l3", "created_at": "2026-07-12T14:00:00Z",
+         "prospecto": {"origen": "TocToc"},
+         "lifecycle": {"first_valid_management_at": "2026-07-13T10:00:00Z"}},
+    ]
+    events = [
+        {"_id": "e1", "lead_id": "l1", "type": "HUMAN_NOTE", "result": "visita_agendada",
+         "timestamp": "2026-07-15T10:00:00Z", "actor": "Mariela", "actor_type": "agent", "confirmed": True},
+        {"_id": "e2", "lead_id": "l3", "type": "HUMAN_NOTE", "result": "NO_RESPONDIO",
+         "timestamp": "2026-07-14T10:00:00Z", "actor": "Mariela", "actor_type": "agent", "confirmed": True},
+    ]
+    db = make_db(leads=docs, events=events)
+    with patch.object(lq, "get_db", return_value=db), \
+         patch.object(lq, "_normalized_created_at_stage", return_value={}), \
+         patch.object(lq, "_build_commercial_cohort_match", return_value={}):
+        res = query_leads_dashboard_sources(
+            period_start="2026-07-10", period_end="2026-07-20", signed_orders=[]
+        )
+    by_name = {row["nombre"]: row for row in res["current"]}
+    portal = by_name["Portal Inmobiliario"]["funnel"]
+    portal_counts = [stage["count"] for stage in portal]
+    assert portal_counts == [2, 1, 1, 1, 1]
+    assert by_name["Portal Inmobiliario"]["funnel"][-1]["pct_of_source"] == 50.0
+    assert [stage["count"] for stage in by_name["TocToc"]["funnel"]] == [1, 1, 0, 0, 0]
 
 
 def test_funnel_contacto_efectivo_deduplicado_por_lead():
@@ -730,6 +798,8 @@ def test_funnel_no_calificados_en_frontend():
     assert "Visita agendada" in HTML
     assert "Contacto efectivo" in HTML
     assert "Gestionados" in HTML
+    assert "Mayor pérdida absoluta" in HTML
+    assert "Mayor caída proporcional" in HTML
 
 
 # =============================================================================

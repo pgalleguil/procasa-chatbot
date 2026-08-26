@@ -15,7 +15,9 @@ RESULT_RULES = {
     "VISIT_SCHEDULED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
     "FOLLOW_UP_REQUESTED": {"attempt": True, "effective": True, "follow_up": True, "status": "managed_follow_up"},
     "NOT_INTERESTED": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
-    "PROPERTY_UNAVAILABLE": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
+    # The property can be unavailable while the lead still needs alternatives.
+    # Keep the cycle open so the executive can recommend another option.
+    "PROPERTY_UNAVAILABLE": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_contacted"},
     "CLOSED_WON": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "CLOSED_LOST": {"attempt": True, "effective": True, "follow_up": False, "status": "managed_closed"},
     "INVALID_NUMBER": {"attempt": True, "effective": False, "follow_up": False, "status": "managed_closed"},
@@ -31,6 +33,15 @@ class StaleAssignmentCycleError(ValueError):
     """The client attempted to manage a cycle that is no longer active."""
 
     code = "stale_assignment_cycle"
+
+
+class ScheduledTimeTooSoonError(ValueError):
+    """A reminder or visit was scheduled too close to the current time."""
+
+    code = "scheduled_time_too_soon"
+
+
+MIN_SCHEDULE_LEAD_MINUTES = 1
 
 
 _LEGACY_RESULT_MAP = {
@@ -74,8 +85,25 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if not rule:
         raise ValueError("unsupported CRM management result")
     details = details_json if isinstance(details_json, dict) else {}
+    # Keep the operational note compact in the list and enforce the same
+    # limit server-side in case a non-browser client bypasses maxlength.
+    details = dict(details)
+    for note_key in ("notes", "outcome"):
+        if note_key in details and details[note_key] is not None:
+            limit = 80
+            details[note_key] = str(details[note_key]).strip()[:limit]
     if str(details.get("reason") or "").strip().casefold() == "seleccionar motivo (opcional)":
         details = {key: value for key, value in details.items() if key != "reason"}
+    if result_type == "NOT_INTERESTED" and not str(details.get("reason") or "").strip():
+        raise ValueError("reason is required for NOT_INTERESTED")
+    # "No interesado" can mean either a definitive closure or simply that
+    # this specific property was not a fit. Keep the latter active for
+    # recommendations while preserving the same quick-response UI.
+    reason_key = str(details.get("reason") or "").strip().casefold()
+    if result_type == "NOT_INTERESTED" and reason_key in {
+        "esta propiedad no le interesa", "precio o condiciones",
+    }:
+        rule = {**rule, "status": "managed_contacted", "follow_up": False}
     visit_at = None
     if result_type == "VISIT_SCHEDULED":
         visit_at = coerce_utc_datetime(details.get("visit_at") or next_follow_up_at)
@@ -89,6 +117,12 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if not all(str(value or "").strip() for value in (lead_id, assignment_cycle_id, actor_user_id, source, idempotency_key)):
         raise ValueError("canonical management identity is incomplete")
     occurred = coerce_utc_datetime(occurred_at) or utc_now()
+    minimum_scheduled_at = occurred + timedelta(minutes=MIN_SCHEDULE_LEAD_MINUTES)
+    follow_at = coerce_utc_datetime(next_follow_up_at)
+    if rule["follow_up"] and follow_at and follow_at < minimum_scheduled_at:
+        raise ScheduledTimeTooSoonError(ScheduledTimeTooSoonError.code)
+    if result_type == "VISIT_SCHEDULED" and visit_at and visit_at < minimum_scheduled_at:
+        raise ScheduledTimeTooSoonError(ScheduledTimeTooSoonError.code)
     # Try active cycle first, then fallback to any cycle for idempotent retries.
     cycle = db["crm_assignment_cycles"].find_one({
         "lead_id": lead_id, "assignment_cycle_id": assignment_cycle_id,
@@ -129,7 +163,6 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                             ("lead_id", "assignment_cycle_id", "actor_user_id", "result_type")):
             raise ValueError("management_request_id was reused for a different management")
 
-    follow_at = coerce_utc_datetime(next_follow_up_at)
     if rule["follow_up"] and not follow_at:
         follow_at = _default_follow_up(occurred)
     follow_cycle_id = f"followup:{assignment_cycle_id}:{idempotency_key}" if rule["follow_up"] else None
@@ -169,7 +202,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
                               "follow_up_status": "pending", "follow_up_cycle_id": follow_cycle_id})
     db["crm_assignment_cycles"].update_one(
-        {"assignment_cycle_id": assignment_cycle_id, "first_valid_management_at": {"$exists": False}},
+        {"assignment_cycle_id": assignment_cycle_id,
+         "$or": [{"first_valid_management_at": {"$exists": False}},
+                 {"first_valid_management_at": None}]},
         {"$set": first_cycle_updates},
     )
     if rule["follow_up"] and follow_at:
@@ -241,6 +276,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         key: value for key, value in {
             "reason": details.get("reason"),
             "notes": details.get("notes"),
+            "outcome": details.get("outcome"),
             "visit_at": details.get("visit_at"),
         }.items() if value not in (None, "")
     }
@@ -301,8 +337,34 @@ def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage
             raise ValueError("close category is required for lead_cerrado")
         close_stage = PipelineStage.CLOSED_WON if result_type == "CLOSED_WON" else PipelineStage.CLOSED_LOST
         stage_override, legacy_stage = close_stage.value, "cerrado"
+    elif raw_normalized == "owner_otro":
+        owner_detail = str(details.get("owner_other_detail") or "").strip()
+        if not owner_detail:
+            raise ValueError("owner other detail is required")
+        details = {**details, "outcome": owner_detail}
+        result_type = "EFFECTIVE_CONTACT" if next_date else "OTHER_EXPLICIT"
+        stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+    # En la interfaz del propietario, los problemas técnico-legales piden
+    # fecha de seguimiento. Deben conservar esa semántica y crear una tarea,
+    # no terminar como un cierre sin recordatorio.
+    elif str(details.get("owner_cat_radio") or "").strip().lower() == "prop_no_disponible":
+        # La propiedad puede no estar disponible, pero el lead sigue abierto
+        # para recomendar alternativas. Si se agenda seguimiento, convertirlo
+        # en una tarea pendiente en vez de tratarlo como cierre perdido.
+        result_type = "FOLLOW_UP_REQUESTED" if next_date else "PROPERTY_UNAVAILABLE"
+        stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+    elif raw_normalized in {
+        "no_regularizada", "doc_incompleta", "rol_incorrecto",
+        "problema_titulo", "reparaciones_pendientes",
+    }:
+        result_type = "FOLLOW_UP_REQUESTED"
+        stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
     elif result_type == "NOT_INTERESTED":
-        stage_override, legacy_stage = PipelineStage.CLOSED_LOST.value, "cerrado"
+        reason_key = str(details.get("reason") or "").strip().casefold()
+        if reason_key in {"esta propiedad no le interesa", "precio o condiciones"}:
+            stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
+        else:
+            stage_override, legacy_stage = PipelineStage.CLOSED_LOST.value, "cerrado"
     elif result_type:
         stage_override, legacy_stage = PipelineStage.CONTACTED.value, "gestion"
     if not result_type:

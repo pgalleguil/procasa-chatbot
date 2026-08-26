@@ -49,6 +49,16 @@ def build_crm_card_urls(query_params) -> dict[str, str]:
             urls[f"{key}_{temperature.lower()}"] = url(
                 {"temperatura": temperature, "estado": state}
             )
+
+    # The management panel uses shorter presentation keys while the
+    # canonical URLs use the database state names. Keep both key shapes
+    # available so every state metric resolves to its intended filter.
+    urls.update({
+        "nuevo": urls["new"],
+        "gestion": urls["grupo_gestion"],
+        "visita": urls["grupo_visita"],
+        "cerrado": urls["grupo_cerrado"],
+    })
     return urls
 
 

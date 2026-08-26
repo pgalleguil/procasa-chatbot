@@ -2,6 +2,8 @@ import asyncio
 import logging
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 import requests
@@ -10,6 +12,16 @@ from config import Config
 
 
 logger = logging.getLogger(__name__)
+
+# Outbound WhatsApp HTTP calls use their own small pool. This keeps a slow
+# provider response from consuming the default executor used by the chatbot,
+# CRM requests, and other background workers.
+_WHATSAPP_HTTP_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="procasa_whatsapp")
+
+
+async def _run_whatsapp_http(func, *args, **kwargs):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_WHATSAPP_HTTP_POOL, partial(func, *args, **kwargs))
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +133,7 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
     url = f"{Config.WASENDER_BASE_URL}/messages/{provider_message_id}/info"
     headers = {"Authorization": f"Bearer {Config.WASENDER_TOKEN}"}
     try:
-        response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
+        response = await _run_whatsapp_http(requests.get, url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
         data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
         status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
@@ -176,7 +188,7 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     # queue lease/idempotency policy and can duplicate an accepted-but-timed-out
     # provider request.
     try:
-        response = await asyncio.to_thread(
+        response = await _run_whatsapp_http(
             requests.post, url, json=payload, headers=headers, timeout=15
         )
     except asyncio.CancelledError:

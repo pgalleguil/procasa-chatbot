@@ -1016,6 +1016,8 @@
         }
     </style>
     <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -1026,7 +1028,6 @@
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;" onerror="this.style.display = 'none'" />
-            <span>MENÚ</span>
         </div>
 
         {% if user_role in ['supervisor', 'admin', 'jefatura'] %}

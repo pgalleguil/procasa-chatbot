@@ -672,6 +672,8 @@
             border-color: var(--bs-danger) !important;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -680,7 +682,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+                onerror="this.style.display='none'">
         </div>
         {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
@@ -1033,8 +1035,51 @@
         let activeComunaIndex = -1;
         let hasInteracted = false;
 
+        function applyVisitaTheme(theme) {
+            const normalized = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', normalized);
+            localStorage.setItem('theme', normalized);
+            const icon = document.getElementById('themeIcon');
+            if (icon) {
+                icon.className = normalized === 'light' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+            }
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            applyVisitaTheme(current === 'light' ? 'dark' : 'light');
+        }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (!sidebar) return;
+            const isOpen = sidebar.classList.toggle('mobile-open');
+            if (overlay) overlay.style.display = isOpen ? 'block' : 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', String(isOpen));
+        }
+
+        function closeMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar?.classList.remove('mobile-open');
+            if (overlay) overlay.style.display = 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', 'false');
+        }
+
+        applyVisitaTheme(localStorage.getItem('theme') || 'dark');
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeMobileMenu();
+        });
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) closeMobileMenu();
+            });
+        });
+
         document.addEventListener("DOMContentLoaded", function () {
             buildComunaDropdown(comunasDeChile);
+            applyVisitaTheme(localStorage.getItem('theme') || 'dark');
         });
 
         function buildComunaDropdown(list) {

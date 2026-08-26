@@ -335,6 +335,28 @@
             margin-top: auto;
         }
 
+        .hamburger-mobile {
+            display: none;
+            width: 40px;
+            height: 40px;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+            cursor: pointer;
+        }
+
+        #sidebarOverlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .55);
+            z-index: 1100;
+        }
+
         .main-content {
             margin-left: var(--sidebar-width-collapsed);
             padding: 30px;
@@ -348,7 +370,23 @@
             }
 
             .sidebar {
-                display: none;
+                display: block;
+                width: min(280px, 86vw);
+                left: min(-280px, calc(-100vw + 48px));
+                z-index: 1200;
+                transition: left .3s ease;
+            }
+
+            .sidebar.mobile-open {
+                left: 0;
+            }
+
+            .container > .d-flex.align-items-center:first-child {
+                padding-left: 52px;
+            }
+
+            .hamburger-mobile {
+                display: flex !important;
             }
         }
 
@@ -368,14 +406,17 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
+    <div id="sidebarOverlay" onclick="toggleMobileMenu()"></div>
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+                onerror="this.style.display='none'">
         </div>
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i> <span>Dashboard</span></a>
         {% if user_role in ['supervisor', 'admin'] %}
@@ -397,6 +438,10 @@
     <div class="main-content">
         <div class="container">
             <div class="d-flex align-items-center mb-4">
+                <button type="button" class="hamburger-mobile" aria-controls="sidebar" aria-expanded="false"
+                    aria-label="Abrir menú" onclick="toggleMobileMenu()">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
                 <h1 class="h3 fw-bold m-0"><i class="fa-solid fa-user-plus text-accent me-2"></i> Nuevo Lead Manual</h1>
             </div>
 
@@ -744,6 +789,32 @@
             if (digits.length === 8 || digits.length === 9) return `+56${digits}`;
             return `+${digits}`;
         }
+
+        function toggleMobileMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (!sidebar) return;
+            const isOpen = sidebar.classList.toggle('mobile-open');
+            if (overlay) overlay.style.display = isOpen ? 'block' : 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', String(isOpen));
+        }
+
+        function closeMobileMenu() {
+            document.getElementById('sidebar')?.classList.remove('mobile-open');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (overlay) overlay.style.display = 'none';
+            document.querySelector('.hamburger-mobile')?.setAttribute('aria-expanded', 'false');
+        }
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') closeMobileMenu();
+        });
+
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth <= 768) closeMobileMenu();
+            });
+        });
 
         function toggleTheme() {
             const html = document.documentElement;

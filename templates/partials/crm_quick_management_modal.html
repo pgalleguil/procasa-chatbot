@@ -3,21 +3,22 @@
         <div class="modal-content" style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
             <div class="modal-header border-bottom border-secondary">
                 <div>
-                    <div class="small text-secondary">Registrar gestión</div>
+                    <div class="small text-secondary">Registrar respuesta</div>
                     <h5 class="modal-title" id="quickManagementLeadName">Lead</h5>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
             <div class="modal-body">
-                <div class="small text-secondary mb-2">Selecciona el resultado realizado</div>
+                <div class="small text-secondary mb-2">Selecciona el resultado realizado. La primera respuesta detiene el SLA.</div>
                 <div class="quick-result-grid" id="quickResultGrid">
-                    <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT">Contactado</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER">Sin respuesta</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="VISIT_SCHEDULED">Visita agendada</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED">No interesado</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="PROPERTY_UNAVAILABLE">Propiedad no disponible</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER">Número inválido</button>
-                    <button type="button" class="quick-result-btn" data-quick-result="OTHER_EXPLICIT">Otro</button>
+                    <button type="button" class="quick-result-btn" data-quick-result="EFFECTIVE_CONTACT"><i class="fa-solid fa-comments" aria-hidden="true"></i><span>Contactado</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="CALL_NO_ANSWER"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i><span>Sin respuesta</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="VISIT_SCHEDULED"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i><span>Visita agendada</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="CLOSED_WON"><i class="fa-solid fa-handshake" aria-hidden="true"></i><span>Negocio concretado</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="NOT_INTERESTED"><i class="fa-solid fa-ban" aria-hidden="true"></i><span>No interesado</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="PROPERTY_UNAVAILABLE"><i class="fa-solid fa-house-circle-xmark" aria-hidden="true"></i><span>Propiedad no disponible</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="INVALID_NUMBER"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Número inválido</span></button>
+                    <button type="button" class="quick-result-btn" data-quick-result="OTHER_EXPLICIT"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Otro</span></button>
                 </div>
                 <div class="quick-extra mt-3" id="quickFollowUpField">
                     <div class="form-check">
@@ -27,25 +28,31 @@
                 </div>
                 <div class="quick-extra mt-3" id="quickDateField">
                     <label class="form-label small mb-1" for="quickNextDate" id="quickDateLabel">Próximo contacto</label>
-                    <input class="form-control form-control-sm" type="datetime-local" id="quickNextDate">
+                    <div class="quick-date-picker" id="quickDatePicker">
+                        <i class="fa-regular fa-calendar quick-date-picker-icon" aria-hidden="true"></i>
+                        <span class="quick-date-picker-text" id="quickDateDisplay">Seleccionar fecha y hora</span>
+                        <input class="quick-date-input" type="datetime-local" id="quickNextDate" aria-label="Seleccionar fecha y hora">
+                    </div>
+                    <div class="small text-danger mt-1 d-none" id="quickDateError" role="alert"></div>
+                    <div class="small text-secondary mt-1" id="quickDateHelp">Se enviará un recordatorio por WhatsApp al ejecutivo asignado en esta fecha y hora.</div>
                 </div>
                 <div class="quick-extra mt-3" id="quickNotesField">
-                    <label class="form-label small mb-1" for="quickNotes">Nota breve (opcional)</label>
-                    <textarea class="form-control form-control-sm" id="quickNotes" rows="2" maxlength="240" placeholder="Ej. Llamar después de las 19:00"></textarea>
+                    <label class="form-label small mb-1" for="quickNotes">Nota breve (opcional · máximo 80 caracteres)</label>
+                    <textarea class="form-control form-control-sm" id="quickNotes" rows="2" maxlength="80" placeholder="Ej. Llamar después de las 19:00"></textarea>
                 </div>
                 <div class="quick-extra mt-3" id="quickReasonField">
-                    <label class="form-label small mb-1" for="quickReason">Motivo</label>
+                    <label class="form-label small mb-1" for="quickReason">Motivo obligatorio</label>
                     <select class="form-select form-select-sm" id="quickReason">
-                        <option value="" selected disabled>Seleccionar motivo (opcional)</option>
+                        <option value="" selected disabled>Seleccionar motivo</option>
                         <option value="Ya no busca">Ya no busca</option>
                         <option value="Esta propiedad no le interesa">Esta propiedad no le interesa</option>
                         <option value="Precio o condiciones">Precio o condiciones</option>
-                        <option value="Ya encontró otra propiedad">Ya encontró otra propiedad</option>
+                        <option value="Ya resolvió">Ya resolvió</option>
                     </select>
                 </div>
                 <div class="quick-extra mt-3" id="quickOtherField">
-                    <label class="form-label small mb-1" for="quickOtherOutcome">Describe brevemente el resultado</label>
-                    <input class="form-control form-control-sm" type="text" id="quickOtherOutcome" maxlength="180" placeholder="Describe el resultado...">
+                    <label class="form-label small mb-1" for="quickOtherOutcome">Describe brevemente el resultado (máximo 80 caracteres)</label>
+                    <input class="form-control form-control-sm" type="text" id="quickOtherOutcome" maxlength="80" placeholder="Describe el resultado...">
                 </div>
                 <div class="quick-error alert alert-danger py-2 mt-3 mb-0 small" id="quickManagementError" role="alert"></div>
             </div>
@@ -53,7 +60,7 @@
                 <a class="quick-detail-link me-auto" id="quickGoDetail" href="#">Ir al detalle →</a>
                 <span class="small text-secondary" id="quickManagementProgress" aria-live="polite"></span>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-primary btn-sm" id="quickManagementSave" disabled>Guardar gestión</button>
+                <button type="button" class="btn btn-primary btn-sm" id="quickManagementSave" disabled>Guardar respuesta</button>
             </div>
         </div>
     </div>

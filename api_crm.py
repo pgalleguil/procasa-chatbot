@@ -414,6 +414,19 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
 # Etiquetas cortas para mostrar en la columna Estado qué registró el ejecutivo.
 RESULTADO_LABELS = {
+    # Canonical CRM management results.
+    "message_sent_waiting_response": "Mensaje enviado",
+    "call_no_answer": "Sin respuesta",
+    "effective_contact": "Contactado",
+    "follow_up_requested": "En seguimiento",
+    "visit_scheduled": "Visita agendada",
+    "not_interested": "No interesado",
+    "property_unavailable": "Propiedad no disponible",
+    "invalid_number": "Número inválido",
+    "closed_won": "Cerrado ganado",
+    "closed_lost": "Cerrado perdido",
+    "discarded_valid_reason": "Descartado",
+    "other_explicit": "Otro",
     "requiere_seguimiento": "En Seguimiento",
     "visita_agendada": "Visita Agendada",
     "intento_fallido": "Intento Fallido",
@@ -422,6 +435,7 @@ RESULTADO_LABELS = {
     "autoriza_visita": "Autoriza Visita",
     "acepta_mostrar": "Acepta Mostrar",
     "confirma_disponibilidad": "Confirma Disponibilidad",
+    "autoriza_con_condiciones": "Autoriza con Condiciones",
     "solo_mananas": "Solo Mañanas",
     "desde_marzo": "Desde Marzo",
     "con_24h_aviso": "Con 24h de Aviso",
@@ -429,17 +443,39 @@ RESULTADO_LABELS = {
     "no_acepta_visitas_aun": "No Acepta Visitas",
     "intento_contacto": "Intento de Contacto",
     "no_logra_contacto": "Sin Contacto",
+    "no_responde_llamada": "No Responde Llamadas",
+    "no_responde_whatsapp": "No Responde WhatsApp",
+    "contactar_otro_horario": "Contactar en Otro Horario",
     "no_quiere_mostrar": "No Quiere Mostrar",
     "no_quiere_visitas": "No Quiere Visitas",
     "no_baja_precio": "No Baja Precio",
+    "condiciones_no_aceptadas": "Condiciones No Aceptadas",
     "rechaza_visita": "Rechaza Visita",
     "no_regularizada": "No Regularizada",
     "doc_incompleta": "Doc. Incompleta",
     "rol_incorrecto": "Rol Incorrecto",
+    "problema_titulo": "Problema con Título o Inscripción",
+    "reparaciones_pendientes": "Reparaciones Pendientes",
     "propietario_retiro": "Retiró Propiedad",
-    "vendio_fuera": "Vendió por Fuera",
+    "vendio_fuera": "Ya no está Disponible",
+    "no_disponible_temporal": "No Disponible Temporalmente",
     "no_autoriza_gestion": "No Autoriza Gestión",
 }
+
+CANONICAL_MANAGEMENT_RESULTS = frozenset({
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EFFECTIVE_CONTACT",
+    "FOLLOW_UP_REQUESTED", "VISIT_SCHEDULED", "NOT_INTERESTED",
+    "PROPERTY_UNAVAILABLE", "INVALID_NUMBER", "CLOSED_WON", "CLOSED_LOST",
+    "DISCARDED_VALID_REASON", "OTHER_EXPLICIT",
+})
+
+
+def _is_canonical_management_event(ev) -> bool:
+    if not ev:
+        return False
+    event_type = str(ev.get("type") or "").strip().upper()
+    result = str(ev.get("result") or (ev.get("meta") or {}).get("result") or "").strip().upper()
+    return event_type == "CONTACT_RESULT" or result in CANONICAL_MANAGEMENT_RESULTS
 
 
 def _resultado_estado_label(ev) -> Optional[str]:
@@ -542,15 +578,107 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # --- FILTRO DE ESTADO ---
     UNASSIGNED_VALUES = [None, "", "Sin Asignar", "No asignado", "No Asignado", "Sin asignar"]
     unassigned_filter = {"$or": [{"ejecutivo_asignado": {"$in": UNASSIGNED_VALUES}}, {"ejecutivo_asignado": {"$exists": False}}]}
+    effective_new_condition = {
+        "$and": [
+            _crm_stage_query(CRM_STAGE_GROUPS["NEW"]),
+            {"$or": [
+                {"lifecycle.first_valid_management_at": {"$exists": False}},
+                {"lifecycle.first_valid_management_at": None},
+            ]},
+        ]
+    }
     state_condition = None
+    effective_state_ids = None
     
     if filtro_estado and filtro_estado != "Todos":
         if filtro_estado == "UNASSIGNED":
-            state_condition = {"$and": [_crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}
+            state_condition = {"$and": [effective_new_condition, unassigned_filter]}
         elif filtro_estado in ["NEW", "nuevo"]:
-            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["NEW"])
+            # Keep the filter aligned with the effective state rendered in
+            # the list, excluding legacy NEW records with management evidence.
+            state_condition = effective_new_condition
         elif filtro_estado == "GRUPO_GESTION":
-            state_condition = _crm_management_stage_query()
+            # Reassignments can leave a historical CONTACTED stage on the
+            # lead while the active assignment cycle is still unmanaged. The
+            # visible list correctly renders that row as Sin atender, so the
+            # En gestión filter must evaluate the effective current-cycle
+            # stage as well.
+            raw_stage_expr = {
+                "$ifNull": [
+                    "$pipeline_stage",
+                    {"$ifNull": ["$stage", {"$ifNull": ["$crm_estado", PipelineStage.NEW]}]},
+                ]
+            }
+            has_cycle_expr = {"$gt": [{"$size": "$_crm_filter_cycle"}, 0]}
+            cycle_management_expr = {
+                "$ifNull": [
+                    {"$arrayElemAt": ["$_crm_filter_cycle.first_valid_management_at", 0]},
+                    None,
+                ]
+            }
+            legacy_management_expr = {"$ifNull": ["$lifecycle.first_valid_management_at", None]}
+            closed_stages = CRM_STAGE_GROUPS["CERRADO"] + ["ARCHIVED", "SUPPRESSED"]
+            effective_stage_expr = {
+                "$cond": [
+                    has_cycle_expr,
+                    {"$cond": [
+                        {"$ne": [cycle_management_expr, None]},
+                        {"$cond": [
+                            {"$in": [raw_stage_expr, CRM_STAGE_GROUPS["NEW"]]},
+                            PipelineStage.CONTACTED,
+                            raw_stage_expr,
+                        ]},
+                        {"$cond": [
+                            {"$in": [raw_stage_expr, closed_stages]},
+                            raw_stage_expr,
+                            PipelineStage.NEW,
+                        ]},
+                    ]},
+                    {"$cond": [
+                        {"$ne": [legacy_management_expr, None]},
+                        {"$cond": [
+                            {"$in": [raw_stage_expr, CRM_STAGE_GROUPS["NEW"]]},
+                            PipelineStage.CONTACTED,
+                            raw_stage_expr,
+                        ]},
+                        raw_stage_expr,
+                    ]},
+                ]
+            }
+            effective_stage_query = {
+                "$expr": {
+                    "$not": [{"$in": [
+                        effective_stage_expr,
+                        CRM_STAGE_GROUPS["NEW"] + CRM_STAGE_GROUPS["VISITA"] + CRM_STAGE_GROUPS["CERRADO"],
+                    ]}]
+                }
+            }
+            cycle_lookup = {
+                "$lookup": {
+                    "from": "crm_assignment_cycles",
+                    "let": {"lead_id": "$_id"},
+                    "pipeline": [
+                        {"$match": {
+                            "$expr": {"$eq": ["$lead_id", "$$lead_id"]},
+                            "unassigned_at": None,
+                            "notification_eligible": True,
+                            "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
+                            "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
+                        }},
+                        {"$sort": {"assigned_at": -1}},
+                        {"$limit": 1},
+                    ],
+                    "as": "_crm_filter_cycle",
+                }
+            }
+            effective_state_docs = await db["leads"].aggregate([
+                {"$match": {"$and": list(query_parts)}},
+                cycle_lookup,
+                {"$match": effective_stage_query},
+                {"$project": {"_id": 1}},
+            ]).to_list(length=None)
+            effective_state_ids = [doc["_id"] for doc in effective_state_docs]
+            state_condition = {"_id": {"$in": effective_state_ids}}
         elif filtro_estado == "GRUPO_VISITA":
             state_condition = _crm_stage_query(CRM_STAGE_GROUPS["VISITA"])
         elif filtro_estado == "GRUPO_CERRADO":
@@ -581,15 +709,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "scope_total": [{"$match": base_kpi_query}, {"$count": "count"}],
             "total_pagina": [{"$match": query_with_state}, {"$count": "count"}],
             "sin_asignar_global": [
-                {"$match": {"$and": [global_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}},
+                {"$match": {"$and": [global_kpi_query, effective_new_condition, unassigned_filter]}},
                 {"$count": "count"}
             ],
             "sin_asignar": [
-                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}},
+                {"$match": {"$and": [base_kpi_query, effective_new_condition, unassigned_filter]}},
                 {"$count": "count"}
             ],
             "nuevo": [
-                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"])]}},
+                {"$match": {"$and": [base_kpi_query, effective_new_condition]}},
                 {"$count": "count"}
             ],
             "gestion": [
@@ -766,7 +894,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_has_assigned": {"$cond": ["$_has_cycle", 0, 1]},
             "_cycle_assigned_at": {"$cond": [
                 "$_has_cycle",
-                "$_active_cycle.assigned_at",
+                {"$ifNull": [
+                    "$_active_cycle.sla_started_at",
+                    "$_active_cycle.assigned_at",
+                ]},
                 None,
             ]},
             "_temperature": {"$cond": [
@@ -797,6 +928,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         }},
         {"$set": {
             "_assigned_at": {"$ifNull": ["$_cycle_assigned_at", "$_legacy_assigned_at"]},
+        }},
+        # A legacy lead can still be assigned even when it has no canonical
+        # assignment-cycle document.  Keep it in the assigned side of the
+        # recent/oldest assignment sorts when lifecycle.assigned_at or the
+        # legacy assignment date is present.
+        {"$set": {
+            "_has_assigned": {"$cond": [
+                {"$or": [
+                    "$_has_cycle",
+                    {"$ne": ["$_legacy_assigned_at", None]},
+                ]},
+                0,
+                1,
+            ]},
         }},
         # SLA overdue minutes computed in a separate $set stage.  Positive =
         # overdue, negative = in-plazo.  Assigned + unmanaged only.
@@ -960,6 +1105,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # sort; the sub-pipeline counts are independent of record-level filters.
     if _use_python_sla_sort:
         total_count = scope_total
+    elif filtro_estado in ("NEW", "nuevo"):
+        # The effective NEW filter excludes legacy rows that already carry
+        # valid management evidence; keep the displayed KPI in parity with
+        # that filtered result set.
+        kpi_counts["nuevo"] = total_count
+    elif filtro_estado == "GRUPO_GESTION":
+        kpi_counts["gestion"] = total_count
     parity = validate_list_parity(kpis=kpi_counts, listed_total=total_count, state_filter=filtro_estado)
     if not parity["validated"]:
         logger.error("[CRM_PARITY] KPI/list mismatch: %s", parity)
@@ -1002,22 +1154,35 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "CLICK_WHATSAPP_OWNER", "CLICK_EMAIL_OWNER", "STATUS_CHANGE", "ASSIGNMENT", "MANUAL_ENTRY",
         "ALERT_SENT", "alert_sent"
     ]
+    page_lead_ids_for_events = [l.get("_id") for l in leads_list if l.get("_id")]
     events_cursor = db["crm_events"].find(
-        {"phone": {"$in": page_phones}, "type": {"$in": management_types}},
+        {"$or": [
+            {"phone": {"$in": page_phones}},
+            {"lead_id": {"$in": page_lead_ids_for_events}},
+        ], "type": {"$in": management_types + ["CONTACT_RESULT"]}},
         sort=[("timestamp", -1)]
     )
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    # Only HUMAN_NOTE and GESTION_LOG are recognized as management events.
-    # SEND/CLICK/STATUS_CHANGE are telemetry and never enter this map.
-    MANAGEMENT_EVENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
+    recognized_management_by_lead_id = {}
+    lead_phone_by_id = {
+        str(lead.get("_id")): str(lead.get("phone") or "").replace("+", "").strip()
+        for lead in leads_list if lead.get("_id")
+    }
+    # CONTACT_RESULT is the canonical event created by the quick-management
+    # form. SEND/CLICK/STATUS_CHANGE remain telemetry and never enter this map.
+    MANAGEMENT_EVENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG", "CONTACT_RESULT"})
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
+        if not phone_ev and ev.get("lead_id") is not None:
+            phone_ev = lead_phone_by_id.get(str(ev.get("lead_id")), "")
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        if ev.get("type") in MANAGEMENT_EVENT_TYPES:
+        if (_is_canonical_management_event(ev) or ev.get("type") in MANAGEMENT_EVENT_TYPES) and phone_ev not in recognized_management_map:
             recognized_management_map[phone_ev] = ev
+        if (_is_canonical_management_event(ev) or ev.get("type") in MANAGEMENT_EVENT_TYPES) and ev.get("lead_id") is not None:
+            recognized_management_by_lead_id.setdefault(str(ev.get("lead_id")), ev)
 
     # TYPE_LABELS is defined at module level (above). No local type_labels needed.
 
@@ -1111,16 +1276,23 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                     estado_db = PipelineStage.NEW
         
         last_ev = events_map.get(raw_phone)
-        recognized_management_ev = (
-            recognized_management_map.get(raw_phone)
-            if phone_identity_counts.get(raw_phone) == 1 else None
-        )
+        recognized_management_ev = recognized_management_by_lead_id.get(str(lead.get("_id")))
+        if not recognized_management_ev and phone_identity_counts.get(raw_phone) == 1:
+            recognized_management_ev = recognized_management_map.get(raw_phone)
         current_cycle = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
         lifecycle = lead.get("lifecycle") or {}
         # Never combine new-cycle SLA with historical lead fields.  If a
         # canonical active cycle exists, it is the sole source for this row.
+        # Keep the two business timestamps separate: the assignment date is
+        # when the executive received the lead, while the SLA date may be the
+        # next business opening for an after-hours assignment.
+        cycle_assignment_raw = ((current_cycle or {}).get("assigned_at")
+                                or lifecycle.get("assigned_at"))
+        cycle_sla_started_raw = ((current_cycle or {}).get("sla_started_at")
+                                or lifecycle.get("sla_started_at")
+                                or cycle_assignment_raw)
         assigned_for_cycle = _coerce_crm_datetime(
-            (current_cycle or {}).get("assigned_at") or lifecycle.get("assigned_at") or lead.get("fecha_asignacion")
+            cycle_assignment_raw or lead.get("fecha_asignacion")
         )
         # Presentation-only "Enviado" timestamp. Never use created_at as a
         # delivery timestamp. Assignment is the honest fallback until reliable
@@ -1131,7 +1303,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                                       or (current_cycle or {}).get("delivered_at"))
         effective_sent_at = _coerce_crm_datetime(
             confirmed_delivery_raw
-            or (current_cycle or {}).get("assigned_at")
+            or cycle_assignment_raw
             or lifecycle.get("assigned_at")
             or lead.get("fecha_asignacion")
         )
@@ -1159,7 +1331,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             # it must not mark the current assignment as managed.
             allow_historical_for_presentation=False,
         )
-        if not outreach["recognized"]:
+        if recognized_management_ev and _is_canonical_management_event(recognized_management_ev):
+            # Canonical management results are already cycle-scoped. Validate
+            # their timestamp/cycle here, instead of treating them as outreach
+            # telemetry (which intentionally follows different rules).
+            result_at = _coerce_crm_datetime(
+                recognized_management_ev.get("timestamp") or recognized_management_ev.get("occurred_at")
+            )
+            result_cycle_id = recognized_management_ev.get("assignment_cycle_id")
+            if ((assigned_for_cycle and result_at and result_at < assigned_for_cycle)
+                    or (current_cycle_id and result_cycle_id
+                        and str(result_cycle_id) != str(current_cycle_id))):
+                recognized_management_ev = None
+        elif not outreach["recognized"]:
             recognized_management_ev = None
         # Management is cycle-scoped and must come from a canonical human result.
         # A legacy lead-level timestamp must never mark a newer active cycle as
@@ -1185,12 +1369,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         if commercial_ev:
             event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
             last_action_text = (
-                TYPE_LABELS.get(commercial_ev.get("type"))
+                _resultado_estado_label(commercial_ev)
+                or TYPE_LABELS.get(commercial_ev.get("type"))
                 or event_meta.get("action_label")
                 or event_meta.get("action")
                 or "Sin gestión registrada"
             )
-            last_action_note = event_meta.get("notes") or event_meta.get("note") or event_meta.get("reason") or ""
+            last_action_note = (event_meta.get("notes") or event_meta.get("note")
+                                or event_meta.get("reason") or event_meta.get("outcome") or "")
         else:
             persisted_action = (lead.get("last_action_label") or "").strip()
             last_action_text = (
@@ -1213,7 +1399,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             last_action_note = lead.get("last_message_preview") or ""
         
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
-        lifecycle_ts = ((current_cycle or {}).get("assigned_at")
+        lifecycle_ts = (cycle_assignment_raw
                         or lifecycle.get("assigned_at"))
         created_ts = lead.get("created_at")
         
@@ -1221,6 +1407,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # una respuesta del cliente posterior a esa gestión.
         last_ts = (
             last_message_at if has_new_customer_reply else
+            ((commercial_ev.get("timestamp") if commercial_ev else None)
+             if recognized_management_ev else None) or
             lead.get("last_event_at") or
             (commercial_ev.get("timestamp") if commercial_ev else None) or
             lifecycle_ts or ultimo_msg_ts or created_ts
@@ -1244,7 +1432,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # Identificar ejecutivo y timestamp real para visualización
         ejecutivo = ((current_cycle or {}).get("assigned_to_display_name")
                      or lead.get("ejecutivo_asignado") or lead.get("prospecto", {}).get("ejecutivo"))
-        sort_ts = ((current_cycle or {}).get("assigned_at")
+        sort_ts = ((current_cycle or {}).get("sla_started_at")
+                   or (current_cycle or {}).get("assigned_at")
                    or lead.get("effective_assigned_at") or lifecycle.get("assigned_at")
                    or lead.get("fecha_asignacion"))
         
@@ -1319,6 +1508,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         canonical_sla = {}
         hot_started_at = None
         sla_info = {}
+        sla_managed_outside = False
         
         if not assigned_at:
             sla_status = "historical" if visual_pre else "unknown"
@@ -1338,6 +1528,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 first_valid_management_at=cycle_management_at,
                 temperature=temp,
                 hot_started_at=hot_started_at,
+            )
+            sla_managed_outside = (
+                canonical_sla.get("canonical_state") == "MANAGED_OUTSIDE_SLA"
             )
             
             if visual_pre and not canonical_sla.get("fulfilled"):
@@ -1396,9 +1589,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         else:
             prioridad_badge = "📋 Lead"
 
-        sla_started_display = ((current_cycle or {}).get("sla_started_at")
-                               or lifecycle.get("sla_started_at")
-                               or lifecycle_ts)
+        sla_started_display = cycle_sla_started_raw or lifecycle_ts
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
@@ -1419,6 +1610,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "phone_is_synthetic": bool(lead.get("phone_is_synthetic")) or str(lead.get("phone", "")).startswith("no-phone-"),
             "sla_status": sla_status,
             "sla_timing": sla_timing if assigned_at else "SLA no disponible",
+            "sla_managed_outside": sla_managed_outside,
             "sla_label": sla_label,
             "age_label": age_label,
             "whatsapp_display": ("Sin teléfono" if (str(lead.get("phone", "")).startswith("no-phone-")
@@ -1429,6 +1621,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "lead_temperature_effective": temp,
             "estado": estado_final,
             "estado_badge": config_estado["label"],
+            "can_register_management": estado_final not in (
+                PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
+                "ARCHIVED", "SUPPRESSED",
+            ),
             "led_class": config_estado["led"],
             "gestionado": bool(has_real_management),
             "estado_resultado": _resultado_estado_label(
@@ -1447,6 +1643,16 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
+            # The SLA clock starts at the commercial/business timestamp. For
+            # after-hours cycles this is the next opening, normally 09:00.
+            "sla_started_at": assigned_at,
+            "sla_started_date": assigned_at.strftime("%d/%m/%Y") if assigned_at else None,
+            "sla_started_time": assigned_at.strftime("%H:%M") if assigned_at else None,
+            "sla_start_differs": bool(
+                assigned_for_cycle and assigned_at
+                and assigned_for_cycle.strftime("%d/%m/%Y %H:%M")
+                != assigned_at.strftime("%d/%m/%Y %H:%M")
+            ),
             "effective_sent_at": effective_sent_at,
             "effective_sent_date": effective_sent_at.strftime("%d/%m/%Y") if effective_sent_at else None,
             "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,

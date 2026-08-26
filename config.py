@@ -289,6 +289,8 @@ class Config:
     # === GOOGLE OAUTH (opcional) ===
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+    # La instancia local activa de esta versión corre en 8000, que es el
+    # callback autorizado por el cliente OAuth existente.
     GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/google/callback")
 
     # === GOOGLE DRIVE (cuenta de servicio + Unidad Compartida) ===

@@ -12,7 +12,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Flatpickr (Calendario Moderno) -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <link rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <link id="flatpickrDarkTheme" rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <link id="flatpickrLightTheme" rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/light.css" disabled>
 
     <style>
         :root {
@@ -441,6 +442,14 @@
             margin-bottom: 15px;
         }
 
+        .identity-section-label {
+            color: var(--text-secondary);
+            font-size: .72rem;
+            font-weight: 750;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
         /* Nuevo Grid de Datos del Lead - Lógica de Filas Alineadas */
         .lead-info-grid {
             display: flex;
@@ -510,12 +519,16 @@
         /* Grid de botones de comunicación */
         .comm-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 10px;
             margin-bottom: 10px;
             border-top: 1px solid var(--border-color);
             padding-top: 15px;
         }
+
+        /* La llamada directa es una acción pensada para móvil; en desktop
+           WhatsApp y Email aprovechan todo el ancho disponible. */
+        .btn-call-mobile-only { display: none !important; }
 
         .btn-comm {
             display: flex;
@@ -792,6 +805,8 @@
                 grid-template-columns: 1fr;
             }
 
+            .btn-call-mobile-only { display: flex !important; }
+
             /* Fix Identity Header wrapping */
             .identity-header {
                 flex-direction: column;
@@ -998,15 +1013,6 @@
 
         input[value="externo"]:checked+.visual-card i {
             color: var(--notes-color);
-        }
-
-        input[value="prop_restricciones"]:checked+.visual-card {
-            border-color: var(--owner-color);
-            background: rgba(245, 158, 11, 0.15);
-        }
-
-        input[value="prop_restricciones"]:checked+.visual-card i {
-            color: var(--owner-color);
         }
 
         input[value="prop_no_responde"]:checked+.visual-card {
@@ -1632,6 +1638,143 @@
         .detail-priority-badge.sla { color: var(--owner-color); border-color: rgba(245,158,11,.35); }
         .detail-work-card { padding: 14px; margin-bottom: 14px; }
         .legacy-management-heading { display: none !important; }
+        .detail-quick-management-bar {
+            display: block;
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 1px solid var(--border-color);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            background: rgba(125, 125, 125, 0.03);
+            animation: fadeIn 0.3s ease;
+        }
+        .detail-quick-management-copy { min-width: 0; margin-bottom: 10px; }
+        .detail-quick-management-title { color: var(--text-secondary); font-size: .8rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+        .detail-lead-response-grid .quick-result-btn.is-selected {
+            border-color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 18%, var(--bg-card));
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+        }
+        .detail-lead-quick-extras {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+            animation: fadeIn .2s ease;
+        }
+        .detail-lead-quick-extras .form-check-label,
+        .detail-lead-quick-extras .data-label { font-size: .74rem; }
+        .detail-lead-quick-extras .data-label,
+        #gestion-footer .data-label { text-transform: none; }
+        .detail-lead-quick-extras .form-control,
+        .detail-lead-quick-extras .form-select { font-size: .78rem; }
+        .detail-lead-quick-extras .btn { min-width: 142px; }
+        .detail-lead-response-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .detail-owner-response-grid { margin-bottom: 10px; }
+        .detail-owner-response-grid .quick-result-btn {
+            min-height: 58px;
+            padding: 10px 38px 10px 11px;
+            border-radius: 8px;
+            background: var(--bg-card);
+        }
+        .detail-owner-response-grid .quick-result-btn:hover {
+            border-color: var(--owner-color);
+            background: color-mix(in srgb, var(--owner-color) 12%, var(--bg-card));
+            transform: translateY(-1px);
+        }
+        .detail-owner-response-grid .quick-result-btn:hover i { color: var(--owner-color); }
+        .detail-owner-response-grid .quick-result-btn i { font-size: 1rem; }
+        .detail-owner-response-grid .quick-result-btn span { font-size: .74rem; line-height: 1.2; }
+        .owner-response-bar { border-left-color: var(--owner-color); }
+        .owner-reason-extras { margin-top: 0; }
+        input[type="datetime-local"] { color-scheme: dark; }
+        [data-theme="light"] input[type="datetime-local"] { color-scheme: light; }
+        input[value="prop_autoriza"]:checked + .quick-result-btn,
+        input[value="prop_no_responde"]:checked + .quick-result-btn,
+        input[value="prop_no_autoriza"]:checked + .quick-result-btn,
+        input[value="prop_tecnico"]:checked + .quick-result-btn,
+        input[value="prop_no_disponible"]:checked + .quick-result-btn,
+        input[value="prop_otro"]:checked + .quick-result-btn {
+            border-color: var(--owner-color);
+            background: color-mix(in srgb, var(--owner-color) 16%, var(--bg-card));
+        }
+        input[value="prop_autoriza"]:checked + .quick-result-btn i,
+        input[value="prop_no_responde"]:checked + .quick-result-btn i,
+        input[value="prop_no_autoriza"]:checked + .quick-result-btn i,
+        input[value="prop_tecnico"]:checked + .quick-result-btn i,
+        input[value="prop_no_disponible"]:checked + .quick-result-btn i,
+        input[value="prop_otro"]:checked + .quick-result-btn i { color: var(--owner-color); }
+        #gestion-footer { padding-top: 1px; }
+        #gestion-footer .section-title {
+            color: var(--text-secondary);
+            font-size: .8rem;
+            font-weight: 700;
+            letter-spacing: .02em;
+            text-transform: uppercase;
+        }
+        #crmForm.owner-mode-visible #gestion-footer {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+        }
+        #crmForm.owner-mode-visible #gestion-footer > .section-title,
+        #crmForm.owner-mode-visible #action-summary { display: none; }
+        #crmForm.owner-mode-visible #owner-followup-toggle { display: flex !important; align-items: center; gap: 6px; }
+        #crmForm.owner-mode-visible #owner-followup-toggle .form-check-label { font-size: .74rem; }
+        #crmForm.owner-mode-visible #global-date-container { margin-top: 8px !important; }
+        #crmForm.owner-mode-visible #notas_manuales { max-height: 72px; }
+        .detail-lead-response-grid .quick-result-btn {
+            min-height: 58px;
+            padding: 10px 11px;
+            border-radius: 8px;
+            justify-content: flex-start;
+            gap: 8px;
+            background: var(--bg-card);
+            transition: border-color .2s ease, background-color .2s ease, transform .16s ease;
+        }
+        .detail-lead-response-grid .quick-result-btn:hover {
+            border-color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+            transform: translateY(-1px);
+        }
+        .detail-lead-response-grid .quick-result-btn i { width: 18px; font-size: 1rem; flex: 0 0 18px; }
+        .detail-lead-response-grid .quick-result-btn span { font-size: .74rem; line-height: 1.2; }
+        .crm-detail-date-picker {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            min-height: 38px;
+            padding: 8px 11px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: border-color .16s ease, box-shadow .16s ease, color .16s ease;
+        }
+        .crm-detail-date-picker:hover,
+        .crm-detail-date-picker:focus-visible {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(99,102,241,.18);
+            color: var(--text-primary);
+            outline: none;
+        }
+        .crm-detail-date-picker-icon { color: var(--accent); font-size: .9rem; }
+        .crm-detail-date-picker-text { font-size: .78rem; }
+        .crm-detail-date-picker-text.has-value { color: var(--text-primary); font-weight: 600; }
+        .crm-detail-date-input {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            pointer-events: auto;
+            cursor: pointer;
+            color-scheme: dark;
+        }
+        [data-theme="light"] .crm-detail-date-input { color-scheme: light; }
+        .crm-detail-date-picker.is-invalid { border-color: var(--bs-danger) !important; box-shadow: 0 0 0 .15rem rgba(220, 53, 69, .18); }
         .action-mode-grid { display: flex; gap: 5px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
         .action-btn { flex: 0 0 auto; flex-direction: row; gap: 6px; height: auto; padding: 6px 10px; border-radius: 7px; font-size: .75rem; }
         .action-btn i { font-size: .8rem; margin-bottom: 0; }
@@ -1643,12 +1786,27 @@
         .info-value { font-size: .82rem; }
         .comm-grid { gap: 6px; margin-bottom: 6px; padding-top: 8px; }
         .btn-comm { padding: 6px; font-size: .76rem; }
-        #crmForm { display: none !important; }
+        #crmForm { display: block !important; }
         #crmForm.owner-mode-visible { display: block !important; }
-        .logic-section.owner-border .visual-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
-        .logic-section.owner-border .visual-card { min-height: 44px; padding: 7px 4px; border-radius: 6px; flex-direction: row; gap: 5px; }
-        .logic-section.owner-border .visual-card i { font-size: .85rem; margin-bottom: 0; }
-        .logic-section.owner-border .visual-card span { font-size: .68rem; }
+        .logic-section.owner-border .visual-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .logic-section.owner-border .visual-card {
+            min-height: 58px;
+            padding: 10px 11px;
+            border-radius: 8px;
+            flex-direction: row;
+            justify-content: flex-start;
+            gap: 8px;
+            text-align: left;
+            background: var(--bg-card);
+            transition: border-color .16s ease, background-color .16s ease, transform .16s ease;
+        }
+        .logic-section.owner-border .visual-card:hover {
+            border-color: var(--owner-color);
+            background: color-mix(in srgb, var(--owner-color) 12%, var(--bg-card));
+            transform: translateY(-1px);
+        }
+        .logic-section.owner-border .visual-card i { width: 18px; font-size: 1rem; margin-bottom: 0; flex: 0 0 18px; }
+        .logic-section.owner-border .visual-card span { font-size: .74rem; line-height: 1.2; }
         @media (max-width: 768px) {
             .detail-operational-header { align-items: flex-start; flex-direction: column; gap: 8px; padding: 10px 12px; }
             .detail-operational-header .btn { width: 100%; }
@@ -1657,6 +1815,9 @@
             .canonical-banner { position: static; overflow-x: auto; gap: 12px; }
             .canonical-banner .banner-stat { min-width: 110px; }
             .detail-work-card { padding: 10px; }
+            .detail-quick-management-bar { padding: 12px; }
+            .detail-lead-response-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .detail-owner-response-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .logic-section.owner-border .visual-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
 
@@ -2450,7 +2611,9 @@
             opacity: 1;
         }
     </style>
-    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
+    <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260825-quick-modal2">
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -2458,7 +2621,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+                onerror="this.style.display='none'">
         </div>
         <a href="/leads-dashboard" class="nav-link"><i class="fa-solid fa-chart-line"></i>
             <span>Dashboard</span></a>
@@ -2530,20 +2693,6 @@
             </div>
         </div>
 
-        <section class="detail-operational-header" aria-label="Resumen operacional del lead">
-            <div>
-                <div class="detail-lead-title">
-                    {{ lead.nombre }}
-                    {% if lead.lead_temperature_effective == 'HOT' %}<span class="detail-priority-badge hot">HOT</span>{% else %}<span class="detail-priority-badge">Normal</span>{% endif %}
-                    <span class="detail-priority-badge sla">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
-                </div>
-                <div class="detail-lead-meta">{{ lead.datos_propiedad.codigo }} · {{ lead.datos_propiedad.comuna }} · Enviado {{ lead.effective_sent_date }} {{ lead.effective_sent_time }} · {{ lead.ejecutivo_nombre }}</div>
-            </div>
-            <button type="button" class="btn btn-primary fw-bold px-3" id="primaryRegisterManagement" onclick="openDetailQuickManagement();" title="Registrar gestión del lead">
-                <i class="fa-solid fa-check-to-slot me-2"></i>Registrar gestión
-            </button>
-        </section>
-
         <div class="left-column">
 
             <div class="card-custom detail-work-card" style="border-top: 3px solid var(--accent);">
@@ -2583,16 +2732,7 @@
                     <div id="identity-lead" class="identity-box lead-theme">
                         <div class="identity-header">
                             <div>
-                                <div class="d-flex flex-wrap align-items-center gap-2">
-                                    <h5 class="fw-bold m-0" style="color: var(--text-primary);">{{ lead.nombre }}</h5>
-                                    {% if lead.lead_temperature_effective == 'HOT' %}
-                                    <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25"
-                                        aria-label="Lead Hot">{{ lead_temperature_icon('HOT', 'me-1') }}{{ lead_temperature_label('HOT') }}</span>
-                                    {% elif lead.lead_temperature_effective == 'COLD' %}
-                                    <span class="badge lead-temperature-normal"
-                                        aria-label="Lead">{{ lead_temperature_icon('COLD', 'me-1') }}{{ lead_temperature_label('COLD') }}</span>
-                                    {% endif %}
-                                </div>
+                                <div class="identity-section-label">Contacto del lead</div>
                                 <div class="small text-secondary mt-1">
                                     <i class="fa-solid fa-location-dot me-1"></i> {{ lead.datos_propiedad.comuna }}
                                 </div>
@@ -2605,6 +2745,13 @@
 
                         <!-- Grid de Datos Mejorado (Filas Alineadas) -->
                         <div class="lead-info-grid">
+                            <!-- Identidad y datos de contacto en un mismo bloque -->
+                            <div class="info-row contact-name-row">
+                                <div class="info-item" style="grid-column: 1 / -1;">
+                                    <span class="info-label">Nombre</span>
+                                    <span class="info-value">{{ lead.nombre }}</span>
+                                </div>
+                            </div>
                             <!-- Fila 1: Datos Personales (3 Columnas) -->
                             <div class="info-row">
                                 <div class="info-item">
@@ -2641,7 +2788,7 @@
 
                         <!-- Botones de Acción Directa -->
                         <div class="comm-grid">
-                            <button onclick="openCommPanel('lead', 'phone')" class="btn-comm ph">
+                            <button onclick="openCommPanel('lead', 'phone')" class="btn-comm ph btn-call-mobile-only">
                                 <i class="fa-solid fa-phone"></i> Llamar
                             </button>
                             <button onclick="openCommPanel('lead', 'whatsapp')" class="btn-comm wa">
@@ -2724,7 +2871,7 @@
                         </div>
 
                         <div class="comm-grid mt-2">
-                            <button onclick="openCommPanel('owner', 'phone')" class="btn-comm ph">
+                            <button onclick="openCommPanel('owner', 'phone')" class="btn-comm ph btn-call-mobile-only">
                                 <i class="fa-solid fa-phone"></i> Llamar
                             </button>
                             <button onclick="openCommPanel('owner', 'whatsapp')" class="btn-comm wa">
@@ -2861,6 +3008,62 @@
                         <input type="radio" class="d-none" name="interaction_type" value="propietario">
                         <input type="radio" class="d-none" name="interaction_type" value="espera">
                         <input type="radio" class="d-none" name="interaction_type" value="descartado">
+
+                        <div class="detail-quick-management-bar" aria-label="Respuestas rápidas del lead">
+                            <div class="detail-quick-management-copy">
+                                <div class="detail-quick-management-title">Respuesta del lead <span class="validation-dot" id="dot-lead-quick"></span></div>
+                            </div>
+                            <div class="quick-result-grid detail-lead-response-grid" aria-label="Resultados rápidos del lead">
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="EFFECTIVE_CONTACT" onclick="selectDetailLeadResponse('EFFECTIVE_CONTACT')"><i class="fa-solid fa-comments" aria-hidden="true"></i><span>Contactado</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="CALL_NO_ANSWER" onclick="selectDetailLeadResponse('CALL_NO_ANSWER')"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i><span>Sin respuesta</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="VISIT_SCHEDULED" onclick="selectDetailLeadResponse('VISIT_SCHEDULED')"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i><span>Visita agendada</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="CLOSED_WON" onclick="selectDetailLeadResponse('CLOSED_WON')"><i class="fa-solid fa-handshake" aria-hidden="true"></i><span>Negocio concretado</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="NOT_INTERESTED" onclick="selectDetailLeadResponse('NOT_INTERESTED')"><i class="fa-solid fa-ban" aria-hidden="true"></i><span>No interesado</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="INVALID_NUMBER" onclick="selectDetailLeadResponse('INVALID_NUMBER')"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Número inválido</span></button>
+                                <button type="button" class="quick-result-btn" data-detail-quick-result="OTHER_EXPLICIT" onclick="selectDetailLeadResponse('OTHER_EXPLICIT')"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Otro</span></button>
+                            </div>
+                            <div id="detailLeadQuickExtras" class="detail-lead-quick-extras d-none">
+                                <div id="detailLeadQuickFollowUp" class="form-check mb-2 d-none">
+                                    <input class="form-check-input" type="checkbox" id="detailLeadQuickFollowUpToggle" onchange="syncDetailLeadQuickFields()">
+                                    <label class="form-check-label" for="detailLeadQuickFollowUpToggle">Programar próximo contacto</label>
+                                </div>
+                                <div id="detailLeadQuickDateField" class="mb-2 d-none">
+                                    <label class="data-label mb-1" for="detailLeadQuickDate" id="detailLeadQuickDateLabel">Próximo contacto</label>
+                                    <div class="crm-detail-date-picker" id="detailLeadQuickDatePickerField"
+                                        role="button" tabindex="0" aria-label="Seleccionar fecha y hora"
+                                        onclick="openDetailLeadQuickCalendar()"
+                                        onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetailLeadQuickCalendar(); }">
+                                        <i class="fa-regular fa-calendar crm-detail-date-picker-icon" aria-hidden="true"></i>
+                                        <span class="crm-detail-date-picker-text" id="detailLeadQuickDateDisplay">Seleccionar fecha y hora</span>
+                                        <input class="crm-detail-date-input" type="datetime-local" id="detailLeadQuickDate" onchange="syncDetailLeadQuickDateDisplay(); syncDetailLeadQuickFields()" onclick="event.stopPropagation()" aria-label="Seleccionar fecha y hora">
+                                    </div>
+                                    <div class="small text-secondary mt-1" id="detailLeadQuickDateHelp">Se enviará un recordatorio por WhatsApp al ejecutivo asignado en esta fecha y hora.</div>
+                                    <div id="detailLeadQuickDateError" class="small text-danger mt-1 d-none"></div>
+                                </div>
+                                <div id="detailLeadQuickReasonField" class="mb-2 d-none">
+                                    <label class="data-label mb-1" for="detailLeadQuickReason">Motivo</label>
+                                    <select class="form-select form-select-sm" id="detailLeadQuickReason" onchange="syncDetailLeadQuickFields()">
+                                        <option value="" selected disabled>Selecciona un motivo</option>
+                                        <option value="Ya no busca">Ya no busca</option>
+                                        <option value="Esta propiedad no le interesa">Esta propiedad no le interesa</option>
+                                        <option value="Precio o condiciones">Precio o condiciones</option>
+                                        <option value="Ya resolvió">Ya resolvió</option>
+                                    </select>
+                                </div>
+                                <div id="detailLeadQuickOtherField" class="mb-2 d-none">
+                                    <label class="data-label mb-1" for="detailLeadQuickOther">Resultado (máximo 80 caracteres)</label>
+                                    <input class="form-control form-control-sm" type="text" id="detailLeadQuickOther" maxlength="80" placeholder="Describe brevemente el resultado" oninput="syncDetailLeadQuickFields()">
+                                </div>
+                                <div id="detailLeadQuickNotesField" class="mb-2 d-none">
+                                    <label class="data-label mb-1" for="detailLeadQuickNotes">Nota breve (opcional · máximo 80 caracteres)</label>
+                                    <textarea class="form-control form-control-sm" id="detailLeadQuickNotes" maxlength="80" rows="2" placeholder="Ej. Llamar después de las 19:00" oninput="syncDetailLeadQuickFields()"></textarea>
+                                </div>
+                                <div id="detailLeadQuickError" class="small text-danger mb-2 d-none"></div>
+                                <div class="d-flex justify-content-end">
+                                    <button type="button" class="btn btn-primary btn-sm" id="detailLeadQuickSave" onclick="saveDetailLeadResponse()" disabled>Guardar respuesta</button>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- LÓGICA DE CONTACTO EFECTIVO (TEXTOS LIMPIOS) -->
                         <div id="logic-effective" class="logic-section d-none">
@@ -3116,71 +3319,77 @@
                             </div>
                         </div>
 
-                        <!-- SECCIÓN DE PROPIETARIO MEJORADA (GRID 3x2) -->
-                        <div id="logic-propietario" class="logic-section owner-border d-none">
-                            <label class="data-label mb-2">
-                                Estado con Propietario <span class="validation-dot" id="dot-prop"></span>
-                            </label>
+                        <!-- RESPUESTA DEL PROPIETARIO: misma estructura visual que las respuestas del lead -->
+                        <div id="logic-propietario" class="logic-section detail-quick-management-bar owner-response-bar owner-border d-none">
+                            <div class="detail-quick-management-copy">
+                                <div class="detail-quick-management-title">Respuesta del propietario <span class="validation-dot" id="dot-prop"></span></div>
+                            </div>
 
-                            <div class="visual-grid grid-3-col">
+                            <div class="quick-result-grid detail-owner-response-grid" aria-label="Resultados rápidos del propietario">
 
                                 <!-- 1. Autoriza (Green) -->
                                 <input type="radio" name="owner_cat_radio" value="prop_autoriza" id="oc_autoriza"
                                     class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_autoriza" class="visual-card">
+                                <label for="oc_autoriza" class="quick-result-btn">
                                     <i class="fa-solid fa-check-circle"></i>
                                     <span>Autoriza</span>
                                 </label>
 
-                                <!-- 2. Restricciones (Yellow) -->
-                                <input type="radio" name="owner_cat_radio" value="prop_restricciones"
-                                    id="oc_restricciones" class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_restricciones" class="visual-card">
-                                    <i class="fa-solid fa-exclamation-circle"></i>
-                                    <span>Restricciones</span>
-                                </label>
-
-                                <!-- 3. No Responde (Blue/Gray) -->
+                                <!-- 2. No Responde (Blue/Gray) -->
                                 <input type="radio" name="owner_cat_radio" value="prop_no_responde" id="oc_no_responde"
                                     class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_no_responde" class="visual-card">
+                                <label for="oc_no_responde" class="quick-result-btn">
                                     <i class="fa-solid fa-phone-slash"></i>
                                     <span>No Responde</span>
                                 </label>
 
-                                <!-- 4. No Autoriza (Orange) -->
+                                <!-- 3. No Autoriza (Orange) -->
                                 <input type="radio" name="owner_cat_radio" value="prop_no_autoriza" id="oc_no_autoriza"
                                     class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_no_autoriza" class="visual-card">
+                                <label for="oc_no_autoriza" class="quick-result-btn">
                                     <i class="fa-solid fa-ban"></i>
                                     <span>No Autoriza</span>
                                 </label>
 
-                                <!-- 5. Técnico/Legal (Red) -->
+                                <!-- 4. Técnico/Legal (Red) -->
                                 <input type="radio" name="owner_cat_radio" value="prop_tecnico" id="oc_tecnico"
                                     class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_tecnico" class="visual-card">
+                                <label for="oc_tecnico" class="quick-result-btn">
                                     <i class="fa-solid fa-gavel"></i>
                                     <span>Legal / Tec</span>
                                 </label>
 
-                                <!-- 6. No Disponible (Black) -->
+                                <!-- 5. No Disponible (Black) -->
                                 <input type="radio" name="owner_cat_radio" value="prop_no_disponible"
                                     id="oc_no_disponible" class="d-none" onchange="renderOwnerReasons()">
-                                <label for="oc_no_disponible" class="visual-card">
+                                <label for="oc_no_disponible" class="quick-result-btn">
                                     <i class="fa-solid fa-shop-slash"></i>
                                     <span>No Disponible</span>
+                                </label>
+
+                                <!-- 6. Otro: respuesta explícita fuera de las categorías habituales -->
+                                <input type="radio" name="owner_cat_radio" value="prop_otro" id="oc_otro"
+                                    class="d-none" onchange="renderOwnerReasons()">
+                                <label for="oc_otro" class="quick-result-btn">
+                                    <i class="fa-solid fa-ellipsis"></i>
+                                    <span>Otro</span>
                                 </label>
 
                             </div>
 
                             <!-- Selector Específico Oculto -->
-                            <div id="owner_reason_container" class="sub-logic mb-2 d-none">
-                                <label class="data-label mb-1">Detalle Específico</label>
+                            <div id="owner_reason_container" class="detail-lead-quick-extras owner-reason-extras mb-2 d-none">
+                                <label class="data-label mb-1">Motivo o detalle</label>
                                 <select class="form-select form-select-sm" id="sel_prop_detalle"
-                                    onchange="setResult(this.value, 'Guardar Gestión Propietario', 'warning')">
+                                    onchange="setResult(this.value, 'Guardar gestión', 'warning')">
                                     <option value="" selected disabled>Seleccione detalle...</option>
                                 </select>
+                            </div>
+                            <div id="owner_other_container" class="detail-lead-quick-extras owner-reason-extras mb-2 d-none">
+                                <label class="data-label mb-1" for="owner_other_detail">Detalle breve (máximo 80 caracteres)</label>
+                                <input class="form-control form-control-sm" type="text" id="owner_other_detail"
+                                    maxlength="80" placeholder="Describe brevemente la respuesta del propietario"
+                                    oninput="syncOwnerFollowupFields()">
                             </div>
                         </div>
 
@@ -3267,18 +3476,33 @@
                         </div>
 
                         <div id="gestion-footer" class="d-none animate__animated animate__fadeIn">
-                            <div class="section-title mt-3">Detalle de Gestión</div>
+                            <div class="section-title mt-3">Seguimiento y nota</div>
+                            <div id="owner-followup-toggle" class="form-check mb-2 d-none">
+                                <input class="form-check-input" type="checkbox" id="ownerFollowUpToggle"
+                                    onchange="syncOwnerFollowupFields()">
+                                <label class="form-check-label" for="ownerFollowUpToggle">
+                                    Programar próximo contacto
+                                </label>
+                            </div>
                             <div id="global-date-container" class="mt-3 mb-3 d-none">
-                                <label class="data-label mb-1">Próxima Acción <span class="validation-dot"
+                                <label class="data-label mb-1">Próximo contacto <span class="validation-dot"
                                         id="dot-date"></span></label>
-                                <input type="datetime-local" id="fecha_global" class="form-control form-control-sm"
-                                    onchange="updateSummary()">
+                                <div class="crm-detail-date-picker" id="globalDatePickerField"
+                                    role="button" tabindex="0" aria-label="Seleccionar fecha y hora"
+                                    onclick="openGlobalDateCalendar()"
+                                    onkeydown="if(event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openGlobalDateCalendar(); }">
+                                    <i class="fa-regular fa-calendar crm-detail-date-picker-icon" aria-hidden="true"></i>
+                                    <span class="crm-detail-date-picker-text" id="globalDateDisplay">Seleccionar fecha y hora</span>
+                                    <input type="datetime-local" id="fecha_global" class="crm-detail-date-input"
+                                        onchange="syncGlobalDateDisplay(); updateSummary()" onclick="event.stopPropagation()" aria-label="Seleccionar fecha y hora">
+                                </div>
+                                <div class="small text-secondary mt-1" id="globalDateHelp">Se enviará un recordatorio por WhatsApp al ejecutivo asignado en esta fecha y hora.</div>
                             </div>
 
                             <div class="mb-3">
-                                <label class="data-label mb-1">Comentarios</label>
-                                <textarea class="form-control" id="notas_manuales" rows="2"
-                                    placeholder="Detalle importante..." oninput="updateSummary()"></textarea>
+                                <label class="data-label mb-1">Nota breve (opcional · máximo 80 caracteres)</label>
+                                <textarea class="form-control" id="notas_manuales" maxlength="80" rows="2"
+                                    placeholder="Escribe una nota breve..." oninput="updateSummary()"></textarea>
                             </div>
 
                             <div id="action-summary" class="summary-box d-none">
@@ -3600,14 +3824,16 @@
             setActionMode('contact');
 
             // 4. Init Flatpickr
-            flatpickr("#fecha_global", {
-                enableTime: true,
-                dateFormat: "Y-m-d H:i",
-                minDate: "today",
-                locale: "es",
-                time_24hr: true,
-                disableMobile: "true"
+            initGlobalDatePicker();
+            const globalDateInput = document.getElementById('fecha_global');
+            ['input', 'change'].forEach(eventName => {
+                globalDateInput?.addEventListener(eventName, () => {
+                    dateFieldTouched = true;
+                    syncGlobalDateDisplay();
+                    updateSummary();
+                });
             });
+            initDetailLeadQuickDatePicker();
         });
 
         // --- GESTIÓN DE BANNER Y TOASTS ---
@@ -3790,7 +4016,7 @@
             }
         }
 
-        function openDetailQuickManagement() {
+        function openDetailQuickManagement(preselectedResult = null) {
             if (!window.CRMQuickManagement) return;
             window.CRMQuickManagement.open({
                 phone: leadData.telefono,
@@ -3803,6 +4029,319 @@
                 onStale: refreshDetailManagementState,
                 closeOnStale: true
             });
+            if (preselectedResult) {
+                window.setTimeout(() => window.CRMQuickManagement.configure(preselectedResult), 0);
+            }
+        }
+
+        // Respuestas del lead: se registran directamente en esta sección del detalle.
+        // El modal compartido queda reservado para el listado CRM.
+        let detailLeadQuickResult = null;
+        let detailLeadQuickDatePicker = null;
+
+        const detailLeadQuickLabels = {
+            EFFECTIVE_CONTACT: 'Contactado',
+            CALL_NO_ANSWER: 'Sin respuesta',
+            VISIT_SCHEDULED: 'Visita agendada',
+            CLOSED_WON: 'Negocio concretado',
+            NOT_INTERESTED: 'No interesado',
+            PROPERTY_UNAVAILABLE: 'Propiedad no disponible',
+            INVALID_NUMBER: 'Número inválido',
+            OTHER_EXPLICIT: 'Otro'
+        };
+
+        function detailLeadQuickElement(id) {
+            return document.getElementById(id);
+        }
+
+        function detailLeadQuickSetVisible(id, visible) {
+            const element = detailLeadQuickElement(id);
+            if (element) element.classList.toggle('d-none', !visible);
+        }
+
+        function detailLeadQuickSetDateMinimum() {
+            const input = detailLeadQuickElement('detailLeadQuickDate');
+            if (!input) return;
+            const minimum = new Date(Math.ceil((Date.now() + 60000) / 60000) * 60000);
+            const pad = value => String(value).padStart(2, '0');
+            input.min = `${minimum.getFullYear()}-${pad(minimum.getMonth() + 1)}-${pad(minimum.getDate())}T${pad(minimum.getHours())}:${pad(minimum.getMinutes())}`;
+            detailLeadQuickDatePicker?.set('minDate', minimum);
+        }
+
+        function initDetailLeadQuickDatePicker() {
+            const input = detailLeadQuickElement('detailLeadQuickDate');
+            if (!input || typeof window.flatpickr !== 'function' || detailLeadQuickDatePicker) return;
+            detailLeadQuickDatePicker = window.flatpickr(input, {
+                enableTime: true,
+                dateFormat: 'Y-m-d\\TH:i',
+                minDate: new Date(Date.now() + 60000),
+                locale: 'es',
+                time_24hr: true,
+                disableMobile: true,
+                onChange: () => {
+                    syncDetailLeadQuickDateDisplay();
+                    syncDetailLeadQuickFields();
+                }
+            });
+            syncFlatpickrTheme();
+            syncDetailLeadQuickDateDisplay();
+        }
+
+        function syncDetailLeadQuickDateDisplay() {
+            const input = detailLeadQuickElement('detailLeadQuickDate');
+            const display = detailLeadQuickElement('detailLeadQuickDateDisplay');
+            if (!input || !display) return;
+            const value = input.value || '';
+            if (!value) {
+                display.textContent = 'Seleccionar fecha y hora';
+                display.classList.remove('has-value');
+                return;
+            }
+            const [datePart, timePart = ''] = value.split('T');
+            const [year, month, day] = datePart.split('-');
+            display.textContent = `${day}/${month}/${year}${timePart ? ` · ${timePart}` : ''}`;
+            display.classList.add('has-value');
+        }
+
+        function openDetailLeadQuickCalendar() {
+            initDetailLeadQuickDatePicker();
+            if (detailLeadQuickDatePicker) {
+                detailLeadQuickDatePicker.open();
+                return;
+            }
+            const input = detailLeadQuickElement('detailLeadQuickDate');
+            try {
+                if (typeof input?.showPicker === 'function') input.showPicker();
+                else { input?.focus(); input?.click(); }
+            } catch (_) { input?.focus(); input?.click(); }
+        }
+
+        function initGlobalDatePicker() {
+            const input = document.getElementById('fecha_global');
+            if (!input || typeof window.flatpickr !== 'function' || globalDatePicker) return;
+            globalDatePicker = window.flatpickr(input, {
+                enableTime: true,
+                dateFormat: 'Y-m-d\\TH:i',
+                minDate: new Date(Date.now() + 60000),
+                locale: 'es',
+                time_24hr: true,
+                disableMobile: true,
+                onChange: () => {
+                    dateFieldTouched = true;
+                    syncGlobalDateDisplay();
+                    updateSummary();
+                }
+            });
+            syncFlatpickrTheme();
+            syncGlobalDateDisplay();
+        }
+
+        function syncGlobalDateDisplay() {
+            const input = document.getElementById('fecha_global');
+            const display = document.getElementById('globalDateDisplay');
+            if (!input || !display) return;
+            const value = input.value || '';
+            if (!value) {
+                display.textContent = 'Seleccionar fecha y hora';
+                display.classList.remove('has-value');
+                return;
+            }
+            const [datePart, timePart = ''] = value.split('T');
+            const [year, month, day] = datePart.split('-');
+            display.textContent = `${day}/${month}/${year}${timePart ? ` · ${timePart}` : ''}`;
+            display.classList.add('has-value');
+        }
+
+        function openGlobalDateCalendar() {
+            initGlobalDatePicker();
+            if (globalDatePicker) {
+                globalDatePicker.open();
+                return;
+            }
+            const input = document.getElementById('fecha_global');
+            try {
+                if (typeof input?.showPicker === 'function') input.showPicker();
+                else { input?.focus(); input?.click(); }
+            } catch (_) { input?.focus(); input?.click(); }
+        }
+
+        function detailLeadQuickDateIsValid(value) {
+            if (!value) return false;
+            const parsed = new Date(value);
+            return Number.isFinite(parsed.getTime()) && parsed.getTime() >= Date.now() + 60000;
+        }
+
+        function selectDetailLeadResponse(resultType) {
+            // Inicializar al abrir la sección para garantizar que el campo
+            // visible use el mismo calendario que el listado CRM.
+            initDetailLeadQuickDatePicker();
+            const previousResult = detailLeadQuickResult;
+            if (previousResult && previousResult !== resultType) {
+                const followUp = detailLeadQuickElement('detailLeadQuickFollowUpToggle');
+                const dateInput = detailLeadQuickElement('detailLeadQuickDate');
+                const reason = detailLeadQuickElement('detailLeadQuickReason');
+                const other = detailLeadQuickElement('detailLeadQuickOther');
+                const notes = detailLeadQuickElement('detailLeadQuickNotes');
+                if (followUp) followUp.checked = false;
+                if (dateInput) dateInput.value = '';
+                detailLeadQuickDatePicker?.clear();
+                if (reason) { reason.value = ''; reason.selectedIndex = 0; }
+                if (other) other.value = '';
+                if (notes) notes.value = '';
+            }
+            detailLeadQuickResult = resultType;
+            document.querySelectorAll('[data-detail-quick-result]').forEach(button => {
+                const selected = button.dataset.detailQuickResult === resultType;
+                button.classList.toggle('is-selected', selected);
+                button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            });
+
+            detailLeadQuickSetVisible('detailLeadQuickExtras', true);
+            detailLeadQuickSetVisible('detailLeadQuickFollowUp', ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType));
+            detailLeadQuickSetVisible('detailLeadQuickDateField', resultType === 'VISIT_SCHEDULED');
+            const dateLabel = detailLeadQuickElement('detailLeadQuickDateLabel');
+            const dateHelp = detailLeadQuickElement('detailLeadQuickDateHelp');
+            const isVisit = resultType === 'VISIT_SCHEDULED';
+            if (dateLabel) dateLabel.textContent = isVisit ? 'Fecha y hora de la visita' : 'Próximo contacto';
+            if (dateHelp) dateHelp.textContent = isVisit
+                ? 'Se enviará un recordatorio por WhatsApp una hora antes de la visita.'
+                : 'Se enviará un recordatorio por WhatsApp al ejecutivo asignado en esta fecha y hora.';
+            detailLeadQuickSetVisible('detailLeadQuickReasonField', resultType === 'NOT_INTERESTED');
+            detailLeadQuickSetVisible('detailLeadQuickOtherField', resultType === 'OTHER_EXPLICIT');
+            detailLeadQuickSetVisible('detailLeadQuickNotesField', ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(resultType));
+            detailLeadQuickSetDateMinimum();
+            syncDetailLeadQuickFields();
+        }
+
+        function syncDetailLeadQuickFields() {
+            if (!detailLeadQuickResult) return;
+            const followUp = detailLeadQuickElement('detailLeadQuickFollowUpToggle');
+            const dateInput = detailLeadQuickElement('detailLeadQuickDate');
+            const dateFieldVisible = detailLeadQuickResult === 'VISIT_SCHEDULED' ||
+                (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(detailLeadQuickResult) && followUp?.checked);
+            detailLeadQuickSetVisible('detailLeadQuickDateField', dateFieldVisible);
+            if (dateFieldVisible) detailLeadQuickSetDateMinimum();
+
+            const dateError = detailLeadQuickElement('detailLeadQuickDateError');
+            const error = detailLeadQuickElement('detailLeadQuickError');
+            const reason = detailLeadQuickElement('detailLeadQuickReason');
+            const other = detailLeadQuickElement('detailLeadQuickOther');
+            const saveButton = detailLeadQuickElement('detailLeadQuickSave');
+            if (!saveButton) return;
+
+            const dateMissing = dateFieldVisible && !dateInput?.value;
+            const dateInvalid = dateFieldVisible && Boolean(dateInput?.value) && !detailLeadQuickDateIsValid(dateInput.value);
+            let message = '';
+            // No mostrar error mientras el ejecutivo aún no ha interactuado
+            // con el campo. La fecha vacía es un estado inicial, no una fecha
+            // inválida; el aviso solo corresponde después de ingresar un valor.
+            if (dateInvalid) {
+                message = 'Elige una fecha y hora al menos 1 minuto a futuro.';
+            } else if (detailLeadQuickResult === 'NOT_INTERESTED' && !reason?.value) {
+                message = 'Selecciona un motivo para guardar esta respuesta.';
+            } else if (detailLeadQuickResult === 'OTHER_EXPLICIT' && !other?.value.trim()) {
+                message = 'Describe brevemente el resultado.';
+            }
+
+            if (dateError) {
+                dateError.textContent = dateInvalid ? message : '';
+                dateError.classList.toggle('d-none', !dateInvalid);
+            }
+            if (error) {
+                error.textContent = message && !dateInvalid ? message : '';
+                error.classList.toggle('d-none', !message || dateInvalid);
+            }
+            // La fecha es obligatoria cuando el resultado la solicita, pero
+            // su ausencia inicial no debe mostrarse como un error.
+            saveButton.disabled = dateMissing || Boolean(message);
+        }
+
+        function resetDetailLeadQuickResponse() {
+            detailLeadQuickResult = null;
+            document.querySelectorAll('[data-detail-quick-result]').forEach(button => {
+                button.classList.remove('is-selected');
+                button.setAttribute('aria-pressed', 'false');
+            });
+            const followUp = detailLeadQuickElement('detailLeadQuickFollowUpToggle');
+            const dateInput = detailLeadQuickElement('detailLeadQuickDate');
+            const reason = detailLeadQuickElement('detailLeadQuickReason');
+            const other = detailLeadQuickElement('detailLeadQuickOther');
+            const notes = detailLeadQuickElement('detailLeadQuickNotes');
+            if (followUp) followUp.checked = false;
+            if (dateInput) dateInput.value = '';
+            detailLeadQuickDatePicker?.clear();
+            syncDetailLeadQuickDateDisplay();
+            if (reason) { reason.value = ''; reason.selectedIndex = 0; }
+            if (other) other.value = '';
+            if (notes) notes.value = '';
+            ['detailLeadQuickExtras', 'detailLeadQuickFollowUp', 'detailLeadQuickDateField', 'detailLeadQuickReasonField', 'detailLeadQuickOtherField', 'detailLeadQuickNotesField'].forEach(id => detailLeadQuickSetVisible(id, false));
+            const error = detailLeadQuickElement('detailLeadQuickError');
+            const dateError = detailLeadQuickElement('detailLeadQuickDateError');
+            const saveButton = detailLeadQuickElement('detailLeadQuickSave');
+            if (error) { error.textContent = ''; error.classList.add('d-none'); }
+            if (dateError) { dateError.textContent = ''; dateError.classList.add('d-none'); }
+            if (saveButton) { saveButton.disabled = true; saveButton.textContent = 'Guardar respuesta'; }
+        }
+
+        async function saveDetailLeadResponse() {
+            const saveButton = detailLeadQuickElement('detailLeadQuickSave');
+            if (!detailLeadQuickResult || !saveButton || saveButton.disabled) {
+                syncDetailLeadQuickFields();
+                return;
+            }
+
+            const requestId = (window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+            const followUp = detailLeadQuickElement('detailLeadQuickFollowUpToggle');
+            const dateInput = detailLeadQuickElement('detailLeadQuickDate');
+            const reason = detailLeadQuickElement('detailLeadQuickReason');
+            const other = detailLeadQuickElement('detailLeadQuickOther');
+            const notes = detailLeadQuickElement('detailLeadQuickNotes');
+            const details = {};
+            if (reason?.value) details.reason = reason.value;
+            if (other?.value.trim()) details.outcome = other.value.trim();
+            if (notes?.value.trim()) details.notes = notes.value.trim();
+            if (detailLeadQuickResult === 'EFFECTIVE_CONTACT' && followUp?.checked) details.follow_up = true;
+
+            saveButton.disabled = true;
+            saveButton.textContent = 'Guardando…';
+            try {
+                const response = await fetch('/api/crm/management-result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        phone: leadData.telefono,
+                        assignment_cycle_id: leadData.assignment_cycle_id,
+                        management_request_id: requestId,
+                        idempotency_key: requestId,
+                        result_type: detailLeadQuickResult,
+                        next_follow_up_at: dateInput?.value || null,
+                        details_json: details
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    if (response.status === 409) {
+                        await refreshDetailManagementState();
+                        throw new Error(data.detail === 'closed_lead' ? 'Este lead ya está cerrado.' : 'El lead cambió de asignación. Actualizamos su estado.');
+                    }
+                    if (response.status === 400 && data.detail === 'scheduled_time_too_soon') {
+                        throw new Error('La fecha y hora debe ser al menos 1 minuto a futuro.');
+                    }
+                    throw new Error(data.detail || 'No se pudo registrar la gestión.');
+                }
+                await refreshDetailManagementState();
+                const label = detailLeadQuickLabels[detailLeadQuickResult] || 'Respuesta guardada';
+                resetDetailLeadQuickResponse();
+                showStrongToast('Gestión registrada', label);
+            } catch (error) {
+                const errorBox = detailLeadQuickElement('detailLeadQuickError');
+                if (errorBox) {
+                    errorBox.textContent = error.message || 'No se pudo registrar la gestión.';
+                    errorBox.classList.remove('d-none');
+                }
+                saveButton.disabled = false;
+                saveButton.textContent = 'Guardar respuesta';
+            }
         }
 
         function toggleMobileMenu() {
@@ -3821,6 +4360,24 @@
             });
         });
 
+        function syncFlatpickrTheme(theme = document.documentElement.getAttribute('data-theme')) {
+            const darkTheme = document.getElementById('flatpickrDarkTheme');
+            const lightTheme = document.getElementById('flatpickrLightTheme');
+            if (!darkTheme || !lightTheme) return;
+            const isLight = theme === 'light';
+            darkTheme.disabled = isLight;
+            lightTheme.disabled = !isLight;
+        }
+
+        // El tema también puede cambiar desde otro módulo; observarlo mantiene
+        // el calendario sincronizado sin recargar la página.
+        new MutationObserver(() => syncFlatpickrTheme()).observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme']
+        });
+        syncFlatpickrTheme();
+        window.setTimeout(initDetailLeadQuickDatePicker, 0);
+
         // Configuración de Theme
         function toggleTheme() {
             const html = document.documentElement;
@@ -3834,6 +4391,7 @@
                 icon.classList.remove('fa-moon');
                 icon.classList.add('fa-sun');
             }
+            syncFlatpickrTheme(html.getAttribute('data-theme'));
         }
 
         // --- DATA ESTRUCTURADA PARA SELECTORES DE ESPERA (EXISTENTE) ---
@@ -3842,35 +4400,32 @@
         // --- DATA ESTRUCTURADA PARA SELECTORES DE PROPIETARIO (EXISTENTE) ---
         const ownerReasons = {
             'prop_autoriza': [
-                { val: 'autoriza_visita', text: 'Autoriza Visita' },
-                { val: 'acepta_mostrar', text: 'Acepta mostrar' },
-                { val: 'confirma_disponibilidad', text: 'Confirma disponibilidad' }
-            ],
-            'prop_restricciones': [
-                { val: 'solo_mananas', text: 'Solo mañanas' },
-                { val: 'desde_marzo', text: 'Desde marzo' },
-                { val: 'con_24h_aviso', text: 'Con 24h de aviso' },
-                { val: 'solo_fines_semana', text: 'Solo fines de semana' },
-                { val: 'no_acepta_visitas_aun', text: 'No acepta visitas aún' }
+                { val: 'autoriza_visita', text: 'Autoriza visita / mostrar' },
+                { val: 'confirma_disponibilidad', text: 'Confirma disponibilidad' },
+                { val: 'autoriza_con_condiciones', text: 'Autoriza con condiciones' }
             ],
             'prop_no_responde': [
-                { val: 'intento_contacto', text: 'Ejecutivo intenta contactar' },
-                { val: 'no_logra_contacto', text: 'No logra contacto' }
+                { val: 'no_logra_contacto', text: 'Sin respuesta tras el intento' },
+                { val: 'no_responde_llamada', text: 'No responde llamadas' },
+                { val: 'no_responde_whatsapp', text: 'No responde WhatsApp' },
+                { val: 'contactar_otro_horario', text: 'Solicita contacto en otro horario' }
             ],
             'prop_no_autoriza': [
-                { val: 'no_quiere_mostrar', text: 'No quiere mostrar' },
-                { val: 'no_quiere_visitas', text: 'No quiere visitas' },
-                { val: 'no_baja_precio', text: 'No quiere bajar precio' },
-                { val: 'rechaza_visita', text: 'Rechaza visita' }
+                { val: 'no_quiere_mostrar', text: 'No autoriza mostrar / visitar' },
+                { val: 'no_baja_precio', text: 'No acepta bajar precio' },
+                { val: 'condiciones_no_aceptadas', text: 'No acepta las condiciones de gestión' }
             ],
             'prop_tecnico': [
                 { val: 'no_regularizada', text: 'No regularizada' },
                 { val: 'doc_incompleta', text: 'Documentación incompleta' },
-                { val: 'rol_incorrecto', text: 'Rol incorrecto' }
+                { val: 'rol_incorrecto', text: 'Rol o dominio inconsistente' },
+                { val: 'problema_titulo', text: 'Problema con título o inscripción' },
+                { val: 'reparaciones_pendientes', text: 'Reparaciones o condición pendiente' }
             ],
             'prop_no_disponible': [
                 { val: 'propietario_retiro', text: 'Propietario la retiró' },
-                { val: 'vendio_fuera', text: 'Vendió por fuera' },
+                { val: 'vendio_fuera', text: 'Ya no está disponible' },
+                { val: 'no_disponible_temporal', text: 'No disponible temporalmente' },
                 { val: 'no_autoriza_gestion', text: 'Ya no autoriza gestión' }
             ]
         };
@@ -4010,6 +4565,8 @@
         let currentActionLabel = "";
         let currentResultLabel = "";
         let pendingManagementRequestId = null;
+        let dateFieldTouched = false;
+        let globalDatePicker = null;
 
         function managementRequestIdForCurrentIntent() {
             if (!pendingManagementRequestId) {
@@ -4050,7 +4607,8 @@
                 btn.classList.add('incomplete');
                 btn.style.opacity = "0.75";
                 // --- GUÍA ADAPTATIVA (FIX) ---
-                const guideText = missingReason ? `Falta: ${missingReason}` : 'Complete la gestión';
+                const hideFollowUpHint = missingReason === 'Programar Seguimiento' && !dateFieldTouched;
+                const guideText = hideFollowUpHint ? 'Guardar Gestión' : (missingReason ? `Falta: ${missingReason}` : 'Complete la gestión');
                 btn.innerHTML = `<i class="fa-solid fa-circle-info me-2"></i> ${guideText} <span class="step-counter">${currentSteps}/${totalSteps}</span>`;
             }
         }
@@ -4116,17 +4674,27 @@
             } else if (currentInteraction === 'propietario') {
                 totalSteps = 2;
                 const selectedCat = document.querySelector('input[name="owner_cat_radio"]:checked')?.value;
-                const propReason = document.getElementById('sel_prop_detalle').value;
+                const ownerOtherDetail = document.getElementById('owner_other_detail');
+                const propReason = selectedCat === 'prop_otro'
+                    ? String(ownerOtherDetail?.value || '').trim()
+                    : document.getElementById('sel_prop_detalle').value;
                 const date = document.getElementById('fecha_global').value;
-                const isOptional = (selectedCat === 'prop_no_autoriza' || selectedCat === 'prop_no_disponible');
+                // No Disponible no cierra al lead: aún puede requerir una recomendación.
+                // El seguimiento queda opcional, igual que en la respuesta rápida del lead.
+                const isOptional = selectedCat === 'prop_no_autoriza';
+                const followUpToggle = document.getElementById('ownerFollowUpToggle');
+                const followUpEnabled = Boolean(followUpToggle?.checked);
+                const followUpRequired = ['prop_no_responde', 'prop_tecnico'].includes(selectedCat);
 
-                if (isOptional) totalSteps = 1;
+                if (isOptional || (!followUpRequired && !followUpEnabled)) totalSteps = 1;
+                else if (followUpEnabled || followUpRequired) totalSteps = 2;
 
                 if (propReason) { currentSteps++; setValidationDot('prop', true); } else { setValidationDot('prop', false); }
-                if (date && !isOptional) { currentSteps++; setValidationDot('date', true); } else if (!isOptional) { setValidationDot('date', false); }
+                if (date && !isOptional && (followUpEnabled || followUpRequired)) { currentSteps++; setValidationDot('date', true); }
+                else if (!isOptional && (followUpEnabled || followUpRequired)) { setValidationDot('date', false); }
 
                 if (!propReason) missing = "Detalle Propietario";
-                else if (!isOptional && !date) missing = "Programar Seguimiento";
+                else if (!isOptional && (followUpRequired || followUpEnabled) && !date) missing = "Programar Seguimiento";
                 else isValid = true;
             }
 
@@ -4135,19 +4703,63 @@
 
 
 
+        function syncOwnerFollowupFields() {
+            const isOwner = currentInteraction === 'propietario';
+            const selectedCat = document.querySelector('input[name="owner_cat_radio"]:checked')?.value;
+            const hasReason = selectedCat === 'prop_otro'
+                ? Boolean(document.getElementById('owner_other_detail')?.value.trim())
+                : Boolean(document.getElementById('sel_prop_detalle')?.value);
+            const isTerminal = selectedCat === 'prop_no_autoriza';
+            const followUpRequired = ['prop_no_responde', 'prop_tecnico'].includes(selectedCat);
+            const toggleContainer = document.getElementById('owner-followup-toggle');
+            const toggle = document.getElementById('ownerFollowUpToggle');
+            const toggleLabel = toggleContainer?.querySelector('label');
+            const dateContainer = document.getElementById('global-date-container');
+
+            if (!toggleContainer || !toggle || !dateContainer) return;
+
+            const shouldOfferFollowUp = isOwner && hasReason && !isTerminal;
+            toggleContainer.classList.toggle('d-none', !shouldOfferFollowUp);
+            toggleContainer.classList.toggle('owner-followup-required', followUpRequired);
+            if (toggleLabel) toggleLabel.textContent = followUpRequired
+                ? 'Programar próximo contacto (requerido)'
+                : 'Programar próximo contacto (opcional)';
+            toggle.disabled = followUpRequired;
+            if (followUpRequired) toggle.checked = true;
+            else if (!shouldOfferFollowUp) toggle.checked = false;
+
+            const showDate = isOwner
+                ? shouldOfferFollowUp && (toggle.checked || followUpRequired)
+                : !dateContainer.classList.contains('d-none');
+            if (isOwner) dateContainer.classList.toggle('d-none', !showDate);
+            if (isOwner) syncGlobalDateDisplay();
+            if (isOwner) document.getElementById('gestion-footer')?.classList.toggle('d-none', !hasReason);
+            validateState();
+        }
+
         function renderOwnerReasons() {
             const selectedRadio = document.querySelector('input[name="owner_cat_radio"]:checked');
             const reasonContainer = document.getElementById('owner_reason_container');
             const reasonSelect = document.getElementById('sel_prop_detalle');
+            const otherContainer = document.getElementById('owner_other_container');
+            const otherInput = document.getElementById('owner_other_detail');
 
             // RESET AL CAMBIAR CATEGORÍA
             document.getElementById('gestion-footer').classList.add('d-none');
             currentResultLabel = "";
+            reasonContainer.classList.add('d-none');
+            reasonSelect.disabled = true;
+            if (otherContainer) otherContainer.classList.add('d-none');
+            if (otherInput) otherInput.value = "";
 
             if (!selectedRadio) return;
             const category = selectedRadio.value;
             reasonSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
-            if (category && ownerReasons[category]) {
+            if (category === 'prop_otro') {
+                document.getElementById('resultado_gestion').value = 'owner_otro';
+                if (otherContainer) otherContainer.classList.remove('d-none');
+                currentResultLabel = 'Otro';
+            } else if (category && ownerReasons[category]) {
                 const options = ownerReasons[category];
                 options.forEach(opt => {
                     const el = document.createElement('option');
@@ -4160,6 +4772,7 @@
                 reasonSelect.disabled = false;
 
             }
+            syncOwnerFollowupFields();
             validateState();
         }
 
@@ -4231,6 +4844,7 @@
                     const ownerSelect = document.getElementById('sel_prop_detalle');
                     if (ownerSelect.selectedIndex > 0) {
                         currentResultLabel = ownerSelect.options[ownerSelect.selectedIndex].text;
+                        syncOwnerFollowupFields();
                         // Progressive Disclosure: show footer when reason is selected
                         document.getElementById('gestion-footer').classList.remove('d-none');
                     }
@@ -4256,15 +4870,18 @@
             const btnProp = document.getElementById('mode_prop');
             const btnClose = document.getElementById('mode_close');
             const recommendContainer = document.getElementById('mode-recommend-container');
+            const quickManagementBar = document.querySelector('.detail-quick-management-bar');
             const contactContext = document.getElementById('contact-context');
             const legacyForm = document.getElementById('crmForm');
 
             // LIMPIEZA TOTAL DE FORMULARIO AL CAMBIAR DE MODO
             resetGestionForm();
+            resetDetailLeadQuickResponse();
 
             idLead.classList.add('d-none');
             idOwner.classList.add('d-none');
             recommendContainer.classList.add('d-none');
+            quickManagementBar?.classList.toggle('d-none', mode !== 'contact');
 
             btnContact.classList.remove('active');
             btnProp.classList.remove('active-prop');
@@ -4336,10 +4953,24 @@
             // Limpiar fecha global
             const fechaGlobal = document.getElementById('fecha_global');
             if (fechaGlobal) fechaGlobal.value = "";
+            globalDatePicker?.clear();
+            syncGlobalDateDisplay();
+            dateFieldTouched = false;
+            const ownerFollowupToggle = document.getElementById('ownerFollowUpToggle');
+            if (ownerFollowupToggle) {
+                ownerFollowupToggle.checked = false;
+                ownerFollowupToggle.disabled = false;
+            }
+            const ownerFollowupContainer = document.getElementById('owner-followup-toggle');
+            if (ownerFollowupContainer) ownerFollowupContainer.classList.add('d-none');
 
             // Ocultar contenedores dinámicos
             const ownerContainer = document.getElementById('owner_reason_container');
             if (ownerContainer) ownerContainer.classList.add('d-none');
+            const ownerOtherContainer = document.getElementById('owner_other_container');
+            if (ownerOtherContainer) ownerOtherContainer.classList.add('d-none');
+            const ownerOtherInput = document.getElementById('owner_other_detail');
+            if (ownerOtherInput) ownerOtherInput.value = "";
             const closeContainer = document.getElementById('close_reason_container');
             if (closeContainer) closeContainer.classList.add('d-none');
 
@@ -4412,6 +5043,8 @@
                 const radiosOwner = document.getElementsByName('owner_cat_radio');
                 radiosOwner.forEach(r => r.checked = false);
                 document.getElementById('owner_reason_container').classList.add('d-none');
+                document.getElementById('owner_other_container')?.classList.add('d-none');
+                document.getElementById('owner_other_detail').value = "";
                 const propSelect = document.getElementById('sel_prop_detalle');
                 propSelect.innerHTML = '<option value="" selected disabled>Seleccione detalle específico...</option>';
                 propSelect.value = "";
@@ -4484,7 +5117,12 @@
                 }
             } else if (currentInteraction === 'propietario') {
                 const ownerSelect = document.getElementById('sel_prop_detalle');
-                if (ownerSelect && ownerSelect.value) {
+                const ownerCategory = document.querySelector('input[name="owner_cat_radio"]:checked')?.value;
+                const ownerOtherDetail = document.getElementById('owner_other_detail');
+                const hasOwnerResult = ownerCategory === 'prop_otro'
+                    ? Boolean(ownerOtherDetail?.value.trim())
+                    : Boolean(ownerSelect?.value);
+                if (hasOwnerResult) {
                     document.getElementById('gestion-footer').classList.remove('d-none');
                 } else {
                     document.getElementById('gestion-footer').classList.add('d-none');
@@ -4546,8 +5184,14 @@
                         targetField = document.getElementById('fecha_global');
                     }
                 } else if (currentInteraction === 'propietario') {
-                    if (!document.getElementById('sel_prop_detalle').value) {
+                    const ownerCategory = document.querySelector('input[name="owner_cat_radio"]:checked')?.value;
+                    if (ownerCategory === 'prop_otro' && !document.getElementById('owner_other_detail').value.trim()) {
+                        targetField = document.getElementById('owner_other_container');
+                    } else if (ownerCategory !== 'prop_otro' && !document.getElementById('sel_prop_detalle').value) {
                         targetField = document.getElementById('owner_reason_container');
+                    } else if (['prop_no_responde', 'prop_tecnico'].includes(document.querySelector('input[name="owner_cat_radio"]:checked')?.value)
+                        && !document.getElementById('ownerFollowUpToggle').checked) {
+                        targetField = document.getElementById('owner-followup-toggle');
                     } else if (!document.getElementById('fecha_global').value && document.getElementById('btnMainAction').innerText.includes("/2")) {
                         targetField = document.getElementById('fecha_global');
                     }

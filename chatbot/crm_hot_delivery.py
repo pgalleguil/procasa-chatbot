@@ -43,12 +43,16 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
     if lead.get("_id") is None:
         raise ValueError("canonical lead_id is required")
     assigned = coerce_utc_datetime(assigned_at) or utc_now()
-    due = coerce_utc_datetime(send_after) or assigned
     cycle = create_assignment_cycle(
         db, lead=lead, assigned_to_user_id=recipient_user_id,
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
         assigned_to_display_name=recipient_name or str(recipient_user_id),
     )
+    # create_assignment_cycle normalizes commercial assignments that arrive
+    # outside hours to the next business opening. Reuse that same timestamp
+    # for lifecycle display and notification scheduling.
+    assigned = coerce_utc_datetime(cycle.get("assigned_at")) or assigned
+    due = coerce_utc_datetime(send_after) or assigned
     source_id = str(
         source_event_id or lead.get("source_inbound_provider_id")
         or lead.get("source_event_id") or ""

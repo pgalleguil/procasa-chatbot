@@ -16,7 +16,7 @@
             --bg-elevated: #202d43;
             --bg-tertiary: var(--bg-elevated);
             --bg-sidebar: #081426;
-            --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-glass-bg: rgba(8, 20, 38, 0.66);
             --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(99, 102, 241, 0.025) 48%, rgba(8, 20, 38, 0.02));
             --sidebar-border: rgba(148, 163, 184, 0.20);
             --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.04), 8px 0 24px rgba(2, 6, 23, 0.16);
@@ -53,8 +53,8 @@
             --bg-elevated: #f1f5f9;
             --bg-tertiary: var(--bg-elevated);
             --bg-sidebar: #f4f7fc;
-            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
-            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
+            --sidebar-glass-bg: rgba(244, 247, 252, 0.60);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.30), rgba(79, 70, 229, 0.025) 50%, rgba(226, 232, 240, 0.04));
             --sidebar-border: rgba(100, 116, 139, 0.24);
             --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
             --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
@@ -108,8 +108,8 @@
         @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
             .sidebar {
                 background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);
-                -webkit-backdrop-filter: blur(14px) saturate(120%);
-                backdrop-filter: blur(14px) saturate(120%);
+                -webkit-backdrop-filter: blur(18px) saturate(135%);
+                backdrop-filter: blur(18px) saturate(135%);
             }
         }
 
@@ -1109,6 +1109,8 @@
             .table-container { padding: 14px; border-radius: 14px; }
         }
     </style>
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -1118,7 +1120,7 @@
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                 style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                onerror="this.style.display='none'"> <span>MENÚ</span>
+                onerror="this.style.display='none'">
         </div>
 
         <div class="sidebar-main-nav">

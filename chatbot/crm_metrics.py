@@ -16,6 +16,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+from .business_calendar import next_business_slot_utc
 from .utils import calculate_business_minutes
 
 METRIC_VERSION = "crm_metrics_v1"
@@ -159,6 +160,7 @@ def normalize_result(value: Any) -> Optional[str]:
         "AUTORIZA_VISITA": "EFFECTIVE_CONTACT",
         "ACEPTA_MOSTRAR": "EFFECTIVE_CONTACT",
         "CONFIRMA_DISPONIBILIDAD": "EFFECTIVE_CONTACT",
+        "AUTORIZA_CON_CONDICIONES": "EFFECTIVE_CONTACT",
         "SOLO_MANANAS": "EFFECTIVE_CONTACT",
         "DESDE_MARZO": "EFFECTIVE_CONTACT",
         "CON_24H_AVISO": "EFFECTIVE_CONTACT",
@@ -167,16 +169,23 @@ def normalize_result(value: Any) -> Optional[str]:
         # Owner not reached: auditable attempt that stops SLA.
         "INTENTO_CONTACTO": "NO_RESPONDIO",
         "NO_LOGRA_CONTACTO": "NO_RESPONDIO",
+        "NO_RESPONDE_LLAMADA": "NO_RESPONDIO",
+        "NO_RESPONDE_WHATSAPP": "NO_RESPONDIO",
+        "CONTACTAR_OTRO_HORARIO": "SOLICITA_SEGUIMIENTO",
         # Owner reached but negative / closed outcome.
         "NO_QUIERE_MOSTRAR": "NO_INTERESADO",
         "NO_QUIERE_VISITAS": "NO_INTERESADO",
         "NO_BAJA_PRECIO": "NO_INTERESADO",
         "RECHAZA_VISITA": "NO_INTERESADO",
+        "CONDICIONES_NO_ACEPTADAS": "NO_INTERESADO",
         "NO_REGULARIZADA": "NO_INTERESADO",
         "DOC_INCOMPLETA": "NO_INTERESADO",
         "ROL_INCORRECTO": "NO_INTERESADO",
+        "PROBLEMA_TITULO": "NO_INTERESADO",
+        "REPARACIONES_PENDIENTES": "NO_INTERESADO",
         "PROPIETARIO_RETIRO": "NO_INTERESADO",
         "VENDIO_FUERA": "NO_INTERESADO",
+        "NO_DISPONIBLE_TEMPORAL": "PROPERTY_UNAVAILABLE",
         "NO_AUTORIZA_GESTION": "NO_INTERESADO",
         # ---- Closing diagnostics (crm_lead_detail closingReasons) ----
         "VENTA_CONCRETADA": "NO_INTERESADO",
@@ -288,6 +297,12 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     notifiable_reasons = frozenset({
         "lead_created", "inbound_message", "manual_lead_created",
     })
+    # Commercial assignment is effective only during business hours.  If an
+    # inbound lead arrives outside the schedule, anchor the cycle at the next
+    # business opening (normally 09:00 on the next working day), while the
+    # original receipt time remains available in the inbound event/audit data.
+    if reason in notifiable_reasons:
+        assigned_at = next_business_slot_utc(assigned_at)
     notification_eligible = reason in notifiable_reasons
     if reason == "manual_lead_created":
         cycle_origin = "manual_lead"

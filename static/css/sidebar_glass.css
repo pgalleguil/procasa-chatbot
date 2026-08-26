@@ -1,0 +1,89 @@
+/* Barra lateral única para todos los módulos. */
+:root {
+    --app-sidebar-bg: rgba(8, 20, 38, .66);
+    --app-sidebar-text: #b9c6d8;
+    --app-sidebar-border: rgba(148, 163, 184, .20);
+    --app-sidebar-accent: #a5b4fc;
+}
+
+[data-theme="light"] {
+    --app-sidebar-bg: rgba(244, 247, 252, .60);
+    --app-sidebar-text: #334155;
+    --app-sidebar-border: rgba(100, 116, 139, .24);
+    --app-sidebar-accent: #4338ca;
+}
+
+.sidebar {
+    background: var(--app-sidebar-bg) !important;
+    border-right: 1px solid var(--app-sidebar-border) !important;
+    box-shadow: 8px 0 26px rgba(2, 8, 23, .14) !important;
+    backdrop-filter: blur(18px) saturate(135%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+}
+
+.sidebar .nav-link {
+    border-left: 3px solid transparent !important;
+    color: var(--app-sidebar-text) !important;
+    transition: color .18s ease, background-color .18s ease, border-color .18s ease !important;
+}
+
+.sidebar .nav-link:hover {
+    color: var(--text-primary, #f4f7fb) !important;
+    background: rgba(99, 102, 241, .10) !important;
+}
+
+.sidebar .nav-link.active {
+    color: var(--text-primary, #f4f7fb) !important;
+    background: rgba(99, 102, 241, .17) !important;
+    border-left-color: var(--app-sidebar-accent) !important;
+    box-shadow: inset 0 0 20px rgba(99, 102, 241, .05) !important;
+}
+
+html[data-theme="dark"] .cd-page .sidebar,
+html[data-theme="light"] .cd-page .sidebar {
+    background: var(--app-sidebar-bg) !important;
+    border-color: var(--app-sidebar-border) !important;
+}
+
+@media (min-width: 992px) {
+    .sidebar { width: 80px !important; }
+    .sidebar:hover { width: 240px !important; }
+}
+
+/* El acceso al menú móvil permanece disponible durante todo el scroll. */
+@media (max-width: 768px) {
+    .hamburger-mobile {
+        display: flex !important;
+        position: fixed !important;
+        top: 12px;
+        left: 12px;
+        z-index: 1301;
+        margin: 0 !important;
+    }
+
+    body:has(.sidebar.mobile-open) .hamburger-mobile {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    .main-content > .d-flex.align-items-center:first-child,
+    .main-content > .page-header:first-child,
+    .main-content > .header-container:first-child,
+    .main-content > .header-container:has(> #seqHeader) {
+        padding-left: 52px;
+    }
+
+    /* El Dashboard aplica filtros de entrada al encabezado; no deben crear
+       un contenedor que desplace el botón fixed durante el scroll. */
+    .main-content > .header-container:first-child > .seq-el {
+        filter: none !important;
+        transform: none !important;
+    }
+
+    .main-content > .header-container:has(> #seqHeader) > #seqHeader {
+        filter: none !important;
+        transform: none !important;
+        will-change: auto !important;
+    }
+}

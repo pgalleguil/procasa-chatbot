@@ -10,6 +10,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link id="flatpickrDarkTheme" rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+    <link id="flatpickrLightTheme" rel="stylesheet" href="https://npmcdn.com/flatpickr/dist/themes/light.css" disabled>
 
     <style>
         :root {
@@ -17,7 +20,7 @@
             --bg-card: #182235;
             --bg-elevated: #202d43;
             --bg-sidebar: #081426;
-            --sidebar-glass-bg: rgba(8, 20, 38, 0.82);
+            --sidebar-glass-bg: rgba(8, 20, 38, 0.66);
             --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(99, 102, 241, 0.025) 48%, rgba(8, 20, 38, 0.02));
             --sidebar-border: rgba(148, 163, 184, 0.20);
             --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.04), 8px 0 24px rgba(2, 6, 23, 0.16);
@@ -62,8 +65,8 @@
             --bg-card: #f8fafc;
             --bg-elevated: #f1f5f9;
             --bg-sidebar: #f4f7fc;
-            --sidebar-glass-bg: rgba(244, 247, 252, 0.84);
-            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(79, 70, 229, 0.035) 50%, rgba(226, 232, 240, 0.08));
+            --sidebar-glass-bg: rgba(244, 247, 252, 0.60);
+            --sidebar-glass-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.30), rgba(79, 70, 229, 0.025) 50%, rgba(226, 232, 240, 0.04));
             --sidebar-border: rgba(100, 116, 139, 0.24);
             --sidebar-shadow: inset -1px 0 rgba(255, 255, 255, 0.72), 8px 0 24px rgba(51, 65, 85, 0.10);
             --sidebar-shadow-expanded: inset -1px 0 rgba(255, 255, 255, 0.82), 10px 0 28px rgba(51, 65, 85, 0.13);
@@ -150,8 +153,8 @@
         @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
             .sidebar {
                 background: var(--sidebar-glass-highlight), var(--sidebar-glass-bg);
-                -webkit-backdrop-filter: blur(14px) saturate(120%);
-                backdrop-filter: blur(14px) saturate(120%);
+                -webkit-backdrop-filter: blur(18px) saturate(135%);
+                backdrop-filter: blur(18px) saturate(135%);
             }
         }
 
@@ -486,7 +489,8 @@
             display: flex;
             height: 14px;
             margin-top: 16px;
-            overflow: hidden;
+            position: relative;
+            overflow: visible;
             background: rgba(148, 163, 184, 0.18);
             border-radius: 999px;
         }
@@ -508,6 +512,75 @@
             z-index: 1;
         }
         .progress-segment.is-active { filter: brightness(1.18); box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+
+        /* Información de estado: reemplaza el tooltip nativo por una tarjeta compacta. */
+        .progress-segment:first-child { border-radius: 999px 0 0 999px; }
+        .progress-segment:last-child { border-radius: 0 999px 999px 0; }
+        .progress-segment:only-child { border-radius: 999px; }
+        .progress-segment-tooltip {
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 11px);
+            z-index: 25;
+            display: grid;
+            gap: 3px;
+            min-width: 158px;
+            max-width: min(235px, calc(100vw - 32px));
+            padding: 10px 12px;
+            border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-color));
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+            color: var(--text-primary);
+            box-shadow: 0 14px 30px rgba(2, 6, 23, .28);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translate(-50%, 5px);
+            transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+            text-align: left;
+        }
+        .progress-segment-tooltip::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            bottom: -5px;
+            width: 9px;
+            height: 9px;
+            border-right: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-color));
+            border-bottom: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-color));
+            background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+            transform: translateX(-50%) rotate(45deg);
+        }
+        .progress-segment-tooltip-title {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: .76rem;
+            line-height: 1.15;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+        .progress-segment-tooltip-dot {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 8px;
+            border-radius: 50%;
+        }
+        .progress-segment-tooltip-meta {
+            padding-left: 15px;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            line-height: 1.25;
+            white-space: nowrap;
+        }
+        .progress-segment:hover .progress-segment-tooltip,
+        .progress-segment:focus-visible .progress-segment-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, 0);
+        }
 
         .segment-nuevo { background: var(--state-unattended); }
         .segment-gestion { background: var(--state-management); }
@@ -719,7 +792,7 @@
         /* FILTERS (Homologados a captacion_list) */
         .filter-bar {
             display: grid;
-            grid-template-columns: 220px 130px repeat(4, 186px) max-content;
+            grid-template-columns: 220px 130px repeat(3, 186px) 210px max-content;
             column-gap: 10px;
             row-gap: 10px;
             margin-bottom: 8px;
@@ -731,7 +804,7 @@
             .filter-bar .search-box input,
             .filter-bar select,
             .filter-bar .btn-clear-filters {
-                min-height: 33px;
+                min-height: 37px;
                 padding-top: 6px;
                 padding-bottom: 6px;
             }
@@ -757,6 +830,8 @@
         }
         .filter-bar .lead-search-field { max-width: 220px; }
         .filter-bar .compact-select-filter { max-width: 186px; }
+        .filter-bar .order-filter { max-width: 210px; }
+        .filter-bar select[name="orden"] { width: 210px; max-width: 210px; }
         .filter-bar .property-code-input {
             padding-left: 10px !important;
             padding-right: 10px !important;
@@ -851,7 +926,12 @@
 
         .btn-clear-filters {
             align-self: flex-end;
-            min-height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 37px;
             padding: 7px 12px;
             border: 1px solid var(--input-border);
             border-radius: 10px;
@@ -947,10 +1027,10 @@
         .management-panel-result { display: flex; align-items: baseline; gap: 5px; padding-right: 2px; }
         .management-panel-percent { font-size: 1.35rem; }
         .segmented-progress { display: flex; height: 11px; margin-top: 9px; }
-        .segmented-progress .segment-nuevo { background: #c87882; }
-        .segmented-progress .segment-gestion { background: var(--accent-color); }
-        .segmented-progress .segment-visita { background: #8c91f2; }
-        .segmented-progress .segment-cerrado { background: #718096; }
+        .segmented-progress .segment-nuevo { background: var(--state-unattended); }
+        .segmented-progress .segment-gestion { background: var(--state-management); }
+        .segmented-progress .segment-visita { background: var(--state-visits); }
+        .segmented-progress .segment-cerrado { background: var(--state-closed); }
         .segmented-progress .progress-segment:not(.is-active) { opacity: .82; }
         .state-metrics-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 5px; }
         .state-metric { padding: 0; min-height: 0; }
@@ -1008,21 +1088,23 @@
             box-shadow: inset 0 0 0 9999px rgba(255, 255, 255, 0.045);
         }
 
-        .crm-table .col-sent { width: 12%; min-width: 116px; }
-        .crm-table .col-priority { width: 15%; min-width: 118px; }
-        .crm-table .col-type { width: 8%; min-width: 78px; }
+        .crm-table .col-sent { width: 11%; min-width: 116px; }
+        .crm-table .col-type { width: 7%; min-width: 78px; }
+        .crm-table .col-priority { width: 14%; min-width: 118px; }
+        .crm-table .col-lead { width: 18%; min-width: 170px; }
+        .crm-table .col-executive { width: 12%; min-width: 120px; }
+        .crm-table .col-management { width: 18%; min-width: 180px; }
         .crm-table .col-code { width: 10%; min-width: 96px; }
-        .crm-table .col-lead { width: 22%; min-width: 170px; }
-        .crm-table .col-management { width: 23%; min-width: 180px; }
         .crm-table .col-response { width: 10%; min-width: 112px; }
 
         @media (min-width: 769px) and (max-width: 1200px) {
-            .crm-table .col-sent { width: 12%; }
-            .crm-table .col-priority { width: 15%; }
-            .crm-table .col-type { width: 8%; }
+            .crm-table .col-sent { width: 11%; }
+            .crm-table .col-type { width: 7%; }
+            .crm-table .col-priority { width: 14%; }
+            .crm-table .col-lead { width: 18%; }
+            .crm-table .col-executive { width: 12%; }
+            .crm-table .col-management { width: 18%; }
             .crm-table .col-code { width: 10%; }
-            .crm-table .col-lead { width: 22%; }
-            .crm-table .col-management { width: 23%; }
             .crm-table .col-response { width: 10%; }
         }
 
@@ -1034,7 +1116,7 @@
             }
 
             .crm-table thead th {
-                box-shadow: 0 1px 0 var(--border-color);
+                box-shadow: none;
             }
         }
 
@@ -1292,6 +1374,8 @@
         .priority-sla { display: inline-block; font-size: .78rem; font-weight: 600; line-height: 1.15; white-space: nowrap; }
         .crm-table td.col-priority .mobile-cell-value { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; row-gap: 2px; }
         .sla-timing { flex: 0 0 calc(100% - 16px); margin-left: 16px; color: var(--text-secondary); font-size: .68rem; line-height: 1.1; white-space: nowrap; }
+        .sla-breached { color: var(--bs-danger) !important; }
+        .sla-started { flex: 0 0 calc(100% - 16px); margin-left: 16px; color: var(--text-secondary); font-size: .64rem; line-height: 1.1; white-space: nowrap; }
         .priority-type { display: none; }
         .priority-type.lead-type-hot { color: var(--bs-danger) !important; }
         .priority-type.lead-type-normal { color: var(--text-secondary) !important; }
@@ -1306,14 +1390,34 @@
         .lead-cell .lead-name, .management-cell .management-main { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
         .lead-cell .lead-meta, .management-cell .management-meta { display: block; margin-top: 3px; color: var(--text-secondary); font-size: .68rem; }
         .management-cell .management-meta { color: var(--text-secondary); }
+        /* El texto de Gestión nunca debe invadir Código, Respuesta u otra columna. */
+        .crm-table td.col-management,
+        .crm-table td.col-management .mobile-cell-value,
+        .crm-table td.col-management .management-cell {
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+        }
+        .crm-table td.col-management .management-main,
+        .crm-table td.col-management .management-meta {
+            display: block;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            white-space: normal;
+        }
         .management-cell .management-status { color: var(--text-primary); font-weight: 600; }
         .quick-management-btn:hover, .quick-management-btn:focus-visible { background: rgba(99,102,241,.28); border-color: var(--accent); }
         .quick-management-btn[disabled] { opacity: .7; cursor: wait; }
-        #quickManagementModal .modal-dialog { max-width: 520px; }
-        .quick-result-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
-        .quick-result-btn { text-align: left; min-height: 50px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--bg-card); color: var(--text-primary); padding: 9px 12px; font-weight: 650; transition: border-color .16s ease, background-color .16s ease; }
+        .quick-management-closed { color: var(--text-secondary); font-size: .72rem; font-weight: 650; white-space: nowrap; }
+        #quickManagementModal .modal-dialog { max-width: 620px; }
+        .quick-result-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .quick-result-btn { width: 100%; position: relative; display: flex; align-items: center; gap: 8px; text-align: left; min-height: 62px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--bg-card); color: var(--text-primary); padding: 10px 38px 10px 14px; font-weight: 650; transition: border-color .16s ease, background-color .16s ease; }
+        .quick-result-btn i { width: 18px; flex: 0 0 18px; color: var(--text-secondary); text-align: center; }
+        .quick-result-btn span { line-height: 1.2; }
         .quick-result-btn:hover, .quick-result-btn.is-selected { border-color: var(--accent); background: rgba(99,102,241,.16); }
-        .quick-result-btn.is-selected::after { content: '✓'; float: right; color: var(--accent); font-size: 1rem; }
+        .quick-result-btn.is-selected i { color: var(--accent); }
+        .quick-result-btn.is-selected::after { content: '✓'; position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 1rem; }
         #quickManagementModal .form-select, #quickManagementModal .form-control { background-color: var(--bg-card); border-color: var(--border-color); color: var(--text-primary); }
         #quickManagementModal .form-select:focus, #quickManagementModal .form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,.18); }
         .quick-detail-link { display: block; margin-top: 12px; color: var(--accent-color); font-size: .78rem; text-decoration: none; }
@@ -1322,8 +1426,18 @@
         .lead-type-label .type-hot { color: var(--bs-danger); }
         .quick-extra { display: none; }
         .quick-extra.is-visible { display: block; }
+        .quick-date-picker { position: relative; display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 8px 11px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease; }
+        .quick-date-picker:hover, .quick-date-picker:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,.18); color: var(--text-primary); }
+        .quick-date-picker-icon { color: var(--accent); font-size: .9rem; }
+        .quick-date-picker-text { font-size: .78rem; }
+        .quick-date-picker-text.has-value { color: var(--text-primary); font-weight: 600; }
+        .quick-date-input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; opacity: 0; cursor: pointer; color-scheme: dark; }
+        [data-theme="light"] .quick-date-input { color-scheme: light; }
         .quick-error { display: none; }
         .quick-error.is-visible { display: block; }
+        .quick-date-picker.is-invalid { border-color: var(--bs-danger) !important; box-shadow: 0 0 0 .15rem rgba(220, 53, 69, .18); }
+        .quick-date-input.is-invalid { accent-color: var(--bs-danger); }
+        @media (max-width: 767.98px) { .quick-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 768px) {
             .sla-info-popup {
                 position: fixed;
@@ -1432,6 +1546,162 @@
             color: var(--text-primary);
             margin: 10px 0;
             font-family: monospace;
+        }
+        /* Estructura móvil final: una tarjeta por lead, con jerarquía operativa. */
+        @media (max-width: 768px) {
+            .crm-table {
+                border-collapse: separate;
+                border-spacing: 0;
+            }
+
+            .crm-table tbody tr.clickable-row {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                grid-template-areas:
+                    "priority sent"
+                    "lead lead"
+                    "management management"
+                    "executive type"
+                    "code response";
+                gap: 0 14px;
+                margin: 0 0 14px;
+                padding: 14px 15px 12px;
+                background: var(--bg-card) !important;
+                border: 1px solid var(--border-color);
+                border-radius: 16px;
+                box-shadow: 0 5px 16px rgba(0, 0, 0, .12);
+                overflow: hidden;
+            }
+
+            .crm-table tbody tr.clickable-row > td {
+                display: block;
+                width: auto !important;
+                min-width: 0;
+                min-height: 0;
+                padding: 0 !important;
+                margin: 0;
+                border: 0 !important;
+                background: transparent !important;
+                text-align: left;
+            }
+
+            .crm-table tbody tr.clickable-row > .col-priority { grid-area: priority; padding-bottom: 9px !important; }
+            .crm-table tbody tr.clickable-row > .col-sent { grid-area: sent; padding-bottom: 9px !important; text-align: right; }
+            .crm-table tbody tr.clickable-row > .col-lead {
+                grid-area: lead;
+                padding: 11px 0 10px !important;
+                border-top: 1px solid var(--border-color) !important;
+            }
+            .crm-table tbody tr.clickable-row > .col-management {
+                grid-area: management;
+                padding: 10px 0 !important;
+                border-top: 1px solid var(--border-color) !important;
+            }
+            .crm-table tbody tr.clickable-row > .col-executive {
+                display: block !important;
+                grid-area: executive;
+                padding-top: 9px !important;
+                border-top: 1px solid var(--border-color) !important;
+            }
+            .crm-table tbody tr.clickable-row > .col-type {
+                grid-area: type;
+                padding-top: 9px !important;
+                border-top: 1px solid var(--border-color) !important;
+                text-align: right;
+            }
+            .crm-table tbody tr.clickable-row > .col-code {
+                grid-area: code;
+                padding-top: 10px !important;
+                align-self: center;
+            }
+            .crm-table tbody tr.clickable-row > .col-response {
+                grid-area: response;
+                padding-top: 10px !important;
+            }
+
+            .crm-table td[data-label="Ejecutivo"]::before,
+            .crm-table td[data-label="Tipo"]::before,
+            .crm-table td[data-label="Código"]::before {
+                display: block !important;
+                margin-bottom: 3px;
+                content: attr(data-label);
+                color: var(--text-secondary);
+                font-size: .62rem;
+                font-weight: 800;
+                letter-spacing: .07em;
+                line-height: 1;
+                text-transform: uppercase;
+            }
+
+            .crm-table td[data-label="Tipo"]::before { text-align: right; }
+            .crm-table td[data-label="Código"]::before { text-align: left; }
+            .crm-table td[data-label="Ejecutivo"] .executive-name,
+            .crm-table td[data-label="Tipo"] .lead-type-label,
+            .crm-table td[data-label="Código"] .prop-code-link {
+                display: block;
+                min-width: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .crm-table td[data-label="Lead"] .lead-name {
+                font-size: 1rem;
+                line-height: 1.2;
+            }
+            .crm-table td[data-label="Lead"] .lead-meta {
+                display: block;
+                margin-top: 4px;
+                font-size: .78rem;
+            }
+            .crm-table td[data-label="Gestión"] .management-main {
+                font-size: .86rem;
+                line-height: 1.2;
+            }
+            .crm-table td[data-label="Gestión"] .management-meta {
+                display: block;
+                margin-top: 4px;
+                overflow-wrap: anywhere;
+                white-space: normal;
+                word-break: break-word;
+                font-size: .75rem;
+                line-height: 1.25;
+            }
+            .crm-table td[data-label="Prioridad"] .mobile-cell-value {
+                display: grid !important;
+                grid-template-columns: auto minmax(0, 1fr);
+                gap: 3px 6px;
+                align-items: center;
+                width: 100%;
+            }
+            .crm-table td[data-label="Prioridad"] .priority-sla,
+            .crm-table td[data-label="Prioridad"] .sla-timing,
+            .crm-table td[data-label="Prioridad"] .sla-started {
+                grid-column: 2;
+                min-width: 0;
+                max-width: 100%;
+                overflow-wrap: anywhere;
+                white-space: normal;
+            }
+            .crm-table td[data-label="Prioridad"] .sla-timing,
+            .crm-table td[data-label="Prioridad"] .sla-started {
+                font-size: .73rem;
+                line-height: 1.2;
+                margin-left: 0 !important;
+                flex: none !important;
+            }
+            .crm-table td[data-label="Asignado"] .sent-cell {
+                align-items: flex-end;
+                line-height: 1.15;
+            }
+            .crm-table td[data-label="Asignado"] .sent-relative {
+                font-size: .73rem;
+            }
+            .crm-table .col-response .mobile-cell-value,
+            .crm-table .col-response .quick-management-btn {
+                width: 100%;
+            }
+            .crm-table .col-response .quick-management-btn {
+                min-height: 42px;
+            }
         }
     </style>
     <style>
@@ -1639,17 +1909,22 @@
                 gap: 10px;
             }
 
-            .filter-bar .filter-search-field {
+            .filter-bar .lead-search-field {
                 grid-column: 1 / -1;
             }
 
+            .filter-bar .filter-field,
             .filter-bar .filter-field:not(.filter-search-field) {
-                display: none;
+                display: flex;
+                max-width: none !important;
             }
 
-            .filter-bar .advanced-filter { display: none; }
-            .filter-bar.is-expanded .filter-field:not(.filter-search-field) { display: flex; }
-            .filter-bar.is-expanded .advanced-filter { display: flex; }
+            .filter-bar .order-filter,
+            .filter-bar .btn-clear-filters {
+                grid-column: 1 / -1;
+            }
+
+            .filter-bar .advanced-filter { display: flex; }
             .filter-bar .btn-clear-filters { display: flex; }
 
             .filter-bar .search-box,
@@ -1666,7 +1941,7 @@
             .filter-bar select,
             .filter-bar .btn-filter,
             .filter-bar .btn-clear-filters {
-                min-height: 48px;
+                min-height: 44px;
             }
 
             .filter-bar .btn-filter {
@@ -1702,7 +1977,8 @@
                 background: var(--bg-card);
                 border: 1px solid var(--border-color);
                 border-radius: 16px;
-                padding: 0;
+                padding: 8px 10px 9px;
+                row-gap: 2px;
                 box-shadow: 0 5px 16px rgba(0,0,0,0.12);
                 position: relative;
                 overflow: hidden;
@@ -1722,7 +1998,7 @@
             .crm-table td {
                 border: none;
                 background: transparent !important;
-                padding: 1px 4px;
+                padding: 4px;
                 display: grid;
                 grid-template-columns: minmax(0, 1fr);
                 gap: 3px;
@@ -1736,6 +2012,7 @@
             .crm-table .col-type,
             .crm-table .col-code,
             .crm-table .col-lead,
+            .crm-table .col-executive,
             .crm-table .col-management,
             .crm-table .col-response {
                 width: 100%;
@@ -1743,11 +2020,12 @@
 
             .crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }
             .crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }
-            .crm-table .col-type { order: 2; grid-column: 1 / -1; grid-row: 2; }
-            .crm-table .col-code { order: 3; grid-column: 1 / -1; grid-row: 3; }
-            .crm-table .col-lead { order: 4; grid-column: 1 / -1; grid-row: 4; }
-            .crm-table .col-management { order: 5; grid-column: 1 / -1; grid-row: 5; }
-            .crm-table .col-response { order: 6; grid-column: 1 / -1; grid-row: 6; }
+            .crm-table .col-lead { order: 2; grid-column: 1 / -1; grid-row: 2; }
+            .crm-table .col-management { order: 3; grid-column: 1 / -1; grid-row: 3; }
+            .crm-table .col-executive { order: 4; grid-column: 1; grid-row: 4; }
+            .crm-table .col-type { order: 4; grid-column: 2; grid-row: 4; }
+            .crm-table .col-code { order: 5; grid-column: 1; grid-row: 5; }
+            .crm-table .col-response { order: 5; grid-column: 2; grid-row: 5; }
 
             /* Etiqueta flotante / Label */
             .crm-table td::before {
@@ -1760,6 +2038,26 @@
                 letter-spacing: 1px;
                 margin-bottom: 0;
                 opacity: 0.7;
+            }
+
+            .crm-table td[data-label="Lead"]::before,
+            .crm-table td[data-label="Gestión"]::before,
+            .crm-table td[data-label="Ejecutivo"]::before,
+            .crm-table td[data-label="Tipo"]::before,
+            .crm-table td[data-label="Código"]::before,
+            .crm-table td[data-label="Respuesta"]::before {
+                display: block;
+            }
+
+            .crm-table td[data-label="Lead"],
+            .crm-table td[data-label="Gestión"],
+            .crm-table td[data-label="Ejecutivo"],
+            .crm-table td[data-label="Tipo"],
+            .crm-table td[data-label="Código"],
+            .crm-table td[data-label="Respuesta"] {
+                grid-template-columns: 58px minmax(0, 1fr);
+                column-gap: 8px;
+                align-items: center;
             }
 
             .crm-table .mobile-cell-value {
@@ -1782,7 +2080,6 @@
             .crm-table td[data-label="Prioridad"]::before { display: none; }
 
             .crm-table td[data-label="Gestión"]::before { display: none; }
-            .crm-table .col-executive { display: none !important; }
 
             .crm-table td[data-label="Prioridad"]::before {
                 margin-bottom: 0;
@@ -1799,14 +2096,11 @@
 
             /* Footer operacional: metadata discreta + CTA táctil. */
             .crm-table td[data-label="Respuesta"] {
-                order: 5;
-                grid-column: 1 / -1;
-                grid-row: 5;
                 padding-top: 1px;
                 padding-bottom: 1px;
             }
-            .crm-table .col-response .mobile-cell-value { justify-content: flex-end; }
-            .crm-table .col-response .quick-management-btn { width: 116px; min-height: 42px; }
+            .crm-table .col-response .mobile-cell-value { justify-content: stretch; }
+            .crm-table .col-response .quick-management-btn { width: 100%; min-height: 40px; }
 
             .crm-table td,
             .crm-table .mobile-cell-value {
@@ -1823,16 +2117,30 @@
                 line-height: 1;
             }
 
-            .crm-table td[data-label="Prioridad"] .priority-sla,
+            .crm-table td[data-label="Prioridad"] .priority-sla {
+                display: inline-block;
+                max-width: 100%;
+                white-space: normal;
+            }
             .crm-table td[data-label="Prioridad"] .priority-type { display: none; }
-
-            .crm-table td[data-label="Prioridad"] .mobile-cell-value { width: auto; }
+            .crm-table td[data-label="Prioridad"] .mobile-cell-value { width: 100%; }
+            .crm-table td[data-label="Prioridad"] .sla-timing,
+            .crm-table td[data-label="Prioridad"] .sla-started {
+                max-width: 100%;
+                white-space: normal;
+            }
             .crm-table td[data-label="Asignado"] { justify-self: end; text-align: right; }
             .crm-table td[data-label="Asignado"] .mobile-cell-value { width: auto; }
             .crm-table td[data-label="Asignado"] .sent-cell { align-items: flex-end; }
             .crm-table .lead-cell, .crm-table .management-cell { padding: 2px 0; }
             .crm-table .lead-cell .lead-name { font-size: .92rem; }
             .crm-table .management-cell .management-main { font-size: .8rem; }
+            .crm-table td.col-management .management-meta {
+                white-space: normal;
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                display: block;
+            }
 
             .state-metrics-grid {
                 display: flex;
@@ -1846,6 +2154,72 @@
             .sent-cell { gap: 1px; }
             .lead-cell .lead-meta, .management-cell .management-meta { margin-top: 2px; }
             .quick-management-btn { padding: 5px 7px; }
+
+            /* Tarjetas móviles: referencia de la versión publicada en GitHub. */
+            .crm-table tbody tr {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                padding: 0;
+            }
+
+            .crm-table .col-priority { order: 1; grid-column: 1; grid-row: 1; }
+            .crm-table .col-sent { order: 1; grid-column: 2; grid-row: 1; }
+            .crm-table .col-type { order: 2; grid-column: 1; grid-row: 2; }
+            .crm-table .col-code { order: 2; grid-column: 2; grid-row: 2; }
+            .crm-table .col-lead { order: 3; grid-column: 1 / -1; grid-row: 3; }
+            .crm-table .col-management { order: 4; grid-column: 1 / -1; grid-row: 4; }
+            .crm-table .col-executive { display: none !important; }
+            .crm-table .col-response { order: 5; grid-column: 1 / -1; grid-row: 5; }
+
+            .crm-table td {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr);
+                align-items: center;
+                gap: 3px;
+                min-height: 0;
+                padding: 4px;
+                text-align: left;
+            }
+
+            .crm-table td[data-label]::before { display: none; }
+
+            .crm-table td[data-label="Prioridad"] {
+                background: transparent !important;
+                border-bottom: 0;
+                padding: 2px 4px;
+            }
+
+            .crm-table td[data-label="Prioridad"] .mobile-cell-value {
+                width: auto;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                flex-wrap: wrap;
+                line-height: 1;
+            }
+
+            .crm-table td[data-label="Prioridad"] .priority-sla {
+                display: inline-block;
+                max-width: 100%;
+                white-space: normal;
+            }
+
+            .crm-table td[data-label="Asignado"] {
+                justify-self: end;
+                text-align: right;
+            }
+
+            .crm-table td[data-label="Asignado"] .mobile-cell-value {
+                width: auto;
+            }
+
+            .crm-table td[data-label="Asignado"] .sent-cell { align-items: flex-end; }
+            .crm-table .lead-cell, .crm-table .management-cell { padding: 2px 0; }
+            .crm-table .lead-cell .lead-name { font-size: .92rem; }
+            .crm-table .management-cell .management-main { font-size: .8rem; }
+            .crm-table td[data-label="Respuesta"] { padding-top: 1px; padding-bottom: 1px; }
+            .crm-table .col-response .mobile-cell-value { justify-content: flex-end; }
+            .crm-table .col-response .quick-management-btn { width: 116px; min-height: 42px; }
 
             /* Toolbar y Filtros en móvil */
             .toolbar {
@@ -1891,7 +2265,9 @@
                 grid-template-columns: 1fr;
             }
 
-            .filter-bar .filter-search-field {
+            .filter-bar .lead-search-field,
+            .filter-bar .order-filter,
+            .filter-bar .btn-clear-filters {
                 grid-column: auto;
             }
 
@@ -1910,6 +2286,8 @@
             .crm-table td[data-label="Respuesta"] { padding: 1px 4px; }
         }
     </style>
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -1918,7 +2296,7 @@
             <div class="brand">
                 <img src="/static/logo.png?v=1.0.1" alt="PROCASA"
                     style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;"
-                    onerror="this.style.display='none'"> <span>MENÚ</span>
+                    onerror="this.style.display='none'">
             </div>
             <div class="sidebar-main-nav">
             {% if user_role in ['supervisor', 'admin'] %}
@@ -2042,8 +2420,16 @@
                     {% if count > 0 %}
                     <a href="{{ filter_urls.state if selected_state == state else card_urls[key] }}"
                         class="progress-segment segment-{{ key }} {{ 'is-active' if selected_state == state }}"
-                        style="width: {{ percentage }}%;" title="{{ label }}: {{ count }} de {{ kpis.scope_total }} ({{ pct(percentage) }}%)"
-                        aria-label="Filtrar {{ label }}: {{ count }} de {{ kpis.scope_total }}"></a>
+                        style="width: {{ percentage }}%;"
+                        aria-label="Filtrar {{ label }}: {{ count }} de {{ kpis.scope_total }}">
+                        <span class="progress-segment-tooltip" aria-hidden="true">
+                            <span class="progress-segment-tooltip-title">
+                                <span class="progress-segment-tooltip-dot segment-{{ key }}"></span>
+                                {{ label }}
+                            </span>
+                            <span class="progress-segment-tooltip-meta">{{ count }} lead{% if count != 1 %}s{% endif %} · {{ pct(percentage) }}% del total</span>
+                        </span>
+                    </a>
                     {% endif %}
                     {% endfor %}
                 </div>
@@ -2122,7 +2508,7 @@
                 </label>
                 {% endif %}
 
-                <label class="filter-field compact-select-filter">
+                <label class="filter-field compact-select-filter order-filter">
                     <span class="filter-field-label">Orden</span>
                     <select name="orden" data-auto-filter>
                         <option value="recent_assigned" {% if request.query_params.get('orden', 'recent_assigned') in ['recent_assigned', 'recientes'] or not request.query_params.get('orden') %}selected{% endif %}>Asignados más recientes</option>
@@ -2145,14 +2531,11 @@
                 {% if request.query_params.get('orden') in order_labels %}<a class="filter-chip" href="{{ filter_urls.order }}">{{ order_labels[request.query_params.get('orden')] }} <span aria-hidden="true">×</span></a>{% endif %}
             </div>
 
+            {% if selected_temperature != 'Todos' or selected_state or current_ejecutivo != 'Todos' or request.query_params.get('busqueda') or request.query_params.get('property_code') %}
             <div class="results-context">
-                <div>
-                    <div class="results-count">{{ pagination.total_count }} leads</div>
-                    {% if selected_temperature != 'Todos' or selected_state or current_ejecutivo != 'Todos' or request.query_params.get('busqueda') or request.query_params.get('property_code') %}
-                    <div class="results-description">Filtros activos</div>
-                    {% endif %}
-                </div>
+                <div class="results-description">Filtros activos</div>
             </div>
+            {% endif %}
 
             <!-- TABLA -->
             {% set show_executive = true %}
@@ -2161,8 +2544,9 @@
                     <thead>
                         <tr>
                             <th class="col-sent">Asignado</th>
+                            <th class="col-type">Tipo</th>
                             <th class="col-priority">
-                                Prioridad
+                                SLA primer contacto
                                 <span class="sla-info-trigger" role="button" tabindex="0"
                                     aria-label="Información del SLA"
                                     onclick="toggleSlaInfo(event)" onkeydown="if(event.key==='Enter'||event.key===' ') { toggleSlaInfo(event); event.preventDefault(); }">
@@ -2203,10 +2587,10 @@
                                     </div>
                                 </div>
                             </th>
-                            <th class="col-type">Tipo</th>
-                            <th class="col-code">Código</th>
                             <th class="col-lead">Lead</th>
+                            <th class="col-executive">Ejecutivo</th>
                             <th class="col-management">Gestión</th>
+                            <th class="col-code">Código</th>
                             <th class="col-response">Respuesta</th>
                         </tr>
                     </thead>
@@ -2230,6 +2614,11 @@
                                     {% endif %}
                                 </div>
                             </td>
+                            <td class="col-type" data-label="Tipo">
+                                <div class="mobile-cell-value lead-type-label">
+                                    {% if lead.lead_temperature_effective == 'HOT' %}<span class="type-hot">Lead Hot</span>{% else %}<span>Lead</span>{% endif %}
+                                </div>
+                            </td>
                             <td class="col-priority" data-label="Prioridad">
                                 <div class="mobile-cell-value">
                                     {% if lead.sla_status == 'critical' %}
@@ -2244,6 +2633,9 @@
                                     {% elif lead.sla_status == 'pending' %}
                                     <i class="fa-solid fa-clock text-secondary opacity-50"></i>
                                     <span class="priority-sla text-secondary">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
+                                    {% elif lead.sla_status == 'fulfilled' and lead.sla_managed_outside %}
+                                    <i class="fa-solid fa-check-circle sla-breached"></i>
+                                    <span class="priority-sla sla-breached">Gestionado</span>
                                     {% elif lead.sla_status == 'fulfilled' %}
                                     <i class="fa-solid fa-check-circle text-success"></i>
                                     <span class="priority-sla text-success">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
@@ -2264,16 +2656,9 @@
                                     <span class="priority-sla">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
                                     {% endif %}
                                     <span class="sla-timing">{{ lead.sla_timing|default('SLA no disponible') }}</span>
-                                </div>
-                            </td>
-                            <td class="col-type" data-label="Tipo">
-                                <div class="mobile-cell-value lead-type-label">
-                                    {% if lead.lead_temperature_effective == 'HOT' %}<span class="type-hot">Lead Hot</span>{% else %}<span>Lead</span>{% endif %}
-                                </div>
-                            </td>
-                            <td class="col-code" data-label="Código">
-                                <div class="mobile-cell-value">
-                                    <a href="{{ lead.url_propiedad }}" class="prop-code-link">{{ lead.codigo_propiedad }}</a>
+                                    {% if lead.sla_start_differs %}
+                                    <span class="sla-started">SLA inicia {{ lead.sla_started_date }} · {{ lead.sla_started_time }}</span>
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="col-lead" data-label="Lead">
@@ -2282,6 +2667,11 @@
                                         <div class="lead-name">{{ lead.nombre }}</div>
                                         <span class="lead-meta">{{ lead.whatsapp_display }}</span>
                                     </div>
+                                </div>
+                            </td>
+                            <td class="col-executive" data-label="Ejecutivo">
+                                <div class="mobile-cell-value">
+                                    <span class="executive-name">{{ lead.ejecutivo_nombre|default('Sin asignar') }}</span>
                                 </div>
                             </td>
                             <td class="col-management" data-label="Gestión">
@@ -2296,8 +2686,14 @@
                                     </div>
                                 </div>
                             </td>
+                            <td class="col-code" data-label="Código">
+                                <div class="mobile-cell-value">
+                                    <a href="{{ lead.url_propiedad }}" class="prop-code-link">{{ lead.codigo_propiedad }}</a>
+                                </div>
+                            </td>
                             <td class="col-response" data-label="Respuesta">
                                 <div class="mobile-cell-value">
+                                {% if lead.can_register_management|default(true) %}
                                 <button type="button" class="quick-management-btn"
                                     data-quick-management
                                     data-lead-id="{{ lead.lead_id }}"
@@ -2308,12 +2704,15 @@
                                     aria-label="Registrar gestión de {{ lead.nombre }}" title="Registrar gestión del lead">
                                     <i class="fa-solid fa-check-to-slot me-1"></i>Gestionar
                                 </button>
+                                {% else %}
+                                <span class="quick-management-closed" title="Este lead está cerrado y no admite nuevas gestiones">Cerrado</span>
+                                {% endif %}
                                 </div>
                             </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="7" class="text-center text-secondary py-5">
+                            <td colspan="8" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>
@@ -2394,7 +2793,9 @@
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260824-followup11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+        <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260825-followup20"></script>
         <script>
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
@@ -2405,8 +2806,69 @@
                 return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
             }
 
+            const QUICK_MIN_SCHEDULE_LEAD_MINUTES = 1;
+            const quickPad = value => String(value).padStart(2, '0');
+            function refreshQuickScheduleMinimum() {
+                const input = document.getElementById('quickNextDate');
+                if (!input) return;
+                const minimum = new Date(Math.ceil((Date.now() + QUICK_MIN_SCHEDULE_LEAD_MINUTES * 60000) / 60000) * 60000);
+                input.min = `${minimum.getFullYear()}-${quickPad(minimum.getMonth() + 1)}-${quickPad(minimum.getDate())}T${quickPad(minimum.getHours())}:${quickPad(minimum.getMinutes())}`;
+            }
+            function quickScheduleTooSoon() {
+                const value = document.getElementById('quickNextDate')?.value;
+                if (!value) return false;
+                const scheduled = new Date(value).getTime();
+                return !Number.isFinite(scheduled) || scheduled < Date.now() + QUICK_MIN_SCHEDULE_LEAD_MINUTES * 60000;
+            }
+            function quickScheduleLeadMessage() {
+                return `La fecha y hora debe ser al menos ${QUICK_MIN_SCHEDULE_LEAD_MINUTES} minuto${QUICK_MIN_SCHEDULE_LEAD_MINUTES === 1 ? '' : 's'} a futuro.`;
+            }
+            function syncQuickDateValidation() {
+                const input = document.getElementById('quickNextDate');
+                const picker = document.getElementById('quickDatePicker');
+                const message = document.getElementById('quickDateError');
+                const invalid = Boolean(input?.value && quickScheduleTooSoon());
+                picker?.classList.toggle('is-invalid', invalid);
+                input?.classList.toggle('is-invalid', invalid);
+                if (message) {
+                    message.textContent = invalid ? quickScheduleLeadMessage() : '';
+                    message.classList.toggle('d-none', !invalid);
+                }
+            }
+
             function setQuickExtra(id, visible) {
                 document.getElementById(id)?.classList.toggle('is-visible', visible);
+            }
+
+            function syncQuickDateDisplay() {
+                const input = document.getElementById('quickNextDate');
+                const display = document.getElementById('quickDateDisplay');
+                if (!input || !display) return;
+                const value = input.value || '';
+                if (!value) {
+                    display.textContent = 'Seleccionar fecha y hora';
+                    display.classList.remove('has-value');
+                    return;
+                }
+                const [datePart, timePart = ''] = value.split('T');
+                const [year, month, day] = datePart.split('-');
+                display.textContent = `${day}/${month}/${year}${timePart ? ` · ${timePart}` : ''}`;
+                display.classList.add('has-value');
+            }
+
+            let quickDatePickerOpening = false;
+            function openQuickDatePicker() {
+                const input = document.getElementById('quickNextDate');
+                if (!input || quickDatePickerOpening) return;
+                quickDatePickerOpening = true;
+                try {
+                    if (typeof input.showPicker === 'function') input.showPicker();
+                    else { input.focus(); input.click(); }
+                } catch (_) {
+                    input.focus();
+                } finally {
+                    window.setTimeout(() => { quickDatePickerOpening = false; }, 0);
+                }
             }
 
             function configureQuickResult(resultType) {
@@ -2417,17 +2879,38 @@
                 const channelNeeded = false;
                 const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType);
                 const isVisit = resultType === 'VISIT_SCHEDULED';
+                const showNotes = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(resultType);
                 const dateNeeded = canScheduleFollowUp && document.getElementById('quickFollowUpToggle')?.checked;
                 const reasonNeeded = resultType === 'NOT_INTERESTED';
                 setQuickExtra('quickChannelField', channelNeeded);
                 setQuickExtra('quickFollowUpField', canScheduleFollowUp);
                 setQuickExtra('quickDateField', isVisit || dateNeeded);
-                setQuickExtra('quickNotesField', isVisit || dateNeeded);
+                setQuickExtra('quickNotesField', showNotes);
+                if (!showNotes) document.getElementById('quickNotes').value = '';
                 document.getElementById('quickDateLabel').textContent = isVisit ? 'Fecha y hora de la visita' : 'Próximo contacto';
+                if (document.getElementById('quickDateHelp')) document.getElementById('quickDateHelp').textContent = isVisit
+                    ? 'Se enviará un recordatorio por WhatsApp una hora antes de la visita.'
+                    : 'Se enviará un recordatorio por WhatsApp al ejecutivo asignado en esta fecha y hora.';
                 setQuickExtra('quickReasonField', reasonNeeded);
                 setQuickExtra('quickOtherField', resultType === 'OTHER_EXPLICIT');
                 const save = document.getElementById('quickManagementSave');
-                if (save) save.disabled = isVisit || dateNeeded;
+                if (save) save.disabled = isVisit || dateNeeded || (reasonNeeded && !document.getElementById('quickReason')?.value);
+            }
+
+            function syncQuickSaveState() {
+                syncQuickDateValidation();
+                const save = document.getElementById('quickManagementSave');
+                if (!save) return;
+                const resultType = quickManagementState.resultType;
+                const requiresDate = resultType === 'VISIT_SCHEDULED'
+                    || (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType)
+                        && document.getElementById('quickFollowUpToggle')?.checked);
+                const requiresReason = resultType === 'NOT_INTERESTED';
+                const requiresOther = resultType === 'OTHER_EXPLICIT';
+                save.disabled = !resultType
+                    || (requiresDate && (!document.getElementById('quickNextDate')?.value || quickScheduleTooSoon()))
+                    || (requiresReason && !document.getElementById('quickReason')?.value)
+                    || (requiresOther && !document.getElementById('quickOtherOutcome')?.value.trim());
             }
 
             function quickFormIsValid() {
@@ -2435,10 +2918,12 @@
                 if (quickManagementState.resultType === 'OTHER_EXPLICIT'
                     && !document.getElementById('quickOtherOutcome')?.value.trim()) return false;
                 if (['FOLLOW_UP_REQUESTED', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)
-                    && !document.getElementById('quickNextDate')?.value) return false;
+                    && (!document.getElementById('quickNextDate')?.value || quickScheduleTooSoon())) return false;
                 if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(quickManagementState.resultType)
                     && document.getElementById('quickFollowUpToggle')?.checked
-                    && !document.getElementById('quickNextDate')?.value) return false;
+                    && (!document.getElementById('quickNextDate')?.value || quickScheduleTooSoon())) return false;
+                if (quickManagementState.resultType === 'NOT_INTERESTED'
+                    && !document.getElementById('quickReason')?.value) return false;
                 if (quickManagementState.resultType === 'VISIT_SCHEDULED'
                     && !document.getElementById('quickNextDate')?.value) return false;
                 if (!quickManagementState.resultType) return false;
@@ -2466,9 +2951,10 @@
                 };
                 const management = row.querySelector('[data-label="Gestión"] .management-cell');
                 if (management) {
-                    const detail = details.reason || details.notes || '';
+                    const detail = details.reason || details.notes || details.outcome || '';
                     const safeDetail = String(detail).replace(/[&<>'"]/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[character]));
-                    management.innerHTML = `<div class="management-main">${labels[resultType] || 'Gestionado'}</div><span class="management-meta">${safeDetail ? `${safeDetail} · ` : ''}Recién</span>`;
+                    const responseLabel = labels[resultType] || 'Gestionado';
+                    management.innerHTML = `<div class="management-main">En Gestión</div><span class="management-meta">Última: ${responseLabel}${safeDetail ? ` · ${safeDetail}` : ''} · Recién</span>`;
                 }
                 row.dataset.managementState = resultType;
                 row.classList.add('crm-row-just-managed');
@@ -2491,6 +2977,9 @@
                 document.getElementById('quickManagementLeadName').textContent = button.dataset.leadName || 'Lead';
                 document.getElementById('quickManagementProgress').textContent = '';
                 document.getElementById('quickNextDate').value = '';
+                refreshQuickScheduleMinimum();
+                syncQuickDateDisplay();
+                syncQuickDateValidation();
                 document.getElementById('quickNotes').value = '';
                 document.getElementById('quickFollowUpToggle').checked = false;
                 document.getElementById('quickDateLabel').textContent = 'Próximo contacto';
@@ -2507,7 +2996,9 @@
                 if (window.CRMQuickManagement) return window.CRMQuickManagement.save();
                 const save = document.getElementById('quickManagementSave');
                 if (!quickFormIsValid() || save.disabled) {
-                    showQuickError('Completa el dato adicional solicitado antes de guardar.');
+                    showQuickError(quickScheduleTooSoon()
+                        ? quickScheduleLeadMessage()
+                        : 'Completa el dato adicional solicitado antes de guardar.');
                     return;
                 }
                 save.disabled = true;
@@ -2518,8 +3009,11 @@
                 const reason = document.getElementById('quickReason').value.trim();
                 if (channel) details.channel = channel;
                 if (reason && reason.toLocaleLowerCase() !== 'seleccionar motivo (opcional)') details.reason = reason;
-                const notes = document.getElementById('quickNotes')?.value.trim();
-                if (notes) details.notes = notes;
+                const notes = quickManagementState.resultType === 'OTHER_EXPLICIT'
+                    ? document.getElementById('quickOtherOutcome')?.value.trim()
+                    : document.getElementById('quickNotes')?.value.trim();
+                if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType) && notes) details.notes = notes;
+                if (quickManagementState.resultType === 'OTHER_EXPLICIT' && notes) details.outcome = notes;
                 if (quickManagementState.resultType === 'VISIT_SCHEDULED') details.visit_at = document.getElementById('quickNextDate').value || null;
                 const payload = {
                     lead_id: quickManagementState.leadId,
@@ -2535,8 +3029,15 @@
                     const response = await fetch('/api/crm/management-result', {
                         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
                     });
-                    if (response.status === 409) throw new Error('STALE_ASSIGNMENT_CYCLE');
-                    if (!response.ok) throw new Error('SERVER_ERROR');
+                    let responseData = null;
+                    try { responseData = await response.json(); } catch (_) { /* empty response */ }
+                    if (response.status === 409) {
+                        throw new Error(responseData?.detail === 'closed_lead' ? 'CLOSED_LEAD' : 'STALE_ASSIGNMENT_CYCLE');
+                    }
+                    if (!response.ok) {
+                        throw new Error(responseData?.detail === 'scheduled_time_too_soon'
+                            ? 'SCHEDULE_TOO_SOON' : 'SERVER_ERROR');
+                    }
                     updateRowAfterQuickManagement(quickManagementState.resultType, null, details);
                     quickManagementState.managementRequestId = null;
                     document.getElementById('quickManagementProgress').textContent = 'Gestión registrada';
@@ -2545,9 +3046,13 @@
                 } catch (error) {
                     save.disabled = false;
                     document.getElementById('quickManagementProgress').textContent = '';
-                    showQuickError(error.message === 'STALE_ASSIGNMENT_CYCLE'
-                        ? 'Este lead cambió de asignación. Actualiza la información antes de registrar la gestión.'
-                        : 'No se pudo registrar la gestión. Puedes reintentarlo.');
+                    showQuickError(error.message === 'CLOSED_LEAD'
+                        ? 'Este lead ya está cerrado y no admite nuevas gestiones.'
+                        : error.message === 'STALE_ASSIGNMENT_CYCLE'
+                            ? 'Este lead cambió de asignación. Actualiza la información antes de registrar la gestión.'
+                            : error.message === 'SCHEDULE_TOO_SOON'
+                                ? quickScheduleLeadMessage()
+                            : 'No se pudo registrar la gestión. Puedes reintentarlo.');
                     if (error.message === 'STALE_ASSIGNMENT_CYCLE') {
                         document.dispatchEvent(new CustomEvent('crm:mutation-complete'));
                     }
@@ -2560,20 +3065,40 @@
                 const resultButton = event.target.closest?.('[data-quick-result]');
                 if (resultButton) { event.preventDefault(); configureQuickResult(resultButton.dataset.quickResult); }
             });
-            document.getElementById('quickManagementSave')?.addEventListener('click', saveQuickManagement);
+            // The shared module already owns the save listener. Register the
+            // legacy fallback only when that module is unavailable; otherwise
+            // the same click would submit twice and the second call would
+            // incorrectly show the validation message while the first save is
+            // still in progress.
+            if (!window.CRMQuickManagement) {
+                document.getElementById('quickManagementSave')?.addEventListener('click', saveQuickManagement);
+            }
             document.getElementById('quickNextDate')?.addEventListener('input', () => {
-                if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType)) {
-                    document.getElementById('quickManagementSave').disabled = false;
-                }
+                refreshQuickScheduleMinimum();
+                syncQuickDateDisplay();
+                syncQuickDateValidation();
+                syncQuickSaveState();
             });
+            document.getElementById('quickNextDate')?.addEventListener('change', syncQuickDateDisplay);
+            if (!window.CRMQuickManagement) {
+                document.getElementById('quickDatePicker')?.addEventListener('pointerdown', event => {
+                    if (event.button === 0) openQuickDatePicker();
+                });
+                document.getElementById('quickDatePicker')?.addEventListener('click', openQuickDatePicker);
+            }
+            document.getElementById('quickOtherOutcome')?.addEventListener('input', () => {
+                syncQuickSaveState();
+            });
+            document.getElementById('quickReason')?.addEventListener('change', syncQuickSaveState);
             document.getElementById('quickFollowUpToggle')?.addEventListener('change', () => {
+                refreshQuickScheduleMinimum();
                 const enabled = document.getElementById('quickFollowUpToggle').checked;
                 setQuickExtra('quickDateField', enabled);
-                setQuickExtra('quickNotesField', enabled);
+                setQuickExtra('quickNotesField', ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'VISIT_SCHEDULED'].includes(quickManagementState.resultType));
                 if (!enabled) {
                     document.getElementById('quickNextDate').value = '';
-                    document.getElementById('quickNotes').value = '';
                 }
+                syncQuickSaveState();
             });
 
             function toggleMobileMenu() {

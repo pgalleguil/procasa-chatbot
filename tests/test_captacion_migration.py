@@ -330,6 +330,29 @@ def test_normalize_captacion_document():
     assert "id" in vm
 
 
+def test_normalize_captacion_document_prefers_manual_owner_contact_fields():
+    """Los datos editados en la ficha prevalecen sobre los datos del scraper."""
+    from api_captacion import normalize_captacion_document
+
+    doc = {
+        "_id": "123456789012345678901234",
+        "seller_name": "Particular",
+        "email": "original@example.com",
+        "whatsapp_phone": "56911111111",
+        "details": {
+            "publicador": "Ana Pérez Soto",
+            "email": "ana@example.com",
+            "whatsapp_phone": "56922222222",
+        },
+    }
+
+    vm = normalize_captacion_document(doc)
+
+    assert vm["vendedor_nombre"] == "Ana Pérez Soto"
+    assert vm["vendedor_email"] == "ana@example.com"
+    assert vm["vendedor_telefono"] == "56922222222"
+
+
 # ========== MODELO: Config no debe lanzar RuntimeError al importar ==========
 
 def test_config_import_no_runtime_error():

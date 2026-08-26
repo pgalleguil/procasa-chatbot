@@ -88,8 +88,15 @@ def normalize_captacion_document(doc):
     details.setdefault("banos", banos)
     details.setdefault("m2_total", m2_total)
     
-    seller_name = first("seller_name", "publicador", "details.publicador", "details.vendedor_nombre") or ""
-    contacto = first("contact_phone", "whatsapp_phone", "telefono", "details.telefono", "details.whatsapp_phone") or ""
+    # Los datos editados desde "Gestión del Propietario" viven en details.
+    # Deben tener prioridad sobre los valores originales del scraper en la raíz
+    # del documento; de lo contrario el cambio se guarda, pero la vista vuelve
+    # a mostrar el valor antiguo al recargar.
+    seller_name = first("details.publicador", "publicador", "details.vendedor_nombre", "seller_name") or ""
+    contacto = first(
+        "details.whatsapp_phone", "details.contact_phone", "details.telefono",
+        "whatsapp_phone", "contact_phone", "telefono",
+    ) or ""
     
     fotos = first("images", "enlaces_fotos", "details.enlaces_fotos", "image_urls") or []
     if not fotos and isinstance(doc.get("main_image_url"), str) and doc["main_image_url"]:
@@ -131,7 +138,7 @@ def normalize_captacion_document(doc):
         "m2_total": m2_total,
         "vendedor_nombre": seller_name,
         "vendedor_telefono": contacto,
-        "vendedor_email": first("email", "vendedor_email", "details.email"),
+        "vendedor_email": first("details.email", "details.vendedor_email", "email", "vendedor_email"),
         "enlaces_fotos": fotos if isinstance(fotos, list) else [],
         "classification_state": classification_state,
         "classification_source": classification.get("decision_source") or classification.get("source") or "",
@@ -818,12 +825,11 @@ def get_captacion_detail(obj_id):
     if vendedor_telefono.startswith("9") and len(vendedor_telefono) == 9:
         vendedor_telefono = "56" + vendedor_telefono
     
-    # Nombre
-    vendedor_nombre = norm["vendedor_nombre"] or "Propietario"
-    if str(vendedor_nombre).lower() in ["particular", "n/a", "no disponible"]:
-        vendedor_nombre = "Propietario"
-    else:
-        vendedor_nombre = str(vendedor_nombre).split()[0].capitalize()
+    # Nombre: se deja vacío cuando no existe para que la plantilla muestre
+    # "Propietario" como placeholder y no como un dato que pueda guardarse.
+    vendedor_nombre = str(norm["vendedor_nombre"] or "").strip()
+    if vendedor_nombre.casefold() in {"particular", "n/a", "no disponible", "propietario"}:
+        vendedor_nombre = ""
     
     vendedor_email = norm.get("vendedor_email") or details.get("email") or details.get("vendedor_email") or ""
     notas_contacto = doc.get("notas_contacto") or ""
@@ -1140,14 +1146,16 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
     audit_changes = []
     now = get_chile_now()
     
-    if nombre and nombre != details.get("publicador"):
-        update_fields["details.publicador"] = nombre
+    nombre_limpio = str(nombre or "").strip()
+    nombre_actual = str(details.get("publicador") or "").strip()
+    if nombre_limpio and nombre_limpio.casefold() != "propietario" and nombre_limpio != nombre_actual:
+        update_fields["details.publicador"] = nombre_limpio
         audit_changes.append({
             "timestamp": now,
             "user": user_name,
             "field": "nombre",
             "old_value": details.get("publicador"),
-            "new_value": nombre
+            "new_value": nombre_limpio
         })
         
     if telefono:

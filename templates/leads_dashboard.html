@@ -847,6 +847,7 @@
         }
 
         .cd1-header {
+            position: relative;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -886,7 +887,7 @@
         .cd1-tooltip {
             position: absolute;
             right: 0;
-            top: 24px;
+            top: calc(100% + 8px);
             width: 224px;
             padding: 10px 12px;
             background: var(--bg-card);
@@ -1294,6 +1295,17 @@
         .cd4-bar-hot { background: #EF4444; }
 
         .cd4-bar-normal { background: var(--sla-accent); }
+
+        @keyframes slaBarGrow {
+            from { transform: scaleX(0); }
+            to { transform: scaleX(1); }
+        }
+
+        .seq-pending #cardSla.seq-shown .cd4-bar-hot,
+        .seq-pending #cardSla.seq-shown .cd4-bar-normal {
+            transform-origin: left center;
+            animation: slaBarGrow 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
 
         .cd4-bars {
             display: flex;
@@ -1831,7 +1843,7 @@
             pointer-events: none;
             z-index: 5;
             white-space: nowrap;
-            transition: left 0.09s ease-out, transform 0.09s ease-out;
+            transition: left 0.09s ease-out, top 0.09s ease-out, transform 0.09s ease-out;
         }
         .tc-chart-tooltip strong { display: block; color: #C4B5FD; font-size: 12px; }
         .tc-chart-tooltip small { display: block; color: var(--text-secondary); font-size: 9px; margin-top: 2px; }
@@ -1992,6 +2004,23 @@
             animation: sparkFade 0.3s ease 0.25s forwards;
         }
 
+        /* Reinicio explícito del trazado cuando se vuelve al resumen o cambia
+           el período. Se activa al entrar el bloque, no mientras está oculto. */
+        #tcTrendChart.tc-replay > .tc-line-wrap .tc-line {
+            animation: drawSpark 1.35s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards !important;
+        }
+
+        #tcTrendChart.tc-replay[data-mode="acumulado"] > .tc-line-wrap .tc-line-prev,
+        #tcTrendChart.tc-replay[data-mode="acumulado"] > .tc-line-wrap .tc-line-meta {
+            animation: revealTrendLine 1.35s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards !important;
+            clip-path: inset(0 100% 0 0);
+            opacity: 0.2;
+        }
+
+        #tcTrendChart.tc-replay > .tc-line-wrap .tc-line-area {
+            animation: sparkFade 0.4s ease 0.2s forwards !important;
+        }
+
         .tc-diff { font-weight: 600; }
         .tc-diff.pos { color: #34D399; }
         .tc-diff.neg { color: #FCA5A5; }
@@ -2073,9 +2102,15 @@
 
         .tc-source-card { position: relative; align-self: start; }
 
-        .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 12px; margin: 4px 0 12px; }
+        .tc-sources-list { flex: 1; display: flex; flex-direction: column; gap: 10px; margin: 4px 0 12px; }
 
-        .tc-src { display: flex; flex-direction: column; gap: 5px; }
+        .tc-src {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .tc-src-source { min-width: 0; display: block; }
 
         .tc-src-top {
             display: flex;
@@ -2104,6 +2139,105 @@
 
         .tc-src-bar { height: 100%; border-radius: 99px; background: var(--conversion-accent); transition: width 0.8s ease; }
 
+        .tc-src-stage { min-width: 0; display: grid; gap: 3px; }
+
+        .tc-src-stage-track {
+            height: 5px;
+            overflow: hidden;
+            border-radius: 99px;
+            background: color-mix(in srgb, var(--border-color) 75%, transparent);
+        }
+
+        .tc-src-stage-fill {
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            transition: width 0.75s cubic-bezier(.16, 1, .3, 1);
+        }
+
+        .tc-src-stage:nth-child(1) .tc-src-stage-fill { background: #94A3B8; }
+        .tc-src-stage:nth-child(2) .tc-src-stage-fill { background: #A78BFA; }
+        .tc-src-stage:nth-child(3) .tc-src-stage-fill { background: #60A5FA; }
+        .tc-src-stage:nth-child(4) .tc-src-stage-fill { background: #34D399; }
+        .tc-src-stage:nth-child(5) .tc-src-stage-fill { background: #FBBF24; }
+
+        .tc-src-stage-value {
+            display: block;
+            margin-top: 2px;
+            color: var(--text-muted);
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tc-src-stage-value strong { color: var(--text-secondary); }
+
+        .portal-dashboard { display: grid; gap: 16px; }
+
+        .portal-dashboard-head,
+        .portal-funnel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+
+        .portal-dashboard-head h2,
+        .portal-funnel-head h3 { margin: 0; color: var(--text-primary); }
+
+        .portal-dashboard-head p,
+        .portal-funnel-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+
+        .portal-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+
+        .portal-summary-card,
+        .portal-funnel-panel { padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); }
+
+        .portal-summary-card span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+
+        .portal-summary-card strong { display: block; margin-top: 5px; color: var(--text-primary); font-size: 22px; font-variant-numeric: tabular-nums; }
+
+        .portal-summary-card small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 10px; }
+
+        .portal-funnel-panel { display: grid; gap: 14px; }
+
+        .portal-funnel-legend,
+        .portal-funnel-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(5, minmax(74px, 1fr)); gap: 10px; }
+
+        .portal-funnel-legend { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+
+        .portal-funnel-legend span:not(:first-child) { text-align: center; }
+
+        .portal-funnel-legend span:not(:first-child)::before { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 4px 1px 0; border-radius: 50%; background: #A78BFA; }
+        .portal-funnel-legend span:nth-child(3)::before { background: #60A5FA; }
+        .portal-funnel-legend span:nth-child(4)::before { background: #34D399; }
+        .portal-funnel-legend span:nth-child(5)::before { background: #FBBF24; }
+        .portal-funnel-legend span:nth-child(6)::before { background: #F97316; }
+
+        .portal-funnel-list { display: grid; gap: 12px; }
+
+        .portal-funnel-row { align-items: center; padding-top: 11px; border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent); }
+
+        .portal-funnel-name { min-width: 0; }
+        .portal-funnel-name strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+        .portal-funnel-name small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 10px; }
+
+        .portal-stage { min-width: 0; }
+        .portal-stage-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+        .portal-stage-count { color: var(--text-primary); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .portal-stage-rate { color: var(--text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+        .portal-stage-track { height: 7px; margin-top: 5px; overflow: hidden; border-radius: 99px; background: var(--border-color); }
+        .portal-stage-fill { width: 0; height: 100%; border-radius: inherit; transition: width .8s cubic-bezier(.16,1,.3,1); }
+        .portal-stage:nth-child(2) .portal-stage-fill { background: #A78BFA; }
+        .portal-stage:nth-child(3) .portal-stage-fill { background: #60A5FA; }
+        .portal-stage:nth-child(4) .portal-stage-fill { background: #34D399; }
+        .portal-stage:nth-child(5) .portal-stage-fill { background: #FBBF24; }
+        .portal-stage:nth-child(6) .portal-stage-fill { background: #F97316; }
+
+        .portal-funnel-note { margin: 0; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+
+        @media (max-width: 760px) {
+            .portal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .portal-funnel-legend,
+            .portal-funnel-row { grid-template-columns: minmax(105px, 1.1fr) repeat(5, minmax(48px, 1fr)); gap: 5px; }
+            .portal-funnel-legend { font-size: 8px; }
+            .portal-stage-count { font-size: 11px; }
+        }
+
         .tc-src-tooltip {
             position: absolute;
             right: 8px;
@@ -2128,6 +2262,7 @@
         @media (max-width: 640px) {
             .tc-src-top { flex-wrap: wrap; row-gap: 2px; }
             .tc-src-name { white-space: normal; overflow: visible; }
+            .tc-src-top { font-size: 10px; }
         }
 
         /* --- NAVEGACIÓN DE TABS (iconos monocromáticos) --- */
@@ -2381,6 +2516,7 @@
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 20px;
+            position: relative;
             transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
         }
 
@@ -2416,6 +2552,7 @@
             position: relative;
             overflow: visible;
             transition: width 0.38s cubic-bezier(0.22, 0.61, 0.36, 1), filter 0.2s ease;
+            cursor: help;
         }
 
         .funnel-level::before {
@@ -2472,6 +2609,7 @@
             color: var(--conversion-accent);
             line-height: 1.25;
             padding: 2px 0 4px;
+            cursor: help;
         }
 
         .funnel-transition::after {
@@ -2542,6 +2680,105 @@
         }
 
         .funnel-conclusion strong { color: var(--text-primary); font-weight: 700; }
+
+        .funnel-tooltip {
+            position: absolute;
+            right: 16px;
+            top: 44px;
+            width: min(252px, calc(100% - 32px));
+            box-sizing: border-box;
+            padding: 9px 11px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 10px;
+            line-height: 1.45;
+            color: var(--text-secondary);
+            z-index: 4;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.30);
+            pointer-events: none;
+        }
+
+        .funnel-tooltip strong {
+            display: block;
+            margin-bottom: 3px;
+            color: var(--text-primary);
+            font-size: 11px;
+        }
+
+        .funnel-tooltip small { display: block; }
+
+        [data-theme="light"] .funnel-tooltip { box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12); }
+
+        .funnel-reading {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .funnel-reading[hidden] { display: none; }
+
+        .funnel-reading-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .funnel-reading h4 {
+            margin: 0;
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .funnel-reading-stage {
+            color: var(--conversion-accent);
+            font-size: 10px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .funnel-reading-body {
+            display: grid;
+            gap: 4px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            line-height: 1.45;
+        }
+
+        .funnel-reading-body strong { color: var(--text-primary); }
+
+        .funnel-reading-responses {
+            margin-top: 4px;
+            padding: 8px 9px;
+            border-left: 2px solid var(--conversion-accent);
+            background: color-mix(in srgb, var(--conversion-accent) 7%, transparent);
+            border-radius: 0 6px 6px 0;
+            color: var(--text-secondary);
+        }
+
+        .funnel-reading-responses > strong {
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        .funnel-reading-responses span { white-space: nowrap; }
+
+        .funnel-reading-responses small {
+            display: block;
+            margin-top: 4px;
+            color: var(--text-muted);
+            font-size: 10px;
+        }
+
+        .funnel-reading.is-updated { animation: funnelReadingIn 0.24s ease both; }
+
+        @keyframes funnelReadingIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
 
         @media (max-width: 640px) {
             .funnel-pipe { max-width: 100%; }
@@ -2839,9 +3076,9 @@
         .team-sla-kpi-lines{display:flex;gap:14px;align-items:flex-end;margin-top:8px}.team-sla-kpi-lines span{display:grid;gap:2px}.team-sla-kpi-lines b{color:var(--text-secondary);font-size:9px;letter-spacing:.06em}.team-sla-kpi-lines strong{font-size:18px}.team-sla-kpi-lines em{color:var(--text-secondary);font-size:9px;font-style:normal}
         .team-current-section{border-top:1px solid var(--border-color);border-bottom:1px solid var(--border-color);padding:14px 0}.team-current-section .team-section-head{margin-bottom:10px}.team-current-strip{gap:0;border:1px solid var(--border-color);border-radius:10px;overflow:hidden;background:var(--bg-card)}.team-current-strip .team-kpi{border:0;border-radius:0;border-right:1px solid var(--border-color);min-height:86px;padding:11px 13px;background:transparent}.team-current-strip .team-kpi:last-child{border-right:0}.team-current-strip .team-kpi strong{font-size:24px}.team-current-strip .team-kpi.is-warning strong{color:#fbbf24}
         .team-period-kpis{gap:9px}.team-period-kpis .team-kpi{padding:13px}.team-period-kpis .team-kpi strong{font-size:25px}.team-speed-cards{display:none}.team-sla-kpi{min-width:0}
-        .team-dashboard.ops-entered .team-period-kpi-section,.team-dashboard.ops-entered .team-split,.team-dashboard.ops-entered .team-speed-section,.team-dashboard.ops-entered .team-aging-section,.team-dashboard.ops-entered .team-period-section{animation:opsSectionIn .42s ease both}.team-dashboard.ops-entered .team-period-kpi-section{animation-delay:.05s}.team-dashboard.ops-entered .team-split{animation-delay:.1s}.team-dashboard.ops-entered .team-speed-section{animation-delay:.16s}.team-dashboard.ops-entered .team-aging-section{animation-delay:.21s}.team-dashboard.ops-entered .team-period-section{animation-delay:.26s}.team-period-kpis.ops-period-update{animation:opsPeriodPulse .38s ease}.team-dashboard.ops-loading{cursor:progress}.team-dashboard.ops-loading .team-period-kpis strong{opacity:.45}
+         .team-dashboard.ops-entered .team-period-kpi-section,.team-dashboard.ops-entered .team-split,.team-dashboard.ops-entered .team-speed-section,.team-dashboard.ops-entered .team-aging-section,.team-dashboard.ops-entered .team-period-section{animation:opsSectionIn .42s ease both}.team-dashboard.ops-entered .team-period-kpi-section{animation-delay:.05s}.team-dashboard.ops-entered .team-split{animation-delay:.1s}.team-dashboard.ops-entered .team-speed-section{animation-delay:.16s}.team-dashboard.ops-entered .team-aging-section{animation-delay:.21s}.team-dashboard.ops-entered .team-period-section{animation-delay:.26s}.team-dashboard.ops-reveal-pending .ops-reveal-item{opacity:0;transform:translateY(10px);filter:blur(5px);pointer-events:none}.team-dashboard.ops-reveal-pending .ops-reveal-item.ops-reveal-shown{animation:opsSectionIn .42s ease both;pointer-events:auto}.team-dashboard .ops-reveal-item.ops-reveal-shown{opacity:1;transform:none;filter:none;pointer-events:auto}.team-dashboard.ops-reveal-pending .ops-period-card:not(.ops-reveal-shown) .ops-microbar:before,.team-dashboard.ops-reveal-pending .ops-period-card:not(.ops-reveal-shown) .ops-microbar:after,.team-dashboard.ops-reveal-pending .ops-period-card:not(.ops-reveal-shown) .ops-progress-mini span,.team-dashboard.ops-reveal-pending .ops-period-card:not(.ops-reveal-shown) .ops-sla-mini i,.team-dashboard.ops-reveal-pending .team-split:not(.ops-reveal-shown) .team-load-fill{width:0!important}.team-dashboard.ops-reveal-pending .ops-reveal-shown .ops-microbar:before,.team-dashboard.ops-reveal-pending .ops-reveal-shown .ops-microbar:after,.team-dashboard.ops-reveal-pending .ops-reveal-shown .ops-progress-mini span,.team-dashboard.ops-reveal-pending .ops-reveal-shown .ops-sla-mini i,.team-dashboard.ops-reveal-pending .team-split.ops-reveal-shown .team-load-fill{transition:width .65s cubic-bezier(.22,.61,.36,1)}.team-dashboard.ops-loading{cursor:progress}.team-dashboard.ops-loading .team-period-kpis strong{opacity:.45}
         @keyframes opsSectionIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}@keyframes opsPeriodPulse{0%{opacity:.5;transform:translateY(2px)}100%{opacity:1;transform:none}}
-        @media (prefers-reduced-motion:reduce){.team-dashboard.ops-entered .team-period-kpi-section,.team-dashboard.ops-entered .team-split,.team-dashboard.ops-entered .team-speed-section,.team-dashboard.ops-entered .team-aging-section,.team-dashboard.ops-entered .team-period-section,.team-period-kpis.ops-period-update{animation:none}.team-load-fill,.team-aging-segment{transition:none}}
+         @media (prefers-reduced-motion:reduce){.team-dashboard.ops-entered .team-period-kpi-section,.team-dashboard.ops-entered .team-split,.team-dashboard.ops-entered .team-speed-section,.team-dashboard.ops-entered .team-aging-section,.team-dashboard.ops-entered .team-period-section,.team-dashboard.ops-reveal-pending .ops-reveal-item,.team-dashboard.ops-reveal-pending .ops-reveal-item.ops-reveal-shown,.team-period-kpis.ops-period-update{animation:none;opacity:1;transform:none;filter:none;pointer-events:auto}.team-load-fill,.team-aging-segment,.ops-microbar:before,.ops-microbar:after,.ops-progress-mini span,.ops-sla-mini i{transition:none}}
         .team-aging-section .team-aging-table{display:none}
         .team-kpi,.team-panel{background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px}
         .team-kpi{min-height:104px;padding:14px;display:flex;flex-direction:column;justify-content:space-between}
@@ -2849,7 +3086,7 @@
         .team-kpi strong{font-size:27px;line-height:1;font-weight:820;font-variant-numeric:tabular-nums}
         .team-kpi small{color:var(--text-secondary);font-size:9px}
         .team-kpi.is-danger strong{color:#fb7185}.team-kpi.is-warning strong{color:#fbbf24}
-        .team-split{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.65fr);gap:12px}
+         .team-split{display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.35fr);gap:12px}
         .team-panel{padding:16px;min-width:0}
         .team-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
         .team-priority-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.team-priority-card{position:relative;display:flex;min-height:92px;flex-direction:column;justify-content:space-between;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-elevated)}.team-priority-card.is-critical{grid-column:1 / -1;min-height:116px;border-color:rgba(251,113,133,.45);background:linear-gradient(135deg,rgba(244,63,94,.13),var(--bg-elevated) 62%)}.team-priority-card.is-attention{border-color:rgba(251,191,36,.35)}.team-priority-card.is-pending{border-color:rgba(96,165,250,.35)}.team-priority-card.is-assignment{border-color:rgba(167,139,250,.4)}.team-priority-card.is-neutral{border-color:var(--border-color)}.team-priority-label{color:var(--text-secondary);font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.team-priority-title{margin-top:3px;font-size:12px;font-weight:780}.team-priority-value{margin-top:4px;font-size:28px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums}.team-priority-card.is-critical .team-priority-value{font-size:34px;color:#fb7185}.team-priority-detail{display:block;margin-top:5px;color:var(--text-secondary);font-size:9px;line-height:1.4}.team-priority-action{align-self:flex-start;margin-top:8px}.team-status{display:inline-flex;width:max-content;align-items:center;gap:5px;padding:3px 7px;border-radius:99px;font-size:9px;font-weight:780}.team-status.critical{color:#fb7185;background:rgba(244,63,94,.13)}.team-status.attention{color:#fbbf24;background:rgba(245,158,11,.13)}.team-status.controlled{color:#34d399;background:rgba(16,185,129,.13)}.team-status.insufficient{color:var(--text-secondary);background:var(--bg-elevated)}
@@ -2878,9 +3115,9 @@
         .ops-compare-line.is-positive{color:#34d399}.ops-compare-line.is-negative{color:#fbbf24}.ops-compare-line.is-risk{color:#fb7185}
         .ops-kpi-support{display:block;margin-top:3px;color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.ops-kpi-secondary{margin-top:7px;color:var(--text-secondary);font-size:8px;line-height:1.35;font-variant-numeric:tabular-nums}.ops-results-link{margin-top:5px;padding:0;border:0;font-size:9px}
         .ops-microbar,.ops-progress-mini{display:block;height:5px;margin-top:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}
-        .ops-microbar:before{content:'';display:block;height:100%;width:var(--current,0%);background:#8b5cf6;border-radius:inherit}.ops-microbar:after{content:'';display:block;height:100%;width:var(--previous,0%);margin-top:-5px;background:#94a3b8;opacity:.45;border-radius:inherit}
-        .ops-progress-mini span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;transition:width .35s ease}
-        .ops-sla-mini{display:grid;gap:7px;margin-top:8px}.ops-sla-mini>span{display:grid;grid-template-columns:48px minmax(0,1fr) 42px 30px;align-items:center;gap:6px}.ops-sla-mini b,.ops-sla-mini em{font-size:8px;color:var(--text-secondary);font-style:normal}.ops-sla-mini i{height:5px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);width:var(--sla,0%)}.ops-sla-mini strong{font-size:12px!important;text-align:right}.ops-sla-mini em{text-align:right}
+         .ops-microbar:before{content:'';display:block;height:100%;width:var(--current,0%);background:#8b5cf6;border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-microbar:after{content:'';display:block;height:100%;width:var(--previous,0%);margin-top:-5px;background:#94a3b8;opacity:.45;border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}
+         .ops-progress-mini span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}
+         .ops-sla-mini{display:grid;gap:7px;margin-top:8px}.ops-sla-mini>span{display:grid;grid-template-columns:48px minmax(0,1fr) 42px 30px;align-items:center;gap:6px}.ops-sla-mini b,.ops-sla-mini em{font-size:8px;color:var(--text-secondary);font-style:normal}.ops-sla-mini i{height:5px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);width:var(--sla,0%);transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-sla-mini strong{font-size:12px!important;text-align:right}.ops-sla-mini em{text-align:right}
         .ops-individual-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)}
         .ops-individual-heading h2{margin:4px 0 0;font-size:22px;letter-spacing:-.02em}
         .ops-individual-heading p{margin:5px 0 0;color:var(--text-secondary);font-size:10px}
@@ -3025,9 +3262,9 @@
                         transform var(--seq-dur, 450ms) ease;
         }
         .seq-pending.seq-refresh .seq-el:not(.seq-shown) {
-            opacity: 0.65;
-            filter: blur(3px);
-            transform: translateY(4px);
+            opacity: 0;
+            filter: blur(14px);
+            transform: translateY(24px) scale(.985);
         }
         /* La ruta local completa representa el dashboard publicable; no debe
            dejar navegación ni filtros ocultos esperando una carga privada. */
@@ -3154,7 +3391,8 @@
 
             .cd2-bar,
             .funnel-fill,
-            .tc-src-bar {
+            .tc-src-bar,
+            .tc-src-stage-fill {
                 transition: width 0.72s cubic-bezier(0.16, 1, 0.3, 1);
                 transform-origin: left center;
             }
@@ -3165,7 +3403,9 @@
 
             .funnel-block.entered .funnel-fill,
             .tc-block.entered .tc-src-bar,
-            .tc-source-card.entered .tc-src-bar {
+            .tc-source-card.entered .tc-src-bar,
+            .tc-block.entered .tc-src-stage-fill,
+            .tc-source-card.entered .tc-src-stage-fill {
                 animation: desktopBarGrow 0.68s cubic-bezier(0.16, 1, 0.3, 1) both;
             }
 
@@ -4007,10 +4247,11 @@
                         <div class="exec-table-head">
                             <div>
                                 <h3>Embudo Comercial</h3>
-                                <p>Recibidos → Gestionados → Contacto efectivo → Visita agendada</p>
+                                <p>Recibidos → Gestionados → Contacto efectivo → Visita agendada → Negocio cerrado</p>
                             </div>
                         </div>
                         <div class="funnel-pipe" id="funnelPipe"></div>
+                        <div class="funnel-tooltip" id="funnelTooltip" hidden></div>
                         <div class="funnel-total" id="funnelTotal"></div>
                         <div class="funnel-notes" id="funnelNotes" hidden></div>
                         <div class="funnel-conclusion" id="funnelConclusion"></div>
@@ -4028,6 +4269,13 @@
                         </div>
                         <div class="tc-sources-list" id="tcSourcesList"></div>
                         <div class="tc-src-tooltip" id="tcSrcTooltip" hidden></div>
+                        <div class="funnel-reading" id="funnelReading" hidden>
+                            <div class="funnel-reading-head">
+                                <h4>Lectura del embudo</h4>
+                                <span class="funnel-reading-stage" id="funnelReadingStage"></span>
+                            </div>
+                            <div class="funnel-reading-body" id="funnelReadingBody"></div>
+                        </div>
                     </div>
                 </section>
             </section>
@@ -4122,11 +4370,27 @@
                 </section>
             </div>
             {% if not territorial_review|default(false) %}<div id="viewChannels" hidden>
-                <div class="t-placeholder">
-                    <div class="t-ico"><i class="fa-solid fa-chart-pie"></i></div>
-                    <h4>Portales & ROI</h4>
-                    <p>Rendimiento por portal: leads, costo, tiempo de respuesta, tasa de contacto y comisión generada por canal.</p>
-                    <span class="t-soon-badge">Próximamente</span>
+                <div class="portal-dashboard" id="portalDashboard">
+                    <div class="portal-dashboard-head">
+                        <div>
+                            <h2>Portales &amp; ROI</h2>
+                            <p>Profundización del avance de cada portal dentro del embudo comercial.</p>
+                        </div>
+                    </div>
+                    <div class="portal-summary-grid" id="portalSummaryGrid"></div>
+                    <section class="portal-funnel-panel" aria-labelledby="portalFunnelTitle">
+                        <div class="portal-funnel-head">
+                            <div>
+                                <h3 id="portalFunnelTitle">Avance por portal</h3>
+                                <p>Las barras muestran el porcentaje de los leads de cada portal que alcanza cada etapa.</p>
+                            </div>
+                        </div>
+                        <div class="portal-funnel-legend" aria-label="Etapas del embudo por portal">
+                            <span>Portal</span><span>Recibidos</span><span>Gestión</span><span>Contacto</span><span>Visita</span><span>Cierre</span>
+                        </div>
+                        <div class="portal-funnel-list" id="portalFunnelList"></div>
+                        <p class="portal-funnel-note">El cierre solo considera negocio ganado confirmado. Los costos y el ROI financiero se incorporarán cuando exista evidencia de inversión por portal.</p>
+                    </section>
                 </div>
             </div>{% endif %}
             {% endif %}
@@ -4434,12 +4698,76 @@
             // --- 4. CARGA DE DATOS Y RENDER DE TARJETAS ---
             let SEQUENCE_MODE = 'full';
             const SCROLL_REVEAL_SELECTOR = '#aiBriefing, #funnelBlock, #trendCardBlock, #sourceBlock';
+            const EXECUTIVE_REVEAL_ORDER = [
+                'cardDemandMeta', 'cardConversion', 'cardPipeline', 'cardSla',
+                'aiBriefing', 'funnelBlock', 'sourceBlock', 'trendCardBlock'
+            ];
+            const EXECUTIVE_REVEAL_INDEX = new Map(EXECUTIVE_REVEAL_ORDER.map((id, index) => [id, index]));
             let seqObservers = {};
             let seqTimers = [];
+            const TEAM_REVEAL_SELECTOR = '.team-period-kpi-section .ops-period-card, #opsDashboard > .team-split, #opsDashboard > .team-speed-section, #opsDashboard > .team-aging-section, #opsDashboard > #opsEffectivenessSection, #opsDashboard > .team-period-section';
+            let teamRevealTimers = [];
 
             function clearRevealTimers() {
                 seqTimers.forEach(timer => clearTimeout(timer));
                 seqTimers = [];
+            }
+
+            function clearTeamRevealTimers() {
+                teamRevealTimers.forEach(timer => clearTimeout(timer));
+                teamRevealTimers = [];
+            }
+
+            function teamRevealItems() {
+                const dashboard = $('opsDashboard');
+                if (!dashboard) return [];
+                return Array.from(dashboard.querySelectorAll(TEAM_REVEAL_SELECTOR)).filter(el => !el.hidden);
+            }
+
+            function resetTeamReveal(startSequence = false) {
+                const dashboard = $('opsDashboard');
+                if (!dashboard) return;
+                clearTeamRevealTimers();
+                dashboard.classList.add('ops-reveal-pending');
+                dashboard.classList.remove('ops-entered');
+                dashboard.querySelectorAll(TEAM_REVEAL_SELECTOR).forEach(el => {
+                    el.classList.add('ops-reveal-item');
+                    el.classList.remove('ops-reveal-shown');
+                });
+                void dashboard.offsetWidth;
+                if (startSequence) runTeamRevealSequence();
+            }
+
+            function runTeamRevealSequence() {
+                const dashboard = $('opsDashboard');
+                if (!dashboard) return;
+                clearTeamRevealTimers();
+                const items = teamRevealItems();
+                if (!items.length) {
+                    dashboard.classList.remove('ops-reveal-pending');
+                    return;
+                }
+                dashboard.classList.add('ops-reveal-pending');
+                const step = 180;
+                const duration = 420;
+                items.forEach(el => {
+                    el.classList.add('ops-reveal-item');
+                    el.classList.remove('ops-reveal-shown');
+                });
+                void dashboard.offsetWidth;
+                items.forEach((el, index) => {
+                    teamRevealTimers.push(setTimeout(() => {
+                        el.classList.add('ops-reveal-shown');
+                        if (el.classList.contains('ops-period-card')) opsAnimateCardMetrics(el);
+                        if (el.matches('.team-split')) opsAnimateSectionMetrics(el);
+                    }, index * step));
+                });
+                teamRevealTimers.push(setTimeout(() => {
+                    // Los elementos quedan en estado visible; no se vuelve a
+                    // aplicar una animación al contenedor cuando termina.
+                    dashboard.classList.remove('ops-reveal-pending', 'ops-entered');
+                    teamRevealTimers = [];
+                }, Math.max(0, items.length - 1) * step + duration + 40));
             }
 
             function observeMobileCards() {
@@ -4448,6 +4776,13 @@
                     .filter(card => !card.classList.contains('seq-shown'));
                 if (!cards.length) return;
                 cards.forEach(card => card.classList.add('seq-shown', 'mobile-card-reveal'));
+                animateCardNumbers('cardDemandMeta');
+                animateCardNumbers('cardConversion');
+                animateCardNumbers('cardPipeline');
+                animateCardNumbers('cardSla');
+                animateConversionGraphic();
+                animatePipelineMix();
+                animateSlaBars();
             }
 
             function isScrollEl(el) {
@@ -4456,11 +4791,96 @@
 
             function growBarsIn(el) {
                 requestAnimationFrame(() => {
-                    el.querySelectorAll('.funnel-fill, .tc-src-bar').forEach(b => {
+                    el.querySelectorAll('.funnel-fill, .tc-src-bar, .tc-src-stage-fill').forEach(b => {
                         const w = b.getAttribute('data-w');
                         if (w !== null) b.style.width = w + '%';
                     });
                 });
+            }
+
+            function animateSlaBars() {
+                const card = $('cardSla');
+                if (!card) return;
+                requestAnimationFrame(() => {
+                    card.querySelectorAll('.cd4-bar-hot[data-target-width], .cd4-bar-normal[data-target-width]').forEach(bar => {
+                        bar.style.width = bar.dataset.targetWidth + '%';
+                    });
+                });
+            }
+
+            function animateConversionGraphic() {
+                requestAnimationFrame(() => {
+                    const seg = $('cd2DeltaSeg');
+                    const dotComp = $('cd2DeltaDotComp');
+                    const dotAct = $('cd2DeltaDotAct');
+                    if (!seg || !dotComp || !dotAct) return;
+                    dotAct.style.left = (dotAct.dataset.targetLeft || '0') + '%';
+                    seg.style.left = (seg.dataset.targetLeft || '0') + '%';
+                    seg.style.width = (seg.dataset.targetWidth || '0') + '%';
+                    seg.style.opacity = dotComp.dataset.targetOpacity || '0';
+                    dotComp.style.left = (dotComp.dataset.targetLeft || '0') + '%';
+                    dotComp.style.opacity = dotComp.dataset.targetOpacity || '0';
+                });
+            }
+
+            function animatePipelineMix() {
+                requestAnimationFrame(() => {
+                    ['cd3MixVenta', 'cd3MixArriendo'].forEach(id => {
+                        const segment = $(id);
+                        if (segment && segment.dataset.targetWidth !== undefined) {
+                            segment.style.width = segment.dataset.targetWidth + '%';
+                        }
+                    });
+                });
+            }
+
+            function resetCardGraphics() {
+                const seg = $('cd2DeltaSeg');
+                const dotComp = $('cd2DeltaDotComp');
+                const dotAct = $('cd2DeltaDotAct');
+                if (seg) { seg.style.left = '0%'; seg.style.width = '0%'; seg.style.opacity = '0'; }
+                if (dotComp) { dotComp.style.left = '0%'; dotComp.style.opacity = '0'; }
+                if (dotAct) dotAct.style.left = '0%';
+                ['cd3MixVenta', 'cd3MixArriendo', 'cd4BarHot', 'cd4BarNormal'].forEach(id => {
+                    const bar = $(id);
+                    if (bar) bar.style.width = '0%';
+                });
+            }
+
+            function animateCardNumbers(cardId) {
+                requestAnimationFrame(() => {
+                    if (cardId === 'cardDemandMeta') {
+                        const el = $('cd1Value');
+                        if (el?.dataset.countTarget !== undefined) {
+                            animateCountUp(el, Number(el.dataset.countTarget), countDuration());
+                        }
+                    } else if (cardId === 'cardConversion') {
+                        const el = $('cd2Value');
+                        if (el?.dataset.countTarget !== undefined) {
+                            animateCountUpFloat(el, Number(el.dataset.countTarget), countDuration());
+                        }
+                    } else if (cardId === 'cardPipeline') {
+                        const commission = $('cd3ComisionValue');
+                        const sale = $('cd3MontoVenta');
+                        const rent = $('cd3MontoArriendo');
+                        if (commission?.dataset.countTarget !== undefined) animateCountUpUF(commission, Number(commission.dataset.countTarget), countDuration());
+                        if (sale?.dataset.countTarget !== undefined) animateCountUpInt(sale, Number(sale.dataset.countTarget), countDuration());
+                        if (rent?.dataset.countTarget !== undefined) animateCountUpInt(rent, Number(rent.dataset.countTarget), countDuration());
+                    } else if (cardId === 'cardSla') {
+                        const el = $('cd4Value');
+                        if (el?.dataset.countTarget !== undefined) {
+                            animateCountUpPct(el, Number(el.dataset.countTarget), countDuration());
+                        }
+                    }
+                });
+            }
+
+            function restartTrendReveal() {
+                const chart = $('tcTrendChart');
+                if (!chart) return;
+                chart.classList.remove('tc-switch', 'tc-replay');
+                void chart.offsetWidth;
+                chart.classList.add('tc-replay');
             }
 
             // Las secciones del resumen se revelan una sola vez después de tener
@@ -4478,14 +4898,21 @@
 
             // Anima los bloques superiores (header, filtros, tarjetas) en secuencia
             function runRevealSequence(mode) {
-                const all = Array.from(document.querySelectorAll('.seq-el'));
+                const all = Array.from(document.querySelectorAll('.seq-el')).sort((a, b) => {
+                    const aIndex = EXECUTIVE_REVEAL_INDEX.get(a.id);
+                    const bIndex = EXECUTIVE_REVEAL_INDEX.get(b.id);
+                    if (aIndex == null && bIndex == null) return 0;
+                    if (aIndex == null) return -1;
+                    if (bIndex == null) return 1;
+                    return aIndex - bIndex;
+                });
                 if (!all.length) return;
                 clearRevealTimers();
                 const isRefresh = mode === 'refresh';
                 const isMobile = window.matchMedia('(max-width: 768px)').matches;
-                // Microanimación breve: el contenido ya está disponible en el DOM.
-                const step = 40;
-                const dur = 280;
+                // Secuencia visible: primero las tarjetas y después las secciones.
+                const step = 220;
+                const dur = 360;
                 document.body.style.setProperty('--seq-dur', dur + 'ms');
                 document.body.classList.add('seq-pending');
                 document.body.classList.toggle('seq-refresh', isRefresh);
@@ -4495,10 +4922,10 @@
                 all.filter(el => el.classList.contains('seq-static'))
                     .forEach(el => el.classList.add('seq-shown'));
                 // La carga inicial respeta el orden DOM: KPI → diagnóstico → embudo/origen → tendencia.
-                // En refresh las secciones inferiores permanecen visibles y no se reaniman.
+                // También se reaniman las secciones inferiores para conservar
+                // el orden jerárquico completo del resumen.
                 const els = all.filter(el => {
                     if (el.classList.contains('seq-static')) return false;
-                    if (isRefresh && isScrollEl(el)) return false;
                     if (isMobile && el.matches('#cardDemandMeta, #cardConversion, #cardPipeline, #cardSla')) return false;
                     return true;
                 });
@@ -4512,6 +4939,11 @@
                             if (el.id === 'funnelBlock') requestAnimationFrame(animateFunnelCounts);
                             growBarsIn(el);
                         }
+                        if (el.id === 'trendCardBlock') restartTrendReveal();
+                        if (el.id === 'cardConversion') animateConversionGraphic();
+                        if (el.id === 'cardPipeline') animatePipelineMix();
+                        if (el.id === 'cardSla') animateSlaBars();
+                        if (el.id === 'cardDemandMeta' || el.id === 'cardConversion' || el.id === 'cardPipeline' || el.id === 'cardSla') animateCardNumbers(el.id);
                     }, i * step));
                 });
                 observeMobileCards();
@@ -4520,45 +4952,38 @@
                     document.body.style.removeProperty('--seq-dur');
                     growBars('.funnel-fill');
                     growBars('.tc-src-bar');
+                    growBars('.tc-src-stage-fill');
                     seqTimers = [];
                 }, Math.max(0, els.length - 1) * step + dur + 40));
             }
 
             function resetExecutiveReveal(startSequence = true) {
+                clearRevealTimers();
                 // Activar primero el estado de refresh evita el flash nítido antes del blur.
                 document.body.classList.add('seq-pending', 'seq-refresh');
-                // Reconstruir el contenido dinámico para repetir también contadores,
-                // barras, trazado, embudo y tabla al volver al resumen.
-                renderDemandCard();
-                renderConversionCard();
-                renderPipelineCard();
-                renderSlaCard();
-                renderInsightsBlock();
-                renderTrendsAndChannels();
-                renderFunnel();
+                // En un cambio de pestaña no se vuelven a consultar ni reconstruir
+                // los datos: solo se reinicia la visibilidad de lo ya renderizado.
                 document.querySelectorAll('.seq-el').forEach(el => {
                     if (el.classList.contains('seq-static')) {
                         // Estructura superior estable al volver a la pestaña.
                         el.classList.add('seq-shown');
                         return;
                     }
-                    if (!isScrollEl(el)) {
-                        el.classList.remove('seq-shown');
-                        el.classList.remove('seq-reveal-active');
-                        el.classList.remove('entered');
-                        el.classList.remove('mobile-card-reveal');
-                    }
+                    el.classList.remove('seq-shown', 'seq-reveal-active', 'entered', 'mobile-card-reveal');
                 });
                 Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
                 seqObservers = {};
+                resetCardGraphics();
+                $('tcTrendChart')?.classList.remove('tc-replay');
                 // Al volver a la pestaña ejecutiva sí se vuelve al inicio.
                 window.scrollTo({ top: 0, behavior: 'auto' });
-                // Sólo reanima tarjetas y contenido; título, fecha, pestañas y filtros quedan estables.
-                if (startSequence) runRevealSequence('refresh');
+                // Título, fechas, pestañas y filtros quedan estables.
+                if (startSequence) runRevealSequence('full');
             }
 
             function prepareRefreshReveal() {
-                // Reinicia el contenido dinamico sin reanimar la estructura estatica.
+                // Reinicia todo el contenido dinámico para que el cambio de fechas
+                // vuelva a mostrar tarjetas y secciones en la misma secuencia.
                 clearRevealTimers();
                 document.body.classList.add('seq-pending', 'seq-refresh');
                 document.querySelectorAll('.seq-el').forEach(el => {
@@ -4566,14 +4991,12 @@
                         el.classList.add('seq-shown');
                         return;
                     }
-                    // El refresh actualiza datos sin volver a ocultar ni reanimar
-                    // las secciones que el usuario ya tiene disponibles.
-                    if (!isScrollEl(el)) {
-                        el.classList.remove('seq-shown', 'seq-reveal-active', 'entered', 'mobile-card-reveal');
-                    }
+                    el.classList.remove('seq-shown', 'seq-reveal-active', 'entered', 'mobile-card-reveal');
                 });
                 Object.values(seqObservers).forEach(ob => { try { ob.disconnect(); } catch (e) { /* noop */ } });
                 seqObservers = {};
+                resetCardGraphics();
+                $('tcTrendChart')?.classList.remove('tc-replay');
                 // El refresh automático conserva la posición de scroll.
             }
 
@@ -4634,6 +5057,60 @@
             }
             function opsNumber(value, fallback='—') {
                 return value == null ? fallback : Number(value).toLocaleString('es-CL');
+            }
+            function opsFormatAnimated(value, format) {
+                if (format === 'pct') return Number(value).toLocaleString('es-CL', {maximumFractionDigits:1}) + '%';
+                return Math.round(Number(value)).toLocaleString('es-CL');
+            }
+            function opsSetAnimatedMetric(id, value, format='int') {
+                const el = $(id);
+                if (!el) return;
+                if (value == null || !Number.isFinite(Number(value))) {
+                    delete el.dataset.opsTarget;
+                    el.textContent = '—';
+                    return;
+                }
+                el.dataset.opsTarget = String(Number(value));
+                el.dataset.opsFormat = format;
+                el.textContent = opsFormatAnimated(0, format);
+            }
+            function opsSetAnimatedPair(id, first, second) {
+                const el = $(id);
+                if (!el) return;
+                el.dataset.opsPairFirst = String(Number(first || 0));
+                el.dataset.opsPairSecond = String(Number(second || 0));
+                el.textContent = '0 de 0';
+            }
+            function opsAnimateMetric(el) {
+                if (!el) return;
+                const pair = el.dataset.opsPairFirst != null;
+                const target = pair ? Number(el.dataset.opsPairFirst) : Number(el.dataset.opsTarget);
+                if (!Number.isFinite(target)) return;
+                const second = pair ? Number(el.dataset.opsPairSecond || 0) : null;
+                const format = el.dataset.opsFormat || 'int';
+                const started = performance.now();
+                const duration = 620;
+                const tick = now => {
+                    const progress = Math.min(1, (now - started) / duration);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    const firstValue = target * eased;
+                    if (pair) el.textContent = Math.round(firstValue).toLocaleString('es-CL') + ' de ' + Math.round(second * eased).toLocaleString('es-CL');
+                    else el.textContent = opsFormatAnimated(firstValue, format);
+                    if (progress < 1) requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            }
+            function opsAnimateCardMetrics(card) {
+                if (!card) return;
+                card.querySelectorAll('[data-ops-target], [data-ops-pair-first]').forEach(opsAnimateMetric);
+            }
+            function opsAnimateSectionMetrics(section) {
+                if (!section) return;
+                section.querySelectorAll('.team-load-fill').forEach(fill => {
+                    const target = fill.dataset.loadPctExact || fill.dataset.loadPct || '0';
+                    fill.style.width = '0%';
+                    requestAnimationFrame(() => { fill.style.width = target + '%'; });
+                });
             }
             function opsPeriodLabel() {
                 return formatDisplayDateRange(FILTERS.period_start, FILTERS.period_end);
@@ -4776,7 +5253,13 @@
                 const unavailable = metric => comparison.eligibility && comparison.eligibility[metric] && !comparison.eligibility[metric].valid ? '— Sin base comparable' : '—';
                 const deltaText = (value, suffix='', metric) => value == null ? unavailable(metric) : (value > 0 ? '+' : '') + Number(value).toLocaleString('es-CL', {maximumFractionDigits:1}) + suffix + ' ' + compareLabel;
                 const setCompareTitle = (id, metric) => { const el=$(id); if (el) el.title = comparison.eligibility?.[metric]?.valid === false ? 'La medición equivalente no estaba instrumentada durante todo el período comparable.' : ''; };
-                put('opsPeriodAssigned', opsNumber(assigned, '0')); put('opsPeriodCoverage', coverage); put('opsPeriodManaged', opsNumber(managed, '0') + ' de ' + opsNumber(assigned, '0')); put('opsPeriodSlaHot', pct(period.hot_sla_pct)); put('opsPeriodSlaNormal', pct(period.normal_sla_pct)); put('opsPeriodSlaHotN', 'n=' + (period.hot_n || 0)); put('opsPeriodSlaNormalN', 'n=' + (period.normal_n || 0)); put('opsPeriodVisits', opsNumber(visits, '0'));
+                opsSetAnimatedMetric('opsPeriodAssigned', assigned, 'int');
+                opsSetAnimatedMetric('opsPeriodCoverage', assigned ? managed / assigned * 100 : null, 'pct');
+                opsSetAnimatedPair('opsPeriodManaged', managed, assigned);
+                opsSetAnimatedMetric('opsPeriodSlaHot', period.hot_sla_pct, 'pct');
+                opsSetAnimatedMetric('opsPeriodSlaNormal', period.normal_sla_pct, 'pct');
+                put('opsPeriodSlaHotN', 'n=' + (period.hot_n || 0)); put('opsPeriodSlaNormalN', 'n=' + (period.normal_n || 0));
+                opsSetAnimatedMetric('opsPeriodVisits', visits, 'int');
                 put('opsPeriodActivityMeta', 'Actividad registrada: ' + opsNumber(period.activity_attempts, '0') + ' · ' + opsNumber(period.activity_without_result, '0') + ' con actividad sin resultado');
                 const resultsButton = $('opsTeamResultsButton'); if (resultsButton) resultsButton.hidden = Boolean(OPS_SCOPE);
                 if ($('opsPeriodVisitsMeta')) $('opsPeriodVisitsMeta').textContent = 'Lead → visita ' + (assigned ? (visits / assigned).toLocaleString('es-CL', {style:'percent', maximumFractionDigits:1}) : '—');
@@ -4881,7 +5364,8 @@
             }
             function opsMatrixCurrentRow(item, teamLoad) {
                 const c = item.current || {}, share = Number(c.share_of_team_load_pct || (teamLoad ? Number(c.active_load || 0) / teamLoad * 100 : 0));
-                return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td><div class="team-load-cell"><span class="team-load-value">' + opsNumber(c.active_load,'0') + ' · ' + share.toLocaleString('es-CL',{maximumFractionDigits:1}) + '%</span><span class="team-load-bar"><span class="team-load-fill" style="width:' + Math.max(0,Math.min(100,share)) + '%"></span></span></div></td><td>' + opsNumber(c.pending,'0') + '</td><td><div class="team-sla-open-cell"><span><b>HOT</b><strong>' + opsNumber(c.hot_overdue,'0') + '</strong></span><span><b>NORMAL</b><strong>' + opsNumber(c.normal_overdue,'0') + '</strong></span></div></td><td><div class="team-backlog-cell"><span>&gt;7 días <strong>' + opsNumber(c.aging?.gt_7d,'0') + '</strong></span><small>Más antiguo · ' + opsCalendarDuration(c.oldest_pending_calendar_minutes ?? c.oldest_pending_minutes) + '</small></div></td><td><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></td></tr>';
+                const barExact = Math.max(0, Math.min(100, share));
+                return '<tr><td><strong>' + opsEscape(item.executive) + '</strong></td><td><div class="team-load-cell"><span class="team-load-value">' + opsNumber(c.active_load,'0') + ' · ' + share.toLocaleString('es-CL',{maximumFractionDigits:1}) + '%</span><span class="team-load-bar"><span class="team-load-fill" data-load-pct="' + Math.round(barExact) + '" data-load-pct-exact="' + barExact.toFixed(4) + '" style="width:' + barExact + '%"></span></span></div></td><td>' + opsNumber(c.pending,'0') + '</td><td><div class="team-sla-open-cell"><span><b>HOT</b><strong>' + opsNumber(c.hot_overdue,'0') + '</strong></span><span><b>NORMAL</b><strong>' + opsNumber(c.normal_overdue,'0') + '</strong></span></div></td><td><div class="team-backlog-cell"><span>&gt;7 días <strong>' + opsNumber(c.aging?.gt_7d,'0') + '</strong></span><small>Más antiguo · ' + opsCalendarDuration(c.oldest_pending_calendar_minutes ?? c.oldest_pending_minutes) + '</small></div></td><td><button type="button" class="team-action-link" data-team-cases-exec="' + opsEscape(item.executive) + '">Ver casos →</button></td></tr>';
             }
             function opsMatrixPortfolioRow(item, totalActive) {
                 const c = item.current || {}, p = item.period || {}, active = Number(c.active_load || 0), share = totalActive ? (active / totalActive * 100).toLocaleString('es-CL',{maximumFractionDigits:1}) + '%' : '—';
@@ -4962,7 +5446,7 @@
                 OPS_LAST_PERIOD_KEY = periodKey;
                 const scopeLabel = OPS_SCOPE || 'Equipo completo';
                 if ($('opsScopeSummary')) $('opsScopeSummary').textContent = scopeLabel;
-                if ($('opsDashboard')) { $('opsDashboard').classList.add('ops-entered'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
+                if ($('opsDashboard')) { $('opsDashboard').classList.remove('ops-entered'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
                 const periodKpis = document.querySelector('.team-period-kpis');
                 if (periodChanged && periodKpis) { periodKpis.classList.remove('ops-period-update'); requestAnimationFrame(() => periodKpis.classList.add('ops-period-update')); }
                 const set = (id, value) => { const el=$(id); if (el) el.textContent = opsNumber(value); };
@@ -5039,8 +5523,10 @@
                     if ($('opsTimeExecutiveView')) $('opsTimeExecutiveView').hidden = OPS_TIME_VIEW !== 'executive';
                 }
                 const error = $('opsError'); if (error) error.hidden = true;
+                runTeamRevealSequence();
             }
             async function loadOperationalData(periodSnapshot = null) {
+                resetTeamReveal(false);
                 const snapshot = periodSnapshot || {start: FILTERS.period_start, end: FILTERS.period_end, executive: OPS_SCOPE, portfolio: OPS_PORTFOLIO, compare: COMPARE, preset: FILTERS.period_preset};
                 const params = new URLSearchParams({period_start:snapshot.start || '', period_end:snapshot.end || ''});
                 if (snapshot.compare) params.set('compare', snapshot.compare);
@@ -5074,9 +5560,10 @@
                         const box = $('opsError'), text = $('opsErrorText');
                         if (text) text.textContent = OPS_DATA ? 'No fue posible actualizar. Se conservan los últimos datos válidos.' : 'No fue posible cargar la gestión operativa.';
                         if (box) box.hidden = false;
+                        if (OPS_DATA) runTeamRevealSequence();
                         throw error;
                     } finally {
-                        if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); }
+                        if (requestId === OPS_REQUEST_SEQ && $('opsDashboard')) { $('opsDashboard').classList.remove('ops-loading'); $('opsDashboard').setAttribute('aria-busy', 'false'); if (!OPS_DATA) $('opsDashboard').classList.remove('ops-reveal-pending'); }
                     }
                 })();
                 request.state.promise = promise;
@@ -5115,10 +5602,10 @@
             }
 
             async function loadData(mode) {
-                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
+                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewChannels') && !$('viewChannels').hidden ? 'channels' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
                 if (activeTab === 'leads') return loadOperationalData();
                 if (activeTab === 'properties') return loadInventoryData(mode === 'refresh');
-                if (activeTab !== 'executive') return null;
+                if (activeTab !== 'executive' && activeTab !== 'channels') return null;
                 const frontendStartedAt = performance.now();
                 const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, compare: COMPARE, preset: FILTERS.period_preset};
                 const p = new URLSearchParams();
@@ -5154,6 +5641,7 @@
                         renderInsightsBlock();
                         renderTrendsAndChannels();
                         renderFunnel();
+                        renderPortalAnalysis();
                         if (seqMode === 'refresh' && $('funnelBlock')?.classList.contains('seq-shown')) requestAnimationFrame(animateFunnelCounts);
                         const now = new Date();
                         LAST_SUCCESS_AT = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
@@ -5372,12 +5860,19 @@
                 return Number.isNaN(dt.getTime()) ? String(iso || '') : dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
             }
 
-            function tcPlaceTooltip(tooltip, snapX) {
+            function tcPlaceTooltip(tooltip, snapX, snapY) {
                 if (!tooltip) return;
                 tooltip.style.left = snapX + '%';
                 if (snapX > 75) tooltip.style.transform = 'translateX(calc(-100% - 4px))';
                 else if (snapX < 25) tooltip.style.transform = 'translateX(4px)';
                 else tooltip.style.transform = 'translateX(-50%)';
+                // Cuando el punto está alto, el tooltip baja para no cubrirlo.
+                // En el resto del gráfico queda arriba, con una separación clara.
+                const y = Number(snapY);
+                tooltip.style.bottom = '';
+                tooltip.style.top = Number.isFinite(y) && y <= 36
+                    ? 'calc(' + Math.max(0, y) + '% + 12px)'
+                    : '8px';
                 tooltip.hidden = false;
             }
 
@@ -5516,6 +6011,7 @@
                 const showAt = (idx) => {
                     idx = Math.max(0, Math.min(days - 1, idx));
                     const snapX = xAt(idx);
+                    const snapY = (yAt(cum[idx]) / H) * 100;
                     if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
                     if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(cum[idx]); hlCur.style.opacity = 1; }
                     if (hlPrev) {
@@ -5537,7 +6033,7 @@
                             (prevVal !== null ? '<small>Comparable acumulado: ' + prevVal + ' leads</small>' : '') +
                             (delta !== null ? '<small>Brecha vs. comparable: ' + (delta >= 0 ? '+' : '-') + Math.abs(delta) + '</small>' : '') +
                             (gapMeta !== null ? '<small>Meta: ' + metaVal.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' leads · ' + (gapMeta >= 0 ? '+' : '-') + Math.abs(gapMeta).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
-                        tcPlaceTooltip(tooltip, snapX);
+                        tcPlaceTooltip(tooltip, snapX, snapY);
                     }
                 };
                 const hideAt = () => {
@@ -5648,13 +6144,14 @@
                 const showAt = (idx) => {
                     idx = Math.max(0, Math.min(days - 1, idx));
                     const snapX = xAt(idx);
+                    const snapY = (yAt(nums[idx]) / H) * 100;
                     if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = 0.25; }
                     if (hlCur) { hlCur.style.left = snapX + '%'; hlCur.style.top = pctY(nums[idx]); hlCur.style.opacity = 1; }
                     if (tooltip) {
                         tooltip.innerHTML = '<span>' + tcFormatDate(labels[idx]) + '</span>' +
                             '<strong>' + nums[idx] + ' leads captados</strong>' +
                             (hasMA ? '<small>Media móvil 7 días: ' + ma[idx].toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '</small>' : '');
-                        tcPlaceTooltip(tooltip, snapX);
+                        tcPlaceTooltip(tooltip, snapX, snapY);
                     }
                 };
                 const hideAt = () => {
@@ -5747,9 +6244,12 @@
                         const conv = src.conversion_pct;
                         const pct = src.pct || 0;
                         const barW = Math.min(pct, 100);
+                        const funnel = Array.isArray(src.funnel) ? src.funnel : [];
+                        const funnelJson = esc(JSON.stringify(funnel));
                         html += '<div class="tc-src" data-nombre="' + esc(nombre) + '" data-leads="' + leads +
                             '" data-pct="' + pct + '" data-visitas="' + (src.visitas || 0) + '" data-conv="' +
-                            (conv === null || conv === undefined ? '' : conv) + '" data-prev="' + (src.prev || 0) + '">' +
+                            (conv === null || conv === undefined ? '' : conv) + '" data-prev="' + (src.prev || 0) +
+                            '" data-funnel="' + funnelJson + '">' +
                             '<div class="tc-src-top">' +
                             '<span class="tc-src-name">' + esc(nombre) + '</span>' +
                             '<span class="tc-src-val"><strong>' + leads + ' leads</strong> <span class="tc-src-conv">Conv. ' + fmtPct(conv) + '</span></span>' +
@@ -5771,6 +6271,8 @@
                         const visitas = Number(row.getAttribute('data-visitas'));
                         const convRaw = row.getAttribute('data-conv');
                         const prev = Number(row.getAttribute('data-prev'));
+                        let funnel = [];
+                        try { funnel = JSON.parse(row.getAttribute('data-funnel') || '[]'); } catch (_) { funnel = []; }
                         const convTxt = convRaw === ''
                             ? 'n/d'
                             : Number(convRaw).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
@@ -5778,6 +6280,11 @@
                         let h = '<strong>' + esc(nombre) + '</strong>' +
                             '<small>' + leads + ' leads · ' + pctTxt + '% del total</small>' +
                             '<small>' + visitas + ' visita(s) agendada(s) · ' + convTxt + ' conversión</small>';
+                        if (funnel.length) {
+                            h += funnel.map(stage => '<small>' + esc(String(stage.label || 'Etapa')) + ': ' +
+                                Number(stage.count || 0).toLocaleString('es-CL') + ' · ' +
+                                Number(stage.pct_of_source || 0).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</small>').join('');
+                        }
                         h += (prev > 0)
                             ? '<small>Período comparable: ' + prev + ' leads · ' + (leads - prev >= 0 ? '+' : '') + (leads - prev) + '</small>'
                             : '<small>Período comparable: sin leads</small>';
@@ -5855,6 +6362,52 @@
                 if (sz) sz.hidden = false;
             }
 
+            function renderPortalAnalysis() {
+                const list = $('portalFunnelList');
+                const summary = $('portalSummaryGrid');
+                if (!list || !summary || !OVERVIEW) return;
+                const sources = (((OVERVIEW || {}).sources || {}).items || []).filter(Boolean);
+                if (!sources.length) {
+                    summary.innerHTML = '';
+                    list.innerHTML = '<div class="tc-empty-state">Sin datos de portales para el período seleccionado.</div>';
+                    return;
+                }
+                const totalLeads = sources.reduce((sum, src) => sum + (Number(src.cantidad) || 0), 0);
+                const topVolume = [...sources].sort((a, b) => (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0))[0];
+                const conversionCandidates = sources.filter(src => Number(src.cantidad) >= 20 && src.conversion_pct !== null && src.conversion_pct !== undefined);
+                const bestConversion = [...conversionCandidates].sort((a, b) => Number(b.conversion_pct) - Number(a.conversion_pct))[0];
+                const n = value => Number(value || 0).toLocaleString('es-CL');
+                const pct = value => (value === null || value === undefined)
+                    ? '—'
+                    : Number(value).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                summary.innerHTML =
+                    '<article class="portal-summary-card"><span>Portales observados</span><strong>' + n(sources.length) + '</strong><small>Con leads en el período</small></article>' +
+                    '<article class="portal-summary-card"><span>Leads recibidos</span><strong>' + n(totalLeads) + '</strong><small>Suma de los portales visibles</small></article>' +
+                    '<article class="portal-summary-card"><span>Mayor volumen</span><strong>' + n(topVolume?.cantidad) + '</strong><small>' + esc(topVolume?.nombre || '—') + '</small></article>' +
+                    '<article class="portal-summary-card"><span>Mejor conversión a visita</span><strong>' + (bestConversion ? pct(bestConversion.conversion_pct) : '—') + '</strong><small>' + esc(bestConversion?.nombre || 'Base insuficiente') + (bestConversion ? ' · mínimo 20 leads' : '') + '</small></article>';
+
+                const stageLabels = ['Recibidos', 'Gestión', 'Contacto', 'Visita', 'Cierre'];
+                list.innerHTML = sources.map(src => {
+                    const stages = Array.isArray(src.funnel) ? src.funnel : [];
+                    const stageCells = stages.map((stage, index) => {
+                        const stagePct = Math.min(100, Math.max(0, Number(stage.pct_of_source) || 0));
+                        return '<div class="portal-stage" title="' + esc(String(stage.label || stageLabels[index] || 'Etapa')) + ': ' + n(stage.count) + ' leads">' +
+                            '<div class="portal-stage-top"><strong class="portal-stage-count">' + n(stage.count) + '</strong><span class="portal-stage-rate">' + pct(stage.pct_of_source) + '</span></div>' +
+                            '<div class="portal-stage-track"><div class="portal-stage-fill" data-w="' + stagePct + '"></div></div>' +
+                        '</div>';
+                    }).join('');
+                    return '<div class="portal-funnel-row" data-portal-name="' + esc(src.nombre || 'Otro') + '">' +
+                        '<div class="portal-funnel-name"><strong>' + esc(src.nombre || 'Otro') + '</strong><small>' + n(src.cantidad) + ' leads · ' + pct(src.pct) + ' del total · visita ' + pct(src.conversion_pct) + '</small></div>' +
+                        stageCells +
+                    '</div>';
+                }).join('');
+                requestAnimationFrame(() => {
+                    list.querySelectorAll('.portal-stage-fill').forEach(fill => {
+                        fill.style.width = fill.getAttribute('data-w') + '%';
+                    });
+                });
+            }
+
             // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
             let EXEC_SORT = { key: 'citas', dir: 'desc' };
 
@@ -5882,12 +6435,18 @@
                 const ges = (byKey.gestionados || {}).count || 0;
                 const con = (byKey.contacto_efectivo || {}).count || 0;
                 const vis = (byKey.visita_agendada || {}).count || 0;
+                const cierre = (byKey.cierre_negocio || {}).count || 0;
                 const tr = f.transitions || {};
                 const exc = f.exceptions || {};
+                const responseSummary = f.response_summary || {};
                 const fmtPct = (v) => (v === null || v === undefined) ? '—' : v.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
-                const gPct = (byKey.gestionados || {}).transition_pct;
-                const cPct = (byKey.contacto_efectivo || {}).transition_pct;
-                const vPct = (byKey.visita_agendada || {}).transition_pct;
+                 // El porcentaje principal debe corresponder al total visible
+                 // de la etapa. La tasa trazable se conserva como detalle de
+                 // excepción y no reemplaza el avance real del embudo.
+                 const gPct = (byKey.gestionados || {}).stage_pct ?? (byKey.gestionados || {}).transition_pct;
+                 const cPct = (byKey.contacto_efectivo || {}).stage_pct ?? (byKey.contacto_efectivo || {}).transition_pct;
+                 const vPct = (byKey.visita_agendada || {}).stage_pct ?? (byKey.visita_agendada || {}).transition_pct;
+                 const cierrePct = (byKey.cierre_negocio || {}).stage_pct ?? (byKey.cierre_negocio || {}).transition_pct;
                 const pipe = $('funnelPipe');
                 const funnelWidth = (n) => {
                     if (!rec) return 100;
@@ -5898,34 +6457,179 @@
                     return Math.min(100, Math.max(6, Math.round((n / rec) * 1000) / 10));
                 };
                 const level = (n, label, w, stage) =>
-                    '<div class="funnel-level" data-funnel-stage="' + stage + '" style="--w:' + w + '"><strong data-funnel-count="' + n + '">0</strong><span>' + esc(label) + '</span></div>';
-                const readableStageMin = { 2: 126, 3: 112, 4: 104 };
+                    '<div class="funnel-level" tabindex="0" data-funnel-stage="' + stage + '" style="--w:' + w + '"><strong data-funnel-count="' + n + '">0</strong><span>' + esc(label) + '</span></div>';
+                const readableStageMin = { 2: 126, 3: 112, 4: 104, 5: 100 };
                 const connectorRight = (nextWidth, nextStage) => {
                     const minPct = ((readableStageMin[nextStage] || 0) / 5.6);
                     return ((100 - Math.max(nextWidth, minPct)) / 2).toFixed(2) + '%';
                 };
                 const transition = (pct, sub, right) =>
-                    '<div class="funnel-transition" style="--connector-right:' + right + '"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
-                if (pipe) {
-                    pipe.innerHTML =
-                        level(rec, 'Recibidos', funnelWidth(rec) + '%', 1) +
-                        transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads', connectorRight(funnelWidth(ges), 2)) +
-                        level(ges, 'Gestionados', funnelWidth(ges) + '%', 2) +
-                        transition(fmtPct(cPct) + ' avanza', '−' + (ges - con) + ' leads', connectorRight(funnelWidth(con), 3)) +
-                        level(con, 'Contacto efectivo', funnelWidth(con) + '%', 3) +
-                        transition(fmtPct(vPct) + ' trazable', (tr.contacto_efectivo_to_visita_agendada || 0) + ' de ' + con + ' con contacto previo', connectorRight(funnelWidth(vis), 4)) +
-                        level(vis, 'Visitas agendadas', funnelWidth(vis) + '%', 4);
+                    '<div class="funnel-transition" tabindex="0" style="--connector-right:' + right + '"><span>' + pct + '</span>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div>';
+                 const contactTrace = tr.gestionados_to_contacto_efectivo || 0;
+                 const visitTrace = tr.contacto_efectivo_to_visita_agendada || 0;
+                 const closeTrace = tr.visita_agendada_to_cierre_negocio || 0;
+                 const contactDetail = '−' + Math.max(ges - con, 0) + ' leads' + (contactTrace !== con ? ' · ' + contactTrace + ' con gestión previa' : '');
+                 const visitDetail = '−' + Math.max(con - vis, 0) + ' leads' + (visitTrace !== vis ? ' · ' + visitTrace + ' con contacto previo' : '');
+                 const closeDetail = closeTrace === cierre ? cierre + ' de ' + vis + ' con visita previa' : '−' + Math.max(vis - cierre, 0) + ' leads · ' + closeTrace + ' con visita previa';
+                 if (pipe) {
+                     pipe.innerHTML =
+                         level(rec, 'Recibidos', funnelWidth(rec) + '%', 1) +
+                         transition(fmtPct(gPct) + ' avanza', '−' + (rec - ges) + ' leads', connectorRight(funnelWidth(ges), 2)) +
+                         level(ges, 'Gestionados', funnelWidth(ges) + '%', 2) +
+                         transition(fmtPct(cPct) + ' avanza', contactDetail, connectorRight(funnelWidth(con), 3)) +
+                         level(con, 'Contacto efectivo', funnelWidth(con) + '%', 3) +
+                         transition(fmtPct(vPct) + ' avanza', vis + ' de ' + con + ' total · ' + visitTrace + ' trazables', connectorRight(funnelWidth(vis), 4)) +
+                         level(vis, 'Visitas agendadas', funnelWidth(vis) + '%', 4) +
+                         transition(fmtPct(cierrePct) + ' cierra', closeDetail, connectorRight(funnelWidth(cierre), 5)) +
+                         level(cierre, 'Negocio cerrado', funnelWidth(cierre) + '%', 5);
+
+                    const funnelTip = $('funnelTooltip');
+                    const funnelCard = block.querySelector('.funnel-card');
+                    if (funnelTip && funnelCard) {
+                        const stageCopy = {
+                            '1': {
+                                title: 'Recibidos',
+                                body: 'Base del embudo: leads captados en el período y con los filtros actuales. Se usa como 100% para calcular el avance.'
+                            },
+                            '2': {
+                                title: 'Gestionados',
+                                body: 'Leads con una primera gestión válida registrada. Esta etapa mide cobertura de atención, no solo intentos de contacto.'
+                            },
+                            '3': {
+                                title: 'Contacto efectivo',
+                                body: 'Leads con contacto efectivo confirmado. Un intento sin respuesta no cuenta como contacto efectivo.'
+                            },
+                            '4': {
+                                title: 'Visitas agendadas',
+                                body: 'Leads con una visita agendada. La conversión total se calcula contra todos los recibidos, no solo contra la etapa anterior.'
+                            },
+                            '5': {
+                                title: 'Negocio cerrado',
+                                body: 'Venta o arriendo confirmado mediante la transición CLOSED_WON. Es la etapa que representa el ingreso ganado por la oficina.'
+                            }
+                        };
+                        const transitionCopy = [
+                            {
+                                title: 'Avance a Gestionados',
+                                body: 'Proporción de los leads recibidos que obtuvo una primera gestión válida. La pérdida corresponde a leads aún sin gestión válida.'
+                            },
+                            {
+                                title: 'Avance a Contacto efectivo',
+                                body: 'Proporción de los leads gestionados que terminó en contacto efectivo confirmado. No confundir con cantidad de intentos.'
+                            },
+                             {
+                                title: 'Avance a Visita agendada',
+                                body: 'Proporción de visitas agendadas sobre contactos efectivos. El total de visitas se muestra en la etapa y la trazabilidad se informa como detalle cuando falta el contacto previo.'
+                            },
+                            {
+                                title: 'Cierre de negocio',
+                                body: 'Proporción de las visitas agendadas que terminó en una venta o arriendo ganado. Solo considera cierres confirmados dentro del período.'
+                            }
+                        ];
+                        const responseLines = (stageKey) => {
+                            const rows = Array.isArray(responseSummary[stageKey]) ? responseSummary[stageKey] : [];
+                            if (!rows.length) {
+                                return '<div class="funnel-reading-responses"><strong>Respuestas de ejecutivos:</strong> no hay una respuesta de gestión humana confirmada para esta etapa.</div>';
+                            }
+                            const visible = rows.slice(0, 5).map(row =>
+                                '<span>' + esc(String(row.label || row.key || 'Otro resultado')) + ': <strong>' +
+                                Number(row.count || 0).toLocaleString('es-CL') + '</strong></span>'
+                            ).join(' · ');
+                            const remaining = rows.length > 5
+                                ? ' · <span>+' + (rows.length - 5) + ' resultados</span>'
+                                : '';
+                            return '<div class="funnel-reading-responses"><strong>Respuestas de ejecutivos:</strong> ' + visible + remaining +
+                                '<small>Última respuesta humana confirmada por lead dentro del período.</small></div>';
+                        };
+                        const stageReadings = {
+                            '1': {
+                                label: 'Recibidos',
+                                body: '<strong>' + rec + ' leads</strong> ingresaron en el período. El siguiente hito es contar con una primera gestión válida registrada.' +
+                                    '<br>La lectura resume el avance del CRM; no transforma una respuesta libre en un cierre.' +
+                                    responseLines('received')
+                            },
+                            '2': {
+                                label: 'Gestionados',
+                                body: '<strong>' + ges + ' leads</strong> tienen una primera gestión válida. ' + Math.max(rec - ges, 0) + ' aún no muestra ese hito dentro del período.' +
+                                    '<br>La respuesta registrada por el ejecutivo queda como evidencia de gestión, pero todavía no implica contacto efectivo ni negocio.' +
+                                    responseLines('gestionados')
+                            },
+                            '3': {
+                                label: 'Contacto efectivo',
+                                body: '<strong>' + con + ' leads</strong> tienen una respuesta o resultado de contacto efectivo confirmado. ' + Math.max(ges - con, 0) + ' gestionados no avanzan a este hito.' +
+                                    '<br>Un “no interesado” o una respuesta negativa puede explicar el resultado, pero nunca se cuenta como negocio ganado.' +
+                                    responseLines('contacto_efectivo')
+                            },
+                             '4': {
+                                 label: 'Visitas agendadas',
+                                 body: '<strong>' + vis + ' leads</strong> tienen visita agendada. ' + Math.max(con - vis, 0) + ' contactos efectivos no llegan a una visita dentro del período.' +
+                                     '<br>' + Math.max(vis - (tr.contacto_efectivo_to_visita_agendada || 0), 0) + ' visitas no tienen contacto efectivo previo trazable; se mantienen visibles en el total.' +
+                                     responseLines('visita_agendada')
+                            },
+                            '5': {
+                                label: 'Negocio cerrado',
+                                body: '<strong>' + cierre + ' leads</strong> llegaron a un cierre ganado confirmado. ' + Math.max(vis - (tr.visita_agendada_to_cierre_negocio || 0), 0) + ' visitas no terminan en este resultado dentro del período.' +
+                                    '<br><strong>Solo cuenta CLOSED_WON:</strong> venta o arriendo ganado. CLOSED_LOST, no interesado, propiedad no disponible o abandono no se consideran ingreso.' +
+                                    responseLines('cierre_negocio')
+                            }
+                        };
+                        const showFunnelReading = (stageKey, titleOverride) => {
+                            const reading = $('funnelReading');
+                            const stage = $('funnelReadingStage');
+                            const body = $('funnelReadingBody');
+                            const detail = stageReadings[stageKey];
+                            if (!reading || !stage || !body || !detail) return;
+                            stage.textContent = titleOverride || detail.label;
+                            body.innerHTML = detail.body;
+                            reading.hidden = false;
+                            reading.classList.remove('is-updated');
+                            void reading.offsetWidth;
+                            reading.classList.add('is-updated');
+                        };
+                        const showFunnelTip = (anchor, copy) => {
+                            funnelTip.innerHTML = '<strong>' + esc(copy.title) + '</strong><small>' + esc(copy.body) + '</small>';
+                            funnelTip.hidden = false;
+                            const cardRect = funnelCard.getBoundingClientRect();
+                            const anchorRect = anchor.getBoundingClientRect();
+                            const maxTop = Math.max(12, funnelCard.clientHeight - funnelTip.offsetHeight - 12);
+                            const targetTop = Math.max(12, Math.min(anchorRect.top - cardRect.top, maxTop));
+                            funnelTip.style.top = Math.round(targetTop) + 'px';
+                        };
+                        const hideFunnelTip = () => {
+                            funnelTip.hidden = true;
+                            funnelTip.style.top = '';
+                        };
+                        pipe.querySelectorAll('.funnel-level').forEach(levelEl => {
+                            const copy = stageCopy[levelEl.dataset.funnelStage];
+                            if (!copy) return;
+                            levelEl.addEventListener('mouseenter', () => showFunnelTip(levelEl, copy));
+                            levelEl.addEventListener('mouseleave', hideFunnelTip);
+                            levelEl.addEventListener('focus', () => showFunnelTip(levelEl, copy));
+                            levelEl.addEventListener('blur', hideFunnelTip);
+                            levelEl.addEventListener('click', () => showFunnelReading(levelEl.dataset.funnelStage));
+                        });
+                        pipe.querySelectorAll('.funnel-transition').forEach((transitionEl, index) => {
+                            const copy = transitionCopy[index];
+                            if (!copy) return;
+                            transitionEl.addEventListener('mouseenter', () => showFunnelTip(transitionEl, copy));
+                            transitionEl.addEventListener('mouseleave', hideFunnelTip);
+                            transitionEl.addEventListener('click', () => showFunnelReading(String(index + 2), copy.title));
+                        });
+                    }
                 }
 
                 // Conversión total del embudo: visitas agendadas sobre recibidos.
                 const totalEl = $('funnelTotal');
                 if (totalEl) {
                     if (rec > 0) {
-                        totalEl.innerHTML = 'Conversión total: <strong>' +
+                        totalEl.innerHTML = 'Conversión a visita: <strong>' +
                             (vis / rec * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) +
-                            '%</strong> <span>(' + vis + ' de ' + rec + ' recibidos)</span>';
+                            '%</strong> <span>(' + vis + ' de ' + rec + ' recibidos)</span><br>' +
+                            'Cierre de negocio: <strong>' +
+                            (cierre / rec * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) +
+                            '%</strong> <span>(' + cierre + ' de ' + rec + ' recibidos)</span>';
                     } else {
-                        totalEl.innerHTML = 'Conversión total: <strong>—</strong>';
+                        totalEl.innerHTML = 'Conversión a visita: <strong>—</strong><br>Cierre de negocio: <strong>—</strong>';
                     }
                 }
 
@@ -5933,11 +6637,13 @@
                 const notes = [];
                 const nSinContacto = exc.visitas_sin_contacto_efectivo || 0;
                 const nSinGestion = exc.visitas_sin_gestion || 0;
-                if (nSinContacto > 0 || nSinGestion > 0) {
+                const nCierresSinVisita = exc.cierres_sin_visita || 0;
+                if (nSinContacto > 0 || nSinGestion > 0 || nCierresSinVisita > 0) {
                     let t = 'Excepciones de registro: ';
                     const parts = [];
                     if (nSinContacto > 0) parts.push(nSinContacto + ' sin contacto previo');
                     if (nSinGestion > 0) parts.push(nSinGestion + ' sin gestión registrada');
+                    if (nCierresSinVisita > 0) parts.push(nCierresSinVisita + ' cierres sin visita registrada');
                     notes.push(t + parts.join(' · ') + '. El embudo conserva las visitas totales y marca aparte las trazables.');
                 }
                 const notesEl = $('funnelNotes');
@@ -5945,17 +6651,27 @@
 
                 // Mayor pérdida entre etapas.
                 const losses = [
-                    { label: 'Recibidos → Gestionados', loss: rec - ges, denominator: rec, denominatorLabel: 'recibidos' },
-                    { label: 'Gestionados → Contacto efectivo', loss: ges - con, denominator: ges, denominatorLabel: 'gestionados' },
-                    { label: 'Contacto efectivo → Visita agendada', loss: con - vis, denominator: con, denominatorLabel: 'contactos efectivos' },
+                    { label: 'Recibidos → Gestionados', loss: Math.max(0, rec - ges), denominator: rec, denominatorLabel: 'recibidos' },
+                    { label: 'Gestionados → Contacto efectivo', loss: Math.max(0, ges - con), denominator: ges, denominatorLabel: 'gestionados' },
+                    { label: 'Contacto efectivo → Visita agendada', loss: Math.max(0, con - vis), denominator: con, denominatorLabel: 'contactos efectivos' },
+                    { label: 'Visitas agendadas → Negocio cerrado', loss: Math.max(0, vis - cierre), denominator: vis, denominatorLabel: 'visitas agendadas' },
                 ];
-                losses.sort((a, b) => b.loss - a.loss);
-                const topLoss = losses[0];
-                const pctLoss = topLoss.denominator > 0 ? topLoss.loss / topLoss.denominator * 100 : 0;
+                const topAbsoluteLoss = losses.reduce((best, item) => item.loss > best.loss ? item : best, losses[0]);
+                const proportionalCandidates = losses.filter(item => item.denominator > 0);
+                const topProportionalLoss = proportionalCandidates.reduce((best, item) => {
+                    const bestRate = best.loss / best.denominator;
+                    const itemRate = item.loss / item.denominator;
+                    return itemRate > bestRate ? item : best;
+                }, proportionalCandidates[0] || losses[0]);
+                const lossText = (item) => {
+                    const pct = item.denominator > 0 ? item.loss / item.denominator * 100 : 0;
+                    return '<strong>' + esc(item.label) + '</strong> · ' + item.loss + ' leads (' +
+                        pct.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% de ' + esc(item.denominatorLabel) + ')';
+                };
                 const conclEl = $('funnelConclusion');
                 if (conclEl) {
-                    conclEl.innerHTML = 'Mayor pérdida: <strong>' + esc(topLoss.label) + '</strong> · ' + topLoss.loss + ' leads (' +
-                        pctLoss.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '% de ' + esc(topLoss.denominatorLabel) + ')';
+                    conclEl.innerHTML = '<div>Mayor pérdida absoluta: ' + lossText(topAbsoluteLoss) + '</div>' +
+                        '<div>Mayor caída proporcional: ' + lossText(topProportionalLoss) + '</div>';
                 }
                 block.hidden = false;
             }
@@ -5993,8 +6709,9 @@
                 $('cd1Footer').innerHTML = resolved === 'none'
                     ? 'Sin período comparable en este modo'
                     : '<strong>' + (isPositive ? '+' : '') + diffLeads + ' leads</strong> frente al período comparable (' + previous + ')';
+                $('cd1Value').dataset.countTarget = total;
+                $('cd1Value').innerHTML = '0 <span class="cd1-unit">Leads</span>';
                 showCardReveal(card);
-                animateCountUp($('cd1Value'), total, countDuration());
             }
 
             // --- CARD 2: EFECTIVIDAD & CONVERSIÓN ---
@@ -6057,6 +6774,7 @@
                     $('cd2DeltaSeg').style.opacity = '0';
                     $('cd2DeltaDotComp').style.opacity = '0';
                     $('cd2DeltaDotAct').style.left = '0%';
+                    delete $('cd2Value').dataset.countTarget;
                     $('cd2Footer').innerHTML = '<span style="font-style:italic;color:var(--text-secondary)">No hay leads en el período para calcular la conversión.</span>';
                     showCardReveal(card);
                     return;
@@ -6096,21 +6814,21 @@
                 dotComp.style.left = '0%';
                 dotComp.style.opacity = '0';
                 dotAct.style.left = '0%';
-                requestAnimationFrame(() => {
-                    dotAct.style.left = posCur + '%';
-                    if (posPrev === null) {
-                        seg.style.opacity = '0';
-                        dotComp.style.opacity = '0';
-                    } else {
-                        const lo = Math.min(posCur, posPrev);
-                        const hi = Math.max(posCur, posPrev);
-                        seg.style.left = lo + '%';
-                        seg.style.width = (hi - lo) + '%';
-                        seg.style.opacity = '1';
-                        dotComp.style.left = posPrev + '%';
-                        dotComp.style.opacity = '1';
-                    }
-                });
+                dotAct.dataset.targetLeft = posCur;
+                if (posPrev === null) {
+                    seg.dataset.targetLeft = 0;
+                    seg.dataset.targetWidth = 0;
+                    dotComp.dataset.targetLeft = 0;
+                    dotComp.dataset.targetOpacity = 0;
+                } else {
+                    const lo = Math.min(posCur, posPrev);
+                    const hi = Math.max(posCur, posPrev);
+                    seg.dataset.targetLeft = lo;
+                    seg.dataset.targetWidth = hi - lo;
+                    seg.dataset.targetOpacity = 1;
+                    dotComp.dataset.targetLeft = posPrev;
+                    dotComp.dataset.targetOpacity = 1;
+                }
 
                 let footer;
                 if (citas > 0) {
@@ -6126,8 +6844,14 @@
                 }
                 $('cd2Footer').innerHTML = footer;
 
+                if (convPct === null || convPct === undefined) {
+                    delete $('cd2Value').dataset.countTarget;
+                    $('cd2Value').textContent = 'N/D';
+                } else {
+                    $('cd2Value').dataset.countTarget = convPct;
+                    $('cd2Value').textContent = '0,0 %';
+                }
                 showCardReveal(card);
-                animateCountUpFloat($('cd2Value'), convPct || 0, countDuration());
             }
 
             // --- CARD 3: PIPELINE & VALORIZACIÓN UF ---
@@ -6158,11 +6882,14 @@
 
                 // KPI principal: comisión potencial con unidad explícita (UF) para
                 // evitar ambigüedad con las cifras de Venta/Arriendo de la sección.
-                animateCountUpUF($('cd3ComisionValue'), Math.round(comisionUF), countDuration());
+                $('cd3ComisionValue').dataset.countTarget = Math.round(comisionUF);
+                $('cd3ComisionValue').innerHTML = 'UF 0';
 
                 // Métricas secundarias: Venta y Arriendo en una sola línea (count-up).
-                animateCountUpInt($('cd3MontoVenta'), Math.round(montoVenta), countDuration());
-                animateCountUpInt($('cd3MontoArriendo'), Math.round(montoArriendo), countDuration());
+                $('cd3MontoVenta').dataset.countTarget = Math.round(montoVenta);
+                $('cd3MontoVenta').textContent = '0';
+                $('cd3MontoArriendo').dataset.countTarget = Math.round(montoArriendo);
+                $('cd3MontoArriendo').textContent = '0';
 
                 // Micrográfico: composición de comisión potencial (Venta vs Arriendo, UF netas).
                 const mixTotal = comisionVenta + comisionArriendo;
@@ -6172,11 +6899,11 @@
                 const mixArriendoEl = $('cd3MixArriendo');
                 if (mixVentaEl) {
                     mixVentaEl.style.width = '0%';
-                    setTimeout(() => { mixVentaEl.style.width = mixVenta + '%'; }, 700);
+                    mixVentaEl.dataset.targetWidth = mixVenta;
                 }
                 if (mixArriendoEl) {
                     mixArriendoEl.style.width = '0%';
-                    setTimeout(() => { mixArriendoEl.style.width = mixArriendo + '%'; }, 700);
+                    mixArriendoEl.dataset.targetWidth = mixArriendo;
                 }
                 const mixPct = $('cd3MixPct');
                 if (mixPct) {
@@ -6239,9 +6966,11 @@
                 // KPI principal: % de leads dentro de SLA (estado al cierre del período), count-up.
                 const inSlaPct = s.in_sla_pct;
                 if (inSlaPct === null || inSlaPct === undefined) {
+                    delete $('cd4Value').dataset.countTarget;
                     $('cd4Value').innerHTML = 'N/D <span class="cd1-unit">%</span>';
                 } else {
-                    animateCountUpPct($('cd4Value'), inSlaPct, countDuration());
+                    $('cd4Value').dataset.countTarget = inSlaPct;
+                    $('cd4Value').innerHTML = '0,0 <span class="cd1-unit">%</span>';
                 }
                 $('cd4Sub').textContent = 'Leads dentro de SLA';
 
@@ -6281,12 +7010,12 @@
                 // Barras = % de leads dentro de SLA (cumplimiento al corte), no mediana/umbral.
                 const hotPct = (hot.in_sla_pct === null || hot.in_sla_pct === undefined) ? 0 : hot.in_sla_pct;
                 const normPct = (lead.in_sla_pct === null || lead.in_sla_pct === undefined) ? 0 : lead.in_sla_pct;
-                $('cd4BarHot').style.width = '0%';
-                $('cd4BarNormal').style.width = '0%';
-                requestAnimationFrame(() => {
-                    $('cd4BarHot').style.width = hotPct + '%';
-                    $('cd4BarNormal').style.width = normPct + '%';
-                });
+                const hotBar = $('cd4BarHot');
+                const normalBar = $('cd4BarNormal');
+                hotBar.style.width = '0%';
+                normalBar.style.width = '0%';
+                hotBar.dataset.targetWidth = hotPct;
+                normalBar.dataset.targetWidth = normPct;
 
                 // Footer ejecutivo compacto: gestionados · abiertos · vencidos.
                 // El diagnóstico "sin trazabilidad" vive en el tooltip (no ocupa
@@ -6756,7 +7485,13 @@
                     if (msel) msel.value = tabId;
                     if (tabId === 'leads') loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:', e));
                     if (tabId === 'properties') loadInventoryData().catch(e=>console.error('Error cargando inventario:', e));
-                    if (tabId === 'executive') loadData('full').catch(e=>console.error('Error cargando vista principal:', e));
+                    if (tabId === 'channels') {
+                        if (OVERVIEW) renderPortalAnalysis();
+                        else loadData('full').catch(e=>console.error('Error cargando análisis de portales:', e));
+                    }
+                    if (tabId === 'executive' && !enteringExecutive) {
+                        loadData('full').catch(e=>console.error('Error cargando vista principal:', e));
+                    }
                     syncUrl();
                     const tabsNav = $('dashTabs');
                     const activeTab = tabsNav ? tabsNav.querySelector('.dash-tab[data-tab="' + tabId + '"]') : null;
@@ -6767,11 +7502,10 @@
                     if (enteringExecutive && execView) {
                         requestAnimationFrame(() => {
                             window.scrollTo({ top: 0, behavior: 'auto' });
-                            setTimeout(() => {
-                                window.scrollTo({ top: 0, behavior: 'auto' });
-                                execView.style.visibility = '';
-                                runRevealSequence('refresh');
-                            }, 500);
+                            execView.style.visibility = '';
+                            // El reingreso usa exactamente la misma secuencia
+                            // visual que una actualización de fechas.
+                            runRevealSequence('refresh');
                         });
                     }
                         // Reiniciar en el mismo evento evita que el resumen se pinte nítido antes del blur.
@@ -6887,7 +7621,7 @@
                 // Tooltips de las 4 cards (mismo comportamiento hover/click y
                 // contenido siempre dentro del viewport, incluso en mobile).
                 const closeDashboardTooltips = () => {
-                    document.querySelectorAll('.cd1-tooltip, .tc-chart-tooltip, .tc-src-tooltip').forEach(tip => {
+                    document.querySelectorAll('.cd1-tooltip, .tc-chart-tooltip, .tc-src-tooltip, .funnel-tooltip').forEach(tip => {
                         tip.hidden = true;
                         tip.dataset.pinned = '';
                     });

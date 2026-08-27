@@ -220,8 +220,12 @@ class Config:
     TEST_PHONE = os.getenv("TEST_PHONE")
 
     # === Modelos DeepSeek / compatibilidad heredada ===
-    DEEPSEEK_MODEL_FAST = os.getenv("DEEPSEEK_MODEL_FAST") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
-    DEEPSEEK_MODEL_REASONER = os.getenv("DEEPSEEK_MODEL_REASONER") or DEEPSEEK_MODEL_FAST
+    # DeepSeek V4 Flash es el modelo único de producción. No permitir que un
+    # DEEPSEEK_MODEL heredado del entorno vuelva a activar V4 Pro y dispare el
+    # coste de la API; load_dotenv no reemplaza variables ya exportadas.
+    DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash"
+    DEEPSEEK_MODEL_FAST = DEEPSEEK_FLASH_MODEL
+    DEEPSEEK_MODEL_REASONER = DEEPSEEK_FLASH_MODEL
     DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("GROK_BASE_URL") or "https://api.deepseek.com"
     DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE") or os.getenv("GROK_TEMPERATURE") or "0.1")
     
@@ -234,9 +238,9 @@ class Config:
     DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
     # === DeepSeek Adjudicator (scraper classification) ===
-    # NOTA: No hereda de DEEPSEEK_MODEL ni DEEPSEEK_MODEL_FAST.
-    # El adjudicador debe ser siempre deepseek-v4-flash, independientemente del modelo del chatbot.
-    DEEPSEEK_ADJUDICATOR_MODEL = os.getenv("DEEPSEEK_ADJUDICATOR_MODEL", "deepseek-v4-flash")
+    # El adjudicador también debe usar siempre Flash, independientemente de
+    # cualquier variable heredada del chatbot o del despliegue.
+    DEEPSEEK_ADJUDICATOR_MODEL = DEEPSEEK_FLASH_MODEL
     DEEPSEEK_ADJUDICATOR_ENABLED = os.getenv("DEEPSEEK_ADJUDICATOR_ENABLED", "false").lower() == "true"
     DEEPSEEK_ADJUDICATOR_TIMEOUT = int(os.getenv("DEEPSEEK_ADJUDICATOR_TIMEOUT") or "12")
     DEEPSEEK_ADJUDICATOR_MAX_CALLS = int(os.getenv("DEEPSEEK_ADJUDICATOR_MAX_CALLS") or "50")
@@ -258,9 +262,9 @@ class Config:
         """Valida que el modelo del adjudicador sea deepseek-v4-flash.
         Debe llamarse solo al inicializar el scraper/clasificador, NO al importar config."""
         model = Config.DEEPSEEK_ADJUDICATOR_MODEL
-        if "pro" in model.lower():
+        if model != Config.DEEPSEEK_FLASH_MODEL:
             raise RuntimeError(
-                f"DeepSeek Pro model '{model}' is not allowed for Yapo adjudicator. "
+                f"DeepSeek model '{model}' is not allowed for Yapo adjudicator. "
                 "Set DEEPSEEK_ADJUDICATOR_MODEL=deepseek-v4-flash in .env"
             )
 

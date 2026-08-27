@@ -12,6 +12,7 @@ DATA_DIR = ROOT_DIR / "data"
 HTML_DUMPS_DIR = ROOT_DIR / "html_dumps"
 LLM_CACHE_DIR = HTML_DUMPS_DIR / "llm_cache"
 REPORTS_DIR = ROOT_DIR / "reports"
+DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash"
 
 
 def _load_dotenv_file(path: Path) -> None:
@@ -93,7 +94,8 @@ class AppConfig:
     mongo_collection: str = field(default_factory=lambda: os.getenv("CAPTACION_COLLECTION_NAME") or os.getenv("MONGO_COLLECTION", "propiedades_captacion"))
     deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""))
     deepseek_base_url: str = field(default_factory=lambda: os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
-    deepseek_model: str = field(default_factory=lambda: os.getenv("DEEPSEEK_ADJUDICATOR_MODEL", "deepseek-v4-flash"))
+    # Modelo único de producción: no permitir overrides heredados a Pro.
+    deepseek_model: str = DEEPSEEK_FLASH_MODEL
     deepseek_enabled: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_ENABLED", True))
     deepseek_timeout_seconds: int = field(default_factory=lambda: _env_int("DEEPSEEK_TIMEOUT_SECONDS", 12))
     deepseek_max_tokens: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_TOKENS", 500))
@@ -148,7 +150,7 @@ class AppConfig:
 def get_config() -> AppConfig:
     cfg = AppConfig()
     # Validación tardía del adjudicador (solo se ejecuta al construir el scraper, no al importar)
-    if "pro" in cfg.deepseek_model.lower():
+    if cfg.deepseek_model != DEEPSEEK_FLASH_MODEL:
         raise RuntimeError("DeepSeek Pro no está permitido para el adjudicador; use deepseek-v4-flash.")
     cfg.ensure_layout()
     return cfg

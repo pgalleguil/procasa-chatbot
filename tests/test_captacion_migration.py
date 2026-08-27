@@ -362,15 +362,16 @@ def test_config_import_no_runtime_error():
     assert hasattr(config.Config, 'DEEPSEEK_ADJUDICATOR_MODEL')
 
 
-def test_chatbot_uses_pro_model():
-    """Chatbot mantiene deepseek-v4-pro cuando la variable está definida."""
+def test_chatbot_uses_flash_model_even_when_legacy_env_is_pro():
+    """El chatbot ignora un override heredado que apunte a V4 Pro."""
     import os
     os.environ['DEEPSEEK_MODEL'] = 'deepseek-v4-pro'
     # Forzar recarga del módulo para probar con el env correcto
     import importlib
     import config
     importlib.reload(config)
-    assert config.Config.DEEPSEEK_MODEL_FAST == 'deepseek-v4-pro'
+    assert config.Config.DEEPSEEK_MODEL_FAST == 'deepseek-v4-flash'
+    assert config.Config.DEEPSEEK_MODEL_REASONER == 'deepseek-v4-flash'
 
 
 def test_adjudicator_uses_flash_independently():
@@ -382,7 +383,7 @@ def test_adjudicator_uses_flash_independently():
     import config
     importlib.reload(config)
     assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL == 'deepseek-v4-flash'
-    assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL != config.Config.DEEPSEEK_MODEL_FAST
+    assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL == config.Config.DEEPSEEK_MODEL_FAST
 
 
 def test_adjudicator_not_inheriting_chatbot_model():
@@ -394,18 +395,14 @@ def test_adjudicator_not_inheriting_chatbot_model():
     assert len(model_lines) == 0, f"Adjudicator still inherits DEEPSEEK_MODEL: {model_lines}"
 
 
-def test_validator_rejects_pro_at_init_time():
-    """validate_adjudicator_model() rechaza deepseek-v4-pro solo al inicializar."""
+def test_validator_keeps_adjudicator_on_flash():
+    """El validador confirma que el adjudicador quedó fijado en Flash."""
     import os
     os.environ['DEEPSEEK_ADJUDICATOR_MODEL'] = 'deepseek-v4-pro'
     import importlib
     import config
     importlib.reload(config)
-    try:
-        config.Config.validate_adjudicator_model()
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError:
-        pass
+    config.Config.validate_adjudicator_model()
     # Restaurar
     os.environ['DEEPSEEK_ADJUDICATOR_MODEL'] = 'deepseek-v4-flash'
     importlib.reload(config)

@@ -100,7 +100,7 @@ def _ds_config() -> dict[str, Any]:
     return {
         "api_key": os.getenv("DEEPSEEK_API_KEY", ""),
         "base_url": os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-        "model": os.getenv("DEEPSEEK_ADJUDICATOR_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")),
+        "model": Config.DEEPSEEK_ADJUDICATOR_MODEL,
         "timeout": int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "20")),
         "max_tokens": max(900, int(os.getenv("DEEPSEEK_MAX_TOKENS", "900"))),
         "max_attempts": 2,

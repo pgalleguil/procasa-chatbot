@@ -1391,6 +1391,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "lead_temperature_effective": temp,
             "estado": estado_final,
             "estado_badge": config_estado["label"],
+            "can_register_management": estado_final not in (
+                PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
+                "ARCHIVED", "SUPPRESSED",
+            ),
             "led_class": config_estado["led"],
             "gestionado": bool(has_real_management),
             "estado_resultado": _resultado_estado_label(
@@ -1409,6 +1413,14 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
+            "sla_started_at": assigned_at,
+            "sla_started_date": assigned_at.strftime("%d/%m/%Y") if assigned_at else None,
+            "sla_started_time": assigned_at.strftime("%H:%M") if assigned_at else None,
+            "sla_start_differs": bool(
+                assigned_for_cycle and assigned_at
+                and assigned_for_cycle.strftime("%d/%m/%Y %H:%M")
+                != assigned_at.strftime("%d/%m/%Y %H:%M")
+            ),
             "effective_sent_at": effective_sent_at,
             "effective_sent_date": effective_sent_at.strftime("%d/%m/%Y") if effective_sent_at else None,
             "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,

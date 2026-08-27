@@ -149,6 +149,29 @@ def format_relative_time(dt_obj):
     elif minutes > 0: return f"Hace {minutes}m"
     else: return "Ahora"
 
+
+def format_relative_compact(dt_obj):
+    """Short assignment age for the list, preserving useful minutes."""
+    text = format_relative_time(dt_obj)
+    if text.startswith("Hace "):
+        parts = text[5:].split()
+        if parts and parts[0].endswith("d"):
+            days = int(parts[0][:-1])
+            hours = parts[1][:-1] if len(parts) > 1 and parts[1].endswith("h") else "0"
+            minutes = parts[2][:-1] if len(parts) > 2 and parts[2].endswith("m") else "0"
+            day_label = "día" if days == 1 else "días"
+            result = f"Hace {days} {day_label}"
+            if int(hours) > 0:
+                result += f" {hours} h"
+            return result
+        if parts and parts[0].endswith("h"):
+            hours = parts[0][:-1]
+            minutes = parts[1][:-1] if len(parts) > 1 and parts[1].endswith("m") else "0"
+            return f"Hace {hours} h" + (f" {minutes} min" if int(minutes) > 0 else "")
+        if parts and parts[0].endswith("m"):
+            return f"Hace {parts[0][:-1]} min"
+    return text
+
 # --- HELPER: Datos de Propiedad ---
 def select_owner_phone(prop, owner):
     """Return the most usable owner phone stored by Prop360.
@@ -1040,9 +1063,38 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         lifecycle = lead.get("lifecycle") or {}
         # Never combine new-cycle SLA with historical lead fields.  If a
         # canonical active cycle exists, it is the sole source for this row.
+        cycle_assignment_raw = ((current_cycle or {}).get("assigned_at")
+                                or lifecycle.get("assigned_at"))
+        cycle_sla_started_raw = ((current_cycle or {}).get("sla_started_at")
+                                or lifecycle.get("sla_started_at")
+                                or cycle_assignment_raw)
         assigned_for_cycle = _coerce_crm_datetime(
-            (current_cycle or {}).get("assigned_at") or lifecycle.get("assigned_at") or lead.get("fecha_asignacion")
+            cycle_assignment_raw or lead.get("fecha_asignacion")
         )
+        # Presentation-only assignment timestamp. Use confirmed delivery when
+        # available, otherwise show the honest assignment timestamp.
+        confirmed_delivery_raw = None
+        if (current_cycle or {}).get("delivery_confirmed") is True:
+            confirmed_delivery_raw = ((current_cycle or {}).get("delivery_confirmed_at")
+                                      or (current_cycle or {}).get("delivered_at"))
+        effective_sent_at = _coerce_crm_datetime(
+            confirmed_delivery_raw
+            or cycle_assignment_raw
+            or lifecycle.get("assigned_at")
+            or lead.get("fecha_asignacion")
+        )
+        if confirmed_delivery_raw and effective_sent_at:
+            effective_sent_source = "Entrega confirmada"
+            effective_sent_confirmed = True
+        elif effective_sent_at and (current_cycle or {}).get("assigned_at"):
+            effective_sent_source = "Asignación"
+            effective_sent_confirmed = False
+        elif effective_sent_at:
+            effective_sent_source = "Asignación legacy"
+            effective_sent_confirmed = False
+        else:
+            effective_sent_source = "Sin información"
+            effective_sent_confirmed = False
         current_cycle_id = ((current_cycle or {}).get("assignment_cycle_id")
                             or lifecycle.get("current_assignment_cycle_id")
                             or lifecycle.get("assignment_cycle_id"))
@@ -1199,10 +1251,13 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             
         # One SLA definition for cards, list, detail and monitor.
         from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover
-        assigned_at = ((current_cycle or {}).get("sla_started_at")
-                       or (current_cycle or {}).get("assigned_at")
-                       or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
-                       or lead.get("fecha_asignacion"))
+        assigned_at_raw = ((current_cycle or {}).get("sla_started_at")
+                           or (current_cycle or {}).get("assigned_at")
+                           or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
+                           or lead.get("fecha_asignacion"))
+        assigned_at = (_coerce_crm_datetime(assigned_at_raw)
+                       or assigned_for_cycle
+                       or effective_sent_at)
         visual_pre = is_pre_visual_cutover((current_cycle or {}).get("assigned_at") or assigned_at) if assigned_at else True
         
         sla_hours = 0
@@ -1273,9 +1328,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         else:
             prioridad_badge = "📋 Lead"
 
-        sla_started_display = ((current_cycle or {}).get("sla_started_at")
-                               or lifecycle.get("sla_started_at")
-                               or lifecycle_ts)
+        sla_started_display = cycle_sla_started_raw or lifecycle_ts
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
         if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
@@ -1323,6 +1376,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
+            "effective_sent_at": effective_sent_at,
+            "effective_sent_date": effective_sent_at.strftime("%d/%m/%Y") if effective_sent_at else None,
+            "effective_sent_time": effective_sent_at.strftime("%H:%M") if effective_sent_at else None,
+            "assigned_relative": format_relative_compact(assigned_for_cycle or effective_sent_at),
+            "effective_sent_source": effective_sent_source,
+            "effective_sent_confirmed": effective_sent_confirmed,
             "stage": lead.get("stage") or "new",
             "sort_timestamp": sort_ts
         })

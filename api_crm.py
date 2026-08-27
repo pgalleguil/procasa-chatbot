@@ -150,6 +150,15 @@ def format_relative_time(dt_obj):
     else: return "Ahora"
 
 
+def format_duration_minutes(total_minutes):
+    """Render a duration with hours and remaining minutes when useful."""
+    total_minutes = max(0, int(total_minutes))
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours} h" + (f" {minutes} min" if minutes else "")
+    return f"{minutes} min"
+
+
 def format_relative_compact(dt_obj):
     """Short assignment age for the list, preserving useful minutes."""
     text = format_relative_time(dt_obj)
@@ -1264,6 +1273,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         canonical_sla = {}
         hot_started_at = None
         sla_info = {}
+        sla_managed_outside = False
+        sla_timing = "SLA no disponible"
         
         if not assigned_at:
             sla_status = "historical" if visual_pre else "unknown"
@@ -1284,6 +1295,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 temperature=temp,
                 hot_started_at=hot_started_at,
             )
+            sla_managed_outside = (
+                canonical_sla.get("canonical_state") == "MANAGED_OUTSIDE_SLA"
+            )
             
             if visual_pre and not canonical_sla.get("fulfilled"):
                 sla_status = "historical"
@@ -1299,6 +1313,23 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 sla_status = "unknown"
             
             sla_hours = (canonical_sla.get("minutes") or 0) / 60.0
+            measured_minutes = (canonical_sla.get("hot_minutes")
+                                if temp == "HOT" and canonical_sla.get("hot_minutes") is not None
+                                else canonical_sla.get("minutes"))
+            threshold_minutes = canonical_sla.get("threshold_minutes")
+            if measured_minutes is not None and threshold_minutes is not None:
+                if canonical_sla.get("fulfilled"):
+                    delta = format_duration_minutes(measured_minutes)
+                    over = format_duration_minutes(measured_minutes - threshold_minutes)
+                    sla_timing = (
+                        f"Dentro de SLA · {delta}"
+                        if measured_minutes < threshold_minutes
+                        else f"Fuera de SLA · +{over}"
+                    )
+                elif measured_minutes >= threshold_minutes:
+                    sla_timing = f"Venció hace {format_duration_minutes(measured_minutes - threshold_minutes)}"
+                else:
+                    sla_timing = f"Faltan {format_duration_minutes(threshold_minutes - measured_minutes)}"
             
             # Build SLA info for row tooltip
             if not visual_pre:
@@ -1348,6 +1379,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "lead_id": str(lead.get("_id") or ""),
             "phone_is_synthetic": bool(lead.get("phone_is_synthetic")) or str(lead.get("phone", "")).startswith("no-phone-"),
             "sla_status": sla_status,
+            "sla_timing": sla_timing if assigned_at else "SLA no disponible",
+            "sla_managed_outside": sla_managed_outside,
             "sla_label": sla_label,
             "age_label": age_label,
             "whatsapp_display": ("Sin teléfono" if (str(lead.get("phone", "")).startswith("no-phone-")

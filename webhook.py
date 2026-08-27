@@ -23,10 +23,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import uvicorn
 import json
-from copy import deepcopy
 import pytz # Importante para la hora local
 from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent, run_in_threadpool
-from chatbot.phone_utils import normalize_phone_strict
 
 # ========================= THREAD POOL CONTROLADO =========================
 # Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
@@ -64,14 +62,7 @@ from analytics.leads_service import (
     get_leads_dashboard_overview, get_leads_operational_dashboard,
     get_operational_executive_performance, get_operational_portfolios,
     get_properties_inventory_dashboard, get_capture_simulation,
-    InventoryTemporarilyUnavailable, warm_pinned_dashboard_cache,
-    keep_pinned_dashboard_cache,
 )
-from analytics.leads_service import _CACHE_REFRESH_POOL, _COMMERCIAL_QUERY_POOL
-from analytics.dashboard_forensics import emit as emit_dashboard_forensics
-from analytics.dashboard_forensics import emit_request as emit_dashboard_request
-from analytics.dashboard_forensics import process_facts as dashboard_process_facts
-from analytics.dashboard_forensics import request_id as dashboard_request_id
 
 from api_captacion import (
     get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
@@ -213,11 +204,6 @@ lead_processing_queue = None  # Se inicializará en lifespan
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
-    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
-        **dashboard_process_facts(), "event": "process_started", "endpoint": None,
-        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
-        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
-    })
     
     # Install phone redaction on all loggers
     from chatbot.storage import install_log_redaction
@@ -257,25 +243,6 @@ async def lifespan(app: FastAPI):
 
     # Cliente HTTP compartido para OAuth (evita crear conexión por callback).
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
-
-    # El warmup inicial es parte de readiness: el proceso no publica su
-    # lifespan hasta haberlo completado o agotado el timeout defensivo.
-    emit_dashboard_forensics("[DASHBOARD_PREWARM]", {
-        **dashboard_process_facts(), "event": "prewarm_scheduled", "endpoint": "overview,operations,properties",
-        "timestamp": datetime.now(timezone.utc).isoformat(), "cache_key_hash": None,
-        "age_before": None, "duration_ms": 0.0, "source": "startup_prewarm",
-    })
-    startup_loop = asyncio.get_running_loop()
-    try:
-        await asyncio.wait_for(
-            startup_loop.run_in_executor(_WARMER_THREAD_POOL, warm_pinned_dashboard_cache),
-            timeout=120.0,
-        )
-        logger.info("[DASHBOARD_PREWARM] startup warm completed before readiness")
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.warning("[DASHBOARD_PREWARM] startup warm failed; continuing after defensive timeout", exc_info=True)
 
     # Iniciar tareas de fondo
     logger.info("[CRM_FLAGS] %s", {
@@ -400,10 +367,9 @@ async def lifespan(app: FastAPI):
     c1_task = asyncio.create_task(lead_consumer_worker(1))
     c2_task = asyncio.create_task(lead_consumer_worker(2))
     
-    # Crear admin y asegurar índices fuera del event loop: ambas funciones
-    # usan PyMongo síncrono durante el startup.
-    await run_in_threadpool(crear_admin_si_no_existe)
-    await run_in_threadpool(asegurar_indices_db)
+    # Crear admin y asegurar índices
+    crear_admin_si_no_existe()
+    asegurar_indices_db()
     
     # Invalidar cachés antiguos de captación (versiones pre-migración)
     try:
@@ -712,15 +678,6 @@ async def slide_session_middleware(request: Request, call_next):
     return response
 
 async def get_current_user(request: Request):
-    # Desarrollo local: el dashboard local usa la misma plantilla y endpoints
-    # productivos, pero no depende de una cookie de sesión del navegador.
-    # Solo se habilita desde el servidor local y nunca afecta Render/producción.
-    client_host = request.client.host if request.client else None
-    referer = request.headers.get("referer", "")
-    local_dashboard = client_host in {"127.0.0.1", "::1", "localhost"} and \
-        ("/leads-dashboard-local" in referer or request.url.path == "/leads-dashboard-local")
-    if local_dashboard:
-        return "__local_dashboard__"
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization")
@@ -739,8 +696,6 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Token invalido o expirado")
 
 async def get_current_user_doc(request: Request):
-    if await get_current_user(request) == "__local_dashboard__":
-        return {"username": "__local_dashboard__", "nombre": "Visualización local", "rol": "admin"}
     cached = getattr(request.state, "current_user_doc", None)
     if cached is not None:
         return cached
@@ -769,6 +724,26 @@ def _safe_login_next(value: str | None) -> str | None:
         return None
     return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
+
+def _default_post_login_url(user_role: str | None) -> str:
+    """Return the first module shown after login for each role."""
+    role = str(user_role or "").strip().lower()
+    return "/leads-dashboard" if role in {"admin", "supervisor", "administrador"} else "/crm"
+
+
+def _is_local_auth_request(request: Request) -> bool:
+    """Identify the local development host without affecting Render redirects."""
+    return (request.url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+
+
+def _post_login_target(request: Request, user_role: str | None, explicit_next: str | None = None) -> str:
+    """Choose a role default, avoiding stale local redirect cookies after a restart."""
+    default_url = _default_post_login_url(user_role)
+    requested_url = _safe_login_next(explicit_next)
+    if _is_local_auth_request(request):
+        return requested_url or default_url
+    return requested_url or _safe_login_next(request.cookies.get("login_next")) or default_url
+
 @app.get("/login/google")
 async def login_google(request: Request, next: str = Query(None)):
     params = {
@@ -782,7 +757,9 @@ async def login_google(request: Request, next: str = Query(None)):
     }
     url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     response = RedirectResponse(url)
-    next_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(next)
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     if next_url:
         response.set_cookie("login_next", next_url, httponly=True, secure=True, samesite="lax", max_age=600)
     return response
@@ -807,7 +784,7 @@ async def auth_google_callback(request: Request, code: str):
             token_data = token_resp.json()
             if "error" in token_data:
                 logger.error(f"Error Token Google: {token_data}")
-                return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
+                return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
 
             access_token = token_data.get("access_token")
             user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
@@ -824,12 +801,11 @@ async def auth_google_callback(request: Request, code: str):
         user = await usuarios.find_one({"$or": [{"email": email}, {"username": email}]}, {"username": 1, "rol": 1, "email": 1})
         if not user:
             logger.warning(f"Intento de acceso denegado: {email}")
-            return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
+            return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
 
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
-        default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-        target_url = _safe_login_next(request.cookies.get("login_next")) or default_url
+        target_url = _post_login_target(request, user_rol)
         access_token_jwt = create_access_token({"sub": user_sub})
         response = RedirectResponse(target_url, status_code=303)
         response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=7200)
@@ -839,15 +815,19 @@ async def auth_google_callback(request: Request, code: str):
         return response
     except Exception as e:
         logger.error(f"Error Google Auth Critical: {e}")
-        return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
+        return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
 
 # ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
 
 @app.head("/")
 @app.get("/")
+@app.get("/login")
 async def login_get(request: Request):
-    next_url = _safe_login_next(request.query_params.get("next")) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(request.query_params.get("next"))
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     response = templates.TemplateResponse(
+        request,
         "login.html",
         {
             "request": request,
@@ -870,8 +850,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         
         if user and verify_password(password, user.get("hashed_password", "")):
             user_rol = user.get("rol", "agente")
-            default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-            target_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next")) or default_url
+            target_url = _post_login_target(request, user_rol, next)
 
             token = create_access_token({"sub": username})
             
@@ -887,12 +866,12 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             response.delete_cookie("login_next")
             return response
         
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Usuario o contraseña incorrectos"
         })
     except Exception as e:
         logger.error(f"Error en login tradicional: {e}")
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Error del servidor"
         })
 
@@ -904,17 +883,17 @@ async def logout():
 
 @app.get("/forgot-password")
 async def forgot_password(request: Request):
-    return templates.TemplateResponse("forgot_password.html", {"request": request})
+    return templates.TemplateResponse(request, "forgot_password.html", {"request": request})
 
 @app.get("/reset-password/{token}")
 async def reset_password(request: Request, token: str):
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+    return templates.TemplateResponse(request, "reset_password.html", {"request": request, "token": token})
 
 # ========================= 5. DASHBOARD & REPORTES =========================
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def ver_campanas(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html", {"request": request})
 
 @app.get("/api/leads_reporte")
 async def api_leads_reporte(request: Request):
@@ -939,7 +918,7 @@ async def ver_leads(request: Request):
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
     
-    return templates.TemplateResponse("leads_dashboard.html", {
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
@@ -947,17 +926,13 @@ async def ver_leads(request: Request):
 
 
 @app.get("/leads-dashboard-review", response_class=HTMLResponse)
-@app.get("/leads-dashboard-local", response_class=HTMLResponse)
 async def ver_leads_review(request: Request):
-    """Local visual review shell using the same full dashboard template."""
-    _require_public_leads_dashboard()
+    """Public, read-only visual review; never resolves a user or touches Mongo."""
     response = templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
-        "user_role": "admin",
+        "user_role": "review",
         "user_name": "Visual Review",
-        "full_visual_review": True,
-        "fixture_demo": True,
-        "local_dashboard": request.url.path == "/leads-dashboard-local",
+        "territorial_review": True,
     })
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
@@ -967,7 +942,6 @@ async def ver_leads_review(request: Request):
 @app.get("/api/review/leads-dashboard")
 async def leads_dashboard_review_data():
     """Sanitized fixture only. No request parameters and no database access."""
-    _require_public_leads_dashboard()
     response = JSONResponse(territorial_review_payload())
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
@@ -1011,340 +985,14 @@ def _overview_server_timing(timing: dict) -> str:
     return ", ".join(parts)
 
 
-def _demand_capture_server_timing(timing: dict) -> str:
-    parts = []
-    if timing.get("cache"):
-        parts.append(f'cache;desc="{timing["cache"]}"')
-    for stage in ("base_leads", "base_properties", "base_network", "base_wall",
-                  "leads_aggregate", "lead_codes", "property_find", "contract_build"):
-        duration = timing.get(f"demand_capture.{stage}_ms")
-        if duration is not None:
-            parts.append(f"demand_capture.{stage};dur={duration}")
-    for metric in ("base_docs", "base_lead_bson_bytes", "base_property_bson_bytes"):
-        value = timing.get(f"demand_capture.{metric}")
-        if value is not None:
-            parts.append(f"demand_capture.{metric};desc=\"{value}\"")
-    total = timing.get("demand_capture.total_ms")
-    if total is not None:
-        parts.append(f"demand_capture.total;dur={total}")
-    if timing.get("demand_capture.timeout_stage"):
-        parts.append(f'demand_capture.timeout_stage;desc="{timing["demand_capture.timeout_stage"]}"')
-    return ", ".join(parts)
-
-
-def _dashboard_mongo_items(value):
-    """Flatten only aggregate Mongo profiles already produced by analytics."""
-    items = []
-    if isinstance(value, dict):
-        mongo = value.get("mongo")
-        if isinstance(mongo, list):
-            items.extend(item for item in mongo if isinstance(item, dict))
-        for key, child in value.items():
-            if key not in {"mongo", "component_details"}:
-                items.extend(_dashboard_mongo_items(child))
-    elif isinstance(value, list):
-        for child in value:
-            items.extend(_dashboard_mongo_items(child))
-    return items
-
-
-def _dashboard_perf_log(*, endpoint: str, request_id: str, timing: dict,
-                        period_start: str | None, period_end: str | None,
-                        period_preset: str | None, request_started: float,
-                        serialization_ms: float, web_worker_thread: str | None = None):
-    mongo_items = _dashboard_mongo_items(timing)
-    mongo_total = round(sum(float(item.get("duration_ms") or 0) for item in mongo_items), 1)
-    total_ms = round((time.perf_counter() - request_started) * 1000, 1)
-    timing["serialization_ms"] = round(serialization_ms, 1)
-    timing["mongo_calls"] = len(mongo_items) if mongo_items else int(timing.get("mongo_calls") or 0)
-    timing["mongo_total_ms"] = mongo_total
-    timing["total_ms"] = total_ms
-    if timing.get("python_compute_ms") is None:
-        timing["python_compute_ms"] = round(max(0.0, float(timing.get("service_total_ms") or timing.get("total_ms") or 0) - mongo_total), 1)
-    payload = {
-        **dashboard_process_facts(),
-        "request_id": request_id,
-        "endpoint": endpoint,
-        "period_preset": period_preset or "date_range",
-        "period_start": period_start,
-        "period_end": period_end,
-        "cache_state": timing.get("cache"),
-        "cache_age_seconds": timing.get("cache_age_seconds", timing.get("stale_age_seconds")),
-        "cache_key_hash": timing.get("cache_key_hash"),
-        "prewarm_active_for_key": timing.get("prewarm_active_for_key"),
-        "background_active_count": timing.get("background_active_count", 0),
-        "cache_entries": len(__import__("analytics.leads_service", fromlist=["L1_CACHE"]).L1_CACHE),
-        "web_pool_queue_wait_ms": timing.get("web_pool_queue_wait_ms"),
-        "web_pool_execution_ms": timing.get("web_pool_execution_ms"),
-        "analytics_pool_queue_wait_ms": timing.get("analytics_pool_queue_wait_ms"),
-        "mongo_calls": timing.get("mongo_calls", 0),
-        "mongo_total_ms": mongo_total,
-        "mongo_slow_over_100_ms": [
-            {"collection": item.get("collection"), "operation": item.get("operation"), "duration_ms": item.get("duration_ms")}
-            for item in mongo_items if float(item.get("duration_ms") or 0) > 100
-        ],
-        "mongo_slow_over_300_ms": [
-            {"collection": item.get("collection"), "operation": item.get("operation"), "duration_ms": item.get("duration_ms")}
-            for item in mongo_items if float(item.get("duration_ms") or 0) > 300
-        ],
-        "python_compute_ms": timing.get("python_compute_ms"),
-        "serialization_ms": timing.get("serialization_ms"),
-        "total_ms": total_ms,
-        "worker_thread": web_worker_thread,
-        "timing": {key: value for key, value in timing.items() if key not in {"request_id"}},
-    }
-    emit_dashboard_request(payload)
-
-
 @app.get("/demo/leads-intelligence", response_class=HTMLResponse)
 async def public_leads_intelligence_demo(request: Request):
     """Temporary, read-only public shell for the Executive Summary only."""
-    _require_public_leads_dashboard()
-    response = templates.TemplateResponse(request, "leads_dashboard.html", {
-        "user_role": "demo",
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
+        "user_role": "public_demo",
         "user_name": "",
-        "fixture_demo": True,
+        "public_demo": True,
     })
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def _require_public_leads_dashboard():
-    if not Config.PUBLIC_LEADS_DASHBOARD_ENABLED:
-        raise HTTPException(status_code=404, detail="No encontrado")
-
-
-_DEMO_DASHBOARD_JSON = Path(__file__).with_name("demo_data") / "leads_dashboard_demo.json"
-
-
-def _load_demo_dashboard_data() -> dict:
-    with _DEMO_DASHBOARD_JSON.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def _demo_json_response(key: str) -> JSONResponse:
-    response = JSONResponse(_load_demo_dashboard_data().get(key, {}))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def _demo_window(period_start=None, period_end=None):
-    base_start = datetime.strptime("2026-07-26", "%Y-%m-%d").date()
-    base_end = datetime.strptime("2026-08-24", "%Y-%m-%d").date()
-    try:
-        start = datetime.strptime(period_start, "%Y-%m-%d").date() if period_start else base_start
-        end = datetime.strptime(period_end, "%Y-%m-%d").date() if period_end else base_end
-    except (TypeError, ValueError):
-        start, end = base_start, base_end
-    if end < start:
-        start, end = end, start
-    days = max(1, (end - start).days + 1)
-    previous_end = start - timedelta(days=1)
-    previous_start = previous_end - timedelta(days=days - 1)
-    return start, end, previous_start, previous_end, days
-
-
-def _demo_factor(*values):
-    seed = "|".join(str(value or "") for value in values)
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-    return 0.92 + (int(digest[:4], 16) % 17) / 100
-
-
-def _demo_scale(value, factor, minimum=0):
-    if value is None:
-        return value
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return max(minimum, round(value * factor, 1))
-    return value
-
-
-def _demo_transform_overview(period_start=None, period_end=None, compare=None):
-    start, end, previous_start, previous_end, days = _demo_window(period_start, period_end)
-    data = deepcopy(_load_demo_dashboard_data()["overview"])
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(period_start, period_end, compare)))
-    data["period"]["current"] = {"start": start.isoformat(), "end": end.isoformat()}
-    data["period"]["previous"] = {"start": previous_start.isoformat(), "end": previous_end.isoformat()}
-    data["period"]["compare_resolved"] = "none" if compare == "none" else "auto"
-    demand = data["demand"]
-    demand["total"] = _demo_scale(demand["total"], factor, 1)
-    demand["previous"] = _demo_scale(demand["previous"], factor * 0.96, 1)
-    demand["variation_pct"] = round((demand["total"] - demand["previous"]) / demand["previous"] * 100, 1)
-    for series_name in ("daily", "previous_daily", "daily_history"):
-        series = demand.get(series_name, {})
-        series["values"] = [_demo_scale(value, factor, 0) for value in series.get("values", [])]
-    for key in ("leads", "citas"):
-        data["conversion"][key] = _demo_scale(data["conversion"][key], factor, 0)
-    data["conversion"]["conversion_pct"] = round(data["conversion"]["citas"] / max(1, data["conversion"]["leads"]) * 100, 1)
-    data["conversion"]["ratio_leads_per_cita"] = round(data["conversion"]["leads"] / max(1, data["conversion"]["citas"]), 1)
-    for key in ("monto_venta_uf", "monto_arriendo_uf", "comision_potencial_uf", "comision_venta_uf", "comision_arriendo_uf", "propiedades_cartera", "propiedades_vinculadas"):
-        data["pipeline"][key] = _demo_scale(data["pipeline"][key], factor, 0)
-    for key in ("managed", "open", "open_breached", "not_evaluable"):
-        data["sla"][key] = _demo_scale(data["sla"][key], factor, 0)
-    for source in data["sources"].get("items", []):
-        source["cantidad"] = _demo_scale(source.get("cantidad"), factor, 0)
-        source["visitas"] = _demo_scale(source.get("visitas"), factor, 0)
-    source_total = max(1, sum(item.get("cantidad", 0) for item in data["sources"].get("items", [])))
-    for source in data["sources"].get("items", []):
-        source["pct"] = round(source.get("cantidad", 0) / source_total * 100, 1)
-        source["conversion_pct"] = round(source.get("visitas", 0) / max(1, source.get("cantidad", 0)) * 100, 1)
-    for stage in data["funnel"].get("stages", []):
-        if stage.get("key") != "received":
-            stage["count"] = _demo_scale(stage["count"], factor, 0)
-    data["funnel"]["stages"][0]["count"] = demand["total"]
-    return data
-
-
-def _demo_filter_match(item, operation=None, property_type=None, commune=None, responsible=None):
-    checks = (
-        (operation, item.get("operation")),
-        (property_type, item.get("type")),
-        (commune, item.get("commune")),
-        (responsible, item.get("responsible")),
-    )
-    return all(not wanted or str(value or "").casefold() == str(wanted).casefold() for wanted, value in checks)
-
-
-def _demo_transform_inventory(period_start=None, period_end=None, operation=None, property_type=None, commune=None, responsible=None):
-    start, end, _, _, days = _demo_window(period_start, period_end)
-    data = _demo_inventory_payload()
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(operation, property_type, commune, responsible)))
-    data["meta"]["period_start"] = start.isoformat()
-    data["meta"]["period_end"] = end.isoformat()
-    data["active_filters"] = {"operation": operation or "Todas", "property_type": property_type or "Todos", "commune": commune or "Todas", "responsible": responsible or "Todos"}
-    data["demand"]["leads"] = _demo_scale(data["demand"].get("leads"), factor, 0)
-    data["inventory"]["active"] = _demo_scale(data["inventory"].get("active"), factor, 1)
-    data["demand"]["properties_with_demand"] = min(data["inventory"]["active"], _demo_scale(data["demand"].get("properties_with_demand"), factor, 0))
-    data["demand"]["coverage_pct"] = round(data["demand"]["properties_with_demand"] / max(1, data["inventory"]["active"]) * 100, 1)
-    data["inventory"]["with_demand"] = data["demand"]["properties_with_demand"]
-    data["inventory"]["without_demand"] = max(0, data["inventory"]["active"] - data["inventory"]["with_demand"])
-    data["inventory"]["coverage_pct"] = data["demand"]["coverage_pct"]
-    for collection in ("properties", "intervention"):
-        data[collection] = [item for item in data.get(collection, []) if _demo_filter_match(item, operation, property_type, commune, responsible)]
-    for dimension, rows in data.get("demand_intelligence", {}).get("dimensions", {}).items():
-        filtered = rows
-        wanted = operation if dimension == "operation" else property_type if dimension == "type" else None
-        if wanted:
-            filtered = [row for row in rows if str(wanted).casefold() in str(row.get("segment", "")).casefold()]
-        for row in filtered:
-            row["leads"] = _demo_scale(row.get("leads"), factor, 0)
-            row["stock_sucre"] = _demo_scale(row.get("stock_sucre"), factor, 0)
-        data["demand_intelligence"]["dimensions"][dimension] = filtered
-    data["opportunities"] = [item for item in data.get("opportunities", []) if _demo_filter_match(item, operation, property_type, commune, None)]
-    return data
-
-
-def _demo_transform_operations(period_start=None, period_end=None, executive=None, portfolio=None):
-    start, end, _, _, days = _demo_window(period_start, period_end)
-    data = deepcopy(_load_demo_dashboard_data()["operations"])
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(executive, portfolio)))
-    data["meta"]["period_start"] = start.isoformat()
-    data["meta"]["period_end"] = end.isoformat()
-    data["meta"]["portfolio"] = portfolio or data["meta"].get("portfolio", "Demo")
-    for key in ("active_assigned", "pending_first_management", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "activity_without_result"):
-        data["current"][key] = _demo_scale(data["current"].get(key), factor, 0)
-    for key in ("assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
-        data["period"][key] = _demo_scale(data["period"].get(key), factor, 0)
-    if executive:
-        data["executives"] = [item for item in data["executives"] if item.get("executive") == executive]
-    for item in data["executives"]:
-        for section in ("current", "period"):
-            for key in ("active_load", "pending", "active_assigned", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
-                if key in item.get(section, {}):
-                    item[section][key] = _demo_scale(item[section][key], factor, 0)
-    return data
-
-
-@app.get("/api/demo/leads-dashboard/overview")
-async def demo_leads_dashboard_overview(
-    period_start: str = Query(None), period_end: str = Query(None),
-    compare: str = Query(None), period_preset: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_overview(period_start, period_end, compare))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations")
-async def demo_leads_dashboard_operations(
-    period_start: str = Query(None), period_end: str = Query(None),
-    executive: str = Query(None), portfolio: str = Query(None),
-    compare: str = Query(None), period_preset: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_operations(period_start, period_end, executive, portfolio))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations/portfolios")
-async def demo_leads_dashboard_operations_portfolios():
-    _require_public_leads_dashboard()
-    response = JSONResponse({"portfolios": [{"captador": "Demo", "active": 94}]})
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations/executives")
-async def demo_leads_dashboard_operations_executives():
-    _require_public_leads_dashboard()
-    return _demo_json_response("operations")
-
-
-def _demo_inventory_payload() -> dict:
-    data = _load_demo_dashboard_data()
-    keys = (
-        "inventory", "demand", "meta", "data_quality", "attribution",
-        "demand_intelligence", "opportunities", "benchmark", "simulator_options",
-        "review_simulator", "composition", "demand_coverage", "responsibles",
-        "intervention", "properties", "filter_options", "forecast",
-    )
-    return {key: data[key] for key in keys if key in data}
-
-
-@app.get("/api/demo/leads-dashboard/properties-inventory")
-async def demo_leads_dashboard_properties_inventory(
-    period_start: str = Query(None), period_end: str = Query(None),
-    operation: str = Query(None), property_type: str = Query(None),
-    commune: str = Query(None), responsible: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_inventory(
-        period_start, period_end, operation, property_type, commune, responsible
-    ))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/capture-simulator")
-async def demo_leads_dashboard_capture_simulator(
-    operation: str = Query(None), property_type: str = Query(None),
-    commune: str = Query(None), price: str = Query(None),
-    bedrooms: str = Query(None), bathrooms: str = Query(None),
-    surface: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    payload = deepcopy(_load_demo_dashboard_data().get("review_simulator", {"available": False}))
-    seed = _demo_factor(operation, property_type, commune, price, bedrooms, bathrooms, surface)
-    evidence = payload.setdefault("evidence", {})
-    evidence["w0"] = _demo_scale(evidence.get("w0"), seed, 0)
-    evidence["w1"] = _demo_scale(evidence.get("w1"), seed, 0)
-    evidence["w2"] = _demo_scale(evidence.get("w2"), seed, 0)
-    evidence["intensity"] = round(float(evidence.get("intensity", 0)) * seed, 2)
-    evidence["text"] = "Escenario ficticio para " + " / ".join(value for value in (operation, property_type, commune) if value)
-    payload["matching"]["quality"] = "exacta" if seed >= 1.0 else "cercana"
-    response = JSONResponse(payload)
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
 
 
 @app.get("/api/demo/leads-intelligence/overview")
@@ -1356,8 +1004,6 @@ async def public_leads_intelligence_overview(
     period_preset: str = Query(None),
 ):
     """Aggregated read-only Overview API for external performance audits."""
-    _require_public_leads_dashboard()
-    return _demo_json_response("overview")
     from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
 
     for key in ("period_start", "period_end", "compare", "period_preset"):
@@ -1400,11 +1046,6 @@ async def public_leads_intelligence_overview(
 @app.get("/api/demo/leads-intelligence/mongo-latency")
 async def public_leads_intelligence_mongo_latency():
     """Temporary aggregate-only Mongo latency probe for infrastructure audit."""
-    _require_public_leads_dashboard()
-    response = JSONResponse({"available": False, "message": "Demo basada exclusivamente en JSON ficticio."})
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
     def percentile(values, pct):
         ordered = sorted(values)
         if not ordered:
@@ -1461,8 +1102,6 @@ async def api_leads_dashboard_overview(
     compare: str = Query(None),
     period_preset: str = Query(None),
 ):
-    request_started = time.perf_counter()
-    dashboard_id = dashboard_request_id()
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
@@ -1480,32 +1119,16 @@ async def api_leads_dashboard_overview(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    timing = {"request_id": dashboard_id}
     loop = asyncio.get_running_loop()
-    submitted_at = time.perf_counter()
-
-    def load_overview():
-        worker_started = time.perf_counter()
-        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
-        timing["worker_thread"] = threading.current_thread().name
-        try:
-            return get_leads_dashboard_overview(
-                period_start=period_start, period_end=period_end,
-                compare=compare, period_preset=period_preset, timing=timing,
-            )
-        finally:
-            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
-
-    payload = await loop.run_in_executor(_WEB_THREAD_POOL, load_overview)
-    timing["service_total_ms"] = timing.get("total_ms")
-    serialization_started = time.perf_counter()
-    response = JSONResponse(payload)
-    _dashboard_perf_log(endpoint="/api/leads-dashboard/overview", request_id=dashboard_id,
-                        timing=timing, period_start=period_start, period_end=period_end,
-                        period_preset=period_preset, request_started=request_started,
-                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
-                        web_worker_thread=timing.get("worker_thread"))
-    return response
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_leads_dashboard_overview(
+            period_start=period_start,
+            period_end=period_end,
+            compare=compare,
+            period_preset=period_preset,
+        ),
+    )
 
 
 @app.get("/api/leads-dashboard/properties-inventory")
@@ -1518,8 +1141,6 @@ async def api_leads_dashboard_properties_inventory(
     commune: str = Query(None),
     responsible: str = Query(None),
 ):
-    request_started = time.perf_counter()
-    dashboard_id = dashboard_request_id()
     """Lazy, read-only inventory snapshot for the third dashboard tab."""
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
@@ -1528,36 +1149,18 @@ async def api_leads_dashboard_properties_inventory(
         "operation": operation, "property_type": property_type,
         "commune": commune, "responsible": responsible,
     }.items() if value}
-    timing = {"request_id": dashboard_id}
+    timing = {}
     loop = asyncio.get_running_loop()
-    submitted_at = time.perf_counter()
-
-    def load_inventory():
-        worker_started = time.perf_counter()
-        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
-        timing["worker_thread"] = threading.current_thread().name
-        try:
-            return get_properties_inventory_dashboard(
-                period_start=period_start, period_end=period_end,
-                filters=filters, timing=timing,
-            )
-        finally:
-            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
-    try:
-        payload = await loop.run_in_executor(_WEB_THREAD_POOL, load_inventory)
-    except InventoryTemporarilyUnavailable:
-        raise HTTPException(status_code=503, detail="Inventario temporalmente no disponible")
-    serialization_started = time.perf_counter()
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_properties_inventory_dashboard(
+            period_start=period_start, period_end=period_end,
+            filters=filters, timing=timing,
+        ),
+    )
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
-    response.headers["Server-Timing"] = _demand_capture_server_timing(timing)
-    timing["service_total_ms"] = timing.get("total_ms")
-    _dashboard_perf_log(endpoint="/api/leads-dashboard/properties-inventory", request_id=dashboard_id,
-                        timing=timing, period_start=period_start, period_end=period_end,
-                        period_preset=None, request_started=request_started,
-                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
-                        web_worker_thread=timing.get("worker_thread"))
     return response
 
 
@@ -1576,7 +1179,6 @@ async def api_leads_dashboard_capture_simulator(
     timing = {}
     loop = asyncio.get_running_loop()
     payload = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_capture_simulation(params=params, period_end=period_end, timing=timing))
-    serialization_started = time.perf_counter()
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
@@ -1599,8 +1201,6 @@ async def api_leads_dashboard_operations(
     search: str = Query(None),
     portfolio: str = Query(None),
 ):
-    request_started = time.perf_counter()
-    dashboard_id = dashboard_request_id()
     """Datos operativos para la segunda pestaña del dashboard ejecutivo."""
     user = await get_current_user_doc(request)
     if not user or user.get("rol") not in ["admin", "supervisor"]:
@@ -1610,26 +1210,16 @@ async def api_leads_dashboard_operations(
         "priority": priority, "assignment": assignment, "search": search,
         "portfolio": portfolio,
     }.items() if value}
-    timing = {"request_id": dashboard_id}
+    timing = {}
     loop = asyncio.get_running_loop()
-    submitted_at = time.perf_counter()
-
-    def load_operations():
-        worker_started = time.perf_counter()
-        timing["web_pool_queue_wait_ms"] = round((worker_started - submitted_at) * 1000, 1)
-        timing["worker_thread"] = threading.current_thread().name
-        try:
-            return get_leads_operational_dashboard(
-                period_start=period_start, period_end=period_end, compare=compare,
-                period_preset=period_preset,
-                role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
-            )
-        finally:
-            timing["web_pool_execution_ms"] = round((time.perf_counter() - worker_started) * 1000, 1)
     payload = await loop.run_in_executor(
-        _WEB_THREAD_POOL, load_operations,
+        _WEB_THREAD_POOL,
+        lambda: get_leads_operational_dashboard(
+            period_start=period_start, period_end=period_end, compare=compare,
+            period_preset=period_preset,
+            role=user.get("rol"), user_name=user.get("nombre"), filters=filters, timing=timing,
+        ),
     )
-    serialization_started = time.perf_counter()
     response = JSONResponse(payload)
     response.headers["Server-Timing"] = ", ".join(
         item for item in (
@@ -1641,12 +1231,6 @@ async def api_leads_dashboard_operations(
         ) if item
     )
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
-    timing["service_total_ms"] = timing.get("total_ms")
-    _dashboard_perf_log(endpoint="/api/leads-dashboard/operations", request_id=dashboard_id,
-                        timing=timing, period_start=period_start, period_end=period_end,
-                        period_preset=period_preset, request_started=request_started,
-                        serialization_ms=(time.perf_counter() - serialization_started) * 1000,
-                        web_worker_thread=timing.get("worker_thread"))
     return response
 
 
@@ -1764,7 +1348,7 @@ async def analytics_leads_page(request: Request):
     user = await get_current_user_doc(request)
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
-    return templates.TemplateResponse("analytics/leads_dashboard.html", {
+    return templates.TemplateResponse(request, "analytics/leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", ""),
@@ -2026,7 +1610,7 @@ async def ver_detalle_chat(request: Request, phone: str):
     if not chat_data:
         chat_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_specific_lead_chat(phone))
         
-    return templates.TemplateResponse("chat_detail.html", {
+    return templates.TemplateResponse(request, "chat_detail.html", {
         "request": request, 
         "chat": chat_data,
         "phone": phone
@@ -2044,7 +1628,7 @@ async def view_manual_lead_entry(request: Request):
     email = user.get("email") or user.get("username")
     if email: email = email.strip()
 
-    return templates.TemplateResponse("manual_lead_entry.html", {
+    return templates.TemplateResponse(request, "manual_lead_entry.html", {
         "request": request,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
@@ -2229,7 +1813,7 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
 
     email = user.get("email") or user.get("username")
 
-    return templates.TemplateResponse("crm_lead_detail.html", {
+    return templates.TemplateResponse(request, "crm_lead_detail.html", {
         "request": request, 
         "lead": data,
         "user_email": email,
@@ -2383,32 +1967,76 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
 
     def _record():
-        from chatbot.crm_management import record_management_result
+        from chatbot.crm_management import (
+            record_management_result,
+            ScheduledTimeTooSoonError,
+            StaleAssignmentCycleError,
+        )
         from chatbot.crm_metrics import active_assignment_cycle
         from chatbot.storage import get_db
         db = get_db()
-        cycle = active_assignment_cycle(db, lead["_id"])
+        requested_cycle_id = str(data.get("assignment_cycle_id") or "").strip()
+        cycle = (
+            db["crm_assignment_cycles"].find_one({
+                "lead_id": lead["_id"], "assignment_cycle_id": requested_cycle_id,
+                "cycle_status": "active", "unassigned_at": None,
+            })
+            if requested_cycle_id else active_assignment_cycle(db, lead["_id"])
+        )
         if not cycle:
+            if requested_cycle_id and active_assignment_cycle(db, lead["_id"]):
+                raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
             raise ValueError("El lead no tiene un ciclo de asignación activo")
         return record_management_result(
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
             actor_user_id=actor_user_id, result_type=data.get("result_type"),
             occurred_at=None, source="crm_quick_action",
-            idempotency_key=str(data.get("idempotency_key") or ""),
+            idempotency_key=str(data.get("management_request_id") or data.get("idempotency_key") or ""),
             next_follow_up_at=data.get("next_follow_up_at"),
+            details_json=data.get("details_json") if isinstance(data.get("details_json"), dict) else {},
+            actor_can_manage_any_cycle=can_administer_leads(user.get("rol")),
         )
     try:
         result = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, _record)
         return {"status": "ok", "result_type": result.get("result_type"),
                 "follow_up_required": result.get("follow_up_required")}
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as e:
+    except Exception as exc:
+        from chatbot.crm_management import ScheduledTimeTooSoonError, StaleAssignmentCycleError
+        if isinstance(exc, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(exc, ScheduledTimeTooSoonError):
+            raise HTTPException(status_code=400, detail=ScheduledTimeTooSoonError.code)
+        if isinstance(exc, ValueError) and str(exc) == "active assignment cycle not found":
+            raise HTTPException(status_code=409, detail="closed_lead")
+        if isinstance(exc, PermissionError):
+            raise HTTPException(status_code=403, detail=str(exc))
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc))
         logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
-                     phone, lead.get("_id"), data.get("result_type"), e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+                     phone, lead.get("_id"), data.get("result_type"), exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/crm/detail-state")
+async def api_crm_detail_state(request: Request, phone: str):
+    """Return the minimal current state needed after a stale detail submit."""
+    phone = str(phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+    _user, lead = await _get_authorized_crm_lead(request, phone)
+    detail = await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, lead_doc=lead)
+    )
+    return {
+        "assignment_cycle_id": detail.get("assignment_cycle_id") or "",
+        "crm_estado": detail.get("crm_estado") or "",
+        "next_action_date": detail.get("next_action_date") or "",
+        "last_action_label": detail.get("last_action_label") or "",
+        "last_action_relative": detail.get("last_action_relative") or "",
+        "ejecutivo_asignado": detail.get("ejecutivo_asignado") or "",
+        "sla_status": detail.get("sla_status") or "",
+        "sla_label": detail.get("sla_label") or "",
+    }
+
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     data = None
@@ -2428,6 +2056,8 @@ async def api_crm_update_lead(request: Request):
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
         data["_actor_name"] = user.get("nombre") or user.get("username") or ""
+        data["_actor_user_id"] = str(user.get("_id") or "")
+        data["_actor_can_manage_any_cycle"] = can_administer_leads(user.get("rol"))
 
         # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
         # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.
@@ -2456,6 +2086,13 @@ async def api_crm_update_lead(request: Request):
         )
         raise
     except Exception as e:
+        from chatbot.crm_management import StaleAssignmentCycleError
+        if isinstance(e, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(e, PermissionError):
+            raise HTTPException(status_code=403, detail=str(e))
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail=str(e))
         logger.error(
             "CRM Update Error: phone=%s actor=%s result=%s -> %s",
             (data or {}).get("phone"), (data or {}).get("_actor_name"),
@@ -2544,11 +2181,23 @@ async def api_crm_admin_archive(request: Request):
 
 @app.post("/api/crm/notes")
 async def api_crm_notes(request: Request):
+    data = None
     try:
         data = await request.json()
         action = data.get("action", "add")
         phone = data.get("phone")
         note_data = data.get("note", {})
+        if not isinstance(note_data, dict):
+            raise HTTPException(status_code=400, detail="Datos de nota inválidos")
+        if action not in {"add", "delete"}:
+            raise HTTPException(status_code=400, detail="Acción de nota inválida")
+        user, lead = await _get_authorized_crm_lead(request, phone)
+        from chatbot.crm_metrics import active_assignment_cycle
+        from chatbot.storage import get_db
+        cycle = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: active_assignment_cycle(get_db(), lead["_id"]),
+        )
 
         # SOLUCIÓN HORA NOTAS: Forzar la hora de Chile en la creación
         if action == "add":
@@ -2559,14 +2208,24 @@ async def api_crm_notes(request: Request):
             note_data["timestamp_iso"] = now_cl.isoformat()
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: manage_crm_notes(phone, note_data, action))
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: manage_crm_notes(
+                phone, note_data, action,
+                lead_id=lead["_id"],
+                actor_user_id=str(user.get("_id") or ""),
+                assignment_cycle_id=(cycle or {}).get("assignment_cycle_id"),
+            ),
+        )
         if result:
             return {"status": "ok", "note": result}
         logger.warning("CRM notes rejected: action=%s phone=%s", action, phone)
-        return {"status": "error"}
+        raise HTTPException(status_code=404, detail="Nota o lead no encontrado")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("CRM notes error: phone=%s action=%s -> %s", data.get("phone") if data else None, (data or {}).get("action"), e, exc_info=True)
-        return {"status": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- BÚSQUEDA SEMÁNTICA ---
 @app.post("/api/crm/recommendations")
@@ -2620,9 +2279,6 @@ async def api_crm_send_recommendation(request: Request):
 
 
 def _normalize_webhook_phone(value):
-    normalized = normalize_phone_strict(str(value or ""))
-    if normalized:
-        return normalized
     digits = "".join(filter(str.isdigit, str(value or "")))
     if not digits:
         return None
@@ -3177,7 +2833,7 @@ async def view_captaciones(
         app.state.captacion_goal_cache = goal_cache
     _perf["goal_done"] = time.perf_counter()
 
-    response = templates.TemplateResponse("captacion_list.html", {
+    response = templates.TemplateResponse(request, "captacion_list.html", {
         "request": request,
         "items": items,
         "total_count": total_count,
@@ -3265,7 +2921,7 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
 
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     
-    return templates.TemplateResponse("captacion_detail.html", {
+    return templates.TemplateResponse(request, "captacion_detail.html", {
         "request": request,
         "prop": data,
         "user_name": user_name,
@@ -3532,7 +3188,7 @@ async def view_captacion_weekly_report(request: Request, report_id: str = Query(
         )
 
     report = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, load_report)
-    return templates.TemplateResponse("captacion_weekly_report_preview.html", {
+    return templates.TemplateResponse(request, "captacion_weekly_report_preview.html", {
         "request": request,
         "report": report,
         "group_recipient": (report or {}).get("group_recipient") or Config.DAILY_REPORT_GROUP_ID,
@@ -3861,6 +3517,7 @@ async def _render_crm_list(
         "temperatura": temperatura if temperatura != "Todos" else None,
         "estado": estado,
         "busqueda": busqueda,
+        "property_code": property_code,
         "orden": orden,
         "ejecutivo": ejecutivo,
     }
@@ -3876,7 +3533,7 @@ async def _render_crm_list(
     else:
         card_query_params["temperatura"] = temperatura
 
-    response = templates.TemplateResponse("crm_leads_list.html", {
+    response = templates.TemplateResponse(request, "crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
         "kpis": kpis,
@@ -4211,6 +3868,7 @@ async def check_scheduled_tasks_loop():
     from chatbot.storage import get_db
     from chatbot.lead_router import get_executive_phone
     from chatbot.notification_service import NotificationService
+    task_worker_id = f"crm_task_monitor_{os.getpid()}"
     
     logger.info("[TASK_MONITOR] Iniciando monitor de tareas agendadas...")
     
@@ -4224,7 +3882,13 @@ async def check_scheduled_tasks_loop():
             
             tasks = await run_db(
                 "crm_tasks.find_due",
-                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now},
+                lambda: list(db["crm_tasks"].find({"$or": [
+                    {"status": "pending", "execute_at": {"$lte": now}, "$or": [
+                        {"next_attempt_at": {"$exists": False}},
+                        {"next_attempt_at": {"$lte": now}},
+                    ]},
+                    {"status": "processing", "lease_until": {"$lte": now}},
+                ],
                     "lead_type": {"$ne": "captacion"}}))
             )
             
@@ -4232,6 +3896,28 @@ async def check_scheduled_tasks_loop():
                 logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
                 for task in tasks:
                     try:
+                        claimed_task = await run_db(
+                            "crm_tasks.claim_due",
+                            lambda: db["crm_tasks"].find_one_and_update(
+                                {"_id": task["_id"], "$or": [
+                                    {"status": "pending", "$or": [
+                                        {"next_attempt_at": {"$exists": False}},
+                                        {"next_attempt_at": {"$lte": now}},
+                                    ]},
+                                    {"status": "processing", "lease_until": {"$lte": now}},
+                                ]},
+                                {"$set": {
+                                    "status": "processing",
+                                    "claimed_at": now,
+                                    "lease_until": now + timedelta(minutes=10),
+                                    "worker_id": task_worker_id,
+                                }},
+                                return_document=ReturnDocument.AFTER,
+                            )
+                        )
+                        if not claimed_task:
+                            continue
+                        task = claimed_task
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
                         
@@ -4275,10 +3961,32 @@ async def check_scheduled_tasks_loop():
                             crm_link = build_secure_crm_url(lead)
                             
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
+                            await run_db(
+                                "crm_tasks.release_no_executive",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_not_available",
+                                    }}
+                                )
+                            )
                             continue
                             
                         exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
+                            await run_db(
+                                "crm_tasks.release_no_executive_phone",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_phone_not_available",
+                                    }}
+                                )
+                            )
                             continue
 
                         if is_captacion:
@@ -4301,24 +4009,24 @@ async def check_scheduled_tasks_loop():
                         if isinstance(scheduled_at, datetime):
                             if scheduled_at.tzinfo is None:
                                 scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y · %H:%M")
+                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y a las %H:%M")
                         else:
                             scheduled_display = "la fecha y hora programadas"
-                        link_label = "Abrir captación" if is_captacion else "Abrir lead"
+                        link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
                         msg_text = (
-                            f"🔔 *Recordatorio de seguimiento*\n\n"
-                            f"Hola {ejecutivo}. Debes realizar seguimiento al lead de *{lead_name}*.\n\n"
-                            f"🕒 *Programado para:* {scheduled_display}\n"
-                            f"📝 *Seguimiento:* {note}\n"
-                            f"👉 *Contacta al lead y registra el resultado de la gestión en el CRM.*\n\n"
-                            f"*{link_label}*\n{crm_link}"
+                            f"*Recordatorio de seguimiento CRM*\n\n"
+                            f"Hola {ejecutivo}, tienes un seguimiento programado para *{lead_name}*.\n\n"
+                            f"*Fecha y hora:* {scheduled_display}\n"
+                            f"*Nota:* {note}\n\n"
+                            f"*{link_label}:*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(
                             phone=exec_phone,
                             message=msg_text,
                             alert_type="TASK_REMINDER",
-                            meta={"task_id": str(task["_id"]), "to": ejecutivo},
+                            meta={"task_id": str(task["_id"]), "to": ejecutivo,
+                                  "lead_id": str(lead.get("_id") or "")},
                             dedup_window_minutes=60 
                         )
                         
@@ -4355,9 +4063,32 @@ async def check_scheduled_tasks_loop():
                                     )
                             # Sleep breve para tareas
                             await asyncio.sleep(6)
+                        else:
+                            await run_db(
+                                "crm_tasks.release_send_failure",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "whatsapp_send_failed",
+                                    }}
+                                )
+                            )
                             
                     except Exception as e:
                         logger.error(f"[TASK_MONITOR] Error procesando tarea {task.get('_id')}: {e}")
+                        await run_db(
+                            "crm_tasks.release_exception",
+                            lambda: db["crm_tasks"].update_one(
+                                {"_id": task.get("_id"), "status": "processing"},
+                                {"$set": {
+                                    "status": "pending",
+                                    "next_attempt_at": now + timedelta(minutes=1),
+                                    "last_error": type(e).__name__,
+                                }}
+                            )
+                        )
             
         except Exception as e:
             logger.error(f"[TASK_MONITOR] Error en loop de tareas: {e}")
@@ -4880,17 +4611,95 @@ async def reassign_unassigned_leads_loop():
             await asyncio.sleep(60)
 
 async def cache_prewarmer_loop():
-    """Keep only the exact pinned 30d dashboard keys alive after startup warm."""
-    logger.info("[DASHBOARD_CACHE_KEEPER] start preset=30d interval_seconds=60 refresh_age_seconds=240")
-    loop = asyncio.get_running_loop()
+    """
+    PRE-WARMING DE CACHE: precalienta el overview real del Leads Dashboard.
+    El reporte ejecutivo antiguo no alimenta /api/leads-dashboard/overview,
+    por lo que no evitaba el primer request lento de week/month/today.
+    """
+    logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (smart mode)...")
+    # Espera inicial para no competir con el startup
+    await asyncio.sleep(30)
+    local_warm_in_progress = False
+    cache_key = "leads_dashboard_overview_v1"
+    lock_key = "lock_cache_prewarm_leads_intel_v1"
     while True:
         try:
-            await asyncio.sleep(60)
-            await loop.run_in_executor(_WARMER_THREAD_POOL, keep_pinned_dashboard_cache)
+            # Evitar solapes locales de warm si el ciclo previo no cerró aún.
+            if local_warm_in_progress:
+                await asyncio.sleep(30)
+                continue
+
+            from chatbot.storage import get_db
+            from datetime import timezone
+            db = get_db()
+            now_utc = datetime.now(timezone.utc)
+
+            # 1) Skip inteligente: si el lock/ciclo aún está vigente, no
+            # recalcular todos los rangos en cada vuelta.
+            loop_ref = asyncio.get_running_loop()
+            cache_doc = await loop_ref.run_in_executor(
+                _WORKER_THREAD_POOL,
+                lambda: db["cache_store"].find_one({"_id": cache_key}, {"expires_at": 1})
+            )
+            expires_at = cache_doc.get("expires_at") if cache_doc else None
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                ttl_left = (expires_at - now_utc).total_seconds()
+                if ttl_left > 120:
+                    logger.debug(f"[CACHE_WARMER] Skip: cache vigente ({ttl_left:.0f}s restantes)")
+                    await asyncio.sleep(60)
+                    continue
+
+            # 2) Lock distribuido: evita prewarm simultáneo entre instancias/restarts.
+            lock_until = now_utc + timedelta(seconds=90)
+            def _acquire_lock():
+                try:
+                    return db["cache_locks"].find_one_and_update(
+                        {"_id": lock_key, "$or": [{"expires_at": {"$exists": False}}, {"expires_at": {"$lte": now_utc}}]},
+                        {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
+                        upsert=True, return_document=ReturnDocument.AFTER
+                    )
+                except DuplicateKeyError:
+                    # Otra instancia ganó el upsert simultáneamente.
+                    return None
+            lock_doc = await loop_ref.run_in_executor(_WORKER_THREAD_POOL, _acquire_lock)
+            if not lock_doc:
+                logger.debug("[CACHE_WARMER] Skip: lock activo en otra instancia")
+                await asyncio.sleep(60)
+                continue
+
+            local_warm_in_progress = True
+            loop = asyncio.get_running_loop()
+            t0 = time.time()
+            # Warmer pool dedicado: evita competir con workers de procesamiento.
+            # Los nombres de preset generan la misma clave canónica que las
+            # peticiones del frontend, incluso cuando este envía fechas explícitas.
+            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"), ("30d", "30 días"))
+            for preset, label in warm_specs:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        _WARMER_THREAD_POOL,
+                        lambda p=preset: get_leads_dashboard_overview(
+                            compare="auto", period_preset=p,
+                        ),
+                    ),
+                    timeout=25.0,
+                )
+                logger.info("[CACHE_WARMER] overview %s precalentado", label)
+            elapsed_ms = (time.time() - t0) * 1000
+            logger.debug(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
+            # Liberar lock explícitamente tras warm exitoso.
+            await loop_ref.run_in_executor(_WORKER_THREAD_POOL, lambda: db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}}))
+        except asyncio.TimeoutError:
+            logger.warning("[CACHE_WARMER] Timeout >8s; se omite este ciclo para evitar jitter")
         except asyncio.CancelledError:
             break
-        except Exception:
-            logger.warning("[DASHBOARD_CACHE_KEEPER] keeper cycle failed", exc_info=True)
+        except Exception as e:
+            logger.warning(f"[CACHE_WARMER] Error al pre-warm cache: {e}")
+        finally:
+            local_warm_in_progress = False
+        await asyncio.sleep(60)
 
 async def event_loop_monitor_loop():
     """
@@ -4979,8 +4788,6 @@ async def threadpool_forensics_loop():
                 ("WEB", _WEB_THREAD_POOL),
                 ("WORKER", _WORKER_THREAD_POOL),
                 ("WARMER", _WARMER_THREAD_POOL),
-                ("COMMERCIAL_ANALYTICS", _COMMERCIAL_QUERY_POOL),
-                ("CACHE_REFRESH", _CACHE_REFRESH_POOL),
             ]
             for name, pool in pools:
                 max_workers = getattr(pool, "_max_workers", -1)

@@ -1150,17 +1150,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         current_cycle_id = ((current_cycle or {}).get("assignment_cycle_id")
                             or lifecycle.get("current_assignment_cycle_id")
                             or lifecycle.get("assignment_cycle_id"))
-        from chatbot.crm_metrics import registered_outreach_evidence
-        outreach = registered_outreach_evidence(
-            recognized_management_ev,
-            assigned_at=assigned_for_cycle,
-            assignment_cycle_id=current_cycle_id,
-            # Previous-cycle outreach may remain visible in the timeline, but
-            # it must not mark the current assignment as managed.
-            allow_historical_for_presentation=False,
-        )
-        if not outreach["recognized"]:
-            recognized_management_ev = None
+        # A canonical/manual management event has already been identified as
+        # such above.  The outreach validator is only for click/send events;
+        # applying it here incorrectly discarded the saved result and exposed
+        # an older WhatsApp click as the latest action.
+        if recognized_management_ev:
+            event_cycle_id = recognized_management_ev.get("assignment_cycle_id")
+            if (current_cycle_id and event_cycle_id
+                    and str(event_cycle_id) != str(current_cycle_id)):
+                recognized_management_ev = None
         # Management is cycle-scoped and must come from a canonical human result.
         # A legacy lead-level timestamp must never mark a newer active cycle as
         # managed; SEND_WA/CLICK events are outreach telemetry only.

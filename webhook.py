@@ -3944,7 +3944,8 @@ async def check_scheduled_tasks_loop():
                         else:
                             lead = await run_db(
                                 "leads.find_one",
-                                lambda: db["leads"].find_one({"phone": phone})
+                                lambda: db["leads"].find_one({"_id": task.get("lead_id")})
+                                or db["leads"].find_one({"phone": phone})
                             )
                             if not lead:
                                 await run_db(
@@ -3955,7 +3956,25 @@ async def check_scheduled_tasks_loop():
                                     )
                                 )
                                 continue
-                            ejecutivo = lead.get("ejecutivo_asignado")
+                            assigned_cycle = None
+                            if task.get("assignment_cycle_id"):
+                                assigned_cycle = await run_db(
+                                    "crm_assignment_cycles.find_for_task",
+                                    lambda: db["crm_assignment_cycles"].find_one({
+                                        "assignment_cycle_id": task.get("assignment_cycle_id"),
+                                        "lead_id": lead.get("_id"),
+                                    }),
+                                )
+                            recipient_user_id = (
+                                task.get("recipient_user_id")
+                                or task.get("target_user_id")
+                                or (assigned_cycle or {}).get("assigned_to_user_id")
+                            )
+                            ejecutivo = (
+                                task.get("recipient_name")
+                                or (assigned_cycle or {}).get("assigned_to_display_name")
+                                or lead.get("ejecutivo_asignado")
+                            )
                             lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
                             from chatbot.lead_router import build_secure_crm_url
                             crm_link = build_secure_crm_url(lead)
@@ -3974,7 +3993,26 @@ async def check_scheduled_tasks_loop():
                             )
                             continue
                             
-                        exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
+                        exec_phone = None
+                        if not is_captacion and recipient_user_id:
+                            from bson import ObjectId
+                            recipient_queries = [{"_id": recipient_user_id}]
+                            try:
+                                recipient_queries.append({"_id": ObjectId(str(recipient_user_id))})
+                            except Exception:
+                                pass
+                            recipient = await run_db(
+                                "usuarios.find_recipient_for_task",
+                                lambda: db["usuarios"].find_one({
+                                    "$or": recipient_queries,
+                                    "is_active": {"$ne": False},
+                                }),
+                            )
+                            if recipient:
+                                ejecutivo = recipient.get("nombre") or ejecutivo
+                                exec_phone = recipient.get("telefono") or recipient.get("tel") or recipient.get("movil")
+                        if not exec_phone:
+                            exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
                             await run_db(
                                 "crm_tasks.release_no_executive_phone",

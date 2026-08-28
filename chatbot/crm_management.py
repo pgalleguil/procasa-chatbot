@@ -144,6 +144,11 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if (not actor_can_manage_any_cycle and
             str(cycle.get("assigned_to_user_id")) != str(actor_user_id)):
         raise PermissionError("management actor does not own the active cycle")
+    # The actor may be a supervisor recording the result on behalf of the
+    # assigned executive.  Audit fields keep the actor, while follow-up work
+    # belongs to the executive who owns this assignment cycle.
+    follow_up_owner_user_id = str(cycle.get("assigned_to_user_id") or actor_user_id)
+    follow_up_owner_name = cycle.get("assigned_to_display_name")
 
     record = {
         "_id": f"crm_management:{idempotency_key}", "idempotency_key": idempotency_key,
@@ -181,7 +186,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     else:
         lead_updates.update({"pipeline_stage": "CONTACTED", "stage": "gestion"})
     if rule["follow_up"]:
-        lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
+        lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
     if result_type == "VISIT_SCHEDULED":
         lead_updates.update({"visit_date": visit_at, "lifecycle.visit_scheduled_at": visit_at})
@@ -202,7 +207,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                      "follow_up_required": rule["follow_up"], "last_management_result": result_type,
                      "sla_alert_claims.yellow.status": "suppressed", "sla_alert_claims.red.status": "suppressed"}
     if rule["follow_up"]:
-        cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
+        cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                               "follow_up_status": "pending", "follow_up_cycle_id": follow_cycle_id})
     db["crm_assignment_cycles"].update_one(
         {"assignment_cycle_id": assignment_cycle_id,
@@ -218,6 +223,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "phone": lead_doc.get("phone"),
             "lead_id": lead_id,
             "assignment_cycle_id": assignment_cycle_id,
+            "recipient_user_id": follow_up_owner_user_id,
+            "target_user_id": follow_up_owner_user_id,
+            "recipient_name": follow_up_owner_name,
             "idempotency_key": idempotency_key,
             "lead_type": "crm",
             "message_domain": "crm_management_follow_up",
@@ -241,6 +249,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "phone": lead_doc.get("phone"),
             "lead_id": lead_id,
             "assignment_cycle_id": assignment_cycle_id,
+            "recipient_user_id": follow_up_owner_user_id,
+            "target_user_id": follow_up_owner_user_id,
+            "recipient_name": follow_up_owner_name,
             "idempotency_key": idempotency_key,
             "lead_type": "crm",
             "message_domain": "crm_scheduled_visit",

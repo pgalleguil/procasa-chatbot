@@ -4010,7 +4010,6 @@
                 leadData.last_action_relative = data.last_action_relative || leadData.last_action_relative;
                 if (window.CRMQuickManagement) window.CRMQuickManagement.state.assignmentCycleId = leadData.assignment_cycle_id;
                 updateCanonicalBanner(data.crm_estado, data.next_action_date, data.last_action_label, data.last_action_relative);
-                showStrongToast('Información actualizada', 'El lead cambió de asignación. Revisa el estado antes de registrar una nueva gestión.', 'info');
             } catch (_error) {
                 showStrongToast('Información desactualizada', 'No pudimos actualizar el estado automáticamente. Recarga cuando sea posible.', 'error');
             }
@@ -4022,9 +4021,8 @@
                 phone: leadData.telefono,
                 leadName: leadData.nombre,
                 assignmentCycleId: leadData.assignment_cycle_id,
-                onSuccess: async (_resultType, label) => {
+                onSuccess: async () => {
                     await refreshDetailManagementState();
-                    showStrongToast('Gestión registrada', label || 'Resultado guardado correctamente.');
                 },
                 onStale: refreshDetailManagementState,
                 closeOnStale: true
@@ -4330,9 +4328,7 @@
                     throw new Error(data.detail || 'No se pudo registrar la gestión.');
                 }
                 await refreshDetailManagementState();
-                const label = detailLeadQuickLabels[detailLeadQuickResult] || 'Respuesta guardada';
                 resetDetailLeadQuickResponse();
-                showStrongToast('Gestión registrada', label);
             } catch (error) {
                 const errorBox = detailLeadQuickElement('detailLeadQuickError');
                 if (errorBox) {
@@ -5280,18 +5276,6 @@
 
                     const actionLabel = currentActionLabel + (currentResultLabel ? " / " + currentResultLabel : "");
                     updateCanonicalBanner(resData.new_state, resData.next_action_date, actionLabel, "Recién");
-
-                    const statusText = {
-                        'NEW': 'Sin Atender', 'CONTACTED': 'En Gestión', 'VISIT_SCHEDULED': 'Visita Agendada',
-                        'CLOSED_WON': 'Cerrado Ganado', 'CLOSED_LOST': 'Cerrado Perdido',
-                    }[resData.new_state] || 'Actualizado';
-
-                    const nextDateStr = resData.next_action_date ? new Date(resData.next_action_date).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }) : 'No programada';
-
-                    showStrongToast(
-                        "Gestión Registrada Exitosamente",
-                        `<b>Estado:</b> ${statusText}<br><b>Próximo contacto:</b> ${nextDateStr}`
-                    );
 
                     setTimeout(() => {
                         btn.disabled = false;

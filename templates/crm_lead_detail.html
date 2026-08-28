@@ -285,9 +285,16 @@
             padding: 30px;
             transition: margin-left var(--transition-speed);
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
             /* Más espacio a la izquierda para la gestión unificada */
             gap: 20px;
+        }
+
+        .left-column,
+        .right-column,
+        .card-custom,
+        .info-item {
+            min-width: 0;
         }
 
         @media (max-width: 992px) {
@@ -461,7 +468,7 @@
 
         .info-row {
             display: grid;
-            grid-template-columns: 1fr 1.8fr 1fr;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
             gap: 15px;
             padding-bottom: 5px;
         }
@@ -489,6 +496,8 @@
             font-size: 0.95rem;
             color: var(--text-primary);
             font-weight: 600;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         /* Link del código de propiedad */

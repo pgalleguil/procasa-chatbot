@@ -413,6 +413,19 @@ def schedule_crm_task(phone, execute_at_str, note, agent="Sistema"):
 # --- 1. LISTA DE LEADS (OPTIMIZADA / BULK QUERY) ---
 # Etiquetas cortas para mostrar en la columna Estado qué registró el ejecutivo.
 RESULTADO_LABELS = {
+    # Canonical CRM management results.
+    "message_sent_waiting_response": "Mensaje enviado",
+    "call_no_answer": "Sin respuesta",
+    "effective_contact": "Contactado",
+    "follow_up_requested": "En seguimiento",
+    "visit_scheduled": "Visita agendada",
+    "not_interested": "No interesado",
+    "property_unavailable": "Propiedad no disponible",
+    "invalid_number": "Número inválido",
+    "closed_won": "Cerrado ganado",
+    "closed_lost": "Cerrado perdido",
+    "discarded_valid_reason": "Descartado",
+    "other_explicit": "Otro",
     "requiere_seguimiento": "En Seguimiento",
     "visita_agendada": "Visita Agendada",
     "intento_fallido": "Intento Fallido",
@@ -439,6 +452,22 @@ RESULTADO_LABELS = {
     "vendio_fuera": "Vendió por Fuera",
     "no_autoriza_gestion": "No Autoriza Gestión",
 }
+
+
+CANONICAL_MANAGEMENT_RESULTS = frozenset({
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EFFECTIVE_CONTACT",
+    "FOLLOW_UP_REQUESTED", "VISIT_SCHEDULED", "NOT_INTERESTED",
+    "PROPERTY_UNAVAILABLE", "INVALID_NUMBER", "CLOSED_WON", "CLOSED_LOST",
+    "DISCARDED_VALID_REASON", "OTHER_EXPLICIT",
+})
+
+
+def _is_canonical_management_event(ev) -> bool:
+    if not ev:
+        return False
+    event_type = str(ev.get("type") or "").strip().upper()
+    result = str(ev.get("result") or (ev.get("meta") or {}).get("result") or "").strip().upper()
+    return event_type == "CONTACT_RESULT" or result in CANONICAL_MANAGEMENT_RESULTS
 
 
 def _resultado_estado_label(ev) -> Optional[str]:
@@ -955,22 +984,37 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "CLICK_WHATSAPP_OWNER", "CLICK_EMAIL_OWNER", "STATUS_CHANGE", "ASSIGNMENT", "MANUAL_ENTRY",
         "ALERT_SENT", "alert_sent"
     ]
+    page_lead_ids_for_events = [l.get("_id") for l in leads_list if l.get("_id")]
     events_cursor = db["crm_events"].find(
-        {"phone": {"$in": page_phones}, "type": {"$in": management_types}},
+        {"$or": [
+            {"phone": {"$in": page_phones}},
+            {"lead_id": {"$in": page_lead_ids_for_events}},
+        ], "type": {"$in": management_types + ["CONTACT_RESULT"]}},
         sort=[("timestamp", -1)]
     )
     events_list = await events_cursor.to_list(length=200)
     events_map = {}
     recognized_management_map = {}
-    # Only HUMAN_NOTE and GESTION_LOG are recognized as management events.
-    # SEND/CLICK/STATUS_CHANGE are telemetry and never enter this map.
-    MANAGEMENT_EVENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG"})
+    recognized_management_by_lead_id = {}
+    lead_phone_by_id = {
+        str(lead.get("_id")): str(lead.get("phone") or "").replace("+", "").strip()
+        for lead in leads_list if lead.get("_id")
+    }
+    # CONTACT_RESULT is the canonical event created by the quick-management
+    # form. SEND/CLICK/STATUS_CHANGE remain telemetry and never enter this map.
+    MANAGEMENT_EVENT_TYPES = frozenset({"HUMAN_NOTE", "GESTION_LOG", "CONTACT_RESULT"})
     for ev in events_list:
         phone_ev = ev.get("phone", "").replace("+", "").strip()
+        if not phone_ev and ev.get("lead_id") is not None:
+            phone_ev = lead_phone_by_id.get(str(ev.get("lead_id")), "")
         if phone_ev not in events_map:
             events_map[phone_ev] = ev
-        if ev.get("type") in MANAGEMENT_EVENT_TYPES:
+        if ev.get("lead_id") is not None:
+            events_map.setdefault(f"lead:{ev.get('lead_id')}", ev)
+        if (_is_canonical_management_event(ev) or ev.get("type") in MANAGEMENT_EVENT_TYPES) and phone_ev not in recognized_management_map:
             recognized_management_map[phone_ev] = ev
+        if (_is_canonical_management_event(ev) or ev.get("type") in MANAGEMENT_EVENT_TYPES) and ev.get("lead_id") is not None:
+            recognized_management_by_lead_id.setdefault(str(ev.get("lead_id")), ev)
 
     # TYPE_LABELS is defined at module level (above). No local type_labels needed.
 
@@ -1063,11 +1107,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 except ValueError:
                     estado_db = PipelineStage.NEW
         
-        last_ev = events_map.get(raw_phone)
-        recognized_management_ev = (
-            recognized_management_map.get(raw_phone)
-            if phone_identity_counts.get(raw_phone) == 1 else None
-        )
+        last_ev = events_map.get(raw_phone) or events_map.get(f"lead:{lead.get('_id')}")
+        recognized_management_ev = recognized_management_by_lead_id.get(str(lead.get("_id")))
+        if not recognized_management_ev and phone_identity_counts.get(raw_phone) == 1:
+            recognized_management_ev = recognized_management_map.get(raw_phone)
         current_cycle = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
         lifecycle = lead.get("lifecycle") or {}
         # Never combine new-cycle SLA with historical lead fields.  If a
@@ -1133,7 +1176,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         else:
             commercial_ev = None
             for candidate_ev in events_list:
-                if candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone:
+                if (candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone
+                        or str(candidate_ev.get("lead_id") or "") == str(lead.get("_id") or "")):
                     if candidate_ev.get("type") in TELEMETRY_LABEL_TYPES:
                         commercial_ev = candidate_ev
                         break
@@ -1142,12 +1186,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         if commercial_ev:
             event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
             last_action_text = (
+                _resultado_estado_label(commercial_ev)
+                or
                 TYPE_LABELS.get(commercial_ev.get("type"))
                 or event_meta.get("action_label")
                 or event_meta.get("action")
                 or "Sin gestión registrada"
             )
-            last_action_note = event_meta.get("notes") or event_meta.get("note") or ""
+            last_action_note = (event_meta.get("notes") or event_meta.get("note")
+                                or event_meta.get("reason") or event_meta.get("outcome") or "")
         else:
             persisted_action = (lead.get("last_action_label") or "").strip()
             last_action_text = (
@@ -1510,12 +1557,17 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         }
 
     # Se incluyen logs de gestión real para un historial limpio y útil
+    phone_values = [phone_clean, f"+{phone_clean}"] if phone_clean else []
     new_events_cursor = db["crm_events"].find({
-        "phone": phone_clean,
+        "$or": [
+            {"phone": {"$in": phone_values}},
+            {"lead_id": lead.get("_id")},
+        ],
         "type": {"$in": [
             "GESTION_LOG", "STATUS_CHANGE", "HUMAN_NOTE", 
             "CLICK_PHONE_LEAD", "CLICK_PHONE_OWNER",
             "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+            "CALL_COMPLETED_LEAD", "CONTACT_RESULT",
             "SEND_WA_OWNER", "SEND_EMAIL_OWNER",
             "ALERT_SENT", "alert_sent", "msg_out"
         ]} 
@@ -1557,7 +1609,12 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             "msg_out": "Respuesta Bot"
         }
 
-        user_action_display = meta.get("action_label") or type_labels.get(evt_type, "Actividad")
+        result_value = str(evt.get("result") or meta.get("result") or "").strip().lower()
+        user_action_display = (
+            meta.get("action_label")
+            or RESULTADO_LABELS.get(result_value)
+            or type_labels.get(evt_type, "Gestión registrada" if evt_type == "CONTACT_RESULT" else "Actividad")
+        )
         
         # --- MAPEO DE ICONOS DINÁMICOS ---
         # Formato: (Icono, Clase CSS)
@@ -1612,8 +1669,10 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         formatted_new_history.append({
             "timestamp": ts_obj,
             "user_action": user_action_display if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
-            "result": meta.get("result", ""),
-            "notes": meta.get("notes", "") or meta.get("to", "") or meta.get("content_preview", ""), 
+            "result": evt.get("result") or meta.get("result", ""),
+            "notes": (meta.get("notes", "") or meta.get("reason", "")
+                      or meta.get("outcome", "") or meta.get("to", "")
+                      or meta.get("content_preview", "")),
             "type_class": display_type,
             "raw_type": evt_type,
             "icon": final_icon,

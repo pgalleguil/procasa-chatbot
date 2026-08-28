@@ -270,7 +270,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     )
     event_type = {"MESSAGE_SENT_WAITING_RESPONSE": "SEND_WA_LEAD", "EMAIL_SENT": "SEND_EMAIL_LEAD",
                   "CALL_NO_ANSWER": "CALL_COMPLETED_LEAD"}.get(result_type, "CONTACT_RESULT")
+    lead_for_event = db["leads"].find_one({"_id": lead_id}) or {}
     event = {"_id": f"crm_event:{idempotency_key}", "lead_id": lead_id,
+             "phone": lead_for_event.get("phone"),
              "assignment_cycle_id": assignment_cycle_id, "actor": actor_user_id,
              "actor_type": "human", "type": event_type, "result": result_type,
              "confirmed": True, "timestamp": occurred, "source": source,

@@ -42,6 +42,7 @@ from .leads_queries import (
     build_capture_simulation_contract,
     _ops_comparable_eligibility,
 )
+from .portal_costs import build_portal_cost_summary
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
@@ -1666,6 +1667,9 @@ def get_leads_dashboard_overview(
                 "pct": s.get("pct", 0.0),
                 "prev": s.get("prev", 0),
                 "diff": s.get("cantidad", 0) - s.get("prev", 0),
+                "prev_visitas": s.get("prev_visitas", 0),
+                "prev_pct": s.get("prev_pct"),
+                "prev_conversion_pct": s.get("prev_conversion_pct"),
                 "funnel": s.get("funnel", []),
             }
             for s in src_items
@@ -1673,6 +1677,9 @@ def get_leads_dashboard_overview(
         "total": src_total,
         "total_visitas": src_total_visitas,
     }
+    sources_data["costs"] = build_portal_cost_summary(
+        sources_data["items"], period_start, period_end
+    )
 
     insights = build_executive_insights(
         demand={"variation_pct": trends.get("variation_pct")},

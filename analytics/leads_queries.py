@@ -3621,8 +3621,8 @@ def query_leads_dashboard_sources(
     - Visitas por origen: la MISMA evidencia canónica de CARD 2
       (_scheduled_visit_lead_ids): stage/lifecycle histórico, crm_events
       VISITA_AGENDADA y órdenes de visita firmadas, deduplicado por lead, as-of.
-    - Orden: leads DESC. Filas: Top 6 + Otros (agregando el resto); si hay
-      <=7 orígenes se muestran todos sin "Otros".
+    - Orden: leads DESC. Se muestran todos los orígenes por separado para no
+      ocultar faltantes de trazabilidad dentro de una categoría "Otros".
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -3637,14 +3637,18 @@ def query_leads_dashboard_sources(
             _cohort_indexed_prefilter(ps_utc, pe_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+            {"$match": _build_test_lead_exclusion_match()},
             {"$project": {
                 "_id": 1, "phone": 1,
                 "prospecto.origen": 1, "prospecto.canal_origen": 1,
+                "prospecto.portal_origen": 1,
                 "prospecto.codigo_mercadolibre": 1, "prospecto.codigo_yapo": 1,
                 "prospecto.codigo": 1, "created_at": 1,
                 "pipeline_stage": 1, "stage": 1, "stage_history": 1,
                 "lifecycle.first_valid_management_at": 1,
                 "lifecycle.visit_scheduled_at": 1,
+                "messages.content": 1, "messages.timestamp": 1,
+                "source_events.portal_source": 1,
             }},
         ]))
 
@@ -3722,11 +3726,23 @@ def query_leads_dashboard_sources(
         if lid in cierres:
             entry["cierre_negocio"] += 1
 
-    prev_counts: dict = {}
-    if prev_start:
-        for lead in _load(prev_start, prev_end, "previous"):
-            name = _normalize_source_name(_resolve_origin(lead))
-            prev_counts[name] = prev_counts.get(name, 0) + 1
+    # La comparación de conversión usa la misma cohorte y la misma evidencia
+    # canónica de visitas. Nunca se reutilizan los conteos de la cohorte actual
+    # para explicar el período comparable.
+    prev_cohort = _load(prev_start, prev_end, "previous") if prev_start else []
+    prev_lead_ids = {str(lead["_id"]) for lead in prev_cohort}
+    prev_scheduled = (
+        _scheduled_visit_lead_ids(prev_cohort, prev_lead_ids, prev_end, timing, shared_orders)
+        if prev_start else set()
+    )
+    prev_by_origin: dict = {}
+    for lead in prev_cohort:
+        name = _normalize_source_name(_resolve_origin(lead))
+        entry = prev_by_origin.setdefault(name, {"leads": 0, "visitas": 0})
+        entry["leads"] += 1
+        if str(lead["_id"]) in prev_scheduled:
+            entry["visitas"] += 1
+    prev_counts = {name: data["leads"] for name, data in prev_by_origin.items()}
 
     current_total = sum(e["leads"] for e in per_origin.values())
     total_visitas = sum(e["visitas"] for e in per_origin.values())
@@ -3767,58 +3783,98 @@ def query_leads_dashboard_sources(
             "cantidad": totals["received"],
             "visitas": totals["visita_agendada"],
             "prev": prev_counts.get(name, 0),
+            "prev_visitas": prev_by_origin.get(name, {}).get("visitas", 0),
             "funnel": funnel_stages,
         }
 
-    if len(ordered) > 6:
-        top = ordered[:5]
-        rest = ordered[5:]
-        items = [_make_item(name, [name]) for name, _ in top]
-        otros_leads = sum(e["leads"] for _, e in rest)
-        otros_visitas = sum(e["visitas"] for _, e in rest)
-        otros_prev = sum(prev_counts.get(name, 0) for name, _ in rest)
-        otros = _make_item("Otros", [name for name, _ in rest])
-        otros["cantidad"] = otros_leads
-        otros["visitas"] = otros_visitas
-        otros["prev"] = otros_prev
-        items.append(otros)
-    else:
-        items = [_make_item(name, [name]) for name, _ in ordered]
+    items = [_make_item(name, [name]) for name, _ in ordered]
 
     for it in items:
         it["pct"] = round(it["cantidad"] / current_total * 100, 1) if current_total else 0.0
         it["conversion_pct"] = round(it["visitas"] / it["cantidad"] * 100, 1) if it["cantidad"] else None
+        previous_leads = it.get("prev", 0) or 0
+        previous_visits = it.get("prev_visitas", 0) or 0
+        it["prev_pct"] = round(previous_leads / sum(prev_counts.values()) * 100, 1) if prev_counts and sum(prev_counts.values()) else None
+        it["prev_conversion_pct"] = round(previous_visits / previous_leads * 100, 1) if previous_leads else None
 
     return {
         "current": items,
         "previous": prev_counts,
+        "previous_total_visitas": sum(data["visitas"] for data in prev_by_origin.values()),
         "total": current_total,
         "total_visitas": total_visitas,
     }
 
 
 def _resolve_origin(lead: Mapping[str, Any]) -> str:
-    """Origen de un lead con la misma precedencia canónica de _origin_expr."""
+    """Resuelve el origen comercial, separándolo del canal de contacto.
+
+    Un lead puede llegar por WhatsApp y traer un enlace de TocToc. En ese
+    caso el portal es el origen de demanda y WhatsApp es solo el canal. Se
+    usa ``portal_origen`` cuando existe y se conserva un fallback para datos
+    históricos donde ese campo aún no fue persistido.
+    """
     prospecto = lead.get("prospecto") or {}
+    unresolved_values = {
+        "", "OTRO PORTAL", "SIN INFORMACION", "SIN INFORMACIÓN",
+        "SIN INFO", "N/A", "NULL", "NONE", "DESCONOCIDO",
+        "NO INFORMADO",
+    }
+    portal = str(prospecto.get("portal_origen") or "").strip()
+    if portal and portal.upper() not in {"WHATSAPP", *unresolved_values}:
+        return portal
+
     origen = str(prospecto.get("origen") or "").strip()
-    if origen and origen.upper() != "WHATSAPP":
-        return origen
     canal = str(prospecto.get("canal_origen") or "").strip()
-    if canal:
+    # Un portal explícito ya guardado tiene precedencia sobre cualquier texto
+    # histórico del lead. El fallback por enlace solo aplica a WhatsApp o a
+    # registros sin origen persistido.
+    if origen and origen.upper() not in {"WHATSAPP", *unresolved_values}:
+        return origen
+    if canal and canal.upper() not in {"WHATSAPP", *unresolved_values}:
+        return canal
+
+    # Backfill de lectura para leads históricos: no modifica la base y solo
+    # atribuye el portal cuando todos los indicios guardados apuntan al mismo.
+    detected = set()
+    texts = []
+    for message in lead.get("messages") or []:
+        if isinstance(message, Mapping):
+            texts.append(str(message.get("content") or ""))
+    for event in lead.get("source_events") or []:
+        if isinstance(event, Mapping):
+            texts.append(str(event.get("portal_source") or ""))
+    blob = " ".join(texts).lower()
+    if "toctoc.com" in blob:
+        detected.add("TocToc")
+    if "yapo.cl" in blob:
+        detected.add("Yapo")
+    if "portalinmobiliario.com" in blob or "portalinmobiliario.cl" in blob:
+        detected.add("PortalInmobiliario")
+    if "mercadolibre." in blob:
+        detected.add("MercadoLibre")
+    if len(detected) == 1:
+        return next(iter(detected))
+
+    if canal and canal.upper() not in unresolved_values:
         return canal
     if prospecto.get("codigo_mercadolibre"):
         return "MercadoLibre"
     if prospecto.get("codigo_yapo"):
         return "Yapo"
     if origen.upper() == "WHATSAPP":
-        return "WhatsApp"
-    return "Sin informacion"
+        # WhatsApp es la fuente/canal de entrada, pero no un portal. Si no
+        # existe evidencia de publicación, el origen debe quedar explícito
+        # como pendiente de identificación.
+        return "Otros"
+    return "Otros"
 
 
 def _normalize_source_name(value) -> str:
     """Normaliza nombres de canal/origen de captura para el dashboard.
 
-    Fusiona variantes (Portal Inmobiliario/PortalInmobiliario, TocToc/TOCTOC).
+    Normaliza variantes de nombre, pero conserva MercadoLibre separado de
+    Portal Inmobiliario aunque ambos compartan la misma propiedad publicada.
     La ausencia de información se presenta como "Sin información" (no se
     disfraza de origen "Directo"). e2e_test se mantiene como tal (política de
     test global pendiente), sin convertirlo en "Directo".
@@ -3827,10 +3883,17 @@ def _normalize_source_name(value) -> str:
     low = text.lower()
     if low in {"", "sin informacion", "sin información", "sin info", "n/a", "null", "none", "desconocido", "-", "no informado"}:
         return "Sin información"
+    # Un código MLC identifica MercadoLibre aunque algunos registros
+    # históricos lo hayan guardado bajo el nombre compartido de Portal
+    # Inmobiliario. La propiedad puede estar publicada en ambos sitios, pero
+    # el lead debe conservar el portal por el que llegó.
+    if "mlc" in low and ("portal inmobiliario" in low or "portalinmobiliario" in low):
+        return "MercadoLibre"
     mapping = {
         "portal inmobiliario": "Portal Inmobiliario",
         "portalinmobiliario": "Portal Inmobiliario",
-        "portal inmobiliario (mlc code)": "Portal Inmobiliario",
+        "portal inmobiliario (mlc code)": "MercadoLibre",
+        "portalinmobiliario (mlc code)": "MercadoLibre",
         "mercadolibre": "MercadoLibre",
         "toctoc": "TocToc",
         "otro portal": "Otro Portal",

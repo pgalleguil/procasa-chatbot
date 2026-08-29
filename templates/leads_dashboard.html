@@ -2173,69 +2173,339 @@
 
         .portal-dashboard { display: grid; gap: 16px; }
 
+        @keyframes portalSectionIn {
+            from { opacity: 0; filter: blur(9px); transform: translateY(12px); }
+            to { opacity: 1; filter: blur(0); transform: translateY(0); }
+        }
+        @keyframes portalIndicatorIn {
+            from { opacity: 0; transform: translateY(7px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes portalBarGrow {
+            from { transform: scaleX(0); }
+            to { transform: scaleX(1); }
+        }
+        @keyframes portalFunnelLineDraw {
+            from { stroke-dasharray: 1; stroke-dashoffset: 1; opacity: 0; }
+            to { stroke-dasharray: 1; stroke-dashoffset: 0; opacity: 1; }
+        }
+        .portal-dashboard.portal-content-pending > .portal-summary-grid,
+        .portal-dashboard.portal-content-pending > .portal-roi-table-panel,
+        .portal-dashboard.portal-content-pending > .portal-insights-panel,
+        .portal-dashboard.portal-content-pending > .portal-funnel-detail-panel { visibility: hidden; opacity: 0; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid { animation: portalSectionIn .26s cubic-bezier(.16,1,.3,1) .03s both; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card { animation: portalSectionIn .26s cubic-bezier(.16,1,.3,1) both; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(1) { animation-delay: .04s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(2) { animation-delay: .09s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(3) { animation-delay: .14s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(4) { animation-delay: .19s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-value,
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-unit,
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-context { animation: portalIndicatorIn .20s ease both; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(1) .portal-summary-value { animation-delay: .06s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(2) .portal-summary-value { animation-delay: .10s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(3) .portal-summary-value { animation-delay: .14s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card:nth-child(4) .portal-summary-value { animation-delay: .18s; }
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-unit,
+        .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-context { animation-delay: .28s; }
+        .portal-dashboard.portal-reveal > .portal-roi-table-panel { animation: portalSectionIn .28s cubic-bezier(.16,1,.3,1) .22s both; }
+        .portal-dashboard.portal-reveal > .portal-insights-panel { animation: portalSectionIn .28s cubic-bezier(.16,1,.3,1) .32s both; }
+        .portal-dashboard.portal-reveal > .portal-funnel-detail-panel { animation: portalSectionIn .28s cubic-bezier(.16,1,.3,1) .42s both; }
+        .portal-dashboard.portal-reveal .portal-summary-card .cd2-bar,
+        .portal-dashboard.portal-reveal .portal-roi-share-track i,
+        .portal-dashboard.portal-reveal .portal-stage-fill { transform-origin: left center; animation: portalBarGrow .72s cubic-bezier(.16,1,.3,1) both; }
+        .portal-dashboard.portal-reveal .portal-summary-card:nth-child(1) .cd2-bar { animation-delay: .18s; }
+        .portal-dashboard.portal-reveal .portal-summary-card:nth-child(2) .cd2-bar { animation-delay: .22s; }
+        .portal-dashboard.portal-reveal .portal-summary-card:nth-child(3) .cd2-bar { animation-delay: .26s; }
+        .portal-dashboard.portal-reveal .portal-summary-card:nth-child(4) .cd2-bar { animation-delay: .30s; }
+        .portal-dashboard.portal-reveal .portal-roi-share-track i { animation-delay: .44s; }
+        .portal-dashboard.portal-reveal .portal-stage-fill { animation-delay: .62s; }
+        .portal-dashboard.portal-reveal .portal-funnel-stack.portal-funnel-reveal .portal-funnel-stage-bar { animation: portalBarGrow .72s cubic-bezier(.16,1,.3,1) .52s both; }
+        .portal-dashboard.portal-reveal .portal-funnel-stack.portal-funnel-reveal .portal-funnel-silhouette line { animation: portalFunnelLineDraw .72s cubic-bezier(.16,1,.3,1) .46s both; }
+        @media (prefers-reduced-motion: reduce) {
+            .portal-dashboard.portal-reveal > .portal-summary-grid,
+            .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-card,
+            .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-value,
+            .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-unit,
+            .portal-dashboard.portal-reveal > .portal-summary-grid .portal-summary-context,
+            .portal-dashboard.portal-reveal > .portal-roi-table-panel,
+            .portal-dashboard.portal-reveal > .portal-insights-panel,
+            .portal-dashboard.portal-reveal > .portal-funnel-detail-panel,
+            .portal-dashboard.portal-content-pending > .portal-summary-grid,
+            .portal-dashboard.portal-content-pending > .portal-roi-table-panel,
+            .portal-dashboard.portal-content-pending > .portal-insights-panel,
+            .portal-dashboard.portal-content-pending > .portal-funnel-detail-panel,
+            .portal-dashboard.portal-reveal .portal-summary-card .cd2-bar,
+            .portal-dashboard.portal-reveal .portal-roi-share-track i,
+            .portal-dashboard.portal-reveal .portal-stage-fill,
+            .portal-dashboard.portal-reveal .portal-funnel-stack.portal-funnel-reveal .portal-funnel-stage-bar,
+            .portal-dashboard.portal-reveal .portal-funnel-stack.portal-funnel-reveal .portal-funnel-silhouette line,
+            .portal-funnel-stage-bar,
+            .portal-title.portal-typewriter-active::after,
+            .portal-subtitle.portal-typewriter-active::after { animation: none; }
+            .portal-funnel-stage-bar { transition: none; }
+        }
+
         .portal-dashboard-head,
         .portal-funnel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
 
         .portal-dashboard-head h2,
         .portal-funnel-head h3 { margin: 0; color: var(--text-primary); }
 
+        .portal-title.portal-typewriter-active::after,
+        .portal-subtitle.portal-typewriter-active::after { content: '▋'; display: inline-block; margin-left: 4px; color: var(--conversion-accent, #8B5CF6); animation: portalCaret .72s steps(1, end) infinite; }
+        @keyframes portalCaret { 50% { opacity: 0; } }
+
         .portal-dashboard-head p,
         .portal-funnel-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
 
-        .portal-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+        .portal-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; max-width: 1440px; overflow: visible; }
 
         .portal-summary-card,
-        .portal-funnel-panel { padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); }
+        .portal-funnel-panel { padding: 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: border-color .18s ease, transform .18s ease, translate .18s ease, box-shadow .18s ease; }
+        .portal-funnel-panel:hover { border-color: color-mix(in srgb, var(--conversion-accent) 45%, var(--border-color)); translate: 0 -2px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
 
-        .portal-summary-card span { display: block; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
-
-        .portal-summary-card strong { display: block; margin-top: 5px; color: var(--text-primary); font-size: 22px; font-variant-numeric: tabular-nums; }
-
-        .portal-summary-card small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-card { display: flex; min-width: 0; min-height: 174px; flex-direction: column; padding: 14px; border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); border-radius: 12px; background: var(--bg-card); box-shadow: none; transition: border-color .18s ease, transform .18s ease, translate .18s ease, box-shadow .18s ease; }
+        .portal-summary-card:hover { border-color: color-mix(in srgb, var(--conversion-accent) 45%, var(--border-color)); translate: 0 -2px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+        .portal-summary-card span { display: flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+        .portal-summary-card > strong { display: block; overflow: hidden; margin-top: 7px; color: var(--text-primary); font-size: 23px; font-variant-numeric: tabular-nums; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+        .portal-summary-card small { display: block; overflow: hidden; min-height: 0; margin-top: auto; padding-top: 7px; border-top: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); color: var(--text-secondary); font-size: 10px; line-height: 1.25; text-overflow: ellipsis; white-space: normal; }
+        .portal-summary-card small strong { display: inline; margin: 0; font-size: inherit; line-height: inherit; white-space: normal; }
+        .portal-summary-card small span { display: inline; color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: normal; text-transform: none; }
+        .portal-summary-card small .portal-trend-arrow { display: inline; }
+        .portal-summary-compare-label { display: inline; margin-left: 4px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; }
+        .portal-summary-card .portal-summary-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 auto; align-items: center; justify-content: center; margin: -2px -2px 0 auto; padding: 0; border: 0; color: var(--text-secondary); background: transparent; cursor: help !important; font-size: 12px; line-height: 1; }
+        .portal-summary-card .portal-summary-icon:hover,
+        .portal-summary-card .portal-summary-icon:focus-visible { color: var(--conversion-accent); outline: none; }
+        .portal-summary-label { display: flex; align-items: center; min-height: 16px; gap: 4px; color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+        .portal-summary-kpi { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-width: 0; }
+        .portal-summary-value { display: inline-block; flex: 0 0 auto; max-width: 100%; overflow: hidden; color: var(--text-primary); font-size: 30px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+        .portal-summary-unit { display: inline-block !important; flex: 0 0 auto; color: var(--text-secondary) !important; font-size: 13px !important; font-weight: 500 !important; letter-spacing: normal !important; white-space: nowrap; }
+        .portal-summary-context { display: inline-flex !important; align-items: center; gap: 5px; margin-top: 5px; color: var(--text-secondary) !important; font-size: 11px !important; font-weight: 600 !important; letter-spacing: normal !important; text-transform: none !important; }
+        .portal-summary-body { display: flex; flex: 1 1 auto; min-height: 50px; flex-direction: column; justify-content: center; margin-top: 10px; }
+        .portal-summary-footer { margin-top: auto; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); color: var(--text-secondary); font-size: 10px; line-height: 1.3; }
+        .portal-summary-footer strong { color: var(--text-primary); font-weight: 600; }
+        .portal-summary-card .cd1-badge { align-self: flex-start; }
+        .portal-summary-kpi .cd1-badge { display: inline-flex; flex: 0 1 auto; align-self: center; margin-left: 0; max-width: 100%; text-transform: none; letter-spacing: normal; }
+        .portal-summary-kpi .cd1-badge > span { display: inline; align-items: initial; color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: normal; text-transform: none; }
+        .portal-summary-compare { display: grid; gap: 7px; }
+        .portal-summary-compare-row { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-compare-row > span { display: block; color: var(--text-secondary); font-size: 10px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+        .portal-summary-compare-row strong { color: var(--text-primary); font-size: 11px; font-variant-numeric: tabular-nums; }
+        .portal-summary-compare-row .cd2-bar-track { height: 7px; margin: 0; }
+        .portal-summary-progress { display: grid; gap: 7px; }
+        .portal-summary-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-progress-head span { display: block; color: var(--text-secondary); font-size: 10px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+        .portal-summary-progress-head strong { color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+        .portal-summary-progress .cd2-bar-track { height: 8px; margin: 0; }
+        .portal-summary-caption { color: var(--text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; }
+        .portal-summary-cpl-compare { display: grid; gap: 7px; }
+        .portal-summary-cpl-head { color: var(--text-secondary); font-size: 10px; font-weight: 500; }
+        .portal-summary-cpl-row { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-cpl-row > span { display: block; overflow: hidden; color: var(--text-secondary); font-size: 10px; font-weight: 500; letter-spacing: normal; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+        .portal-summary-cpl-row strong { color: var(--text-primary); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .portal-summary-cpl-row .cd2-bar-track { height: 7px; margin: 0; }
+        .portal-summary-dual { display: grid; gap: 8px; }
+        .portal-summary-dual-row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+        .portal-summary-dual-row span { display: block; color: var(--text-secondary); font-size: 10px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+        .portal-summary-dual-row strong { color: var(--text-primary); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .portal-summary-dual .cd2-bar-track { height: 6px; margin: 0; }
+        .portal-summary-bar-current { background: var(--spark-accent); }
+        .portal-summary-bar-comparable { background: var(--text-secondary); }
+        .portal-summary-bar-general { background: var(--text-secondary); }
+        .portal-summary-bar-best { background: var(--conversion-accent); }
+        .portal-summary-bar-cpl { background: linear-gradient(90deg, var(--spark-accent), var(--conversion-accent)); box-shadow: 0 0 8px color-mix(in srgb, var(--conversion-accent) 24%, transparent); }
 
         .portal-funnel-panel { display: grid; gap: 14px; }
+        .portal-funnel-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; color: var(--text-muted); font-size: 9px; line-height: 1.3; letter-spacing: 0; }
+        .portal-funnel-legend-item { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; color: inherit; background: transparent; cursor: help; font: inherit; white-space: nowrap; transition: color .16s ease, opacity .16s ease; }
+        .portal-funnel-legend-item i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--portal-color); }
+        .portal-funnel-legend-item.is-active { color: var(--text-primary); }
+        .portal-funnel-legend-item.is-dimmed { opacity: .32; }
+        .portal-funnel-stack { position: relative; display: grid; gap: 8px; }
+        .portal-funnel-stage-row { display: grid; justify-items: center; gap: 7px; min-width: 0; }
+        .portal-funnel-stage-row { position: relative; z-index: 1; }
+        .portal-funnel-stage-label { display: flex; align-items: baseline; justify-content: center; gap: 7px; min-width: 0; line-height: 1.15; white-space: nowrap; }
+        .portal-funnel-stage-label span { overflow: hidden; color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; }
+        .portal-funnel-stage-label strong { color: var(--text-primary); font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .portal-funnel-stage-label small { color: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+        .portal-funnel-stage-label small::before { content: '·'; display: inline-block; margin-right: 7px; color: color-mix(in srgb, var(--text-muted) 68%, transparent); }
+        .portal-funnel-stage-rail { display: flex; width: 100%; min-width: 0; justify-content: center; }
+        .portal-funnel-stage-bar { display: flex; width: var(--stage-width); max-width: 100%; min-width: 0; height: 22px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--border-color) 72%, transparent); transform: scaleX(.02); transform-origin: center; transition: transform .3s cubic-bezier(.16,1,.3,1); }
+        .portal-funnel-stack.portal-funnel-reveal .portal-funnel-stage-bar { transform: scaleX(1); }
+        .portal-funnel-segment { display: block; flex: 0 0 auto; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; background: var(--portal-color); box-shadow: inset -1px 0 rgba(11, 18, 32, .18); cursor: help; opacity: .86; transition: filter .16s ease, opacity .16s ease; }
+        .portal-funnel-segment:first-child { border-radius: 999px 0 0 999px; }
+        .portal-funnel-segment:last-child { border-radius: 0 999px 999px 0; }
+        .portal-funnel-segment:only-child { border-radius: 999px; }
+        .portal-funnel-segment:hover,
+        .portal-funnel-segment:focus-visible,
+        .portal-funnel-segment.is-active { filter: brightness(1.16) saturate(1.05); opacity: 1; outline: 0; }
+        .portal-funnel-segment.is-dimmed { filter: saturate(.65); opacity: .3; }
+        .portal-funnel-segment.is-small-sample { opacity: .58; }
+        .portal-funnel-zero-marker { width: 5px; height: 5px; align-self: center; border-radius: 50%; background: var(--text-muted); opacity: .8; }
+        .portal-funnel-silhouette { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; color: color-mix(in srgb, var(--text-secondary) 38%, transparent); pointer-events: none; opacity: .42; }
+        .portal-funnel-silhouette line { stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke; }
+        .portal-funnel-note { margin: 0; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent); color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+        .portal-funnel-method { display: block; margin-top: 6px; color: var(--text-muted); font-size: 10px; font-weight: 500; }
+        .portal-funnel-tooltip { position: fixed; z-index: 1400; display: grid; width: min(270px, calc(100vw - 20px)); gap: 4px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); box-shadow: var(--shadow-card); color: var(--text-secondary); font-size: 10.5px; line-height: 1.35; pointer-events: none; }
+        .portal-funnel-tooltip[hidden] { display: none; }
+        .portal-funnel-tooltip strong { color: var(--text-primary); font-size: 12px; }
+        .portal-funnel-tooltip .portal-funnel-tooltip-stage { color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+        .portal-funnel-tooltip small { color: var(--text-secondary); font-size: 10px; }
+        .portal-funnel-insights-panel { display: grid; gap: 10px; min-height: 95px; padding: 14px 16px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); }
+        .portal-funnel-insights-head { margin: 0; padding-bottom: 9px; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); }
+        .portal-funnel-insights-head span { display: block; color: var(--text-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .portal-funnel-insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+        .portal-funnel-insight { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 0 14px; }
+        .portal-funnel-insight:first-child { padding-left: 0; }
+        .portal-funnel-insight:last-child { padding-right: 0; }
+        .portal-funnel-insight + .portal-funnel-insight { border-left: 1px solid color-mix(in srgb, var(--border-color) 58%, transparent); }
+        .portal-funnel-insight-label { color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .portal-funnel-insight-value { color: var(--text-primary); font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .portal-funnel-insight-copy { overflow: hidden; color: var(--text-secondary); font-size: 11px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+        .portal-funnel-insight-meta { display: grid; gap: 2px; color: var(--text-muted); font-size: 9px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+        .portal-funnel-insight-transition { color: var(--text-secondary); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 
-        .portal-funnel-legend,
-        .portal-funnel-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) repeat(5, minmax(74px, 1fr)); gap: 10px; }
+        .portal-insights-panel { display: grid; gap: 12px; min-height: 140px; padding: 17px 16px 15px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); transition: border-color .18s ease, transform .18s ease, translate .18s ease, box-shadow .18s ease; }
+        .portal-insights-panel:hover { border-color: color-mix(in srgb, var(--conversion-accent) 45%, var(--border-color)); translate: 0 -2px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+        .portal-insights-head { margin: 0; padding-bottom: 10px; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); }
+        .portal-insights-head span { display: block; color: var(--text-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .portal-insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+        .portal-insight { position: relative; min-width: 0; padding: 6px 14px; border-left: 0; border-right: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); background: transparent; }
+        .portal-insight:first-child { padding-left: 0; }
+        .portal-insight:last-child { padding-right: 0; border-right: 0; }
+        .portal-insight-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+        .portal-insight-category { display: block; min-width: 0; color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+        .portal-insight .portal-summary-icon { display: inline-flex; width: 16px; height: 16px; flex: 0 0 auto; align-items: center; justify-content: center; margin: -2px 0 0 auto; padding: 0; border: 0; color: var(--text-secondary); background: transparent; cursor: help !important; font-size: 12px; line-height: 1; }
+        .portal-insight .portal-summary-icon:hover,
+        .portal-insight .portal-summary-icon:focus-visible { color: var(--conversion-accent); outline: none; }
+        .portal-insight strong { display: block; margin-top: 4px; color: var(--text-primary); font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .portal-insight small { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 10px; line-height: 1.2; }
+        .portal-insight-meta { display: block; margin-top: 3px; color: var(--text-muted) !important; font-size: 9px !important; font-weight: 500 !important; letter-spacing: normal !important; text-transform: none !important; }
 
-        .portal-funnel-legend { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+        .portal-table-wrap { --portal-table-surface: color-mix(in srgb, var(--bg-card) 82%, #0b1220); --portal-row-hover-fill: color-mix(in srgb, var(--accent) 7%, var(--portal-table-surface)); overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: rgba(167, 139, 250, 0.78) rgba(148, 163, 184, 0.12); scrollbar-gutter: stable; border: 1px solid var(--border-color); border-radius: 12px; background: var(--portal-table-surface); }
+        .portal-table-wrap::-webkit-scrollbar { height: 8px; }
+        .portal-table-wrap::-webkit-scrollbar-track { background: rgba(148, 163, 184, 0.10); border-radius: 999px; }
+        .portal-table-wrap::-webkit-scrollbar-thumb { background: linear-gradient(90deg, rgba(124, 58, 237, 0.82), rgba(167, 139, 250, 0.92)); border: 2px solid transparent; background-clip: padding-box; border-radius: 999px; min-width: 56px; }
+        .portal-table-wrap::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg, #7C3AED, #A78BFA); background-clip: padding-box; }
+        [data-theme="light"] .portal-table-wrap { --portal-table-surface: var(--bg-elevated); }
+        .portal-roi-table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: separate; border-spacing: 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+        .portal-roi-table th,
+        .portal-roi-table td { padding: 9px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 62%, transparent); vertical-align: middle; white-space: nowrap; }
+        .portal-roi-table tbody th { padding: 9px 10px; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 62%, transparent); vertical-align: middle; white-space: nowrap; }
+        .portal-roi-table thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-card); color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-align: left; text-transform: uppercase; }
+        .portal-roi-table thead th:nth-child(1) { width: 20%; }
+        .portal-roi-table thead th:nth-child(2) { width: 18%; }
+        .portal-roi-table thead th:nth-child(3) { width: 17%; }
+        .portal-roi-table thead th:nth-child(4) { width: 15%; }
+        .portal-roi-table thead th:nth-child(5) { width: 11%; }
+        .portal-roi-table thead th:nth-child(6) { width: 10%; }
+        .portal-roi-table thead th:nth-child(7) { width: 9%; }
+        .portal-header-label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+        .portal-cost-info { position: relative; display: inline-flex; align-items: center; }
+        .portal-header-info { display: inline-grid; width: 16px; height: 16px; padding: 0; place-items: center; border: 0; background: transparent; color: var(--text-secondary); cursor: help !important; font-size: 12px; line-height: 1; outline: none; box-shadow: none; transition: color .18s ease; }
+        .portal-header-info:hover, .portal-header-info:focus-visible { color: var(--conversion-accent); outline: 0; box-shadow: none; }
+        .portal-cost-help { position: fixed; z-index: 1300; display: grid; width: min(330px, calc(100vw - 20px)); gap: 5px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); box-shadow: var(--shadow-card); color: var(--text-secondary); font-size: 10.5px; font-weight: 500; line-height: 1.4; pointer-events: none; text-transform: none; }
+        .portal-cost-help[hidden] { display: none; }
+        .portal-cost-help strong { display: block; color: var(--text-primary); font-size: 11px; }
+        .portal-cost-help span { display: block; }
+        .portal-cost-help b { color: var(--text-primary); }
+        .portal-roi-table thead th:not(:first-child),
+        .portal-roi-table tbody td:not(:first-child),
+        .portal-roi-table tfoot td:not(:first-child) { text-align: right; }
+        .portal-roi-table tbody tr { transition: background .2s ease; }
+        .portal-roi-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+        .portal-roi-table tbody tr:last-child th,
+        .portal-roi-table tbody tr:last-child td { border-bottom: 0; }
+        .portal-roi-table tbody th { min-width: 0; color: var(--text-primary); font-size: 13px; text-align: left; }
+        .portal-roi-name { display: block; overflow: hidden; max-width: 220px; font-size: 14px; text-overflow: ellipsis; }
+        .portal-roi-table small { display: block; margin-top: 2px; color: var(--text-muted); font-size: 10px; font-weight: 500; line-height: 1.15; }
+        .portal-roi-number strong { color: var(--text-primary); font-size: 15px; }
+        .portal-roi-leads { min-width: 0; }
+        .portal-roi-leads-main { display: flex; align-items: baseline; justify-content: flex-end; gap: 7px; }
+        .portal-roi-leads-main strong { color: var(--text-primary); font-size: 16px; }
+        .portal-roi-leads-main span { color: var(--text-secondary); font-size: 11px; }
+        .portal-roi-share-track { width: 92%; height: 4px; margin-top: 5px; margin-left: auto; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--border-color) 70%, transparent); }
+        .portal-roi-share-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: #A78BFA; transition: width .65s cubic-bezier(.16, 1, .3, 1); }
+        .portal-roi-comparison strong { color: var(--text-primary); font-size: 13px; }
+        .portal-roi-conversion strong { color: var(--text-primary); font-size: 15px; }
+        .portal-roi-comparison .portal-trend-positive,
+        .portal-roi-comparison .portal-trend-negative { color: var(--text-primary) !important; }
+        .portal-roi-comparison .portal-trend-arrow { color: var(--text-secondary); }
+        .portal-roi-comparison .portal-trend-positive .portal-trend-arrow { color: #34D399 !important; }
+        .portal-roi-comparison .portal-trend-negative .portal-trend-arrow { color: #F87171 !important; }
+        .portal-trend-positive { color: var(--text-secondary) !important; }
+        .portal-trend-negative { color: var(--text-secondary) !important; }
+        .portal-trend-neutral { color: var(--text-secondary) !important; }
+        .portal-roi-stage { min-width: 82px; }
+        .portal-roi-stage-value { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; }
+        .portal-roi-stage-value strong { color: var(--text-primary); font-size: 12px; }
+        .portal-roi-stage-value span { color: var(--text-muted); font-size: 9px; }
+        .portal-roi-mini-track { height: 5px; margin-top: 6px; overflow: hidden; border-radius: 99px; background: var(--border-color); }
+        .portal-roi-mini-track i { display: block; width: 0; height: 100%; border-radius: inherit; background: #A78BFA; transition: width .75s cubic-bezier(.16, 1, .3, 1); }
+        .portal-roi-stage:nth-child(6) .portal-roi-mini-track i { background: #60A5FA; }
+        .portal-roi-stage:nth-child(7) .portal-roi-mini-track i { background: #34D399; }
+        .portal-roi-stage:nth-child(8) .portal-roi-mini-track i { background: #FBBF24; }
+        .portal-roi-unavailable { color: var(--text-muted); }
+        .portal-roi-unavailable span { font-size: 13px; }
+        .portal-roi-table tfoot th,
+        .portal-roi-table tfoot td { border-top: 1px solid var(--border-color); border-bottom: 0; background: color-mix(in srgb, var(--bg-card) 70%, #0b1220); color: var(--text-primary); font-weight: 700; }
+        [data-theme="light"] .portal-roi-table tfoot th,
+        [data-theme="light"] .portal-roi-table tfoot td { background: var(--bg-card); }
+        .portal-roi-table tfoot th { text-align: left; }
+        .portal-roi-table tfoot td:last-child small { white-space: normal; overflow-wrap: anywhere; }
+        .portal-package-finance { vertical-align: middle !important; background: transparent; border-left: 0; transition: background .2s ease; }
+        .portal-package-hover .portal-package-finance { background: var(--portal-row-hover-fill); }
+        .portal-package-finance strong { color: var(--text-secondary); font-size: 16px; font-weight: 700; line-height: 24px; }
+        .portal-monthly-cost strong { color: var(--text-secondary); font-size: 14px; font-weight: 700; }
+        .portal-total-meta td { padding-top: 4px; padding-bottom: 7px; border-top: 0; color: var(--text-secondary); font-size: 10px; font-weight: 500; text-align: right !important; }
+        .portal-funnel-legacy-head { padding-top: 0; }
+        .portal-funnel-legacy-head h3 { margin: 0; color: var(--text-primary); font-size: 13px; }
+        .portal-funnel-legacy-head p { margin: 4px 0 0; color: var(--text-secondary); font-size: 10px; }
 
-        .portal-funnel-legend span:not(:first-child) { text-align: center; }
-
-        .portal-funnel-legend span:not(:first-child)::before { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 4px 1px 0; border-radius: 50%; background: #A78BFA; }
-        .portal-funnel-legend span:nth-child(3)::before { background: #60A5FA; }
-        .portal-funnel-legend span:nth-child(4)::before { background: #34D399; }
-        .portal-funnel-legend span:nth-child(5)::before { background: #FBBF24; }
-        .portal-funnel-legend span:nth-child(6)::before { background: #F97316; }
-
-        .portal-funnel-list { display: grid; gap: 12px; }
-
-        .portal-funnel-row { align-items: center; padding-top: 11px; border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent); }
-
-        .portal-funnel-name { min-width: 0; }
-        .portal-funnel-name strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-        .portal-funnel-name small { display: block; margin-top: 3px; color: var(--text-secondary); font-size: 10px; }
-
-        .portal-stage { min-width: 0; }
-        .portal-stage-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
-        .portal-stage-count { color: var(--text-primary); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-        .portal-stage-rate { color: var(--text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
-        .portal-stage-track { height: 7px; margin-top: 5px; overflow: hidden; border-radius: 99px; background: var(--border-color); }
-        .portal-stage-fill { width: 0; height: 100%; border-radius: inherit; transition: width .8s cubic-bezier(.16,1,.3,1); }
-        .portal-stage:nth-child(2) .portal-stage-fill { background: #A78BFA; }
-        .portal-stage:nth-child(3) .portal-stage-fill { background: #60A5FA; }
-        .portal-stage:nth-child(4) .portal-stage-fill { background: #34D399; }
-        .portal-stage:nth-child(5) .portal-stage-fill { background: #FBBF24; }
-        .portal-stage:nth-child(6) .portal-stage-fill { background: #F97316; }
-
-        .portal-funnel-note { margin: 0; color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+        @media (max-width: 1280px) {
+            .portal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .portal-summary-kpi { flex-wrap: wrap; row-gap: 5px; }
+            .portal-summary-value { flex: 0 0 auto; max-width: 100%; }
+            .portal-summary-kpi .cd1-badge { margin-left: 0; max-width: 100%; }
+        }
 
         @media (max-width: 760px) {
-            .portal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .portal-funnel-legend,
-            .portal-funnel-row { grid-template-columns: minmax(105px, 1.1fr) repeat(5, minmax(48px, 1fr)); gap: 5px; }
+            .portal-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+            .portal-summary-card { min-width: 0; padding: 12px; }
+            .portal-summary-kpi { flex-wrap: wrap; row-gap: 5px; }
+            .portal-summary-value { flex: 0 0 auto; max-width: 100%; font-size: clamp(24px, 7vw, 30px); }
+            .portal-summary-kpi .cd1-badge { margin-left: 0; max-width: 100%; }
+            .portal-funnel-stage-row { gap: 6px; }
+            .portal-funnel-stage-label { gap: 5px; }
             .portal-funnel-legend { font-size: 8px; }
-            .portal-stage-count { font-size: 11px; }
+            .portal-funnel-stage-label strong { font-size: 14px; }
+            .portal-funnel-stage-bar { height: 19px; }
+            .portal-roi-table { min-width: 900px; }
+            .portal-funnel-insights { grid-template-columns: 1fr; gap: 8px; }
+            .portal-funnel-insight,
+            .portal-funnel-insight:first-child,
+            .portal-funnel-insight:last-child { padding: 7px 0; border-left: 0; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); }
+            .portal-funnel-insight:last-child { border-bottom: 0; }
+            .portal-table-wrap { margin-inline: -4px; }
+            .portal-insights { grid-template-columns: 1fr; gap: 8px; }
+            .portal-insight,
+            .portal-insight:first-child,
+            .portal-insight:last-child { padding: 8px 0; border-right: 0; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent); }
+            .portal-insight:last-child { border-bottom: 0; }
+        }
+
+        @media (max-width: 420px) {
+            .portal-summary-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (min-width: 761px) and (max-width: 1100px) {
+            .portal-roi-table { font-size: 11px; }
+            .portal-roi-table th, .portal-roi-table td { padding-inline: 7px; }
+            .portal-roi-name { max-width: 150px; font-size: 12px; }
+            .portal-roi-leads small, .portal-roi-share-track { display: none; }
+            .portal-roi-table small { font-size: 9px; }
         }
 
         .tc-src-tooltip {
@@ -3101,7 +3371,7 @@
         .team-matrix th,.team-performance th{padding:8px 7px;text-align:left;color:var(--text-secondary);font-size:9px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}.team-group-head{text-align:center!important;color:var(--text-primary)!important;background:rgba(139,92,246,.07)}.team-period-divider{border-left:1px solid var(--border-color)}
         .team-matrix td,.team-performance td{padding:9px 7px;border-top:1px solid var(--border-color);white-space:nowrap}.team-matrix td:last-child{white-space:normal;min-width:128px}.team-matrix .team-state-cell{display:grid;gap:5px}.team-action-link{border:0;background:transparent;color:var(--conversion-accent);font-size:9px;font-weight:780;padding:0;cursor:pointer;text-align:left}.team-sla-empty{color:var(--text-secondary);font-size:10px}.team-exec-cards{display:none}.team-exec-card{display:grid;gap:9px;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-elevated)}.team-exec-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.team-exec-card-name{font-size:12px;font-weight:800}.team-exec-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.team-exec-metric{display:grid;gap:3px}.team-exec-metric span{color:var(--text-secondary);font-size:9px}.team-exec-metric strong{font-size:15px;font-variant-numeric:tabular-nums}.team-exec-card-action{justify-self:start}
         .team-matrix td:not(:first-child),.team-performance td:not(:first-child){font-variant-numeric:tabular-nums}
-        .team-load-cell{display:flex;align-items:center;gap:7px;min-width:126px}.team-load-value{min-width:54px}.team-load-bar{height:7px;flex:1;min-width:35px;background:rgba(148,163,184,.18);border:1px solid rgba(148,163,184,.18);border-radius:99px;overflow:hidden}.team-load-fill{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;box-shadow:0 0 8px rgba(139,92,246,.28);transition:width .55s ease}
+        .team-load-cell{display:flex;align-items:center;gap:7px;min-width:126px}.team-load-value{min-width:54px}.team-load-bar{height:7px;flex:1;min-width:35px;background:color-mix(in srgb,var(--bg-elevated) 86%,#0f172a);border:1px solid color-mix(in srgb,#8b5cf6 22%,var(--border-color));border-radius:99px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(2,6,23,.24)}.team-load-fill{display:block;height:100%;min-width:2px;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);border-radius:inherit;box-shadow:0 0 10px rgba(99,102,241,.34);transition:width .55s ease}
         .team-individual-panel[hidden]{display:none}
         .team-individual-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
         .team-individual-metric{padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}
@@ -3118,9 +3388,10 @@
         .ops-compare-line.is-positive{color:#34d399}.ops-compare-line.is-negative{color:#fbbf24}.ops-compare-line.is-risk{color:#fb7185}
         .ops-kpi-support{display:block;margin-top:3px;color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.ops-kpi-secondary{margin-top:7px;color:var(--text-secondary);font-size:8px;line-height:1.35;font-variant-numeric:tabular-nums}.ops-results-link{margin-top:5px;padding:0;border:0;font-size:9px}
         .ops-microbar,.ops-progress-mini{display:block;height:5px;margin-top:7px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}
-         .ops-microbar:before{content:'';display:block;height:100%;width:var(--current,0%);background:#8b5cf6;border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-microbar:after{content:'';display:block;height:100%;width:var(--previous,0%);margin-top:-5px;background:#94a3b8;opacity:.45;border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}
-         .ops-progress-mini span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#38bdf8);border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}
-         .ops-sla-mini{display:grid;gap:7px;margin-top:8px}.ops-sla-mini>span{display:grid;grid-template-columns:48px minmax(0,1fr) 42px 30px;align-items:center;gap:6px}.ops-sla-mini b,.ops-sla-mini em{font-size:8px;color:var(--text-secondary);font-style:normal}.ops-sla-mini i{height:5px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#38bdf8);width:var(--sla,0%);transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-sla-mini strong{font-size:12px!important;text-align:right}.ops-sla-mini em{text-align:right}
+         .ops-microbar,.ops-progress-mini{height:7px;border:1px solid rgba(148,163,184,.18);background:linear-gradient(180deg,color-mix(in srgb,var(--bg-elevated) 92%,#0f172a),color-mix(in srgb,var(--bg-elevated) 78%,#0f172a));box-shadow:inset 0 1px 2px rgba(2,6,23,.24)}
+         .ops-microbar:before{content:'';display:block;height:100%;width:var(--current,0%);background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);border-radius:inherit;box-shadow:0 0 10px rgba(99,102,241,.34);transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-microbar:after{content:'';display:block;height:100%;width:var(--previous,0%);margin-top:-7px;background:linear-gradient(90deg,#64748b,#94a3b8);opacity:.52;border-radius:inherit;transition:width .65s cubic-bezier(.22,.61,.36,1)}
+         .ops-progress-mini span{display:block;height:100%;width:0;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);border-radius:inherit;box-shadow:0 0 10px rgba(56,189,248,.28);transition:width .65s cubic-bezier(.22,.61,.36,1)}
+         .ops-sla-mini{display:grid;gap:7px;margin-top:8px}.ops-sla-mini>span{display:grid;grid-template-columns:48px minmax(0,1fr) 42px 30px;align-items:center;gap:6px}.ops-sla-mini b,.ops-sla-mini em{font-size:8px;color:var(--text-secondary);font-style:normal}.ops-sla-mini i{height:6px;border-radius:99px;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);width:var(--sla,0%);box-shadow:0 0 9px rgba(56,189,248,.26);transition:width .65s cubic-bezier(.22,.61,.36,1)}.ops-sla-mini strong{font-size:12px!important;text-align:right}.ops-sla-mini em{text-align:right}
         .ops-individual-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border-color)}
         .ops-individual-heading h2{margin:4px 0 0;font-size:22px;letter-spacing:-.02em}
         .ops-individual-heading p{margin:5px 0 0;color:var(--text-secondary);font-size:10px}
@@ -4013,14 +4284,14 @@
                 <button class="dash-tab active" data-tab="executive"><span>Resumen Ejecutivo</span></button>
                 <button class="dash-tab" data-tab="leads"><span>Gestión del Equipo Comercial</span></button>
                 <button class="dash-tab" data-tab="properties"><span>Demanda &amp; Captación</span></button>
-                <button class="dash-tab" data-tab="channels"><span>Portales & ROI</span></button>
+                <button class="dash-tab" data-tab="channels"><span>Portales &amp; Costos</span></button>
             </nav>
             <div class="mobile-tab-select seq-el seq-static" aria-label="Vista del dashboard">
                 <select id="mobileTabSelect" aria-label="Vista del dashboard">
                     <option value="executive">Resumen Ejecutivo</option>
                     <option value="leads">Gestión del Equipo Comercial</option>
                     <option value="properties">Demanda &amp; Captación</option>
-                    <option value="channels">Portales & ROI</option>
+                    <option value="channels">Portales &amp; Costos</option>
                 </select>
             </div>
             {% endif %}
@@ -4377,26 +4648,94 @@
                 </section>
             </div>
             {% if not territorial_review|default(false) %}<div id="viewChannels" hidden>
-                <div class="portal-dashboard" id="portalDashboard">
+                <div class="portal-dashboard portal-content-pending" id="portalDashboard">
                     <div class="portal-dashboard-head">
                         <div>
-                            <h2>Portales &amp; ROI</h2>
-                            <p>Profundización del avance de cada portal dentro del embudo comercial.</p>
+                            <h2 class="portal-title" id="portalDashboardTitle">Portales &amp; Costos</h2>
+                            <p class="portal-subtitle" id="portalDashboardSubtitle">Profundización del avance de cada portal dentro del embudo comercial.</p>
                         </div>
                     </div>
                     <div class="portal-summary-grid" id="portalSummaryGrid"></div>
-                    <section class="portal-funnel-panel" aria-labelledby="portalFunnelTitle">
+                    <section class="portal-funnel-panel portal-roi-table-panel" aria-labelledby="portalFunnelTitle">
                         <div class="portal-funnel-head">
                             <div>
-                                <h3 id="portalFunnelTitle">Avance por portal</h3>
-                                <p>Las barras muestran el porcentaje de los leads de cada portal que alcanza cada etapa.</p>
+                                <h3 id="portalFunnelTitle">Rendimiento y eficiencia por portal</h3>
+                                <p>Volumen, conversión y costo de adquisición por canal.</p>
                             </div>
                         </div>
-                        <div class="portal-funnel-legend" aria-label="Etapas del embudo por portal">
-                            <span>Portal</span><span>Recibidos</span><span>Gestión</span><span>Contacto</span><span>Visita</span><span>Cierre</span>
+                        <div class="portal-cost-help" id="portalCostHelp" role="tooltip" hidden>
+                            <strong>Gasto del período</strong>
+                            <span>El monto corresponde al costo mensual configurado y se prorratea por días calendario del período seleccionado.</span>
+                            <span>Portal Inmobiliario y MercadoLibre pertenecen a un paquete compartido: el gasto se muestra una sola vez en su resumen financiero.</span>
                         </div>
-                        <div class="portal-funnel-list" id="portalFunnelList"></div>
-                        <p class="portal-funnel-note">El cierre solo considera negocio ganado confirmado. Los costos y el ROI financiero se incorporarán cuando exista evidencia de inversión por portal.</p>
+                        <div class="portal-cost-help" id="portalComparableHelp" role="tooltip" hidden>
+                            <strong>Período comparable</strong>
+                            <span>Comparación contra el período equivalente anterior.</span>
+                            <span>El gasto y el costo por lead no se comparan históricamente porque los costos configurados son actuales.</span>
+                        </div>
+                        <div class="portal-cost-help" id="portalConversionHelp" role="tooltip" hidden>
+                            <strong>Conversión a visita</strong>
+                            <span>Visitas agendadas con evidencia válida divididas por los leads recibidos del portal.</span>
+                            <span>Se consideran portales con al menos 20 leads para evitar conclusiones basadas en muestras pequeñas.</span>
+                        </div>
+                        <div class="portal-cost-help" id="portalCplHelp" role="tooltip" hidden>
+                            <strong>Costo por lead conocido</strong>
+                            <span>Gasto conocido dividido por los leads cubiertos por portales con costo informado.</span>
+                            <span>Los portales sin costo disponible no se consideran en el denominador.</span>
+                        </div>
+                        <div class="portal-table-wrap">
+                            <table class="portal-roi-table" aria-label="Rendimiento y costos por portal">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Portal</th>
+                                        <th scope="col">Leads / participación</th>
+                                        <th scope="col"><span class="portal-header-label">Vs. comparable <span class="portal-cost-info" data-portal-info="portalComparableHelp"><button type="button" class="portal-header-info" aria-label="Qué significa el período comparable" aria-expanded="false" aria-controls="portalComparableHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></span></span></th>
+                                        <th scope="col"><span class="portal-header-label">Conversión a visita <span class="portal-cost-info" data-portal-info="portalConversionHelp"><button type="button" class="portal-header-info" aria-label="Cómo se calcula la conversión a visita" aria-expanded="false" aria-controls="portalConversionHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></span></span></th>
+                                        <th scope="col">Precio mensual</th>
+                                        <th scope="col"><span class="portal-header-label">Gasto período <span class="portal-cost-info" data-portal-info="portalCostHelp"><button type="button" class="portal-header-info" aria-label="Cómo se calcula el gasto del período" aria-expanded="false" aria-controls="portalCostHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></span></span></th>
+                                        <th scope="col"><span class="portal-header-label">Costo por lead <span class="portal-cost-info" data-portal-info="portalCplHelp"><button type="button" class="portal-header-info" aria-label="Qué significa costo por lead" aria-expanded="false" aria-controls="portalCplHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></span></span></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="portalRoiBody"></tbody>
+                                <tfoot id="portalRoiFoot"></tfoot>
+                            </table>
+                        </div>
+                    </section>
+                    <section class="portal-insights-panel" aria-labelledby="portalInsightsTitle">
+                        <div class="portal-insights-head"><span id="portalInsightsTitle">Lectura ejecutiva del período</span></div>
+                        <div class="portal-cost-help" id="portalInsightConcentrationHelp" role="tooltip" hidden>
+                            <strong>Concentración</strong>
+                            <span>Indica qué proporción del total de leads del período proviene de Portal Inmobiliario y MercadoLibre.</span>
+                            <span>Se calcula como los leads de ambos portales divididos por el total del período.</span>
+                        </div>
+                        <div class="portal-cost-help" id="portalInsightQualityHelp" role="tooltip" hidden>
+                            <strong>Calidad vs. costo</strong>
+                            <span>Relaciona la conversión a visita de TocToc con el promedio general y su costo por lead conocido.</span>
+                            <span>El múltiplo muestra cuánto mayor es su CPL frente al promedio.</span>
+                        </div>
+                        <div class="portal-cost-help" id="portalInsightMixHelp" role="tooltip" hidden>
+                            <strong>Recomposición interna</strong>
+                            <span>Muestra cómo cambió la participación de Portal Inmobiliario y MercadoLibre dentro del paquete compartido.</span>
+                            <span>La variación se expresa en puntos porcentuales frente al período comparable.</span>
+                        </div>
+                        <div class="portal-insights" id="portalInsights" aria-label="Lectura ejecutiva del período"></div>
+                    </section>
+                    <section class="portal-funnel-panel portal-funnel-detail-panel" aria-labelledby="portalFunnelDetailTitle">
+                        <div class="portal-funnel-legacy-head">
+                            <div>
+                                <h3 id="portalFunnelDetailTitle">Embudo por portal</h3>
+                                <p>Volumen y avance de cada origen desde lead recibido hasta cierre.</p>
+                                <small class="portal-funnel-method">% calculado sobre recibidos</small>
+                            </div>
+                        </div>
+                        <div class="portal-funnel-legend" id="portalFunnelLegend" aria-label="Portales incluidos en el embudo"></div>
+                        <div class="portal-funnel-stack" id="portalFunnelStack" role="group" aria-label="Embudo horizontal apilado por portal"></div>
+                        <section class="portal-funnel-insights-panel" aria-labelledby="portalFunnelInsightsTitle">
+                            <div class="portal-funnel-insights-head"><span id="portalFunnelInsightsTitle">Lectura del embudo</span></div>
+                            <div class="portal-funnel-insights" id="portalFunnelInsights" aria-label="Interpretación de las transiciones del embudo"></div>
+                        </section>
+                        <p class="portal-funnel-note" id="portalFunnelCoverageNote"></p>
+                        <div class="portal-funnel-tooltip" id="portalFunnelTooltip" role="tooltip" hidden></div>
                     </section>
                 </div>
             </div>{% endif %}
@@ -4755,6 +5094,84 @@
                 };
                 teamRevealTimers.push(setTimeout(tick, interval));
                 return fullText.length * interval;
+            }
+
+            let portalTitleTimers = [];
+            let portalHeaderHasRendered = false;
+
+            function clearPortalTitleTimers() {
+                portalTitleTimers.forEach(timer => clearTimeout(timer));
+                portalTitleTimers = [];
+                const title = $('portalDashboardTitle');
+                const subtitle = $('portalDashboardSubtitle');
+                if (title) {
+                    title.classList.remove('portal-typewriter-active');
+                    if (title.dataset.typewriterText) title.textContent = title.dataset.typewriterText;
+                }
+                if (subtitle) {
+                    subtitle.classList.remove('portal-typewriter-active');
+                    if (subtitle.dataset.typewriterText) subtitle.textContent = subtitle.dataset.typewriterText;
+                }
+            }
+
+            function runPortalTitleTypewriter() {
+                const title = $('portalDashboardTitle');
+                if (!title) return 0;
+                const subtitle = $('portalDashboardSubtitle');
+                clearPortalTitleTimers();
+                const fullTitle = title.dataset.typewriterText || title.textContent || '';
+                const fullSubtitle = subtitle ? (subtitle.dataset.typewriterText || subtitle.textContent || '') : '';
+                title.dataset.typewriterText = fullTitle;
+                if (subtitle) subtitle.dataset.typewriterText = fullSubtitle;
+                if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    title.textContent = fullTitle;
+                    if (subtitle) subtitle.textContent = fullSubtitle;
+                    return 0;
+                }
+                const titleInterval = 18;
+                const subtitleInterval = 9;
+                let titleIndex = 0;
+                let subtitleIndex = 0;
+                title.textContent = '';
+                if (subtitle) subtitle.textContent = '';
+                const typeSubtitle = () => {
+                    if (!subtitle || !fullSubtitle) return;
+                    subtitle.classList.add('portal-typewriter-active');
+                    const tickSubtitle = () => {
+                        subtitleIndex += 1;
+                        subtitle.textContent = fullSubtitle.slice(0, subtitleIndex);
+                        if (subtitleIndex < fullSubtitle.length) {
+                            portalTitleTimers.push(setTimeout(tickSubtitle, subtitleInterval));
+                        } else {
+                            subtitle.classList.remove('portal-typewriter-active');
+                        }
+                    };
+                    portalTitleTimers.push(setTimeout(tickSubtitle, subtitleInterval));
+                };
+                const tickTitle = () => {
+                    titleIndex += 1;
+                    title.textContent = fullTitle.slice(0, titleIndex);
+                    if (titleIndex < fullTitle.length) {
+                        portalTitleTimers.push(setTimeout(tickTitle, titleInterval));
+                    } else {
+                        title.classList.remove('portal-typewriter-active');
+                        typeSubtitle();
+                    }
+                };
+                title.classList.add('portal-typewriter-active');
+                portalTitleTimers.push(setTimeout(tickTitle, titleInterval));
+                return fullTitle.length * titleInterval + (fullSubtitle ? subtitleInterval + fullSubtitle.length * subtitleInterval : 0);
+            }
+
+            function schedulePortalContentReveal(titleDelay) {
+                const dashboard = $('portalDashboard');
+                if (!dashboard) return;
+                const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : titleDelay + 40;
+                portalTitleTimers.push(setTimeout(() => {
+                    dashboard.classList.remove('portal-content-pending');
+                    dashboard.classList.add('portal-reveal');
+                    animatePortalIndicators();
+                }, delay));
             }
 
             function setOperationsLoadingIndicator(visible) {
@@ -5732,10 +6149,10 @@
                 const request = dashboardBeginRequest('overview', overviewPath + '?' + p.toString());
                 if (request.reused) return request.state.promise;
                 const requestId = ++OVERVIEW_REQUEST_SEQ;
-                const overlay = $('loadingOverlay');
-                const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
-                RENDER_MODE = seqMode;
-                if (overlay) overlay.hidden = seqMode === 'refresh';
+                    const overlay = $('loadingOverlay');
+                    const seqMode = (mode === 'refresh') ? 'refresh' : 'full';
+                    RENDER_MODE = seqMode;
+                    if (overlay) overlay.hidden = seqMode === 'refresh';
                 const upd = $('dashUpdated');
                 if (upd) { upd.textContent = 'Actualizando indicadores…'; upd.classList.add('loading'); }
                 if (seqMode === 'refresh') prepareRefreshReveal();
@@ -5747,6 +6164,7 @@
                         const frontendResponseAt = performance.now();
                         if (requestId !== OVERVIEW_REQUEST_SEQ || periodSnapshot.start !== FILTERS.period_start || periodSnapshot.end !== FILTERS.period_end || periodSnapshot.compare !== COMPARE || periodSnapshot.preset !== FILTERS.period_preset) return null;
                         OVERVIEW = overview;
+                        if (overlay) overlay.hidden = true;
                         syncUrl();
                         renderPeriodMeta();
                         renderDemandCard();
@@ -6477,16 +6895,156 @@
                 if (sz) sz.hidden = false;
             }
 
+            function bindPortalInfo() {
+                document.querySelectorAll('[data-portal-info]').forEach(wrapper => {
+                    if (wrapper.dataset.bound) return;
+                    wrapper.dataset.bound = '1';
+                    const button = wrapper.matches('.portal-header-info, .portal-summary-icon') ? wrapper : wrapper.querySelector('.portal-header-info, .portal-summary-icon');
+                    const help = document.getElementById(wrapper.dataset.portalInfo);
+                    if (!button || !help) return;
+                    // Keep fixed tooltips outside animated panels so transformed ancestors
+                    // cannot offset them vertically from the icon that opened them.
+                    if (help.parentElement !== document.body) document.body.appendChild(help);
+                    let pinned = false;
+                    let closeTimer = null;
+                    const scheduleClose = () => {
+                        clearTimeout(closeTimer);
+                        closeTimer = setTimeout(() => { if (!pinned) close(); }, 140);
+                    };
+                    const close = () => {
+                        pinned = false;
+                        help.hidden = true;
+                        button.setAttribute('aria-expanded', 'false');
+                    };
+                    const closeOnScroll = () => close();
+                    const show = () => {
+                        clearTimeout(closeTimer);
+                        help.hidden = false;
+                        const rect = button.getBoundingClientRect();
+                        const margin = 10;
+                        const gap = 10;
+                        const width = Math.min(360, window.innerWidth - 20);
+                        help.style.width = width + 'px';
+                        const height = help.offsetHeight;
+                        const clampLeft = left => Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+                        const candidates = [
+                            { left: rect.right - width, top: rect.top - height - gap },
+                            { left: rect.right + gap, top: rect.top + (rect.height - height) / 2 },
+                            { left: rect.left - width - gap, top: rect.top + (rect.height - height) / 2 },
+                            { left: rect.right - width, top: rect.bottom + gap }
+                        ].map(candidate => ({
+                            ...candidate,
+                            left: clampLeft(candidate.left)
+                        }));
+                        const fits = candidate => candidate.top >= margin && candidate.top + height <= window.innerHeight - margin;
+                        const positioned = candidates
+                            .map((candidate, index) => ({ candidate, index, safe: fits(candidate) }))
+                            .filter(item => item.safe)
+                            .sort((a, b) => a.index - b.index)[0]?.candidate;
+                        const fallback = candidates[3];
+                        const left = positioned ? positioned.left : fallback.left;
+                        const top = positioned
+                            ? positioned.top
+                            : Math.max(margin, Math.min(window.innerHeight - height - margin, fallback.top));
+                        help.style.left = left + 'px';
+                        help.style.top = top + 'px';
+                        button.setAttribute('aria-expanded', 'true');
+                    };
+                    wrapper.addEventListener('mouseenter', () => {
+                        if (!window.matchMedia('(hover: none)').matches) show();
+                    });
+                    wrapper.addEventListener('mouseleave', scheduleClose);
+                    button.addEventListener('focus', show);
+                    button.addEventListener('blur', () => {
+                        if (!pinned) scheduleClose();
+                    });
+                    button.addEventListener('click', event => {
+                        event.stopPropagation();
+                        pinned = !pinned;
+                        pinned ? show() : close();
+                    });
+                    button.addEventListener('keydown', event => {
+                        if (event.key === 'Escape') {
+                            close();
+                            button.blur();
+                        }
+                    });
+                    window.addEventListener('scroll', closeOnScroll, { passive: true });
+                    document.addEventListener('scroll', closeOnScroll, true);
+                    document.addEventListener('pointerdown', event => {
+                        if (!wrapper.contains(event.target) && !help.contains(event.target)) close();
+                    }, true);
+                });
+            }
+
+            function formatPortalAnimatedValue(value, type) {
+                if (type === 'currency') return '$' + Math.round(value).toLocaleString('es-CL');
+                if (type === 'percent') return Number(value).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+                return Math.round(value).toLocaleString('es-CL');
+            }
+
+            function animatePortalIndicators() {
+                const root = $('portalDashboard');
+                if (!root) return;
+                root.classList.remove('portal-reveal');
+                void root.offsetWidth;
+                root.classList.add('portal-reveal');
+                const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                root.querySelectorAll('[data-portal-count-target]').forEach((element, index) => {
+                    const target = Number(element.dataset.portalCountTarget);
+                    if (!Number.isFinite(target)) return;
+                    const type = element.dataset.portalCountType || 'int';
+                    if (reducedMotion) {
+                        element.textContent = formatPortalAnimatedValue(target, type);
+                        return;
+                    }
+                    element.textContent = formatPortalAnimatedValue(0, type);
+                    const duration = RENDER_MODE === 'refresh' ? 480 : 820;
+                    const startedAt = performance.now() + index * 45;
+                    const tick = now => {
+                        const progress = Math.min(1, Math.max(0, (now - startedAt) / duration));
+                        const eased = 1 - Math.pow(1 - progress, 3);
+                        element.textContent = formatPortalAnimatedValue(target * eased, type);
+                        if (progress < 1) requestAnimationFrame(tick);
+                    };
+                    requestAnimationFrame(tick);
+                });
+            }
+
             function renderPortalAnalysis() {
-                const list = $('portalFunnelList');
+                const body = $('portalRoiBody');
+                const foot = $('portalRoiFoot');
+                const stack = $('portalFunnelStack');
+                const legend = $('portalFunnelLegend');
+                const coverageNote = $('portalFunnelCoverageNote');
+                const funnelInsights = $('portalFunnelInsights');
                 const summary = $('portalSummaryGrid');
-                if (!list || !summary || !OVERVIEW) return;
+                const dashboard = $('portalDashboard');
+                if (!body || !foot || !stack || !legend || !summary || !OVERVIEW) return;
+                const titleDelay = portalHeaderHasRendered ? 0 : runPortalTitleTypewriter();
+                portalHeaderHasRendered = true;
+                if (dashboard) {
+                    dashboard.classList.remove('portal-reveal', 'portal-content-pending');
+                    void dashboard.offsetWidth;
+                    dashboard.classList.add('portal-content-pending');
+                }
                 const sources = (((OVERVIEW || {}).sources || {}).items || []).filter(Boolean);
                 if (!sources.length) {
                     summary.innerHTML = '';
-                    list.innerHTML = '<div class="tc-empty-state">Sin datos de portales para el período seleccionado.</div>';
+                    body.innerHTML = '<tr><td colspan="6" class="tc-empty-state">Sin datos de portales para el período seleccionado.</td></tr>';
+                    foot.innerHTML = '';
+                    legend.innerHTML = '';
+                    stack.innerHTML = '<div class="tc-empty-state">Sin datos de portales para el período seleccionado.</div>';
+                    if (funnelInsights) funnelInsights.innerHTML = '';
+                    if (coverageNote) coverageNote.textContent = '';
+                    if (dashboard) {
+                        dashboard.classList.remove('portal-content-pending');
+                        dashboard.classList.add('portal-reveal');
+                    }
                     return;
                 }
+                const costAnalysis = (((OVERVIEW || {}).sources || {}).costs || {});
+                const costItems = costAnalysis.items || {};
                 const totalLeads = sources.reduce((sum, src) => sum + (Number(src.cantidad) || 0), 0);
                 const topVolume = [...sources].sort((a, b) => (Number(b.cantidad) || 0) - (Number(a.cantidad) || 0))[0];
                 const conversionCandidates = sources.filter(src => Number(src.cantidad) >= 20 && src.conversion_pct !== null && src.conversion_pct !== undefined);
@@ -6495,32 +7053,478 @@
                 const pct = value => (value === null || value === undefined)
                     ? '—'
                     : Number(value).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%';
+                const decimal = value => Number(value || 0).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                const formatCLP = value => (value === null || value === undefined) ? '—' : '$' + Number(value).toLocaleString('es-CL');
+                const period = (OVERVIEW.period && OVERVIEW.period.current) || {};
+                const comparisonPeriod = ((OVERVIEW || {}).period || {}).previous || {};
+                const dayCount = (() => {
+                    const start = Date.parse(String(period.start || FILTERS.period_start || '') + 'T00:00:00Z');
+                    const end = Date.parse(String(period.end || FILTERS.period_end || '') + 'T00:00:00Z');
+                    return Number.isFinite(start) && Number.isFinite(end)
+                        ? Math.max(1, Math.round((end - start) / 86400000) + 1)
+                        : 1;
+                })();
+                const dailyForDays = (value, days) => (Number(value || 0) / Math.max(1, days)).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                const daily = value => dailyForDays(value, dayCount);
+                const hasPortalComparison = Boolean(comparisonPeriod.start && comparisonPeriod.end);
+                const previousTotalLeads = hasPortalComparison ? sources.reduce((sum, src) => sum + (Number(src.prev) || 0), 0) : null;
+                const knownPeriodCost = Number(costAnalysis.known_period_cost) || 0;
+                const knownCostLeads = Number(costAnalysis.known_leads) || 0;
+                const knownCpl = costAnalysis.known_cpl === null || costAnalysis.known_cpl === undefined ? null : Number(costAnalysis.known_cpl);
+                const coveragePct = costAnalysis.coverage_pct === null || costAnalysis.coverage_pct === undefined ? (totalLeads ? knownCostLeads / totalLeads * 100 : 0) : Number(costAnalysis.coverage_pct);
+                const signClass = value => value > 0 ? 'portal-trend-positive' : value < 0 ? 'portal-trend-negative' : 'portal-trend-neutral';
+                const trendCount = (current, previous) => {
+                    if (!hasPortalComparison || previous === null || previous === undefined) return '<strong class="portal-trend-neutral">—</strong>';
+                    const delta = current - previous;
+                    const arrow = delta > 0 ? '↑' : delta < 0 ? '↓' : '→';
+                    const variation = previous > 0 ? ' · ' + (delta >= 0 ? '+' : '−') + Math.abs(delta / previous * 100).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%' : '';
+                    return '<strong class="' + signClass(delta) + '"><span class="portal-trend-arrow">' + arrow + '</span> ' + n(Math.abs(delta)) + variation + '</strong>';
+                };
+                const trendPp = (current, previous) => {
+                    if (!hasPortalComparison || previous === null || previous === undefined) return '';
+                    const delta = current - previous;
+                    if (delta === 0) return '';
+                    const arrow = delta > 0 ? '↑' : '↓';
+                    return '<small class="' + signClass(delta) + '">Part. <span class="portal-trend-arrow">' + arrow + '</span>' + Math.abs(delta).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' pp</small>';
+                };
+                const shareFor = src => src.pct === null || src.pct === undefined ? (totalLeads ? Number(src.cantidad || 0) / totalLeads * 100 : 0) : Number(src.pct);
+                const previousShareFor = src => previousTotalLeads ? Number(src.prev || 0) / previousTotalLeads * 100 : null;
+                const topShare = shareFor(topVolume);
+                const changeCandidates = hasPortalComparison && previousTotalLeads
+                    ? sources.map(src => ({src, delta: shareFor(src) - (previousShareFor(src) || 0)})).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+                    : [];
+                const biggestChange = changeCandidates[0] && changeCandidates[0].delta !== 0 ? changeCandidates[0] : null;
+                const portalTotalVisits = Number(((OVERVIEW.sources || {}).total_visitas) || 0);
+                const generalConversion = totalLeads ? portalTotalVisits / totalLeads * 100 : null;
+                const leadDelta = hasPortalComparison && previousTotalLeads !== null ? totalLeads - previousTotalLeads : null;
+                const leadVariation = leadDelta !== null && previousTotalLeads > 0 ? leadDelta / previousTotalLeads * 100 : null;
+                const leadBadge = leadVariation === null
+                    ? '<span class="cd1-badge cd1-badge-neutral">Sin comparación</span>'
+                    : '<span class="cd1-badge ' + (leadVariation >= 0 ? 'cd1-badge-pos' : 'cd1-badge-neg') + '"><span>' + (leadVariation >= 0 ? '▲' : '▼') + '</span><span>' + (leadVariation >= 0 ? '+' : '−') + Math.abs(leadVariation).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '%</span><span class="cd1-badge-vs">vs. comparable</span></span>';
+                const leadScale = Math.max(1, totalLeads, previousTotalLeads || 0);
+                const leadCurrentWidth = Math.min(100, totalLeads / leadScale * 100);
+                const leadPreviousWidth = Math.min(100, (previousTotalLeads || 0) / leadScale * 100);
+                const packagedPortals = new Set();
+                const cplComparison = [];
+                (costAnalysis.packages || []).forEach(pkg => {
+                    (pkg.portals || []).forEach(portal => packagedPortals.add(portal));
+                    const packageCpl = pkg.cpl === null || pkg.cpl === undefined ? null : Number(pkg.cpl);
+                    if ((pkg.portals || []).length > 1 && Number.isFinite(packageCpl) && packageCpl > 0) cplComparison.push({ label: 'PI + ML', cpl: packageCpl });
+                });
+                sources.forEach(src => {
+                    const item = costItems[src.nombre] || {};
+                    const sourceCpl = item.cpl === null || item.cpl === undefined ? null : Number(item.cpl);
+                    if (!packagedPortals.has(src.nombre) && item.status === 'direct' && Number.isFinite(sourceCpl) && sourceCpl > 0) cplComparison.push({ label: src.nombre, cpl: sourceCpl });
+                });
+                cplComparison.sort((a, b) => a.cpl - b.cpl);
+                const cplComparisonMax = cplComparison.reduce((max, item) => Math.max(max, item.cpl), 0);
+                const cplComparisonRows = cplComparison.length && cplComparisonMax > 0
+                    ? cplComparison.map(item => '<div class="portal-summary-cpl-row"><span>' + esc(item.label) + '</span><div class="cd2-bar-track"><div class="cd2-bar portal-summary-bar-cpl" style="width:' + (item.cpl / cplComparisonMax * 100) + '%"></div></div><strong>' + formatCLP(item.cpl) + '</strong></div>').join('')
+                    : '<div class="portal-summary-caption">Sin CPL atribuible adicional</div>';
+                const bestRate = bestConversion ? Number(bestConversion.conversion_pct) : null;
+                const bestDelta = bestRate !== null && generalConversion !== null ? bestRate - generalConversion : null;
+                const conversionScale = Math.max(1, bestRate || 0, generalConversion || 0);
+                const generalWidth = generalConversion === null ? 0 : generalConversion / conversionScale * 100;
+                const bestWidth = bestRate === null ? 0 : bestRate / conversionScale * 100;
+                const bestContext = bestConversion ? esc(bestConversion.nombre) + ' · ' + n(bestConversion.visitas) + ' visitas' : 'Base insuficiente';
+                const qualityCostPortal = [...conversionCandidates]
+                    .map(src => ({ src, cpl: costItems[src.nombre] && costItems[src.nombre].cpl !== null && costItems[src.nombre].cpl !== undefined ? Number(costItems[src.nombre].cpl) : null }))
+                    .filter(item => Number.isFinite(item.cpl) && item.cpl > 0)
+                    .sort((a, b) => Number(b.src.conversion_pct) - Number(a.src.conversion_pct))[0];
+                const qualityRate = qualityCostPortal ? Number(qualityCostPortal.src.conversion_pct) : null;
+                const qualityCpl = qualityCostPortal ? qualityCostPortal.cpl : null;
+                const qualityMultiple = qualityRate !== null && generalConversion > 0 ? qualityRate / generalConversion : null;
+                const qualityCostPhrase = qualityCpl !== null && knownCpl !== null && qualityCpl > knownCpl ? 'convierte sobre el promedio, con mayor costo por lead' : 'convierte sobre el promedio, con costo por lead comparable';
+                const piSource = sources.find(src => src.nombre === 'Portal Inmobiliario');
+                const mlSource = sources.find(src => src.nombre === 'MercadoLibre');
+                const sharedCurrentLeads = (piSource ? Number(piSource.cantidad) || 0 : 0) + (mlSource ? Number(mlSource.cantidad) || 0 : 0);
+                const sharedPreviousLeads = hasPortalComparison ? (piSource ? Number(piSource.prev) || 0 : 0) + (mlSource ? Number(mlSource.prev) || 0 : 0) : null;
+                const sharedCurrentShare = totalLeads > 0 ? sharedCurrentLeads / totalLeads * 100 : null;
+                const sharedPreviousShare = sharedPreviousLeads !== null && previousTotalLeads > 0 ? sharedPreviousLeads / previousTotalLeads * 100 : null;
+                const sharedShareDelta = sharedCurrentShare !== null && sharedPreviousShare !== null ? sharedCurrentShare - sharedPreviousShare : null;
+                const piShareDelta = piSource && previousShareFor(piSource) !== null ? shareFor(piSource) - previousShareFor(piSource) : null;
+                const mlShareDelta = mlSource && previousShareFor(mlSource) !== null ? shareFor(mlSource) - previousShareFor(mlSource) : null;
+                const formatPpDelta = value => value === null ? '—' : (value >= 0 ? '+' : '−') + Math.abs(value).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' pp';
                 summary.innerHTML =
-                    '<article class="portal-summary-card"><span>Portales observados</span><strong>' + n(sources.length) + '</strong><small>Con leads en el período</small></article>' +
-                    '<article class="portal-summary-card"><span>Leads recibidos</span><strong>' + n(totalLeads) + '</strong><small>Suma de los portales visibles</small></article>' +
-                    '<article class="portal-summary-card"><span>Mayor volumen</span><strong>' + n(topVolume?.cantidad) + '</strong><small>' + esc(topVolume?.nombre || '—') + '</small></article>' +
-                    '<article class="portal-summary-card"><span>Mejor conversión a visita</span><strong>' + (bestConversion ? pct(bestConversion.conversion_pct) : '—') + '</strong><small>' + esc(bestConversion?.nombre || 'Base insuficiente') + (bestConversion ? ' · mínimo 20 leads' : '') + '</small></article>';
-
-                const stageLabels = ['Recibidos', 'Gestión', 'Contacto', 'Visita', 'Cierre'];
-                list.innerHTML = sources.map(src => {
-                    const stages = Array.isArray(src.funnel) ? src.funnel : [];
-                    const stageCells = stages.map((stage, index) => {
-                        const stagePct = Math.min(100, Math.max(0, Number(stage.pct_of_source) || 0));
-                        return '<div class="portal-stage" title="' + esc(String(stage.label || stageLabels[index] || 'Etapa')) + ': ' + n(stage.count) + ' leads">' +
-                            '<div class="portal-stage-top"><strong class="portal-stage-count">' + n(stage.count) + '</strong><span class="portal-stage-rate">' + pct(stage.pct_of_source) + '</span></div>' +
-                            '<div class="portal-stage-track"><div class="portal-stage-fill" data-w="' + stagePct + '"></div></div>' +
+                    '<article class="portal-summary-card"><div class="portal-summary-label">Volumen de leads</div><div class="portal-summary-kpi"><strong class="portal-summary-value" data-portal-count-target="' + totalLeads + '" data-portal-count-type="int">' + n(totalLeads) + '</strong><span class="portal-summary-unit">Leads</span>' + leadBadge + '</div><div class="portal-summary-body"><div class="portal-summary-compare" aria-label="Comparación de volumen actual y comparable"><div class="portal-summary-compare-row"><span>Actual</span><div class="cd2-bar-track"><div class="cd2-bar portal-summary-bar-current" style="width:' + leadCurrentWidth + '%"></div></div><strong>' + n(totalLeads) + '</strong></div><div class="portal-summary-compare-row"><span>Comparable</span><div class="cd2-bar-track"><div class="cd2-bar portal-summary-bar-comparable" style="width:' + leadPreviousWidth + '%"></div></div><strong>' + (previousTotalLeads === null ? '—' : n(previousTotalLeads)) + '</strong></div></div></div><div class="portal-summary-footer">' + (leadDelta === null ? 'Sin período comparable' : '<strong>' + (leadDelta >= 0 ? '+' : '−') + n(Math.abs(leadDelta)) + ' leads</strong> frente al período comparable (' + n(previousTotalLeads) + ')') + '</div></article>' +
+                    '<article class="portal-summary-card"><div class="portal-summary-label">Gasto conocido</div><div class="portal-summary-kpi"><strong class="portal-summary-value"' + (knownPeriodCost > 0 ? ' data-portal-count-target="' + knownPeriodCost + '" data-portal-count-type="currency"' : '') + '>' + (knownPeriodCost ? formatCLP(knownPeriodCost) : '—') + '</strong></div><div class="portal-summary-body"><div class="portal-summary-progress"><div class="portal-summary-progress-head"><span>Cobertura de costos</span><strong>' + pct(coveragePct) + '</strong></div><div class="cd2-bar-track"><div class="cd2-bar cd2-bar-leads" style="width:' + Math.min(100, Math.max(0, coveragePct)) + '%"></div></div><div class="portal-summary-caption">' + n(knownCostLeads) + ' de ' + n(totalLeads) + ' leads</div></div></div><div class="portal-summary-footer">' + n(Math.max(0, totalLeads - knownCostLeads)) + ' leads sin costo atribuible</div></article>' +
+                    '<article class="portal-summary-card"><div class="portal-summary-head"><div class="portal-summary-label">Costo por lead</div><button type="button" class="portal-summary-icon" data-portal-info="portalCplHelp" aria-label="Qué significa costo por lead" aria-expanded="false" aria-controls="portalCplHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><div class="portal-summary-kpi"><strong class="portal-summary-value"' + (knownCpl !== null && Number.isFinite(knownCpl) ? ' data-portal-count-target="' + knownCpl + '" data-portal-count-type="currency"' : '') + '>' + (knownCpl === null ? '—' : formatCLP(knownCpl)) + '</strong><span class="portal-summary-unit">por lead</span></div><div class="portal-summary-body"><div class="portal-summary-cpl-compare" aria-label="Comparación del costo por lead atribuible"><div class="portal-summary-cpl-head">CPL por fuente con costo conocido</div>' + cplComparisonRows + '</div></div><div class="portal-summary-footer">' + (knownPeriodCost ? formatCLP(knownPeriodCost) : '—') + ' / ' + n(knownCostLeads) + ' leads con costo</div></article>' +
+                    '<article class="portal-summary-card"><div class="portal-summary-head"><div class="portal-summary-label">Mejor conversión a visita</div><button type="button" class="portal-summary-icon" data-portal-info="portalConversionHelp" aria-label="Cómo se calcula la mejor conversión" aria-expanded="false" aria-controls="portalConversionHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><div class="portal-summary-kpi"><strong class="portal-summary-value"' + (bestRate !== null && Number.isFinite(bestRate) ? ' data-portal-count-target="' + bestRate + '" data-portal-count-type="percent"' : '') + '>' + (bestRate === null ? '—' : pct(bestRate)) + '</strong></div><div class="portal-summary-context">' + bestContext + '</div><div class="portal-summary-body"><div class="portal-summary-dual"><div class="portal-summary-dual-row"><span>Promedio general</span><strong>' + (generalConversion === null ? '—' : pct(generalConversion)) + '</strong></div><div class="cd2-bar-track"><div class="cd2-bar portal-summary-bar-general" style="width:' + generalWidth + '%"></div></div><div class="portal-summary-dual-row"><span>Mejor portal</span><strong>' + (bestRate === null ? '—' : pct(bestRate)) + '</strong></div><div class="cd2-bar-track"><div class="cd2-bar portal-summary-bar-best" style="width:' + bestWidth + '%"></div></div></div></div><div class="portal-summary-footer">' + (bestDelta === null ? 'Base insuficiente: mínimo 20 leads' : '<strong>' + (bestDelta >= 0 ? '+' : '−') + Math.abs(bestDelta).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' pp</strong> vs. promedio general · ' + n(bestConversion.visitas) + ' visitas de ' + n(bestConversion.cantidad) + ' leads · mínimo 20 leads') + '</div></article>';
+                const sourceRow = (src, packageFinance = null) => {
+                    const leads = Number(src.cantidad) || 0;
+                    const previousLeads = Number(src.prev) || 0;
+                    const share = shareFor(src);
+                    const previousShare = previousShareFor(src);
+                    const visits = Number(src.visitas) || 0;
+                    const currentConversion = src.conversion_pct === null || src.conversion_pct === undefined ? null : Number(src.conversion_pct);
+                    const previousConversion = src.prev_conversion_pct === null || src.prev_conversion_pct === undefined ? null : Number(src.prev_conversion_pct);
+                    const cost = costItems[src.nombre] || {};
+                    const shared = cost.status === 'shared_package';
+                    const monthlyCost = cost.status === 'direct' && cost.monthly_cost !== null && cost.monthly_cost !== undefined ? Number(cost.monthly_cost) : null;
+                    const periodCost = cost.status === 'direct' && cost.period_cost !== null ? Number(cost.period_cost) : null;
+                    const cpl = cost.status === 'direct' && cost.cpl !== null ? Number(cost.cpl) : null;
+                    const conversionDelta = currentConversion !== null && previousConversion !== null ? currentConversion - previousConversion : null;
+                    const financialCells = packageFinance
+                        ? (packageFinance.isFirst
+                            ? '<td rowspan="' + packageFinance.rowspan + '" class="portal-roi-unavailable portal-package-finance portal-monthly-cost"><strong>' + formatCLP(packageFinance.monthlyCost) + '</strong></td>' +
+                              '<td rowspan="' + packageFinance.rowspan + '" class="portal-roi-unavailable portal-package-finance"><strong>' + formatCLP(packageFinance.periodCost) + '</strong></td>' +
+                              '<td rowspan="' + packageFinance.rowspan + '" class="portal-roi-unavailable portal-package-finance"><strong>' + formatCLP(packageFinance.cpl) + '</strong></td>'
+                            : '')
+                        : '<td class="portal-roi-unavailable portal-monthly-cost">' + (shared ? '<strong>—</strong>' : monthlyCost === null ? '<strong>—</strong>' : '<strong>' + formatCLP(monthlyCost) + '</strong>') + '</td>' +
+                          '<td class="portal-roi-unavailable">' + (shared ? '<strong>—</strong>' : periodCost === null ? '<strong>—</strong>' : '<strong>' + formatCLP(periodCost) + '</strong>') + '</td>' +
+                          '<td class="portal-roi-unavailable">' + (shared ? '<strong>—</strong>' : cpl === null ? '<strong>—</strong>' : '<strong>' + formatCLP(cpl) + '</strong>') + '</td>';
+                    return '<tr' + (packageFinance ? ' class="portal-package-row"' : '') + '>' +
+                        '<th scope="row"><span class="portal-roi-name">' + esc(src.nombre || 'Otros') + '</span></th>' +
+                        '<td class="portal-roi-leads"><div class="portal-roi-leads-main"><strong>' + n(leads) + '</strong><span>' + pct(share) + '</span></div><small>' + daily(leads) + '/día</small><div class="portal-roi-share-track"><i data-w="' + Math.min(100, Math.max(0, share)) + '"></i></div></td>' +
+                        '<td class="portal-roi-comparison">' + trendCount(leads, hasPortalComparison ? previousLeads : null) + (previousShare === null ? '' : trendPp(share, previousShare)) + '</td>' +
+                        '<td class="portal-roi-conversion">' + (currentConversion === null ? '<strong>—</strong><small>Sin dato</small>' : '<strong>' + pct(currentConversion) + '</strong><small>' + n(visits) + '/' + n(leads) + '</small>') + (conversionDelta === null || conversionDelta === 0 ? '' : '<small class="' + signClass(conversionDelta) + '">' + (conversionDelta > 0 ? '↑' : '↓') + Math.abs(conversionDelta).toLocaleString('es-CL', { maximumFractionDigits: 1 }) + ' pp</small>') + '</td>' +
+                        financialCells +
+                    '</tr>';
+                };
+                const packageByPortal = new Map();
+                (costAnalysis.packages || []).forEach(pkg => (pkg.portals || []).forEach(portal => packageByPortal.set(portal, pkg)));
+                let renderedRows = '';
+                sources.forEach(src => {
+                    const pkg = packageByPortal.get(src.nombre);
+                    const packageSources = pkg ? sources.filter(item => (pkg.portals || []).includes(item.nombre)) : [];
+                    const packageFirst = packageSources[0];
+                    const packageFinance = pkg && packageSources.length > 1
+                        ? { isFirst: packageFirst && src.nombre === packageFirst.nombre, rowspan: packageSources.length, monthlyCost: pkg.monthly_cost, periodCost: pkg.period_cost, cpl: pkg.cpl }
+                        : null;
+                    renderedRows += sourceRow(src, packageFinance);
+                });
+                body.innerHTML = renderedRows;
+                const packageRows = body.querySelectorAll('tr.portal-package-row');
+                packageRows.forEach(row => {
+                    row.addEventListener('mouseenter', () => body.classList.add('portal-package-hover'));
+                    row.addEventListener('mouseleave', () => {
+                        if (![...packageRows].some(item => item.matches(':hover'))) body.classList.remove('portal-package-hover');
+                    });
+                });
+                const totalConversion = totalLeads ? (Number(((OVERVIEW.sources || {}).total_visitas) || 0) / totalLeads * 100) : null;
+                const totalVisits = Number(((OVERVIEW.sources || {}).total_visitas) || 0);
+                foot.innerHTML = '<tr>' +
+                    '<th scope="row">Total combinado</th>' +
+                    '<td class="portal-roi-leads"><div class="portal-roi-leads-main"><strong>' + n(totalLeads) + '</strong><span>100%</span></div><small>' + daily(totalLeads) + '/día</small></td>' +
+                    '<td class="portal-roi-comparison">' + trendCount(totalLeads, hasPortalComparison ? previousTotalLeads : null) + '</td>' +
+                    '<td class="portal-roi-conversion"><strong>' + (totalConversion === null ? '—' : pct(totalConversion)) + '</strong><small>' + n(totalVisits) + '/' + n(totalLeads) + '</small></td>' +
+                    '<td class="portal-monthly-cost"><strong>—</strong></td>' +
+                    '<td>' + (knownPeriodCost ? '<strong>' + formatCLP(knownPeriodCost) + '</strong>' : '<strong>Sin dato</strong>') + '</td>' +
+                    '<td>' + (knownCpl === null ? '<strong>—</strong>' : '<strong>' + formatCLP(knownCpl) + '</strong>') + '</td>' +
+                '</tr>' +
+                '<tr class="portal-total-meta"><td colspan="7">' + n(knownCostLeads) + '/' + n(totalLeads) + ' leads con costo · ' + pct(coveragePct) + ' cobertura</td></tr>';
+                const insights = $('portalInsights');
+                if (insights) {
+                    const insightParts = [
+                        sharedCurrentShare === null
+                            ? '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Concentración</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightConcentrationHelp" aria-label="Qué significa concentración" aria-expanded="false" aria-controls="portalInsightConcentrationHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>—</strong><small>PI + MercadoLibre<br><span class="portal-insight-meta">Sin datos suficientes</span></small></article>'
+                            : '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Concentración</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightConcentrationHelp" aria-label="Qué significa concentración" aria-expanded="false" aria-controls="portalInsightConcentrationHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>' + pct(sharedCurrentShare) + '</strong><small>' + Math.max(0, Math.round(sharedCurrentShare / 10)) + ' de cada 10 leads provienen de PI + MercadoLibre<span class="portal-insight-meta">' + n(sharedCurrentLeads) + ' de ' + n(totalLeads) + ' leads</span></small></article>',
+                        qualityCostPortal && qualityMultiple !== null
+                            ? '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Calidad vs. costo</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightQualityHelp" aria-label="Qué significa calidad versus costo" aria-expanded="false" aria-controls="portalInsightQualityHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>' + qualityMultiple.toLocaleString('es-CL', { maximumFractionDigits: 1 }) + '×</strong><small>' + esc(qualityCostPortal.src.nombre) + ' convierte ' + (qualityRate > generalConversion ? 'más que el promedio' : 'en línea con el promedio') + ', con ' + (qualityCpl > knownCpl ? 'un CPL superior' : 'un CPL comparable') + '<span class="portal-insight-meta">' + pct(qualityRate) + ' vs. ' + pct(generalConversion) + ' · ' + formatCLP(qualityCpl) + ' vs. ' + formatCLP(knownCpl) + '</span></small></article>'
+                            : '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Calidad vs. costo</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightQualityHelp" aria-label="Qué significa calidad versus costo" aria-expanded="false" aria-controls="portalInsightQualityHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>—</strong><small>Sin CPL y conversión comparables</small></article>',
+                        sharedShareDelta === null
+                            ? '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Recomposición interna</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightMixHelp" aria-label="Qué significa recomposición interna" aria-expanded="false" aria-controls="portalInsightMixHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>—</strong><small>PI + MercadoLibre<span class="portal-insight-meta">Sin período comparable</span></small></article>'
+                            : '<article class="portal-insight"><div class="portal-insight-head"><span class="portal-insight-category">Recomposición interna</span><button type="button" class="portal-summary-icon" data-portal-info="portalInsightMixHelp" aria-label="Qué significa recomposición interna" aria-expanded="false" aria-controls="portalInsightMixHelp"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button></div><strong>' + formatPpDelta(sharedShareDelta) + '</strong><small>El paquete ' + (sharedShareDelta >= 0 ? 'gana' : 'pierde') + ' participación pese a una fuerte redistribución interna<span class="portal-insight-meta">' + (piSource ? piSource.nombre : 'PI') + ' ' + formatPpDelta(piShareDelta) + ' · ' + (mlSource ? mlSource.nombre : 'MercadoLibre') + ' ' + formatPpDelta(mlShareDelta) + '</span></small></article>'
+                    ];
+                    insights.innerHTML = insightParts.join('');
+                }
+                const stageKeys = ['received', 'gestionados', 'contacto_efectivo', 'visita_agendada', 'cierre_negocio'];
+                const stageLabels = {
+                    received: 'Recibidos',
+                    gestionados: 'Gestión',
+                    contacto_efectivo: 'Contacto',
+                    visita_agendada: 'Visita',
+                    cierre_negocio: 'Cierre'
+                };
+                const stageNouns = {
+                    received: 'recibidos',
+                    gestionados: 'gestionados',
+                    contacto_efectivo: 'contactos',
+                    visita_agendada: 'visitas',
+                    cierre_negocio: 'cierres'
+                };
+                const stageArticles = {
+                    received: 'los',
+                    gestionados: 'los',
+                    contacto_efectivo: 'los',
+                    visita_agendada: 'las',
+                    cierre_negocio: 'los'
+                };
+                const portalLabels = {
+                    portalinmobiliario: 'Portal Inmobiliario',
+                    mercadolibre: 'MercadoLibre',
+                    toctoc: 'TocToc',
+                    proppit: 'Proppit',
+                    yapo: 'Yapo',
+                    otros: 'Otros',
+                    sitioweb: 'Sitio Web',
+                    chilepropiedades: 'ChilePropiedades'
+                };
+                const portalColors = {
+                    portalinmobiliario: '#A78BFA',
+                    mercadolibre: '#B7A1FF',
+                    toctoc: '#60A5FA',
+                    proppit: '#7DD3FC',
+                    yapo: '#34D399',
+                    otros: '#94A3B8',
+                    sitioweb: '#CBD5E1',
+                    chilepropiedades: '#64748B'
+                };
+                const stageFor = (src, key) => (Array.isArray(src.funnel) ? src.funnel : []).find(stage => stage.key === key) || {};
+                const globalStageSource = Array.isArray(OVERVIEW.funnel?.stages) ? OVERVIEW.funnel.stages : [];
+                const globalReceived = Number(
+                    globalStageSource.find(stage => stage.key === 'received')?.count ?? OVERVIEW.funnel?.received
+                ) || totalLeads;
+                const reconciledReceived = totalLeads;
+                const reconciledCoverage = globalReceived ? reconciledReceived / globalReceived * 100 : 100;
+                const totalStageFor = key => {
+                    const count = key === 'received'
+                        ? reconciledReceived
+                        : sources.reduce((sum, src) => sum + (Number(stageFor(src, key).count) || 0), 0);
+                    return { count, pct: reconciledReceived ? count / reconciledReceived * 100 : 0 };
+                };
+                const totalStageData = Object.fromEntries(stageKeys.map(key => [key, totalStageFor(key)]));
+                const closureAllZero = totalStageData.cierre_negocio.count === 0;
+                const transitionData = stageKeys.slice(1).map((to, index) => {
+                    const from = stageKeys[index];
+                    const fromCount = totalStageData[from].count;
+                    const toCount = totalStageData[to].count;
+                    const loss = Math.max(0, fromCount - toCount);
+                    return { from, to, fromCount, toCount, loss, lossRate: fromCount > 0 ? loss / fromCount * 100 : 0 };
+                });
+                const principalLoss = transitionData.reduce((best, item) => !best || item.loss > best.loss ? item : best, null);
+                const bottleneckCandidates = transitionData.filter(item => item.fromCount > 0 && !(item.to === 'cierre_negocio' && closureAllZero));
+                const bottleneck = bottleneckCandidates.reduce((best, item) => !best || item.lossRate > best.lossRate ? item : best, null);
+                const closureTransition = transitionData.find(item => item.to === 'cierre_negocio') || null;
+                const transitionLabel = item => stageLabels[item.from].toUpperCase() + ' → ' + stageLabels[item.to].toUpperCase();
+                const transitionCountMeta = item => n(item.fromCount) + ' → ' + n(item.toCount) + ' leads';
+                const transitionMeta = item => '<span class="portal-funnel-insight-transition">' + transitionLabel(item) + '</span><span>' + transitionCountMeta(item) + '</span>';
+                const lossPhrase = item => {
+                    const phrases = {
+                        gestionados: 'no alcanza una gestión válida',
+                        contacto_efectivo: 'no llega a contacto efectivo',
+                        visita_agendada: 'no llega a visita',
+                        cierre_negocio: 'no llega a cierre'
+                    };
+                    return pct(item.lossRate) + ' ' + (phrases[item.to] || 'no avanza a ' + stageLabels[item.to].toLowerCase());
+                };
+                if (funnelInsights) {
+                    const insightMarkup = (label, value, copy, meta) => '<article class="portal-funnel-insight"><span class="portal-funnel-insight-label">' + label + '</span><strong class="portal-funnel-insight-value">' + value + '</strong><span class="portal-funnel-insight-copy">' + copy + '</span><small class="portal-funnel-insight-meta">' + meta + '</small></article>';
+                    const principalMarkup = principalLoss
+                        ? insightMarkup('Principal pérdida', n(principalLoss.loss) + ' leads', lossPhrase(principalLoss), transitionMeta(principalLoss))
+                        : insightMarkup('Principal pérdida', '—', 'Sin transición medible', 'Sin datos suficientes');
+                    const bottleneckMarkup = bottleneck
+                        ? insightMarkup('Cuello de botella', pct(bottleneck.lossRate), pct(bottleneck.lossRate) + ' de los ' + stageNouns[bottleneck.from] + ' no llegan a ' + stageLabels[bottleneck.to].toLowerCase(), transitionMeta(bottleneck))
+                        : insightMarkup('Cuello de botella', '—', 'Sin transición operativa medible', 'Sin datos suficientes');
+                    const closureCount = closureTransition ? closureTransition.toCount : 0;
+                    const closureFromCount = closureTransition ? closureTransition.fromCount : 0;
+                    const closureRate = closureFromCount > 0 ? closureCount / closureFromCount * 100 : 0;
+                    const closurePath = closureTransition || { from: stageKeys[stageKeys.length - 2], to: stageKeys[stageKeys.length - 1] };
+                    const closureNoun = stageNouns.visita_agendada || 'visitas';
+                    const closureCopy = closureNoun + ' ' + (closureCount === 1 ? 'termina' : 'terminan') + ' en negocio ganado';
+                    const closureMeta = '<span class="portal-funnel-insight-transition">' + transitionLabel(closurePath) + '</span><span>' + pct(closureRate) + ' de conversión</span>';
+                    const closureMarkup = insightMarkup('Cierre', n(closureCount) + ' de ' + n(closureFromCount), closureCopy, closureMeta);
+                    funnelInsights.innerHTML = principalMarkup + bottleneckMarkup + closureMarkup;
+                }
+                const portalKeyFor = src => String(src?.nombre || 'Otros').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+                const portalStageCount = (src, key) => key === 'received' ? Number(src.cantidad) || 0 : Number(stageFor(src, key).count) || 0;
+                const formatTooltipPct = (value, denominator) => denominator > 0 ? Number(value / denominator * 100).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%' : '—';
+                const portalTooltipMarkup = segment => {
+                    const sourceLeads = Number(segment.dataset.sourceLeads) || 0;
+                    const stageCount = Number(segment.dataset.stageCount) || 0;
+                    const count = Number(segment.dataset.count) || 0;
+                    const previousStageCount = segment.dataset.previousStageCount === '' ? null : Number(segment.dataset.previousStageCount);
+                    const ownConversion = formatTooltipPct(count, sourceLeads);
+                    const stageParticipation = formatTooltipPct(count, stageCount);
+                    const retention = previousStageCount !== null && previousStageCount > 0
+                        ? '<small>Retención desde etapa anterior: ' + n(count) + ' / ' + n(previousStageCount) + ' = ' + formatTooltipPct(count, previousStageCount) + '</small>'
+                        : '';
+                    return '<strong>' + esc(segment.dataset.portalName) + '</strong>' +
+                        '<span class="portal-funnel-tooltip-stage">' + esc(segment.dataset.stageLabel) + '</span>' +
+                        '<span>' + n(count) + ' leads</span>' +
+                        '<small>Conversión propia: ' + ownConversion + ' de sus ' + n(sourceLeads) + ' recibidos</small>' +
+                        '<small>Participación de la etapa: ' + stageParticipation + ' de ' + stageArticles[segment.dataset.stageKey] + ' ' + n(stageCount) + ' ' + stageNouns[segment.dataset.stageKey] + '</small>' +
+                        retention;
+                };
+                const bindPortalFunnelTooltips = () => {
+                    const tooltip = $('portalFunnelTooltip');
+                    if (!tooltip || stack.dataset.tooltipBound) return;
+                    stack.dataset.tooltipBound = '1';
+                    if (tooltip.parentElement !== document.body) document.body.appendChild(tooltip);
+                    let pinned = false;
+                    let activeSegment = null;
+                    let closeTimer = null;
+                    const clearFollow = () => {
+                        stack.querySelectorAll('.portal-funnel-segment.is-active, .portal-funnel-segment.is-dimmed').forEach(item => item.classList.remove('is-active', 'is-dimmed'));
+                        legend.querySelectorAll('.portal-funnel-legend-item.is-active, .portal-funnel-legend-item.is-dimmed').forEach(item => item.classList.remove('is-active', 'is-dimmed'));
+                    };
+                    const highlightPortal = portalKey => {
+                        clearTimeout(closeTimer);
+                        stack.querySelectorAll('.portal-funnel-segment').forEach(item => {
+                            item.classList.toggle('is-dimmed', item.dataset.portalKey !== portalKey);
+                        });
+                        legend.querySelectorAll('.portal-funnel-legend-item').forEach(item => {
+                            item.classList.toggle('is-active', item.dataset.portalKey === portalKey);
+                            item.classList.toggle('is-dimmed', item.dataset.portalKey !== portalKey);
+                        });
+                    };
+                    const close = () => {
+                        pinned = false;
+                        activeSegment = null;
+                        clearFollow();
+                        tooltip.hidden = true;
+                    };
+                    const scheduleClose = () => {
+                        clearTimeout(closeTimer);
+                        closeTimer = setTimeout(() => { if (!pinned) close(); }, 130);
+                    };
+                    const position = segment => {
+                        const rect = segment.getBoundingClientRect();
+                        const margin = 10;
+                        const gap = 10;
+                        const width = Math.min(270, window.innerWidth - margin * 2);
+                        tooltip.style.width = width + 'px';
+                        const height = tooltip.offsetHeight;
+                        const clampLeft = left => Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+                        const candidates = [
+                            { left: rect.left + rect.width / 2 - width / 2, top: rect.top - height - gap },
+                            { left: rect.right + gap, top: rect.top + rect.height / 2 - height / 2 },
+                            { left: rect.left - width - gap, top: rect.top + rect.height / 2 - height / 2 },
+                            { left: rect.left + rect.width / 2 - width / 2, top: rect.bottom + gap }
+                        ].map(candidate => ({ ...candidate, left: clampLeft(candidate.left) }));
+                        const fits = candidate => candidate.top >= margin && candidate.top + height <= window.innerHeight - margin;
+                        const chosen = candidates.find(fits) || candidates[3];
+                        tooltip.style.left = chosen.left + 'px';
+                        tooltip.style.top = Math.max(margin, Math.min(window.innerHeight - height - margin, chosen.top)) + 'px';
+                    };
+                    const show = segment => {
+                        clearTimeout(closeTimer);
+                        activeSegment = segment;
+                        highlightPortal(segment.dataset.portalKey);
+                        segment.classList.add('is-active');
+                        tooltip.innerHTML = portalTooltipMarkup(segment);
+                        tooltip.hidden = false;
+                        position(segment);
+                    };
+                    stack.addEventListener('pointerover', event => {
+                        const segment = event.target.closest?.('.portal-funnel-segment');
+                        if (segment && stack.contains(segment)) show(segment);
+                    });
+                    stack.addEventListener('pointerout', event => {
+                        if (event.target.closest?.('.portal-funnel-segment') && !event.relatedTarget?.closest?.('.portal-funnel-segment')) scheduleClose();
+                    });
+                    stack.addEventListener('focusin', event => {
+                        const segment = event.target.closest?.('.portal-funnel-segment');
+                        if (segment) show(segment);
+                    });
+                    stack.addEventListener('focusout', scheduleClose);
+                    stack.addEventListener('click', event => {
+                        const segment = event.target.closest?.('.portal-funnel-segment');
+                        if (!segment) return;
+                        event.stopPropagation();
+                        if (pinned && activeSegment === segment) close();
+                        else { pinned = true; show(segment); }
+                    });
+                    legend.addEventListener('pointerover', event => {
+                        const item = event.target.closest?.('.portal-funnel-legend-item');
+                        if (item && legend.contains(item)) highlightPortal(item.dataset.portalKey);
+                    });
+                    legend.addEventListener('pointerout', event => {
+                        if (event.target.closest?.('.portal-funnel-legend-item') && !event.relatedTarget?.closest?.('.portal-funnel-legend-item')) scheduleClose();
+                    });
+                    legend.addEventListener('focusin', event => {
+                        const item = event.target.closest?.('.portal-funnel-legend-item');
+                        if (item) highlightPortal(item.dataset.portalKey);
+                    });
+                    legend.addEventListener('focusout', scheduleClose);
+                    document.addEventListener('pointerdown', event => {
+                        if (!stack.contains(event.target)) close();
+                    });
+                    window.addEventListener('scroll', close, true);
+                    window.addEventListener('resize', () => { if (activeSegment && !tooltip.hidden) position(activeSegment); });
+                };
+                const renderPortalFunnel = () => {
+                    const legendMarkup = sources.map(src => {
+                        const key = portalKeyFor(src);
+                        return '<button type="button" class="portal-funnel-legend-item" style="--portal-color:' + (portalColors[key] || portalColors.otros) + '" data-portal-key="' + esc(key) + '" aria-label="Resaltar ' + esc(portalLabels[key] || src.nombre || 'Otros') + '"><i aria-hidden="true"></i>' + esc(portalLabels[key] || src.nombre || 'Otros') + '</button>';
+                    }).join('');
+                    legend.innerHTML = legendMarkup;
+                    stack.innerHTML = stageKeys.map(key => {
+                        const stage = totalStageData[key];
+                        const stageWidth = reconciledReceived ? Math.min(100, Math.max(0, stage.count / reconciledReceived * 100)) : 0;
+                        const isZero = key === 'cierre_negocio' && stage.count === 0;
+                        const stageIndex = stageKeys.indexOf(key);
+                        const previousStageKey = stageIndex > 0 ? stageKeys[stageIndex - 1] : null;
+                        const segments = sources.map(src => {
+                            const count = portalStageCount(src, key);
+                            if (!count || !stage.count) return '';
+                            const portalKey = portalKeyFor(src);
+                            const segmentPct = count / stage.count * 100;
+                            const smallClass = (Number(src.cantidad) || 0) < 10 ? ' is-small-sample' : '';
+                            return '<button type="button" class="portal-funnel-segment' + smallClass + '" style="--portal-color:' + (portalColors[portalKey] || portalColors.otros) + ';width:' + segmentPct + '%" data-portal-key="' + esc(portalKey) + '" data-portal-name="' + esc(src.nombre || 'Otros') + '" data-stage-key="' + esc(key) + '" data-stage-label="' + esc(stageLabels[key]) + '" data-count="' + count + '" data-source-leads="' + (Number(src.cantidad) || 0) + '" data-stage-count="' + stage.count + '" data-previous-stage-count="' + (previousStageKey ? portalStageCount(src, previousStageKey) : '') + '" aria-label="' + esc((src.nombre || 'Otros') + ', ' + stageLabels[key] + ': ' + n(count) + ' leads') + '"></button>';
+                        }).join('');
+                        const visual = isZero
+                            ? '<div class="portal-funnel-stage-rail"><span class="portal-funnel-zero-marker" aria-hidden="true"></span></div>'
+                            : '<div class="portal-funnel-stage-rail"><div class="portal-funnel-stage-bar" style="--stage-width:' + stageWidth + '%">' + segments + '</div></div>';
+                        return '<div class="portal-funnel-stage-row' + (isZero ? ' is-zero-stage' : '') + '" data-stage-key="' + key + '" aria-label="' + esc(stageLabels[key] + ': ' + n(stage.count) + ' leads, ' + pct(stage.pct) + (isZero ? '. Sin cierres confirmados en el período.' : '')) + '">' +
+                            '<div class="portal-funnel-stage-label"><span>' + stageLabels[key] + '</span><strong>' + n(stage.count) + '</strong><small>' + pct(stage.pct) + '</small></div>' +
+                            visual +
                         '</div>';
                     }).join('');
-                    return '<div class="portal-funnel-row" data-portal-name="' + esc(src.nombre || 'Otro') + '">' +
-                        '<div class="portal-funnel-name"><strong>' + esc(src.nombre || 'Otro') + '</strong><small>' + n(src.cantidad) + ' leads · ' + pct(src.pct) + ' del total · visita ' + pct(src.conversion_pct) + '</small></div>' +
-                        stageCells +
-                    '</div>';
-                }).join('');
+                    if (coverageNote) coverageNote.innerHTML = 'Cobertura de origen: ' + n(reconciledReceived) + '/' + n(globalReceived) + ' leads · ' + pct(reconciledCoverage);
+                    const renderSilhouetteGuide = () => {
+                        stack.querySelector('.portal-funnel-silhouette')?.remove();
+                        const stackRect = stack.getBoundingClientRect();
+                        if (!stackRect.width || !stackRect.height) return;
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.classList.add('portal-funnel-silhouette');
+                        svg.setAttribute('viewBox', '0 0 ' + stackRect.width + ' ' + stackRect.height);
+                        const bounds = [...stack.querySelectorAll('.portal-funnel-stage-row')].map(row => {
+                            const element = row.querySelector('.portal-funnel-stage-bar') || row.querySelector('.portal-funnel-zero-marker');
+                            const rect = element?.getBoundingClientRect();
+                            if (!rect) return null;
+                            const left = rect.left - stackRect.left;
+                            const right = rect.right - stackRect.left;
+                            const y = rect.top - stackRect.top + rect.height / 2;
+                            return { left, right, y };
+                        });
+                        for (let index = 0; index < bounds.length - 1; index += 1) {
+                            const current = bounds[index];
+                            const next = bounds[index + 1];
+                            if (!current || !next) continue;
+                            [['left', 'left'], ['right', 'right']].forEach(([from, to]) => {
+                                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                                line.setAttribute('x1', current[from]);
+                                line.setAttribute('y1', current.y);
+                                line.setAttribute('x2', next[to]);
+                                line.setAttribute('y2', next.y);
+                                line.setAttribute('pathLength', '1');
+                                svg.appendChild(line);
+                            });
+                        }
+                        stack.insertBefore(svg, stack.firstChild);
+                    };
+                    renderSilhouetteGuide();
+                    if (!stack.dataset.guideResizeBound) {
+                        stack.dataset.guideResizeBound = '1';
+                        window.addEventListener('resize', () => renderSilhouetteGuide());
+                    }
+                    bindPortalFunnelTooltips();
+                    stack.classList.remove('portal-funnel-reveal');
+                    void stack.offsetWidth;
+                    requestAnimationFrame(() => {
+                        stack.classList.add('portal-funnel-reveal');
+                        renderSilhouetteGuide();
+                    });
+                };
+                renderPortalFunnel();
                 requestAnimationFrame(() => {
-                    list.querySelectorAll('.portal-stage-fill').forEach(fill => {
+                    body.querySelectorAll('.portal-roi-share-track i').forEach(fill => {
                         fill.style.width = fill.getAttribute('data-w') + '%';
                     });
                 });
+                bindPortalInfo();
+                schedulePortalContentReveal(titleDelay);
             }
 
             // --- BLOQUE 4: TABLA DE RENDIMIENTO COMERCIAL ---
@@ -7573,6 +8577,7 @@
                 // Navegación por pestañas
                 function switchTab(tabId) {
                     document.body.classList.toggle('team-view-active', tabId === 'leads');
+                    if (tabId !== 'channels') clearPortalTitleTimers();
                     if (tabId !== 'leads') setOperationsLoadingIndicator(false);
                     const menuTabs = document.querySelectorAll('#dashTabs .dash-tab');
                     menuTabs.forEach(b => {
@@ -7602,6 +8607,7 @@
                     if (tabId === 'leads') loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:', e));
                     if (tabId === 'properties') loadInventoryData().catch(e=>console.error('Error cargando inventario:', e));
                     if (tabId === 'channels') {
+                        portalHeaderHasRendered = false;
                         if (OVERVIEW) renderPortalAnalysis();
                         else loadData('full').catch(e=>console.error('Error cargando análisis de portales:', e));
                     }

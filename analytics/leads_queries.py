@@ -8,12 +8,9 @@ import hashlib
 import math
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
-from threading import Event, Lock
 from typing import Any, Mapping, Optional
 
 from pymongo.errors import NetworkTimeout
-from bson import BSON
 
 from chatbot.constants import CHILE_TZ
 from chatbot.crm_metrics import (
@@ -26,8 +23,6 @@ from chatbot.crm_metrics import (
     normalize_result,
     registered_outreach_evidence,
     resolve_hot_start_at,
-    REGISTERED_OUTREACH_EVENT_TYPES,
-    VALID_MANAGEMENT_EVENT_TYPES,
 )
 from chatbot.utils import calculate_business_minutes
 from chatbot.storage import get_db
@@ -40,12 +35,30 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-_DEMAND_CAPTURE_BASE_TTL = 120
-_DEMAND_CAPTURE_BASE_CACHE = None
-_DEMAND_CAPTURE_BASE_LOCK = Lock()
-
 ACTIVE_STAGES = ["ARCHIVED", "CLOSED_WON", "CLOSED_LOST"]
 UNASSIGNED_VALUES = ["Sin Asignar", "No Asignado", None, ""]
+FUNNEL_RESPONSE_LABELS = {
+    "NO_RESPONDIO": "Sin respuesta",
+    "OCUPADO": "Ocupado",
+    "NUMERO_INVALIDO": "Número inválido",
+    "INVALID_NUMBER": "Número inválido",
+    "MENSAJE_ENVIADO": "Mensaje enviado",
+    "MESSAGE_SENT_WAITING_RESPONSE": "Mensaje enviado / pendiente",
+    "EMAIL_SENT": "Email enviado",
+    "CONTACTADO": "Contactado",
+    "EFFECTIVE_CONTACT": "Contacto efectivo",
+    "SOLICITA_SEGUIMIENTO": "En seguimiento",
+    "FOLLOW_UP_REQUESTED": "En seguimiento",
+    "SCHEDULE_FOLLOW_UP": "Seguimiento agendado",
+    "NO_INTERESADO": "No interesado",
+    "PROPERTY_UNAVAILABLE": "Propiedad no disponible",
+    "VISIT_SCHEDULED": "Visita agendada",
+    "OTHER_EXPLICIT": "Otro resultado",
+    "OTRO": "Otro resultado",
+    "CLOSED_WON": "Cierre ganado",
+    "CLOSED_LOST": "Cierre perdido",
+    "DISCARDED_VALID_REASON": "Descartado con motivo",
+}
 OPS_PORTFOLIO_OFFICE = "PROCASA SUCRE"
 
 # These are contracts for interpretation, not filters over the data.  A
@@ -1809,7 +1822,6 @@ def _scheduled_visit_lead_ids(
     profile: Optional[dict] = None,
     signed_orders: Optional[list] = None,
     signed_orders_future=None,
-    scheduled_events: Optional[list] = None,
 ) -> set:
     """Leads de la cohorte con evidencia canónica de visita agendada as-of.
 
@@ -1822,7 +1834,7 @@ def _scheduled_visit_lead_ids(
     """
     from collections import defaultdict
 
-    db = None
+    db = get_db()
     scheduled = set()
 
     # Fuente A — stage_history / lifecycle con timestamps reales (as-of).
@@ -1845,8 +1857,7 @@ def _scheduled_visit_lead_ids(
                 break
 
     # Fuente B — crm_events con resultado canónico de visita agendada (as-of).
-    if lead_ids and scheduled_events is None:
-        db = get_db()
+    if lead_ids:
         by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
         # Filtrar en Mongo por el resultado canónico. Antes se descargaban
         # todos los eventos de cada lead y se descartaban aquí, lo que podía
@@ -1862,10 +1873,6 @@ def _scheduled_visit_lead_ids(
             event_filter,
             {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1},
         ))
-    else:
-        events = scheduled_events or []
-    if lead_ids:
-        by_created = {str(l["_id"]): l.get("created_at") for l in cohort_leads}
         for event in events:
             raw = event.get("result") or (event.get("meta") or {}).get("result") or ""
             if str(raw).strip().upper() not in CANONICAL_SCHEDULED_VISIT_RESULTS:
@@ -1887,7 +1894,6 @@ def _scheduled_visit_lead_ids(
         if profile is not None:
             profile["signed_orders_wait_ms"] = round((time.perf_counter() - wait_started) * 1000, 1)
     if signed_orders is None:
-        db = db or get_db()
         signed_orders = _profile_query(profile, "visitas", "find_signed_orders", lambda: db["visitas"].find(
             {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
             {"visita_code": 1, "phone": 1, "property_code": 1, "timeline": 1, "created_at": 1},
@@ -3365,7 +3371,6 @@ def build_demand_capture_contract(
     period_end: str | None = None,
     filters: Mapping[str, Any] | None = None,
     min_observations: int = 3,
-    network_summary: Mapping[str, Any] | None = None,
 ) -> dict:
     """Deterministic demand/capture intelligence built from one property batch and one lead batch."""
     filters = {key: str(value).strip() for key, value in (filters or {}).items() if value not in (None, "")}
@@ -3467,19 +3472,9 @@ def build_demand_capture_contract(
         row["strategic_fit"] = {"status": "undefined", "reason": "No existe configuración institucional explícita de Procasa Sucre."}
         row["recommendation"] = _demand_capture_recent_band(row["recency"]["w0_leads"], row["historical_leads_total"], row["historical_properties_with_demand"])
         row["analytical_recommendation"] = "Candidata a captación basada en evidencia"
-    if network_summary is None:
-        active_network = [item["profile"] | {"office": item["office"]} for item in property_by_code.values() if item["active"] and item["office"] and item["office"] != DEMAND_CAPTURE_CANONICAL_OFFICE]
-        network_offices = Counter(item["office"] for item in active_network)
-        network_composition = {
-            dimension: [{"segment": label, "count": count} for label, count in sorted(Counter(item[dimension] for item in active_network).items(), key=lambda item: (-item[1], item[0]))[:10]]
-            for dimension in ("operation", "type", "commune")
-        }
-    else:
-        network_offices = Counter(network_summary.get("offices") or {})
-        network_composition = {
-            dimension: [{"segment": str(label), "count": int(count)} for label, count in sorted((network_summary.get("composition", {}).get(dimension) or {}).items(), key=lambda item: (-int(item[1]), str(item[0])))[:10]]
-            for dimension in ("operation", "type", "commune")
-        }
+    active_network = [item["profile"] | {"office": item["office"]} for item in property_by_code.values() if item["active"] and item["office"] and item["office"] != DEMAND_CAPTURE_CANONICAL_OFFICE]
+    network_offices = Counter(item["office"] for item in active_network)
+    network_composition = {dimension: [{"segment": label, "count": count} for label, count in Counter(item[dimension] for item in active_network).most_common(10)] for dimension in ("operation", "type", "commune")}
     filtered_active_codes = {record["code"] for record in filtered_scope if record.get("is_active_sucre")}
     with_demand = sum(1 for code in filtered_active_codes if lead_counts_by_code.get(code, 0) > 0)
     attribution_total = period_total_leads
@@ -3503,7 +3498,7 @@ def build_demand_capture_contract(
     geography["metric_rule"] = {"default": "leads", "leads": "Leads últimos 30 días del período seleccionado", "intensity": "Leads divididos por propiedades distintas consultadas", "gap": "Participación de demanda menos participación de stock activo Procasa Sucre", "scale": "Cuantiles robustos P10/P90 de los territorios con datos; los extremos se recortan para evitar que un outlier aplaste la escala."}
     geography["matching"] = {"normalization": "minúsculas, sin tildes, espacios y alias oficiales de regiones; Región Metropolitana/Metropolitana y O'Higgins se unifican.", "territories_with_data": sum(bool(row.get("geo_key")) for dimension in ("region", "commune") for row in geography[dimension]), "unmatched_territories": None, "coverage_method": "calculada al asociar el payload con los GeoJSON locales cargados por la UI"}
     return {
-        "meta": {"source": "universo_cartera_prop360 + leads", "canonical_office_field": "estado.oficina", "canonical_office": DEMAND_CAPTURE_CANONICAL_OFFICE, "period_start": period_start, "period_end": period_end, "stock_period_independent": True, "filters": filters, "mongo_reads": 3},
+        "meta": {"source": "universo_cartera_prop360 + leads", "canonical_office_field": "estado.oficina", "canonical_office": DEMAND_CAPTURE_CANONICAL_OFFICE, "period_start": period_start, "period_end": period_end, "stock_period_independent": True, "filters": filters, "mongo_reads": 2},
         "inventory": inventory["inventory"],
         "inventory_context": inventory,
         "attribution": {"leads_total": attribution_total, "leads_with_identifiable_office": attributed, "coverage_pct": attribution_coverage, "historical_leads_total": len(lead_docs), "historical_leads_with_identifiable_office": historical_attributed, "by_office": [{"office": office, "leads": count} for office, count in office_counts.most_common()], "method": "lead → prospecto.codigo → universo_cartera_prop360 → estado.oficina"},
@@ -3526,261 +3521,42 @@ def build_demand_capture_contract(
     }
 
 
-def _demand_capture_network_summary(db, profile: dict | None = None) -> dict:
-    """Aggregate network benchmark dimensions without transporting properties."""
-    pipeline = [{"$match": {
-        "disponible_prop360": True,
-        "estado.oficina": {"$nin": [None, "", DEMAND_CAPTURE_CANONICAL_OFFICE]},
-        "codigo": {"$nin": [None, ""]},
-        "$or": [
-            {"tipo_operacion.venta": True},
-            {"tipo_operacion.arriendo": True},
-        ],
-    }}, {"$project": {
-        "codigo": 1,
-        "estado.oficina": 1,
-        "tipo_operacion.tipo": 1,
-        "tipo_operacion.venta": 1,
-        "tipo_operacion.arriendo": 1,
-        "ubicacion.comuna": 1,
-    }}, {"$group": {
-        # The Python contract canonicalizes numeric/string representations
-        # through _inventory_code before deduplication.
-        "_id": {"$toString": "$codigo"},
-        "doc": {"$first": "$$ROOT"},
-    }}, {"$replaceWith": "$doc"}, {"$facet": {
-        "offices": [{"$group": {"_id": "$estado.oficina", "count": {"$sum": 1}}}],
-        # Operation normalization only consumes tipo/venta/arriendo. Grouping
-        # the complete subdocument would create one raw row per price value.
-        "operation": [{"$group": {"_id": {
-            "tipo": "$tipo_operacion.tipo",
-            "venta": "$tipo_operacion.venta",
-            "arriendo": "$tipo_operacion.arriendo",
-        }, "count": {"$sum": 1}}}],
-        "type": [{"$group": {"_id": "$tipo_operacion.tipo", "count": {"$sum": 1}}}],
-        "commune": [{"$group": {"_id": "$ubicacion.comuna", "count": {"$sum": 1}}}],
-    }}]
-    rows = _profile_query(profile, "universo_cartera_prop360", "aggregate_network_summary", lambda: db["universo_cartera_prop360"].aggregate(pipeline))
-    result = rows[0] if rows and isinstance(rows[0], Mapping) else {}
-    summary = {"offices": {}, "composition": {"operation": {}, "type": {}, "commune": {}}, "_rows": 0, "_bson_bytes": 0}
-    for facet_rows in result.values():
-        if isinstance(facet_rows, list):
-            summary["_rows"] += len(facet_rows)
-            summary["_bson_bytes"] += sum(len(BSON.encode(row)) for row in facet_rows if isinstance(row, Mapping))
-    for row in result.get("offices", []):
-        if row.get("_id") not in (None, ""):
-            summary["offices"][str(row["_id"]).strip()] = int(row.get("count") or 0)
-    for dimension in ("operation", "type", "commune"):
-        for row in result.get(dimension, []):
-            raw = row.get("_id")
-            if dimension == "operation":
-                profile = _demand_capture_profile({"tipo_operacion": raw})
-                label = profile["operation"]
-            elif dimension == "type":
-                profile = _demand_capture_profile({"tipo_operacion": {}, "tipo_propiedad": raw})
-                label = profile["type"]
-            else:
-                profile = _demand_capture_profile({"tipo_operacion": {}, "ubicacion": {"comuna": raw}})
-                label = profile["commune"] or "Sin comuna"
-            summary["composition"][dimension][label] = summary["composition"][dimension].get(label, 0) + int(row.get("count") or 0)
-    return summary
-
-
-def _demand_capture_load_leads(db, profile: dict | None = None) -> tuple[list[Mapping[str, Any]], set[str]]:
-    """Load the reusable lead projection and derive referenced property codes."""
-    lead_pipeline = [
-        _normalized_created_at_stage(),
-        {"$match": _build_test_lead_exclusion_match()},
-        {"$project": {
-            "created_at": 1,
-            "prospecto.codigo": 1,
-            "lifecycle.first_effective_contact_at": 1,
-            "lifecycle.visit_scheduled_at": 1,
-        }},
-    ]
-    lead_docs = _profile_query(profile, "leads", "aggregate_demand_capture_leads", lambda: db["leads"].aggregate(lead_pipeline))
-    lead_codes = {
-        _inventory_code((lead.get("prospecto") or {}).get("codigo"))
-        for lead in lead_docs
-    }
-    lead_codes.discard(None)
-    return lead_docs, lead_codes
-
-
-def _query_demand_capture_base(timing: dict | None = None) -> dict:
-    """Load the period-independent demand dataset with a single-flight cache."""
-    global _DEMAND_CAPTURE_BASE_CACHE
-    now = time.time()
-    if _DEMAND_CAPTURE_BASE_CACHE and now - _DEMAND_CAPTURE_BASE_CACHE["created_at"] < _DEMAND_CAPTURE_BASE_TTL:
-        if timing is not None:
-            timing["demand_capture.base_cache"] = "HIT"
-        return _DEMAND_CAPTURE_BASE_CACHE["data"]
-    with _DEMAND_CAPTURE_BASE_LOCK:
-        now = time.time()
-        if _DEMAND_CAPTURE_BASE_CACHE and now - _DEMAND_CAPTURE_BASE_CACHE["created_at"] < _DEMAND_CAPTURE_BASE_TTL:
-            if timing is not None:
-                timing["demand_capture.base_cache"] = "HIT"
-            return _DEMAND_CAPTURE_BASE_CACHE["data"]
-        db = get_db()
-        base_started = time.perf_counter()
-        leads_started = time.perf_counter()
-        if timing is not None:
-            timing["demand_capture.timeout_stage"] = "leads_aggregate"
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="demand-capture") as executor:
-            leads_future = executor.submit(_demand_capture_load_leads, db, timing)
-            benchmark_started = time.perf_counter()
-            benchmark_future = executor.submit(_demand_capture_network_summary, db, timing)
-            lead_docs, lead_codes = leads_future.result()
-            leads_finished = time.perf_counter()
-            property_projection = {
-                "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-                "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
-                "tipo_operacion": 1, "ubicacion.comuna": 1, "ubicacion.region": 1,
-                "caracteristicas.dormitorios": 1,
-            }
-            # Only Sucre history and lead-referenced records travel to Python.
-            property_filter = {"$or": [
-                {"estado.oficina": DEMAND_CAPTURE_CANONICAL_OFFICE},
-                {"codigo": {"$in": sorted(lead_codes)}},
-            ]}
-            properties_started = time.perf_counter()
-            if timing is not None:
-                timing["demand_capture.timeout_stage"] = "property_find"
-                timing["demand_capture.property_find_ms"] = 0.0
-            property_docs = _profile_query(
-                timing, "universo_cartera_prop360", "find_demand_capture_properties",
-                lambda: db["universo_cartera_prop360"].find(property_filter, property_projection).batch_size(250),
-            )
-            detail_finished = time.perf_counter()
-            if timing is not None:
-                timing["demand_capture.property_find_ms"] = round((time.perf_counter() - properties_started) * 1000, 1)
-            if timing is not None:
-                timing["demand_capture.timeout_stage"] = "network_aggregate"
-            network_summary = benchmark_future.result()
-            network_finished = time.perf_counter()
-            data = {"lead_docs": lead_docs, "property_docs": property_docs, "network_summary": network_summary,
-                    "lead_codes": len(lead_codes), "base_docs": len(property_docs),
-                    "base_leads_ms": round((leads_finished - leads_started) * 1000, 1),
-                    "base_properties_ms": round((detail_finished - properties_started) * 1000, 1),
-                    "base_network_ms": round((network_finished - benchmark_started) * 1000, 1),
-                    "base_wall_ms": round((time.perf_counter() - base_started) * 1000, 1),
-                    "base_lead_bson_bytes": sum(len(BSON.encode(doc)) for doc in lead_docs),
-                    "base_property_bson_bytes": sum(len(BSON.encode(doc)) for doc in property_docs)}
-        _DEMAND_CAPTURE_BASE_CACHE = {"created_at": time.time(), "data": data}
-        if timing is not None:
-            timing["demand_capture.base_cache"] = "MISS"
-            timing["demand_capture.base_docs"] = len(property_docs)
-            timing["demand_capture.base_network_aggregate"] = True
-        return data
-
-
 def query_demand_capture_dashboard(
     period_start: Optional[str] = None,
     period_end: Optional[str] = None,
     filters: Mapping[str, Any] | None = None,
-    timing: dict | None = None,
 ) -> dict:
-    """Read-only demand/capture payload in two batch reads.
-
-    The property collection can contain a large historical network.  The
-    contract only needs active network stock, all Sucre records, and records
-    referenced by leads, so avoid an unbounded collection scan.
-    """
-    query_started = time.perf_counter()
-
-    def record_stage(name: str, started: float) -> float:
-        duration_ms = round((time.perf_counter() - started) * 1000, 1)
-        if timing is not None:
-            timing[f"demand_capture.{name}_ms"] = duration_ms
-        return duration_ms
-
-    def record_total() -> None:
-        if timing is not None:
-            timing["demand_capture.total_ms"] = round((time.perf_counter() - query_started) * 1000, 1)
-
-    try:
-        base = _query_demand_capture_base(timing)
-    except NetworkTimeout:
-        if timing is not None:
-            timing["demand_capture.total_ms"] = round((time.perf_counter() - query_started) * 1000, 1)
-        raise
-    lead_docs = base["lead_docs"]
-    property_docs = base["property_docs"]
-    if timing is not None:
-        timing["base_cache_state"] = timing.get("demand_capture.base_cache")
-        timing["base_cache_age"] = round(max(0.0, time.time() - _DEMAND_CAPTURE_BASE_CACHE["created_at"]), 1) if _DEMAND_CAPTURE_BASE_CACHE else None
-        timing["base_leads_ms"] = base["base_leads_ms"]
-        timing["base_properties_ms"] = base["base_properties_ms"]
-        timing["base_network_ms"] = base["base_network_ms"]
-        timing["base_wall_ms"] = base["base_wall_ms"]
-        timing["contract_build_ms"] = 0.0
-        timing["demand_capture.leads_aggregate_ms"] = base["base_leads_ms"]
-        timing["demand_capture.property_find_ms"] = base["base_properties_ms"]
-        timing["demand_capture.network_aggregate_ms"] = base["base_network_ms"]
-        timing["demand_capture.base_wall_ms"] = base["base_wall_ms"]
-        timing["demand_capture.base_docs"] = base["base_docs"]
-        timing["demand_capture.lead_codes_ms"] = 0.0
-
-    stage_started = time.perf_counter()
-    try:
-        payload = build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters, network_summary=base["network_summary"])
-    except NetworkTimeout:
-        duration_ms = record_stage("contract_build", stage_started)
-        if timing is not None:
-            timing["demand_capture.timeout_stage"] = "contract_build"
-        record_total()
-        logger.warning(
-            "[DEMAND_CAPTURE] mongo_timeout timeout_stage=contract_build duration_ms=%.1f",
-            duration_ms,
-        )
-        raise
-    record_stage("contract_build", stage_started)
-    if timing is not None:
-        timing["contract_build_ms"] = timing.get("demand_capture.contract_build_ms", 0.0)
-        timing["mongo_calls"] = len(timing.get("mongo") or [])
-    record_total()
-    logger.info(
-        "[DEMAND_CAPTURE_TIMING] leads_aggregate_ms=%.1f lead_codes_ms=%.1f "
-        "property_find_ms=%.1f contract_build_ms=%.1f total_ms=%.1f",
-        timing.get("demand_capture.leads_aggregate_ms", 0.0) if timing else 0.0,
-        timing.get("demand_capture.lead_codes_ms", 0.0) if timing else 0.0,
-        timing.get("demand_capture.property_find_ms", 0.0) if timing else 0.0,
-        timing.get("demand_capture.contract_build_ms", 0.0) if timing else 0.0,
-        timing.get("demand_capture.total_ms", 0.0) if timing else round((time.perf_counter() - query_started) * 1000, 1),
-    )
-    return payload
+    """Read-only demand/capture payload in two batch reads."""
+    db = get_db()
+    property_projection = {
+        "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
+        "tipo_operacion": 1, "ubicacion.comuna": 1, "ubicacion.region": 1, "caracteristicas.dormitorios": 1,
+    }
+    property_docs = list(db["universo_cartera_prop360"].find({}, property_projection))
+    lead_pipeline = [
+        _normalized_created_at_stage(),
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"created_at": 1, "prospecto": 1, "lifecycle": 1, "stage": 1}},
+    ]
+    lead_docs = list(db["leads"].aggregate(lead_pipeline))
+    return build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
 
 
 def query_capture_simulation_dataset(period_end: Optional[str] = None) -> dict:
     """Read the complete historical simulation batch; no writes and no per-property queries."""
     db = get_db()
-    lead_pipeline = [
-        _normalized_created_at_stage(),
-        {"$match": _build_test_lead_exclusion_match()},
-        {"$project": {"created_at": 1, "prospecto.codigo": 1}},
-    ]
-    lead_docs = list(db["leads"].aggregate(lead_pipeline))
-    lead_codes = {
-        _inventory_code((lead.get("prospecto") or {}).get("codigo"))
-        for lead in lead_docs
-    }
-    lead_codes.discard(None)
     projection = {
         "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
         "tipo_operacion": 1, "tipo_propiedad": 1, "ubicacion.comuna": 1, "ubicacion.region": 1,
         "caracteristicas": 1,
     }
-    property_filter = {"$or": [
-        {"disponible_prop360": True},
-        {"estado.oficina": DEMAND_CAPTURE_CANONICAL_OFFICE},
-    ]}
-    if lead_codes:
-        property_filter["$or"].append({"codigo": {"$in": sorted(lead_codes)}})
-    property_docs = list(
-        db["universo_cartera_prop360"]
-        .find(property_filter, projection)
-        .batch_size(250)
-    )
+    property_docs = list(db["universo_cartera_prop360"].find({}, projection))
+    lead_docs = list(db["leads"].aggregate([
+        _normalized_created_at_stage(),
+        {"$match": _build_test_lead_exclusion_match()},
+        {"$project": {"created_at": 1, "prospecto.codigo": 1}},
+    ]))
     properties = {}
     for doc in property_docs:
         code = _inventory_code(doc.get("codigo"))
@@ -3845,8 +3621,8 @@ def query_leads_dashboard_sources(
     - Visitas por origen: la MISMA evidencia canónica de CARD 2
       (_scheduled_visit_lead_ids): stage/lifecycle histórico, crm_events
       VISITA_AGENDADA y órdenes de visita firmadas, deduplicado por lead, as-of.
-    - Orden: leads DESC. Filas: Top 6 + Otros (agregando el resto); si hay
-      <=7 orígenes se muestran todos sin "Otros".
+    - Orden: leads DESC. Se muestran todos los orígenes por separado para no
+      ocultar faltantes de trazabilidad dentro de una categoría "Otros".
     """
     db = get_db()
     start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
@@ -3861,13 +3637,18 @@ def query_leads_dashboard_sources(
             _cohort_indexed_prefilter(ps_utc, pe_utc),
             _normalized_created_at_stage(),
             {"$match": _build_commercial_cohort_match(ps_utc, pe_utc, filters)},
+            {"$match": _build_test_lead_exclusion_match()},
             {"$project": {
                 "_id": 1, "phone": 1,
                 "prospecto.origen": 1, "prospecto.canal_origen": 1,
+                "prospecto.portal_origen": 1,
                 "prospecto.codigo_mercadolibre": 1, "prospecto.codigo_yapo": 1,
                 "prospecto.codigo": 1, "created_at": 1,
                 "pipeline_stage": 1, "stage": 1, "stage_history": 1,
+                "lifecycle.first_valid_management_at": 1,
                 "lifecycle.visit_scheduled_at": 1,
+                "messages.content": 1, "messages.timestamp": 1,
+                "source_events.portal_source": 1,
             }},
         ]))
 
@@ -3879,80 +3660,221 @@ def query_leads_dashboard_sources(
         ))
     cohort = _load(start_utc, end_utc, "current")
     lead_ids = {str(l["_id"]) for l in cohort}
+
+    # Hitos del embudo por lead. Se usan las mismas reglas temporales y de
+    # evidencia del embudo principal para que un portal no parezca mejor o
+    # peor por una definición distinta.
+    created_utc = {
+        str(lead["_id"]): coerce_utc_datetime(lead.get("created_at"))
+        for lead in cohort
+    }
+    gestionados = set()
+    contacto_efectivo = set()
+    cierres = set()
+    for lead in cohort:
+        lid = str(lead["_id"])
+        created = created_utc.get(lid)
+        if created is None:
+            continue
+        lifecycle = lead.get("lifecycle") or {}
+        management_at = coerce_utc_datetime(lifecycle.get("first_valid_management_at"))
+        if management_at is not None and created <= management_at < end_utc:
+            gestionados.add(lid)
+        for entry in lead.get("stage_history") or []:
+            stage = str((entry or {}).get("to") or "").upper()
+            timestamp = coerce_utc_datetime((entry or {}).get("timestamp"))
+            if stage == "CLOSED_WON" and timestamp is not None and created <= timestamp < end_utc:
+                cierres.add(lid)
+
+    if lead_ids:
+        for event in _profile_query(timing, "crm_events", "find_source_funnel_contact_events", lambda: db["crm_events"].find(
+            {
+                "lead_id": {"$in": [lead["_id"] for lead in cohort]},
+                "$or": [{"confirmed": True}, {"meta.confirmed": True}],
+            },
+            {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
+             "timestamp": 1, "occurred_at": 1, "confirmed": 1,
+             "actor": 1, "actor_type": 1},
+        )):
+            lid = str(event.get("lead_id"))
+            if lid not in lead_ids:
+                continue
+            created = created_utc.get(lid)
+            timestamp = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+            if created is None or timestamp is None or not (created <= timestamp < end_utc):
+                continue
+            if event_evidence(event).get("effective_contact"):
+                contacto_efectivo.add(lid)
+
     scheduled = _scheduled_visit_lead_ids(cohort, lead_ids, end_utc, timing, shared_orders)
 
     per_origin: dict = {}
     for lead in cohort:
         name = _normalize_source_name(_resolve_origin(lead))
-        entry = per_origin.setdefault(name, {"leads": 0, "visitas": 0})
+        lid = str(lead["_id"])
+        entry = per_origin.setdefault(name, {
+            "leads": 0, "gestionados": 0, "contacto_efectivo": 0,
+            "visitas": 0, "cierre_negocio": 0,
+        })
         entry["leads"] += 1
-        if str(lead["_id"]) in scheduled:
+        if lid in gestionados:
+            entry["gestionados"] += 1
+        if lid in contacto_efectivo:
+            entry["contacto_efectivo"] += 1
+        if lid in scheduled:
             entry["visitas"] += 1
+        if lid in cierres:
+            entry["cierre_negocio"] += 1
 
-    prev_counts: dict = {}
-    if prev_start:
-        for lead in _load(prev_start, prev_end, "previous"):
-            name = _normalize_source_name(_resolve_origin(lead))
-            prev_counts[name] = prev_counts.get(name, 0) + 1
+    # La comparación de conversión usa la misma cohorte y la misma evidencia
+    # canónica de visitas. Nunca se reutilizan los conteos de la cohorte actual
+    # para explicar el período comparable.
+    prev_cohort = _load(prev_start, prev_end, "previous") if prev_start else []
+    prev_lead_ids = {str(lead["_id"]) for lead in prev_cohort}
+    prev_scheduled = (
+        _scheduled_visit_lead_ids(prev_cohort, prev_lead_ids, prev_end, timing, shared_orders)
+        if prev_start else set()
+    )
+    prev_by_origin: dict = {}
+    for lead in prev_cohort:
+        name = _normalize_source_name(_resolve_origin(lead))
+        entry = prev_by_origin.setdefault(name, {"leads": 0, "visitas": 0})
+        entry["leads"] += 1
+        if str(lead["_id"]) in prev_scheduled:
+            entry["visitas"] += 1
+    prev_counts = {name: data["leads"] for name, data in prev_by_origin.items()}
 
     current_total = sum(e["leads"] for e in per_origin.values())
     total_visitas = sum(e["visitas"] for e in per_origin.values())
 
     ordered = sorted(per_origin.items(), key=lambda kv: -kv[1]["leads"])
-    if len(ordered) > 6:
-        top = ordered[:5]
-        rest = ordered[5:]
-        items = [
-            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
-             "prev": prev_counts.get(name, 0)}
-            for name, e in top
-        ]
-        otros_leads = sum(e["leads"] for _, e in rest)
-        otros_visitas = sum(e["visitas"] for _, e in rest)
-        otros_prev = sum(prev_counts.get(name, 0) for name, _ in rest)
-        items.append({"nombre": "Otros", "cantidad": otros_leads,
-                      "visitas": otros_visitas, "prev": otros_prev})
-    else:
-        items = [
-            {"nombre": name, "cantidad": e["leads"], "visitas": e["visitas"],
-             "prev": prev_counts.get(name, 0)}
-            for name, e in ordered
-        ]
+
+    def _make_item(name, source_names):
+        totals = {
+            "received": sum(per_origin[source]["leads"] for source in source_names),
+            "gestionados": sum(per_origin[source]["gestionados"] for source in source_names),
+            "contacto_efectivo": sum(per_origin[source]["contacto_efectivo"] for source in source_names),
+            "visita_agendada": sum(per_origin[source]["visitas"] for source in source_names),
+            "cierre_negocio": sum(per_origin[source]["cierre_negocio"] for source in source_names),
+        }
+        previous_key = None
+        stage_labels = {
+            "received": "Recibidos",
+            "gestionados": "Gestionados",
+            "contacto_efectivo": "Contacto",
+            "visita_agendada": "Visita",
+            "cierre_negocio": "Cierre",
+        }
+        funnel_stages = []
+        for key, label in stage_labels.items():
+            count = totals[key]
+            previous_count = totals.get(previous_key) if previous_key else None
+            funnel_stages.append({
+                "key": key,
+                "label": label,
+                "count": count,
+                "pct_of_source": round(count / totals["received"] * 100, 1) if totals["received"] else 0.0,
+                "transition_pct": round(count / previous_count * 100, 1)
+                if previous_count else None,
+            })
+            previous_key = key
+        return {
+            "nombre": name,
+            "cantidad": totals["received"],
+            "visitas": totals["visita_agendada"],
+            "prev": prev_counts.get(name, 0),
+            "prev_visitas": prev_by_origin.get(name, {}).get("visitas", 0),
+            "funnel": funnel_stages,
+        }
+
+    items = [_make_item(name, [name]) for name, _ in ordered]
 
     for it in items:
         it["pct"] = round(it["cantidad"] / current_total * 100, 1) if current_total else 0.0
         it["conversion_pct"] = round(it["visitas"] / it["cantidad"] * 100, 1) if it["cantidad"] else None
+        previous_leads = it.get("prev", 0) or 0
+        previous_visits = it.get("prev_visitas", 0) or 0
+        it["prev_pct"] = round(previous_leads / sum(prev_counts.values()) * 100, 1) if prev_counts and sum(prev_counts.values()) else None
+        it["prev_conversion_pct"] = round(previous_visits / previous_leads * 100, 1) if previous_leads else None
 
     return {
         "current": items,
         "previous": prev_counts,
+        "previous_total_visitas": sum(data["visitas"] for data in prev_by_origin.values()),
         "total": current_total,
         "total_visitas": total_visitas,
     }
 
 
 def _resolve_origin(lead: Mapping[str, Any]) -> str:
-    """Origen de un lead con la misma precedencia canónica de _origin_expr."""
+    """Resuelve el origen comercial, separándolo del canal de contacto.
+
+    Un lead puede llegar por WhatsApp y traer un enlace de TocToc. En ese
+    caso el portal es el origen de demanda y WhatsApp es solo el canal. Se
+    usa ``portal_origen`` cuando existe y se conserva un fallback para datos
+    históricos donde ese campo aún no fue persistido.
+    """
     prospecto = lead.get("prospecto") or {}
+    unresolved_values = {
+        "", "OTRO PORTAL", "SIN INFORMACION", "SIN INFORMACIÓN",
+        "SIN INFO", "N/A", "NULL", "NONE", "DESCONOCIDO",
+        "NO INFORMADO",
+    }
+    portal = str(prospecto.get("portal_origen") or "").strip()
+    if portal and portal.upper() not in {"WHATSAPP", *unresolved_values}:
+        return portal
+
     origen = str(prospecto.get("origen") or "").strip()
-    if origen and origen.upper() != "WHATSAPP":
-        return origen
     canal = str(prospecto.get("canal_origen") or "").strip()
-    if canal:
+    # Un portal explícito ya guardado tiene precedencia sobre cualquier texto
+    # histórico del lead. El fallback por enlace solo aplica a WhatsApp o a
+    # registros sin origen persistido.
+    if origen and origen.upper() not in {"WHATSAPP", *unresolved_values}:
+        return origen
+    if canal and canal.upper() not in {"WHATSAPP", *unresolved_values}:
+        return canal
+
+    # Backfill de lectura para leads históricos: no modifica la base y solo
+    # atribuye el portal cuando todos los indicios guardados apuntan al mismo.
+    detected = set()
+    texts = []
+    for message in lead.get("messages") or []:
+        if isinstance(message, Mapping):
+            texts.append(str(message.get("content") or ""))
+    for event in lead.get("source_events") or []:
+        if isinstance(event, Mapping):
+            texts.append(str(event.get("portal_source") or ""))
+    blob = " ".join(texts).lower()
+    if "toctoc.com" in blob:
+        detected.add("TocToc")
+    if "yapo.cl" in blob:
+        detected.add("Yapo")
+    if "portalinmobiliario.com" in blob or "portalinmobiliario.cl" in blob:
+        detected.add("PortalInmobiliario")
+    if "mercadolibre." in blob:
+        detected.add("MercadoLibre")
+    if len(detected) == 1:
+        return next(iter(detected))
+
+    if canal and canal.upper() not in unresolved_values:
         return canal
     if prospecto.get("codigo_mercadolibre"):
         return "MercadoLibre"
     if prospecto.get("codigo_yapo"):
         return "Yapo"
     if origen.upper() == "WHATSAPP":
-        return "WhatsApp"
-    return "Sin informacion"
+        # WhatsApp es la fuente/canal de entrada, pero no un portal. Si no
+        # existe evidencia de publicación, el origen debe quedar explícito
+        # como pendiente de identificación.
+        return "Otros"
+    return "Otros"
 
 
 def _normalize_source_name(value) -> str:
     """Normaliza nombres de canal/origen de captura para el dashboard.
 
-    Fusiona variantes (Portal Inmobiliario/PortalInmobiliario, TocToc/TOCTOC).
+    Normaliza variantes de nombre, pero conserva MercadoLibre separado de
+    Portal Inmobiliario aunque ambos compartan la misma propiedad publicada.
     La ausencia de información se presenta como "Sin información" (no se
     disfraza de origen "Directo"). e2e_test se mantiene como tal (política de
     test global pendiente), sin convertirlo en "Directo".
@@ -3961,10 +3883,17 @@ def _normalize_source_name(value) -> str:
     low = text.lower()
     if low in {"", "sin informacion", "sin información", "sin info", "n/a", "null", "none", "desconocido", "-", "no informado"}:
         return "Sin información"
+    # Un código MLC identifica MercadoLibre aunque algunos registros
+    # históricos lo hayan guardado bajo el nombre compartido de Portal
+    # Inmobiliario. La propiedad puede estar publicada en ambos sitios, pero
+    # el lead debe conservar el portal por el que llegó.
+    if "mlc" in low and ("portal inmobiliario" in low or "portalinmobiliario" in low):
+        return "MercadoLibre"
     mapping = {
         "portal inmobiliario": "Portal Inmobiliario",
         "portalinmobiliario": "Portal Inmobiliario",
-        "portal inmobiliario (mlc code)": "Portal Inmobiliario",
+        "portal inmobiliario (mlc code)": "MercadoLibre",
+        "portalinmobiliario (mlc code)": "MercadoLibre",
         "mercadolibre": "MercadoLibre",
         "toctoc": "TocToc",
         "otro portal": "Otro Portal",
@@ -4148,13 +4077,15 @@ def query_leads_dashboard_funnel(
     signed_orders: Optional[list] = None,
     signed_orders_future=None,
 ) -> dict:
-    """Embudo comercial (Recibidos → Gestionados → Contacto efectivo → Visita).
+    """Embudo comercial hasta el cierre de negocio.
 
     - Recibidos: cohorte (created_at ∈ [period_start, period_end)).
     - Gestionados: lifecycle.first_valid_management_at con corte as-of.
     - Contacto efectivo: event_evidence()["effective_contact"] con corte as-of
       (misma clasificación canónica que usa SLA).
     - Visita agendada: MISMA definición de CARD 2 (reconcilia exactamente).
+    - Negocio cerrado: lead con transición histórica confirmada a CLOSED_WON
+      dentro del período; representa una venta o arriendo ganado.
     - Transiciones por conjuntos de lead_id (intersecciones), nunca restas de
       cantidades. Se entregan excepciones de trazabilidad y hitos avanzados.
     Todas las etapas respetan: lead.created_at <= evidencia < period_end.
@@ -4196,42 +4127,40 @@ def query_leads_dashboard_funnel(
         if mgmt is not None and c <= mgmt < end_utc:
             gestionados.add(lid)
 
-    # ---- Contacto efectivo (as-of, clasificación canónica) ----
+    # ---- Respuestas de gestión + contacto efectivo (as-of) ----
+    # Se conserva solo la última respuesta humana confirmada por lead. Así el
+    # resumen explica qué ocurrió sin contar varias veces una misma gestión.
     contacto_efectivo = set()
+    latest_response_by_lead = {}
     if ids:
-        effective_results = [
-            "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
-            "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
-            "REQUIERE_SEGUIMIENTO",
-            "VISITA_AGENDADA", "visita_agendada",
-            "contactado", "solicita_seguimiento", "no_interesado",
-            "effective_contact", "follow_up_requested",
-            "requiere_seguimiento",
-        ]
-        for event in _profile_query(timing, "crm_events", "find_funnel_contact_events", lambda: db["crm_events"].find(
+        for event in _profile_query(timing, "crm_events", "find_funnel_response_events", lambda: db["crm_events"].find(
             {
                 "lead_id": {"$in": [l["_id"] for l in cohort]},
                 "confirmed": True,
-                "$or": [
-                    {"result": {"$in": effective_results}},
-                    {"meta.result": {"$in": effective_results}},
-                    {"meta.contact_result": {"$in": effective_results}},
-                ],
             },
             {"lead_id": 1, "result": 1, "meta": 1, "type": 1,
-            "timestamp": 1, "confirmed": 1, "actor": 1, "actor_type": 1},
+             "timestamp": 1, "occurred_at": 1, "confirmed": 1,
+             "actor": 1, "actor_type": 1},
         )):
-            if not event_evidence(event).get("effective_contact"):
-                continue
             eid = str(event.get("lead_id"))
             if eid not in ids:
                 continue
             c = created_utc.get(eid)
             if c is None:
                 continue
-            ts = coerce_utc_datetime(event.get("timestamp"))
-            if ts is not None and c <= ts < end_utc:
+            ts = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+            if ts is None or not (c <= ts < end_utc):
+                continue
+            evidence = event_evidence(event)
+            if evidence.get("effective_contact"):
                 contacto_efectivo.add(eid)
+            if evidence.get("management") and evidence.get("result"):
+                previous = latest_response_by_lead.get(eid)
+                if previous is None or ts > previous["timestamp"]:
+                    latest_response_by_lead[eid] = {
+                        "result": evidence["result"],
+                        "timestamp": ts,
+                    }
 
     # ---- Visita agendada (definición CARD 2, reconcilia exactamente) ----
     visita_agendada = _scheduled_visit_lead_ids(
@@ -4264,22 +4193,59 @@ def query_leads_dashboard_funnel(
     rec_gestion = len(gestionados & ids)          # = gestionados (⊆ cohort)
     gest_contacto = len(contacto_efectivo & gestionados)
     contacto_visita = len(contacto_efectivo & visita_agendada)
+    visita_cierre = len(visita_agendada & cierres)
 
     def _pct(num, den):
         return round(num / den * 100, 1) if den else None
 
+    def _response_summary(lead_ids):
+        counts = Counter()
+        for lid in lead_ids:
+            response = latest_response_by_lead.get(str(lid))
+            if response and response.get("result"):
+                result = response["result"]
+                counts[result] += 1
+        return [
+            {
+                "key": result,
+                "label": FUNNEL_RESPONSE_LABELS.get(result, result.replace("_", " ").title()),
+                "count": count,
+            }
+            for result, count in counts.most_common()
+        ]
+
+    response_summary = {
+        "received": _response_summary(ids),
+        "gestionados": _response_summary(gestionados),
+        "contacto_efectivo": _response_summary(contacto_efectivo),
+        "visita_agendada": _response_summary(visita_agendada),
+        "cierre_negocio": _response_summary(cierres),
+    }
+
+    # ``transition_pct`` conserva la tasa estrictamente trazable para no
+    # perder el control de excepciones. ``stage_pct`` es la tasa que debe
+    # acompañar al número visible de la etapa: total de la etapa actual /
+    # total de la etapa anterior. Antes se mostraba la primera con el segundo
+    # cálculo y eso hacía que el porcentaje no coincidiera con los números.
     stages = [
         {"key": "received", "label": "Recibidos", "count": received,
-         "pct_of_received": 100.0, "transition_pct": None},
+         "pct_of_received": 100.0, "transition_pct": None, "stage_pct": None},
         {"key": "gestionados", "label": "Gestionados", "count": len(gestionados),
          "pct_of_received": _pct(len(gestionados), received),
-         "transition_pct": _pct(rec_gestion, received)},
+         "transition_pct": _pct(rec_gestion, received),
+         "stage_pct": _pct(len(gestionados), received)},
         {"key": "contacto_efectivo", "label": "Contacto efectivo", "count": len(contacto_efectivo),
          "pct_of_received": _pct(len(contacto_efectivo), received),
-         "transition_pct": _pct(gest_contacto, len(gestionados))},
+         "transition_pct": _pct(gest_contacto, len(gestionados)),
+         "stage_pct": _pct(len(contacto_efectivo), len(gestionados))},
         {"key": "visita_agendada", "label": "Visita agendada", "count": len(visita_agendada),
          "pct_of_received": _pct(len(visita_agendada), received),
-         "transition_pct": _pct(contacto_visita, len(contacto_efectivo))},
+         "transition_pct": _pct(contacto_visita, len(contacto_efectivo)),
+         "stage_pct": _pct(len(visita_agendada), len(contacto_efectivo))},
+        {"key": "cierre_negocio", "label": "Negocio cerrado", "count": len(cierres),
+         "pct_of_received": _pct(len(cierres), received),
+         "transition_pct": _pct(visita_cierre, len(visita_agendada)),
+         "stage_pct": _pct(len(cierres), len(visita_agendada))},
     ]
 
     return {
@@ -4289,10 +4255,12 @@ def query_leads_dashboard_funnel(
             "received_to_gestionados": rec_gestion,
             "gestionados_to_contacto_efectivo": gest_contacto,
             "contacto_efectivo_to_visita_agendada": contacto_visita,
+            "visita_agendada_to_cierre_negocio": visita_cierre,
         },
         "exceptions": {
             "visitas_sin_contacto_efectivo": len(visita_agendada - contacto_efectivo),
             "visitas_sin_gestion": len(visita_agendada - gestionados),
+            "cierres_sin_visita": len(cierres - visita_agendada),
         },
         "hitos_excepcionales": {
             "avanzados_sin_visita": len(avanzados - visita_agendada),
@@ -4300,6 +4268,8 @@ def query_leads_dashboard_funnel(
             "avanzados": len(avanzados),
             "cierres": len(cierres),
         },
+        "response_summary": response_summary,
+        "response_basis": "Última respuesta de gestión humana confirmada por lead dentro del período.",
     }
 
 
@@ -4432,7 +4402,8 @@ def _ops_portfolio_codes(db, captador: Optional[str]) -> list[str]:
     return sorted({str(doc.get("codigo")).strip() for doc in docs if doc.get("codigo") not in (None, "")})
 
 
-_OPS_PROJECTED_LEAD_PROJECTION = {
+def _ops_projected_leads(db, match: dict, profile: Optional[dict] = None, operation: str = "aggregate_projected_leads") -> list[dict]:
+    projection = {
         "_id": 1, "created_at": 1, "_created_normalized": 1,
         "phone": 1, "prospecto.nombre": 1, "prospecto.codigo": 1,
         "pipeline_stage": 1, "stage": 1, "ejecutivo_asignado": 1,
@@ -4443,213 +4414,12 @@ _OPS_PROJECTED_LEAD_PROJECTION = {
         "lifecycle.first_effective_contact_at": 1,
         "lifecycle.visit_scheduled_at": 1,
         "stage_history": 1,
-}
-
-_OPS_CURRENT_RESOURCE_TTL = 120
-_OPS_CURRENT_RESOURCE_CACHE = {}
-_OPS_CURRENT_RESOURCE_LOCK = Lock()
-_OPS_USERS_CACHE = None
-_OPS_USERS_CACHE_AT = 0.0
-_OPS_USERS_CACHE_LOCK = Lock()
-_OPS_HISTORICAL_BASE_TTL = 120
-_OPS_HISTORICAL_BASE_CACHE = {}
-_OPS_HISTORICAL_BASE_INFLIGHT = {}
-_OPS_HISTORICAL_BASE_LOCK = Lock()
-_OPS_SHARED_RESOURCE_TTL = 120
-_OPS_SIGNED_ORDERS_CACHE = None
-_OPS_SIGNED_ORDERS_CACHE_AT = 0.0
-_OPS_SIGNED_ORDERS_INFLIGHT = None
-_OPS_SIGNED_ORDERS_LOCK = Lock()
-_OPS_ASSIGNMENT_EPISODE_CACHE = {}
-_OPS_ASSIGNMENT_EPISODE_INFLIGHT = {}
-_OPS_ASSIGNMENT_EPISODE_LOCK = Lock()
-
-
-def _ops_historical_base_match(mongo_filters: dict) -> tuple[dict, str, str]:
-    """Build the period-independent assigned-lead universe for Operations.
-
-    The production cohort contract is based on ``lifecycle.assigned_at``.
-    Keep the same non-date filters and use a stable historical envelope so
-    period presets can be sliced locally without changing the cohort rules.
-    """
-    base_start = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    now_utc = datetime.now(timezone.utc)
-    base_end = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc) + timedelta(days=1)
-    assigned_date = {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}}
-    date_expr = {"$expr": {"$and": [
-        {"$gte": [assigned_date, base_start]},
-        {"$lt": [assigned_date, base_end]},
-    ]}}
-    if mongo_filters:
-        match = {"$and": [date_expr, mongo_filters]}
-    else:
-        match = date_expr
-    return match, base_start.isoformat(), base_end.isoformat()
-
-
-def _ops_slice_historical_base(docs: list[dict], start_utc: datetime, end_utc: datetime) -> list[dict]:
-    """Apply the exact semi-open assigned_at interval used by Mongo."""
-    sliced = []
-    for doc in docs:
-        assigned_at = coerce_utc_datetime((doc.get("lifecycle") or {}).get("assigned_at"))
-        if assigned_at is not None and start_utc <= assigned_at < end_utc:
-            sliced.append(doc)
-    return sliced
-
-
-def _ops_historical_base(
-    db,
-    mongo_filters: dict,
-    projection: dict,
-    profile: Optional[dict] = None,
-) -> list[dict]:
-    """Load and cache raw historical cohort documents with single-flight."""
-    match, base_start, base_end = _ops_historical_base_match(mongo_filters)
-    cache_key = repr((match, tuple(sorted(projection.items())), base_start, base_end))
-    now = time.time()
-    cached = _OPS_HISTORICAL_BASE_CACHE.get(cache_key)
-    if cached and now - cached["created_at"] < _OPS_HISTORICAL_BASE_TTL:
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "historical_base_cache_hit", "documents": len(cached["data"])})
-        return cached["data"]
-
-    leader = False
-    with _OPS_HISTORICAL_BASE_LOCK:
-        now = time.time()
-        cached = _OPS_HISTORICAL_BASE_CACHE.get(cache_key)
-        if cached and now - cached["created_at"] < _OPS_HISTORICAL_BASE_TTL:
-            if profile is not None:
-                profile.setdefault("resource", []).append({"operation": "historical_base_cache_hit", "documents": len(cached["data"])})
-            return cached["data"]
-        flight = _OPS_HISTORICAL_BASE_INFLIGHT.get(cache_key)
-        if flight is None:
-            flight = {"event": Event(), "error": None}
-            _OPS_HISTORICAL_BASE_INFLIGHT[cache_key] = flight
-            leader = True
-
-    if not leader:
-        flight["event"].wait()
-        if flight.get("error") is not None:
-            raise flight["error"]
-        cached = _OPS_HISTORICAL_BASE_CACHE.get(cache_key)
-        if cached is None:
-            raise RuntimeError("historical Operations base completed without a cache entry")
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "historical_base_single_flight_wait", "documents": len(cached["data"])})
-        return cached["data"]
-
-    try:
-        started = time.perf_counter()
-        docs = _profile_query(profile, "leads", "aggregate_historical_base", lambda: db["leads"].aggregate([
-            _normalized_created_at_stage(),
-            {"$match": match},
-            {"$project": projection},
-        ]))
-        _OPS_HISTORICAL_BASE_CACHE[cache_key] = {"created_at": time.time(), "data": docs}
-        if profile is not None:
-            profile.setdefault("resource", []).append({
-                "operation": "historical_base_loaded",
-                "documents": len(docs),
-                "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
-            })
-        return docs
-    except Exception as exc:
-        flight["error"] = exc
-        raise
-    finally:
-        with _OPS_HISTORICAL_BASE_LOCK:
-            _OPS_HISTORICAL_BASE_INFLIGHT.pop(cache_key, None)
-            flight["event"].set()
-
-
-def _ops_projected_leads(
-    db,
-    match: dict,
-    profile: Optional[dict] = None,
-    operation: str = "aggregate_projected_leads",
-    projection: Optional[dict] = None,
-) -> list[dict]:
-    projection = projection or _OPS_PROJECTED_LEAD_PROJECTION
+    }
     return _profile_query(profile, "leads", operation, lambda: db["leads"].aggregate([
         _normalized_created_at_stage(),
         {"$match": match},
         {"$project": projection},
     ]))
-
-
-def _ops_current_resource(
-    db,
-    active_match: dict,
-    profile: Optional[dict] = None,
-) -> dict:
-    """Cache period-independent current counts plus actionable lead detail.
-
-    Current SLA/aging decisions remain in Python. Mongo only removes managed
-    assigned leads that cannot contribute to those decisions, while retaining
-    every unassigned, pending, or temporally inconsistent lead.
-    """
-    cache_key = repr(active_match)
-    now = time.time()
-    cached = _OPS_CURRENT_RESOURCE_CACHE.get(cache_key)
-    if cached and now - cached["created_at"] < _OPS_CURRENT_RESOURCE_TTL:
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "current_resource_cache_hit"})
-        return cached["data"]
-    with _OPS_CURRENT_RESOURCE_LOCK:
-        now = time.time()
-        cached = _OPS_CURRENT_RESOURCE_CACHE.get(cache_key)
-        if cached and now - cached["created_at"] < _OPS_CURRENT_RESOURCE_TTL:
-            if profile is not None:
-                profile.setdefault("resource", []).append({"operation": "current_resource_cache_hit"})
-            return cached["data"]
-        started = time.perf_counter()
-        normalized = _normalized_created_at_stage()
-        summary_pipeline = [normalized, {"$match": active_match}, {"$facet": {
-            "executives": [{"$group": {"_id": "$ejecutivo_asignado", "active": {"$sum": 1}}}],
-            "totals": [{"$group": {"_id": None, "active": {"$sum": 1}}}],
-        }}]
-        summary_rows = _profile_query(profile, "leads", "aggregate_current_summary", lambda: db["leads"].aggregate(summary_pipeline))
-        summary_row = summary_rows[0] if summary_rows else {}
-        by_executive = []
-        unassigned = 0
-        active_total = int((summary_row.get("totals") or [{}])[0].get("active") or 0)
-        for row in summary_row.get("executives") or []:
-            name = str(row.get("_id") or "").strip()
-            count = int(row.get("active") or 0)
-            if _ops_unassigned(name):
-                unassigned += count
-            else:
-                by_executive.append({"executive": name, "active": count})
-        detail_match = {"$and": [active_match, {"$or": [
-            {"ejecutivo_asignado": {"$in": [None, "", "Sin Asignar", "No Asignado"]}},
-            {"lifecycle.first_valid_management_at": None},
-            {"$expr": {"$lt": [
-                {"$convert": {"input": "$lifecycle.first_valid_management_at", "to": "date", "onError": None, "onNull": None}},
-                {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
-            ]}},
-            # Mongo dates are millisecond precision while some historical
-            # assigned_at values are strings with microseconds.  Keep the
-            # equality-after-conversion boundary so Python can preserve the
-            # canonical temporal comparison used by the old contract.
-            {"$expr": {"$eq": [
-                {"$convert": {"input": "$lifecycle.first_valid_management_at", "to": "date", "onError": None, "onNull": None}},
-                {"$convert": {"input": "$lifecycle.assigned_at", "to": "date", "onError": None, "onNull": None}},
-            ]}},
-        ]}]}
-        detail_docs = _profile_query(profile, "leads", "aggregate_current_actionable_detail", lambda: db["leads"].aggregate([
-            normalized, {"$match": detail_match}, {"$project": _OPS_PROJECTED_LEAD_PROJECTION},
-        ]))
-        data = {
-            "summary": {"active_total": active_total, "active_assigned": active_total - unassigned,
-                        "unassigned": unassigned, "by_executive": by_executive},
-            "detail_docs": detail_docs,
-            "summary_rows": len(summary_row.get("executives") or []),
-            "summary_bson_bytes": sum(len(BSON.encode(row)) for row in summary_rows),
-            "detail_bson_bytes": sum(len(BSON.encode(row)) for row in detail_docs),
-            "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
-        }
-        _OPS_CURRENT_RESOURCE_CACHE[cache_key] = {"created_at": time.time(), "data": data}
-        return data
 
 
 def _ops_elapsed(start: Optional[datetime], end: datetime) -> int:
@@ -4762,25 +4532,11 @@ def _ops_active_executive_names(db, profile: Optional[dict] = None) -> set[str]:
     La matriz no debe mezclar administradores, supervisores ni ejecutivos
     inactivos con la dotación comercial vigente.
     """
-    global _OPS_USERS_CACHE, _OPS_USERS_CACHE_AT
-    now = time.time()
-    if _OPS_USERS_CACHE is not None and now - _OPS_USERS_CACHE_AT < _OPS_CURRENT_RESOURCE_TTL:
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "users_cache_hit"})
-        return set(_OPS_USERS_CACHE)
-    with _OPS_USERS_CACHE_LOCK:
-        now = time.time()
-        if _OPS_USERS_CACHE is not None and now - _OPS_USERS_CACHE_AT < _OPS_CURRENT_RESOURCE_TTL:
-            if profile is not None:
-                profile.setdefault("resource", []).append({"operation": "users_cache_hit"})
-            return set(_OPS_USERS_CACHE)
-        names = {
-            str(user.get("nombre") or "").strip()
-            for user in _profile_query(profile, "usuarios", "find_active_executives", lambda: db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1}))
-        }
-        _OPS_USERS_CACHE = {name for name in names if name and name.casefold() != "pablo galleguillos"}
-        _OPS_USERS_CACHE_AT = time.time()
-        return set(_OPS_USERS_CACHE)
+    names = {
+        str(user.get("nombre") or "").strip()
+        for user in _profile_query(profile, "usuarios", "find_active_executives", lambda: db["usuarios"].find({"rol": "agente", "is_active": True}, {"nombre": 1}))
+    }
+    return {name for name in names if name and name.casefold() != "pablo galleguillos"}
 
 
 def _ops_assignment_episode_map(db, docs: list[dict], profile: Optional[dict] = None) -> dict[str, list[dict]]:
@@ -4803,66 +4559,6 @@ def _ops_assignment_episode_map(db, docs: list[dict], profile: Optional[dict] = 
     for cycle in cycles:
         result.setdefault(str(cycle.get("lead_id")), []).append(cycle)
     return result
-
-
-def _ops_assignment_resource_key(docs: list[dict]) -> tuple:
-    """Stable superset key; assignment cycles depend only on these lifecycle fields."""
-    rows = []
-    for doc in docs:
-        lifecycle = doc.get("lifecycle") or {}
-        rows.append((
-            str(doc.get("_id")),
-            str(lifecycle.get("assigned_at")),
-            str(lifecycle.get("first_valid_management_at")),
-            str(lifecycle.get("current_assignment_cycle_id")),
-        ))
-    return tuple(sorted(set(rows)))
-
-
-def _ops_assignment_episode_map_cached(db, docs: list[dict], profile: Optional[dict] = None) -> dict[str, list[dict]]:
-    """Cache the assignment-cycle map for the current+historical superset."""
-    cache_key = _ops_assignment_resource_key(docs)
-    now = time.time()
-    cached = _OPS_ASSIGNMENT_EPISODE_CACHE.get(cache_key)
-    if cached and now - cached["created_at"] < _OPS_SHARED_RESOURCE_TTL:
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "assignment_episode_map_cache_hit", "documents": len(docs)})
-        return cached["data"]
-
-    leader = False
-    with _OPS_ASSIGNMENT_EPISODE_LOCK:
-        now = time.time()
-        cached = _OPS_ASSIGNMENT_EPISODE_CACHE.get(cache_key)
-        if cached and now - cached["created_at"] < _OPS_SHARED_RESOURCE_TTL:
-            if profile is not None:
-                profile.setdefault("resource", []).append({"operation": "assignment_episode_map_cache_hit", "documents": len(docs)})
-            return cached["data"]
-        flight = _OPS_ASSIGNMENT_EPISODE_INFLIGHT.get(cache_key)
-        if flight is None:
-            flight = {"event": Event(), "error": None}
-            _OPS_ASSIGNMENT_EPISODE_INFLIGHT[cache_key] = flight
-            leader = True
-
-    if not leader:
-        flight["event"].wait()
-        if flight.get("error") is not None:
-            raise flight["error"]
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "assignment_episode_map_single_flight_wait", "documents": len(docs)})
-        return flight.get("data") or {}
-
-    try:
-        data = _ops_assignment_episode_map(db, docs, profile)
-        flight["data"] = data
-        _OPS_ASSIGNMENT_EPISODE_CACHE[cache_key] = {"created_at": time.time(), "data": data}
-        return data
-    except Exception as exc:
-        flight["error"] = exc
-        raise
-    finally:
-        with _OPS_ASSIGNMENT_EPISODE_LOCK:
-            _OPS_ASSIGNMENT_EPISODE_INFLIGHT.pop(cache_key, None)
-            flight["event"].set()
 
 
 def _ops_temporal_assignment(doc: dict, assignment_cycles: Optional[dict[str, list[dict]]] = None) -> dict:
@@ -4903,53 +4599,12 @@ def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: lis
     docs = {str(doc.get("_id")): doc for doc in [*current_docs, *period_docs] if doc.get("_id") is not None}
     if not docs:
         return {}
-    # crm_events also contains navigations, assignments and bot/system noise.
-    # Restrict the server-side read to event families that can contribute to
-    # either activity or a valid management result.  The Python evidence
-    # checks below remain authoritative (human actor, confirmation, result,
-    # assignment episode, etc.).
-    activity_types = sorted({
-        value
-        for event_type in REGISTERED_OUTREACH_EVENT_TYPES
-        for value in (event_type, event_type.lower())
-    })
-    management_types = sorted({
-        value
-        for event_type in (VALID_MANAGEMENT_EVENT_TYPES - {"CONTACT_RESULT"})
-        for value in (event_type, event_type.lower())
-    })
-    event_filter = {
-        "lead_id": {"$in": [doc.get("_id") for doc in docs.values()]},
-        "$or": [
-            {"type": {"$in": activity_types}},
-            {"type": {"$in": management_types}},
-        ],
-    }
-    try:
-        events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
-            event_filter,
-            {"lead_id": 1, "type": 1, "result": 1,
-             "meta.actor_type": 1, "meta.result": 1,
-             "meta.contact_result": 1, "meta.confirmed": 1,
-             "confirmed": 1,
-             "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
-             "assignment_cycle_id": 1},
-        ))
-    except NetworkTimeout:
-        # Activity is complementary evidence; the lead/SLA contract can still
-        # be rendered without it.  A Mongo timeout must not turn the whole
-        # operational dashboard into a 500 response.
-        logger.warning(
-            "[OPS_DASHBOARD] crm_events timeout; continuing without activity evidence"
-        )
-        if profile is not None:
-            profile.setdefault("mongo", []).append({
-                "collection": "crm_events",
-                "operation": "find_activity_and_results",
-                "timeout": True,
-                "documents": 0,
-            })
-        return {}
+    events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
+        {"lead_id": {"$in": [doc.get("_id") for doc in docs.values()]}},
+        {"lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
+         "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
+         "assignment_cycle_id": 1},
+    ))
     period_ids = {str(doc.get("_id")) for doc in period_docs if doc.get("_id") is not None}
     signals = defaultdict(lambda: {"current_activity": False, "period_activity": False,
                                    "period_result": False, "result": None,
@@ -5005,86 +4660,7 @@ def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: lis
     return dict(signals)
 
 
-def _ops_fetch_signed_orders(db, profile: Optional[dict] = None) -> list[dict]:
-    return _profile_query(
-        profile,
-        "visitas",
-        "find_signed_orders",
-        lambda: db["visitas"].find(
-            {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
-            {"visita_code": 1, "phone": 1, "property_code": 1,
-             "timeline": 1, "created_at": 1},
-        ),
-    )
-
-
-def _ops_fetch_signed_orders_cached(db, profile: Optional[dict] = None) -> list[dict]:
-    """Cache raw signed-order evidence across standard period requests."""
-    global _OPS_SIGNED_ORDERS_CACHE, _OPS_SIGNED_ORDERS_CACHE_AT, _OPS_SIGNED_ORDERS_INFLIGHT
-    now = time.time()
-    if _OPS_SIGNED_ORDERS_CACHE is not None and now - _OPS_SIGNED_ORDERS_CACHE_AT < _OPS_SHARED_RESOURCE_TTL:
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "signed_orders_cache_hit", "documents": len(_OPS_SIGNED_ORDERS_CACHE)})
-        return _OPS_SIGNED_ORDERS_CACHE
-
-    leader = False
-    with _OPS_SIGNED_ORDERS_LOCK:
-        now = time.time()
-        if _OPS_SIGNED_ORDERS_CACHE is not None and now - _OPS_SIGNED_ORDERS_CACHE_AT < _OPS_SHARED_RESOURCE_TTL:
-            if profile is not None:
-                profile.setdefault("resource", []).append({"operation": "signed_orders_cache_hit", "documents": len(_OPS_SIGNED_ORDERS_CACHE)})
-            return _OPS_SIGNED_ORDERS_CACHE
-        flight = _OPS_SIGNED_ORDERS_INFLIGHT
-        if flight is None:
-            flight = {"event": Event(), "error": None}
-            _OPS_SIGNED_ORDERS_INFLIGHT = flight
-            leader = True
-
-    if not leader:
-        flight["event"].wait()
-        if flight.get("error") is not None:
-            raise flight["error"]
-        if profile is not None:
-            profile.setdefault("resource", []).append({"operation": "signed_orders_single_flight_wait", "documents": len(flight.get("data") or [])})
-        return flight.get("data") or []
-
-    try:
-        data = _ops_fetch_signed_orders(db, profile)
-        with _OPS_SIGNED_ORDERS_LOCK:
-            _OPS_SIGNED_ORDERS_CACHE = data
-            _OPS_SIGNED_ORDERS_CACHE_AT = time.time()
-        flight["data"] = data
-        return data
-    except Exception as exc:
-        flight["error"] = exc
-        raise
-    finally:
-        with _OPS_SIGNED_ORDERS_LOCK:
-            if _OPS_SIGNED_ORDERS_INFLIGHT is flight:
-                _OPS_SIGNED_ORDERS_INFLIGHT = None
-            flight["event"].set()
-
-
-def _ops_fetch_scheduled_events(db, cohort_leads: list[dict], profile: Optional[dict] = None) -> list[dict]:
-    event_filter = {
-        "lead_id": {"$in": [lead.get("_id") for lead in cohort_leads]},
-        "$or": [
-            {"result": {"$in": ["visita_agendada", "VISITA_AGENDADA"]}},
-            {"meta.result": {"$in": ["visita_agendada", "VISITA_AGENDADA"]}},
-        ],
-    }
-    return _profile_query(
-        profile,
-        "crm_events",
-        "find_scheduled_events",
-        lambda: db["crm_events"].find(
-            event_filter,
-            {"lead_id": 1, "result": 1, "meta": 1, "timestamp": 1},
-        ),
-    )
-
-
-def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None, team_executives: Optional[set[str]] = None, scheduled_visit_ids: Optional[set[str]] = None, assignment_cycles: Optional[dict[str, list[dict]]] = None, activity_signals: Optional[dict[str, dict]] = None, current_summary: Optional[dict] = None) -> dict:
+def build_operational_contract(current_docs: list[dict], period_docs: list[dict], period_start: Optional[str], period_end: Optional[str], now: Optional[datetime] = None, team_executives: Optional[set[str]] = None, scheduled_visit_ids: Optional[set[str]] = None, assignment_cycles: Optional[dict[str, list[dict]]] = None, activity_signals: Optional[dict[str, dict]] = None) -> dict:
     """Construye CURRENT (stock) y PERIOD (desempeño) sin mezclarlos."""
     now = coerce_utc_datetime(now) or datetime.now(timezone.utc)
     _, period_cutoff = _build_chile_period_bounds(period_start, period_end)
@@ -5229,24 +4805,6 @@ def build_operational_contract(current_docs: list[dict], period_docs: list[dict]
                 "client": prop.get("nombre") or "Sin nombre", "property_reference": prop.get("codigo") or "Sin propiedad",
                 "stage": doc.get("pipeline_stage") or doc.get("stage") or "Sin estado",
                 "first_management": "sin primera gestión" if not state["managed"] else "gestionada"})
-
-    # The summary is period-independent and authoritative for current stock
-    # volume.  Detail remains responsible for SLA, aging and intervention
-    # evidence; only the volume/load fields are replaced here.
-    if current_summary is not None:
-        summary_assigned = 0
-        for row in current_summary.get("by_executive") or []:
-            name = str(row.get("executive") or "").strip()
-            count = int(row.get("active") or 0)
-            if not name or (team_filter_enabled and name.casefold() not in team_keys):
-                if name:
-                    excluded_non_team_current += count
-                continue
-            bucket = executives.setdefault(name, _ops_exec_bucket(name))
-            bucket["current"]["active_load"] = count
-            summary_assigned += count
-        current["active_assigned"] = summary_assigned
-        current["unassigned"] = int(current_summary.get("unassigned") or 0)
 
     for doc in period_docs:
         temporal = _ops_temporal_assignment(doc, assignment_cycles)
@@ -5417,91 +4975,34 @@ def query_leads_operational_dashboard(
     if mongo_filters:
         period_parts.append(mongo_filters)
     period_match = {"$and": period_parts}
-    # Stage 1: these reads have no dependency on one another.  Each worker
-    # keeps an isolated timing profile; the main thread merges it afterwards
-    # so shared_resources and the commercial contract remain deterministic.
-    period_projection = dict(_OPS_PROJECTED_LEAD_PROJECTION)
-    period_projection.pop("prospecto.nombre", None)
-    users_needed = team_executives_override is None or bool(portfolio)
-
-    def _timed_read(reader):
-        worker_profile = {}
-        started = time.perf_counter()
-        value = reader(worker_profile)
-        return value, (time.perf_counter() - started) * 1000, worker_profile
-
-    stage1_started = time.perf_counter()
-    stage1_jobs = {}
-    shared_historical_base = (
-        shared_resources.get("historical_base")
-        if shared_resources is not None else None
+    started = time.perf_counter()
+    current_docs = (
+        _ops_projected_leads(db, active_match, timing, "aggregate_current_stock")
+        if not period_only else []
     )
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        if not period_only:
-            stage1_jobs["current"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_current_resource(
-                    db, active_match, worker_profile
-                ),
-            )
-        if shared_historical_base is None:
-            stage1_jobs["historical_base"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_historical_base(
-                    db, mongo_filters, period_projection, worker_profile
-                ),
-            )
-        if users_needed:
-            stage1_jobs["users"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_active_executive_names(db, worker_profile),
-            )
-
-        stage1_results = {name: future.result() for name, future in stage1_jobs.items()}
-
-    current_resource, current_ms, current_profile = stage1_results.get("current", ({}, 0, {}))
-    current_docs = current_resource.get("detail_docs", []) if isinstance(current_resource, dict) else []
-    current_summary = current_resource.get("summary") if isinstance(current_resource, dict) else None
-    if shared_historical_base is None:
-        historical_base, historical_base_ms, historical_base_profile = stage1_results["historical_base"]
-    else:
-        historical_base = shared_historical_base
-        historical_base_ms = 0.0
-        historical_base_profile = {}
-    period_slice_started = time.perf_counter()
-    period_docs = _ops_slice_historical_base(historical_base, start_utc, end_utc)
-    period_ms = (time.perf_counter() - period_slice_started) * 1000
-    period_profile = historical_base_profile
-    if shared_resources is not None and shared_historical_base is None:
-        shared_resources["historical_base"] = historical_base
-    active_names, users_ms, users_profile = stage1_results.get("users", (set(), 0, {}))
-    if timing is not None:
-        for profile in (current_profile, period_profile, users_profile):
-            timing.setdefault("mongo", []).extend(profile.get("mongo", []))
-        timing["historical_base_load_ms"] = round(historical_base_ms, 1)
-        timing["historical_base_docs"] = len(historical_base)
-        timing["period_slice_python_ms"] = round(period_ms, 1)
-        timing["period_cohort_source"] = "historical_base_cache"
-        timing["stage1_wall_ms"] = round((time.perf_counter() - stage1_started) * 1000, 1)
-        if isinstance(current_resource, dict):
-            timing.update({
-                "current_resource_elapsed_ms": current_resource.get("elapsed_ms"),
-                "current_summary_rows": current_resource.get("summary_rows"),
-                "current_summary_bson_bytes": current_resource.get("summary_bson_bytes"),
-                "current_detail_docs": len(current_docs),
-                "current_detail_bson_bytes": current_resource.get("detail_bson_bytes"),
-            })
-
+    current_ms = (time.perf_counter() - started) * 1000
+    started = time.perf_counter()
+    period_docs = _ops_projected_leads(db, period_match, timing, "aggregate_period_cohort")
+    period_ms = (time.perf_counter() - started) * 1000
+    assignment_started = time.perf_counter()
+    assignment_cycles = _ops_assignment_episode_map(db, [*current_docs, *period_docs], timing)
+    assignment_ms = (time.perf_counter() - assignment_started) * 1000
     period_cutoff = min(end_utc, datetime.now(timezone.utc))
+    activity_started = time.perf_counter()
+    activity_signals = _ops_collect_activity_signals(
+        db, current_docs, period_docs, start_utc, period_cutoff,
+        assignment_cycles,
+        timing,
+    )
+    activity_ms = (time.perf_counter() - activity_started) * 1000
     portfolio_context = None
     if portfolio:
-        team_names = {name.casefold() for name in active_names}
+        team_names = {name.casefold() for name in _ops_active_executive_names(db, timing)}
         outside_counts: dict[str, int] = {}
         outside_cases: list[dict] = []
         unassigned_cases: list[dict] = []
         unassigned_count = 0
         active_team_count = 0
-        summary_for_portfolio = current_summary or {}
         for doc in current_docs:
             name = str(doc.get("ejecutivo_asignado") or "").strip()
             if _ops_unassigned(name):
@@ -5512,22 +5013,10 @@ def query_leads_operational_dashboard(
             else:
                 outside_counts[name or "Sin nombre"] = outside_counts.get(name or "Sin nombre", 0) + 1
                 outside_cases.append({"lead_id": str(doc.get("_id")), "executive": name or "Sin nombre", "client": (doc.get("prospecto") or {}).get("nombre") or "Sin nombre", "property_reference": (doc.get("prospecto") or {}).get("codigo") or "Sin propiedad"})
-        if current_summary is not None:
-            outside_counts = {
-                str(row.get("executive") or "Sin nombre"): int(row.get("active") or 0)
-                for row in current_summary.get("by_executive") or []
-                if str(row.get("executive") or "").strip().casefold() not in team_names
-            }
-            active_team_count = sum(
-                int(row.get("active") or 0)
-                for row in current_summary.get("by_executive") or []
-                if str(row.get("executive") or "").strip().casefold() in team_names
-            )
-            unassigned_count = int(current_summary.get("unassigned") or 0)
         portfolio_context = {
             "captador": portfolio,
             "property_codes": len(portfolio_codes),
-            "active_total": int((current_summary or {}).get("active_total") or len(current_docs)),
+            "active_total": len(current_docs),
             "active_team": active_team_count,
             "unassigned": unassigned_count,
             "outside_team": sum(outside_counts.values()),
@@ -5539,84 +5028,32 @@ def query_leads_operational_dashboard(
             "unassigned_cases": unassigned_cases,
         }
     period_lead_ids = {str(doc.get("_id")) for doc in period_docs}
-    # Stage 2: assignment cycles depend on the lead documents; signed orders
-    # and scheduled-event evidence do not depend on cycles or on one another.
-    stage2_started = time.perf_counter()
-    stage2_jobs = {}
     signed_orders = None
-    shared_assignment_cycles = (
-        shared_resources.get("assignment_cycles")
-        if shared_resources is not None else None
-    )
-    assignment_docs_by_id = {}
-    for doc in [*historical_base, *current_docs]:
-        if doc.get("_id") is not None:
-            assignment_docs_by_id[str(doc.get("_id"))] = doc
-    assignment_docs = list(assignment_docs_by_id.values())
-    shared_signed_orders = (
-        shared_resources.get("signed_orders")
-        if shared_resources is not None else None
-    )
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        if shared_assignment_cycles is None:
-            stage2_jobs["assignment"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_assignment_episode_map_cached(
-                    db, assignment_docs, worker_profile
+    if period_lead_ids:
+        if shared_resources is not None and shared_resources.get("signed_orders") is not None:
+            signed_orders = shared_resources["signed_orders"]
+        else:
+            signed_orders = _profile_query(
+                timing,
+                "visitas",
+                "find_signed_orders",
+                lambda: db["visitas"].find(
+                    {"status": {"$in": list(CANONICAL_SIGNED_ORDER_STATUSES)}},
+                    {"visita_code": 1, "phone": 1, "property_code": 1,
+                     "timeline": 1, "created_at": 1},
                 ),
             )
-        if period_lead_ids and shared_signed_orders is None:
-            stage2_jobs["signed"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_fetch_signed_orders_cached(db, worker_profile),
-            )
-        if period_lead_ids:
-            stage2_jobs["scheduled"] = executor.submit(
-                _timed_read,
-                lambda worker_profile: _ops_fetch_scheduled_events(db, period_docs, worker_profile),
-            )
-        stage2_results = {name: future.result() for name, future in stage2_jobs.items()}
-
-    if shared_assignment_cycles is not None:
-        assignment_cycles = shared_assignment_cycles
-        assignment_ms, assignment_profile = 0.0, {}
-    else:
-        assignment_cycles, assignment_ms, assignment_profile = stage2_results.get("assignment", ({}, 0.0, {}))
-    if shared_signed_orders is not None:
-        signed_orders = shared_signed_orders
-        signed_ms = 0.0
-        signed_profile = {}
-    elif "signed" in stage2_results:
-        signed_orders, signed_ms, signed_profile = stage2_results["signed"]
-    else:
-        signed_ms, signed_profile = 0.0, {}
-    scheduled_events, scheduled_ms, scheduled_profile = stage2_results.get("scheduled", ([], 0.0, {}))
-    if timing is not None:
-        for profile in (assignment_profile, signed_profile, scheduled_profile):
-            timing.setdefault("mongo", []).extend(profile.get("mongo", []))
-        timing["stage2_wall_ms"] = round((time.perf_counter() - stage2_started) * 1000, 1)
-    if shared_resources is not None and shared_signed_orders is None and signed_orders is not None:
-        shared_resources["signed_orders"] = signed_orders
-    if shared_resources is not None and shared_assignment_cycles is None:
-        shared_resources["assignment_cycles"] = assignment_cycles
-
-    activity_started = time.perf_counter()
-    activity_signals = _ops_collect_activity_signals(
-        db, current_docs, period_docs, start_utc, period_cutoff,
-        assignment_cycles,
-        timing,
-    )
-    activity_ms = (time.perf_counter() - activity_started) * 1000
+            if shared_resources is not None:
+                shared_resources["signed_orders"] = signed_orders
     scheduled_visit_ids = _scheduled_visit_lead_ids(
         period_docs,
         period_lead_ids,
         period_cutoff,
         timing,
         signed_orders=signed_orders,
-        scheduled_events=scheduled_events if period_lead_ids else None,
     ) if period_lead_ids else set()
     transform_started = time.perf_counter()
-    team_executives = team_executives_override or active_names
+    team_executives = team_executives_override or _ops_active_executive_names(db, timing)
     result = build_operational_contract(
         current_docs,
         period_docs,
@@ -5626,7 +5063,6 @@ def query_leads_operational_dashboard(
         scheduled_visit_ids=scheduled_visit_ids,
         assignment_cycles=assignment_cycles,
         activity_signals=activity_signals,
-        current_summary=current_summary,
     )
     transform_ms = (time.perf_counter() - transform_started) * 1000
     if python_filters:
@@ -5650,7 +5086,7 @@ def query_leads_operational_dashboard(
     result["meta"]["portfolio_property_codes"] = len(portfolio_codes) if portfolio else None
     result["meta"]["portfolio_context"] = portfolio_context
     if timing is not None:
-        timing.update({"mongo_calls": actual_mongo_calls, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1), "users_query_ms": round(users_ms, 1), "assignment_cycles_ms": round(assignment_ms, 1), "signed_orders_ms": round(signed_ms, 1), "scheduled_events_ms": round(scheduled_ms, 1), "activity_results_ms": round(activity_ms, 1), "transform_ms": round(transform_ms, 1), "visit_evidence_leads": len(scheduled_visit_ids), "assignment_cycle_leads": len(assignment_cycles)})
+        timing.update({"mongo_calls": actual_mongo_calls, "current_query_ms": round(current_ms, 1), "period_query_ms": round(period_ms, 1), "assignment_cycles_ms": round(assignment_ms, 1), "activity_results_ms": round(activity_ms, 1), "transform_ms": round(transform_ms, 1), "visit_evidence_leads": len(scheduled_visit_ids), "assignment_cycle_leads": len(assignment_cycles)})
     return result
 
 

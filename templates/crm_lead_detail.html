@@ -5386,10 +5386,15 @@
             const msgInput = document.getElementById('commMessage');
             if (msgInput && !msgInput.dataset.listener) {
                 msgInput.addEventListener('input', () => {
-                    const activeTab = document.querySelector('.stage-tab.active');
-                    const currentCategory = activeTab ? activeTab.innerText.toLowerCase() : ''; // Approximation or use state
-                    // We'll use a safer way to get category in the next step or keep track
-                    updateSendLink(target, semState.currentCategory || firstTabId);
+                    // Read the current modal target at event time. Capturing the
+                    // first open's `target` could redirect a later message to the
+                    // previous recipient after switching between lead and owner.
+                    const activeTarget = currentCommTarget;
+                    const activeCategory = semState.currentCategory
+                        || commTemplates[activeTarget]?.tabs?.[0]?.id;
+                    if (activeTarget && activeCategory) {
+                        updateSendLink(activeTarget, activeCategory);
+                    }
                 });
                 msgInput.dataset.listener = "true";
             }

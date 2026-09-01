@@ -799,16 +799,18 @@ async def send_contract(contract_code: str, request: Request):
         if user_role not in ["supervisor", "admin"]:
             raise HTTPException(status_code=403, detail="Solo supervisor/admin puede reenviar convenios ya enviados.")
         
-    # Reusar token si aún es válido
+    # Reusar token si aún es válido y asegurar la nueva ventana de 120 horas.
     if contract.get("security", {}).get("token") and not contract["security"]["token_used"]:
         expiry = contract["security"]["token_expiry"]
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) < expiry:
+        now = datetime.now(timezone.utc)
+        if now < expiry:
             token = contract["security"]["token"]
+            expiry = max(expiry, now + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS))
         else:
             token = str(uuid.uuid4()).replace("-", "")
-            expiry = datetime.now(timezone.utc) + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS)
+            expiry = now + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS)
     else:
         token = str(uuid.uuid4()).replace("-", "")
         expiry = datetime.now(timezone.utc) + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS)

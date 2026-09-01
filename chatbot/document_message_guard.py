@@ -38,7 +38,7 @@ def find_active_document_guard(db: Any, phone: Any, now: Optional[datetime] = No
     """Busca un convenio u orden vigente que deba silenciar el chatbot.
 
     La vigencia proviene del mismo ``security.token_expiry`` usado por la firma,
-    por lo que un reenvío renueva automáticamente el bloqueo por otras 24 horas.
+    por lo que un reenvío renueva automáticamente el bloqueo por otras 120 horas.
     """
     phone_pattern = build_phone_suffix_regex(phone)
     if phone_pattern is None:

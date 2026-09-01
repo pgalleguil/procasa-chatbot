@@ -35,6 +35,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 active_signatures_lock = threading.Lock()
 ACTIVE_SIGNATURES = 0
 MAX_CONCURRENT_SIGNATURES = 100
+DOCUMENT_LINK_VALIDITY_HOURS = 120
 
 otp_rate_limit = defaultdict(list)
 verify_rate_limit = defaultdict(list)
@@ -913,10 +914,10 @@ async def send_contract(visita_code: str, request: Request):
             token = contract["security"]["token"]
         else:
             token = str(uuid.uuid4()).replace("-", "")
-            expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+            expiry = datetime.now(timezone.utc) + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS)
     else:
         token = str(uuid.uuid4()).replace("-", "")
-        expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+        expiry = datetime.now(timezone.utc) + timedelta(hours=DOCUMENT_LINK_VALIDITY_HOURS)
     
     server_timestamp = SecurityContracts.generate_server_timestamp()
     ip = get_client_ip(request)
@@ -1010,7 +1011,7 @@ async def visitas_statuses(request: Request):
     return {"items": [{"visita_code": r.get("visita_code"), "status": r.get("status", "created")} for r in rows]}
 
 def ensure_document_valid(contract: dict):
-    """Verifica la expiración real del documento (24 horas) en todos los endpoints"""
+    """Verifica la expiración real del documento (120 horas) en todos los endpoints"""
     now = datetime.now(timezone.utc)
     token_expiry = contract["security"].get("token_expiry")
     if token_expiry:
@@ -1039,7 +1040,7 @@ async def view_visita_public(token: str, request: Request):
         
     is_signed = contract["security"].get("token_used", False)
     
-    # Solo expira a las 24h si NO está firmado. Si ya se firmó, el acceso es permanente.
+    # Solo expira a las 120h si NO está firmado. Si ya se firmó, el acceso es permanente.
     if not is_signed:
         try:
             ensure_document_valid(contract)
@@ -1371,7 +1372,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         raise HTTPException(status_code=403, detail="Orden de Visita no válido para aceptación")
 
     # Timeout de sesión de firma (15 min desde OTP)
-    # La expiración de sesión NO invalida el documento (vigencia 24h)
+    # La expiración de sesión NO invalida el documento (vigencia 120h)
     # Solo lanza el error para que frontend vuelva a Paso 2
     SIGNATURE_TIMEOUT_MINUTES = 15
     otp_expiry = contract["security"].get("otp_expiry")

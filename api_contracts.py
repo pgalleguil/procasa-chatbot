@@ -951,21 +951,35 @@ async def view_contract_public(token: str, request: Request):
     ua = request.headers.get("user-agent", "")
     server_timestamp = SecurityContracts.generate_server_timestamp()
     
+    # Una apertura posterior a la firma es válida (por ejemplo, para volver a
+    # consultar el documento), pero nunca debe degradar el estado final.
+    # Mantener esta condición aquí es importante porque el enlace firmado sigue
+    # siendo accesible después de la firma.
+    update_doc = {
+        "$push": {
+            "access_logs": {"ip": ip, "user_agent": ua, "timestamp": server_timestamp},
+            "timeline": {
+                "action": "link_opened",
+                "server_timestamp": server_timestamp,
+                "ip": ip,
+                "user_agent": ua
+            }
+        }
+    }
+    update_filter = {"contract_code": contract["contract_code"]}
+    if not is_signed and contract.get("status") not in ["signed", "accepted"]:
+        update_doc["$set"] = {"status": "opened"}
+        # La condición también se aplica en MongoDB para cubrir la carrera en
+        # la que el cliente firma entre el find_one() y este update_one().
+        update_filter.update({
+            "status": {"$nin": ["signed", "accepted"]},
+            "security.token_used": {"$ne": True},
+        })
+
     await _db_call(
         db["contracts"].update_one,
-        {"contract_code": contract["contract_code"]},
-        {
-            "$push": {
-                "access_logs": {"ip": ip, "user_agent": ua, "timestamp": server_timestamp},
-                "timeline": {
-                    "action": "link_opened",
-                    "server_timestamp": server_timestamp,
-                    "ip": ip,
-                    "user_agent": ua
-                }
-            },
-            "$set": {"status": "opened"}
-        },
+        update_filter,
+        update_doc,
     )
     
     # Obtener token_expiry exacto en America/Santiago para evitar el bug de las 27 horas

@@ -20,7 +20,7 @@
             <p class="text-sm text-gray-500">Sistema de Integridad Documental Procasa Sucre</p>
         </div>
 
-        {% if contract.status in ["accepted", "signed"] %}
+        {% if contract.status in ["accepted", "signed"] or contract.security.token_used %}
         <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
             <div class="flex">
                 <div class="flex-shrink-0">

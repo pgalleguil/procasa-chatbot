@@ -2985,7 +2985,7 @@
                     {% endif %}
                 </div>
                 <div class="captacion-goal-block">
-                    <div class="captacion-goal-label">Equipo esta semana</div>
+                    <div class="captacion-goal-label">{% if goal_is_current_week %}Equipo esta semana{% else %}Equipo · Semana {{ goal_week_number }}{% endif %}</div>
                     <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} propiedades</small></div>
                     {% set team_week_progress_pct = ((captacion_goal.week_count * 100 / captacion_goal.week_goal)|round(1)) if captacion_goal.week_goal else 0 %}
                     <div class="captacion-week-progress" role="progressbar" aria-label="Avance de la meta semanal del equipo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_week_progress_pct, 100]|min }}">

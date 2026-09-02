@@ -129,6 +129,17 @@ def ensure_management_indexes(db) -> None:
     db[LEDGER_COLLECTION].create_index(
         [("actor_user_id", 1), ("local_date", 1), ("credited", 1)], name="captacion_ledger_actor_day"
     )
+    # Consultas del panel por día/semana y exclusión de reversas. Sin estos
+    # índices el fast path temporal debía recorrer demasiado ledger antes de
+    # poder resolver los IDs de propiedades.
+    db[LEDGER_COLLECTION].create_index(
+        [("occurred_at", 1), ("event_type", 1), ("credited", 1)],
+        name="captacion_ledger_period",
+    )
+    db[LEDGER_COLLECTION].create_index(
+        [("event_type", 1), ("original_event_id", 1)],
+        name="captacion_ledger_reversal",
+    )
     db[ANOMALY_COLLECTION].create_index(
         [("actor_user_id", 1), ("local_date", 1), ("status", 1)], name="captacion_anomaly_review"
     )
@@ -556,7 +567,11 @@ def _record_first_action_for_cycle(db, event: dict) -> None:
             "gestion.assignment_cycle_id": cycle_id,
             "$or": [{"gestion.first_valid_action_at": None}, {"gestion.first_valid_action_at": {"$exists": False}}],
         },
-        {"$set": {"gestion.first_valid_action_at": occurred_at, "gestion.fecha_ultima_gestion": occurred_at}},
+        {"$set": {
+            "gestion.first_valid_action_at": occurred_at,
+            "gestion.fecha_ultima_gestion": occurred_at,
+            "captacion_management_date": occurred_at,
+        }},
     )
 
 

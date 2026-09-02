@@ -8,6 +8,7 @@ import re
 import time as _perf_time
 from captacion_kpis import (
     VISIBLE_CLASSIFICATION_STATES,
+    AVAILABLE_STATES,
     MANAGEMENT_STATES,
     CAPTURED_STATES,
     DISCARDED_STATES,
@@ -28,6 +29,7 @@ from captacion_management import (
     record_manual_management_decision,
     start_management_attempt,
 )
+from captacion_materialized import build_captacion_materialized_fields
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +158,19 @@ def normalize_captacion_document(doc):
     return result
 
 
+def format_captacion_portal_label(origin):
+    """Nombre legible para un portal detectado desde los datos."""
+    value = str(origin or "").strip()
+    known_labels = {
+        "toctoc": "TocToc",
+        "yapo": "Yapo",
+        "prop360": "Prop360",
+        "portalinmobiliario": "Portal Inmobiliario",
+        "mercadolibre": "MercadoLibre",
+    }
+    return known_labels.get(value.casefold(), value.replace("_", " ").replace("-", " ").title())
+
+
 def get_captacion_capture_datetime(doc):
     """Return the first capture timestamp, never the last modification time."""
     candidates = [
@@ -185,6 +200,13 @@ def get_captacion_capture_datetime(doc):
 def _invalidate_detail_cache(obj_id):
     """Elimina el cache del detalle para forzar un render fresco tras un cambio."""
     _LOCAL_CACHE_L1.pop(f"detail_full_{obj_id}", None)
+
+
+def _invalidate_captacion_list_cache():
+    """Descarta cualquier snapshot local del listado de Captación."""
+    for key in list(_LOCAL_CACHE_L1):
+        if str(key).startswith("captacion_resp_"):
+            _LOCAL_CACHE_L1.pop(key, None)
 
 def _l1_get(key):
     rec = _LOCAL_CACHE_L1.get(key)
@@ -484,14 +506,14 @@ def resolve_operacion(details: dict) -> str:
     return "VENTA"
 
 
-def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, classification_filter=None, sort_by=None, sort_dir="desc"):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, classification_filter=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
     _l_start = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
     
     # Base: captaciones elegibles de todos los portales soportados.
     query = {
-        "origen": {"$in": ["toctoc", "yapo"]},
+        "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
 
@@ -557,7 +579,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     if classification_filter and classification_filter != "Todos":
         query["classification.state"] = classification_filter
-    
+
     if status_filter:
         terminal_states = list(CAPTURED_STATES + DISCARDED_STATES)
         if status_filter == "GRUPO_TRABAJADAS":
@@ -583,38 +605,153 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         ]})
     
     if telefono_filter:
-        tel_pattern = re.compile(re.escape(telefono_filter), re.I)
-        add_condition({"$or": [
-            {"contact_phone": tel_pattern},
-            {"whatsapp_phone": tel_pattern},
-            {"telefono": tel_pattern},
-            {"details.whatsapp_phone": tel_pattern},
-            {"details.contact_phone": tel_pattern},
-            {"details.telefono": tel_pattern},
-            {"details.phone": tel_pattern},
-        ]})
+        phone_digits = "".join(char for char in str(telefono_filter) if char.isdigit())
+        if phone_digits:
+            # El formato canónico permite usar el índice para búsquedas por
+            # prefijo. El fallback se limita a documentos sin backfill, para
+            # no volver a escanear toda la cartera en cada búsqueda.
+            legacy_phone_pattern = re.compile(re.escape(str(telefono_filter)), re.I)
+            add_condition({"$or": [
+                {"telefono_normalizado": re.compile(f"^{re.escape(phone_digits)}")},
+                {"telefono_normalizado": {"$exists": False}, "$or": [
+                    {"contact_phone": legacy_phone_pattern},
+                    {"whatsapp_phone": legacy_phone_pattern},
+                    {"telefono": legacy_phone_pattern},
+                    {"details.whatsapp_phone": legacy_phone_pattern},
+                    {"details.contact_phone": legacy_phone_pattern},
+                    {"details.telefono": legacy_phone_pattern},
+                    {"details.phone": legacy_phone_pattern},
+                ]},
+            ]})
+        else:
+            tel_pattern = re.compile(re.escape(str(telefono_filter)), re.I)
+            add_condition({"$or": [
+                {"contact_phone": tel_pattern},
+                {"whatsapp_phone": tel_pattern},
+                {"telefono": tel_pattern},
+                {"details.whatsapp_phone": tel_pattern},
+                {"details.contact_phone": tel_pattern},
+                {"details.telefono": tel_pattern},
+                {"details.phone": tel_pattern},
+            ]})
+
+    # El filtro temporal usa la misma fuente de gestiones acreditadas que la
+    # tarjeta de metas. Se traduce a IDs de propiedades antes de contar/listar
+    # para que el contador y la paginación respeten todos los filtros actuales.
+    temporal_portal_base_query = None
+    temporal_property_values = None
+    if gestion_date or gestion_week_start:
+        from captacion_goals import get_captacion_management_rows
+
+        temporal_portal_base_query = dict(query)
+        if "$and" in temporal_portal_base_query:
+            temporal_portal_base_query["$and"] = list(temporal_portal_base_query["$and"])
+
+        try:
+            if gestion_date:
+                temporal_start = datetime.strptime(str(gestion_date), "%Y-%m-%d").date()
+                temporal_end = temporal_start
+            else:
+                temporal_start = datetime.strptime(str(gestion_week_start), "%Y-%m-%d").date()
+                temporal_end = temporal_start + timedelta(days=6)
+
+            temporal_rows = get_captacion_management_rows(
+                db,
+                period_start=temporal_start.isoformat(),
+                period_end=temporal_end.isoformat(),
+            )
+            property_values = {
+                str(row.get("property_id")).strip()
+                for row in temporal_rows
+                if row.get("credited", True) and row.get("property_id")
+            }
+            object_ids = []
+            string_ids = []
+            for property_value in property_values:
+                try:
+                    object_ids.append(ObjectId(property_value))
+                except Exception:
+                    string_ids.append(property_value)
+            temporal_property_values = object_ids + string_ids
+
+            temporal_clauses = []
+            if object_ids:
+                temporal_clauses.append({"_id": {"$in": object_ids}})
+            if string_ids:
+                temporal_clauses.append({"_id": {"$in": string_ids}})
+            add_condition({"$or": temporal_clauses} if temporal_clauses else {"_id": None})
+        except (TypeError, ValueError):
+            # Un parámetro temporal inválido nunca debe ampliar el universo.
+            add_condition({"_id": None})
+
+    # Se calcula sin el portal elegido para que el selector muestre solo los
+    # portales que realmente tienen registros en el alcance actual del usuario.
+    # El selector de portal depende del alcance actual (RBAC + filtros), por
+    # lo que se cachea por consulta y no como catálogo global. Así se conserva
+    # exactamente qué opciones quedan disponibles para cada combinación de
+    # filtros, evitando repetir el distinct en cada petición idéntica.
+    portal_cache_key = repr(query)
+    portal_cache = getattr(get_captacion_list, "_portal_cache", {})
+    portal_cache_rec = portal_cache.get(portal_cache_key)
+    portal_cache_ttl = 300
+    if portal_cache_rec and (get_chile_now() - portal_cache_rec[0]).total_seconds() < portal_cache_ttl:
+        available_portal_values = portal_cache_rec[1]
+        if perf_context is not None:
+            perf_context["portal_catalog_cache"] = "hit"
+    else:
+        if temporal_property_values and temporal_portal_base_query is not None:
+            # El filtro temporal ya resolvió IDs concretos desde el ledger.
+            # Consultar esos pocos documentos evita un distinct sobre toda la
+            # cartera, que era el outlier del fast path diario/semanal.
+            temporal_portal_query = dict(temporal_portal_base_query)
+            temporal_portal_query.setdefault("$and", []).append({
+                "_id": {"$in": temporal_property_values}
+            })
+            portal_documents = coll.find(temporal_portal_query, {"origen": 1})
+            available_portal_values = sorted({
+                str(document.get("origen")).strip()
+                for document in portal_documents
+                if document.get("origen") and str(document.get("origen")).strip()
+            }, key=str.casefold)
+        else:
+            available_portal_values = sorted({
+                str(origin).strip()
+                for origin in coll.distinct("origen", query)
+                if origin and str(origin).strip()
+            }, key=str.casefold)
+        portal_cache[portal_cache_key] = (get_chile_now(), available_portal_values)
+        # Evita que combinaciones de filtros históricas acumulen memoria.
+        if len(portal_cache) > 128:
+            oldest_key = min(portal_cache, key=lambda key: portal_cache[key][0])
+            portal_cache.pop(oldest_key, None)
+        get_captacion_list._portal_cache = portal_cache
+        if perf_context is not None:
+            perf_context["portal_catalog_cache"] = "miss"
+    _l_portal = _perf_time.perf_counter()
+    available_portals = [
+        {"value": origin, "label": format_captacion_portal_label(origin)}
+        for origin in available_portal_values
+    ]
+
+    if portal_filter in available_portal_values:
+        query["origen"] = portal_filter
     
-    # Cache
-    response_cache_key = (
-        f"captacion_resp_v11_{user_role}_{user_name}_{comuna_filters}_{status_filter}_"
-        f"{executive_filter}_{operacion_filter}_{telefono_filter}_{classification_filter}_"
-        f"{sort_by}_{sort_dir}_{page}_{limit}"
-    )
-    cached = get_cached_value(response_cache_key)
-    if cached is not None:
-        return cached.get("items", []), cached.get("total_count", 0), cached.get("available_ops", ["venta", "arriendo"])
+    # El listado no se cachea: sus estados cambian desde la vista de detalle
+    # y debe reflejar la actualización inmediatamente al volver a la tabla.
+    # La cuenta y la página se obtienen juntas más abajo con un único $facet.
+    total_count = None
+    _l_count = _l_portal
     
-    total_count = coll.count_documents(query)
-    _l_count = _perf_time.perf_counter()
-    
-    # Available ops: resultado estático por colección, cache global 120s.
+    # Available ops: resultado estático por colección, cache global 300s.
     # No depende de RBAC ni filtros, así que no debe recalcularse por request.
     _global_ops_cache = getattr(get_captacion_list, '_ops_cache', None)
-    if _global_ops_cache and (get_chile_now() - _global_ops_cache[0]).total_seconds() < 120:
+    if _global_ops_cache and (get_chile_now() - _global_ops_cache[0]).total_seconds() < 300:
         available_ops = _global_ops_cache[1]
+        if perf_context is not None:
+            perf_context["operation_catalog_cache"] = "hit"
     else:
         pipeline_ops = [
-            {"$match": {"origen": {"$in": ["toctoc", "yapo"]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
+            {"$match": {"origen": {"$exists": True, "$nin": [None, ""]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
             {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
         ]
         ops_result = list(coll.aggregate(pipeline_ops))
@@ -628,14 +765,19 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         if not available_ops:
             available_ops = ["venta", "arriendo"]
         get_captacion_list._ops_cache = (get_chile_now(), available_ops)
+        if perf_context is not None:
+            perf_context["operation_catalog_cache"] = "miss"
     _l_ops = _perf_time.perf_counter()
     
     skip = (page - 1) * limit
     sort_fields = {
-        "comuna": "comuna_slug",
-        "precio": "precio_uf",
-        "owner_probability": "classification.owner_probability",
+        "comuna": "captacion_comuna_sort",
+        "precio": "captacion_price_sort",
+        "owner_probability": "captacion_probability_sort",
+        "ultima_gestion": "captacion_management_date",
     }
+    allowed_orders = {"prioridad", "recientes", "probabilidad", "antiguas", "ultima_gestion"}
+    order_filter = order_filter if order_filter in allowed_orders else None
     sort_keys = [s.strip() for s in str(sort_by or "").split(",") if s.strip()]
     sort_dirs = [s.strip().lower() for s in str(sort_dir or "").split(",") if s.strip()]
     sort_specs = []
@@ -644,36 +786,147 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             continue
         direction = 1 if index < len(sort_dirs) and sort_dirs[index] == "asc" else -1
         sort_specs.append((key, direction))
-    projection = {"descripcion": 0, "description": 0, "historial": 0}
-    if any(key == "antiguedad" for key, _ in sort_specs):
-        # Antigüedad ascendente = menos días primero, por eso la fecha va
-        # descendente. $ifNull mantiene el orden global aunque falte updated_at.
-        aggregate_sort = {}
-        for key, direction in sort_specs:
-            aggregate_sort["_captacion_sort_date" if key == "antiguedad" else sort_fields[key]] = (
-                -direction if key == "antiguedad" else direction
-            )
-        aggregate_sort["_id"] = -1
-        cursor = coll.aggregate([
-            {"$match": query},
-            {"$addFields": {"_captacion_sort_date": {
-                "$ifNull": ["$first_seen", {"$ifNull": ["$first_seen_at", {
-                    "$ifNull": ["$created_at", {"$ifNull": ["$fecha_captura", {
-                        "$ifNull": ["$processed_at", "$updated_at"]
-                    }]}]
-                }]}]
-            }}},
-            {"$sort": aggregate_sort},
-            {"$skip": skip},
-            {"$limit": limit},
-            {"$project": {"descripcion": 0, "description": 0, "historial": 0,
-                           "_captacion_sort_date": 0}},
-        ])
+    # Proyección mínima de la vista de listado. La anterior era de exclusión
+    # y seguía trayendo clasificación completa, imágenes, metadata del scrape
+    # y otros payloads que la tabla no renderiza. Se conservan los alias que
+    # normalize_captacion_document() y los helpers de precio/owner usan, más
+    # los campos de gestión, fechas y ordenamiento.
+    projection = {
+        "_id": 1,
+        "listing_id": 1,
+        "url": 1,
+        "title": 1,
+        "titulo": 1,
+        "comuna": 1,
+        "comuna_slug": 1,
+        "operation": 1,
+        "operacion": 1,
+        "tipo_operacion": 1,
+        "property_type": 1,
+        "tipo_propiedad": 1,
+        "precio_raw": 1,
+        "precio": 1,
+        "price": 1,
+        "precio_uf": 1,
+        "price_uf": 1,
+        "precio_clp": 1,
+        "price_clp": 1,
+        "contact_phone": 1,
+        "whatsapp_phone": 1,
+        "telefono": 1,
+        "email": 1,
+        "vendedor_email": 1,
+        "seller_name": 1,
+        "publicador": 1,
+        "origen": 1,
+        "source_portal": 1,
+        "score_captacion": 1,
+        "probabilidad": 1,
+        "first_seen": 1,
+        "first_seen_at": 1,
+        "created_at": 1,
+        "fecha_captura": 1,
+        "processed_at": 1,
+        "scraped_at": 1,
+        "updated_at": 1,
+        "details.comuna": 1,
+        "details.comuna_norm": 1,
+        "details.operacion": 1,
+        "details.tipo_operacion": 1,
+        "details.tipo_propiedad": 1,
+        "details.tipo": 1,
+        "details.precio": 1,
+        "details.precio_raw": 1,
+        "details.price": 1,
+        "details.precio_uf": 1,
+        "details.price_uf": 1,
+        "details.precio_clp": 1,
+        "details.price_clp": 1,
+        "details.dormitorios": 1,
+        "details.banos": 1,
+        "details.baños": 1,
+        "details.dormitorios_min": 1,
+        "details.banos_min": 1,
+        "details.m2_total": 1,
+        "details.m2_totales": 1,
+        "details.m2_construidos": 1,
+        "details.superficie_total": 1,
+        "details.publicador": 1,
+        "details.vendedor_nombre": 1,
+        "details.whatsapp_phone": 1,
+        "details.contact_phone": 1,
+        "details.telefono": 1,
+        "details.phone": 1,
+        "details.email": 1,
+        "details.vendedor_email": 1,
+        "gestion.estado": 1,
+        "gestion.ejecutivo_asignado": 1,
+        "gestion.ejecutivo_id": 1,
+        "gestion.intent_count": 1,
+        "gestion.fecha_ultima_gestion": 1,
+        "classification.state": 1,
+        "classification.final_state": 1,
+        "classification.owner_probability": 1,
+        "classification.owner_probability_signals": 1,
+    }
+    preloaded_docs = None
+    if order_filter or sort_specs:
+        if order_filter == "prioridad":
+            aggregate_sort = {
+                "captacion_priority": 1,
+                "captacion_sort_date": -1,
+                "_id": -1,
+            }
+        elif order_filter == "recientes":
+            aggregate_sort = {"captacion_sort_date": -1, "_id": -1}
+        elif order_filter == "antiguas":
+            aggregate_sort = {"captacion_sort_date": 1, "_id": -1}
+        elif order_filter == "probabilidad":
+            aggregate_sort = {"captacion_probability_sort": -1, "_id": -1}
+        elif order_filter == "ultima_gestion":
+            aggregate_sort = {"captacion_management_date": -1, "_id": -1}
+        else:
+            aggregate_sort = {}
+            for key, direction in sort_specs:
+                sort_key = {
+                    "comuna": "captacion_comuna_sort",
+                    "precio": "captacion_price_sort",
+                    "owner_probability": "captacion_probability_sort",
+                    # Antigüedad ASC = menos días = fecha más reciente.
+                    "antiguedad": "captacion_sort_date",
+                }[key]
+                aggregate_sort[sort_key] = -direction if key == "antiguedad" else direction
+            aggregate_sort["_id"] = -1
+        # Los campos se materializan durante la ingesta/backfill, de modo que
+        # Mongo puede usar un índice para ordenar antes de paginar.
+        list_sort = aggregate_sort
     else:
-        mongo_sort = ([(sort_fields[key], direction) for key, direction in sort_specs] + [("_id", -1)]
-                      if sort_specs else [("updated_at", -1), ("_id", -1)])
-        cursor = coll.find(query, projection).sort(mongo_sort).skip(skip).limit(limit)
-    _raw_docs = list(cursor)
+        list_sort = {"updated_at": -1, "_id": -1}
+
+    _facet_started = _perf_time.perf_counter()
+    if preloaded_docs is not None:
+        total_count = coll.count_documents(query)
+        _raw_docs = preloaded_docs
+    else:
+        # Una sola ida a Mongo para el contador y los diez documentos visibles.
+        facet_rows = list(coll.aggregate([
+            {"$match": query},
+            {"$facet": {
+                "metadata": [{"$count": "total"}],
+                "data": [
+                    {"$sort": list_sort},
+                    {"$skip": skip},
+                    {"$limit": limit},
+                    {"$project": projection},
+                ],
+            }},
+        ]))
+        facet_row = facet_rows[0] if facet_rows else {}
+        metadata = facet_row.get("metadata") or []
+        total_count = int((metadata[0] if metadata else {}).get("total") or 0)
+        _raw_docs = facet_row.get("data") or []
+    _facet_finished = _perf_time.perf_counter()
+    _l_count = _facet_finished
     _l_cursor = _perf_time.perf_counter()
     
     items_paginated = []
@@ -751,6 +1004,15 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     
     _l_enrich = _perf_time.perf_counter()
     _l_total = (_perf_time.perf_counter() - _l_start) * 1000
+    if perf_context is not None:
+        perf_context.update({
+            "count_ms": round((_facet_finished - _facet_started) * 1000, 1),
+            "portal_ms": round((_l_portal - _l_start) * 1000, 1),
+            "ops_ms": round((_l_ops - _l_portal) * 1000, 1),
+            "query_ms": round((_facet_finished - _facet_started) * 1000, 1),
+            "enrich_ms": round((_l_enrich - _l_cursor) * 1000, 1),
+            "total_ms": round(_l_total, 1),
+        })
     logger.debug(
         f"[CAPTACION_LIST_PERF] count={(_l_count - _l_start)*1000:.0f} "
         f"ops={(_l_ops - _l_count)*1000:.0f} "
@@ -759,8 +1021,61 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         f"total={_l_total:.0f}ms items={len(items_paginated)}"
     )
     
-    _l1_set(response_cache_key, {"items": items_paginated, "total_count": total_count, "available_ops": available_ops}, expire_seconds=45)
+    if return_portals:
+        return items_paginated, total_count, available_ops, available_portals
     return items_paginated, total_count, available_ops
+
+
+def warm_captacion_shared_catalogs():
+    """Precalienta catálogos globales usados por la primera vista.
+
+    Los catálogos no dependen del usuario, paginación ni ordenamiento. Se
+    preparan una vez fuera del request para que el primer visitante no pague
+    los ``distinct``/agregados de infraestructura del formulario.
+    """
+    warm_started = _perf_time.perf_counter()
+    db = get_db()
+    coll = get_captacion_collection(db)
+    base_query = {
+        "origen": {"$exists": True, "$nin": [None, ""]},
+        "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
+    }
+    now = get_chile_now()
+
+    portal_cache = getattr(get_captacion_list, "_portal_cache", {})
+    base_key = repr(base_query)
+    portal_values = sorted({
+        str(origin).strip()
+        for origin in coll.distinct("origen", base_query)
+        if origin and str(origin).strip()
+    }, key=str.casefold)
+    portal_cache[base_key] = (now, portal_values)
+    if len(portal_cache) > 128:
+        oldest_key = min(portal_cache, key=lambda key: portal_cache[key][0])
+        portal_cache.pop(oldest_key, None)
+    get_captacion_list._portal_cache = portal_cache
+
+    pipeline_ops = [
+        {"$match": base_query},
+        {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}},
+    ]
+    ops_result = list(coll.aggregate(pipeline_ops))
+    raw_ops = ops_result[0].get("ops", []) if ops_result else []
+    available_ops = []
+    for operation in raw_ops:
+        if operation and "venta" in str(operation).lower():
+            available_ops.append("venta")
+        if operation and "arr" in str(operation).lower():
+            available_ops.append("arriendo")
+    if not available_ops:
+        available_ops = ["venta", "arriendo"]
+    get_captacion_list._ops_cache = (now, available_ops)
+    elapsed_ms = (_perf_time.perf_counter() - warm_started) * 1000
+    return {
+        "portal_count": len(portal_values),
+        "operation_count": len(available_ops),
+        "elapsed_ms": round(elapsed_ms, 1),
+    }
 
 def get_captacion_detail(obj_id):
     from bson import ObjectId
@@ -998,7 +1313,9 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
     update_fields = {
         "gestion.estado": status,
         "gestion.estado_captacion": status,
-        "gestion.fecha_ultima_gestion": now
+        "gestion.fecha_ultima_gestion": now,
+        "captacion_priority": 0 if status in AVAILABLE_STATES else 1,
+        "captacion_management_date": now,
     }
     
     if next_followup:
@@ -1106,6 +1423,12 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             now=now,
         )
     _invalidate_detail_cache(obj_id)
+    _invalidate_captacion_list_cache()
+    try:
+        from captacion_goals import clear_captacion_management_rows_cache
+        clear_captacion_management_rows_cache()
+    except Exception:
+        logger.debug("No se pudo invalidar la caché de ledger de captación", exc_info=True)
     
     # Precomputación SaaS: Actualizar métricas de captación
     try:
@@ -1162,6 +1485,13 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         clean_phone = "".join(filter(str.isdigit, str(telefono)))
         if clean_phone != details.get("whatsapp_phone"):
             update_fields["details.whatsapp_phone"] = clean_phone
+            updated_doc = dict(current_doc)
+            updated_details = dict(details)
+            updated_details["whatsapp_phone"] = clean_phone
+            updated_doc["details"] = updated_details
+            update_fields["telefono_normalizado"] = build_captacion_materialized_fields(
+                updated_doc
+            )["telefono_normalizado"]
             audit_changes.append({
                 "timestamp": now,
                 "user": user_name,
@@ -1196,6 +1526,7 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             update_params
         )
         _invalidate_detail_cache(obj_id)
+        _invalidate_captacion_list_cache()
         
         # LOG EVENT CENTRAL: Registro de Teléfono
         if telefono:
@@ -1267,6 +1598,7 @@ def log_captacion_activity(
         {"$push": {"gestion.actividades": activity_entry}}
     )
     _invalidate_detail_cache(obj_id)
+    _invalidate_captacion_list_cache()
 
     # Auditoría de intención: abrir una app externa nunca acredita la meta.
     try:
@@ -1582,6 +1914,40 @@ def ensure_leads_indexes():
             ], name="idx_captacion_default_sort")
         except Exception:
             pass
+
+        # Índices para los campos derivados del listado. Se crean después del
+        # backfill en despliegue; mientras faltan campos, get_captacion_list
+        # conserva el mismo orden materializado para los documentos existentes.
+        materialized_indexes = (
+            ("idx_captacion_priority_materialized", [
+                ("origen", 1), ("classification.state", 1),
+                ("captacion_priority", 1), ("captacion_sort_date", -1), ("_id", -1),
+            ]),
+            ("idx_captacion_date_materialized", [
+                ("origen", 1), ("classification.state", 1),
+                ("captacion_sort_date", -1), ("_id", -1),
+            ]),
+            ("idx_captacion_price_materialized", [
+                ("origen", 1), ("classification.state", 1),
+                ("captacion_price_sort", 1), ("_id", -1),
+            ]),
+            ("idx_captacion_probability_materialized", [
+                ("origen", 1), ("classification.state", 1),
+                ("captacion_probability_sort", -1), ("_id", -1),
+            ]),
+            ("idx_captacion_comuna_materialized", [
+                ("origen", 1), ("classification.state", 1),
+                ("captacion_comuna_sort", 1), ("_id", -1),
+            ]),
+            ("idx_captacion_phone_normalized", [
+                ("telefono_normalizado", 1),
+            ]),
+        )
+        for index_name, index_spec in materialized_indexes:
+            try:
+                coll.create_index(index_spec, name=index_name)
+            except Exception:
+                pass
 
         # 6. Índice TTL para caché persistente
         try:

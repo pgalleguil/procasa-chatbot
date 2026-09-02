@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
+from copy import deepcopy
 import logging
 import time as _perf_time
 from typing import Iterable
@@ -30,8 +31,15 @@ VALID_EXCEPTION_TYPES = {
 }
 
 _INDEXES_READY = False
+_TEAM_CACHE = {}
+_TEAM_CACHE_TTL_SECONDS = 300
 
 logger = logging.getLogger(__name__)
+
+
+def clear_captacion_team_cache() -> None:
+    """Invalida el equipo cacheado cuando cambia una membresía."""
+    _TEAM_CACHE.clear()
 
 
 def clean_id(value) -> str:
@@ -174,8 +182,14 @@ def get_active_captacion_team(db, local_day: date | str) -> list[dict]:
     """Equipo del dashboard: membresías explícitas activas + agentes activos sin
     membresía (inferido por `rol=agente`; nunca por comunas). Crear/desactivar la
     membresía sigue siendo la vía para controlar la inclusión."""
-    _t0 = _perf_time.perf_counter()
     day = parse_local_date(local_day)
+    cache_key = (id(db), day.isoformat())
+    cache_now = _perf_time.time()
+    cached = _TEAM_CACHE.get(cache_key)
+    if cached and cache_now - cached[0] < _TEAM_CACHE_TTL_SECONDS:
+        return deepcopy(cached[1])
+
+    _t0 = _perf_time.perf_counter()
     memberships = get_active_memberships(db, day)
     _t1 = _perf_time.perf_counter()
     result = resolve_membership_users(db, memberships)
@@ -185,7 +199,11 @@ def get_active_captacion_team(db, local_day: date | str) -> list[dict]:
         f"[CAPTACION_GOAL_PERF] team: memberships={(_t1-_t0)*1000:.0f}ms "
         f"resolve_users={(_t2-_t1)*1000:.0f}ms members={len(result)}"
     )
-    return result
+    _TEAM_CACHE[cache_key] = (cache_now, deepcopy(result))
+    if len(_TEAM_CACHE) > 16:
+        oldest_key = min(_TEAM_CACHE, key=lambda key: _TEAM_CACHE[key][0])
+        _TEAM_CACHE.pop(oldest_key, None)
+    return deepcopy(result)
 
 
 def get_calendar_day(db, local_day: date, timezone_name: str) -> dict | None:
@@ -311,6 +329,7 @@ def upsert_membership(db, payload: dict, actor_user_id) -> dict:
     db[WORKFORCE_AUDIT_COLLECTION].insert_one(
         {"type": "membership_upserted", "user_id": user_id, "actor_user_id": clean_id(actor_user_id), "snapshot": document, "created_at": datetime.now(timezone.utc)}
     )
+    clear_captacion_team_cache()
     return document
 
 

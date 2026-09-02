@@ -23,7 +23,7 @@
             <p class="text-[10px] text-gray-400 font-medium mt-1">Inmobiliaria Sucre SpA &mdash; Procasa Sucre</p>
         </div>
 
-        {% if contract.status in ["accepted", "signed"] %}
+        {% if contract.status in ["accepted", "signed"] or contract.security.token_used %}
         <div class="bg-green-50 border-l-4 border-green-500 p-5 mb-8 rounded-r-lg">
             <div class="flex">
                 <div class="flex-shrink-0">

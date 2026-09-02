@@ -1066,12 +1066,19 @@ async def view_visita_public(token: str, request: Request):
             }
         }
     }
+    update_filter = {"visita_code": contract["visita_code"]}
     if not is_signed and contract.get("status") not in ["signed", "accepted"]:
         update_query["$set"] = {"status": "opened"}
+        # La condición en MongoDB evita degradar una firma si esta ocurre
+        # entre el find_one() y el update_one().
+        update_filter.update({
+            "status": {"$nin": ["signed", "accepted"]},
+            "security.token_used": {"$ne": True},
+        })
 
     await _db_call(
         db["visitas"].update_one,
-        {"visita_code": contract["visita_code"]},
+        update_filter,
         update_query,
     )
     

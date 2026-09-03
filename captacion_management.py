@@ -25,6 +25,7 @@ LEDGER_COLLECTION = "captacion_management_events"
 ANOMALY_COLLECTION = "captacion_management_anomalies"
 DAILY_METRICS_COLLECTION = "captacion_daily_metrics"
 ASSIGNMENT_CYCLE_COLLECTION = "captacion_assignment_cycles"
+KPI_REVISION_COLLECTION = "captacion_kpi_revision"
 LEDGER_VERSION = "ledger_v2"
 
 VALID_STARTED_ACTIONS = {
@@ -77,6 +78,18 @@ COMMERCIAL_OUTCOME_DEFINITIONS = {
     "not_interested": ("no_interesado", "No interesado", "closed_without_capture", 70),
     "invalid_number": ("numero_invalido", "Número inválido", "closed_without_capture", 70),
     "captured": ("captado", "Captado", "captured", 100),
+}
+COMMERCIAL_RESULT_VALUES = set(COMMERCIAL_OUTCOME_DEFINITIONS)
+CONTACT_RESULT_VALUES = set(VALID_RESULTS)
+COMMERCIAL_RESULT_STATUS = {
+    "ready_to_contact": "Por contactar",
+    "in_progress": "En gestión",
+    "not_interested": "No interesado",
+    "captured": "Captado",
+    "broker_identified": "Corredor",
+    "discarded": "Descartado",
+    "unavailable": "Propiedad no disponible",
+    "listing_expired": "Publicación expirada",
 }
 
 # Fuente Ãºnica de verdad para decisiones manuales que representan trabajo
@@ -184,6 +197,59 @@ def normalize_result(result) -> str:
     return value
 
 
+def normalize_commercial_result(result) -> str | None:
+    """Normaliza el resultado comercial opcional de una gestión combinada."""
+    if result in (None, ""):
+        return None
+    value = unicodedata.normalize("NFKD", str(result).strip().casefold())
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    aliases = {
+        "no interesado": "not_interested",
+        "no_interesado": "not_interested",
+        "captado": "captured",
+        "captada": "captured",
+        "corredor": "broker_identified",
+        "descartado": "discarded",
+        "propiedad no disponible": "unavailable",
+        "publicacion expirada": "listing_expired",
+        "en gestion": "in_progress",
+        "por contactar": "ready_to_contact",
+    }
+    value = aliases.get(value, value)
+    if value not in COMMERCIAL_RESULT_VALUES:
+        raise ValueError("Resultado comercial no permitido")
+    return value
+
+
+def bump_captacion_kpi_revision(db) -> int:
+    """Incrementa una revisión compartida para invalidar KPI entre workers."""
+    collection = db[KPI_REVISION_COLLECTION]
+    updater = getattr(collection, "find_one_and_update", None)
+    if updater:
+        from pymongo import ReturnDocument
+        result = updater(
+            {"_id": "captacion_kpi_revision"},
+            {"$inc": {"revision": 1}, "$set": {"updated_at": datetime.now(timezone.utc)}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int((result or {}).get("revision") or 1)
+    # Fallback para dobles de prueba/implementaciones de almacenamiento que no
+    # exponen find_one_and_update. MongoDB usa el camino atómico anterior.
+    current = get_captacion_kpi_revision(db) + 1
+    collection.update_one(
+        {"_id": "captacion_kpi_revision"},
+        {"$set": {"revision": current, "updated_at": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return current
+
+
+def get_captacion_kpi_revision(db) -> int:
+    row = db[KPI_REVISION_COLLECTION].find_one({"_id": "captacion_kpi_revision"}) or {}
+    return int(row.get("revision") or 0)
+
+
 def normalize_manual_status(status) -> str:
     value = unicodedata.normalize("NFKD", str(status or "").strip().casefold())
     return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
@@ -206,6 +272,8 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         return {"eligible": False, "reason": "context_required", "status": normalized_status}
     if not changed:
         return {"eligible": False, "reason": "no_meaningful_change", "status": normalized_status}
+    if rule.get("requires_evidence") and not evidence:
+        return {"eligible": False, "reason": "evidence_required", "status": normalized_status}
     return {
         "eligible": True,
         "reason": None,
@@ -341,9 +409,10 @@ def start_management_attempt(
     return {"attempt_id": attempt_id, "status": document["status"], "assignment_cycle_id": cycle_id}
 
 
-def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, notes=None, now=None) -> dict:
+def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, notes=None, commercial_result=None, now=None) -> dict:
     ensure_management_indexes(db)
     result_value = normalize_result(result)
+    commercial_result_value = normalize_commercial_result(commercial_result)
     actor_user_id = clean_id(actor_user.get("_id"))
     attempt = db[ATTEMPT_COLLECTION].find_one({"attempt_id": clean_id(attempt_id)})
     if not attempt:
@@ -388,7 +457,9 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         "actor_email_snapshot": actor_user.get("email") or attempt.get("actor_email_snapshot") or "",
         "action": attempt["action"],
         "channel": attempt["channel"],
-        "result": result_value,
+        "result": commercial_result_value or result_value,
+        "contact_result": result_value,
+        "commercial_result": commercial_result_value,
         "contact_attempt": True,
         "notes": str(notes or ""),
         "contact_effective": result_value in CONTACT_EFFECTIVE_RESULTS,
@@ -415,13 +486,41 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         }},
     )
     if credited:
+        if commercial_result_value in COMMERCIAL_RESULT_STATUS:
+            candidates = [attempt["property_id"]]
+            try:
+                candidates.append(ObjectId(attempt["property_id"]))
+            except Exception:
+                pass
+            for candidate in candidates:
+                property_doc = Config.get_captacion_collection(db).find_one({"_id": candidate})
+                if property_doc:
+                    current_status = (property_doc.get("gestion") or {}).get("estado_captacion") or (property_doc.get("gestion") or {}).get("estado") or "NUEVO"
+                    Config.get_captacion_collection(db).update_one(
+                        {"_id": candidate},
+                        {"$set": {
+                            "gestion.estado": COMMERCIAL_RESULT_STATUS[commercial_result_value],
+                            "gestion.estado_captacion": COMMERCIAL_RESULT_STATUS[commercial_result_value],
+                        }, "$push": {"gestion.status_history": {
+                            "timestamp": occurred_at.astimezone(timezone.utc),
+                            "from_state": current_status,
+                            "to_state": COMMERCIAL_RESULT_STATUS[commercial_result_value],
+                            "user": actor_user.get("nombre") or "",
+                            "source": "combined_contact_and_commercial_result",
+                        }}},
+                    )
+                    break
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
         audit_management_patterns(db, event)
+        bump_captacion_kpi_revision(db)
     return {
         "status": "confirmed",
         "credited": credited,
         "event_id": resolved_event_id,
+        "property_id": attempt["property_id"],
+        "assignment_cycle_id": attempt.get("assignment_cycle_id"),
+        "occurred_at": occurred_at.astimezone(timezone.utc),
         "contact_effective": result_value in CONTACT_EFFECTIVE_RESULTS,
         "local_date": local.date().isoformat(),
     }
@@ -485,6 +584,8 @@ def record_manual_management_decision(
             "action": "manual_decision",
             "channel": "manual",
             "result": decision["result"],
+            "contact_result": None,
+            "commercial_result": decision["result"],
             "status_snapshot": str(status or ""),
             "previous_status_snapshot": str(previous_status or ""),
             "notes": decision["evidence"],
@@ -518,6 +619,8 @@ def record_manual_management_decision(
         "action": "manual_decision",
         "channel": "manual",
         "result": decision["result"],
+        "contact_result": None,
+        "commercial_result": decision["result"],
         "status_snapshot": str(status or ""),
         "previous_status_snapshot": str(previous_status or ""),
         "notes": decision["evidence"],
@@ -538,10 +641,14 @@ def record_manual_management_decision(
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
         audit_management_patterns(db, event)
+        bump_captacion_kpi_revision(db)
     return {
         "status": "confirmed",
         "credited": credited,
         "event_id": resolved_event_id,
+        "property_id": property_id,
+        "assignment_cycle_id": cycle_id,
+        "occurred_at": occurred_at.astimezone(timezone.utc),
         "contact_effective": decision["contact_effective"],
         "capture": decision["capture"],
         "local_date": local.date().isoformat(),
@@ -776,7 +883,7 @@ def record_capture_event(db, *, property_doc: dict, actor_user: dict, now=None) 
     )
 
 
-def reverse_management_event(db, *, event_id, actor_user: dict, reason, now=None) -> dict:
+def reverse_management_event(db, *, event_id, actor_user: dict, reason, replacement_status=None, now=None) -> dict:
     ensure_management_indexes(db)
     original = db[LEDGER_COLLECTION].find_one({"event_id": clean_id(event_id), "credited": True})
     if not original:
@@ -786,6 +893,37 @@ def reverse_management_event(db, *, event_id, actor_user: dict, reason, now=None
     reason = str(reason or "").strip()
     if not reason:
         raise ValueError("El motivo de reversa es obligatorio")
+    replacement_status = str(replacement_status or "").strip()
+    state_result = clean_id(original.get("result")).lower()
+    feeds_state_kpi = bool(original.get("status_snapshot")) and state_result in COMMERCIAL_RESULT_VALUES
+    if feeds_state_kpi and not replacement_status:
+        raise ValueError("La reversa requiere replacement_status para mantener consistente el estado operativo")
+    if replacement_status:
+        valid_statuses = {
+            "Por contactar", "En gestión", "Contacto exitoso", "Sin respuesta",
+            "Teléfono inválido", "Reunión agendada", "Corredor", "Descartado",
+            "Captado", "Propiedad no disponible", "Publicación expirada", "No interesado",
+        }
+        if replacement_status not in valid_statuses:
+            raise ValueError("replacement_status no permitido")
+        candidates = [original.get("property_id")]
+        try:
+            candidates.append(ObjectId(original.get("property_id")))
+        except Exception:
+            pass
+        prop = None
+        property_storage_id = None
+        for candidate in candidates:
+            prop = Config.get_captacion_collection(db).find_one({"_id": candidate})
+            if prop:
+                property_storage_id = candidate
+                break
+        if not prop:
+            raise LookupError("Propiedad asociada al evento no encontrada")
+        gestion = prop.get("gestion") or {}
+        current_status = gestion.get("estado_captacion") or gestion.get("estado") or "NUEVO"
+        if normalize_manual_status(current_status) != normalize_manual_status(original.get("status_snapshot")):
+            raise ValueError("El estado cambió después del evento; indique un nuevo estado mediante el flujo normal")
     occurred_at = now or datetime.now(timezone.utc)
     reversal = {
         "event_id": str(uuid.uuid4()),
@@ -797,14 +935,31 @@ def reverse_management_event(db, *, event_id, actor_user: dict, reason, now=None
         "actor_name_snapshot": actor_user.get("nombre") or "",
         "reason": reason,
         "previous_value": {"credited": True, "result": original.get("result")},
-        "resulting_effect": {"credited": False},
+        "resulting_effect": {"credited": False, "replacement_status": replacement_status or None},
         "occurred_at": occurred_at.astimezone(timezone.utc),
         "source_system": "captacion_admin",
         "migration_version": LEDGER_VERSION,
         "legacy_inferred": False,
     }
     db[LEDGER_COLLECTION].insert_one(reversal)
+    if replacement_status:
+        Config.get_captacion_collection(db).update_one(
+            {"_id": property_storage_id},
+            {"$set": {
+                "gestion.estado": replacement_status,
+                "gestion.estado_captacion": replacement_status,
+                "gestion.fecha_ultima_gestion": occurred_at,
+                "captacion_management_date": occurred_at,
+            }, "$push": {"gestion.status_history": {
+                "timestamp": occurred_at,
+                "user": actor_user.get("nombre") or "Administrador",
+                "from_state": original.get("status_snapshot"),
+                "to_state": replacement_status,
+                "reason": "reversa de evento de gestión",
+            }}},
+        )
     recalculate_daily_metric(db, original["actor_user_id"], original["local_date"], now=occurred_at)
+    bump_captacion_kpi_revision(db)
     return reversal
 
 

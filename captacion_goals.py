@@ -427,6 +427,7 @@ def build_captacion_goal_dashboard(
 
     counts = defaultdict(lambda: defaultdict(set))
     last_activity = {}
+    period_last_activity = {}
     weekend_activity = defaultdict(set)
     for row in rows:
         actor_key = _clean(row.get("actor_user_id")) or _name_key(row.get("actor"))
@@ -441,6 +442,10 @@ def build_captacion_goal_dashboard(
             weekend_activity[actor_key].add(dedup)
         if actor_key not in last_activity or local > last_activity[actor_key]:
             last_activity[actor_key] = local
+        if local.date() in period_days and (
+            actor_key not in period_last_activity or local > period_last_activity[actor_key]
+        ):
+            period_last_activity[actor_key] = local
 
     elapsed_workdays = sum(1 for day in weekdays if day <= today)
 
@@ -530,6 +535,7 @@ def build_captacion_goal_dashboard(
             "daily": daily,
             "weekend_activity": len(weekend_activity[identity_key]) or len(weekend_activity[name_key]),
             "last_activity": last_activity.get(identity_key) or last_activity.get(name_key),
+            "period_last_activity": period_last_activity.get(identity_key) or period_last_activity.get(name_key),
             "contact_attempts": sum(
                 int(metric.get("contact_attempts") or 0) for metric in (member.get("daily_metrics") or {}).values()
             ),
@@ -580,6 +586,20 @@ def build_captacion_goal_dashboard(
         }
 
     team_rows = [member_metrics(key, display) for key, display in names.items()]
+    if period_mode:
+        # Una semana histórica se evalúa por el cierre semanal, no por el
+        # estado operativo de hoy.
+        team_rows.sort(key=lambda row: (-row["week_percent"], _name_key(row["name"])))
+    else:
+        # En la semana actual primero aparecen quienes más necesitan
+        # intervención: brecha más negativa, luego alertas y finalmente nombre.
+        team_rows.sort(
+            key=lambda row: (
+                row["week_count"] - row["expected_to_date"],
+                -row["anomaly_count"],
+                _name_key(row["name"]),
+            )
+        )
     member_count = len(team_rows)
     return {
         "mode": "team",
@@ -593,6 +613,10 @@ def build_captacion_goal_dashboard(
         "today_count": sum(row["today_count"] for row in team_rows),
         "today_goal": sum(row["today_goal"] for row in team_rows),
         "executives_met_today": sum(1 for row in team_rows if row["met_today"]),
+        "executives_met_week": sum(
+            1 for row in team_rows
+            if row["week_goal"] > 0 and row["week_count"] >= row["week_goal"]
+        ),
         "executives_pending_today": sum(
             1 for row in team_rows if row["today_status"] in {"EN_PROGRESO", "INCUMPLIDO"}
         ),

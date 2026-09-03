@@ -428,6 +428,7 @@
             display: flex;
             width: 100%;
             height: 10px;
+            margin-top: 9px;
             overflow: hidden;
             background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
             border-radius: 999px;
@@ -440,7 +441,7 @@
         .captacion-goal-status strong { color: var(--text-primary); }
         .captacion-goal-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
         .captacion-goal-block + .captacion-goal-block { border-left: 1px solid var(--border-color); padding-left: 18px; }
-        .captacion-goal-label { margin-bottom: 7px; color: var(--text-secondary); font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+        .captacion-goal-label { min-height: 18px; margin-bottom: 7px; color: var(--text-secondary); font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
         .captacion-goal-days { display: grid; grid-template-columns: repeat(5, minmax(42px, 1fr)); gap: 7px; margin-top: 13px; }
         .captacion-goal-day { padding: 7px 5px; border: 1px solid var(--border-color); border-radius: 9px; color: var(--text-secondary); font-size: .7rem; text-align: center; background: color-mix(in srgb, var(--bg-secondary) 75%, transparent); }
         .captacion-goal-day strong { display: block; margin-top: 2px; color: var(--text-primary); font-size: .77rem; }
@@ -451,12 +452,34 @@
         .captacion-goal-day .day-status { display: block; margin-top: 3px; font-size: .58rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
         .captacion-goal-day.status-exento { border-style: dashed; }
         .captacion-goal-day.status-incumplido { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.08); }
+        .captacion-goal-day.status-incumplido.today {
+            border-color: rgba(239,68,68,.45);
+            box-shadow: none;
+        }
         .captacion-goal-day.status-incumplido .day-status { color: #ef4444; }
         .captacion-goal-day.status-en_progreso .day-status { color: #f59e0b; }
         .captacion-goal-day.status-cumplido .day-status { color: #10b981; }
         .captacion-goal-help { margin-top: 7px; color: var(--text-secondary); font-size: .7rem; line-height: 1.4; }
         .captacion-team-details { grid-column: 1 / -1; border-top: 1px solid var(--border-color); padding-top: 13px; }
-        .captacion-team-details summary { color: var(--accent); font-size: .8rem; font-weight: 700; cursor: pointer; }
+        .captacion-team-details summary {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            list-style: none;
+            color: var(--text-primary);
+            font-size: .78rem;
+            font-weight: 750;
+            cursor: pointer;
+        }
+        .captacion-team-details summary::-webkit-details-marker { display: none; }
+        .captacion-team-details summary .summary-count { color: var(--text-secondary); font-weight: 650; }
+        .captacion-team-details summary .summary-chevron {
+            margin-left: auto;
+            color: var(--accent);
+            font-size: .9rem;
+            transition: transform 140ms ease;
+        }
+        .captacion-team-details[open] summary .summary-chevron { transform: rotate(180deg); }
         .captacion-team-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: .76rem; }
         .captacion-team-table th { padding: 7px 8px; color: var(--text-secondary); text-align: left; font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border-color); }
         .captacion-team-table td { padding: 8px; color: var(--text-primary); border-bottom: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent); }
@@ -464,6 +487,50 @@
         .captacion-team-table .goal-met { color: #10b981; font-weight: 700; }
         .captacion-team-table .goal-pending { color: #f59e0b; font-weight: 700; }
         .captacion-team-table .goal-zero { color: #ef4444; font-weight: 700; }
+        .captacion-team-table .captacion-team-today { white-space: nowrap; }
+        .captacion-team-today-count { display: block; font-weight: 750; white-space: nowrap; }
+        .captacion-team-today-note,
+        .captacion-team-gap,
+        .captacion-team-days-secondary {
+            display: block;
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: .64rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .captacion-team-today-note.is-met { color: var(--text-primary); font-weight: 700; }
+        .captacion-team-week-secondary { display: block; margin-top: 4px; color: var(--text-secondary); font-size: .66rem; line-height: 1.2; white-space: nowrap; }
+        .captacion-team-gap.is-positive { color: var(--text-primary); font-weight: 700; }
+        .captacion-team-gap.is-negative { color: var(--text-secondary); }
+        .captacion-team-name-link {
+            color: inherit;
+            text-decoration: none;
+            font-weight: inherit;
+        }
+        .captacion-team-name-link:hover,
+        .captacion-team-name-link:focus-visible {
+            color: var(--accent);
+            text-decoration: underline;
+            outline: none;
+        }
+        .captacion-team-week-sort {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-size: inherit;
+            font-weight: inherit;
+            letter-spacing: inherit;
+            text-transform: inherit;
+            cursor: pointer;
+        }
+        .captacion-team-week-sort:hover,
+        .captacion-team-week-sort:focus-visible { color: var(--text-primary); outline: none; }
 
         .kpi-card.gestion .kpi-icon {
             background: transparent;
@@ -664,6 +731,16 @@
             padding-top: 12px;
         }
         .kpi-model-footer strong { color: var(--text-primary); }
+        .kpi-model-info {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 5px;
+            color: var(--text-secondary);
+            font-size: .72rem;
+            vertical-align: middle;
+            cursor: help;
+        }
         .kpi-model.kpi-model-link { cursor: pointer; text-align: left; }
         .kpi-model.kpi-model-link:hover .kpi-model-value { color: var(--accent); }
         .kpi-model-action {
@@ -707,10 +784,15 @@
             letter-spacing: -.02em;
             white-space: nowrap;
         }
-        .kpi-volume-stack {
+        .kpi-volume-stack,
+        .kpi-management-stack,
+        .kpi-contact-stack,
+        .captacion-card__portal-bar-track {
             display: flex;
             width: 100%;
             height: 10px;
+            flex: 0 0 10px;
+            box-sizing: border-box;
             overflow: hidden;
             border-radius: 999px;
             background: color-mix(in srgb, var(--border-color) 75%, transparent);
@@ -819,16 +901,6 @@
             font-size: 1rem;
             font-weight: 850;
         }
-        .kpi-management-stack {
-            display: flex;
-            width: 100%;
-            height: 10px;
-            overflow: hidden;
-            border-radius: 999px;
-            border: 1px solid rgba(148, 163, 184, 0.24);
-            box-sizing: border-box;
-            background: #202d43;
-        }
         .kpi-management-stack-segment {
             display: block;
             flex: 0 0 var(--kpi-target-width, 0%);
@@ -935,14 +1007,6 @@
             font-weight: 800;
             white-space: nowrap;
         }
-        .kpi-contact-stack {
-            display: flex;
-            width: 100%;
-            height: 10px;
-            overflow: hidden;
-            border-radius: 999px;
-            background: color-mix(in srgb, var(--border-color) 75%, transparent);
-        }
         .kpi-contact-stack-segment {
             display: block;
             flex: 0 0 var(--kpi-target-width, 0%);
@@ -952,13 +1016,51 @@
         }
         .kpi-contact-stack-segment.broker,
         .kpi-contact-result-dot.broker { background: #8b5cf6; }
+        .kpi-contact-stack-segment.effective { background: #6366f1; }
         .kpi-contact-stack-segment.other,
         .kpi-contact-result-dot.other { background: #64748b; }
+        .kpi-contact-stack-caption {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 750;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .kpi-contact-stack-caption > span {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            min-width: 0;
+        }
+        .kpi-contact-stack-caption > span:last-child {
+            justify-content: flex-end;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .kpi-contact-stack-caption-dot {
+            width: 6px;
+            height: 6px;
+            flex: 0 0 6px;
+            border-radius: 50%;
+        }
+        .kpi-contact-stack-caption-dot.effective { background: #6366f1; }
+        .kpi-contact-stack-caption-dot.other { background: #64748b; }
         .kpi-contact-results {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 11px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 7px;
+        }
+        .kpi-contact-results-heading {
+            margin-top: 13px;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 750;
+            line-height: 1.1;
         }
         .kpi-contact-result {
             min-width: 0;
@@ -966,7 +1068,7 @@
         .kpi-contact-result-top {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 0;
         }
         .kpi-contact-result-dot {
             width: 7px;
@@ -1121,6 +1223,184 @@
             color: var(--text-primary);
         }
 
+        .kpi-portal-performance {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: 0;
+        }
+        .kpi-portal-performance-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .kpi-portal-performance-row + .kpi-portal-performance-row {
+            border-top: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+            padding-top: 6px;
+        }
+        .kpi-portal-performance-row-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-width: 0;
+        }
+        .kpi-portal-performance-name {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: .68rem;
+            font-weight: 800;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .kpi-portal-performance-sample {
+            flex: 0 0 auto;
+            color: var(--text-primary);
+            font-size: .68rem;
+            font-weight: 850;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .kpi-portal-performance-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 7px;
+            border-radius: 50%;
+        }
+        .kpi-portal-performance-row.portal-toctoc .kpi-portal-performance-dot { background: #8b5cf6; }
+        .kpi-portal-performance-row.portal-yapo .kpi-portal-performance-dot { background: #38bdf8; }
+        .kpi-portal-performance-row.portal-other .kpi-portal-performance-dot { background: #64748b; }
+        .kpi-portal-performance-details {
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: .62rem;
+            font-weight: 750;
+            line-height: 1;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .kpi-portal-performance-rates {
+            overflow: hidden;
+            color: var(--text-secondary);
+            font-size: .62rem;
+            font-weight: 750;
+            line-height: 1;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .kpi-portal-corridor-bar-track {
+            width: 100%;
+            height: 8px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--border-color) 75%, transparent);
+        }
+        .kpi-portal-corridor-bar-fill {
+            display: block;
+            width: var(--kpi-target-width, 0%);
+            height: 100%;
+            border-radius: inherit;
+        }
+        .kpi-portal-corridor-bar-fill.portal-toctoc { background: #8b5cf6; }
+        .kpi-portal-corridor-bar-fill.portal-yapo { background: #38bdf8; }
+        .kpi-portal-corridor-bar-fill.portal-other { background: #64748b; }
+        .kpi-portal-performance-label {
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 800;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+        }
+        .kpi-source-context-metric {
+            align-items: flex-start;
+            margin: 4px 0 0;
+        }
+        .kpi-source-context-label {
+            color: var(--text-secondary);
+            font-size: .78rem;
+            font-weight: 750;
+            line-height: 1.25;
+        }
+        .kpi-source-performance-rule {
+            border-bottom: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+        }
+        .kpi-portal-performance-empty {
+            color: var(--text-secondary);
+            font-size: .68rem;
+            line-height: 1.25;
+        }
+        /* Card 4 comparte las mismas zonas verticales que las otras tarjetas;
+           el comparativo usa filas compactas y una única visual de corredor. */
+        .kpi-source-card .kpi-portal-primary-insight {
+            display: flex;
+            align-items: baseline;
+            height: 42px;
+            margin: 4px 0 0;
+            overflow: hidden;
+            color: var(--text-primary);
+            font-size: 1.04rem;
+            font-weight: 900;
+            letter-spacing: .01em;
+            line-height: 1;
+            text-overflow: ellipsis;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .kpi-source-card .kpi-portal-primary-subline {
+            height: 22px;
+            color: var(--text-secondary);
+            font-size: .76rem;
+            font-weight: 750;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .kpi-source-card .kpi-portal-performance-label {
+            height: 24px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent);
+        }
+        .kpi-source-card .kpi-portal-performance.kpi-model-breakdown {
+            height: 76px;
+            gap: 1px;
+            padding-top: 1px;
+        }
+        .kpi-source-card .kpi-portal-performance-name,
+        .kpi-source-card .kpi-portal-performance-sample {
+            font-size: .58rem;
+        }
+        .kpi-source-card .kpi-portal-performance-details,
+        .kpi-source-card .kpi-portal-performance-rates {
+            font-size: .58rem;
+        }
+        .kpi-source-card .kpi-portal-performance-row .kpi-portal-corridor-bar-track {
+            height: 4px;
+        }
+        .kpi-source-card .kpi-portal-performance-row + .kpi-portal-performance-row {
+            border-top-color: color-mix(in srgb, var(--border-color) 40%, transparent);
+            padding-top: 3px;
+        }
+        .kpi-source-card .kpi-source-footer {
+            margin-top: 0;
+            padding-top: 10px;
+        }
+        .kpi-source-card .captacion-card__footer {
+            transform: translateY(36px);
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 700;
+            line-height: 1.2;
+            letter-spacing: normal;
+            text-align: left;
+        }
+        @media (max-width: 576px) {
+            .kpi-source-card .kpi-portal-primary-insight {
+                font-size: .95rem;
+            }
+        }
         /* Sistema común de filas para las cuatro tarjetas superiores. */
         .kpi-card.kpi-model {
             min-height: 230px;
@@ -1128,7 +1408,7 @@
         }
         .kpi-model-body {
             display: grid;
-            grid-template-rows: 18px 46px 18px 22px 10px 74px minmax(0, 1fr);
+            grid-template-rows: 18px 46px 26px 24px 84px minmax(0, 1fr);
             min-width: 0;
             row-gap: 0;
         }
@@ -1149,7 +1429,7 @@
         .kpi-model-secondary {
             align-self: start;
             min-width: 0;
-            height: 18px;
+            height: 26px;
             line-height: 1.2;
         }
         .kpi-model-secondary.is-empty {
@@ -1160,7 +1440,7 @@
             align-items: baseline;
             justify-content: space-between;
             gap: 10px;
-            height: 22px;
+            height: 24px;
             min-width: 0;
             margin: 0;
         }
@@ -1168,6 +1448,12 @@
             width: 100%;
             height: 10px;
             min-width: 0;
+        }
+        .kpi-model-visual-zone {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 84px;
         }
         .kpi-model-breakdown {
             align-self: start;
@@ -1215,18 +1501,6 @@
             display: none;
         }
 
-        /* En escritorio intermedio el ancho de cada columna puede hacer que
-           el badge y las leyendas ocupen una segunda línea. Se reserva esa
-           altura de forma común para evitar que el contenido se monte. */
-        @media (max-width: 1400px) and (min-width: 993px) {
-            .kpi-card.kpi-model {
-                min-height: 266px;
-            }
-            .kpi-model-body {
-                grid-template-rows: 18px 48px 18px 22px 10px 74px minmax(0, 1fr);
-            }
-        }
-
         /* En 2×2 y una columna se permite que el contenido crezca cuando una
            leyenda necesita envolver texto, sin imponer alturas rígidas. */
         @media (max-width: 992px) {
@@ -1234,7 +1508,7 @@
                 min-height: 0;
             }
             .kpi-model-body {
-                grid-template-rows: 18px auto 18px auto 10px auto auto;
+                grid-template-rows: 18px auto 26px auto auto auto;
             }
             .kpi-model-metric {
                 height: auto;
@@ -1242,7 +1516,7 @@
             }
             .kpi-model-secondary {
                 height: auto;
-                min-height: 18px;
+                min-height: 26px;
             }
             .kpi-model-visual-heading {
                 height: auto;
@@ -1263,6 +1537,337 @@
             .kpi-source-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .kpi-source-result-label { white-space: normal; }
             .kpi-source-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+        }
+
+        /* En layouts apilados la altura común evita que cada fila visual
+           cambie según el texto que envuelva. El valor móvil deja espacio
+           para la leyenda de tres resultados de Card 2. */
+        @media (max-width: 992px) {
+            .kpi-card.kpi-model { min-height: 270px; }
+        }
+        @media (max-width: 576px) {
+            .kpi-card.kpi-model { min-height: 286px; }
+        }
+
+        /* Sistema común de las cuatro tarjetas superiores. Cada card reserva
+           las mismas zonas para que el contenido no dependa de márgenes
+           particulares ni de la longitud de una métrica. */
+        .kpi-card.captacion-card {
+            min-height: 272px;
+            padding: 17px 18px 10px;
+            overflow: visible;
+        }
+        .kpi-grid > .kpi-volume-card { order: 1; }
+        .kpi-grid > .kpi-contact-card { order: 2; }
+        .kpi-grid > .kpi-management-card { order: 3; }
+        .kpi-grid > .kpi-source-card { order: 4; }
+        .captacion-card-scope {
+            margin: 0 0 10px;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .captacion-card .kpi-model-body {
+            display: grid;
+            grid-template-rows: 18px 54px 24px 22px 72px 36px 44px;
+            min-width: 0;
+            row-gap: 0;
+        }
+        .captacion-card__title,
+        .captacion-card .kpi-model-label {
+            align-self: start;
+            height: 18px;
+            color: var(--text-secondary);
+            font-size: clamp(.72rem, .7vw, .84rem);
+            font-weight: 800;
+            letter-spacing: .03em;
+            line-height: 1;
+            text-transform: uppercase;
+        }
+        .captacion-card__kpi,
+        .captacion-card .kpi-model-metric {
+            display: flex;
+            align-items: baseline;
+            height: 54px;
+            gap: 0;
+            margin: 4px 0 0;
+            min-width: 0;
+        }
+        .captacion-card__kpi-value,
+        .captacion-card .kpi-model-value {
+            color: var(--text-primary);
+            font-size: clamp(36px, 2.35vw, 48px);
+            font-weight: 700;
+            letter-spacing: -.045em;
+            line-height: .95;
+            white-space: nowrap;
+        }
+        .captacion-card__kpi-label,
+        .captacion-card .kpi-model-unit {
+            margin-left: 9px;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 650;
+            letter-spacing: .01em;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .captacion-card__context,
+        .captacion-card .kpi-model-secondary {
+            align-self: start;
+            height: 26px;
+            min-width: 0;
+            color: var(--text-secondary);
+            font-size: .72rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .kpi-contact-card .kpi-contact-base {
+            font-size: .72rem;
+            letter-spacing: -.01em;
+            white-space: nowrap;
+        }
+        .captacion-card__section-label,
+        .captacion-card .kpi-model-visual-heading {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            height: 24px;
+            min-width: 0;
+            margin: 0;
+            color: var(--text-secondary);
+            font-size: .72rem;
+            font-weight: 750;
+            line-height: 1.1;
+        }
+        .captacion-card__visual-zone {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 72px;
+        }
+        .captacion-card__visual,
+        .captacion-card .kpi-model-visual {
+            width: 100%;
+            height: 10px;
+            min-width: 0;
+        }
+        .captacion-card__legend,
+        .captacion-card .kpi-model-breakdown {
+            align-self: start;
+            height: 66px;
+            min-width: 0;
+            margin-top: 0;
+            padding-top: 10px;
+            box-sizing: border-box;
+        }
+        .captacion-card__minimal-legend {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            align-items: start;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 750;
+            line-height: 1.2;
+        }
+        .captacion-card__management-legend {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .captacion-card__result-legend {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            align-items: start;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 750;
+            line-height: 1.2;
+        }
+        .captacion-card__result-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 0;
+        }
+        .captacion-card__result-item > span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            white-space: nowrap;
+        }
+        .captacion-card__result-item strong {
+            margin-left: 13px;
+            color: var(--text-primary);
+            font-size: .68rem;
+            font-weight: 800;
+        }
+        .captacion-card__flex {
+            min-height: 0;
+        }
+        .captacion-card__footer,
+        .captacion-card .kpi-model-footer {
+            align-self: stretch;
+            display: flex;
+            min-width: 0;
+            height: 48px;
+            margin: 0;
+            padding: 14px 0 0;
+            border-top: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+            box-sizing: border-box;
+            color: var(--text-secondary);
+            font-size: .68rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .captacion-card__footer-content,
+        .captacion-card .kpi-model-footer-content {
+            width: 100%;
+            min-height: 0;
+            margin: 0;
+        }
+        .captacion-card__legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            white-space: nowrap;
+        }
+        .captacion-card__legend-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 7px;
+            border-radius: 50%;
+            background: #64748b;
+        }
+        .captacion-card__legend-dot.worked,
+        .captacion-card__legend-dot.management { background: #6366f1; }
+        .captacion-card__legend-dot.pending { background: #8b5cf6; }
+        .captacion-card__legend-dot.captured { background: #a78bfa; }
+        .captacion-card__legend-dot.discarded { background: #64748b; }
+        .captacion-card__contact-ratio {
+            display: flex;
+            align-items: center;
+            min-height: 23px;
+            color: var(--text-secondary);
+            font-size: .72rem;
+            font-weight: 750;
+            line-height: 1.25;
+        }
+        .captacion-card__portal-difference {
+            align-items: baseline;
+        }
+        .captacion-card__portal-difference .captacion-card__kpi-value {
+            font-size: clamp(36px, 2.35vw, 48px);
+            font-weight: 700;
+            letter-spacing: -.045em;
+        }
+        .captacion-card__portal-difference .captacion-card__kpi-label {
+            max-width: 100%;
+            overflow: visible;
+            text-overflow: clip;
+            font-size: 11px;
+            letter-spacing: 0;
+            white-space: nowrap;
+        }
+        .captacion-card__portal-difference .captacion-card__kpi-value::after {
+            content: " pp";
+            font-size: .72em;
+            letter-spacing: -.02em;
+        }
+        .captacion-card__portal-kpis,
+        .captacion-card__portal-samples {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            min-width: 0;
+        }
+        .captacion-card__portal-kpi {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            min-width: 0;
+        }
+        .captacion-card__portal-kpis .captacion-card__kpi-value {
+            font-size: clamp(34px, 2.2vw, 44px);
+        }
+        .captacion-card__portal-kpis .captacion-card__kpi-label {
+            margin: 5px 0 0;
+            font-size: .76rem;
+            font-weight: 800;
+            letter-spacing: .04em;
+        }
+        .captacion-card__portal-samples {
+            align-items: start;
+            color: var(--text-secondary);
+            font-size: .78rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .captacion-card__portal-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            height: 76px;
+            padding-top: 3px;
+            box-sizing: border-box;
+        }
+        .captacion-card__portal-bar-row {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+        .captacion-card__portal-bar-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            min-width: 0;
+            color: var(--text-secondary);
+            font-size: .66rem;
+            font-weight: 750;
+            line-height: 1;
+        }
+        .captacion-card__portal-bar-name {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            color: var(--text-primary);
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .captacion-card__portal-dot {
+            width: 7px;
+            height: 7px;
+            flex: 0 0 7px;
+            border-radius: 50%;
+        }
+        .captacion-card__portal-bar-row.portal-toctoc .captacion-card__portal-dot,
+        .captacion-card__portal-bar-fill.portal-toctoc { background: #8b5cf6; }
+        .captacion-card__portal-bar-row.portal-yapo .captacion-card__portal-dot,
+        .captacion-card__portal-bar-fill.portal-yapo { background: #38bdf8; }
+        .captacion-card__portal-bar-row.portal-other .captacion-card__portal-dot,
+        .captacion-card__portal-bar-fill.portal-other { background: #64748b; }
+        .captacion-card__portal-bar-track {
+            display: block;
+        }
+        .captacion-card__portal-bar-fill {
+            display: block;
+            min-width: 0;
+            width: var(--kpi-target-width, 0%);
+            height: 100%;
+            border-radius: 0;
+        }
+        @media (max-width: 992px) {
+            .kpi-card.captacion-card { min-height: 282px; }
+            .captacion-card .kpi-model-body {
+                grid-template-rows: 18px auto 26px auto 76px minmax(0, 1fr) 48px;
+            }
         }
 
         /* TABLE CONTAINER */
@@ -1974,14 +2579,14 @@
             background: var(--bg-elevated);
             border: 1px solid var(--border-color);
             border-radius: 16px;
-            padding: 16px 24px 10px;
+            padding: 12px 18px 8px;
             margin-bottom: 14px;
         }
 
         .captacion-filter-toolbar .filter-bar {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 14px;
+            gap: 10px;
             align-items: end;
             margin: 0;
         }
@@ -2006,9 +2611,35 @@
         .captacion-filter-toolbar select,
         .captacion-filter-toolbar .commune-picker summary,
         .captacion-filter-toolbar .btn-filter {
-            height: 52px;
-            min-height: 52px;
-            border-radius: 14px;
+            height: 46px;
+            min-height: 46px;
+            border-radius: 12px;
+        }
+
+        .captacion-filter-toolbar .search-box input,
+        .captacion-filter-toolbar select,
+        .captacion-filter-toolbar .commune-picker summary {
+            background: color-mix(in srgb, var(--bg-card) 78%, var(--bg-elevated));
+            border-radius: 12px;
+            line-height: normal;
+        }
+
+        .captacion-filter-toolbar .commune-picker summary {
+            border-color: var(--input-border);
+            color: var(--input-text);
+            font-size: 0.88rem;
+            font-weight: 400;
+            line-height: normal;
+        }
+
+        .captacion-filter-toolbar select option,
+        .captacion-filter-toolbar .commune-option,
+        .captacion-filter-toolbar .commune-option span {
+            color: var(--input-text);
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.88rem;
+            font-weight: 400;
+            line-height: normal;
         }
 
         .captacion-filter-toolbar .search-box,
@@ -2019,8 +2650,8 @@
 
         .captacion-filter-toolbar .search-box input,
         .captacion-filter-toolbar select {
-            height: 52px;
-            min-height: 52px;
+            height: 46px;
+            min-height: 46px;
             padding: 0 14px;
             font-size: 0.88rem;
         }
@@ -2355,6 +2986,112 @@
             gap: 16px;
         }
 
+        .captacion-team-overview {
+            display: grid;
+            grid-template-columns: minmax(360px, 1fr) auto;
+            gap: 16px;
+            align-items: stretch;
+        }
+
+        .captacion-team-overview-main,
+        .captacion-team-overview-metrics,
+        .captacion-team-overview-metric {
+            min-width: 0;
+        }
+
+        .captacion-team-overview-metrics {
+            display: flex;
+            align-items: stretch;
+            gap: 18px;
+        }
+
+        .captacion-team-overview-metric {
+            border-left: 1px solid var(--border-color);
+            min-width: 112px;
+            padding-left: 18px;
+        }
+
+        .captacion-team-overview-metric:first-child {
+            border-left: 0;
+            padding-left: 0;
+        }
+
+        .captacion-team-overview-metric-label {
+            color: var(--text-secondary);
+            font-size: .64rem;
+            font-weight: 750;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .captacion-team-overview-metric-value {
+            display: block;
+            margin-top: 7px;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+
+        .captacion-team-overview-metric-unit {
+            display: block;
+            margin-top: 4px;
+            color: var(--text-secondary);
+            font-size: .7rem;
+        }
+
+        .captacion-team-week-cell {
+            min-width: 128px;
+        }
+
+        .captacion-team-week-values {
+            display: flex;
+            align-items: baseline;
+            gap: 7px;
+            white-space: nowrap;
+        }
+
+        .captacion-team-week-values strong {
+            color: var(--text-primary);
+            font-size: .82rem;
+        }
+
+        .captacion-team-week-percent {
+            color: var(--text-secondary);
+            font-size: .7rem;
+            font-weight: 700;
+        }
+
+        .captacion-team-micro-progress {
+            width: 100%;
+            height: 5px;
+            margin-top: 6px;
+            overflow: hidden;
+            border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+        }
+
+        .captacion-team-micro-progress span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            background: var(--accent);
+        }
+
+        .captacion-team-days-secondary {
+            display: block;
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: .64rem;
+            white-space: nowrap;
+        }
+
+        .captacion-team-name {
+            font-weight: 700;
+        }
+
         .captacion-goal-block {
             min-width: 0;
         }
@@ -2464,6 +3201,19 @@
             .captacion-goal-days {
                 grid-template-columns: repeat(4, minmax(0, 1fr));
             }
+
+            .captacion-team-overview {
+                grid-template-columns: minmax(210px, 1fr) auto;
+                gap: 12px;
+            }
+
+            .captacion-team-overview-metrics {
+                gap: 12px;
+            }
+
+            .captacion-team-overview-metric {
+                padding-left: 12px;
+            }
         }
 
         @media (max-width: 576px) {
@@ -2486,6 +3236,20 @@
 
             .captacion-goal-days {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .captacion-team-overview {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .captacion-team-overview-metrics {
+                grid-column: 1 / -1;
+                flex-wrap: wrap;
+            }
+
+            .captacion-team-overview-metric:first-child {
+                border-left: 0;
+                padding-left: 0;
             }
 
             .captacion-goal-results {
@@ -2518,19 +3282,20 @@
 
         .captacion-week-progress {
             width: 100%;
-            height: 7px;
+            height: 10px;
             margin-top: 9px;
             overflow: hidden;
-            border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+            border: 0;
             border-radius: 999px;
-            background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+            box-sizing: border-box;
+            background: color-mix(in srgb, var(--border-color) 75%, transparent);
         }
 
         .captacion-week-progress span {
             display: block;
             height: 100%;
             border-radius: inherit;
-            background: var(--accent);
+            background: linear-gradient(90deg, #6366f1, #a855f7);
             transition: width .35s ease;
         }
 
@@ -2591,6 +3356,72 @@
             transform: translateY(0) scale(1);
         }
 
+        .captacion-card__help-wrap {
+            position: absolute;
+            top: 13px;
+            right: 13px;
+            z-index: 25;
+            display: block;
+            margin: 0;
+        }
+
+        .captacion-card__help-wrap .captacion-info-trigger {
+            width: 24px;
+            height: 24px;
+            margin: 0;
+            border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+            border-radius: 50%;
+            background: color-mix(in srgb, var(--bg-secondary) 68%, transparent);
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: .72rem;
+            transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+        }
+
+        .captacion-card__help-wrap .captacion-info-trigger:hover,
+        .captacion-card__help-wrap .captacion-info-trigger:focus-visible,
+        .captacion-card__help-wrap .captacion-info-trigger[aria-expanded="true"] {
+            border-color: color-mix(in srgb, var(--accent) 66%, var(--border-color));
+            background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary));
+            color: var(--accent-hover);
+            outline: none;
+            transform: translateY(-1px);
+        }
+
+        .captacion-card__help-wrap .captacion-info-popover {
+            top: calc(100% + 8px);
+            right: 0;
+            left: auto;
+            width: min(340px, calc(100vw - 32px));
+            padding: 12px 14px;
+            border-radius: 11px;
+            font-size: .72rem;
+            line-height: 1.45;
+        }
+
+        .captacion-card__help-popover > strong {
+            display: block;
+            margin-top: 8px;
+            font-size: .68rem;
+            letter-spacing: .01em;
+        }
+
+        .captacion-card__help-popover > strong:first-child {
+            margin-top: 0;
+        }
+
+        .captacion-card__help-popover > span {
+            display: block;
+            margin-top: 2px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .captacion-card__help-wrap .captacion-info-popover strong {
+            color: var(--text-primary);
+            font-weight: 800;
+        }
+
         .captacion-goal-day {
             width: 100%;
             appearance: none;
@@ -2621,6 +3452,22 @@
 
         .captacion-goal-day.is-selected.met {
             border-color: var(--accent);
+        }
+
+        /* El día filtrado usa un solo contorno; no mezclar el halo de
+           selección con el borde semántico del estado. */
+        .captacion-goal-day.is-selected {
+            box-shadow: none;
+        }
+
+        .captacion-goal-day.is-selected.status-incumplido {
+            border-color: rgba(239,68,68,.65);
+            background: rgba(239,68,68,.12);
+        }
+
+        .captacion-goal-day.is-selected.status-cumplido {
+            border-color: rgba(16,185,129,.65);
+            background: rgba(16,185,129,.12);
         }
 
         .captacion-temporal-chip {
@@ -2705,161 +3552,273 @@
             </div>
         </div>
 
+        <div class="captacion-card-scope">
+            {{ current_ejecutivo if current_ejecutivo else "Todo el equipo" }} · Cartera actual
+        </div>
+
         <div class="kpi-grid">
-            <button type="button" class="kpi-card kpi-model kpi-volume-card kpi-model-link total {{ 'is-active' if not current_estado }}"
-                aria-label="Volumen de captación: {{ portfolio_count }} propiedades"
-                aria-pressed="{{ 'true' if not current_estado else 'false' }}" onclick="window.location.href='/captacion'">
+            <button type="button" class="kpi-card kpi-model captacion-card kpi-volume-card kpi-model-link total"
+                aria-label="Cobertura de cartera: {{ worked_count }} de {{ portfolio_count }} propiedades trabajadas"
+                aria-pressed="false" onclick="window.location.href='/captacion'">
+                <span class="captacion-card__help-wrap captacion-info-wrap">
+                    <span class="captacion-info-trigger" role="button" tabindex="0" aria-label="Ayuda sobre cobertura de cartera" aria-expanded="false" aria-controls="captacion-card-help-coverage">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </span>
+                    <span id="captacion-card-help-coverage" class="captacion-info-popover captacion-card__help-popover" role="tooltip" hidden>
+                        <strong>¿Qué mide la cobertura?</strong>
+                        <span>Indica qué porcentaje de la cartera actual ya registra una gestión comercial real.</span>
+                        <strong>Cómo se calcula</strong>
+                        <span>Cobertura = propiedades trabajadas ÷ cartera actual elegible. Por contactar permanece dentro de la cartera como pendiente de acción.</span>
+                        <strong>Ten en cuenta</strong>
+                        <span>La tarjeta refleja el estado actual y la asignación actual del ejecutivo. Si una propiedad cambia de ejecutivo, pasa a contabilizarse en la cartera del nuevo responsable.</span>
+                        <span>Los filtros temporales por día o semana no recalculan estas tarjetas superiores; muestran la cartera actual.</span>
+                    </span>
+                </span>
                 <div class="kpi-model-body">
-                    <div class="kpi-model-label">Volumen de captación</div>
-                    <div class="kpi-model-metric">
-                        <span class="kpi-model-value" data-kpi-count="{{ portfolio_count }}">{{ portfolio_count }}</span>
-                        <span class="kpi-model-unit">propiedades</span>
+                    <div class="kpi-model-label captacion-card__title">Cobertura de cartera</div>
+                    <div class="kpi-model-metric captacion-card__kpi">
+                        <span class="kpi-model-value captacion-card__kpi-value" data-kpi-percent="{{ volume_worked_rate }}">{{ "%.1f"|format(volume_worked_rate)|replace(".", ",") }}%</span>
+                        <span class="kpi-model-unit captacion-card__kpi-label">cobertura</span>
                     </div>
-                    <div class="kpi-model-secondary is-empty" aria-hidden="true">&nbsp;</div>
-                    <div class="kpi-volume-coverage kpi-model-visual-heading">
-                        <span class="kpi-volume-coverage-label">Cobertura de cartera</span>
-                        <span class="kpi-volume-coverage-value">{{ "%.1f"|format(volume_worked_rate)|replace(".", ",") }}%</span>
+                    <div class="kpi-model-secondary captacion-card__context">Cartera actual: {{ "{:,}".format(portfolio_count)|replace(",", ".") }} propiedades</div>
+                    <div class="kpi-volume-coverage kpi-model-visual-heading captacion-card__section-label">
+                        <span class="kpi-volume-coverage-label">Avance de cartera</span>
                     </div>
-                    <div class="kpi-model-visual">
-                        <div class="kpi-volume-stack" role="img" aria-label="Cobertura de cartera: {{ "%.1f"|format(volume_worked_rate)|replace(".", ",") }}% trabajadas y {{ "%.1f"|format(volume_available_rate)|replace(".", ",") }}% disponibles">
-                            <span class="kpi-volume-stack-segment worked" style="--kpi-target-width: {{ ((worked_count * 100 / portfolio_count) if portfolio_count else 0) }}%"></span>
-                            <span class="kpi-volume-stack-segment available" style="--kpi-target-width: {{ ((available_count * 100 / portfolio_count) if portfolio_count else 0) }}%"></span>
+                    <div class="kpi-model-visual-zone captacion-card__visual-zone">
+                        <div class="kpi-model-visual captacion-card__visual">
+                            <div class="kpi-volume-stack" role="img" aria-label="Cobertura de cartera: {{ "%.1f"|format(volume_worked_rate)|replace(".", ",") }}% trabajadas y {{ "%.1f"|format(volume_available_rate)|replace(".", ",") }}% pendientes">
+                                <span class="kpi-volume-stack-segment worked" style="--kpi-target-width: {{ ((worked_count * 100 / portfolio_count) if portfolio_count else 0) }}%"></span>
+                                 <span class="kpi-volume-stack-segment available" style="--kpi-target-width: {{ ((pending_count * 100 / portfolio_count) if portfolio_count else 0) }}%"></span>
+                            </div>
+                        </div>
+                        <div class="captacion-card__legend captacion-card__minimal-legend">
+                            <span class="captacion-card__legend-item"><span class="captacion-card__legend-dot worked"></span>{{ "{:,}".format(worked_count)|replace(",", ".") }} Trabajadas</span>
+                            <span class="captacion-card__legend-item"><span class="captacion-card__legend-dot pending"></span>{{ "{:,}".format(pending_count)|replace(",", ".") }} Pendientes</span>
                         </div>
                     </div>
-                    <div class="kpi-volume-breakdown kpi-model-breakdown">
-                        <span class="kpi-volume-breakdown-item">
-                            <span class="kpi-volume-breakdown-top"><span class="kpi-volume-breakdown-dot"></span><strong>{{ worked_count }}</strong></span>
-                            <span class="kpi-volume-breakdown-label">trabajadas</span>
-                            <span class="kpi-volume-breakdown-rate">{{ "%.1f"|format(volume_worked_rate)|replace(".", ",") }}%</span>
-                        </span>
-                        <span class="kpi-volume-breakdown-item">
-                            <span class="kpi-volume-breakdown-top"><span class="kpi-volume-breakdown-dot available"></span><strong>{{ available_count }}</strong></span>
-                            <span class="kpi-volume-breakdown-label">disponibles</span>
-                            <span class="kpi-volume-breakdown-rate">{{ "%.1f"|format(volume_available_rate)|replace(".", ",") }}%</span>
-                        </span>
+                    <div class="captacion-card__flex" aria-hidden="true"></div>
+                    <div class="kpi-model-footer captacion-card__footer">
+                        <div class="kpi-model-footer-content captacion-card__footer-content">
+                            {% if not worked_count %}
+                            La cartera actual todavía no registra propiedades trabajadas
+                            {% elif not pending_count %}
+                            Toda la cartera actual ya registra al menos una gestión
+                            {% else %}
+                            {% set pending_per_worked = pending_count / worked_count %}
+                            {% set pending_per_worked_rounded = ((pending_per_worked * 10 + 0.5)|int) / 10 %}
+                            Por cada propiedad trabajada, aún quedan aproximadamente {{ "%.1f"|format(pending_per_worked_rounded)|replace(".", ",") }} pendientes de gestión
+                            {% endif %}
+                        </div>
                     </div>
-                    <div class="kpi-model-footer kpi-volume-footer"><div class="kpi-model-footer-content"><strong>{{ available_count }}</strong> propiedades aún requieren gestión · {{ "%.1f"|format(volume_available_rate)|replace(".", ",") }}% de la cartera</div></div>
                 </div>
             </button>
 
-            <button type="button" class="kpi-card kpi-model kpi-management-card kpi-model-link gestion {{ 'is-active' if current_estado == 'GRUPO_TRABAJADAS' }}"
-                aria-label="Propiedades trabajadas: {{ worked_count }}"
+            <button type="button" class="kpi-card kpi-model captacion-card kpi-management-card kpi-model-link gestion {{ 'is-active' if current_estado == 'GRUPO_TRABAJADAS' }}"
+                aria-label="Resultado de gestión: {{ in_gestion_count }} propiedades en gestión"
                 aria-pressed="{{ 'true' if current_estado == 'GRUPO_TRABAJADAS' else 'false' }}" onclick="filterByGrupoEstado('GRUPO_TRABAJADAS')">
+                <span class="captacion-card__help-wrap captacion-info-wrap">
+                    <span class="captacion-info-trigger" role="button" tabindex="0" aria-label="Ayuda sobre resultado de gestión" aria-expanded="false" aria-controls="captacion-card-help-result">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </span>
+                    <span id="captacion-card-help-result" class="captacion-info-popover captacion-card__help-popover" role="tooltip" hidden>
+                        <strong>¿Qué muestra Resultado de gestión?</strong>
+                        <span>Resume cómo se encuentran actualmente las propiedades que ya fueron trabajadas.</span>
+                        <strong>En gestión</strong>
+                        <span>Incluye propiedades trabajadas que continúan abiertas. Por contactar queda fuera porque representa una acción pendiente, no una gestión realizada.</span>
+                        <strong>Captada</strong>
+                        <span>Corresponde a propiedades cuyo estado actual está registrado como captado.</span>
+                        <strong>Descartada</strong>
+                        <span>Incluye estados como corredor, teléfono inválido, publicación no disponible o expirada, no interesado y otros descartes registrados.</span>
+                        <strong>Ten en cuenta</strong>
+                        <span>La tarjeta excluye Por contactar y reconcilia En gestión, Captada y Descartadas sobre el mismo universo trabajado.</span>
+                    </span>
+                </span>
                 <div class="kpi-model-body">
-                    <div class="kpi-model-label">Gestión acumulada</div>
-                    <div class="kpi-model-metric">
-                        <span class="kpi-model-value" data-kpi-count="{{ worked_count }}">{{ worked_count }}</span>
-                        <span class="kpi-model-unit">trabajadas</span>
+                    <div class="kpi-model-label captacion-card__title">Resultado de gestión</div>
+                    <div class="kpi-model-metric captacion-card__kpi">
+                        <span class="kpi-model-value captacion-card__kpi-value" data-kpi-count="{{ in_gestion_count }}">{{ in_gestion_count }}</span>
+                        <span class="kpi-model-unit captacion-card__kpi-label">en gestión</span>
                     </div>
-                    <div class="kpi-model-secondary is-empty" aria-hidden="true">&nbsp;</div>
-                    <div class="kpi-management-heading kpi-model-visual-heading">
-                        <span class="kpi-management-heading-label">Resultado de gestión</span>
-                        <span class="kpi-management-conversion" title="Propiedades captadas ÷ propiedades trabajadas">Conversión <strong>{{ "%.1f"|format(capture_rate)|replace(".", ",") }}%</strong></span>
+                    <div class="kpi-model-secondary captacion-card__context">{{ "%.1f"|format(management_rate)|replace(".", ",") }}% de las {{ worked_count }} trabajadas</div>
+                    <div class="kpi-management-heading kpi-model-visual-heading captacion-card__section-label">
+                        <span class="kpi-management-heading-label">Resultado de las gestiones</span>
                     </div>
-                    <div class="kpi-model-visual">
-                        <div class="kpi-management-stack" role="img" aria-label="Resultado de las gestiones: {{ in_gestion_count }} en gestión, {{ captados_count }} captadas y {{ descartados_count }} descartadas">
-                            <span class="kpi-management-stack-segment management" style="--kpi-target-width: {{ ((in_gestion_count * 100 / worked_count) if worked_count else 0) }}%"></span>
-                            <span class="kpi-management-stack-segment captured" style="--kpi-target-width: {{ ((captados_count * 100 / worked_count) if worked_count else 0) }}%"></span>
-                            <span class="kpi-management-stack-segment discarded" style="--kpi-target-width: {{ ((descartados_count * 100 / worked_count) if worked_count else 0) }}%"></span>
+                    <div class="kpi-model-visual-zone captacion-card__visual-zone">
+                        <div class="kpi-model-visual captacion-card__visual">
+                            <div class="kpi-management-stack" role="img" aria-label="Resultado de las gestiones: {{ in_gestion_count }} en gestión, {{ captados_count }} captadas y {{ descartados_count }} descartadas">
+                                <span class="kpi-management-stack-segment management" style="--kpi-target-width: {{ ((in_gestion_count * 100 / worked_count) if worked_count else 0) }}%"></span>
+                                <span class="kpi-management-stack-segment captured" style="--kpi-target-width: {{ ((captados_count * 100 / worked_count) if worked_count else 0) }}%"></span>
+                                <span class="kpi-management-stack-segment discarded" style="--kpi-target-width: {{ ((descartados_count * 100 / worked_count) if worked_count else 0) }}%"></span>
+                            </div>
+                        </div>
+                        <div class="captacion-card__legend captacion-card__result-legend">
+                            <span class="captacion-card__result-item"><span><span class="captacion-card__legend-dot management"></span>En gestión</span><strong>{{ "%.1f"|format(management_rate)|replace(".", ",") }}%</strong></span>
+                            <span class="captacion-card__result-item"><span><span class="captacion-card__legend-dot captured"></span>Captada</span><strong>{{ "%.1f"|format(captured_rate)|replace(".", ",") }}%</strong></span>
+                            <span class="captacion-card__result-item"><span><span class="captacion-card__legend-dot discarded"></span>Descartadas</span><strong>{{ "%.1f"|format(discarded_rate)|replace(".", ",") }}%</strong></span>
                         </div>
                     </div>
-                    <div class="kpi-management-results kpi-model-breakdown">
-                        <div class="kpi-management-result">
-                            <div class="kpi-management-result-top"><span class="kpi-management-result-dot management"></span><span class="kpi-management-result-count">{{ in_gestion_count }}</span></div>
-                            <div class="kpi-management-result-label">En gestión</div>
-                            <div class="kpi-management-result-rate">{{ "%.1f"|format(management_rate)|replace(".", ",") }}%</div>
-                        </div>
-                        <div class="kpi-management-result">
-                            <div class="kpi-management-result-top"><span class="kpi-management-result-dot captured"></span><span class="kpi-management-result-count">{{ captados_count }}</span></div>
-                            <div class="kpi-management-result-label">Captada</div>
-                            <div class="kpi-management-result-rate">{{ "%.1f"|format(captured_rate)|replace(".", ",") }}%</div>
-                        </div>
-                        <div class="kpi-management-result">
-                            <div class="kpi-management-result-top"><span class="kpi-management-result-dot discarded"></span><span class="kpi-management-result-count">{{ descartados_count }}</span></div>
-                            <div class="kpi-management-result-label">Descartadas</div>
-                            <div class="kpi-management-result-rate">{{ "%.1f"|format(discarded_rate)|replace(".", ",") }}%</div>
+                    <div class="captacion-card__flex" aria-hidden="true"></div>
+                    <div class="kpi-model-footer captacion-card__footer">
+                        <div class="kpi-model-footer-content captacion-card__footer-content">
+                            {% set management_discard_gap = discarded_rate - management_rate %}
+                            {% set management_discard_gap_abs = management_discard_gap|abs %}
+                            {% set management_discard_gap_rounded = ((management_discard_gap_abs * 10 + 0.5)|int) / 10 %}
+                            {% if management_discard_gap_abs < 0.5 %}
+                            En gestión y descarte presentan una distribución similar
+                            {% elif management_discard_gap > 0 %}
+                            El descarte supera a las gestiones aún abiertas en {{ "%.1f"|format(management_discard_gap_rounded)|replace(".", ",") }} pp
+                            {% else %}
+                            Las gestiones aún abiertas superan al descarte en {{ "%.1f"|format(management_discard_gap_rounded)|replace(".", ",") }} pp
+                            {% endif %}
                         </div>
                     </div>
-                    <div class="kpi-model-footer"><div class="kpi-model-footer-content"><span class="kpi-management-footer-action" title="Ver propiedades en gestión"><strong>{{ in_gestion_count }}</strong> propiedades continúan en gestión · {{ "%.1f"|format(management_rate)|replace(".", ",") }}% de las trabajadas</span></div></div>
                 </div>
             </button>
 
-            <div class="kpi-card kpi-model kpi-contact-card" aria-label="Intermediación detectada: {{ contact_corredor_rate }} por ciento de las trabajadas marcadas como corredor">
+            <div class="kpi-card kpi-model captacion-card kpi-contact-card" aria-label="Contactabilidad: {{ ("%.1f"|format(contactability_pct)|replace(".", ",") ~ "%") if contactability_pct is not none else "sin muestra" }}">
+                <span class="captacion-card__help-wrap captacion-info-wrap">
+                    <span class="captacion-info-trigger" role="button" tabindex="0" aria-label="Ayuda sobre contactabilidad" aria-expanded="false" aria-controls="captacion-card-help-contact">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </span>
+                    <span id="captacion-card-help-contact" class="captacion-info-popover captacion-card__help-popover" role="tooltip" hidden>
+                        <strong>¿Qué significa Contactabilidad?</strong>
+                        <span>Mide qué proporción de las propiedades con intento de contacto logró un contacto efectivo.</span>
+                        <strong>Cómo se calcula</strong>
+                        <span>Contactabilidad = propiedades únicas con contacto efectivo ÷ propiedades únicas con intento de contacto.</span>
+                        <span>La barra muestra visualmente las propiedades con contacto efectivo frente a las que tuvieron intento sin contacto efectivo.</span>
+                        <strong>Cuenta como efectivo</strong>
+                        <span>Contactado · Solicita llamada posterior</span>
+                        <strong>Intento sin contacto efectivo</strong>
+                        <span>Número inválido · No respondió · Ocupado · Mensaje enviado</span>
+                        <strong>Ten en cuenta</strong>
+                        <span>No interesado, Captada y Corredor son resultados comerciales y no forman parte del cálculo por sí solos. Los buckets muestran el último resultado válido por propiedad, sin duplicar eventos.</span>
+                    </span>
+                </span>
                 <div class="kpi-model-body">
-                    <div class="kpi-model-label">Intermediación detectada</div>
-                    <div class="kpi-model-metric">
-                        <span class="kpi-model-value" data-kpi-percent="{{ contact_corredor_rate }}">{{ "%.1f"|format(contact_corredor_rate)|replace(".", ",") }}%</span>
-                        <span class="kpi-model-unit">corredor</span>
+                    <div class="kpi-model-label captacion-card__title">Contactabilidad</div>
+                    <div class="kpi-model-metric captacion-card__kpi">
+                        {% if contactability_pct is not none %}
+                        <span class="kpi-model-value captacion-card__kpi-value" data-kpi-percent="{{ contactability_pct }}">{{ "%.1f"|format(contactability_pct)|replace(".", ",") }}%</span>
+                        {% else %}
+                        <span class="kpi-model-value captacion-card__kpi-value">—</span>
+                        {% endif %}
+                        <span class="kpi-model-unit captacion-card__kpi-label">contactabilidad</span>
                     </div>
-                    <div class="kpi-contact-base kpi-contact-definition kpi-model-secondary" title="Porcentaje sobre propiedades trabajadas. Corredor corresponde exclusivamente a la marca del ejecutivo 'Corredor'.">
-                        Sobre {{ contact_type_total }} propiedades trabajadas
+                    {% set non_effective_contacts = [contact_attempts - effective_contacts, 0]|max %}
+                    <div class="kpi-contact-base kpi-model-secondary captacion-card__context">{{ effective_contacts }} contactos efectivos de {{ contact_attempts }} propiedades con intento</div>
+                    <div class="kpi-contact-distribution kpi-model-visual-heading captacion-card__section-label">
+                        <span class="kpi-contact-distribution-label">Resultado de contacto</span>
                     </div>
-                    <div class="kpi-contact-distribution kpi-model-visual-heading">
-                        <span class="kpi-contact-distribution-label">Marca del ejecutivo</span>
-                    </div>
-                    <div class="kpi-model-visual">
-                        <div class="kpi-contact-stack" role="img" aria-label="Distribución según marca del ejecutivo: {{ contact_type_counts['corredor'] }} corredor y {{ contact_type_counts['otros'] }} no marcadas como corredor">
-                            <span class="kpi-contact-stack-segment broker" style="--kpi-target-width: {{ ((contact_type_counts['corredor'] * 100 / contact_type_total) if contact_type_total else 0) }}%"></span>
-                            <span class="kpi-contact-stack-segment other" style="--kpi-target-width: {{ ((contact_type_counts['otros'] * 100 / contact_type_total) if contact_type_total else 0) }}%"></span>
+                    <div class="kpi-model-visual-zone captacion-card__visual-zone">
+                        <div class="kpi-contact-stack" role="img" aria-label="Contactabilidad: {{ effective_contacts }} propiedades con contacto efectivo y {{ [contact_attempts - effective_contacts, 0]|max }} sin contacto efectivo">
+                            <span class="kpi-contact-stack-segment effective" style="--kpi-target-width: {{ ((effective_contacts * 100 / contact_attempts) if contact_attempts else 0) }}%"></span>
+                            <span class="kpi-contact-stack-segment other" style="--kpi-target-width: {{ (((contact_attempts - effective_contacts) * 100 / contact_attempts) if contact_attempts and contact_attempts > effective_contacts else 0) }}%"></span>
+                        </div>
+                        <div class="kpi-contact-stack-caption" aria-hidden="true">
+                            <span><i class="kpi-contact-stack-caption-dot effective"></i>{{ effective_contacts }} Efectivos</span>
+                            <span><i class="kpi-contact-stack-caption-dot other"></i>{{ non_effective_contacts }} Sin contacto efectivo</span>
+                        </div>
+                        <div class="kpi-contact-results-heading">Resultado sin contacto</div>
+                        <div class="kpi-contact-results" aria-label="Desglose de resultados sin contacto">
+                            {% if contactability_result_buckets %}
+                            {% for bucket in contactability_result_buckets|sort(attribute='count', reverse=true) %}
+                            <div class="kpi-contact-result">
+                                <div class="kpi-contact-result-top"><span class="kpi-contact-result-count">{{ bucket.count }}</span></div>
+                                <div class="kpi-contact-result-label">{{ bucket.label }}</div>
+                            </div>
+                            {% endfor %}
+                            {% elif not contact_attempts %}
+                            <div class="captacion-card__contact-ratio">Sin intentos registrados</div>
+                            {% else %}
+                            <div class="captacion-card__contact-ratio">Todos los intentos registrados lograron contacto efectivo</div>
+                            {% endif %}
                         </div>
                     </div>
-                    <div class="kpi-contact-results kpi-model-breakdown">
-                        <div class="kpi-contact-result">
-                            <div class="kpi-contact-result-top"><span class="kpi-contact-result-dot broker"></span><span class="kpi-contact-result-count">{{ contact_type_counts['corredor'] }}</span></div>
-                            <div class="kpi-contact-result-label">Corredor</div>
-                            <div class="kpi-contact-result-rate">{{ "%.1f"|format(contact_corredor_share)|replace(".", ",") }}%</div>
-                        </div>
-                        <div class="kpi-contact-result">
-                            <div class="kpi-contact-result-top"><span class="kpi-contact-result-dot other"></span><span class="kpi-contact-result-count">{{ contact_type_counts['otros'] }}</span></div>
-                            <div class="kpi-contact-result-label">No marcadas como corredor</div>
-                            <div class="kpi-contact-result-rate">{{ "%.1f"|format(contact_other_share)|replace(".", ",") }}%</div>
+                    <div class="captacion-card__flex" aria-hidden="true"></div>
+                    <div class="kpi-model-footer kpi-contact-footer captacion-card__footer">
+                        <div class="kpi-model-footer-content captacion-card__footer-content">
+                            {{ contactability_insight }}
                         </div>
                     </div>
-            <div class="kpi-model-footer kpi-contact-footer"><div class="kpi-model-footer-content"><strong>{{ contact_type_counts['otros'] }}</strong> propiedades no están marcadas como corredor · {{ "%.1f"|format(contact_other_share)|replace(".", ",") }}% de las trabajadas</div></div>
                 </div>
             </div>
 
-            <div class="kpi-card kpi-model kpi-source-card" aria-label="Origen de la cartera: {{ source_primary.percentage }} por ciento de {{ source_primary.label }}">
+            <div class="kpi-card kpi-model captacion-card kpi-source-card" aria-label="Intermediación por portal sobre propiedades trabajadas">
+                <span class="captacion-card__help-wrap captacion-info-wrap">
+                    <span class="captacion-info-trigger" role="button" tabindex="0" aria-label="Ayuda sobre intermediación por portal" aria-expanded="false" aria-controls="captacion-card-help-portal">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    </span>
+                    <span id="captacion-card-help-portal" class="captacion-info-popover captacion-card__help-popover" role="tooltip" hidden>
+                        <strong>¿Qué significa Intermediación por portal?</strong>
+                        <span>Compara, entre las propiedades trabajadas de cada portal, qué proporción tiene al menos una detección válida de corredor.</span>
+                        <strong>Cómo se calcula</strong>
+                        <span>Tasa de corredor = propiedades trabajadas con una detección válida de corredor no reversada ÷ propiedades trabajadas elegibles del portal.</span>
+                        <strong>Interpretación</strong>
+                        <span>Una tasa menor indica que, entre las propiedades ya trabajadas, se ha detectado menor intermediación por corredores.</span>
+                        <strong>Ten en cuenta</strong>
+                        <span>La brecha de corredor es la diferencia absoluta entre las tasas observadas de los portales con muestra. Una detección posteriormente reversada no cuenta.</span>
+                        <span>No estar marcado como Corredor no significa que la propiedad esté confirmada como publicada directamente por su propietario.</span>
+                    </span>
+                </span>
                 <div class="kpi-model-body">
-                    <div class="kpi-model-label">Origen de la cartera</div>
-                    <div class="kpi-model-metric" title="Participación de la fuente principal sobre la cartera actual">
-                        <span class="kpi-model-value" data-kpi-percent="{{ source_primary.percentage }}">{{ "%.1f"|format(source_primary.percentage)|replace(".", ",") }}%</span>
-                        <span class="kpi-model-unit">{{ source_primary.label }}</span>
+                    {% set portal_insight_candidates = worked_portal_counts | selectattr('worked', 'gt', 0) | list %}
+                    {% if portal_insight_candidates|length >= 2 %}
+                    {% set portal_low_rate = portal_insight_candidates | sort(attribute='corredor_rate') | first %}
+                    {% set portal_high_rate = portal_insight_candidates | sort(attribute='corredor_rate', reverse=true) | first %}
+                    {% set portal_corridor_gap = (portal_high_rate.corredor_rate - portal_low_rate.corredor_rate) | abs %}
+                    {% set portal_other = namespace(item=None) %}
+                    {% for portal in portal_insight_candidates %}
+                    {% if portal.value != portal_low_rate.value %}
+                    {% set portal_other.item = portal %}
+                    {% endif %}
+                    {% endfor %}
+                    {% endif %}
+                    <div class="kpi-model-label captacion-card__title">Intermediación por portal</div>
+                    <div class="captacion-card__kpi captacion-card__portal-difference">
+                        {% if portal_insight_candidates|length >= 2 and portal_corridor_gap > 0 %}
+                        <span class="kpi-model-value captacion-card__kpi-value" data-kpi-percent="{{ portal_corridor_gap }}" data-kpi-suffix="">{{ "%.1f"|format(portal_corridor_gap)|replace(".", ",") }}</span>
+                        <span class="captacion-card__kpi-label">BRECHA DE CORREDOR</span>
+                        {% elif portal_insight_candidates|length >= 2 %}
+                        <span class="kpi-model-value captacion-card__kpi-value" data-kpi-percent="0" data-kpi-suffix="">0,0</span>
+                        <span class="captacion-card__kpi-label">BRECHA DE CORREDOR</span>
+                        {% else %}
+                        <span class="captacion-card__kpi-value">—</span>
+                        <span class="captacion-card__kpi-label">comparación no disponible</span>
+                        {% endif %}
                     </div>
-                    <div class="kpi-source-base kpi-model-secondary">{{ source_primary.count }} de {{ source_total }} propiedades</div>
-                    <div class="kpi-source-heading kpi-model-visual-heading">
-                        <span class="kpi-source-heading-label">Distribución por origen</span>
+                    <div class="kpi-source-heading kpi-model-visual-heading captacion-card__section-label">
+                        <span>Tasa de corredor</span>
                     </div>
-                    <div class="kpi-model-visual">
-                        <div class="kpi-source-stack" role="img" aria-label="Distribución por origen: {% for source in source_breakdown %}{{ source.count }} {{ source.label }} ({{ '%.1f'|format(source.percentage)|replace('.', ',') }}%){% if not loop.last %}, {% endif %}{% endfor %}">
-                            {% for source in source_breakdown %}
-                        <span class="kpi-source-stack-segment source-{{ loop.index }}{{ ' other' if source.value == 'otros' else '' }}" style="--kpi-target-width: {{ ((source.count * 100 / source_total) if source_total else 0) }}%"></span>
+                    <div class="captacion-card__visual-zone">
+                        <div class="captacion-card__portal-bars" aria-label="Tasa de corredor por portal">
+                            {% for portal in portal_insight_candidates %}
+                            <div class="captacion-card__portal-bar-row {% if portal.value|lower == 'toctoc' %}portal-toctoc{% elif portal.value|lower == 'yapo' %}portal-yapo{% else %}portal-other{% endif %}">
+                                <div class="captacion-card__portal-bar-head">
+                                    <span class="captacion-card__portal-bar-name"><span class="captacion-card__portal-dot"></span><span>{{ portal.label }} ({{ portal.worked }})</span></span>
+                                    <span>{{ ("%.1f"|format(portal.corredor_rate)|replace(".", ",") ~ "%") if portal.corredor_rate is not none else "—" }}</span>
+                                </div>
+                                <div class="captacion-card__portal-bar-track">
+                                    <span class="captacion-card__portal-bar-fill {% if portal.value|lower == 'toctoc' %}portal-toctoc{% elif portal.value|lower == 'yapo' %}portal-yapo{% else %}portal-other{% endif %}" style="--kpi-target-width: {{ portal.corredor_rate if portal.corredor_rate is not none else 0 }}%"></span>
+                                </div>
+                            </div>
                             {% else %}
-                            <span class="kpi-source-stack-empty"></span>
+                            <div class="kpi-portal-performance-empty">
+                                {% if worked_count %}Datos de origen no disponibles temporalmente{% else %}Sin propiedades trabajadas{% endif %}
+                            </div>
                             {% endfor %}
                         </div>
                     </div>
-                    <div class="kpi-source-results kpi-model-breakdown source-count-{{ source_breakdown|length }}">
-                        {% for source in source_breakdown %}
-                        <div class="kpi-source-result">
-                            <div class="kpi-source-result-top"><span class="kpi-source-result-dot source-{{ loop.index }}{{ ' other' if source.value == 'otros' else '' }}"></span><span class="kpi-source-result-count">{{ source.count }}</span></div>
-                            <div class="kpi-source-result-label" title="{{ source.label }}">{{ source.label }}</div>
-                            <div class="kpi-source-result-rate">{{ "%.1f"|format(source.percentage)|replace(".", ",") }}%</div>
-                        </div>
-                        {% else %}
-                        <div class="kpi-source-result">
-                            <div class="kpi-source-result-top"><span class="kpi-source-result-dot other"></span><span class="kpi-source-result-count">0</span></div>
-                            <div class="kpi-source-result-label">Sin origen</div>
-                            <div class="kpi-source-result-rate">0,0%</div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    <div class="kpi-model-footer kpi-source-footer">
-                        <div class="kpi-model-footer-content">
-                            {% if source_total %}
-                            <strong>{{ source_primary.count }}</strong> propiedades provienen de {{ source_primary.label }} · {{ "%.1f"|format(source_primary.percentage)|replace(".", ",") }}% de la cartera
+                    <div class="captacion-card__flex" aria-hidden="true"></div>
+                    <div class="kpi-model-footer kpi-source-footer captacion-card__footer">
+                        <div class="kpi-model-footer-content captacion-card__footer-content">
+                            {% if portal_insight_candidates|length >= 2 and portal_corridor_gap > 0 and portal_other.item and portal_low_rate.worked < portal_other.item.worked %}
+                            {{ portal_low_rate.label }} registra menor intermediación, con una muestra considerablemente menor que {{ portal_other.item.label }}
+                            {% elif portal_insight_candidates|length >= 2 and portal_corridor_gap > 0 %}
+                            {{ portal_low_rate.label }} registra menor intermediación observada
+                            {% elif portal_insight_candidates|length >= 2 %}
+                            Los portales muestran la misma tasa de intermediación observada
                             {% else %}
-                            Sin fuentes de origen disponibles
+                            No hay muestra suficiente para comparar portales
                             {% endif %}
                         </div>
                     </div>
@@ -2967,56 +3926,91 @@
                 {% if captacion_goal.weekend_activity %}<div class="captacion-progress-legend">Actividad adicional de fin de semana: {{ captacion_goal.weekend_activity }}</div>{% endif %}
             </div>
             {% else %}
-            <div class="captacion-goal-columns">
-                <div class="captacion-goal-block">
-                    <div class="captacion-goal-label">{% if goal_is_current_week %}Propiedades gestionadas hoy · Equipo{% else %}Resultado de la semana · Equipo{% endif %}</div>
-                    {% if not goal_is_current_week %}
-                    <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }}</small></div>
-                    <div class="captacion-goal-status"><strong>{{ ((captacion_goal.week_count * 100 / captacion_goal.week_goal)|round(1)) if captacion_goal.week_goal else 0 }}%</strong> · Cumplimiento semanal final</div>
-                    {% elif captacion_goal.today_goal %}
-                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>de {{ captacion_goal.today_goal }}</small></div>
-                    {% set team_today_pct = ((captacion_goal.today_count * 100 / captacion_goal.today_goal)|round(1)) if captacion_goal.today_goal else 0 %}
-                    <div class="captacion-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_today_pct, 100]|min }}">
-                        <span class="captacion-goal-progress" style="width: {{ [team_today_pct, 100]|min }}%"></span>
-                    </div>
-                    <div class="captacion-goal-status"><strong>{{ captacion_goal.executives_met_today }} de {{ captacion_goal.member_count }}</strong> ejecutivos cumplieron · {{ captacion_goal.executives_pending_today }} pendientes</div>
+            {% set team_week_pct = ((captacion_goal.week_count * 100 / captacion_goal.week_goal)|round(1)) if captacion_goal.week_goal else 0 %}
+            <div class="captacion-team-overview">
+                <div class="captacion-team-overview-main">
+                    <div class="captacion-goal-label">{% if goal_is_current_week %}Gestión vs esperado a hoy{% else %}Cumplimiento semanal final{% endif %}</div>
+                    {% if goal_is_current_week %}
+                    <div class="captacion-goal-number">{{ captacion_goal.today_count }} <small>gestionadas</small></div>
                     {% else %}
-                    <div class="captacion-goal-number">Sin meta <small>· {{ captacion_goal.executives[0].today_reason if captacion_goal.executives else 'Día no laborable' }}</small></div>
-                    {% endif %}
-                </div>
-                <div class="captacion-goal-block">
-                    <div class="captacion-goal-label">{% if goal_is_current_week %}Equipo esta semana{% else %}Equipo · Semana {{ goal_week_number }}{% endif %}</div>
                     <div class="captacion-goal-number">{{ captacion_goal.week_count }} <small>de {{ captacion_goal.week_goal }} propiedades</small></div>
-                    {% set team_week_progress_pct = ((captacion_goal.week_count * 100 / captacion_goal.week_goal)|round(1)) if captacion_goal.week_goal else 0 %}
-                    <div class="captacion-week-progress" role="progressbar" aria-label="Avance de la meta semanal del equipo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_week_progress_pct, 100]|min }}">
-                        <span style="width: {{ [team_week_progress_pct, 100]|min }}%"></span>
-                    </div>
+                    {% endif %}
                     {% set team_pace_delta = captacion_goal.week_count - captacion_goal.expected_to_date %}
                     {% if goal_is_current_week %}
                     <div class="captacion-goal-status"><strong>Meta esperada a hoy: {{ captacion_goal.expected_to_date }}</strong> · {% if team_pace_delta > 0 %}+{{ team_pace_delta }} sobre el ritmo{% elif team_pace_delta < 0 %}faltan {{ team_pace_delta|abs }} para recuperar el ritmo{% else %}en ritmo{% endif %}</div>
+                    <div class="captacion-team-week-secondary">{{ captacion_goal.week_count }} / {{ captacion_goal.week_goal }} · {{ "%.1f"|format(team_week_pct)|replace(".", ",") }}% de la meta semanal</div>
                     {% else %}
-                    <div class="captacion-goal-status"><strong>{{ ((captacion_goal.week_count * 100 / captacion_goal.week_goal)|round(1)) if captacion_goal.week_goal else 0 }}%</strong> · Cumplimiento semanal final</div>
+                    <div class="captacion-goal-status"><strong>{{ "%.1f"|format(team_week_pct)|replace(".", ",") }}%</strong> · Cumplimiento semanal final</div>
                     {% endif %}
+                    <div class="captacion-week-progress" role="progressbar" aria-label="Avance de la meta semanal del equipo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [team_week_pct, 100]|min }}">
+                        <span style="width: {{ [team_week_pct, 100]|min }}%"></span>
+                    </div>
+                </div>
+                <div class="captacion-team-overview-metrics">
+                    <div class="captacion-team-overview-metric">
+                        <span class="captacion-team-overview-metric-label">{% if goal_is_current_week %}Cumplen hoy{% else %}Cumplieron meta{% endif %}</span>
+                        <strong class="captacion-team-overview-metric-value">{% if goal_is_current_week %}{{ captacion_goal.executives_met_today }}{% else %}{{ captacion_goal.executives_met_week }}{% endif %} de {{ captacion_goal.member_count }}</strong>
+                        <span class="captacion-team-overview-metric-unit">ejecutivos</span>
+                    </div>
+                    <div class="captacion-team-overview-metric">
+                        <span class="captacion-team-overview-metric-label">Contactos efectivos</span>
+                        <strong class="captacion-team-overview-metric-value">{{ captacion_goal.effective_contacts }}</strong>
+                        <span class="captacion-team-overview-metric-unit">en el período</span>
+                    </div>
+                    <div class="captacion-team-overview-metric">
+                        <span class="captacion-team-overview-metric-label">Captaciones</span>
+                        <strong class="captacion-team-overview-metric-value">{{ captacion_goal.captures }}</strong>
+                        <span class="captacion-team-overview-metric-unit">en el período</span>
+                    </div>
                 </div>
             </div>
             <details class="captacion-team-details">
-                <summary>Ver cumplimiento por ejecutivo ({{ captacion_goal.member_count }})</summary>
+                <summary><span>Cumplimiento por ejecutivo</span><span class="summary-count">{{ captacion_goal.member_count }} ejecutivos</span><span class="summary-chevron" aria-hidden="true">⌄</span></summary>
                 <div style="overflow-x:auto">
                     <table class="captacion-team-table">
-                        <thead><tr><th>Ejecutivo</th><th>Hoy</th><th>Estado</th><th>Semana</th><th>Días</th><th>Intentos</th><th>Contactos efectivos</th><th>Captaciones</th><th>Alertas</th><th>Última gestión</th></tr></thead>
+                        <thead><tr><th>Ejecutivo</th>{% if goal_is_current_week %}<th>Hoy</th>{% endif %}<th>{% if goal_is_current_week %}Semana{% else %}<button type="button" class="captacion-team-week-sort" data-team-sort="week" aria-label="Ordenar por cumplimiento semanal">Semana <span aria-hidden="true">↕</span></button>{% endif %}</th><th>Días</th><th>Intentos</th><th>Contactos efectivos</th><th>Captaciones</th>{% if goal_is_current_week %}<th>Alertas</th>{% endif %}<th>Última gestión</th></tr></thead>
                         <tbody>
                         {% for executive in captacion_goal.executives %}
-                        <tr>
-                            <td>{{ executive.name }}</td>
-                            <td>{{ executive.today_count }} / {{ executive.today_goal }}</td>
-                            <td class="{% if executive.today_status == 'CUMPLIDO' %}goal-met{% elif executive.today_status == 'INCUMPLIDO' %}goal-zero{% else %}goal-pending{% endif %}">{{ executive.today_status|replace('_', ' ')|title }}</td>
-                            <td>{{ executive.week_count }} / {{ executive.week_goal }}</td>
-                            <td>{{ executive.days_met }} / {{ executive.days_goal }}</td>
+                        {% set executive_week_pct = ((executive.week_count * 100 / executive.week_goal)|round(1)) if executive.week_goal else 0 %}
+                        {% set executive_pace_delta = executive.week_count - executive.expected_to_date %}
+                        <tr data-week-percent="{{ executive_week_pct }}">
+                            <td class="captacion-team-name"><a class="captacion-team-name-link" href="{{ executive.detail_url }}">{{ executive.name }}</a></td>
+                            {% if goal_is_current_week %}
+                            <td class="captacion-team-today">
+                                {% if executive.is_workday %}
+                                <span class="captacion-team-today-count">{{ executive.today_count }} / {{ executive.today_goal }}</span>
+                                {% if executive.met_today %}<span class="captacion-team-today-note is-met">✓ Cumplido</span>{% else %}<span class="captacion-team-today-note">Faltan {{ executive.today_remaining }}</span>{% endif %}
+                                {% elif executive.today_status == 'EXENTO' %}
+                                <span class="captacion-team-today-count">—</span><span class="captacion-team-today-note">Exento</span>
+                                {% else %}
+                                <span class="captacion-team-today-count">—</span><span class="captacion-team-today-note">Sin meta</span>
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                            {% set elapsed_days = namespace(total=0, met=0) %}
+                            {% for day in executive.daily or [] %}
+                                {% if not day.future and day.target > 0 %}
+                                    {% set elapsed_days.total = elapsed_days.total + 1 %}
+                                    {% if day.met %}{% set elapsed_days.met = elapsed_days.met + 1 %}{% endif %}
+                                {% endif %}
+                            {% endfor %}
+                            <td class="captacion-team-week-cell">
+                                <div class="captacion-team-week-values"><strong>{{ executive.week_count }} / {{ executive.week_goal }}</strong><span class="captacion-team-week-percent">{{ "%.1f"|format(executive_week_pct)|replace(".", ",") }}%</span></div>
+                                <div class="captacion-team-micro-progress" role="progressbar" aria-label="Cumplimiento semanal de {{ executive.name }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [executive_week_pct, 100]|min }}"><span style="width: {{ [((executive.week_count * 100 / executive.week_goal) if executive.week_goal else 0), 100]|min }}%"></span></div>
+                                {% if goal_is_current_week %}<span class="captacion-team-gap {% if executive_pace_delta >= 0 %}is-positive{% else %}is-negative{% endif %}">{% if executive_pace_delta > 0 %}+{{ executive_pace_delta }}{% elif executive_pace_delta < 0 %}−{{ executive_pace_delta|abs }}{% else %}0{% endif %} vs esperado a hoy</span>{% endif %}
+                            </td>
+                            {% if goal_is_current_week %}
+                            <td title="Días hábiles transcurridos en que el ejecutivo alcanzó la meta diaria.">{{ elapsed_days.met }} / {{ elapsed_days.total }}<small class="captacion-team-days-secondary">días cumplidos</small></td>
+                            {% else %}
+                            <td title="Cantidad de días hábiles de esa semana en que el ejecutivo alcanzó la meta diaria.">{{ executive.days_met }} / {{ executive.days_goal }}<small class="captacion-team-days-secondary">días cumplidos</small></td>
+                            {% endif %}
                             <td>{{ executive.contact_attempts }}</td>
                             <td>{{ executive.effective_contacts }}</td>
                             <td>{{ executive.captures }}</td>
+                            {% if goal_is_current_week %}
                             <td>{% if executive.anomaly_count %}<span class="goal-zero">{{ executive.anomaly_count }} pendiente(s)</span>{% else %}0{% endif %}</td>
-                            <td>{{ executive.last_activity.strftime('%d/%m %H:%M') if executive.last_activity else 'Sin actividad' }}</td>
+                            {% endif %}
+                            <td>{{ executive.period_last_activity.strftime('%d/%m · %H:%M') if executive.period_last_activity else 'Sin actividad' }}</td>
                         </tr>
                         {% endfor %}
                         </tbody>
@@ -3211,7 +4205,7 @@
                     </thead>
                     <tbody>
                         {% for item in items %}
-                        <tr onclick="location.href='/captacion/{{ item.id }}'">
+                        <tr onclick="location.href='/captacion/{{ item.id }}?source=captacion_list'">
                             <td data-label="Comuna"><div class="mobile-cell-value"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</div></td>
                             <td data-label="Origen"><div class="mobile-cell-value">{{ item.portal_label }}</div></td>
                             <td data-label="Operación">
@@ -3431,7 +4425,7 @@
                     </thead>
                     <tbody>
                         {% for item in items %}
-                        <tr onclick="location.href='/captacion/{{ item.id }}'">
+                        <tr onclick="location.href='/captacion/{{ item.id }}?source=captacion_list'">
                             <td data-label="Comuna"><i class="fa-solid fa-location-dot me-1 opacity-50"></i>{{ item.comuna }}</td>
                             <td data-label="Origen">{{ item.portal_label }}</td>
                             <td class="text-center" data-label="Precio">
@@ -3689,15 +4683,16 @@
                 .filter(item => item.target);
             const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             const formatCount = value => Math.floor(value).toLocaleString('es-CL');
-            const formatPercent = value => value.toLocaleString('es-CL', {
+            const formatPercent = (value, suffix = '%') => value.toLocaleString('es-CL', {
                 minimumFractionDigits: 1,
                 maximumFractionDigits: 1
-            }) + '%';
+            }) + suffix;
             const renderFinal = item => {
                 const prefix = item.element.dataset.kpiPrefix || '';
+                const suffix = item.element.dataset.kpiSuffix ?? '%';
                 item.element.textContent = prefix + (item.type === 'count'
                     ? formatCount(item.target)
-                    : formatPercent(item.target));
+                    : formatPercent(item.target, suffix));
             };
 
             if (reducedMotion) {
@@ -3707,7 +4702,8 @@
 
             numbers.forEach(item => {
                 const prefix = item.element.dataset.kpiPrefix || '';
-                item.element.textContent = prefix + (item.type === 'count' ? '0' : formatPercent(0));
+                const suffix = item.element.dataset.kpiSuffix ?? '%';
+                item.element.textContent = prefix + (item.type === 'count' ? '0' : formatPercent(0, suffix));
             });
             segments.forEach(item => {
                 item.element.style.flexBasis = '0%';
@@ -3720,9 +4716,10 @@
                 numbers.forEach(item => {
                     const value = item.target * progress;
                     const prefix = item.element.dataset.kpiPrefix || '';
+                    const suffix = item.element.dataset.kpiSuffix ?? '%';
                     item.element.textContent = prefix + (item.type === 'count'
                         ? formatCount(value)
-                        : formatPercent(value));
+                        : formatPercent(value, suffix));
                 });
                 if (progress < 1) requestAnimationFrame(step);
             };
@@ -3872,6 +4869,11 @@
             }
         }
 
+        function captacionPopoverHoverEnabled() {
+            return window.matchMedia('(hover: hover) and (pointer: fine)').matches
+                && window.innerWidth > 576;
+        }
+
         function clearCaptacionFilter(button) {
             const params = new URLSearchParams(window.location.search);
             const parameter = button?.dataset?.filterParam;
@@ -3897,6 +4899,26 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('[data-team-sort="week"]').forEach(button => {
+                let descending = true;
+                button.addEventListener('click', () => {
+                    const table = button.closest('table');
+                    const body = table?.querySelector('tbody');
+                    if (!body) return;
+                    descending = !descending;
+                    [...body.querySelectorAll('tr')]
+                        .sort((left, right) => {
+                            const leftValue = Number(left.dataset.weekPercent || 0);
+                            const rightValue = Number(right.dataset.weekPercent || 0);
+                            if (leftValue !== rightValue) return descending ? rightValue - leftValue : leftValue - rightValue;
+                            return (left.querySelector('.captacion-team-name-link')?.textContent || '')
+                                .localeCompare(right.querySelector('.captacion-team-name-link')?.textContent || '', 'es');
+                        })
+                        .forEach(row => body.appendChild(row));
+                    button.querySelector('span[aria-hidden="true"]').textContent = descending ? '↓' : '↑';
+                });
+            });
+
             document.querySelectorAll('.captacion-goal-day[data-temporal-value]').forEach(day => {
                 day.addEventListener('click', () => {
                     applyCaptacionTemporalFilter('date', day.dataset.temporalValue);
@@ -3913,12 +4935,12 @@
                 const trigger = wrapper.querySelector('.captacion-info-trigger');
                 if (!trigger) return;
                 wrapper.addEventListener('mouseenter', () => {
-                    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+                    if (captacionPopoverHoverEnabled()) {
                         toggleCaptacionPopover(trigger, true);
                     }
                 });
                 wrapper.addEventListener('mouseleave', () => {
-                    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+                    if (!captacionPopoverHoverEnabled()) return;
                     window.clearTimeout(wrapper._captacionPopoverTimer);
                     wrapper._captacionPopoverTimer = window.setTimeout(() => toggleCaptacionPopover(trigger, false), 120);
                 });
@@ -3926,7 +4948,14 @@
                     event.preventDefault();
                     event.stopPropagation();
                     window.clearTimeout(wrapper._captacionPopoverTimer);
-                    toggleCaptacionPopover(trigger);
+                    toggleCaptacionPopover(trigger, captacionPopoverHoverEnabled() ? true : undefined);
+                });
+                trigger.addEventListener('keydown', event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    window.clearTimeout(wrapper._captacionPopoverTimer);
+                    toggleCaptacionPopover(trigger, captacionPopoverHoverEnabled() ? true : undefined);
                 });
             });
         });

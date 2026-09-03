@@ -23,6 +23,7 @@ from owner_confidence import (
 )
 from captacion_goals import can_manage_captacion
 from captacion_management import (
+    bump_captacion_kpi_revision,
     confirm_management_attempt,
     evaluate_manual_decision,
     new_assignment_cycle,
@@ -1283,7 +1284,7 @@ def get_captacion_detail(obj_id):
     _l1_set(_detail_cache_key, _result, expire_seconds=45)
     return _result
 
-def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None, user_doc=None):
+def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None, user_doc=None, followup_token=None):
     db = get_db()
     
     now = get_chile_now() # Store as Date object, not string
@@ -1357,6 +1358,8 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 "audit_note": audit_note,
                 "idempotency_key": f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}:{str((user_doc or {}).get('_id') or user_name)}",
                 "lead_type": "captacion",
+                "followup_tracking_version": "followup_tracking_v1",
+                "attribution_status": "attributed",
                 "phone": "+56900000000",
                 "obj_id": obj_id_str,
                 "target_name": user_name,
@@ -1373,6 +1376,14 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 "agent": user_name
             }
             db["crm_tasks"].insert_one(task)
+            try:
+                from chatbot.followup_tracking import record_followup_event
+                record_followup_event(
+                    db, task=task, event_type="reminder_scheduled",
+                    occurred_at=now, source="captacion_crm",
+                )
+            except ValueError:
+                pass
         except Exception as e:
             logger.error(f"Error scheduling captacion task: {e}")
     
@@ -1411,8 +1422,12 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         {"_id": current_doc["_id"]},
         update_params
     )
+    if old_status != status:
+        # La revisión vive en Mongo y permite invalidar snapshots de otros
+        # workers, además de la limpieza local que ya realiza este módulo.
+        bump_captacion_kpi_revision(db)
     if user_doc and manual_decision.get("eligible"):
-        record_manual_management_decision(
+        manual_result = record_manual_management_decision(
             db,
             property_doc=current_doc,
             actor_user=user_doc,
@@ -1422,6 +1437,22 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             outcome=outcome,
             now=now,
         )
+        if followup_token and manual_result.get("event_id"):
+            try:
+                from chatbot.followup_tracking import record_followup_management
+                record_followup_management(
+                    db,
+                    token=followup_token,
+                    entity_id=obj_id,
+                    executive_id=str(user_doc.get("_id") or ""),
+                    management_event_id=manual_result["event_id"],
+                    occurred_at=now,
+                    followup_cycle_id=manual_result.get("assignment_cycle_id"),
+                )
+            except ValueError:
+                # A bad or legacy token must not invalidate a valid status
+                # change; the management simply remains unattributed.
+                pass
     _invalidate_detail_cache(obj_id)
     _invalidate_captacion_list_cache()
     try:
@@ -1616,16 +1647,32 @@ def log_captacion_activity(
     return {"ok": True, "credited": False, **attempt}
 
 
-def confirm_captacion_activity(attempt_id, user_doc, result, notes=None):
+def confirm_captacion_activity(attempt_id, user_doc, result, notes=None, followup_token=None, commercial_result=None):
     if not user_doc or not user_doc.get("_id"):
         raise PermissionError("Usuario sin identidad válida")
-    return confirm_management_attempt(
+    confirmed = confirm_management_attempt(
         get_db(),
         attempt_id=attempt_id,
         actor_user=user_doc,
         result=result,
         notes=notes,
+        commercial_result=commercial_result,
     )
+    if followup_token and confirmed.get("event_id"):
+        try:
+            from chatbot.followup_tracking import record_followup_management
+            record_followup_management(
+                get_db(),
+                token=followup_token,
+                entity_id=confirmed.get("property_id") or "",
+                executive_id=str(user_doc.get("_id") or ""),
+                management_event_id=confirmed["event_id"],
+                occurred_at=confirmed.get("occurred_at"),
+                followup_cycle_id=confirmed.get("assignment_cycle_id"),
+            )
+        except ValueError:
+            pass
+    return confirmed
 
 def normalize_commune(name):
     """

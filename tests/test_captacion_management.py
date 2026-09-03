@@ -118,6 +118,28 @@ def test_contact_effective_is_separate_from_managed_property():
     assert db[management.LEDGER_COLLECTION].rows[0]["contact_effective"] is True
 
 
+def test_combined_contact_and_commercial_result_is_one_event():
+    db = _Db()
+    attempt = management.start_management_attempt(
+        db, property_doc=_property(), actor_user=_user(), action="call", channel="tel"
+    )
+    result = management.confirm_management_attempt(
+        db,
+        attempt_id=attempt["attempt_id"],
+        actor_user=_user(),
+        result="contacted",
+        commercial_result="not_interested",
+    )
+    event = db[management.LEDGER_COLLECTION].rows[0]
+    assert result["contact_effective"] is True
+    assert len(db[management.LEDGER_COLLECTION].rows) == 1
+    assert event["contact_result"] == "contacted"
+    assert event["commercial_result"] == "not_interested"
+    assert event["result"] == "not_interested"
+    assert event["contact_attempt"] is True
+    assert event["contact_effective"] is True
+
+
 @pytest.mark.parametrize("status,result", [("Corredor", "broker_identified"), ("Descartado", "discarded")])
 def test_manual_commercial_conclusion_with_reason_credits(status, result):
     db = _Db()
@@ -161,9 +183,9 @@ def test_capture_is_a_managed_property():
 
 
 @pytest.mark.parametrize("status,notes,previous,expected_eligible,expected_reason", [
-    # State change alone credits — Bitácora is optional
-    ("Corredor", "", "Por contactar", True, None),
-    ("Descartado", "", "Por contactar", True, None),
+    # Las conclusiones comerciales requieren evidencia explícita.
+    ("Corredor", "", "Por contactar", False, "evidence_required"),
+    ("Descartado", "", "Por contactar", False, "evidence_required"),
     # Short notes (1-4 chars) credit when state changes
     ("Corredor", "OK", "Por contactar", True, None),
     ("Descartado", "N/A", "Por contactar", True, None),
@@ -332,6 +354,44 @@ def test_reversal_appends_event_without_editing_original():
     assert reversal["resulting_effect"]["credited"] is False
     assert db[management.LEDGER_COLLECTION].rows[0] == original
     assert len(db[management.LEDGER_COLLECTION].rows) == 2
+
+
+def test_state_feeding_reversal_requires_replacement_and_restores_consistent_state():
+    db = _Db()
+    prop = _property()
+    prop["gestion"]["estado"] = "Corredor"
+    db["propiedades_captacion"].insert_one(prop)
+    db[management.LEDGER_COLLECTION].rows.append({
+        "event_id": "ev-state",
+        "event_type": "manual_decision_confirmed",
+        "credited": True,
+        "property_id": "p1",
+        "actor_user_id": "u1",
+        "local_date": "2026-07-20",
+        "result": "broker_identified",
+        "status_snapshot": "Corredor",
+    })
+    with pytest.raises(ValueError, match="replacement_status"):
+        management.reverse_management_event(
+            db, event_id="ev-state", actor_user={"_id": "admin1"}, reason="Corrección"
+        )
+    reversal = management.reverse_management_event(
+        db,
+        event_id="ev-state",
+        actor_user={"_id": "admin1", "nombre": "Admin"},
+        reason="Corrección",
+        replacement_status="En gestión",
+    )
+    assert reversal["resulting_effect"]["replacement_status"] == "En gestión"
+    assert db["propiedades_captacion"].rows[0]["gestion.estado"] == "En gestión"
+
+
+def test_shared_kpi_revision_increments():
+    db = _Db()
+    assert management.get_captacion_kpi_revision(db) == 0
+    assert management.bump_captacion_kpi_revision(db) == 1
+    assert management.bump_captacion_kpi_revision(db) == 2
+    assert management.get_captacion_kpi_revision(db) == 2
 
 
 def test_assignment_cycle_uses_existing_id_or_deterministic_legacy_fallback():

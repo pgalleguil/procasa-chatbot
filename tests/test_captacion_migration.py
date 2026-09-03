@@ -375,7 +375,7 @@ def test_chatbot_uses_flash_model_even_when_legacy_env_is_pro():
 
 
 def test_adjudicator_uses_flash_independently():
-    """Adjudicador usa deepseek-v4-flash aunque DEEPSEEK_MODEL sea pro."""
+    """Adjudicador usa deepseek-v4-flash aunque el entorno sea pro."""
     import os
     os.environ['DEEPSEEK_MODEL'] = 'deepseek-v4-pro'
     os.environ.pop('DEEPSEEK_ADJUDICATOR_MODEL', None)
@@ -403,7 +403,7 @@ def test_validator_keeps_adjudicator_on_flash():
     import config
     importlib.reload(config)
     config.Config.validate_adjudicator_model()
-    # Restaurar
+    # Restaurar el entorno para no contaminar las pruebas siguientes.
     os.environ['DEEPSEEK_ADJUDICATOR_MODEL'] = 'deepseek-v4-flash'
     importlib.reload(config)
 

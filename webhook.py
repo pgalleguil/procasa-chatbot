@@ -292,6 +292,7 @@ async def _refresh_captacion_goal_snapshot(
     selected_executive=None,
     period_start=None,
     period_end=None,
+    excluded_executives=None,
     perf_context=None,
 ):
     """Calcula una meta y la persiste; el cálculo pesado vive en un hilo."""
@@ -306,6 +307,7 @@ async def _refresh_captacion_goal_snapshot(
             selected_executive=selected_executive,
             period_start=period_start,
             period_end=period_end,
+            excluded_executives=excluded_executives,
             perf_context=perf_context,
             include_control=False,
             # Los índices de metas ya se preparan una vez durante startup.
@@ -318,6 +320,7 @@ async def _refresh_captacion_goal_snapshot(
                 selected_executive=selected_executive,
                 period_start=period_start,
                 period_end=period_end,
+                excluded_executives=excluded_executives,
             )
         except Exception:
             # El snapshot es una aceleración; nunca debe impedir una respuesta
@@ -341,6 +344,7 @@ def _start_captacion_goal_refresh(
     selected_executive=None,
     period_start=None,
     period_end=None,
+    excluded_executives=None,
     perf_context=None,
 ):
     """Single-flight por equipo/ejecutivo y período, sin cálculos duplicados."""
@@ -355,6 +359,7 @@ def _start_captacion_goal_refresh(
             selected_executive=selected_executive,
             period_start=period_start,
             period_end=period_end,
+            excluded_executives=excluded_executives,
             perf_context=perf_context,
         )
     )
@@ -380,6 +385,7 @@ async def _read_captacion_goal_snapshot(
     selected_executive=None,
     period_start=None,
     period_end=None,
+    excluded_executives=None,
 ):
     def _read():
         from chatbot.storage import get_db
@@ -389,6 +395,7 @@ async def _read_captacion_goal_snapshot(
             selected_executive=selected_executive,
             period_start=period_start,
             period_end=period_end,
+            excluded_executives=excluded_executives,
         )
 
     return await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, _read)

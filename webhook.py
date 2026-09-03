@@ -286,6 +286,14 @@ def _put_captacion_goal_cache(cache_key, data):
     app.state.captacion_goal_cache = cache
 
 
+def _captacion_goal_cache_key(selected_executive=None, period_start=None, today=None):
+    key = f"goal_v2_{selected_executive or '_none'}"
+    if period_start:
+        return f"{key}_{period_start}"
+    current_day = today or datetime.now(pytz.timezone("America/Santiago")).date().isoformat()
+    return f"{key}_{current_day}"
+
+
 async def _refresh_captacion_goal_snapshot(
     cache_key,
     *,
@@ -406,13 +414,14 @@ async def _prewarm_captacion_default_goal():
     started = time.perf_counter()
     try:
         excluded_executives = CAPTACION_GOAL_EXCLUDED_EXECUTIVES
+        cache_key = _captacion_goal_cache_key()
         snapshot = await _read_captacion_goal_snapshot(
             excluded_executives=excluded_executives,
         )
         if snapshot:
-            _put_captacion_goal_cache("goal_v2__none", snapshot["data"])
+            _put_captacion_goal_cache(cache_key, snapshot["data"])
             _start_captacion_goal_refresh(
-                "goal_v2__none",
+                cache_key,
                 excluded_executives=excluded_executives,
             )
             logger.info(
@@ -422,7 +431,7 @@ async def _prewarm_captacion_default_goal():
             return True
 
         refresh_task = _start_captacion_goal_refresh(
-            "goal_v2__none",
+            cache_key,
             excluded_executives=excluded_executives,
         )
         await refresh_task
@@ -3621,9 +3630,11 @@ async def view_captaciones(
     # desde aquí para que su cold fill ocurra en paralelo con ambas consultas.
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
     goal_excluded_executives = CAPTACION_GOAL_EXCLUDED_EXECUTIVES
-    goal_cache_key = f"goal_v2_{goal_executive or '_none'}"
-    if goal_period_start:
-        goal_cache_key = f"{goal_cache_key}_{goal_period_start}"
+    goal_cache_key = _captacion_goal_cache_key(
+        goal_executive,
+        goal_period_start,
+        today=goal_today.isoformat(),
+    )
     _goal_diag_context = {}
     _goal_snapshot_mode = "not_run"
     _goal_wait_ms = 0.0
@@ -3650,7 +3661,7 @@ async def view_captaciones(
         # Si el warm-up del arranque todavía está en curso, esperar el mismo
         # trabajo compartido evita duplicar el cálculo pesado de metas.
         default_goal_prewarm = getattr(app.state, "captacion_goal_prewarm_task", None)
-        if goal_cache_key == "goal_v2__none" and default_goal_prewarm is not None:
+        if not goal_executive and not goal_period_start and default_goal_prewarm is not None:
             _prewarm_wait_started = time.perf_counter()
             await default_goal_prewarm
             _goal_wait_ms += (time.perf_counter() - _prewarm_wait_started) * 1000
@@ -4396,8 +4407,7 @@ async def api_update_captacion(request: Request):
             app.state.captacion_stats_cache = {}
             goal_cache = getattr(app.state, 'captacion_goal_cache', None)
             if goal_cache is not None:
-                goal_cache.pop(f"goal_v1_{user_name}", None)
-                goal_cache.pop("goal_v1__none", None)
+                goal_cache.clear()
             return {"status": "ok"}
         return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:

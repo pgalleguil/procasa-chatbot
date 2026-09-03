@@ -8,6 +8,7 @@ from captacion_goals import (
     _build_period_series,
     build_captacion_goal_dashboard,
     can_manage_captacion,
+    captacion_goal_snapshot_key,
 )
 from captacion_management import evaluate_manual_decision
 
@@ -42,6 +43,30 @@ def test_daily_dedup_is_property_actor_and_local_day():
     assert result["daily"][0]["count"] == 1
     assert result["daily"][1]["count"] == 1
     assert result["week_count"] == 2
+
+
+def test_current_goal_snapshot_key_changes_with_chile_local_day():
+    first_day = captacion_goal_snapshot_key(
+        now=CHILE.localize(datetime(2026, 9, 2, 23, 0))
+    )
+    next_day = captacion_goal_snapshot_key(
+        now=CHILE.localize(datetime(2026, 9, 3, 0, 0))
+    )
+    historical_a = captacion_goal_snapshot_key(
+        now=CHILE.localize(datetime(2026, 9, 3, 10, 0)),
+        period_start="2026-08-31",
+        period_end="2026-09-06",
+    )
+    historical_b = captacion_goal_snapshot_key(
+        now=CHILE.localize(datetime(2026, 9, 4, 10, 0)),
+        period_start="2026-08-31",
+        period_end="2026-09-06",
+    )
+
+    assert first_day != next_day
+    assert "2026-09-02" in first_day
+    assert "2026-09-03" in next_day
+    assert historical_a == historical_b
 
 
 def test_week_total_does_not_hide_a_failed_workday():

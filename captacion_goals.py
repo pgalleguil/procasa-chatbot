@@ -67,6 +67,7 @@ def captacion_goal_snapshot_key(
 ) -> str:
     """Construye una clave estable para el último resultado de metas válido."""
     local_now = _as_chile_datetime(now)
+    current_period = not (period_start and period_end)
     if period_start and period_end:
         start = date.fromisoformat(str(period_start))
         end = date.fromisoformat(str(period_end))
@@ -79,7 +80,12 @@ def captacion_goal_snapshot_key(
         for value in (excluded_executives or ())
         if _name_key(value)
     })) or "_none"
-    return f"v{_GOAL_SNAPSHOT_VERSION}:{scope}:{start.isoformat()}:{end.isoformat()}:{excluded}"
+    # El período actual cambia de significado al pasar la medianoche en Chile:
+    # el mismo lunes-domingo debe recalcular su columna "hoy" cada día. Evitar
+    # reutilizar el snapshot del día anterior, manteniendo estables los
+    # snapshots de períodos históricos seleccionados explícitamente.
+    day_scope = f":{local_now.date().isoformat()}" if current_period else ""
+    return f"v{_GOAL_SNAPSHOT_VERSION}:{scope}:{start.isoformat()}:{end.isoformat()}:{excluded}{day_scope}"
 
 
 def load_captacion_goal_snapshot(

@@ -1,0 +1,36 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_detail_broadcasts_successful_management_to_captacion_list():
+    source = (ROOT / "templates" / "captacion_detail.html").read_text(encoding="utf-8")
+
+    assert "captacionMetricsUpdatedAt" in source
+    assert "notifyCaptacionMetricsUpdated();" in source
+    assert "if (result !== 'cancel') notifyCaptacionMetricsUpdated();" in source
+
+
+def test_captacion_list_refreshes_when_detail_management_changes_metrics():
+    source = (ROOT / "templates" / "captacion_list.html").read_text(encoding="utf-8")
+
+    assert "window.addEventListener('storage'" in source
+    assert "event.key === 'captacionMetricsUpdatedAt'" in source
+    assert "window.location.reload();" in source
+
+
+def test_captacion_popovers_close_when_scrolling():
+    source = (ROOT / "templates" / "captacion_list.html").read_text(encoding="utf-8")
+
+    assert "document.addEventListener('scroll'" in source
+    assert "closeCaptacionPopovers()" in source
+
+
+def test_management_invalidates_the_full_current_goal_snapshot():
+    source = (ROOT / "webhook.py").read_text(encoding="utf-8")
+
+    assert "def _invalidate_captacion_goal_cache" in source
+    assert "def _delete_current_captacion_goal_snapshots" in source
+    assert "_invalidate_captacion_goal_cache()" in source
+    assert "_delete_current_captacion_goal_snapshots" in source

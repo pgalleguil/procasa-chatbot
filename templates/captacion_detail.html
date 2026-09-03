@@ -1783,6 +1783,15 @@
                 let pendingManagementAttempt = null;
                 let externalAppWasHidden = false;
                 let confirmationDisplayed = false;
+                const CAPTACION_METRICS_REFRESH_KEY = 'captacionMetricsUpdatedAt';
+
+                function notifyCaptacionMetricsUpdated() {
+                    try {
+                        localStorage.setItem(CAPTACION_METRICS_REFRESH_KEY, String(Date.now()));
+                    } catch (_) {
+                        // El listado también se actualiza al volver mediante pageshow.
+                    }
+                }
 
                 async function createManagementAttempt(action, channel, message, template_used) {
                     const payload = {
@@ -1926,6 +1935,7 @@
                         });
                         const data = await res.json();
                         if (data.status === 'ok') {
+                            notifyCaptacionMetricsUpdated();
                             btn.innerHTML = '<i class="fa-solid fa-check"></i> ACTUALIZADO';
                             btn.classList.add('bg-success', 'border-success');
                             setTimeout(() => {
@@ -2642,6 +2652,7 @@
                         document.getElementById('feedbackNotes').value = '';
                         const commercialResult = document.getElementById('commercialResult');
                         if (commercialResult) commercialResult.value = '';
+                        if (result !== 'cancel') notifyCaptacionMetricsUpdated();
                         const toast = document.getElementById('postSendToast');
                         if (toast && result !== 'cancel') {
                             toast.style.display = 'flex';

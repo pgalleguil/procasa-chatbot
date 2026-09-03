@@ -4754,6 +4754,14 @@
             if (event.persisted) window.location.reload();
         });
 
+        // Si Captaciones queda abierta en otra pestaña, refleja una gestión
+        // confirmada sin exigir que el ejecutivo recargue manualmente.
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'captacionMetricsUpdatedAt' && event.newValue) {
+                window.location.reload();
+            }
+        });
+
         document.addEventListener('click', event => {
             document.querySelectorAll('.commune-picker[open]').forEach(picker => {
                 if (!picker.contains(event.target)) picker.removeAttribute('open');
@@ -4963,6 +4971,10 @@
         document.addEventListener('click', event => {
             if (!event.target.closest('.captacion-info-wrap')) closeCaptacionPopovers();
         });
+
+        // Los popovers son apoyo momentáneo: al desplazarse no deben quedar
+        // flotando sobre otra zona del módulo.
+        document.addEventListener('scroll', () => closeCaptacionPopovers(), { passive: true, capture: true });
 
         document.addEventListener('keydown', event => {
             if (event.key !== 'Escape') return;

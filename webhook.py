@@ -89,6 +89,7 @@ from api_captacion import (
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
 from captacion_goals import (
     CAPTACION_PRIVILEGED_ROLES,
+    CAPTACION_GOAL_SNAPSHOT_COLLECTION,
     can_manage_captacion,
     get_captacion_goal_dashboard,
     load_captacion_goal_snapshot,
@@ -292,6 +293,49 @@ def _captacion_goal_cache_key(selected_executive=None, period_start=None, today=
         return f"{key}_{period_start}"
     current_day = today or datetime.now(pytz.timezone("America/Santiago")).date().isoformat()
     return f"{key}_{current_day}"
+
+
+def _captacion_goal_snapshot_is_current(snapshot):
+    """Evita servir un snapshot del día anterior a una gestión confirmada."""
+    invalidated_at = getattr(app.state, "captacion_goal_snapshot_invalidated_at", 0)
+    if not invalidated_at:
+        return True
+
+    snapshot_timestamp = snapshot.get("timestamp") if snapshot else None
+    if isinstance(snapshot_timestamp, datetime):
+        snapshot_epoch = snapshot_timestamp.timestamp()
+    elif isinstance(snapshot_timestamp, str):
+        try:
+            parsed_timestamp = datetime.fromisoformat(snapshot_timestamp.replace("Z", "+00:00"))
+            if parsed_timestamp.tzinfo is None:
+                parsed_timestamp = parsed_timestamp.replace(tzinfo=timezone.utc)
+            snapshot_epoch = parsed_timestamp.timestamp()
+        except ValueError:
+            return False
+    else:
+        return False
+    return snapshot_epoch >= invalidated_at
+
+
+def _invalidate_captacion_goal_cache():
+    """Invalida la caché local y marca obsoleto el snapshot actual."""
+    app.state.captacion_goal_cache = {}
+    app.state.captacion_goal_snapshot_invalidated_at = time.time()
+
+
+def _delete_current_captacion_goal_snapshots():
+    """Elimina snapshots del día actual para no restaurar datos anteriores tras reinicio."""
+    try:
+        from chatbot.storage import get_db
+
+        current_day = datetime.now(pytz.timezone("America/Santiago")).date().isoformat()
+        result = get_db()[CAPTACION_GOAL_SNAPSHOT_COLLECTION].delete_many({
+            "_id": {"$regex": rf":{re.escape(current_day)}$"}
+        })
+        return result.deleted_count
+    except Exception:
+        logger.exception("[CAPTACION_GOAL_SNAPSHOT] invalidación persistente fallida")
+        return 0
 
 
 async def _refresh_captacion_goal_snapshot(
@@ -3682,7 +3726,11 @@ async def view_captaciones(
         except Exception:
             logger.exception("[CAPTACION_GOAL_SNAPSHOT] lectura fallida")
             snapshot = None
-        if snapshot:
+        snapshot_can_be_used = snapshot and (
+            bool(goal_period_start or goal_period_end)
+            or _captacion_goal_snapshot_is_current(snapshot)
+        )
+        if snapshot_can_be_used:
             _goal_snapshot_mode = "HIT"
             _put_captacion_goal_cache(goal_cache_key, snapshot["data"])
             _start_captacion_goal_refresh(
@@ -4405,9 +4453,8 @@ async def api_update_captacion(request: Request):
         if result:
             _up3 = time.perf_counter()
             app.state.captacion_stats_cache = {}
-            goal_cache = getattr(app.state, 'captacion_goal_cache', None)
-            if goal_cache is not None:
-                goal_cache.clear()
+            _invalidate_captacion_goal_cache()
+            await loop.run_in_executor(_WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots)
             return {"status": "ok"}
         return {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:
@@ -4534,6 +4581,10 @@ async def api_captacion_confirm_action(request: Request):
         )
         app.state.captacion_stats_cache = {}
         _invalidate_captacion_list_cache()
+        _invalidate_captacion_goal_cache()
+        await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots
+        )
         return {"status": "ok", **result}
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))

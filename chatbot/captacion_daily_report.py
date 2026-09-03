@@ -22,13 +22,13 @@ from .whatsapp_client import (
     normalize_whatsapp_recipient,
     send_whatsapp_message_detailed,
 )
-from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo import MongoClient, ReadPreference, ReturnDocument
+from pymongo.errors import AutoReconnect, DuplicateKeyError, NetworkTimeout
 
 logger = logging.getLogger(__name__)
 CHILE = pytz.timezone("America/Santiago")
 DAILY_TARGET = 10
-COVERAGE_THRESHOLD_DAYS = 10
+COVERAGE_THRESHOLD_DAYS = 5
 DAILY_DELIVERY_COLLECTION = Config.CAPTACION_DAILY_DELIVERY_COLLECTION
 DAILY_PRODUCTION_START_HOUR = 8
 DAILY_PRODUCTION_START_MINUTE = 30
@@ -285,6 +285,31 @@ def calculate_daily_report(db, period: date | str) -> dict:
     return calculate_period_report(db, period, period)
 
 
+def _calculate_daily_report_with_retry(db, report_date: date) -> dict:
+    """Calculate with a longer-lived read client after a transient Mongo timeout."""
+    try:
+        return calculate_daily_report(db, report_date)
+    except (AutoReconnect, NetworkTimeout) as exc:
+        logger.warning(
+            "[CAPTACION_DAILY_PRODUCTION] retry_calculation report_date=%s reason=%s",
+            report_date.isoformat(),
+            type(exc).__name__,
+        )
+
+    retry_client = MongoClient(
+        Config.MONGO_URI,
+        socketTimeoutMS=30000,
+        connectTimeoutMS=10000,
+        serverSelectionTimeoutMS=20000,
+        maxIdleTimeMS=45000,
+        read_preference=ReadPreference.SECONDARY_PREFERRED,
+    )
+    try:
+        return calculate_daily_report(retry_client[Config.DB_NAME], report_date)
+    finally:
+        retry_client.close()
+
+
 def _bar(value: float) -> str:
     filled = min(10, max(0, int(value * 10 / 100)))
     return "█" * filled + "░" * (10 - filled)
@@ -322,13 +347,29 @@ def _short_display_names(rows: list[dict]) -> dict[str, str]:
     return result
 
 
+def _coverage_status(report: dict) -> str:
+    below = []
+    for row in report["executives"]:
+        pending = max(int(row.get("pendientes", 0)), 0)
+        coverage_days = row.get("cobertura_dias", pending / DAILY_TARGET)
+        if coverage_days < COVERAGE_THRESHOLD_DAYS:
+            below.append((row, pending, coverage_days))
+    if not below:
+        return f"Cobertura de cartera: Todos con ≥{_int_es(COVERAGE_THRESHOLD_DAYS)} días disponibles"
+
+    display_names = _short_display_names([row for row, _, _ in below])
+    details = [
+        f"{display_names[row['name']]} bajo {_int_es(COVERAGE_THRESHOLD_DAYS)} días · "
+        f"{_int_es(pending)} pendientes ≈ {coverage_days:.1f}".replace(".", ",") + " días"
+        for row, pending, coverage_days in below
+    ]
+    if len(details) == 1:
+        return f"Cobertura de cartera: {details[0]}"
+    count_label = f"{len(details)} ejecutivo" if len(details) == 1 else f"{len(details)} ejecutivos"
+    return f"Cobertura de cartera: {count_label} bajo {_int_es(COVERAGE_THRESHOLD_DAYS)} días · " + "; ".join(details)
+
+
 def build_whatsapp_message(report: dict) -> str:
-    below_threshold = report["coverage_below_threshold_count"]
-    availability_status = (
-        "Todos con ≥10 días de datos"
-        if below_threshold == 0
-        else f"{below_threshold} ejecutivos con menos de 10 días de datos"
-    )
     lines = [
         f"👤 *Gestión Diaria de Captación | {report['period_label']}*",
         "",
@@ -348,7 +389,7 @@ def build_whatsapp_message(report: dict) -> str:
     lines.extend([
         f"*Disponibilidad:* {_int_es(report['pending_team'])} pendientes · "
         f"{_pct(report['availability_pct'], trim_zero=False)}",
-        f"*Cobertura:* {availability_status}",
+        _coverage_status(report),
     ])
     return "\n".join(lines)
 
@@ -493,8 +534,12 @@ async def send_production_daily_report(db, report_date: date | str) -> dict:
     if not claimed:
         return {"status": "already_claimed", "delivery": claim}
     try:
-        report = await asyncio.to_thread(calculate_daily_report, db, report_date)
+        report = await asyncio.to_thread(_calculate_daily_report_with_retry, db, report_date)
         if report.get("team_size") == 0:
+            logger.warning(
+                "[CAPTACION_DAILY_PRODUCTION] status=skipped_no_data report_date=%s reason=no_applicable_executives",
+                report_date.isoformat(),
+            )
             await asyncio.to_thread(
                 _update_daily_delivery_sync,
                 db,

@@ -131,8 +131,9 @@ def reminder_text(task, captacion):
         raise ValueError("canonical_audit_note_missing")
     if has_degraded_unicode(contact, current_state, note):
         raise ValueError("invalid_unicode_input")
+    from .followup_tracking import build_followup_open_url
     base_url = str(__import__("config").Config.CRM_BASE_URL).rstrip("/")
-    url = f"{base_url}/captacion/{task['obj_id']}"
+    url = build_followup_open_url(task, base_url=base_url) or f"{base_url}/captacion/{task['obj_id']}"
     lines = [f"{bell} *RECORDATORIO DE CAPTACI\u00d3N*", ""]
     if contact:
         lines.append(f"{person} *Contacto:* {contact}")
@@ -195,7 +196,7 @@ async def deliver_claimed_reminder(db, task):
         db[COLLECTION].update_one(update_filter, {
             "$set": {"status": "notified", "provider_called": True,
                      "provider_message_id": result.get("provider_message_id"),
-                     "actually_delivered": True, "delivered_at": now,
+                     "actually_delivered": True, "delivered_at": now, "sent_at": now,
                      "recipient_user_id": str(recipient["_id"]),
                      "target_user_id": str(recipient["_id"]),
                      "recipient_name": recipient.get("nombre"),
@@ -210,6 +211,16 @@ async def deliver_claimed_reminder(db, task):
                                               "provider_message_id": result.get("provider_message_id")},
                       "history": {"at": now, "state": "notified", "reason": "provider_accepted"}},
         })
+        try:
+            from .followup_tracking import record_followup_event
+            record_followup_event(
+                db, task=task, event_type="reminder_sent", occurred_at=now,
+                source="whatsapp_provider",
+                extra={"provider_message_id": result.get("provider_message_id")},
+            )
+        except ValueError:
+            # Historical tasks intentionally remain legacy_unattributed.
+            pass
         return {"status": "notified", "provider_message_id": result.get("provider_message_id")}
     state = "delivery_unknown" if result.get("delivery_status") == "delivery_unknown" else "failed_retryable"
     db[COLLECTION].update_one(update_filter, {

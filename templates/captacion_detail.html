@@ -1016,6 +1016,8 @@
         }
     </style>
     <link rel="stylesheet" href="/static/css/crm_module_shell.css?v=20260718-1">
+    <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
 <body>
@@ -1026,7 +1028,6 @@
     <nav class="sidebar" id="sidebar">
         <div class="brand">
             <img src="/static/logo.png?v=1.0.1" alt="PROCASA" style="width: 80px; height: 50px; flex-shrink: 0; object-fit: contain; object-position: center; padding: 0 12px;" onerror="this.style.display = 'none'" />
-            <span>MENÚ</span>
         </div>
 
         {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
@@ -1277,7 +1278,7 @@
                             <div class="col-12">
                                 <label class="info-label">Nombre</label>
                                 <input type="text" id="contact-nombre" class="form-control"
-                                    value="{{ prop.vendedor_nombre }}" placeholder="Nombre del propietario" />
+                                    value="{{ prop.vendedor_nombre or '' }}" placeholder="Propietario" />
                             </div>
 
                             <div class="col-md-6">
@@ -1650,6 +1651,17 @@
                                 <button type="button" class="btn btn-outline-primary" onclick="confirmManagementResult('callback_requested')"><i class="fa-solid fa-calendar me-2"></i>Solicita llamada posterior</button>
                                 <button type="button" class="btn btn-outline-success" onclick="confirmManagementResult('message_sent')"><i class="fa-solid fa-paper-plane me-2"></i>Mensaje enviado</button>
                             </div>
+                            <div class="text-start mt-4">
+                                <label for="commercialResult" class="form-label text-secondary">Resultado comercial (opcional)</label>
+                                <select class="form-select" id="commercialResult">
+                                    <option value="">Sin resultado comercial</option>
+                                    <option value="not_interested">No interesado</option>
+                                    <option value="captured">Captada</option>
+                                    <option value="broker_identified">Corredor identificado</option>
+                                    <option value="in_progress">Continúa en gestión</option>
+                                    <option value="unavailable">Propiedad no disponible</option>
+                                </select>
+                            </div>
                             <textarea class="form-control mt-4" id="feedbackNotes" rows="2"
                                 placeholder="Opcional: Detalles adicionales de la gestión..."></textarea>
                         </div>
@@ -1665,6 +1677,7 @@
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
             <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
             <script>
+                const followupContextToken = new URLSearchParams(window.location.search).get('followup_token') || '';
                 // Scripts originales de inicialización
                 document.addEventListener("DOMContentLoaded", () => {
                     flatpickr(".flatpickr-date", {
@@ -1779,7 +1792,8 @@
                         message: message,
                         phone: document.getElementById('wa-telefono') ? document.getElementById('wa-telefono').value : '',
                         result: 'pending_confirmation',
-                        template_used: template_used || ""
+                        template_used: template_used || "",
+                        followup_token: followupContextToken || null
                     };
                     const response = await fetch('/api/captacion/log_action', {
                         method: 'POST',
@@ -1900,7 +1914,8 @@
                         id: "{{ prop.id|default(prop._id) }}",
                         status: document.getElementById('statusSelect').value,
                         notes: document.getElementById('notes').value,
-                        next_followup: document.getElementById('proximo-contacto').value
+                        next_followup: document.getElementById('proximo-contacto').value,
+                        followup_token: followupContextToken || null
                     };
 
                     try {
@@ -2609,7 +2624,15 @@
                         const response = await fetch('/api/captacion/confirm_action', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ attempt_id: pendingManagementAttempt.attempt_id, result, notes })
+                            body: JSON.stringify({
+                                attempt_id: pendingManagementAttempt.attempt_id,
+                                result,
+                                commercial_result: (result === 'contacted' || result === 'callback_requested')
+                                    ? (document.getElementById('commercialResult')?.value || null)
+                                    : null,
+                                notes,
+                                followup_token: followupContextToken || null
+                            })
                         });
                         const data = await response.json();
                         if (!response.ok || data.status !== 'ok') throw new Error(data.detail || 'No fue posible confirmar');
@@ -2617,6 +2640,8 @@
                         pendingManagementAttempt = null;
                         bootstrap.Modal.getInstance(document.getElementById('feedbackModal'))?.hide();
                         document.getElementById('feedbackNotes').value = '';
+                        const commercialResult = document.getElementById('commercialResult');
+                        if (commercialResult) commercialResult.value = '';
                         const toast = document.getElementById('postSendToast');
                         if (toast && result !== 'cancel') {
                             toast.style.display = 'flex';

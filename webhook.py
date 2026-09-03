@@ -36,8 +36,8 @@ _WORKER_THREAD_POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="proc
 # Strictly limited PROCESS_SERVICE pool; it cannot consume chatbot/delivery capacity.
 _PROCESS_THREAD_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="procasa_process")
 
-# Instrumentación de diagnóstico de Captaciones: identifica la primera entrada
-# al módulo dentro del proceso sin alterar el flujo de las solicitudes.
+# Instrumentación de diagnóstico solamente: identifica la primera entrada al
+# módulo dentro del proceso sin alterar el flujo de la solicitud.
 _CAPTACION_DIAG_FIRST_VISIT_LOCK = threading.Lock()
 _CAPTACION_DIAG_FIRST_VISIT_SEEN = False
 
@@ -88,7 +88,7 @@ from api_captacion import (
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
     get_personal_templates, save_personal_template, delete_personal_template,
-    warm_captacion_shared_catalogs
+    warm_captacion_shared_catalogs,
 )
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
 from captacion_goals import (
@@ -98,7 +98,20 @@ from captacion_goals import (
     load_captacion_goal_snapshot,
     save_captacion_goal_snapshot,
 )
-from captacion_workforce import create_work_exception, upsert_calendar_day, upsert_membership
+from captacion_workforce import (
+    create_work_exception,
+    upsert_calendar_day,
+    upsert_membership,
+)
+from chatbot.followup_tracking import (
+    FollowupTokenError,
+    build_followup_open_url,
+    find_tracked_task,
+    record_captacion_detail_open,
+    record_followup_event,
+    record_followup_open,
+    verify_followup_token,
+)
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
 from chatbot.crm_permissions import (
@@ -128,6 +141,14 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger("procasa-full")
+
+# La tarjeta de rendimiento por portal depende de un campo que no existía en
+# snapshots anteriores. La versión forma parte de la key y del payload para
+# que un proceso caliente nunca reutilice silenciosamente un esquema viejo.
+# Incremento de versión para que cualquier proceso recargado invalide snapshots KPI antiguos.
+CAPTACION_KPI_CACHE_VERSION = "v12"
+CAPTACION_KPI_CACHE_SCHEMA = 4
+CAPTACION_GOAL_EXCLUDED_EXECUTIVES = ("Pablo Galleguillos",)
 
 # --- BLOCKING DETECTOR (temporal forensics) ---
 _ORIG_TIME_SLEEP = time.sleep
@@ -381,17 +402,26 @@ async def _prewarm_captacion_default_goal():
     """Carga snapshot rápido y refresca la meta sin bloquear readiness."""
     started = time.perf_counter()
     try:
-        snapshot = await _read_captacion_goal_snapshot()
+        excluded_executives = CAPTACION_GOAL_EXCLUDED_EXECUTIVES
+        snapshot = await _read_captacion_goal_snapshot(
+            excluded_executives=excluded_executives,
+        )
         if snapshot:
-            _put_captacion_goal_cache("goal_v1__none", snapshot["data"])
-            _start_captacion_goal_refresh("goal_v1__none")
+            _put_captacion_goal_cache("goal_v2__none", snapshot["data"])
+            _start_captacion_goal_refresh(
+                "goal_v2__none",
+                excluded_executives=excluded_executives,
+            )
             logger.info(
                 "[CAPTACION_WARMER] default goal snapshot ready total_ms=%.0f",
                 (time.perf_counter() - started) * 1000,
             )
             return True
 
-        refresh_task = _start_captacion_goal_refresh("goal_v1__none")
+        refresh_task = _start_captacion_goal_refresh(
+            "goal_v2__none",
+            excluded_executives=excluded_executives,
+        )
         await refresh_task
         logger.info(
             "[CAPTACION_WARMER] default goal cold ready total_ms=%.0f",
@@ -405,14 +435,254 @@ async def _prewarm_captacion_default_goal():
         return False
 
 
+def _build_captacion_worked_portal_breakdown(rows, contactability_by_portal=None, broker_by_portal=None):
+    """Resume resultados por portal usando solo propiedades ya trabajadas."""
+    contactability_by_portal = contactability_by_portal or {}
+    broker_by_portal = broker_by_portal or {}
+    portal_rows = []
+    for row in rows:
+        value = str(row.get("_id") or "").strip() or "sin_origen"
+        worked = int(row.get("worked") or 0)
+        corredor = int(broker_by_portal.get(value, row.get("corredor") or 0) or 0)
+        captadas = int(row.get("captadas") or 0)
+        contactability = contactability_by_portal.get(value, {})
+        portal_rows.append({
+            "value": value,
+            "label": "Sin origen" if value.casefold() == "sin_origen" else format_captacion_portal_label(value),
+            "worked": worked,
+            "corredor": corredor,
+            "captadas": captadas,
+            "contact_attempts": int(contactability.get("contact_attempts") or 0),
+            "effective_contacts": int(contactability.get("effective_contacts") or 0),
+        })
+    portal_rows.sort(key=lambda row: (-row["worked"], row["label"].casefold()))
+    if len(portal_rows) > 2:
+        top_rows = portal_rows[:2]
+        other_rows = portal_rows[2:]
+        top_rows.append({
+            "value": "otros",
+            "label": "Otros",
+            "worked": sum(row["worked"] for row in other_rows),
+            "corredor": sum(row["corredor"] for row in other_rows),
+            "captadas": sum(row["captadas"] for row in other_rows),
+            "contact_attempts": sum(row["contact_attempts"] for row in other_rows),
+            "effective_contacts": sum(row["effective_contacts"] for row in other_rows),
+        })
+        portal_rows = top_rows
+    for row in portal_rows:
+        worked = row["worked"]
+        row["corredor_rate"] = round(row["corredor"] * 100 / worked, 1) if worked else None
+        row["captura_rate"] = round(row["captadas"] * 100 / worked, 1) if worked else None
+        attempts = row["contact_attempts"]
+        row["contactability_pct"] = round(row["effective_contacts"] * 100 / attempts, 1) if attempts else None
+    return portal_rows
+
+
+def _captacion_kpi_cache_is_compatible(record):
+    """Valida el contrato mínimo requerido por las cuatro cards superiores."""
+    if not isinstance(record, dict):
+        return False
+    required_keys = {
+        "time",
+        "in_gestion_count",
+        "captados_count",
+        "descartados_count",
+        "available_count",
+        "comunas_clean",
+        "source_counts",
+        "contact_type_counts",
+        "worked_portal_counts",
+        "contact_attempts",
+        "effective_contacts",
+        "contactability_pct",
+        "contactability_result_buckets",
+        "contactability_insight",
+        "pending_count",
+        "ready_to_contact_count",
+        "kpi_revision",
+    }
+    if record.get("schema_version") != CAPTACION_KPI_CACHE_SCHEMA:
+        return False
+    if not required_keys.issubset(record):
+        return False
+    portal_rows = record.get("worked_portal_counts")
+    if not isinstance(portal_rows, list):
+        return False
+    worked_total = sum(
+        int(record.get(key) or 0)
+        for key in ("in_gestion_count", "captados_count", "descartados_count")
+    )
+    portal_total = sum(int(row.get("worked") or 0) for row in portal_rows if isinstance(row, dict))
+    return (
+        (worked_total == 0 or portal_total > 0)
+        and all(
+            isinstance(row, dict)
+            and {"contact_attempts", "effective_contacts", "contactability_pct"}.issubset(row)
+            for row in portal_rows
+        )
+    )
+
+
+def _log_captacion_portal_card_consistency(worked_total, portal_rows):
+    portal_total = sum(int(row.get("worked") or 0) for row in (portal_rows or []) if isinstance(row, dict))
+    if worked_total > 0 and portal_total == 0:
+        logger.error(
+            "[CAPTACION_PORTAL_CARD_INCONSISTENT] worked_total=%s portal_total=%s",
+            worked_total,
+            portal_total,
+        )
+
+
+def _contactability_result_buckets(active_events):
+    """Asigna exactamente un resultado sin contacto a cada propiedad única."""
+    from captacion_management import CONTACT_RESULT_VALUES
+
+    attempted = {
+        str(row.get("property_id")) for row in active_events
+        if row.get("event_type") == "management_confirmed" or row.get("contact_attempt")
+    }
+    effective = {str(row.get("property_id")) for row in active_events if row.get("contact_effective")}
+    latest = {}
+    for row in active_events:
+        property_id = str(row.get("property_id"))
+        if property_id not in attempted or property_id in effective:
+            continue
+        result = str(row.get("contact_result") or row.get("result") or "").strip().lower()
+        if result not in CONTACT_RESULT_VALUES:
+            continue
+        occurred_at = str(row.get("occurred_at") or "")
+        if property_id not in latest or occurred_at >= latest[property_id][0]:
+            latest[property_id] = (occurred_at, result)
+
+    labels = {
+        "no_answer": "No respondió",
+        "message_sent": "Mensaje enviado",
+        "invalid_number": "Número inválido",
+        "busy": "Ocupado",
+    }
+    counts = {}
+    for property_id in attempted - effective:
+        result = latest.get(property_id, ("", "other"))[1]
+        key = result if result in labels else "other"
+        counts[key] = counts.get(key, 0) + 1
+    buckets = [
+        {"key": key, "label": labels.get(key, "Otro resultado sin contacto"), "count": counts[key]}
+        for key in ("no_answer", "message_sent", "invalid_number", "busy", "other")
+        if counts.get(key)
+    ]
+    if not attempted:
+        insight = "Aún no hay intentos suficientes para analizar la contactabilidad"
+    elif not (attempted - effective):
+        insight = "Todos los intentos registrados lograron contacto efectivo"
+    else:
+        highest = max((row["count"] for row in buckets), default=0)
+        leaders = [row["label"] for row in buckets if row["count"] == highest]
+        insight = (
+            f"{leaders[0]} concentra la mayor parte de los resultados sin contacto"
+            if len(leaders) == 1
+            else "Los resultados sin contacto se concentran en " + " y ".join(leaders)
+        )
+    return buckets, insight
+
+
+async def _load_captacion_canonical_contactability(adb, worked_property_rows):
+    """Calcula contactabilidad desde el ledger canónico de Captaciones."""
+    from captacion_management import LEDGER_COLLECTION, VALID_CREDIT_EVENT_TYPES, summarize_management_metrics
+
+    property_origin = {
+        str(row.get("_id")): str(row.get("origen") or "sin_origen").strip() or "sin_origen"
+        for row in (worked_property_rows or [])
+        if row.get("_id") is not None
+    }
+    empty = {"contact_attempts": 0, "effective_contacts": 0, "contactability_pct": None}
+    if not property_origin:
+        buckets, insight = _contactability_result_buckets([])
+        return {
+            "overall": empty,
+            "by_portal": {},
+            "active_events": [],
+            "result_buckets": buckets,
+            "result_insight": insight,
+        }
+
+    event_projection = {
+        "event_id": 1,
+        "event_type": 1,
+        "property_id": 1,
+        "contact_attempt": 1,
+        "contact_effective": 1,
+        "credited": 1,
+        "commercially_valid": 1,
+        "result": 1,
+        "contact_result": 1,
+        "occurred_at": 1,
+    }
+    events = await adb[LEDGER_COLLECTION].find(
+        {
+            "property_id": {"$in": list(property_origin)},
+            "event_type": {"$in": list(VALID_CREDIT_EVENT_TYPES)},
+            "$or": [{"credited": True}, {"commercially_valid": True}],
+        },
+        event_projection,
+    ).to_list(None)
+    event_ids = [event.get("event_id") for event in events if event.get("event_id")]
+    reversed_ids = {
+        str(row.get("original_event_id"))
+        for row in await adb[LEDGER_COLLECTION].find(
+            {"event_type": "management_reversed", "original_event_id": {"$in": event_ids}},
+            {"original_event_id": 1},
+        ).to_list(None)
+    }
+    active_events = [event for event in events if str(event.get("event_id")) not in reversed_ids]
+
+    def summary(rows):
+        values = summarize_management_metrics(rows)
+        attempts = values["contact_attempts"]
+        effective = values["effective_contacts"]
+        return {
+            "contact_attempts": attempts,
+            "effective_contacts": effective,
+            "contactability_pct": round(effective * 100 / attempts, 1) if attempts else None,
+        }
+
+    by_portal = {}
+    for portal in set(property_origin.values()):
+        by_portal[portal] = summary([
+            event for event in active_events
+            if property_origin.get(str(event.get("property_id"))) == portal
+        ])
+    buckets, insight = _contactability_result_buckets(active_events)
+    return {
+        "overall": summary(active_events),
+        "by_portal": by_portal,
+        "active_events": active_events,
+        "result_buckets": buckets,
+        "result_insight": insight,
+    }
+
+
+def _broker_counts_by_portal(active_events, property_origin):
+    grouped = {}
+    for event in active_events or []:
+        if str(event.get("result") or event.get("commercial_result") or "").lower() != "broker_identified":
+            continue
+        property_id = str(event.get("property_id"))
+        portal = property_origin.get(property_id)
+        if portal:
+            grouped.setdefault(portal, set()).add(property_id)
+    return {portal: len(properties) for portal, properties in grouped.items()}
+
+
 async def _load_captacion_kpi_snapshot(adb, base_query):
     """Calcula el snapshot de KPI sin depender del listado paginado."""
-    from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES
+    from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, KPI_MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES, KPI_WORKED_STATES
+    worked_states = list(KPI_WORKED_STATES)
     kpi_facet = [
         {"$match": base_query},
         {"$facet": {
             "available": [{"$match": {"gestion.estado": {"$in": list(AVAILABLE_STATES)}}}, {"$count": "count"}],
-            "management": [{"$match": {"gestion.estado": {"$in": list(MANAGEMENT_STATES)}}}, {"$count": "count"}],
+            "ready_to_contact": [{"$match": {"gestion.estado": "Por contactar"}}, {"$count": "count"}],
+            "management": [{"$match": {"gestion.estado": {"$in": list(KPI_MANAGEMENT_STATES)}}}, {"$count": "count"}],
             "captured": [{"$match": {"gestion.estado": {"$in": list(CAPTURED_STATES)}}}, {"$count": "count"}],
             "discarded": [{"$match": {"gestion.estado": {"$in": list(DISCARDED_STATES)}}}, {"$count": "count"}],
             "sources": [
@@ -464,6 +734,21 @@ async def _load_captacion_kpi_snapshot(adb, base_query):
         if bucket not in contact_type_counts:
             bucket = "otros"
         contact_type_counts[bucket] += int(row.get("count") or 0)
+    canonical_contactability = await _load_captacion_canonical_contactability(
+        adb,
+        counts.get("worked_properties") or [],
+    )
+    worked_portal_counts = _build_captacion_worked_portal_breakdown(
+        counts.get("worked_portal") or [],
+        canonical_contactability["by_portal"],
+        _broker_counts_by_portal(
+            canonical_contactability.get("active_events"),
+            {
+                str(row.get("_id")): str(row.get("origen") or "sin_origen").strip() or "sin_origen"
+                for row in (counts.get("worked_properties") or [])
+            },
+        ),
+    )
     comunas_clean = sorted(
         {str(value).strip() for value in comunas_list if value and str(value).strip()},
         key=lambda value: value.casefold(),
@@ -490,10 +775,15 @@ async def _prewarm_captacion_default_kpi():
             "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
         }
         snapshot = await _load_captacion_kpi_snapshot(adb, base_query)
-        record = {"time": time.time(), **snapshot}
+        record = {
+            "time": time.time(),
+            "schema_version": CAPTACION_KPI_CACHE_SCHEMA,
+            "kpi_revision": int(((await adb["captacion_kpi_revision"].find_one({"_id": "captacion_kpi_revision"}) or {}).get("revision") or 0)),
+            **snapshot,
+        }
         cache = getattr(app.state, "captacion_stats_cache", {})
         for role in ("admin", "supervisor"):
-            cache[f"stats_v9_global_{role}"] = record
+            cache[f"stats_{CAPTACION_KPI_CACHE_VERSION}_global_{role}"] = record
         app.state.captacion_stats_cache = cache
         logger.info(
             "[CAPTACION_WARMER] default KPI ready total_ms=%.0f",
@@ -860,11 +1150,33 @@ async def advanced_perf_middleware(request: Request, call_next):
             if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
                 status_level = "CRITICAL"
                 
+            _captacion_diag = getattr(request.state, "captacion_perf", None) or {}
+            _mongo_calls = _captacion_diag.get("list_mongo_calls")
+            _mongo_call_text = str(_mongo_calls) if _mongo_calls is not None else "n/a"
+            _stage_text = ""
+            if _captacion_diag:
+                _stage_text = (
+                    f"\nauth_ms={_captacion_diag.get('auth_ms', 'n/a')}"
+                    f"\nlist_ms={_captacion_diag.get('list_stage_ms', 'n/a')}"
+                    f"\nlist_query_ms={_captacion_diag.get('query_ms', 'n/a')}"
+                    f"\nlist_count_ms={_captacion_diag.get('count_ms', 'n/a')}"
+                    f"\nlist_catalog_ms={_captacion_diag.get('portal_ms', 'n/a')}"
+                    f"\nkpi_ms={_captacion_diag.get('kpi_ms', 'n/a')}"
+                    f"\ngoal_ms={_captacion_diag.get('goal_ms', 'n/a')}"
+                    f"\nrender_ms={_captacion_diag.get('render_ms', 'n/a')}"
+                    f"\ncache_hits={_captacion_diag.get('cache_hits', 'n/a')}"
+                    f"\ncache_misses={_captacion_diag.get('cache_misses', 'n/a')}"
+                    f"\ncache_stale={_captacion_diag.get('cache_stale', 'n/a')}"
+                    f"\ncold_total_ms={_captacion_diag.get('cold_total_ms', 'n/a')}"
+                    f"\nwarm_total_ms={_captacion_diag.get('warm_total_ms', 'n/a')}"
+                )
             summary_msg = (
                 f"[REQUEST_SUMMARY]\ntrace={request_id}\n"
-                f"mongo_calls=none\nmongo_sync_violations={snap['mongo_sync_on_loop']}\n"
+                f"mongo_calls={_mongo_call_text}\n"
+                f"mongo_sync_violations={snap['mongo_sync_on_loop']}\n"
                 f"event_loop_blocked={snap['event_loop_blocked']}\n"
                 f"duration_ms={duration_ms:.0f}\nstatus={status_level}"
+                f"{_stage_text}"
             )
             if status_level == "CRITICAL":
                 logger.error(summary_msg)
@@ -1891,13 +2203,12 @@ async def api_leads_dashboard_captacion_management(
             selected_executive=executive or None,
             period_start=period_start or None,
             period_end=period_end or None,
-            excluded_executives=("Pablo Galleguillos",),
+            excluded_executives=CAPTACION_GOAL_EXCLUDED_EXECUTIVES,
         ),
     )
     response = JSONResponse(jsonable_encoder(payload))
     response.headers["Cache-Control"] = "private, no-store"
     return response
-
 
 # ========================= COMMERCIAL DASHBOARD (READ-ONLY) =========================
 
@@ -3228,6 +3539,9 @@ async def view_captaciones(
         "template_ms": 0,
         "wait_ms": 0,
         "compute_ms": 0,
+        "worked_total_runtime": 0,
+        "worked_portal_counts_runtime": [],
+        "portal_rows_runtime": 0,
     }
     _lazy_import_started = time.perf_counter()
     from chatbot.storage import get_async_db
@@ -3497,13 +3811,15 @@ async def view_captaciones(
     # Las metas no dependen del listado ni de los KPI de cartera. Se inicia
     # desde aquí para que su cold fill ocurra en paralelo con ambas consultas.
     goal_executive = current_ejecutivo if user_role in CAPTACION_PRIVILEGED_ROLES else user_name
-    goal_cache_key = f"goal_v1_{goal_executive or '_none'}"
+    goal_excluded_executives = CAPTACION_GOAL_EXCLUDED_EXECUTIVES
+    goal_cache_key = f"goal_v2_{goal_executive or '_none'}"
     if goal_period_start:
         goal_cache_key = f"{goal_cache_key}_{goal_period_start}"
     _goal_diag_context = {}
     _goal_snapshot_mode = "not_run"
     _goal_wait_ms = 0.0
     _goal_compute_ms = 0.0
+    _temporal_request = bool(temporal_date or temporal_week_start)
     async def _load_goal_dashboard():
         nonlocal _goal_snapshot_mode, _goal_wait_ms, _goal_compute_ms
         goal_cache = getattr(app.state, 'captacion_goal_cache', {})
@@ -3525,7 +3841,7 @@ async def view_captaciones(
         # Si el warm-up del arranque todavía está en curso, esperar el mismo
         # trabajo compartido evita duplicar el cálculo pesado de metas.
         default_goal_prewarm = getattr(app.state, "captacion_goal_prewarm_task", None)
-        if goal_cache_key == "goal_v1__none" and default_goal_prewarm is not None:
+        if goal_cache_key == "goal_v2__none" and default_goal_prewarm is not None:
             _prewarm_wait_started = time.perf_counter()
             await default_goal_prewarm
             _goal_wait_ms += (time.perf_counter() - _prewarm_wait_started) * 1000
@@ -3541,6 +3857,7 @@ async def view_captaciones(
                 selected_executive=goal_executive or None,
                 period_start=goal_period_start,
                 period_end=goal_period_end,
+                excluded_executives=goal_excluded_executives,
             )
         except Exception:
             logger.exception("[CAPTACION_GOAL_SNAPSHOT] lectura fallida")
@@ -3564,6 +3881,7 @@ async def view_captaciones(
             selected_executive=goal_executive or None,
             period_start=goal_period_start,
             period_end=goal_period_end,
+            excluded_executives=goal_excluded_executives,
             perf_context=_goal_diag_context if inflight_before is None else None,
         )
         goal_data = await refresh_task
@@ -3584,26 +3902,41 @@ async def view_captaciones(
         if user_role in CAPTACION_PRIVILEGED_ROLES and not current_ejecutivo
         else f"{user_role}_{user_id}_{current_ejecutivo}"
     )
-    cache_key = f"stats_v9_{stats_scope}"
+    cache_key = f"stats_{CAPTACION_KPI_CACHE_VERSION}_{stats_scope}"
     cache_store = getattr(app.state, 'captacion_stats_cache', {})
+    from captacion_management import KPI_REVISION_COLLECTION
+    _revision_row = await adb[KPI_REVISION_COLLECTION].find_one({"_id": "captacion_kpi_revision"})
+    _current_kpi_revision = int((_revision_row or {}).get("revision") or 0)
     _cache_now = time.time()
     _stats_record = cache_store.get(cache_key)
+    _worked_portal_cache_valid = _captacion_kpi_cache_is_compatible(_stats_record)
+    if _stats_record is not None and not _worked_portal_cache_valid:
+        logger.info(
+            "[CAPTACION_KPI_CACHE_INVALID] key=%s schema=%s; recalculando snapshot",
+            cache_key,
+            _stats_record.get("schema_version"),
+        )
+        # Solo se invalida la entrada incompatible de este scope/version.
+        cache_store.pop(cache_key, None)
     _kpi_fresh = (
         _stats_record is not None
+        and int(_stats_record.get('kpi_revision') or 0) == _current_kpi_revision
         and _cache_now - _stats_record['time'] < 300
         and 'contact_type_counts' in _stats_record
+        and _worked_portal_cache_valid
     )
     # Un cambio de día/semana solo cambia el conjunto del listado. Las cards
     # superiores siguen representando la cartera global y no deben obligar a
     # recalcularse al entrar a un histórico. Si el snapshot expiró, usamos el
     # último válido durante una ventana acotada; las peticiones normales siguen
     # respetando el TTL de 300 s y refrescan de forma habitual.
-    _temporal_request = bool(temporal_date or temporal_week_start)
     _kpi_stale_snapshot = (
         _temporal_request
         and _stats_record is not None
+        and int(_stats_record.get('kpi_revision') or 0) == _current_kpi_revision
         and _cache_now - _stats_record['time'] < 900
         and 'contact_type_counts' in _stats_record
+        and _worked_portal_cache_valid
     )
     _kpi_hit = _kpi_fresh or _kpi_stale_snapshot
     _kpi_cache_mode = "HIT" if _kpi_fresh else "STALE" if _kpi_stale_snapshot else "MISS"
@@ -3613,9 +3946,17 @@ async def view_captaciones(
         captados_count = _stats_record['captados_count']
         descartados_count = _stats_record['descartados_count']
         available_count = _stats_record['available_count']
+        ready_to_contact_count = _stats_record['ready_to_contact_count']
+        pending_count = _stats_record['pending_count']
         comunas_clean = _stats_record['comunas_clean']
         source_counts = _stats_record.get('source_counts', [])
         contact_type_counts = _stats_record['contact_type_counts']
+        worked_portal_counts = _stats_record.get('worked_portal_counts', [])
+        contact_attempts = int(_stats_record.get('contact_attempts') or 0)
+        effective_contacts = int(_stats_record.get('effective_contacts') or 0)
+        contactability_pct = _stats_record.get('contactability_pct')
+        contactability_result_buckets = _stats_record.get('contactability_result_buckets', [])
+        contactability_insight = _stats_record.get('contactability_insight', '')
     else:
         if ejecutivo and ejecutivo != "Todos" and user_role in CAPTACION_PRIVILEGED_ROLES:
             selected_exec_doc = await adb["usuarios"].find_one(
@@ -3635,12 +3976,14 @@ async def view_captaciones(
             else:
                 # Fallback si no encuentra el usuario: buscar solo por nombre
                 base_query["gestion.ejecutivo_asignado"] = ejecutivo
-        from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES
+        from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, KPI_MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES, KPI_WORKED_STATES
+        worked_states = list(KPI_WORKED_STATES)
         kpi_facet = [
             {"$match": base_query},
             {"$facet": {
                 "available": [{"$match": {"gestion.estado": {"$in": list(AVAILABLE_STATES)}}}, {"$count": "count"}],
-                "management": [{"$match": {"gestion.estado": {"$in": list(MANAGEMENT_STATES)}}}, {"$count": "count"}],
+                "ready_to_contact": [{"$match": {"gestion.estado": "Por contactar"}}, {"$count": "count"}],
+                "management": [{"$match": {"gestion.estado": {"$in": list(KPI_MANAGEMENT_STATES)}}}, {"$count": "count"}],
                 "captured": [{"$match": {"gestion.estado": {"$in": list(CAPTURED_STATES)}}}, {"$count": "count"}],
                 "discarded": [{"$match": {"gestion.estado": {"$in": list(DISCARDED_STATES)}}}, {"$count": "count"}],
                 "sources": [
@@ -3660,6 +4003,19 @@ async def view_captaciones(
                     }},
                     {"$group": {"_id": "$contact_bucket", "count": {"$sum": 1}}},
                 ],
+                "worked_portal": [
+                    {"$match": {"gestion.estado": {"$in": worked_states}}},
+                    {"$group": {
+                        "_id": {"$ifNull": ["$origen", "sin_origen"]},
+                        "worked": {"$sum": 1},
+                        "corredor": {"$sum": 0},
+                        "captadas": {"$sum": {"$cond": [{"$in": ["$gestion.estado", list(CAPTURED_STATES)]}, 1, 0]}},
+                    }},
+                ],
+                "worked_properties": [
+                    {"$match": {"gestion.estado": {"$in": worked_states}}},
+                    {"$project": {"_id": 1, "origen": 1}},
+                ],
             }}
         ]
         kpi_task = adb[Config.CAPTACION_COLLECTION_NAME].aggregate(kpi_facet).to_list(1)
@@ -3672,6 +4028,8 @@ async def view_captaciones(
                 return 0
             return int((rows[0] or {}).get("count") or 0)
         available_count = _fc("available")
+        ready_to_contact_count = _fc("ready_to_contact")
+        pending_count = available_count + ready_to_contact_count
         in_gestion_count = _fc("management")
         captados_count = _fc("captured")
         descartados_count = _fc("discarded")
@@ -3696,21 +4054,51 @@ async def view_captaciones(
             if bucket not in contact_type_counts:
                 bucket = "otros"
             contact_type_counts[bucket] += int(row.get("count") or 0)
+        canonical_contactability = await _load_captacion_canonical_contactability(
+            adb,
+            counts.get("worked_properties") or [],
+        )
+        worked_portal_counts = _build_captacion_worked_portal_breakdown(
+            counts.get("worked_portal") or [],
+            canonical_contactability["by_portal"],
+            _broker_counts_by_portal(
+                canonical_contactability.get("active_events"),
+                {
+                    str(row.get("_id")): str(row.get("origen") or "sin_origen").strip() or "sin_origen"
+                    for row in (counts.get("worked_properties") or [])
+                },
+            ),
+        )
         comunas_clean = sorted(
             {str(c).strip() for c in comunas_list if c and str(c).strip()},
             key=lambda value: value.casefold(),
         )
         cache_store[cache_key] = {
             'time': _cache_now,
+            'schema_version': CAPTACION_KPI_CACHE_SCHEMA,
+            'kpi_revision': _current_kpi_revision,
             'in_gestion_count': in_gestion_count,
             'captados_count': captados_count,
             'descartados_count': descartados_count,
             'available_count': available_count,
+            'ready_to_contact_count': ready_to_contact_count,
+            'pending_count': pending_count,
             'comunas_clean': comunas_clean,
             'source_counts': source_counts,
             'contact_type_counts': contact_type_counts,
+            'worked_portal_counts': worked_portal_counts,
+            'contact_attempts': canonical_contactability["overall"]["contact_attempts"],
+            'effective_contacts': canonical_contactability["overall"]["effective_contacts"],
+            'contactability_pct': canonical_contactability["overall"]["contactability_pct"],
+            'contactability_result_buckets': canonical_contactability["result_buckets"],
+            'contactability_insight': canonical_contactability["result_insight"],
         }
         app.state.captacion_stats_cache = cache_store
+        contact_attempts = canonical_contactability["overall"]["contact_attempts"]
+        effective_contacts = canonical_contactability["overall"]["effective_contacts"]
+        contactability_pct = canonical_contactability["overall"]["contactability_pct"]
+        contactability_result_buckets = canonical_contactability["result_buckets"]
+        contactability_insight = canonical_contactability["result_insight"]
 
     # El listado ya avanzó en paralelo con KPI y metas; se recoge ahora antes
     # de construir el contexto que necesita total_count y los catálogos.
@@ -3737,9 +4125,15 @@ async def view_captaciones(
         
     total_pages = (total_count + limit - 1) // limit
     worked_count = in_gestion_count + captados_count + descartados_count
+    _log_captacion_portal_card_consistency(worked_count, worked_portal_counts)
+    _captacion_diag["worked_total_runtime"] = worked_count
+    _captacion_diag["worked_portal_counts_runtime"] = worked_portal_counts
+    _captacion_diag["portal_rows_runtime"] = sum(
+        int(row.get("worked") or 0) for row in worked_portal_counts if isinstance(row, dict)
+    )
     capture_rate = round((captados_count / worked_count) * 100, 1) if worked_count else 0
-    portfolio_count = available_count + worked_count
-    volume_available_rate = round((available_count / portfolio_count) * 100, 1) if portfolio_count else 0
+    portfolio_count = pending_count + worked_count
+    volume_available_rate = round((pending_count / portfolio_count) * 100, 1) if portfolio_count else 0
     # Es el complemento del porcentaje disponible para que ambos valores
     # mostrados siempre reconcilien exactamente el 100% de la cartera.
     volume_worked_rate = round(100 - volume_available_rate, 1) if portfolio_count else 0
@@ -3796,6 +4190,21 @@ async def view_captaciones(
     _captacion_diag["compute_ms"] += round(_goal_compute_ms, 1)
     _captacion_diag.update(_goal_diag_context)
 
+    # El nombre del ejecutivo conserva los filtros globales y la semana que
+    # el supervisor estaba revisando al abrir la vista individual.
+    if captacion_goal.get("mode") == "team":
+        executive_url_base = [(key, value) for key, value in nav_query_pairs if key != "ejecutivo"]
+        if goal_week_query:
+            executive_url_base.append(("meta_semana", goal_week_query))
+        if temporal_date:
+            executive_url_base.append(("gestion_fecha", temporal_date))
+        elif temporal_week_start:
+            executive_url_base.append(("gestion_semana", temporal_week_start))
+        for executive in captacion_goal.get("executives") or []:
+            executive_url_pairs = list(executive_url_base)
+            executive_url_pairs.append(("ejecutivo", executive.get("name") or ""))
+            executive["detail_url"] = "/captacion?" + urlencode(executive_url_pairs, doseq=True)
+
     # Alinear con nombre de variables del template original
     current_comunas = [c for c in (comuna or []) if c]
     current_comuna = current_comunas[0] if len(current_comunas) == 1 else ""
@@ -3812,6 +4221,8 @@ async def view_captaciones(
         "items": items,
         "total_count": total_count,
         "available_count": available_count,
+        "ready_to_contact_count": ready_to_contact_count,
+        "pending_count": pending_count,
         "in_gestion_count": in_gestion_count,
         "worked_count": worked_count,
         "captados_count": captados_count,
@@ -3828,6 +4239,12 @@ async def view_captaciones(
         "contact_corredor_rate": contact_corredor_rate,
         "contact_corredor_share": contact_corredor_share,
         "contact_other_share": contact_other_share,
+        "contact_attempts": contact_attempts,
+        "effective_contacts": effective_contacts,
+        "contactability_pct": contactability_pct,
+        "contactability_result_buckets": contactability_result_buckets,
+        "contactability_insight": contactability_insight,
+        "worked_portal_counts": worked_portal_counts,
         "source_counts": source_counts,
         "source_total": source_total,
         "source_primary": source_primary,
@@ -3985,8 +4402,42 @@ async def view_captaciones(
 
     return response
 
+@app.get("/followup/open/{signed_token}")
+async def open_followup_link(request: Request, signed_token: str):
+    """Attribute a WhatsApp follow-up click, then preserve the old detail UX."""
+    try:
+        payload = verify_followup_token(signed_token)
+        db = get_db()
+        task = find_tracked_task(db, payload["task_id"])
+        if not task:
+            raise FollowupTokenError("followup_task_not_found")
+        if task.get("lead_type") == "captacion":
+            entity_id = task.get("obj_id")
+            target = f"/captacion/{entity_id}"
+        else:
+            entity_id = task.get("lead_id")
+            target = f"/crm/lead-id/{entity_id}"
+        if not entity_id:
+            raise FollowupTokenError("followup_entity_missing")
+        record_followup_event(
+            db,
+            task=task,
+            event_type="reminder_clicked",
+            source="whatsapp_followup",
+        )
+        separator = "&" if "?" in target else "?"
+        target = f"{target}{separator}followup_token={quote(signed_token, safe='')}"
+        return RedirectResponse(url=target, status_code=302)
+    except FollowupTokenError as exc:
+        raise HTTPException(status_code=410, detail=str(exc))
+
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
-async def view_captacion_detail_route(request: Request, obj_id: str):
+async def view_captacion_detail_route(
+    request: Request,
+    obj_id: str,
+    followup_token: str | None = Query(None),
+    source: str | None = Query(None),
+):
     user = await get_current_user_doc(request)
     
     if not user:
@@ -4006,9 +4457,35 @@ async def view_captacion_detail_route(request: Request, obj_id: str):
     if not can_manage_captacion(user, data):
         return RedirectResponse(url="/captacion?error=no_asignada")
 
+    def _record_unattributed_open(open_source=None):
+        try:
+            from chatbot.storage import get_db as _sync_db
+            record_captacion_detail_open(
+                _sync_db(),
+                property_id=obj_id,
+                executive_id=str(user.get("_id") or user.get("nombre") or ""),
+                source=open_source or ("captacion_list" if source == "captacion_list" else "direct"),
+            )
+        except Exception:
+            # A telemetry failure must never block a valid authenticated detail view.
+            logger.warning("[CAPTACION] no se pudo registrar apertura: obj_id=%s", obj_id, exc_info=True)
+
+    if followup_token:
+        try:
+            from chatbot.storage import get_db as _sync_db
+            record_followup_open(
+                _sync_db(), token=followup_token, entity_id=obj_id,
+                actor_user_id=str(user.get("_id") or ""),
+            )
+        except FollowupTokenError:
+            logger.info("[FOLLOWUP] captacion open was not attributable: obj_id=%s", obj_id)
+            _record_unattributed_open("direct")
+    else:
+        _record_unattributed_open()
+
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     
-    return templates.TemplateResponse("captacion_detail.html", {
+    return templates.TemplateResponse(request, "captacion_detail.html", {
         "request": request,
         "prop": data,
         "user_name": user_name,
@@ -4228,14 +4705,16 @@ async def api_captacion_confirm_action(request: Request):
     if not payload.get("attempt_id") or not payload.get("result"):
         raise HTTPException(status_code=400, detail="Faltan intento o resultado")
     try:
-        from api_captacion import confirm_captacion_activity
+        from api_captacion import confirm_captacion_activity, _invalidate_captacion_list_cache
         result = await asyncio.get_running_loop().run_in_executor(
             _WEB_THREAD_POOL,
             lambda: confirm_captacion_activity(
-                payload["attempt_id"], user_doc, payload["result"], payload.get("notes")
+                payload["attempt_id"], user_doc, payload["result"], payload.get("notes"),
+                payload.get("followup_token"), payload.get("commercial_result"),
             ),
         )
         app.state.captacion_stats_cache = {}
+        _invalidate_captacion_list_cache()
         return {"status": "ok", **result}
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
@@ -4275,7 +4754,7 @@ async def view_captacion_weekly_report(request: Request, report_id: str = Query(
         )
 
     report = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, load_report)
-    return templates.TemplateResponse("captacion_weekly_report_preview.html", {
+    return templates.TemplateResponse(request, "captacion_weekly_report_preview.html", {
         "request": request,
         "report": report,
         "group_recipient": (report or {}).get("group_recipient") or Config.DAILY_REPORT_GROUP_ID,
@@ -4411,7 +4890,8 @@ async def api_reverse_captacion_management(request: Request, event_id: str):
         reversal = await asyncio.get_running_loop().run_in_executor(
             _WEB_THREAD_POOL,
             lambda: reverse_management_event(
-                get_db(), event_id=event_id, actor_user=user_doc, reason=payload.get("reason")
+                get_db(), event_id=event_id, actor_user=user_doc, reason=payload.get("reason"),
+                replacement_status=payload.get("replacement_status")
             ),
         )
         return {"status": "ok", "reversal_event_id": reversal["event_id"]}

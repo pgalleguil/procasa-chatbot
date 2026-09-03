@@ -426,6 +426,36 @@ def test_operational_weekly_message_is_deterministic_and_mobile_first():
     assert "¡Buen inicio" not in message
 
 
+def test_official_operational_validation_accepts_generated_header():
+    snapshot = {
+        "report": {"period_label": "10 al 14 de agosto de 2026"},
+        "crm_parity": {"validated": True},
+        "outcome_groups": {
+            "captured": {"total": 1},
+            "closed_without_capture": {"total": 0},
+            "management_in_progress": {"total": 0},
+            "pending_next_action": {"total": 0},
+            "other_review": {"total": 0},
+        },
+        "executives": [{
+            "name": "María Paz Galleguillos", "gestiones_semana": 1, "meta_semana": 10,
+            "cumplimiento_semana": 10.0, "dias_cumplidos": 0, "dias_aplicables": 1,
+            "total_gestionadas_acumuladas": 1, "total_asignadas": 2, "avance_cartera": 50.0,
+            "pendientes": 1,
+        }],
+        "weekly_operational": {
+            "team_done": 1, "team_goal": 10, "team_compliance": 10.0,
+            "total_assigned": 2, "total_managed": 1, "pending": 1,
+            "availability_pct": 50.0, "coverage_below_threshold_count": 0,
+        },
+    }
+
+    message = weekly.assemble_operational_weekly_message(snapshot)
+    checks = weekly.validate_official_report(snapshot, message)
+
+    assert checks["official_header"] is True
+
+
 @pytest.mark.parametrize(("result", "expected_group", "expected_detail"), [
     ("ready_to_contact", "pending_next_action", "por_contactar"),
     ("no_answer", "pending_next_action", "no_respondio"),

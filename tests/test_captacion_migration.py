@@ -330,6 +330,29 @@ def test_normalize_captacion_document():
     assert "id" in vm
 
 
+def test_normalize_captacion_document_prefers_manual_owner_contact_fields():
+    """Los datos editados en la ficha prevalecen sobre los datos del scraper."""
+    from api_captacion import normalize_captacion_document
+
+    doc = {
+        "_id": "123456789012345678901234",
+        "seller_name": "Particular",
+        "email": "original@example.com",
+        "whatsapp_phone": "56911111111",
+        "details": {
+            "publicador": "Ana Pérez Soto",
+            "email": "ana@example.com",
+            "whatsapp_phone": "56922222222",
+        },
+    }
+
+    vm = normalize_captacion_document(doc)
+
+    assert vm["vendedor_nombre"] == "Ana Pérez Soto"
+    assert vm["vendedor_email"] == "ana@example.com"
+    assert vm["vendedor_telefono"] == "56922222222"
+
+
 # ========== MODELO: Config no debe lanzar RuntimeError al importar ==========
 
 def test_config_import_no_runtime_error():
@@ -339,19 +362,20 @@ def test_config_import_no_runtime_error():
     assert hasattr(config.Config, 'DEEPSEEK_ADJUDICATOR_MODEL')
 
 
-def test_chatbot_uses_pro_model():
-    """Chatbot mantiene deepseek-v4-pro cuando la variable está definida."""
+def test_chatbot_uses_flash_model_even_when_legacy_env_is_pro():
+    """El chatbot ignora un override heredado que apunte a V4 Pro."""
     import os
     os.environ['DEEPSEEK_MODEL'] = 'deepseek-v4-pro'
     # Forzar recarga del módulo para probar con el env correcto
     import importlib
     import config
     importlib.reload(config)
-    assert config.Config.DEEPSEEK_MODEL_FAST == 'deepseek-v4-pro'
+    assert config.Config.DEEPSEEK_MODEL_FAST == 'deepseek-v4-flash'
+    assert config.Config.DEEPSEEK_MODEL_REASONER == 'deepseek-v4-flash'
 
 
 def test_adjudicator_uses_flash_independently():
-    """Adjudicador usa deepseek-v4-flash aunque DEEPSEEK_MODEL sea pro."""
+    """Adjudicador usa deepseek-v4-flash aunque el entorno sea pro."""
     import os
     os.environ['DEEPSEEK_MODEL'] = 'deepseek-v4-pro'
     os.environ.pop('DEEPSEEK_ADJUDICATOR_MODEL', None)
@@ -359,7 +383,7 @@ def test_adjudicator_uses_flash_independently():
     import config
     importlib.reload(config)
     assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL == 'deepseek-v4-flash'
-    assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL != config.Config.DEEPSEEK_MODEL_FAST
+    assert config.Config.DEEPSEEK_ADJUDICATOR_MODEL == config.Config.DEEPSEEK_MODEL_FAST
 
 
 def test_adjudicator_not_inheriting_chatbot_model():
@@ -371,19 +395,15 @@ def test_adjudicator_not_inheriting_chatbot_model():
     assert len(model_lines) == 0, f"Adjudicator still inherits DEEPSEEK_MODEL: {model_lines}"
 
 
-def test_validator_rejects_pro_at_init_time():
-    """validate_adjudicator_model() rechaza deepseek-v4-pro solo al inicializar."""
+def test_validator_keeps_adjudicator_on_flash():
+    """El validador confirma que el adjudicador quedó fijado en Flash."""
     import os
     os.environ['DEEPSEEK_ADJUDICATOR_MODEL'] = 'deepseek-v4-pro'
     import importlib
     import config
     importlib.reload(config)
-    try:
-        config.Config.validate_adjudicator_model()
-        assert False, "Should have raised RuntimeError"
-    except RuntimeError:
-        pass
-    # Restaurar
+    config.Config.validate_adjudicator_model()
+    # Restaurar el entorno para no contaminar las pruebas siguientes.
     os.environ['DEEPSEEK_ADJUDICATOR_MODEL'] = 'deepseek-v4-flash'
     importlib.reload(config)
 

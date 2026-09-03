@@ -1,8 +1,14 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pytz
 
-from captacion_goals import CAPTACION_DAILY_GOAL, CAPTACION_WEEKLY_GOAL, build_captacion_goal_dashboard, can_manage_captacion
+from captacion_goals import (
+    CAPTACION_DAILY_GOAL,
+    CAPTACION_WEEKLY_GOAL,
+    _build_period_series,
+    build_captacion_goal_dashboard,
+    can_manage_captacion,
+)
 from captacion_management import evaluate_manual_decision
 
 
@@ -50,7 +56,8 @@ def test_week_total_does_not_hide_a_failed_workday():
 
 def test_weekend_activity_is_additional_and_does_not_compensate():
     result = build_captacion_goal_dashboard([{"name": "Ana"}], _rows("Ana", 18, 12, "sat"), "Ana", now=_at(18))
-    assert result["week_count"] == 0
+    assert result["week_count"] == 12
+    assert result["week_goal"] == CAPTACION_WEEKLY_GOAL
     assert result["weekend_activity"] == 12
     assert result["today_goal"] == 0
 
@@ -58,13 +65,53 @@ def test_weekend_activity_is_additional_and_does_not_compensate():
 def test_sunday_has_no_daily_goal_but_preserves_the_workweek():
     rows = _rows("Ana", 13, 10, "mon") + _rows("Ana", 14, 4, "tue")
     result = build_captacion_goal_dashboard([{"name": "Ana"}], rows, "Ana", now=_at(19))
-    assert result["today_status"] == "SIN_META"
+    assert result["today_status"] == "EXENTO"
     assert result["today_reason"] == "Domingo"
     assert result["week_goal"] == 50
     assert result["week_count"] == 14
     assert result["daily"][0]["status"] == "CUMPLIDO"
     assert result["daily"][1]["status"] == "INCUMPLIDO"
-    assert all(day["status"] != "EXENTO" for day in result["daily"])
+    assert result["daily"][5]["target"] == 0
+    assert result["daily"][6]["target"] == 0
+    assert result["daily"][6]["status"] == "EXENTO"
+
+
+def test_selected_period_keeps_weekend_production_without_weekend_goal():
+    rows = (
+        _rows("Ana", 17, 8, "fri")
+        + _rows("Ana", 18, 6, "sat")
+        + _rows("Ana", 19, 4, "sun")
+        + _rows("Ana", 20, 12, "mon")
+    )
+    result = build_captacion_goal_dashboard(
+        [{"name": "Ana"}],
+        rows,
+        "Ana",
+        now=_at(20),
+        period_start="2026-07-17",
+        period_end="2026-07-20",
+    )
+    assert result["week_count"] == 30
+    assert result["week_goal"] == 20
+    assert [item["target"] for item in result["daily"]] == [10, 0, 0, 10]
+
+
+def test_period_series_keeps_real_weekend_counts_and_flattens_goal():
+    start = date(2026, 7, 17)
+    days = [start + timedelta(days=index) for index in range(4)]
+    result = {
+        "executives": [{
+            "daily": [
+                {"date": day.isoformat(), "count": count, "target": target}
+                for day, count, target in zip(days, [8, 6, 4, 12], [10, 0, 0, 10])
+            ]
+        }]
+    }
+    series = _build_period_series(result, days, [], {})
+    assert [item["current"] for item in series] == [8, 6, 4, 12]
+    assert [item["current_cumulative"] for item in series] == [8, 14, 18, 30]
+    assert [item["target"] for item in series] == [10, 0, 0, 10]
+    assert [item["target_cumulative"] for item in series] == [10, 10, 10, 20]
 
 
 def test_team_goal_uses_only_active_capture_members_supplied():

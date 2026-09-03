@@ -307,8 +307,8 @@ def test_status_history_written_and_notas_empty(_patch_env):
     assert len(g.get("notas", [])) == 0
 
 
-def test_ledger_event_written_after_state_change(_patch_env):
-    """captacion_management_events recibe evento credited=True tras cambio."""
+def test_state_change_without_evidence_does_not_credit_ledger(_patch_env):
+    """Una conclusión comercial sin evidencia no se acredita en el ledger."""
     db = _patch_env
     # Setup a real record_manual_management_decision that writes to our fake DB
     import captacion_management as _cm
@@ -323,14 +323,11 @@ def test_ledger_event_written_after_state_change(_patch_env):
 
     events = db["captacion_management_events"]._docs
     credited = [e for e in events if e.get("credited")]
-    assert len(credited) >= 1, f"No credited event found in: {events}"
-    assert credited[0]["event_type"] in ("manual_decision_confirmed", "capture_confirmed")
-    assert credited[0]["result"] == "broker_identified"
-    assert credited[0]["actor_name_snapshot"] == "Ana"
+    assert credited == []
 
 
-def test_second_identical_request_no_duplicate_ledger(_patch_env):
-    """Segundo POST identico no crea segundo evento de ledger."""
+def test_second_identical_request_without_evidence_no_ledger(_patch_env):
+    """Dos cambios sin evidencia no crean eventos acreditados."""
     db = _patch_env
     prop = _property_doc()
     db["propiedades_captacion"].insert_one(prop)
@@ -343,7 +340,7 @@ def test_second_identical_request_no_duplicate_ledger(_patch_env):
 
     events = db["captacion_management_events"]._docs
     credited = [e for e in events if e.get("credited")]
-    assert len(credited) == 1, f"Expected 1 credited event, got {len(credited)}: {events}"
+    assert credited == []
 
 
 def test_same_state_empty_bitacora_no_ledger_write(_patch_env):

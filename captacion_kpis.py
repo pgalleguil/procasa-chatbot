@@ -16,6 +16,11 @@ MANAGEMENT_STATES = (
     "INTERESADO EN TASACIÓN",
     "TASACIÓN ENVIADA",
 )
+# Universo utilizado exclusivamente por las cuatro tarjetas superiores. Una
+# propiedad "Por contactar" sigue perteneciendo a la cartera, pero todavía no
+# representa una gestión comercial realizada.
+KPI_MANAGEMENT_STATES = tuple(state for state in MANAGEMENT_STATES if state != "Por contactar")
+KPI_PENDING_STATES = tuple(dict.fromkeys(AVAILABLE_STATES + ("Por contactar",)))
 CAPTURED_STATES = ("Captado", "CAPTADO")
 DISCARDED_STATES = (
     "Corredor",
@@ -26,6 +31,7 @@ DISCARDED_STATES = (
     "No interesado",
     "DESCARTADO",
 )
+KPI_WORKED_STATES = KPI_MANAGEMENT_STATES + CAPTURED_STATES + DISCARDED_STATES
 
 
 def build_kpi_queries(base_query):

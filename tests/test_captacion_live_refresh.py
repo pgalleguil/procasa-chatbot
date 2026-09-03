@@ -36,6 +36,13 @@ def test_management_invalidates_the_full_current_goal_snapshot():
     assert "_delete_current_captacion_goal_snapshots" in source
 
 
+def test_current_goal_never_uses_persistent_snapshot_as_display_value():
+    source = (ROOT / "webhook.py").read_text(encoding="utf-8")
+
+    assert "El período actual debe salir siempre del ledger fresco" in source
+    assert "snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)" in source
+
+
 def test_snapshot_dates_without_timezone_are_treated_as_utc():
     source = (ROOT / "webhook.py").read_text(encoding="utf-8")
 

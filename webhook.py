@@ -3728,10 +3728,12 @@ async def view_captaciones(
         except Exception:
             logger.exception("[CAPTACION_GOAL_SNAPSHOT] lectura fallida")
             snapshot = None
-        snapshot_can_be_used = snapshot and (
-            bool(goal_period_start or goal_period_end)
-            or _captacion_goal_snapshot_is_current(snapshot)
-        )
+        # El período actual debe salir siempre del ledger fresco. Un snapshot
+        # persistente puede haber sido creado antes de la última gestión (o
+        # pertenecer al esquema antiguo sin timestamp), y servirlo aquí deja
+        # visible un "0 de 10" hasta la siguiente recarga/refresco. Los
+        # períodos históricos explícitos sí pueden reutilizar su snapshot.
+        snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)
         if snapshot_can_be_used:
             _goal_snapshot_mode = "HIT"
             _put_captacion_goal_cache(goal_cache_key, snapshot["data"])
@@ -3740,6 +3742,7 @@ async def view_captaciones(
                 selected_executive=goal_executive or None,
                 period_start=goal_period_start,
                 period_end=goal_period_end,
+                excluded_executives=goal_excluded_executives,
             )
             return snapshot["data"], "STALE"
 

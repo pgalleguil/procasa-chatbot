@@ -34,3 +34,9 @@ def test_management_invalidates_the_full_current_goal_snapshot():
     assert "def _delete_current_captacion_goal_snapshots" in source
     assert "_invalidate_captacion_goal_cache()" in source
     assert "_delete_current_captacion_goal_snapshots" in source
+
+
+def test_snapshot_dates_without_timezone_are_treated_as_utc():
+    source = (ROOT / "webhook.py").read_text(encoding="utf-8")
+
+    assert "snapshot_timestamp.replace(tzinfo=timezone.utc)" in source

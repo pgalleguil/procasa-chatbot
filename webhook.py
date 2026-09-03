@@ -303,6 +303,8 @@ def _captacion_goal_snapshot_is_current(snapshot):
 
     snapshot_timestamp = snapshot.get("timestamp") if snapshot else None
     if isinstance(snapshot_timestamp, datetime):
+        if snapshot_timestamp.tzinfo is None:
+            snapshot_timestamp = snapshot_timestamp.replace(tzinfo=timezone.utc)
         snapshot_epoch = snapshot_timestamp.timestamp()
     elif isinstance(snapshot_timestamp, str):
         try:

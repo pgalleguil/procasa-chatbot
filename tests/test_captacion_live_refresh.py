@@ -43,6 +43,14 @@ def test_current_goal_never_uses_persistent_snapshot_as_display_value():
     assert "snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)" in source
 
 
+def test_captacion_kpis_include_new_portals_without_hardcoding_names():
+    source = (ROOT / "webhook.py").read_text(encoding="utf-8")
+
+    assert 'CAPTACION_KPI_CACHE_VERSION = "v13"' in source
+    assert source.count('"origen": {"$exists": True, "$nin": [None, ""]}') >= 2
+    assert '"origen": {"$in": ["toctoc", "yapo"]}' not in source
+
+
 def test_snapshot_dates_without_timezone_are_treated_as_utc():
     source = (ROOT / "webhook.py").read_text(encoding="utf-8")
 

@@ -143,7 +143,7 @@ logger = logging.getLogger("procasa-full")
 # snapshots anteriores. La versión forma parte de la key y del payload para
 # que un proceso caliente nunca reutilice silenciosamente un esquema viejo.
 # Incremento de versión para que cualquier proceso recargado invalide snapshots KPI antiguos.
-CAPTACION_KPI_CACHE_VERSION = "v12"
+CAPTACION_KPI_CACHE_VERSION = "v13"
 CAPTACION_KPI_CACHE_SCHEMA = 4
 CAPTACION_GOAL_EXCLUDED_EXECUTIVES = ("Pablo Galleguillos",)
 
@@ -829,7 +829,9 @@ async def _prewarm_captacion_default_kpi():
         from chatbot.storage import get_async_db
         adb = get_async_db()
         base_query = {
-            "origen": {"$in": ["toctoc", "yapo"]},
+            # Las tarjetas deben incorporar cualquier portal nuevo con origen
+            # válido, sin tener que modificar esta consulta cada vez.
+            "origen": {"$exists": True, "$nin": [None, ""]},
             "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
         }
         snapshot = await _load_captacion_kpi_snapshot(adb, base_query)
@@ -3658,7 +3660,9 @@ async def view_captaciones(
     
     # KPIs de todos los portales soportados.
     base_query = {
-        "origen": {"$in": ["toctoc", "yapo"]},
+        # Universo dinámico: todo portal con origen válido entra en las
+        # tarjetas superiores y en su desglose por portal.
+        "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
     if user_role not in CAPTACION_PRIVILEGED_ROLES:

@@ -411,6 +411,13 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             old_security["original_pdf_path"] = str(perm_original_path)
             contract_doc["security"] = old_security
             contract_doc["status"] = existing.get("status", "created")
+            # Preserve the original executive identity for the one-off revision
+            # requested for this existing convenio.
+            if contract_code == "PROC-2026-3400":
+                contract_doc["created_by"] = existing.get("created_by", created_by)
+                contract_doc["executive"] = existing.get("executive", executive)
+                contract_doc["executive_display"] = existing.get("executive_display", exec_nombre)
+                contract_doc["executive_data"] = existing.get("executive_data", contract_doc["executive_data"])
 
         try:
             from chatbot.storage import get_db

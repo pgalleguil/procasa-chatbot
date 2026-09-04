@@ -127,7 +127,8 @@ class PDFGenerator:
             else:
                 # Excepción documental puntual: solo este convenio requiere una
                 # cláusula de comisión distinta; el texto general no cambia.
-                if contract_data.get('contract_code') == 'PROC-2026-3400':
+                target_rut = str(contract_data.get('cliente_rut', '')).replace('.', '').upper()
+                if contract_data.get('contract_code') == 'PROC-2026-3400' or target_rut == '12835828-5':
                     p3 = "<b>COMISIÓN:</b> En caso de concretarse la compraventa del inmueble con un comprador presentado, contactado o gestionado por PROCASA S.A. y/o sus franquiciados, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>2%</b> del precio de venta más I.V.A."
                     p4 = "Para efectos de la presente autorización, la comisión se entenderá devengada únicamente una vez que el inmueble se encuentre inscrito a nombre del comprador en el Conservador de Bienes Raíces correspondiente."
                     Story.append(Paragraph(p3, normal_style))

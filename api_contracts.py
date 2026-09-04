@@ -419,6 +419,21 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
                 contract_doc["executive_display"] = existing.get("executive_display", exec_nombre)
                 contract_doc["executive_data"] = existing.get("executive_data", contract_doc["executive_data"])
 
+        # This one-off replacement must remain attributed to Hernán Castro,
+        # even when prepared by an authorized supervisor/admin session.
+        target_rut = str(data.get("cliente_rut", "")).replace(".", "").upper()
+        if target_rut == "12835828-5" and not existing:
+            target_exec = await adb["usuarios"].find_one({"username": "hcastro@procasa.cl"})
+            contract_doc["created_by"] = "hcastro@procasa.cl"
+            contract_doc["executive"] = "hcastro@procasa.cl"
+            contract_doc["executive_display"] = (target_exec or {}).get("nombre") or "Hernán Castro"
+            if target_exec:
+                contract_doc["executive_data"] = {
+                    "nombre": target_exec.get("nombre", "Hernán Castro"),
+                    "email": target_exec.get("email", ""),
+                    "telefono": target_exec.get("phone") or target_exec.get("telefono", "")
+                }
+
         try:
             from chatbot.storage import get_db
             local_db = get_db()

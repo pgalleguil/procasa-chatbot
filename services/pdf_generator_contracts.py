@@ -125,8 +125,16 @@ class PDFGenerator:
                 Story.append(Paragraph(p3, normal_style))
                 Story.append(Paragraph(p4, normal_style))
             else:
-                p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
-                Story.append(Paragraph(p3, normal_style))
+                # Excepción documental puntual: solo este convenio requiere una
+                # cláusula de comisión distinta; el texto general no cambia.
+                if contract_data.get('contract_code') == 'PROC-2026-3400':
+                    p3 = "<b>COMISIÓN:</b> En caso de concretarse la compraventa del inmueble con un comprador presentado, contactado o gestionado por PROCASA S.A. y/o sus franquiciados, se devengará en favor de PROCASA S.A. y/o sus franquiciados una comisión equivalente al <b>2%</b> del precio de venta más I.V.A."
+                    p4 = "Para efectos de la presente autorización, la comisión se entenderá devengada únicamente una vez que el inmueble se encuentre inscrito a nombre del comprador en el Conservador de Bienes Raíces correspondiente."
+                    Story.append(Paragraph(p3, normal_style))
+                    Story.append(Paragraph(p4, normal_style))
+                else:
+                    p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de compra respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> del precio de venta más el I.V.A."
+                    Story.append(Paragraph(p3, normal_style))
         else:
             comision_text = comision if comision else "50%"
             p3 = f"<b>COMISIÓN:</b> En caso de formularse una oferta de arriendo respecto del inmueble y esta sea aceptada por parte de EL COMITENTE se devengará en favor de PROCASA S.A. y/o a sus franquiciados una comisión equivalente al <b>{comision_text}</b> de la renta mensual pactada más I.V.A. En los contratos de plazos superiores a 24 meses la comisión será de un dos por ciento (2 %) más IVA sobre el total de las rentas y con un límite de 60 meses."

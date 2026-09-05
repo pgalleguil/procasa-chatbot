@@ -586,6 +586,7 @@ class Prop360Client:
             },
         )
         self.session_active = False
+        self.last_listing_meta = {}
 
     def _wait(self):
         time.sleep(self.delay * (0.6 + random.random() * 0.8))
@@ -654,6 +655,9 @@ class Prop360Client:
             raise Prop360AuthError("Sesión no activa. Ejecutar login() primero.")
         rows = []
         page = 1
+        page_sizes = []
+        reported_total = None
+        response_valid = True
         while True:
             params = {
                 "ac": "listadoPropiedades",
@@ -675,15 +679,41 @@ class Prop360Client:
             except json.JSONDecodeError:
                 raise Prop360AuthError(f"Listado no JSON: {r.text[:200]}")
             listing_html = ""
-            if isinstance(payload, list) and payload:
-                listing_html = payload[0].get("listing", "")
+            payload_item = payload[0] if isinstance(payload, list) and payload else None
+            if isinstance(payload_item, dict):
+                listing_html = payload_item.get("listing", "") or ""
+                for total_key in (
+                    "total", "totalCount", "recordsTotal", "recordsFiltered",
+                    "cantidadTotal", "totalRecords",
+                ):
+                    raw_total = payload_item.get(total_key)
+                    try:
+                        if raw_total is not None:
+                            reported_total = int(raw_total)
+                            break
+                    except (TypeError, ValueError):
+                        continue
+            else:
+                response_valid = False
             page_rows = re.split(r"<tr id='filaProp\d+'>", listing_html)[1:]
+            page_sizes.append(len(page_rows))
             if page_rows:
                 rows.extend(page_rows)
             self._wait()
             if len(page_rows) < 500:
                 break
             page += 1
+        self.last_listing_meta = {
+            "office_id": office_id,
+            "pages": len(page_sizes),
+            "page_sizes": page_sizes,
+            "rows": len(rows),
+            "reported_total": reported_total,
+            "response_valid": response_valid,
+            "complete": response_valid and bool(page_sizes) and (
+                reported_total is None or len(rows) >= reported_total
+            ),
+        }
         return [self._parse_listing_row(row) for row in rows]
 
     @staticmethod

@@ -1025,19 +1025,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("[PROP360_POLL] Loop import failed — disabled", exc_info=True)
     
-    # PROCASA SUCRE ficha sync — feature-flagged, self-contained
+    # PROCASA SUCRE ficha sync — ejecución automática temporalmente desactivada.
+    # La lógica y el runner manual permanecen disponibles en ficha_sync_loop.py.
     ficha_task = None
-    try:
-        from chatbot.ficha_sync_loop import ficha_sync_loop as _fsl
-        ficha_task = asyncio.create_task(_fsl())
-        import os as _os
-        logger.info(
-            "[FICHA_SYNC] Loop scheduled. enabled=%s",
-            _os.getenv("FICHA_SYNC_ENABLED", "false"),
-        )
-    except Exception:
-        logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
-
+    logger.info("[FICHA_SYNC] Automatic loop disabled — manual runner remains available")
     # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
     uf_sync_task = None
     try:

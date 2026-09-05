@@ -1414,6 +1414,31 @@ async def get_current_user_doc(request: Request):
     request.state.current_user_doc = user
     return user
 
+
+@app.post("/api/crm/portfolio-sync/sucre/dry-run")
+async def api_crm_sucre_portfolio_dry_run(
+    user_doc: dict = Depends(get_current_user_doc),
+):
+    """Admin-only, read-only preparation for the future CRM action."""
+    from chatbot.sucre_portfolio_sync import is_admin_user, run_sucre_portfolio_sync
+
+    if not is_admin_user(user_doc):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    try:
+        result = await asyncio.to_thread(
+            run_sucre_portfolio_sync,
+            dry_run=True,
+            apply_bajas=False,
+        )
+    except Exception:
+        logger.exception("[SUCRE_SYNC] dry-run endpoint failed")
+        raise HTTPException(status_code=500, detail="Error ejecutando dry-run")
+
+    if result.get("status") == "already_running":
+        return JSONResponse(result, status_code=409)
+    return JSONResponse(result)
+
 @app.post("/api/session/renew")
 async def renew_session(user_name: str = Depends(get_current_user)):
     return {"status": "ok", "user": user_name}

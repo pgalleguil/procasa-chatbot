@@ -59,6 +59,7 @@ def _doc(row, available=True):
         "disponible_prop360": available,
         "resumen": {
             "oficina": "PROCASA SUCRE",
+            "snapshot_listado": row,
             "listing_fingerprint": sync.listing_fingerprint(row),
         },
     }
@@ -86,6 +87,7 @@ def test_new_property_enters_detail_and_inserts(monkeypatch):
     )
     assert result["status"] == "completed"
     assert result["nuevas"] == 1
+    assert result["fichas_requeridas"] == 1
     assert calls == [("scrape", "100"), ("upsert", "100")]
 
 
@@ -110,6 +112,11 @@ def test_price_change_enters_detail_and_updates(monkeypatch):
         db=db, prop360_client=FakeClient([_row("100", "4.700 UF")])
     )
     assert result["modificadas"] == 1
+    assert result["fichas_requeridas"] == 1
+    assert result["modification_samples"][0]["changes"]["precio"] == {
+        "mongo": "4.500 UF",
+        "prop360": "4.700 UF",
+    }
     assert calls == [("scrape", "100"), ("upsert", "100")]
 
 
@@ -122,6 +129,7 @@ def test_many_unchanged_generate_no_detail_requests(monkeypatch):
     result = sync.run_sucre_portfolio_sync(db=db, prop360_client=FakeClient(rows))
     assert result["sin_cambios"] == 10
     assert result["procesadas"] == 0
+    assert result["fichas_requeridas"] == 0
     assert calls == []
 
 
@@ -163,6 +171,42 @@ def test_second_execution_is_rejected_while_lock_is_running():
 
 def test_incremental_service_does_not_import_embeddings():
     assert "semantic_engine" not in sync.__dict__
+
+
+def test_admin_authorization_contract():
+    assert sync.is_admin_user({"rol": "admin"}) is True
+    assert sync.is_admin_user({"rol": "supervisor"}) is False
+    assert sync.is_admin_user(None) is False
+
+
+def test_dry_run_never_writes_portfolio_or_applies_bajas(monkeypatch):
+    db = _db()
+    row = _row("100")
+    db[sync.COLLECTION_NAME].insert_one(_doc(row))
+    calls = []
+    _patch_detail(monkeypatch, calls)
+    result = sync.run_sucre_portfolio_sync(
+        db=db, prop360_client=FakeClient([_row("100", "UF 4.700")]),
+        dry_run=True, apply_bajas=True,
+    )
+    assert result["status"] == "completed"
+    assert result["bajas_aplicadas"] == 0
+    assert result["apply_bajas"] is True
+    assert db[sync.COLLECTION_NAME].find_one({"codigo": "100"})["disponible_prop360"] is True
+    assert all(kind == "scrape" for kind, _ in calls)
+
+
+def test_endpoint_is_admin_only_and_server_forces_dry_run():
+    source = open("webhook.py", encoding="utf-8").read()
+    start = source.index('@app.post("/api/crm/portfolio-sync/sucre/dry-run")')
+    route = source[start: source.index('\n\n@app.post("/api/session/renew")', start)]
+    assert "Depends(get_current_user_doc)" in route
+    assert "is_admin_user(user_doc)" in route
+    assert "dry_run=True" in route
+    assert "apply_bajas=False" in route
+    assert "asyncio.to_thread" in route
+    assert "mark_bajas" not in route
+    assert "semantic_engine" not in route
 
 
 def test_scheduler_stays_disabled_and_leads_loop_stays_started():

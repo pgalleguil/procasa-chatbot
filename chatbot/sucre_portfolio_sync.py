@@ -10,7 +10,6 @@ import hashlib
 import json
 import logging
 import os
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -93,6 +92,11 @@ def listing_fingerprint(row: dict) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def is_admin_user(user: dict | None) -> bool:
+    """Only the administrator role may invoke the future CRM action."""
+    return bool(user) and str(user.get("rol", "")).strip().lower() == "admin"
+
+
 def _sucre_query() -> dict:
     return {
         "$or": [
@@ -113,11 +117,14 @@ def _empty_result(started_at: datetime) -> dict:
         "office": SUCRE_OFFICE_NAME,
         "collection": COLLECTION_NAME,
         "prop360_total": 0,
+        "prop360_active": 0,
         "mongo_total_before": 0,
+        "mongo_active_before": 0,
         "nuevas": 0,
         "modificadas": 0,
         "sin_cambios": 0,
         "posibles_bajas": 0,
+        "fichas_requeridas": 0,
         "actualizadas": 0,
         "procesadas": 0,
         "errores": 0,
@@ -126,6 +133,9 @@ def _empty_result(started_at: datetime) -> dict:
         "bajas_omitidas": False,
         "listing_fields": list(LISTING_CONTROL_FIELDS),
         "listing_meta": {},
+        "modification_samples": [],
+        "dry_run": False,
+        "apply_bajas": False,
         "run_id": None,
     }
 
@@ -227,6 +237,29 @@ def _stored_fingerprint(doc: dict) -> str | None:
     return listing_fingerprint(snapshot) if isinstance(snapshot, dict) else None
 
 
+def _stored_listing_snapshot(doc: dict) -> dict | None:
+    snapshot = (doc.get("resumen") or {}).get("snapshot_listado")
+    return snapshot if isinstance(snapshot, dict) else None
+
+
+def _control_value(field: str, value: Any) -> Any:
+    return _norm_price(value) if field == "precio" else _norm_text(value)
+
+
+def _change_detail(code: str, doc: dict, row: dict) -> dict:
+    previous = _stored_listing_snapshot(doc) or {}
+    changes = {}
+    for field in LISTING_CONTROL_FIELDS:
+        if field == "codigo":
+            continue
+        if _control_value(field, previous.get(field)) != _control_value(field, row.get(field)):
+            changes[field] = {
+                "mongo": previous.get(field),
+                "prop360": row.get(field),
+            }
+    return {"codigo": code, "changes": changes}
+
+
 def _finish_result(db, result: dict, status: str, started: datetime, run_id: str, **extra) -> dict:
     finished = _utc_now()
     result.update({
@@ -257,6 +290,8 @@ def run_sucre_portfolio_sync(
     """
     started = _utc_now()
     result = _empty_result(started)
+    result["dry_run"] = dry_run
+    result["apply_bajas"] = apply_bajas
     run_id = uuid.uuid4().hex
     mongo_client = None
     owned_prop360_client = prop360_client is None
@@ -283,6 +318,9 @@ def run_sucre_portfolio_sync(
 
         existing = _existing_code_map(coll)
         result["mongo_total_before"] = len(existing)
+        result["mongo_active_before"] = sum(
+            bool(doc.get("disponible_prop360", True)) for doc in existing.values()
+        )
 
         if prop360_client is None:
             email = os.getenv("PROP360_EMAIL")
@@ -317,7 +355,8 @@ def run_sucre_portfolio_sync(
             code: row for code, row in by_code.items()
             if _norm_text(row.get("estado")) == "activa"
         }
-        result["prop360_total"] = len(active)
+        result["prop360_total"] = len(by_code)
+        result["prop360_active"] = len(active)
         new_codes = sorted(code for code in active if code not in existing)
         changed_codes = sorted(
             code for code, row in active.items()
@@ -337,6 +376,11 @@ def run_sucre_portfolio_sync(
             "modificadas": len(changed_codes),
             "sin_cambios": len(unchanged_codes),
             "posibles_bajas": len(possible_bajas),
+            "fichas_requeridas": len(new_codes) + len(changed_codes),
+            "modification_samples": [
+                _change_detail(code, existing[code], active[code])
+                for code in changed_codes[:20]
+            ],
         })
         _persist_status(db, result, "running", classified_at=_iso(_utc_now()))
 
@@ -403,6 +447,7 @@ __all__ = [
     "LISTING_CONTROL_FIELDS",
     "SUCRE_OFFICE_ID",
     "SUCRE_OFFICE_NAME",
+    "is_admin_user",
     "listing_fingerprint",
     "run_sucre_portfolio_sync",
 ]

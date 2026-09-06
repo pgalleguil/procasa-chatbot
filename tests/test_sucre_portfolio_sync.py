@@ -59,6 +59,7 @@ def _doc(row, available=True):
         "disponible_prop360": available,
         "resumen": {
             "oficina": "PROCASA SUCRE",
+            "ejecutivo": row["captador"],
             "snapshot_listado": row,
             "listing_fingerprint": sync.listing_fingerprint(row),
         },
@@ -70,7 +71,7 @@ def _patch_detail(monkeypatch, calls):
         calls.append(("scrape", code))
         return {"codigo": code, "resumen": {"oficina": "PROCASA SUCRE"}}
 
-    def fake_upsert(coll, doc):
+    def fake_upsert(coll, doc, **kwargs):
         calls.append(("upsert", doc["codigo"]))
         return (True, False)
 
@@ -87,7 +88,8 @@ def test_new_property_enters_detail_and_inserts(monkeypatch):
     )
     assert result["status"] == "completed"
     assert result["nuevas"] == 1
-    assert result["fichas_requeridas"] == 1
+    assert result["fichas_completas_requeridas"] == 1
+    assert result["fichas_completas_consultadas"] == 1
     assert calls == [("scrape", "100"), ("upsert", "100")]
 
 
@@ -98,12 +100,12 @@ def test_existing_without_change_does_not_enter_detail(monkeypatch):
     calls = []
     _patch_detail(monkeypatch, calls)
     result = sync.run_sucre_portfolio_sync(db=db, prop360_client=FakeClient([row]))
-    assert result["sin_cambios"] == 1
+    assert result["sin_cambios_operativos"] == 1
     assert result["modificadas"] == 0
     assert calls == []
 
 
-def test_price_change_enters_detail_and_updates(monkeypatch):
+def test_price_change_updates_from_listing_without_detail(monkeypatch):
     db = _db()
     db[sync.COLLECTION_NAME].insert_one(_doc(_row("100", "4.500 UF")))
     calls = []
@@ -112,12 +114,16 @@ def test_price_change_enters_detail_and_updates(monkeypatch):
         db=db, prop360_client=FakeClient([_row("100", "4.700 UF")])
     )
     assert result["modificadas"] == 1
-    assert result["fichas_requeridas"] == 1
-    assert result["modification_samples"][0]["changes"]["precio"] == {
-        "mongo": "4.500 UF",
-        "prop360": "4.700 UF",
+    assert result["fichas_completas_requeridas"] == 0
+    assert result["fichas_completas_consultadas"] == 0
+    sample = result["operational_change_samples"][0]
+    assert sample["changes"]["precio_publicado"] == {
+        "moneda_mongo": "UF",
+        "monto_mongo": 4500,
+        "moneda_prop360": "UF",
+        "monto_prop360": 4700,
     }
-    assert calls == [("scrape", "100"), ("upsert", "100")]
+    assert calls == []
 
 
 def test_many_unchanged_generate_no_detail_requests(monkeypatch):
@@ -127,9 +133,9 @@ def test_many_unchanged_generate_no_detail_requests(monkeypatch):
     calls = []
     _patch_detail(monkeypatch, calls)
     result = sync.run_sucre_portfolio_sync(db=db, prop360_client=FakeClient(rows))
-    assert result["sin_cambios"] == 10
+    assert result["sin_cambios_operativos"] == 10
     assert result["procesadas"] == 0
-    assert result["fichas_requeridas"] == 0
+    assert result["fichas_completas_requeridas"] == 0
     assert calls == []
 
 
@@ -193,7 +199,7 @@ def test_dry_run_never_writes_portfolio_or_applies_bajas(monkeypatch):
     assert result["bajas_aplicadas"] == 0
     assert result["apply_bajas"] is True
     assert db[sync.COLLECTION_NAME].find_one({"codigo": "100"})["disponible_prop360"] is True
-    assert all(kind == "scrape" for kind, _ in calls)
+    assert calls == []
 
 
 def test_endpoint_is_admin_only_and_server_forces_dry_run():

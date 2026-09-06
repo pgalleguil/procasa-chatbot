@@ -91,6 +91,7 @@ OFICINAS = {
 }
 OFICINA_NOMBRE = OFICINAS.get(OFFICE_ID, f"OFICINA {OFFICE_ID}")
 COLLECTION_NAME = getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
+HISTORY_COLLECTION_NAME = "universo_cartera_prop360_historial"
 SCRAPER_VERSION = "2.0.0"
 
 _CARACTERISTICAS_INT = {
@@ -256,6 +257,17 @@ def normalize_numeric_for_compare(val):
         return int(s)
     except Exception:
         return None
+
+
+def values_equal_for_history(left, right):
+    """Compare text safely, using numeric equality only for two numbers."""
+    left_text = normalize_text_for_compare(left)
+    right_text = normalize_text_for_compare(right)
+    if left_text == right_text:
+        return True
+    left_num = normalize_numeric_for_compare(left)
+    right_num = normalize_numeric_for_compare(right)
+    return left_num is not None and right_num is not None and left_num == right_num
 
 
 def price_change_is_material(old_val, new_val, threshold_pct=1.0):
@@ -438,9 +450,7 @@ def build_history(existing: dict | None, new_doc: dict) -> list[dict]:
         new_val = get_tracked_value(new_doc, field)
         if field in ("precio_clp", "precio_uf") and not price_change_is_material(old_val, new_val):
             continue
-        if normalize_text_for_compare(old_val) == normalize_text_for_compare(new_val):
-            continue
-        if normalize_numeric_for_compare(old_val) == normalize_numeric_for_compare(new_val):
+        if values_equal_for_history(old_val, new_val):
             continue
         historial.append({
             "fecha": now_iso(),
@@ -467,9 +477,7 @@ def build_deep_history(existing: dict | None, new_doc: dict) -> list[dict]:
         new_val = new_flat.get(key)
         if old_val is None or old_val == "":
             continue
-        if normalize_text_for_compare(old_val) == normalize_text_for_compare(new_val):
-            continue
-        if normalize_numeric_for_compare(old_val) == normalize_numeric_for_compare(new_val):
+        if values_equal_for_history(old_val, new_val):
             continue
         if key in {"precio_clp", "precio_uf"} and not price_change_is_material(old_val, new_val):
             continue
@@ -486,6 +494,94 @@ def build_snapshot(doc: dict, version_type: str, hash_value: str) -> dict:
     snapshot = canonical_for_audit(doc)
     snapshot["__meta"] = {"fecha": now_iso(), "tipo": version_type, "hash": hash_value}
     return snapshot
+
+
+def _history_token(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def build_history_event(
+    *,
+    codigo: str,
+    oficina_id: int | None,
+    oficina: str | None,
+    campo: str,
+    valor_anterior,
+    valor_nuevo,
+    tipo_evento: str,
+    hash_anterior: str | None,
+    hash_nuevo: str | None,
+    sync_run_id: str | None = None,
+    fuente: str = "Prop360",
+    fecha: str | None = None,
+    moneda_anterior: str | None = None,
+    monto_anterior=None,
+    moneda_nueva: str | None = None,
+    monto_nuevo=None,
+) -> dict:
+    """Build one compact, idempotent event for the permanent history collection."""
+    event = {
+        "codigo": str(codigo),
+        "oficina_id": oficina_id,
+        "oficina": oficina,
+        "campo": campo,
+        "valor_anterior": valor_anterior,
+        "valor_nuevo": valor_nuevo,
+        "fecha": fecha or now_iso(),
+        "fuente": fuente,
+        "tipo_evento": tipo_evento,
+        "hash_anterior": hash_anterior,
+        "hash_nuevo": hash_nuevo,
+        "sync_run_id": sync_run_id,
+    }
+    if moneda_anterior is not None or monto_anterior is not None:
+        event["moneda_anterior"] = moneda_anterior
+        event["monto_anterior"] = monto_anterior
+    if moneda_nueva is not None or monto_nuevo is not None:
+        event["moneda_nueva"] = moneda_nueva
+        event["monto_nuevo"] = monto_nuevo
+
+    identity = {
+        key: value
+        for key, value in event.items()
+        if key not in {"_id", "fecha"}
+    }
+    # Including sync_run_id makes repeated real transitions in different runs
+    # permanent while retrying one run remains idempotent.
+    event["_id"] = hashlib.sha256(_history_token(identity).encode("utf-8")).hexdigest()
+    return event
+
+
+def history_collection_for(coll):
+    database = getattr(coll, "database", None)
+    if database is None:
+        return None
+    return database[HISTORY_COLLECTION_NAME]
+
+
+def ensure_history_indexes(history_coll) -> None:
+    if history_coll is None:
+        return
+    history_coll.create_index(
+        [("codigo", 1), ("oficina_id", 1), ("fecha", -1)],
+        name="history_property_office_date",
+    )
+    history_coll.create_index(
+        [("tipo_evento", 1), ("fecha", -1)],
+        name="history_event_date",
+    )
+
+
+def append_history_event(history_coll, event: dict) -> bool:
+    """Insert once; the deterministic _id makes retries safe."""
+    if history_coll is None:
+        return False
+    result = history_coll.update_one(
+        {"_id": event["_id"]},
+        {"$setOnInsert": event},
+        upsert=True,
+    )
+    return bool(getattr(result, "upserted_id", None))
 
 
 def _bs(html: str) -> BeautifulSoup:
@@ -1191,16 +1287,62 @@ def parse_publicaciones_json(payload: dict, codigo: str) -> dict:
     return data
 
 
+def normalize_published_amount(raw):
+    """Normalize a published amount without confusing decimals and thousands."""
+    if raw is None:
+        return None
+    text = re.sub(r"[^\d,.-]", "", str(raw).strip())
+    if not text or text in {"-", ".", ","}:
+        return None
+    negative = text.startswith("-")
+    text = text.lstrip("-")
+    if "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            normalized = text.replace(".", "").replace(",", ".")
+        else:
+            normalized = text.replace(",", "")
+    elif "," in text:
+        left, right = text.rsplit(",", 1)
+        normalized = f"{left}.{right}" if len(right) <= 2 else text.replace(",", "")
+    elif text.count(".") > 1:
+        normalized = text.replace(".", "")
+    elif "." in text:
+        left, right = text.split(".", 1)
+        normalized = text.replace(".", "") if len(right) == 3 and len(left) <= 3 else text
+    else:
+        normalized = text
+    try:
+        value = float(normalized)
+    except (TypeError, ValueError):
+        return None
+    if negative:
+        value = -value
+    return int(value) if value.is_integer() else round(value, 2)
+
+
 def parse_listing_price(precio_text: str | None):
+    """Extract both explicit amounts from a Prop360 listing cell.
+
+    Prop360 commonly renders a cell as either ``UF 12.478 $ 510.088.661``
+    or ``$ 2.600.000 UF 63,60``.  The previous suffix expression could start
+    at the CLP amount and consume the later ``UF`` token, returning the CLP
+    amount as if it were UF.  Prefer the amount immediately following each
+    currency marker and use the suffix form only for a standalone ``4500 UF``.
+    """
     uf = None
     clp = None
     if precio_text:
-        uf_m = re.search(r"UF\s*([\d.,]+)", precio_text, re.IGNORECASE)
-        if uf_m:
-            uf = normalize_numeric_for_compare(uf_m.group(1))
-        clp_m = re.search(r"\$\s*([\d.,]+)", precio_text)
+        text = " ".join(str(precio_text).split())
+        uf_values = re.findall(r"\bUF\s*([\d.,]+)", text, re.IGNORECASE)
+        if uf_values:
+            uf = normalize_published_amount(uf_values[0])
+        else:
+            uf_m = re.search(r"(?<![\d.,])([\d.,]+)\s*UF\b", text, re.IGNORECASE)
+            if uf_m:
+                uf = normalize_published_amount(uf_m.group(1))
+        clp_m = re.search(r"\$\s*([\d.,]+)", text)
         if clp_m:
-            clp = clean_price(clp_m.group(1))
+            clp = normalize_published_amount(clp_m.group(1))
     return uf, clp
 
 
@@ -1323,30 +1465,43 @@ def parse_ficha_imprimible(html: str, audit: dict | None = None) -> dict:
     if reg_m:
         ubicacion["region"] = reg_m.group(1).strip()
 
-    # Price block: operation word + label (primary) + small (secondary)
-    op_m = re.search(r"<h4[^>]*>([^<]*?)(?:<label|$)", seg, re.S)
-    op_txt = _clean_value(op_m.group(1)) if op_m else None
+    # Price block: the printable ficha contains unrelated labels (for
+    # example ``Cód.: 17.043``) before the actual price.  Restrict parsing to
+    # the right-aligned operation heading so the publication amount is the
+    # primary label and the secondary value is never mistaken for it.
+    price_heading = None
+    for heading in soup.select("h4.text-right"):
+        heading_text = " ".join(heading.get_text(" ", strip=True).split())
+        if heading.find("label") and re.search(
+            r"\b(venta|arriendo|arr\.?\s*temp\.?)\b", heading_text, re.I
+        ):
+            price_heading = heading
+            break
+    op_txt = None
+    primary_price_txt = None
+    if price_heading is not None:
+        heading_text = " ".join(price_heading.get_text(" ", strip=True).split())
+        op_m = re.search(
+            r"\b(venta|arriendo|arr\.?\s*temp\.?)\b", heading_text, re.I
+        )
+        op_txt = op_m.group(1) if op_m else None
+        label = price_heading.find("label")
+        primary_price_txt = (
+            " ".join(label.get_text(" ", strip=True).split()) if label else None
+        )
     if op_txt:
         lower = op_txt.lower()
         if "venta" in lower or "vende" in lower:
             tipo_op["venta"] = True
-        if "arriendo" in lower or "arrienda" in lower:
+        if "arriendo" in lower or "arrienda" in lower or "arr" in lower and "temp" in lower:
             tipo_op["arriendo"] = True
-    label_m = re.search(r"<label[^>]*>([^<]+)</label>", seg, re.S)
-    small_m = re.search(r"<small[^>]*>([^<]+)</small>", seg, re.S)
-    prices = []
-    if label_m:
-        prices.append(label_m.group(1))
-    if small_m:
-        prices.append(small_m.group(1))
     venta_p = {"precio_uf": None, "precio_clp": None}
     arriendo_p = {"precio_uf": None, "precio_clp": None}
     target = venta_p if tipo_op["venta"] and not tipo_op["arriendo"] else (
         arriendo_p if tipo_op["arriendo"] and not tipo_op["venta"] else venta_p)
-    for txt in prices:
-        unit, val = _detect_print_price(txt)
-        if unit and val is not None:
-            target[f"precio_{unit}"] = val
+    unit, val = _detect_print_price(primary_price_txt)
+    if unit and val is not None:
+        target[f"precio_{unit}"] = val
     if any(v is not None for v in venta_p.values()):
         tipo_op["precio_venta"] = venta_p
     if any(v is not None for v in arriendo_p.values()):
@@ -1397,6 +1552,32 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
     estado = parsed["estado"]
     datos_propietario = parsed["datos_propietario"]
 
+    published_uf, published_clp = parse_listing_price(listing_row.get("precio"))
+    published_currency = None
+    published_amount = None
+    # The ficha's selected currency is authoritative for new properties.  A
+    # listing cell can contain both the published amount and its conversion,
+    # and its visual order is not stable across properties.
+    for operation in ("precio_venta", "precio_arriendo"):
+        price = tipo_op.get(operation)
+        if not isinstance(price, dict):
+            continue
+        if price.get("precio_clp") is not None:
+            published_currency = "CLP"
+            published_amount = price["precio_clp"]
+            break
+        if price.get("precio_uf") is not None:
+            published_currency = "UF"
+            published_amount = price["precio_uf"]
+            break
+    if published_currency is None:
+        if published_uf is not None and published_clp is None:
+            published_currency = "UF"
+            published_amount = published_uf
+        elif published_clp is not None and published_uf is None:
+            published_currency = "CLP"
+            published_amount = published_clp
+
     precio_clp = None
     precio_uf = None
     if isinstance(tipo_op.get("precio_venta"), dict):
@@ -1428,6 +1609,8 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
             "ultima_actualizacion": estado.get("ultima_actualizacion"),
             "precio_clp": precio_clp,
             "precio_uf": precio_uf,
+            "moneda_publicacion": published_currency,
+            "monto_publicacion": published_amount,
             "telefono": datos_propietario.get("telefono"),
             "disponible_prop360": True,
             "estado_prop360": estado.get("estado_prop360", "Activa"),
@@ -1612,8 +1795,61 @@ def get_mongo_collection(collection_name: str):
     return client, db[collection_name]
 
 
-def upsert_ficha(coll, doc: dict) -> tuple[bool, bool]:
+def _history_key(entry: dict) -> tuple:
+    return (
+        entry.get("campo"),
+        _history_token(entry.get("valor_anterior")),
+        _history_token(entry.get("valor_nuevo")),
+    )
+
+
+def _write_with_history(coll, history_coll, events: list[dict], update_filter: dict, update: dict):
+    """Write current state and permanent events atomically on MongoDB Atlas."""
+    if history_coll is None or not events:
+        return coll.update_one(update_filter, update, upsert=True)
+
+    database = getattr(coll, "database", None)
+    mongo_client = getattr(database, "client", None)
+    start_session = getattr(mongo_client, "start_session", None)
+    if callable(start_session):
+        try:
+            with mongo_client.start_session() as session:
+                with session.start_transaction():
+                    for event in events:
+                        history_coll.update_one(
+                            {"_id": event["_id"]},
+                            {"$setOnInsert": event},
+                            upsert=True,
+                            session=session,
+                        )
+                    return coll.update_one(
+                        update_filter, update, upsert=True, session=session
+                    )
+        except NotImplementedError:
+            # mongomock exposes start_session but intentionally does not
+            # implement it; fall through to the non-transactional test path.
+            pass
+
+    # Used by lightweight test stores.  Atlas uses the transaction path above.
+    for event in events:
+        append_history_event(history_coll, event)
+    return coll.update_one(update_filter, update, upsert=True)
+
+
+def upsert_ficha(
+    coll,
+    doc: dict,
+    *,
+    history_coll=None,
+    source: str = "Prop360",
+    sync_run_id: str | None = None,
+) -> tuple[bool, bool]:
     existing = coll.find_one({"codigo": doc["codigo"]}) or {}
+    if history_coll is None:
+        history_coll = history_collection_for(coll)
+    if not existing:
+        doc.setdefault("fecha_primera_deteccion", now_iso())
+        doc.setdefault("fuente_incorporacion", source)
     for section in (
         "publicaciones",
         "datos_propietario",
@@ -1657,7 +1893,79 @@ def upsert_ficha(coll, doc: dict) -> tuple[bool, bool]:
         doc["ultima_version_hash"] = existing.get("ultima_version_hash")
         doc["ultima_version_at"] = existing.get("ultima_version_at")
 
-    result = coll.update_one({"codigo": doc["codigo"]}, {"$set": doc}, upsert=True)
+    history_events = []
+    event_date = now_iso()
+    oficina_id = doc.get("oficina_id")
+    oficina = doc.get("oficina_nombre") or (doc.get("resumen") or {}).get("oficina")
+    if not existing:
+        history_events.append(
+            build_history_event(
+                codigo=doc["codigo"],
+                oficina_id=oficina_id,
+                oficina=oficina,
+                campo="propiedad",
+                valor_anterior=None,
+                valor_nuevo=doc["codigo"],
+                tipo_evento="alta",
+                hash_anterior=None,
+                hash_nuevo=current_hash,
+                sync_run_id=sync_run_id,
+                fuente=source,
+                fecha=event_date,
+            )
+        )
+    elif previous_hash != current_hash:
+        previous_keys = {
+            _history_key(item)
+            for item in existing.get("historial_cambios", [])
+            if isinstance(item, dict)
+        }
+        for entry in historial:
+            if _history_key(entry) in previous_keys:
+                continue
+            history_events.append(
+                build_history_event(
+                    codigo=doc["codigo"],
+                    oficina_id=oficina_id or existing.get("oficina_id"),
+                    oficina=oficina or existing.get("oficina_nombre") or (existing.get("resumen") or {}).get("oficina"),
+                    campo=entry.get("campo"),
+                    valor_anterior=entry.get("valor_anterior"),
+                    valor_nuevo=entry.get("valor_nuevo"),
+                    tipo_evento="actualizacion",
+                    hash_anterior=previous_hash,
+                    hash_nuevo=current_hash,
+                    sync_run_id=sync_run_id,
+                    fuente=source,
+                    fecha=event_date,
+                )
+            )
+    if existing and not bool(existing.get("disponible_prop360", True)) and bool(doc.get("disponible_prop360", True)):
+        history_events.append(
+            build_history_event(
+                codigo=doc["codigo"],
+                oficina_id=oficina_id or existing.get("oficina_id"),
+                oficina=oficina or existing.get("oficina_nombre") or (existing.get("resumen") or {}).get("oficina"),
+                campo="disponible_prop360",
+                valor_anterior=False,
+                valor_nuevo=True,
+                tipo_evento="reactivacion",
+                hash_anterior=previous_hash,
+                hash_nuevo=current_hash,
+                sync_run_id=sync_run_id,
+                fuente=source,
+                fecha=event_date,
+            )
+        )
+
+    if history_coll is not None and history_events:
+        ensure_history_indexes(history_coll)
+    result = _write_with_history(
+        coll,
+        history_coll,
+        history_events,
+        {"codigo": doc["codigo"]},
+        {"$set": doc},
+    )
     nuevo = bool(result.upserted_id)
     actualizado = not nuevo and result.modified_count > 0
     return nuevo, actualizado

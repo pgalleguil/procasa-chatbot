@@ -4375,16 +4375,19 @@ async def view_captacion_detail_route(
 
     if followup_token:
         try:
-            from chatbot.storage import get_db as _sync_db
-            record_followup_open(
-                _sync_db(), token=followup_token, entity_id=obj_id,
-                actor_user_id=str(user.get("_id") or ""),
-            )
+            def _record_captacion_followup_open():
+                from chatbot.storage import get_db as _sync_db
+                return record_followup_open(
+                    _sync_db(), token=followup_token, entity_id=obj_id,
+                    actor_user_id=str(user.get("_id") or ""),
+                )
+
+            await loop.run_in_executor(_WEB_THREAD_POOL, _record_captacion_followup_open)
         except FollowupTokenError:
             logger.info("[FOLLOWUP] captacion open was not attributable: obj_id=%s", obj_id)
-            _record_unattributed_open("direct")
+            await loop.run_in_executor(_WEB_THREAD_POOL, _record_unattributed_open, "direct")
     else:
-        _record_unattributed_open()
+        await loop.run_in_executor(_WEB_THREAD_POOL, _record_unattributed_open)
 
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     

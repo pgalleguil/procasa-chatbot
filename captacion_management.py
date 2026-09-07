@@ -8,6 +8,7 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 
 from captacion_workforce import (
     DEFAULT_TIMEZONE,
@@ -139,6 +140,7 @@ def ensure_management_indexes(db) -> None:
     db[LEDGER_COLLECTION].create_index("event_id", unique=True, sparse=True, name="captacion_event_id")
     db[LEDGER_COLLECTION].create_index("source_event_id", unique=True, sparse=True, name="captacion_source_event")
     db[LEDGER_COLLECTION].create_index("dedup_key", unique=True, sparse=True, name="captacion_management_dedup")
+    db[LEDGER_COLLECTION].create_index("operation_id", unique=True, sparse=True, name="captacion_operation_id")
     db[LEDGER_COLLECTION].create_index(
         [("actor_user_id", 1), ("local_date", 1), ("credited", 1)], name="captacion_ledger_actor_day"
     )
@@ -535,6 +537,7 @@ def record_manual_management_decision(
     outcome=None,
     is_automatic=False,
     now=None,
+    operation_id=None,
 ) -> dict:
     """Acredita una conclusiÃ³n comercial manual usando la misma deduplicaciÃ³n diaria."""
     decision = evaluate_manual_decision(
@@ -552,6 +555,22 @@ def record_manual_management_decision(
     property_id = clean_id(property_doc.get("_id"))
     if not actor_user_id or not property_id:
         raise ValueError("La gestiÃ³n requiere una propiedad y un user_id identificables")
+    operation_id = clean_id(operation_id) or None
+    if operation_id:
+        existing_operation = db[LEDGER_COLLECTION].find_one({
+            "operation_id": operation_id,
+            "property_id": property_id,
+            "actor_user_id": actor_user_id,
+        })
+        if existing_operation:
+            return {
+                "status": "confirmed" if existing_operation.get("credited") else "not_credited",
+                "credited": bool(existing_operation.get("credited")),
+                "event_id": existing_operation.get("event_id"),
+                "property_id": property_id,
+                "assignment_cycle_id": existing_operation.get("assignment_cycle_id"),
+                "reason": existing_operation.get("non_credit_reason"),
+            }
     occurred_at = now or datetime.now(timezone.utc)
     if occurred_at.tzinfo is None:
         occurred_at = occurred_at.replace(tzinfo=timezone.utc)
@@ -570,6 +589,7 @@ def record_manual_management_decision(
     }):
         db[LEDGER_COLLECTION].insert_one({
             "event_id": event_id,
+            **({"operation_id": operation_id} if operation_id else {}),
             "event_type": "manual_decision_confirmed",
             "credited": False,
             "credit_duplicate": True,
@@ -606,6 +626,7 @@ def record_manual_management_decision(
         }
     event = {
         "event_id": event_id,
+        **({"operation_id": operation_id} if operation_id else {}),
         "event_type": event_type,
         "credited": True,
         "dedup_key": dedup_key,
@@ -634,7 +655,26 @@ def record_manual_management_decision(
         "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
-    credited, resolved_event_id = _write_credited_event_or_observation(db, event)
+    try:
+        credited, resolved_event_id = _write_credited_event_or_observation(db, event)
+    except DuplicateKeyError:
+        if not operation_id:
+            raise
+        existing_operation = db[LEDGER_COLLECTION].find_one({
+            "operation_id": operation_id,
+            "property_id": property_id,
+            "actor_user_id": actor_user_id,
+        })
+        if not existing_operation:
+            raise
+        return {
+            "status": "confirmed" if existing_operation.get("credited") else "not_credited",
+            "credited": bool(existing_operation.get("credited")),
+            "event_id": existing_operation.get("event_id"),
+            "property_id": property_id,
+            "assignment_cycle_id": existing_operation.get("assignment_cycle_id"),
+            "reason": existing_operation.get("non_credit_reason"),
+        }
     if credited:
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)

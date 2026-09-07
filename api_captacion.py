@@ -1284,8 +1284,45 @@ def get_captacion_detail(obj_id):
     _l1_set(_detail_cache_key, _result, expire_seconds=45)
     return _result
 
-def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None, user_doc=None, followup_token=None):
+
+def get_captacion_update_state(obj_id, operation_id=None):
+    """Read the persisted update marker without using the detail cache."""
     db = get_db()
+    coll = get_captacion_collection(db)
+    try:
+        query_id = ObjectId(obj_id)
+    except Exception:
+        query_id = str(obj_id)
+
+    doc = coll.find_one({"_id": query_id}, {"_id": 1, "gestion": 1})
+    if not doc:
+        doc = coll.find_one({"_id": str(obj_id)}, {"_id": 1, "gestion": 1})
+    if not doc:
+        return None
+
+    gestion = dict(doc.get("gestion") or {})
+    stored_operation_id = str(gestion.get("last_update_operation_id") or "").strip() or None
+    requested_operation_id = str(operation_id or "").strip() or None
+    core_persisted = bool(
+        requested_operation_id
+        and stored_operation_id
+        and requested_operation_id == stored_operation_id
+    )
+    return {
+        "id": str(doc.get("_id") or obj_id),
+        "gestion": gestion,
+        "status": gestion.get("estado_captacion") or gestion.get("estado") or "NUEVO",
+        "operation_id": stored_operation_id,
+        "core_persisted": core_persisted,
+        "persisted": core_persisted and bool(gestion.get("last_update_completed_at")),
+    }
+
+def update_captacion_status(
+    obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema",
+    next_followup=None, user_doc=None, followup_token=None, operation_id=None,
+):
+    db = get_db()
+    operation_id = str(operation_id or "").strip() or None
     
     now = get_chile_now() # Store as Date object, not string
     
@@ -1301,10 +1338,22 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             return False
 
         
-    old_status = current_doc.get("gestion", {}).get("estado_captacion") or current_doc.get("gestion", {}).get("estado") or "NUEVO"
+    current_gestion = current_doc.get("gestion", {}) or {}
+    old_status = current_gestion.get("estado_captacion") or current_gestion.get("estado") or "NUEVO"
+    operation_already_applied = bool(
+        operation_id
+        and str(current_gestion.get("last_update_operation_id") or "").strip() == operation_id
+    )
+    if operation_already_applied and current_gestion.get("last_update_completed_at"):
+        return True
+    decision_previous_status = (
+        current_gestion.get("last_update_previous_status")
+        if operation_already_applied
+        else old_status
+    ) or old_status
     manual_decision = evaluate_manual_decision(
         status=status,
-        previous_status=old_status,
+        previous_status=decision_previous_status,
         notes=notes,
         outcome=outcome,
         is_automatic=not bool(user_doc),
@@ -1319,7 +1368,8 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         "captacion_management_date": now,
     }
     
-    if next_followup:
+    followup_error = None
+    if next_followup and not operation_already_applied:
         update_fields["gestion.next_followup"] = next_followup
         # Crear tarea en crm_tasks
         try:
@@ -1386,6 +1436,18 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
                 pass
         except Exception as e:
             logger.error(f"Error scheduling captacion task: {e}")
+            followup_error = e
+
+    if followup_error is not None:
+        raise RuntimeError("No se pudo guardar el seguimiento programado") from followup_error
+
+    if operation_id and not operation_already_applied:
+        update_fields.update({
+            "gestion.last_update_operation_id": operation_id,
+            "gestion.last_update_operation_at": now,
+            "gestion.last_update_previous_status": old_status,
+            "gestion.last_update_completed_at": None,
+        })
     
     # 2. Incrementar contador de intentos si es una acción de contacto
     inc_fields = {}
@@ -1406,7 +1468,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         }
     
     # Si cambió el estado, registrar el cambio
-    if old_status != status:
+    if old_status != status and not operation_already_applied:
         push_fields["gestion.status_history"] = {
             "timestamp": now,
             "user": user_name,
@@ -1415,14 +1477,26 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         }
     
     update_params = {"$set": update_fields}
-    if inc_fields: update_params["$inc"] = inc_fields
-    if push_fields: update_params["$push"] = push_fields
-    
-    get_captacion_collection(db).update_one(
-        {"_id": current_doc["_id"]},
-        update_params
-    )
-    if old_status != status:
+    if inc_fields and not operation_already_applied: update_params["$inc"] = inc_fields
+    if push_fields and not operation_already_applied: update_params["$push"] = push_fields
+
+    if not operation_already_applied:
+        write_result = get_captacion_collection(db).update_one(
+            {"_id": current_doc["_id"], **({"gestion.last_update_operation_id": {"$ne": operation_id}} if operation_id else {})},
+            update_params,
+        )
+        matched_count = getattr(write_result, "matched_count", None)
+        if operation_id and matched_count == 0:
+            latest = get_captacion_collection(db).find_one(
+                {"_id": current_doc["_id"]}, {"gestion.last_update_operation_id": 1}
+            ) or {}
+            latest_operation_id = str(
+                (latest.get("gestion") or {}).get("last_update_operation_id") or ""
+            ).strip()
+            if latest_operation_id != operation_id:
+                raise RuntimeError("La actualización no pudo confirmarse en MongoDB")
+            operation_already_applied = True
+    if old_status != status and not operation_already_applied:
         # La revisión vive en Mongo y permite invalidar snapshots de otros
         # workers, además de la limpieza local que ya realiza este módulo.
         bump_captacion_kpi_revision(db)
@@ -1432,10 +1506,11 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             property_doc=current_doc,
             actor_user=user_doc,
             status=status,
-            previous_status=old_status,
+            previous_status=decision_previous_status,
             notes=notes,
             outcome=outcome,
             now=now,
+            operation_id=operation_id,
         )
         if followup_token and manual_result.get("event_id"):
             try:
@@ -1477,6 +1552,12 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         })
     except Exception as e:
         logger.error(f"Error logging status change event: {e}")
+
+    if operation_id:
+        get_captacion_collection(db).update_one(
+            {"_id": current_doc["_id"], "gestion.last_update_operation_id": operation_id},
+            {"$set": {"gestion.last_update_completed_at": now}},
+        )
 
     return True
 

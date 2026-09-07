@@ -1926,14 +1926,55 @@
                         next_followup: document.getElementById('proximo-contacto').value,
                         followup_token: followupContextToken || null
                     };
+                    payload.operation_id = (
+                        window.crypto && typeof window.crypto.randomUUID === 'function'
+                            ? window.crypto.randomUUID()
+                            : `captacion-${Date.now()}-${Math.random().toString(16).slice(2)}`
+                    );
+
+                    const controller = new AbortController();
+                    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+
+                    async function verifyPersistedUpdate() {
+                        const verificationUrl = `/api/captacion/${encodeURIComponent(payload.id)}/update-verification?operation_id=${encodeURIComponent(payload.operation_id)}`;
+                        for (let attempt = 0; attempt < 4; attempt += 1) {
+                            try {
+                                const verificationResponse = await fetch(verificationUrl, {
+                                    method: 'GET',
+                                    cache: 'no-store',
+                                    credentials: 'same-origin'
+                                });
+                                if (verificationResponse.ok) {
+                                    const verification = await verificationResponse.json();
+                                    if (verification.persisted) return verification;
+                                }
+                            } catch (_) {
+                                // La verificación también puede coincidir con el corte.
+                            }
+                            if (attempt < 3) {
+                                await new Promise(resolve => window.setTimeout(resolve, 500));
+                            }
+                        }
+                        return null;
+                    }
 
                     try {
                         const res = await fetch('/api/captacion/update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
+                            body: JSON.stringify(payload),
+                            signal: controller.signal
                         });
-                        const data = await res.json();
+                        const raw = await res.text();
+                        let data = {};
+                        try {
+                            data = raw ? JSON.parse(raw) : {};
+                        } catch (_) {
+                            data = {};
+                        }
+                        if (!res.ok) {
+                            throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+                        }
                         if (data.status === 'ok') {
                             notifyCaptacionMetricsUpdated();
                             btn.innerHTML = '<i class="fa-solid fa-check"></i> ACTUALIZADO';
@@ -1945,9 +1986,83 @@
                             throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
-                        alert("Error al actualizar: " + e.message);
+                        console.error('[CAPTACION_UPDATE] Error de red o servidor', e, {
+                            propertyId: payload.id,
+                            status: payload.status,
+                            operationId: payload.operation_id
+                        });
+
+                        let message = e?.message || 'Error desconocido';
+                        const persisted = await verifyPersistedUpdate();
+                        if (persisted) {
+                            notifyCaptacionMetricsUpdated();
+                            btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                            btn.classList.add('bg-success', 'border-success');
+                            window.setTimeout(() => window.location.reload(), 1000);
+                            return;
+                        }
+
+                        const recoverableFailure = (
+                            e?.name === 'AbortError'
+                            || e instanceof TypeError
+                            || message === 'Failed to fetch'
+                            || /^HTTP 5\d\d$/.test(message)
+                            || message === 'HTTP 409'
+                        );
+                        if (recoverableFailure) {
+                            let recoveryTimeoutId = null;
+                            try {
+                                const recoveryController = new AbortController();
+                                recoveryTimeoutId = window.setTimeout(() => recoveryController.abort(), 30000);
+                                const recoveryResponse = await fetch('/api/captacion/update', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload),
+                                    signal: recoveryController.signal
+                                });
+                                const recoveryRaw = await recoveryResponse.text();
+                                let recoveryData = {};
+                                try {
+                                    recoveryData = recoveryRaw ? JSON.parse(recoveryRaw) : {};
+                                } catch (_) {
+                                    recoveryData = {};
+                                }
+                                if (recoveryResponse.ok && recoveryData.status === 'ok') {
+                                    notifyCaptacionMetricsUpdated();
+                                    btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                                    btn.classList.add('bg-success', 'border-success');
+                                    window.setTimeout(() => window.location.reload(), 1000);
+                                    return;
+                                }
+                            } catch (_) {
+                                // Se conserva el error original para informar al ejecutivo.
+                            } finally {
+                                if (recoveryTimeoutId !== null) {
+                                    window.clearTimeout(recoveryTimeoutId);
+                                }
+                            }
+
+                            const recovered = await verifyPersistedUpdate();
+                            if (recovered) {
+                                notifyCaptacionMetricsUpdated();
+                                btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                                btn.classList.add('bg-success', 'border-success');
+                                window.setTimeout(() => window.location.reload(), 1000);
+                                return;
+                            }
+                        }
+
+                        if (e?.name === 'AbortError') {
+                            message = 'El servidor tardó más de 30 segundos y no pudimos confirmar el guardado. Revisa el estado antes de volver a intentarlo.';
+                        } else if (e instanceof TypeError || message === 'Failed to fetch') {
+                            message = 'Se perdió la conexión y no pudimos confirmar el guardado. Recarga la página y revisa el estado antes de volver a intentarlo.';
+                        }
+
+                        alert("Error al actualizar: " + message);
                         btn.innerHTML = originalHtml;
                         btn.disabled = false;
+                    } finally {
+                        window.clearTimeout(timeoutId);
                     }
                 }
 

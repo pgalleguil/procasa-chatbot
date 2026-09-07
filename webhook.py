@@ -80,7 +80,8 @@ from analytics.leads_service import (
 )
 
 from api_captacion import (
-    get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
+    get_captacion_list, get_captacion_detail, get_captacion_update_state,
+    update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
     get_personal_templates, save_personal_template, delete_personal_template,
@@ -4445,6 +4446,38 @@ async def api_get_matching_leads(request: Request, obj_id: str):
     finally:
         if obj_id in PENDING_MATCHING_REQUESTS:
             del PENDING_MATCHING_REQUESTS[obj_id]
+@app.get("/api/captacion/{obj_id}/update-verification")
+async def api_verify_captacion_update(
+    request: Request,
+    obj_id: str,
+    operation_id: str = Query(""),
+):
+    """Confirm a Captación write when the original POST response was lost."""
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+    operation_id = str(operation_id or "").strip()
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="Falta operation_id")
+
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_captacion_update_state(obj_id, operation_id),
+    )
+    if not state:
+        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+    if not can_manage_captacion(user_doc, state):
+        raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
+
+    return {
+        "status": "confirmed" if state.get("persisted") else "not_confirmed",
+        "persisted": bool(state.get("persisted")),
+        "operation_id": operation_id,
+        "current_status": state.get("status"),
+    }
+
+
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
     try:
@@ -4455,6 +4488,7 @@ async def api_update_captacion(request: Request):
         status = data.get("status")
         notes = data.get("notes")
         next_followup = data.get("next_followup")
+        operation_id = str(data.get("operation_id") or "").strip() or str(uuid.uuid4())
         channel = data.get("channel")
         outcome = data.get("outcome")
         user_name = user_doc.get("nombre", username_str) if user_doc else username_str
@@ -4482,6 +4516,7 @@ async def api_update_captacion(request: Request):
                 user_name=user_name,
                 next_followup=next_followup,
                 user_doc=user_doc,
+                operation_id=operation_id,
             )
         )
         if result:
@@ -4489,8 +4524,8 @@ async def api_update_captacion(request: Request):
             app.state.captacion_stats_cache = {}
             _invalidate_captacion_goal_cache()
             await loop.run_in_executor(_WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots)
-            return {"status": "ok"}
-        return {"status": "error", "message": "Operación retornó falso"}
+            return {"status": "ok", "persisted": True, "operation_id": operation_id}
+        raise HTTPException(status_code=409, detail="La actualización no pudo confirmarse")
     except HTTPException:
         # Re-lanzar 401/403/400 para que el cliente y el handler global los manejen correctamente
         raise

@@ -1078,24 +1078,30 @@ def warm_captacion_shared_catalogs():
         "elapsed_ms": round(elapsed_ms, 1),
     }
 
-def get_captacion_detail(obj_id):
-    from bson import ObjectId
+def get_captacion_raw(obj_id):
+    """Read the source document without running detail scoring or market queries."""
     from bson.errors import InvalidId
 
+    db = get_db()
+    coll = get_captacion_collection(db)
+    try:
+        query_id = ObjectId(obj_id)
+    except (InvalidId, TypeError):
+        query_id = str(obj_id)
+
+    doc = coll.find_one({"_id": query_id})
+    if not doc and query_id != str(obj_id):
+        doc = coll.find_one({"_id": str(obj_id)})
+    return doc
+
+
+def get_captacion_detail(obj_id):
     _detail_cache_key = f"detail_full_{obj_id}"
     _cached = _l1_get(_detail_cache_key)
     if _cached is not None:
         return _cached
 
-    db = get_db()
-    coll = get_captacion_collection(db)
-    
-    try:
-        query_id = ObjectId(obj_id)
-    except InvalidId:
-        query_id = obj_id
-        
-    doc = coll.find_one({"_id": query_id})
+    doc = get_captacion_raw(obj_id)
     if not doc:
         return None
     
@@ -1317,9 +1323,30 @@ def get_captacion_update_state(obj_id, operation_id=None):
         "persisted": core_persisted and bool(gestion.get("last_update_completed_at")),
     }
 
+def run_captacion_secondary_effects(obj_id, old_status, status, user_name, notes):
+    """Run non-blocking score and audit updates after the durable write."""
+    db = get_db()
+    try:
+        from chatbot.metrics import update_captacion_metrics
+        update_captacion_metrics(db, obj_id)
+    except Exception:
+        logger.exception("Error updating captacion metrics for %s", obj_id)
+
+    try:
+        log_event(str(obj_id), EventType.STAGE_CHANGE.value, user_name, {
+            "old_stage": old_status,
+            "new_stage": status,
+            "notes": notes,
+            "source": "captacion",
+        })
+    except Exception:
+        logger.exception("Error logging captacion status change event for %s", obj_id)
+
+
 def update_captacion_status(
     obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema",
     next_followup=None, user_doc=None, followup_token=None, operation_id=None,
+    current_doc=None, defer_secondary_effects=False,
 ):
     db = get_db()
     operation_id = str(operation_id or "").strip() or None
@@ -1331,11 +1358,12 @@ def update_captacion_status(
     except Exception:
         query_id = str(obj_id)
         
-    current_doc = get_captacion_collection(db).find_one({"_id": query_id})
-    if not current_doc:
-        current_doc = get_captacion_collection(db).find_one({"_id": str(obj_id)})
+    if current_doc is None:
+        current_doc = get_captacion_collection(db).find_one({"_id": query_id})
         if not current_doc:
-            return False
+            current_doc = get_captacion_collection(db).find_one({"_id": str(obj_id)})
+            if not current_doc:
+                return False
 
         
     current_gestion = current_doc.get("gestion", {}) or {}
@@ -1536,22 +1564,8 @@ def update_captacion_status(
     except Exception:
         logger.debug("No se pudo invalidar la caché de ledger de captación", exc_info=True)
     
-    # Precomputación SaaS: Actualizar métricas de captación
-    try:
-        from chatbot.metrics import update_captacion_metrics
-        update_captacion_metrics(db, obj_id)
-    except: pass
-
-    # LOG EVENT CENTRAL: Cambio de Estado
-    try:
-        log_event(str(obj_id), EventType.STAGE_CHANGE.value, user_name, {
-            "old_stage": old_status,
-            "new_stage": status,
-            "notes": notes,
-            "source": "captacion"
-        })
-    except Exception as e:
-        logger.error(f"Error logging status change event: {e}")
+    if not defer_secondary_effects:
+        run_captacion_secondary_effects(obj_id, old_status, status, user_name, notes)
 
     if operation_id:
         get_captacion_collection(db).update_one(

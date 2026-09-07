@@ -80,7 +80,8 @@ from analytics.leads_service import (
 )
 
 from api_captacion import (
-    get_captacion_list, get_captacion_detail, get_captacion_update_state,
+    get_captacion_list, get_captacion_detail, get_captacion_raw,
+    get_captacion_update_state, run_captacion_secondary_effects,
     update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
@@ -4483,6 +4484,14 @@ async def api_verify_captacion_update(
 
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
+    _update_started = time.perf_counter()
+    _update_perf = {
+        "request_id": getattr(request.state, "trace_id", None) or str(uuid.uuid4())[:8],
+        "operation_id": None,
+        "raw_lookup_ms": 0.0,
+        "core_write_ms": 0.0,
+        "secondary_deferred": True,
+    }
     try:
         username_str = await get_current_user(request)
         user_doc = await get_current_user_doc(request)
@@ -4492,6 +4501,7 @@ async def api_update_captacion(request: Request):
         notes = data.get("notes")
         next_followup = data.get("next_followup")
         operation_id = str(data.get("operation_id") or "").strip() or str(uuid.uuid4())
+        _update_perf["operation_id"] = operation_id
         channel = data.get("channel")
         outcome = data.get("outcome")
         user_name = user_doc.get("nombre", username_str) if user_doc else username_str
@@ -4499,15 +4509,26 @@ async def api_update_captacion(request: Request):
         if not obj_id or not status:
             raise HTTPException(status_code=400, detail="Faltan datos")
 
+        _raw_lookup_started = time.perf_counter()
         captacion_doc = await asyncio.get_running_loop().run_in_executor(
-            _WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id)
+            _WEB_THREAD_POOL, lambda: get_captacion_raw(obj_id)
+        )
+        _update_perf["raw_lookup_ms"] = round(
+            (time.perf_counter() - _raw_lookup_started) * 1000, 1
         )
         if not captacion_doc:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         if not user_doc or not can_manage_captacion(user_doc, captacion_doc):
             raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
+
+        current_gestion = captacion_doc.get("gestion") or {}
+        operation_already_completed = bool(
+            str(current_gestion.get("last_update_operation_id") or "").strip() == operation_id
+            and current_gestion.get("last_update_completed_at")
+        )
             
         loop = asyncio.get_running_loop()
+        _core_write_started = time.perf_counter()
         result = await loop.run_in_executor(
             _WEB_THREAD_POOL,
             lambda: update_captacion_status(
@@ -4520,13 +4541,43 @@ async def api_update_captacion(request: Request):
                 next_followup=next_followup,
                 user_doc=user_doc,
                 operation_id=operation_id,
+                current_doc=captacion_doc,
+                defer_secondary_effects=True,
             )
+        )
+        _update_perf["core_write_ms"] = round(
+            (time.perf_counter() - _core_write_started) * 1000, 1
         )
         if result:
             _up3 = time.perf_counter()
             app.state.captacion_stats_cache = {}
             _invalidate_captacion_goal_cache()
-            await loop.run_in_executor(_WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots)
+            if not operation_already_completed:
+                old_status = (
+                    current_gestion.get("estado_captacion")
+                    or current_gestion.get("estado")
+                    or "NUEVO"
+                )
+
+                async def _finish_captacion_update_side_effects():
+                    try:
+                        await loop.run_in_executor(
+                            _WEB_THREAD_POOL,
+                            lambda: run_captacion_secondary_effects(
+                                obj_id, old_status, status, user_name, notes
+                            ),
+                        )
+                        await loop.run_in_executor(
+                            _WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[CAPTACION_UPDATE] secondary effects failed obj_id=%s operation_id=%s",
+                            obj_id,
+                            operation_id,
+                        )
+
+                asyncio.create_task(_finish_captacion_update_side_effects())
             return {"status": "ok", "persisted": True, "operation_id": operation_id}
         raise HTTPException(status_code=409, detail="La actualización no pudo confirmarse")
     except HTTPException:
@@ -4535,6 +4586,9 @@ async def api_update_captacion(request: Request):
     except Exception as e:
         logger.error(f"Error updating captacion: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _update_perf["total_ms"] = round((time.perf_counter() - _update_started) * 1000, 1)
+        logger.info("[CAPTACION_UPDATE_PERF] %s", json.dumps(_update_perf, ensure_ascii=False, sort_keys=True))
 
 
 @app.post("/api/captacion/contact")

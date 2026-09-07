@@ -41,6 +41,8 @@ def test_current_goal_never_uses_persistent_snapshot_as_display_value():
 
     assert "El período actual debe salir siempre del ledger fresco" in source
     assert "snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)" in source
+    assert "goal_data = await refresh_task" in source
+    assert "refresh histórico fallido; usando snapshot como fallback" in source
 
 
 def test_captacion_kpis_include_new_portals_without_hardcoding_names():

@@ -254,8 +254,15 @@ def build_weekly_snapshot(db, period_start, period_end, *, is_test: bool) -> dic
     end = _parse_date(period_end)
     _validate_period(start, end)
 
-    # Esta es la misma función que usa la ruta /captacion.
-    panel = get_captacion_goal_dashboard(db, now=_panel_now(end))
+    # Esta es la misma función que usa la ruta /captacion. El período viaja
+    # explícitamente para que el reporte lunes-viernes no termine consultando
+    # accidentalmente la semana calendario de siete días.
+    panel = get_captacion_goal_dashboard(
+        db,
+        now=_panel_now(end),
+        period_start=start.isoformat(),
+        period_end=end.isoformat(),
+    )
     panel_dates = [item.get("date") for row in panel.get("executives") or [] for item in row.get("daily") or []]
     expected_dates = {(start + timedelta(days=index)).isoformat() for index in range(5)}
     if panel_dates and set(panel_dates) != expected_dates:

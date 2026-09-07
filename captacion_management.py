@@ -109,12 +109,12 @@ MANUAL_DECISION_RULES = {
         "contact_attempt": True,
         "contact_effective": True,
     },
-    "corredor": {"result": "broker_identified", "requires_evidence": True},
-    "descartado": {"result": "discarded", "requires_evidence": True},
+    "corredor": {"result": "broker_identified"},
+    "descartado": {"result": "discarded"},
     "captado": {"result": "captured", "capture": True},
-    "propiedad no disponible": {"result": "unavailable", "requires_evidence": True},
-    "publicacion expirada": {"result": "listing_expired", "requires_evidence": True},
-    "no interesado": {"result": "not_interested", "requires_evidence": True},
+    "propiedad no disponible": {"result": "unavailable"},
+    "publicacion expirada": {"result": "listing_expired"},
+    "no interesado": {"result": "not_interested"},
 }
 
 _INDEXES_READY = False
@@ -272,8 +272,6 @@ def evaluate_manual_decision(*, status, previous_status=None, notes=None, outcom
         return {"eligible": False, "reason": "context_required", "status": normalized_status}
     if not changed:
         return {"eligible": False, "reason": "no_meaningful_change", "status": normalized_status}
-    if rule.get("requires_evidence") and not evidence:
-        return {"eligible": False, "reason": "evidence_required", "status": normalized_status}
     return {
         "eligible": True,
         "reason": None,

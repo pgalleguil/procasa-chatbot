@@ -3752,19 +3752,28 @@ async def view_captaciones(
         # persistente puede haber sido creado antes de la última gestión (o
         # pertenecer al esquema antiguo sin timestamp), y servirlo aquí deja
         # visible un "0 de 10" hasta la siguiente recarga/refresco. Los
-        # períodos históricos explícitos sí pueden reutilizar su snapshot.
+        # períodos históricos también se refrescan antes de mostrarse: de lo
+        # contrario la vista de equipo podía quedar en 22 mientras el filtro
+        # individual ya mostraba 45.
         snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)
         if snapshot_can_be_used:
-            _goal_snapshot_mode = "HIT"
-            _put_captacion_goal_cache(goal_cache_key, snapshot["data"])
-            _start_captacion_goal_refresh(
+            _goal_snapshot_mode = "STALE"
+            refresh_task = _start_captacion_goal_refresh(
                 goal_cache_key,
                 selected_executive=goal_executive or None,
                 period_start=goal_period_start,
                 period_end=goal_period_end,
                 excluded_executives=goal_excluded_executives,
             )
-            return snapshot["data"], "STALE"
+            try:
+                goal_data = await refresh_task
+                return goal_data, "REFRESHED"
+            except Exception:
+                logger.exception(
+                    "[CAPTACION_GOAL_SNAPSHOT] refresh histórico fallido; usando snapshot como fallback"
+                )
+                _put_captacion_goal_cache(goal_cache_key, snapshot["data"])
+                return snapshot["data"], "STALE_FALLBACK"
 
         _goal_snapshot_mode = "MISS"
         _goal_refresh_started = time.perf_counter()

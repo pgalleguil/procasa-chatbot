@@ -85,6 +85,7 @@ from api_captacion import (
     update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
+    _parse_captacion_price_bound,
     get_personal_templates, save_personal_template, delete_personal_template,
     warm_captacion_shared_catalogs,
 )
@@ -516,9 +517,9 @@ def _build_captacion_worked_portal_breakdown(rows, contactability_by_portal=None
             "effective_contacts": int(contactability.get("effective_contacts") or 0),
         })
     portal_rows.sort(key=lambda row: (-row["worked"], row["label"].casefold()))
-    if len(portal_rows) > 2:
-        top_rows = portal_rows[:2]
-        other_rows = portal_rows[2:]
+    if len(portal_rows) > 3:
+        top_rows = portal_rows[:3]
+        other_rows = portal_rows[3:]
         top_rows.append({
             "value": "otros",
             "label": "Otros",
@@ -3388,6 +3389,9 @@ async def view_captaciones(
     operacion: str = Query(None),
     telefono: str = Query(None),
     portal: str = Query(None),
+    moneda: str = Query(None),
+    monto_desde: str = Query(None),
+    monto_hasta: str = Query(None),
     classification: str = Query(None),
     orden: str = Query(None),
     meta_semana: str = Query(None),
@@ -3452,6 +3456,16 @@ async def view_captaciones(
     user_id = str(user["_id"])
     user_email = user.get("email", "")
     current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
+    selected_price_currency = str(moneda or "").strip().upper()
+    if selected_price_currency not in {"UF", "CLP"}:
+        selected_price_currency = "CLP" if "arr" in str(operacion or "").lower() else "UF"
+    parsed_price_min = _parse_captacion_price_bound(monto_desde)
+    parsed_price_max = _parse_captacion_price_bound(monto_hasta)
+    invalid_price_range = (
+        parsed_price_min is not None
+        and parsed_price_max is not None
+        and parsed_price_min > parsed_price_max
+    )
     _captacion_diag["actor_resolution_ms"] = round((time.perf_counter() - _perf["auth"]) * 1000, 1)
     
     limit = 10
@@ -3527,6 +3541,9 @@ async def view_captaciones(
                 telefono_filter=telefono,
                 portal_filter=portal,
                 classification_filter=classification,
+                price_currency=selected_price_currency,
+                price_min=monto_desde,
+                price_max=monto_hasta,
                 sort_by=sort_by,
                 sort_dir=sort_dir,
                 order_filter=current_order,
@@ -3662,6 +3679,9 @@ async def view_captaciones(
             "comuna": current_comunas,
             "operacion": current_operacion,
             "portal": current_portal,
+            "moneda": selected_price_currency if (monto_desde or monto_hasta) else "",
+            "monto_desde": monto_desde or "",
+            "monto_hasta": monto_hasta or "",
             "orden": current_order,
             "estado": current_estado,
             "ejecutivo": current_ejecutivo,
@@ -4115,6 +4135,9 @@ async def view_captaciones(
     current_estado = estado
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
+    current_moneda = selected_price_currency
+    current_monto_desde = str(monto_desde or "").strip()
+    current_monto_hasta = str(monto_hasta or "").strip()
     available_portal_values = {item["value"] for item in available_portals}
     current_portal = portal if portal in available_portal_values else ""
     current_classification = classification or ""
@@ -4175,6 +4198,10 @@ async def view_captaciones(
         "current_ejecutivo": current_ejecutivo,
         "current_operacion": current_operacion,
         "current_telefono": current_telefono,
+        "current_moneda": current_moneda,
+        "current_monto_desde": current_monto_desde,
+        "current_monto_hasta": current_monto_hasta,
+        "invalid_price_range": invalid_price_range,
         "current_portal": current_portal,
         "available_portals": available_portals,
         "current_order": current_order,

@@ -1108,7 +1108,7 @@
                 {'id': 'negotiate', 'label': 'Negociación', 'match': ['Contacto exitoso', 'Reunión agendada',
                 'INTERESADO EN TASACIÓN', 'TASACIÓN ENVIADA']},
                 {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
-                interesado', 'Corredor', 'Publicación expirada']}
+                interesado', 'Corredor', 'Publicación expirada', 'Duplicado']}
                 ] %}
                 {% for s in stages %}
                 {% set is_active = prop.estado_captacion in s.match %}

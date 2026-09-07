@@ -1863,6 +1863,43 @@
             height: 100%;
             border-radius: 0;
         }
+        /* El contenido descriptivo de las tarjetas usa peso normal; los
+           valores KPI principales conservan su énfasis visual. */
+        .captacion-card .captacion-card__title,
+        .captacion-card .kpi-model-label,
+        .captacion-card .captacion-card__kpi-label,
+        .captacion-card .kpi-model-unit,
+        .captacion-card .captacion-card__context,
+        .captacion-card .kpi-model-secondary,
+        .captacion-card .captacion-card__section-label,
+        .captacion-card .captacion-card__legend,
+        .captacion-card .captacion-card__result-legend,
+        .captacion-card .captacion-card__footer,
+        .captacion-card .captacion-card__contact-ratio,
+        .captacion-card .kpi-contact-stack-caption,
+        .captacion-card .kpi-contact-results-heading,
+        .captacion-card .kpi-contact-result-label,
+        .captacion-card .kpi-contact-result-rate,
+        .captacion-card .kpi-source-base,
+        .captacion-card .kpi-source-heading-label,
+        .captacion-card .kpi-source-heading-value,
+        .captacion-card .kpi-source-result-label,
+        .captacion-card .kpi-source-result-rate,
+        .captacion-card .kpi-portal-performance-name,
+        .captacion-card .kpi-portal-performance-sample,
+        .captacion-card .kpi-portal-performance-details,
+        .captacion-card .kpi-portal-performance-rates,
+        .captacion-card .kpi-portal-performance-label,
+        .captacion-card .captacion-card__portal-samples,
+        .captacion-card .captacion-card__portal-bar-head,
+        .captacion-card .captacion-card__portal-bar-name {
+            font-weight: 400;
+        }
+        /* Los títulos de cada tarjeta mantienen su jerarquía visual. */
+        .captacion-card .captacion-card__title,
+        .captacion-card .kpi-model-label {
+            font-weight: 800;
+        }
         @media (max-width: 992px) {
             .kpi-card.captacion-card { min-height: 282px; }
             .captacion-card .kpi-model-body {
@@ -2668,6 +2705,61 @@
             min-width: 0;
             width: 100%;
         }
+
+        .captacion-price-filter-inline {
+            display: grid;
+            grid-template-columns: minmax(64px, .8fr) repeat(2, minmax(0, 1fr));
+            gap: 6px;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .captacion-price-filter-inline input {
+            width: 100%;
+            min-width: 0;
+            height: 46px;
+            min-height: 46px;
+            padding: 0 10px;
+            background: color-mix(in srgb, var(--bg-card) 78%, var(--bg-elevated));
+            border: 1px solid var(--input-border);
+            border-radius: 12px;
+            color: var(--input-text);
+            font-size: .88rem;
+        }
+
+        .captacion-price-filter-inline input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .captacion-price-filter-inline.is-invalid input,
+        .captacion-price-filter-inline.is-invalid select {
+            border-color: #f59e0b;
+        }
+
+        .captacion-price-filter-error {
+            display: none;
+            min-width: 0;
+            margin: 0;
+            color: #fbbf24;
+            font-size: .66rem;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .captacion-price-filter-error.is-visible { display: inline; }
+
+        .captacion-price-label-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            min-width: 0;
+            min-height: 12px;
+        }
+
+        .captacion-price-label-row .filter-control-label { flex: 0 0 auto; }
 
         .captacion-filter-toolbar .commune-picker summary {
             padding: 0 16px;
@@ -4022,7 +4114,7 @@
 
         <div class="table-container">
             <div class="captacion-filter-toolbar">
-            <form action="/captacion" method="GET" class="filter-bar">
+            <form action="/captacion" method="GET" class="filter-bar" onsubmit="return validateCaptacionPriceRange(this)">
                 <div class="filter-control filter-control-phone {{ 'is-active' if current_telefono else '' }}">
                     <label class="filter-control-label" for="captacion-telefono">Teléfono</label>
                     <div class="search-box">
@@ -4052,7 +4144,7 @@
                 </div>
                 <div class="filter-control {{ 'is-active' if current_operacion else '' }}">
                     <label class="filter-control-label" for="captacion-operacion">Operación</label>
-                    <select id="captacion-operacion" name="operacion" onchange="this.form.submit()">
+                    <select id="captacion-operacion" name="operacion" onchange="syncCaptacionPriceCurrency(this); this.form.submit()">
                         <option value="">Todas las operaciones</option>
                         {% if 'venta' in available_ops %}
                         <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
@@ -4061,6 +4153,20 @@
                         <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
                         {% endif %}
                     </select>
+                </div>
+                <div class="filter-control {{ 'is-active' if current_monto_desde or current_monto_hasta else '' }}">
+                    <div class="captacion-price-label-row">
+                        <label class="filter-control-label" for="captacion-moneda">Monto</label>
+                        <div class="captacion-price-filter-error{% if invalid_price_range %} is-visible{% endif %}" role="alert">Desde no puede ser mayor que hasta.</div>
+                    </div>
+                    <div class="captacion-price-filter-inline">
+                        <select id="captacion-moneda" name="moneda" aria-label="Moneda del monto" onchange="this.form.dataset.priceCurrencyTouched='1'; formatCaptacionPriceFields(this.form);">
+                            <option value="UF" {% if current_moneda == 'UF' %}selected{% endif %}>UF</option>
+                            <option value="CLP" {% if current_moneda == 'CLP' %}selected{% endif %}>$ CLP</option>
+                        </select>
+                        <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Desde" value="{{ current_monto_desde }}" aria-label="Monto desde">
+                        <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Hasta" value="{{ current_monto_hasta }}" aria-label="Monto hasta">
+                    </div>
                 </div>
                 <div class="filter-control {{ 'is-active' if current_portal else '' }}">
                     <label class="filter-control-label" for="captacion-portal">Portal</label>
@@ -4083,6 +4189,7 @@
                         <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
                         <option value="Publicación expirada" {% if current_estado=='Publicación expirada' %}selected{% endif %}>Publicación expirada</option>
                         <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                        <option value="Duplicado" {% if current_estado=='Duplicado' %}selected{% endif %}>Duplicado</option>
                         <option value="Reunión agendada" {% if current_estado=='Reunión agendada' %}selected{% endif %}>Reunión agendada</option>
                         <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
                         <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
@@ -4126,7 +4233,7 @@
                 <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
-            {% set has_active_filters = current_telefono or current_comunas or current_operacion or current_portal or current_estado or current_ejecutivo %}
+            {% set has_active_filters = current_telefono or current_comunas or current_operacion or current_monto_desde or current_monto_hasta or current_portal or current_estado or current_ejecutivo %}
             {% set has_any_filters = has_active_filters or temporal_filter_kind %}
             <div class="filter-toolbar-meta">
                 {% if has_any_filters %}
@@ -4149,6 +4256,11 @@
                     {% if current_operacion %}
                     <button type="button" class="active-filter-chip" data-filter-param="operacion" onclick="clearCaptacionFilter(this)" title="Quitar filtro de operación">
                         {{ current_operacion|title }} <span class="chip-close" aria-hidden="true">×</span>
+                    </button>
+                    {% endif %}
+                    {% if current_monto_desde or current_monto_hasta %}
+                    <button type="button" class="active-filter-chip" data-filter-param="precio" onclick="clearCaptacionFilter(this)" title="Quitar filtro de monto">
+                        Monto: {{ current_moneda }} {{ current_monto_desde or '0' }}–{{ current_monto_hasta or 'sin tope' }} <span class="chip-close" aria-hidden="true">×</span>
                     </button>
                     {% endif %}
                     {% if current_portal %}
@@ -4344,7 +4456,7 @@
         </div>
 
         <div class="table-container">
-            <form action="/captacion" method="GET" class="filter-bar">
+            <form action="/captacion" method="GET" class="filter-bar" onsubmit="return validateCaptacionPriceRange(this)">
                 <div class="search-box">
                     <i class="fa-solid fa-phone"></i>
                     <input type="text" name="telefono" placeholder="Buscar teléfono..."
@@ -4375,6 +4487,15 @@
                     <option value="arriendo" {% if current_operacion=='arriendo' %}selected{% endif %}>Arriendo</option>
                     {% endif %}
                 </select>
+                <div class="captacion-price-filter-inline">
+                    <select name="moneda" aria-label="Moneda del monto" onchange="this.form.dataset.priceCurrencyTouched='1'; formatCaptacionPriceFields(this.form);">
+                        <option value="UF" {% if current_moneda == 'UF' %}selected{% endif %}>UF</option>
+                        <option value="CLP" {% if current_moneda == 'CLP' %}selected{% endif %}>$ CLP</option>
+                    </select>
+                    <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto desde" value="{{ current_monto_desde }}" aria-label="Monto desde">
+                    <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto hasta" value="{{ current_monto_hasta }}" aria-label="Monto hasta">
+                    <div class="captacion-price-filter-error{% if invalid_price_range %} is-visible{% endif %}" role="alert">Desde no puede ser mayor que hasta.</div>
+                </div>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>
                     <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
@@ -4385,6 +4506,7 @@
                     <option value="Propiedad no disponible" {% if current_estado=='Propiedad no disponible' %}selected{% endif %}>Propiedad no disponible</option>
                     <option value="Publicación expirada" {% if current_estado=='Publicación expirada' %}selected{% endif %}>Publicación expirada</option>
                     <option value="No interesado" {% if current_estado=='No interesado' %}selected{% endif %}>No interesado</option>
+                    <option value="Duplicado" {% if current_estado=='Duplicado' %}selected{% endif %}>Duplicado</option>
                     <option value="Reunión agendada" {% if current_estado=='Reunión agendada' %}selected{% endif %}>Reunión agendada</option>
                     <option value="Captado" {% if current_estado=='Captado' %}selected{% endif %}>Captado</option>
                     <option value="Descartado" {% if current_estado=='Descartado' %}selected{% endif %}>Descartado</option>
@@ -4451,7 +4573,7 @@
                                     <span class="badge-custom badge-gestion">{{ e }}</span>
                                 {% elif e in ['Captado', 'CAPTADO'] %}
                                     <span class="badge-custom badge-captado">{{ e }}</span>
-                                {% elif e in ['Corredor', 'Teléfono inválido', 'Descartado', 'Propiedad no disponible', 'Publicación expirada', 'No interesado', 'DESCARTADO'] %}
+                                {% elif e in ['Corredor', 'Teléfono inválido', 'Descartado', 'Propiedad no disponible', 'Publicación expirada', 'No interesado', 'Duplicado', 'DESCARTADO'] %}
                                     <span class="badge-custom badge-descartado">{{ e }}</span>
                                 {% else %}
                                     <span class="badge-custom badge-nuevo">{{ e }}</span>
@@ -4882,13 +5004,98 @@
                 && window.innerWidth > 576;
         }
 
+        function captacionPriceCurrency(input) {
+            return String(input?.form?.querySelector('select[name="moneda"]')?.value || 'UF').toUpperCase();
+        }
+
+        function groupCaptacionPriceThousands(digits) {
+            const cleanDigits = String(digits || '').replace(/\D/g, '');
+            if (!cleanDigits) return '';
+            return cleanDigits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+
+        function formatCaptacionPriceValue(rawValue, currency) {
+            const raw = String(rawValue || '').trim();
+            if (!raw) return '';
+            const clean = raw.replace(/\./g, '').replace(/[^0-9,]/g, '');
+            if (!clean) return '';
+            if (currency === 'CLP') return groupCaptacionPriceThousands(clean.replace(/\D/g, ''));
+            const commaIndex = clean.lastIndexOf(',');
+            const hasDecimalSeparator = commaIndex >= 0;
+            const integerPart = hasDecimalSeparator ? clean.slice(0, commaIndex) : clean;
+            const decimalPart = hasDecimalSeparator ? clean.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2) : '';
+            const integerDigits = integerPart.replace(/\D/g, '');
+            if (!integerDigits && !decimalPart) return '';
+            const groupedInteger = groupCaptacionPriceThousands(integerDigits || '0');
+            return hasDecimalSeparator ? `${groupedInteger},${decimalPart}` : groupedInteger;
+        }
+
+        function formatCaptacionPriceInput(input) {
+            if (!input) return;
+            input.value = formatCaptacionPriceValue(input.value, captacionPriceCurrency(input));
+        }
+
+        function formatCaptacionPriceFields(form) {
+            (form || document).querySelectorAll('[data-captacion-price-input]').forEach(formatCaptacionPriceInput);
+        }
+
+        function parseCaptacionPriceForValidation(input) {
+            if (!input) return null;
+            const currency = captacionPriceCurrency(input);
+            const raw = String(input.value || '').replace(/\./g, '').replace(/[^0-9,]/g, '');
+            if (!raw) return null;
+            const normalized = currency === 'UF' ? raw.replace(',', '.') : raw.replace(/,/g, '');
+            const parsed = Number(normalized);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        function validateCaptacionPriceRange(form) {
+            const priceInline = form?.querySelector('.captacion-price-filter-inline');
+            const fromInput = form?.querySelector('[name="monto_desde"]');
+            const toInput = form?.querySelector('[name="monto_hasta"]');
+            const from = parseCaptacionPriceForValidation(fromInput);
+            const to = parseCaptacionPriceForValidation(toInput);
+            const invalid = from !== null && to !== null && from > to;
+            priceInline?.classList.toggle('is-invalid', invalid);
+            form?.querySelector('.captacion-price-filter-error')?.classList.toggle('is-visible', invalid);
+            if (invalid) {
+                (fromInput || toInput)?.focus();
+                return false;
+            }
+            return true;
+        }
+
+        function preventCaptacionPricePoint(event, input) {
+            const key = String(event?.key || '');
+            if (key === '.' || key === 'Decimal' || event?.code === 'NumpadDecimal') {
+                event.preventDefault();
+                return false;
+            }
+            if (captacionPriceCurrency(input) === 'CLP' && key === ',') {
+                event.preventDefault();
+                return false;
+            }
+            return true;
+        }
+
+        function syncCaptacionPriceCurrency(operationSelect) {
+            const form = operationSelect?.form;
+            const currency = form?.querySelector('select[name="moneda"]');
+            const from = form?.querySelector('[name="monto_desde"]')?.value;
+            const to = form?.querySelector('[name="monto_hasta"]')?.value;
+            if (!currency || form?.dataset?.priceCurrencyTouched === '1' || from || to) return;
+            currency.value = String(operationSelect.value || '').toLowerCase().includes('arr') ? 'CLP' : 'UF';
+        }
+
         function clearCaptacionFilter(button) {
             const params = new URLSearchParams(window.location.search);
             const parameter = button?.dataset?.filterParam;
             const value = button?.dataset?.filterValue;
             if (!parameter) return;
 
-            if (parameter === 'comuna' && value !== undefined) {
+            if (parameter === 'precio') {
+                ['moneda', 'monto_desde', 'monto_hasta'].forEach(item => params.delete(item));
+            } else if (parameter === 'comuna' && value !== undefined) {
                 const remaining = params.getAll(parameter).filter(item => item !== value);
                 params.delete(parameter);
                 remaining.forEach(item => params.append(parameter, item));
@@ -4901,12 +5108,13 @@
 
         function clearCaptacionFilters() {
             const params = new URLSearchParams(window.location.search);
-            ['telefono', 'comuna', 'operacion', 'portal', 'estado', 'ejecutivo', 'classification', 'gestion_fecha', 'gestion_semana'].forEach(parameter => params.delete(parameter));
+            ['telefono', 'comuna', 'operacion', 'moneda', 'monto_desde', 'monto_hasta', 'portal', 'estado', 'ejecutivo', 'classification', 'gestion_fecha', 'gestion_semana'].forEach(parameter => params.delete(parameter));
             params.set('page', '1');
             window.location.search = params.toString();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            formatCaptacionPriceFields();
             document.querySelectorAll('[data-team-sort="week"]').forEach(button => {
                 let descending = true;
                 button.addEventListener('click', () => {

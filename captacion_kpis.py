@@ -29,6 +29,7 @@ DISCARDED_STATES = (
     "Propiedad no disponible",
     "Publicación expirada",
     "No interesado",
+    "Duplicado",
     "DESCARTADO",
 )
 KPI_WORKED_STATES = KPI_MANAGEMENT_STATES + CAPTURED_STATES + DISCARDED_STATES

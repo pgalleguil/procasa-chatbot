@@ -172,6 +172,68 @@ def format_captacion_portal_label(origin):
     return known_labels.get(value.casefold(), value.replace("_", " ").replace("-", " ").title())
 
 
+def _parse_captacion_price_bound(value):
+    """Normaliza un límite ingresado desde el filtro de monto."""
+    if value is None or str(value).strip() == "":
+        return None
+    raw = str(value).strip().replace("$", "").replace("UF", "").replace("uf", "")
+    raw = re.sub(r"[^0-9,.-]", "", raw)
+    if not raw:
+        return None
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif raw.count(".") > 1:
+        raw = raw.replace(".", "")
+    elif raw.count(".") == 1:
+        left, right = raw.split(".")
+        if len(right) == 3 and len(left) <= 3:
+            raw = left + right
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _captacion_price_range_condition(currency, price_min=None, price_max=None):
+    currency = str(currency or "").strip().upper()
+    if currency not in {"UF", "CLP"}:
+        return None
+
+    lower = _parse_captacion_price_bound(price_min)
+    upper = _parse_captacion_price_bound(price_max)
+    if lower is None and upper is None:
+        return None
+    if lower is not None and upper is not None and lower > upper:
+        return {"_id": {"$in": []}}
+
+    bounds = {}
+    if lower is not None:
+        bounds["$gte"] = lower
+    if upper is not None:
+        bounds["$lte"] = upper
+
+    suffix = currency.lower()
+    normalized_field = f"precio_{suffix}_normalizado"
+    source_fields = (
+        f"precio_{suffix}",
+        f"price_{suffix}",
+        f"details.precio_{suffix}",
+        f"details.price_{suffix}",
+    )
+    return {
+        "$or": [
+            {normalized_field: bounds},
+            {
+                "$and": [
+                    {normalized_field: {"$exists": False}},
+                    {"$or": [{field: bounds} for field in source_fields]},
+                ]
+            },
+        ]
+    }
+
+
 def get_captacion_capture_datetime(doc):
     """Return the first capture timestamp, never the last modification time."""
     candidates = [
@@ -507,7 +569,7 @@ def resolve_operacion(details: dict) -> str:
     return "VENTA"
 
 
-def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, classification_filter=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, classification_filter=None, price_currency=None, price_min=None, price_max=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
     _l_start = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
@@ -604,6 +666,12 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             {"operacion": op_pattern},
             {"tipo_operacion": op_pattern},
         ]})
+
+    price_condition = _captacion_price_range_condition(
+        price_currency, price_min=price_min, price_max=price_max
+    )
+    if price_condition:
+        add_condition(price_condition)
     
     if telefono_filter:
         phone_digits = "".join(char for char in str(telefono_filter) if char.isdigit())
@@ -1159,7 +1227,7 @@ def get_captacion_detail(obj_id):
     pipeline_stages = [
         "Por contactar", "En gestión", "Contacto exitoso", "Sin respuesta", "Teléfono inválido",
         "Corredor", "Propiedad no disponible", "Publicación expirada", "No interesado",
-        "Reunión agendada", "Captado", "Descartado"
+        "Reunión agendada", "Captado", "Descartado", "Duplicado"
     ]
     
     estado_actual = gestion.get("estado_captacion") or gestion.get("estado") or "Por contactar"
@@ -2083,6 +2151,12 @@ def ensure_leads_indexes():
             ]),
             ("idx_captacion_phone_normalized", [
                 ("telefono_normalizado", 1),
+            ]),
+            ("idx_captacion_price_uf_range", [
+                ("precio_uf_normalizado", 1), ("_id", -1),
+            ]),
+            ("idx_captacion_price_clp_range", [
+                ("precio_clp_normalizado", 1), ("_id", -1),
             ]),
         )
         for index_name, index_spec in materialized_indexes:

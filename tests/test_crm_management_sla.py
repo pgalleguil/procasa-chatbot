@@ -209,6 +209,46 @@ def test_effective_contact_credits_attempt_and_effective_contact():
     assert lead["lifecycle"]["first_effective_contact_at"]
 
 
+def test_legacy_detail_update_records_canonical_owner_other_and_stops_sla(monkeypatch):
+    import api_crm
+
+    db, _, _ = fixture("COLD")
+    monkeypatch.setattr(api_crm, "get_db", lambda: db)
+    monkeypatch.setattr("chatbot.crm_management.utc_now", lambda: local(20, 10))
+
+    result = api_crm.update_lead_crm_data(
+        "56911111111",
+        {
+            "assignment_cycle_id": "cycle-1",
+            "management_request_id": "legacy-owner-other-1",
+            "idempotency_key": "legacy-owner-other-1",
+            "interaction_type": "propietario",
+            "resultado_gestion": "owner_otro",
+            "details_json": {
+                "owner_cat_radio": "prop_otro",
+                "owner_other_detail": "Solicita revisar la publicación con su familia",
+            },
+            "_actor_user_id": "user-1",
+            "_actor_can_manage_any_cycle": False,
+        },
+    )
+
+    lead, cycle = refreshed(db)
+    assert result["status"] == "ok"
+    assert result["new_state"] == "CONTACTED"
+    assert lead["lifecycle"]["first_valid_management_at"] == local(20, 10)
+    assert cycle["first_valid_management_at"] == local(20, 10)
+    assert cycle["sla_first_management_status"] == "completed"
+    assert calculate_sla(
+        assigned_at=cycle["assigned_at"],
+        first_valid_management_at=cycle["first_valid_management_at"],
+        now=local(20, 14),
+    )["fulfilled"] is True
+    assert len(db["crm_management_results"].docs) == 1
+    assert db["crm_management_results"].docs[0]["result_type"] == "OTHER_EXPLICIT"
+    assert db["crm_events"].docs[0]["type"] == "CONTACT_RESULT"
+
+
 def test_duplicate_result_is_idempotent_and_keeps_one_first_management():
     db, _, _ = fixture(); first = record(db, "CALL_NO_ANSWER", "same"); second = record(db, "CALL_NO_ANSWER", "same")
     assert first["_id"] == second["_id"]

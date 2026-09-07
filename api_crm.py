@@ -1721,151 +1721,53 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 def update_lead_crm_data(phone, data):
     db = get_db()
     phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    
+
     current_lead = db["leads"].find_one({"phone": {"$regex": phone_clean}})
-    if not current_lead: return False
-    
-    # --- VALIDACIÓN DEL TRIÁNGULO DE CONTROL (CRITICA 1 & 3) ---
-    interaction_type = data.get("interaction_type")
-    result = data.get("resultado_gestion")
-    next_date = data.get("next_action_date")
-    actor_name = str(data.get("_actor_name") or "").strip()
-    
-    # Regla: Si hablé, OBLIGATORIO definir siguiente paso o cerrar
-    if interaction_type == "hable" and result != "lead_cerrado":
-        if not next_date:
-            # Rechazar gestión incompleta (Backend Enforcement)
-            logger.warning("CRM management rejected: 'Hablé' sin próxima fecha. phone=%s", phone_clean)
-            return False 
-    
-    # A failed attempt and an empty CONTACTED submission are audit events, not
-    # canonical management.  Reject before update_stage so no partial state
-    # transition can be written ahead of the result log.
-    normalized_result = None
-    if result:
-        from chatbot.crm_metrics import normalize_result
-        normalized_result = normalize_result(result)
-    if not normalized_result:
-        logger.warning("CRM management rejected without canonical result: phone=%s", phone_clean)
+    if not current_lead:
         return False
-    new_state = data.get("estado_calculado")
-    if normalized_result == "NO_RESPONDIO":
-        new_state = PipelineStage.NEW
-    elif not new_state:
-        res = data.get("resultado_gestion")
-        if res == "visita_agendada": new_state = "visita"
-        elif res == "lead_cerrado": new_state = "cerrado"
-        elif res in ["lead_pausado", "requiere_seguimiento"]: new_state = "gestion"
-        else: new_state = "gestion"
 
-    old_state = current_lead.get("stage") or current_lead.get("crm_estado", PipelineStage.NEW)
-    
-    # 1. ACTUALIZACIÓN DE ESTADO VIA SERVICE (Prioridad Absoluta)
-    # Forzamos promoción si es NEW y hay gestión
-    if (normalized_result != "NO_RESPONDIO" and new_state == old_state) and (old_state == PipelineStage.NEW or str(old_state).lower() in ["nuevo", "new"]):
-        new_state = "gestion"
+    actor_user_id = str(data.get("_actor_user_id") or "").strip()
+    if not actor_user_id:
+        raise ValueError("Usuario sin identidad canónica")
 
-    if normalized_result != "NO_RESPONDIO" and new_state and new_state != old_state:
-        valid_stage = new_state
-        if new_state == "visita": valid_stage = PipelineStage.VISIT_SCHEDULED
-        elif new_state == "cerrado":
-            close_cat = None
-            raw_details = data.get("details_json") or {}
-            if isinstance(raw_details, dict):
-                close_cat = raw_details.get("close_cat_radio")
-            elif isinstance(raw_details, str):
-                try:
-                    import json
-                    close_cat = json.loads(raw_details).get("close_cat_radio")
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            valid_stage = PipelineStage.CLOSED_WON if close_cat == "ganado" else PipelineStage.CLOSED_LOST
-        elif new_state == "gestion": valid_stage = PipelineStage.CONTACTED
-        
-        stage_updated = CrmService.update_stage(
-            phone_clean, valid_stage, actor=actor_name or "agent", notes=data.get("notas")
-        )
+    # The legacy detail form must use the same canonical write path as the
+    # quick-management form.  Otherwise the lead is promoted to CONTACTED and
+    # receives a HUMAN_NOTE, while the assignment cycle never gets
+    # first_valid_management_at and the SLA keeps running.
+    from chatbot.crm_management import (
+        StaleAssignmentCycleError,
+        record_legacy_management_result,
+    )
+    from chatbot.crm_metrics import active_assignment_cycle
 
-        # A valid human management must never remain as NEW just because a
-        # more advanced milestone (for example VISIT_SCHEDULED) is missing a
-        # required field.  Preserve the milestone validation, but fall back to
-        # CONTACTED so the list and KPIs reflect that the lead was managed.
-        if not stage_updated and (
-            old_state == PipelineStage.NEW
-            or str(old_state).lower() in {"nuevo", "new", "pipelinestage.new"}
-        ):
-            stage_updated = CrmService.update_stage(
-                phone_clean,
-                PipelineStage.CONTACTED,
-                actor=actor_name or "agent",
-                notes=data.get("notas"),
-            )
+    requested_cycle_id = str(data.get("assignment_cycle_id") or "").strip()
+    cycle = (
+        db["crm_assignment_cycles"].find_one({
+            "lead_id": current_lead["_id"],
+            "assignment_cycle_id": requested_cycle_id,
+            "cycle_status": "active",
+            "unassigned_at": None,
+        })
+        if requested_cycle_id else active_assignment_cycle(db, current_lead["_id"])
+    )
+    if not cycle:
+        if requested_cycle_id and active_assignment_cycle(db, current_lead["_id"]):
+            raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+        raise ValueError("El lead no tiene un ciclo de asignación activo")
 
-        if stage_updated:
-            refreshed_lead = db["leads"].find_one({"_id": current_lead["_id"]}, {"pipeline_stage": 1})
-            new_state = (refreshed_lead or {}).get("pipeline_stage") or valid_stage
-        else:
-            # The result itself is still a valid human management even if the
-            # milestone promotion was blocked by a required-field rule (for
-            # example VISIT_SCHEDULED without visit_date).  Never discard the
-            # management: keep the current stage and persist the result below so
-            # the lead is not left unattended by a failed transition.
-            logger.warning(
-                "CRM milestone transition skipped (required fields not met); management still recorded: "
-                "phone=%s target=%s old=%s",
-                phone_clean,
-                valid_stage,
-                old_state,
-            )
-            if not (
-                old_state == PipelineStage.NEW
-                or str(old_state).lower() in {"nuevo", "new", "pipelinestage.new"}
-            ):
-                new_state = old_state
-
-    # Agendar tarea solo si hay fecha válida
-    if next_date:
-        schedule_crm_task(phone_clean, next_date, data.get("notas"))
-    elif new_state in [PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST]:
-        # Cleanup: Si se cierra el lead, resolver tareas pendientes y cerrar ciclo
-        db["crm_tasks"].update_many(
-            {"phone": phone_clean, "status": "pending"},
-            {"$set": {"status": "completed", "resolved_at": datetime.now(), "resolution": "lead_closed"}}
-        )
-        # Close the active cycle idempotently
-        from chatbot.crm_metrics import active_assignment_cycle
-        cycle_to_close = active_assignment_cycle(db, current_lead["_id"])
-        if cycle_to_close:
-            db["crm_assignment_cycles"].update_one(
-                {"_id": cycle_to_close["_id"], "cycle_status": "active"},
-                {"$set": {"cycle_status": "closed", "closed_at": datetime.now(CHILE_TZ),
-                          "closed_reason": "lead_closed", "unassigned_at": datetime.now(CHILE_TZ)}},
-            )
-
-    # Log de gestión comercial (Acción User) -> Usamos el log centralizado
-    log_event(phone_clean, InteractionType.HUMAN_NOTE, actor_name or "unresolved_actor", {
-        "interaction_type": interaction_type,
-        "result": result,
-        "notes": data.get("notas"),
-        "action_label": data.get("action_label"),
-        "details_json": data.get("details_json", {}),
-        "meaningful_change": bool(result or data.get("notas") or next_date),
-    }, lead_id=current_lead["_id"], actor_type="human", result=result,
-       confirmed=bool(result))
-    
-    # NOTA: No actualizamos "crm_estado" manual en DB, update_stage ya lo hizo.
-    # Solo actualizamos last_crm_update si no hubo cambio de estado (si hubo, update_stage lo hizo)
-    if new_state == old_state:
-         db["leads"].update_one(
-            {"phone": {"$regex": phone_clean}},
-            {"$set": {"last_crm_update": datetime.now()}} # Mantenemos datetime.now() para sorting interno de mongo si se usa
-        )
-
+    result = record_legacy_management_result(
+        db,
+        lead=current_lead,
+        actor_user_id=actor_user_id,
+        actor_can_manage_any_cycle=bool(data.get("_actor_can_manage_any_cycle")),
+        assignment_cycle_id=cycle["assignment_cycle_id"],
+        data=data,
+    )
     return {
         "status": "ok",
-        "new_state": new_state,
-        "next_action_date": next_date,
-        "event_id": "centralized_log"
+        "new_state": result.get("new_state") or result.get("pipeline_stage"),
+        "next_action_date": result.get("next_action_date") or result.get("next_follow_up_at"),
+        "event_id": result.get("_id") or result.get("idempotency_key"),
     }
 
 

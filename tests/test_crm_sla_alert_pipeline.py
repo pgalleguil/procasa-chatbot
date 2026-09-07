@@ -185,6 +185,28 @@ async def test_catch_up_guard_excludes_backlog_before_recovery_marker():
 
 
 @pytest.mark.asyncio
+async def test_catch_up_guard_runs_before_batch_limit_so_fresh_leads_are_not_starved():
+    db = populated_db()
+    db["leads"].docs.append(lead("l-new"))
+    db["crm_assignment_cycles"].docs = [
+        cycle("l1", "c-backlog", assigned=cl(9)),
+        cycle("l-new", "c-fresh", assigned=cl(10)),
+    ]
+    # The old candidate sorts first by deadline. With the previous ordering,
+    # MAX_PER_RUN=1 selected it and the catch-up guard discarded the whole
+    # batch, so the fresh candidate was never persisted.
+    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 30)
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True), \
+         patch("chatbot.crm_sla_alert_pipeline.MAX_PER_RUN", 1):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11))
+
+    assert result["excluded_by_catch_up"] == 1
+    assert result["persisted"] == 1
+    assert result["excluded_by_limit"] == 0
+    assert db[COLLECTION].docs[0]["assignment_cycle_id"] == "c-fresh"
+
+
+@pytest.mark.asyncio
 async def test_catch_up_marker_is_initialized_once_on_first_run():
     db = populated_db()
     db["crm_sla_alert_meta"].docs = []  # no marker yet

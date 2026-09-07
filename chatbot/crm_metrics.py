@@ -40,11 +40,11 @@ CONTACT_ATTEMPT_RESULTS = frozenset({
     "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
     "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
-    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER", "OTHER_EXPLICIT",
 })
 EFFECTIVE_CONTACT_RESULTS = frozenset({
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
-    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "OTHER_EXPLICIT",
 })
 VALID_MANAGEMENT_RESULTS = frozenset({
     # Failed/no-response attempts are auditable contact attempts and stop the
@@ -54,7 +54,7 @@ VALID_MANAGEMENT_RESULTS = frozenset({
     "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
     "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
     "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
-    "DISCARDED_VALID_REASON", "SCHEDULE_FOLLOW_UP",
+    "DISCARDED_VALID_REASON", "SCHEDULE_FOLLOW_UP", "OTHER_EXPLICIT",
 })
 HUMAN_ACTOR_TYPES = frozenset({"human", "agent", "administrator", "supervisor"})
 
@@ -155,6 +155,10 @@ def normalize_result(value: Any) -> Optional[str]:
         "LLAMADA_SIN_RESPUESTA": "CALL_NO_ANSWER",
         "CONTACTO_EFECTIVO": "EFFECTIVE_CONTACT",
         "NUMERO_INVALIDO": "INVALID_NUMBER",
+        # Legacy owner-management values persisted by the old detail form.
+        "OWNER_OTRO": "OTHER_EXPLICIT",
+        "NO_RESPONDE_LLAMADA": "CALL_NO_ANSWER",
+        "NO_LOGRA_CONTACTO": "CALL_NO_ANSWER",
         # ---- "Gestión Propietario" results (crm_lead_detail ownerReasons) ----
         # Owner contact achieved: positive / informative outcomes.
         "AUTORIZA_VISITA": "EFFECTIVE_CONTACT",

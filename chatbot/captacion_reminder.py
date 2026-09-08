@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -13,37 +14,101 @@ DOMAIN = "captacion_reminder"
 MESSAGE_TYPE = "scheduled_reminder"
 RECIPIENT_ROLE = "executive"
 COLLECTION = "crm_tasks"
+PROCESSING_LEASE = timedelta(minutes=10)
+RETRY_BASE_DELAY = timedelta(minutes=5)
+RETRY_MAX_DELAY = timedelta(hours=1)
+MAX_DELIVERY_ATTEMPTS = 3
+RETRYABLE_STATES = ("failed_retryable", "delivery_unknown")
+PROVIDER_TIMEOUT_SECONDS = 90
+logger = logging.getLogger(__name__)
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 def _lease_filter(now: datetime) -> dict[str, Any]:
-    return {"$or": [{"lease_until": {"$exists": False}}, {"lease_until": None}, {"lease_until": {"$lte": now}}]}
+    return {
+        "$or": [
+            {"processing_lease_until": {"$lte": now}},
+            {
+                "processing_lease_until": {"$exists": False},
+                "lease_until": {"$lte": now},
+            },
+            {
+                "processing_lease_until": {"$exists": False},
+                "lease_until": {"$exists": False},
+            },
+        ]
+    }
+
+
+def _retry_delay(attempts: int) -> timedelta:
+    multiplier = max(0, min(int(attempts or 1) - 1, 6))
+    return min(RETRY_BASE_DELAY * (2 ** multiplier), RETRY_MAX_DELAY)
+
+
+def _claim_filter(now: datetime) -> dict[str, Any]:
+    return {
+        "message_domain": DOMAIN,
+        "$or": [
+            {
+                "status": "pending",
+                "execute_at": {"$lte": now},
+                "$or": [
+                    {"next_attempt_at": {"$exists": False}},
+                    {"next_attempt_at": {"$lte": now}},
+                ],
+            },
+            {
+                "status": {"$in": list(RETRYABLE_STATES)},
+                "execute_at": {"$lte": now},
+                "next_attempt_at": {"$lte": now},
+            },
+            {
+                "status": "processing",
+                "execute_at": {"$lte": now},
+                **_lease_filter(now),
+            },
+        ],
+    }
 
 def claim_due_reminder(db, *, worker_id: str, now: datetime | None = None, task_id=None):
     now = now or utc_now()
-    query: dict[str, Any] = {
-        "message_domain": DOMAIN, "status": "pending",
-        "execute_at": {"$lte": now}, **_lease_filter(now),
-    }
+    query: dict[str, Any] = _claim_filter(now)
     if task_id is not None:
         query["_id"] = task_id
     token = str(uuid.uuid4())
-    return db[COLLECTION].find_one_and_update(
+    task = db[COLLECTION].find_one_and_update(
         query,
         {"$set": {"status": "processing", "lease_owner": worker_id,
-                  "lease_token": token, "claimed_at": now,
-                  "lease_until": now + timedelta(minutes=3),
-                  "updated_at": now},
+                   "lease_token": token, "claimed_at": now,
+                   "processing_started_at": now,
+                   "processing_lease_until": now + PROCESSING_LEASE,
+                   # Keep the old field during the compatibility window so
+                   # an older process cannot mistake the new lease for none.
+                   "lease_until": now + PROCESSING_LEASE,
+                   "updated_at": now},
          "$inc": {"attempts": 1},
          "$push": {"history": {"at": now, "state": "processing", "reason": "atomic_claim"}}},
         sort=[("execute_at", 1)], return_document=ReturnDocument.AFTER,
     )
+    if task and task.get("status") == "processing":
+        history = task.get("history") or []
+        was_recovered = any(
+            isinstance(entry, dict) and entry.get("state") == "processing"
+            and entry.get("reason") == "stale_lease_recovery"
+            for entry in history[:-1]
+        )
+        if was_recovered:
+            logger.warning(
+                "[CAPTACION_REMINDER] stale_processing_recovered task_id=%s obj_id=%s",
+                task.get("task_id"), task.get("obj_id"),
+            )
+    return task
 
 def resolve_recipient(db, task):
     # Target identity is persisted by the authenticated producer.  Name lookup
     # is a legacy fallback only when it is unique among active users.
-    recipient_id = task.get("target_user_id") or task.get("recipient_user_id")
+    recipient_id = task.get("recipient_user_id") or task.get("target_user_id")
     if recipient_id:
         from bson import ObjectId
         try:
@@ -133,7 +198,11 @@ def reminder_text(task, captacion):
         raise ValueError("invalid_unicode_input")
     from .followup_tracking import build_followup_open_url
     base_url = str(__import__("config").Config.CRM_BASE_URL).rstrip("/")
-    url = build_followup_open_url(task, base_url=base_url) or f"{base_url}/captacion/{task['obj_id']}"
+    # The worker passes its delivery timestamp so token issuance is explicit
+    # and cannot occur while the task is merely being scheduled.
+    url = build_followup_open_url(
+        task, base_url=base_url, emitted_at=utc_now()
+    ) or f"{base_url}/captacion/{task['obj_id']}"
     lines = [f"{bell} *RECORDATORIO DE CAPTACI\u00d3N*", ""]
     if contact:
         lines.append(f"{person} *Contacto:* {contact}")
@@ -147,58 +216,167 @@ def reminder_text(task, captacion):
                   f"{warning} Registra el resultado de la gesti\u00f3n en el m\u00f3dulo de captaciones."])
     return "\n".join(lines)
 
+def _claimed_filter(task: dict[str, Any]) -> dict[str, Any]:
+    return {"_id": task["_id"], "status": "processing", "lease_token": task.get("lease_token")}
+
+
+def _clear_lease_update(*, clear_next_attempt: bool = False) -> dict[str, Any]:
+    fields = {
+        "lease_owner": "",
+        "lease_token": "",
+        "lease_until": "",
+        "processing_lease_until": "",
+    }
+    if clear_next_attempt:
+        fields["next_attempt_at"] = ""
+    return fields
+
+
+def _mark_terminal(db, task, *, error: str, reason: str, now: datetime | None = None):
+    now = now or utc_now()
+    db[COLLECTION].update_one(
+        _claimed_filter(task),
+        {
+            "$set": {
+                "status": "failed_terminal",
+                "error": error,
+                "resolution": "retry_exhausted" if reason == "max_attempts" else None,
+                "updated_at": now,
+            },
+            "$unset": _clear_lease_update(clear_next_attempt=True),
+            "$push": {"history": {"at": now, "state": "failed_terminal", "reason": reason}},
+        },
+    )
+    logger.error(
+        "[CAPTACION_REMINDER] reminder_delivery_failed task_id=%s obj_id=%s status=failed_terminal reason=%s",
+        task.get("task_id"), task.get("obj_id"), reason,
+    )
+    return {"status": "failed_terminal", "provider_message_id": None}
+
+
+def _mark_retryable_failure(
+    db,
+    task,
+    *,
+    error: str,
+    state: str = "failed_retryable",
+    provider_called: bool = False,
+    provider_message_id: str | None = None,
+    now: datetime | None = None,
+):
+    now = now or utc_now()
+    attempts = int(task.get("attempts") or 0)
+    if attempts >= MAX_DELIVERY_ATTEMPTS:
+        return _mark_terminal(db, task, error=error, reason="max_attempts", now=now)
+    next_attempt_at = now + _retry_delay(attempts)
+    db[COLLECTION].update_one(
+        _claimed_filter(task),
+        {
+            "$set": {
+                "status": state,
+                "provider_called": bool(provider_called),
+                "last_error": error,
+                "updated_at": now,
+                "next_attempt_at": next_attempt_at,
+            },
+            "$unset": _clear_lease_update(),
+            "$push": {
+                "delivery_attempts": {
+                    "at": now,
+                    "accepted": False,
+                    "delivery_status": error,
+                    "provider_message_id": provider_message_id,
+                },
+                "history": {"at": now, "state": state, "reason": error},
+            },
+        },
+    )
+    logger.info(
+        "[CAPTACION_REMINDER] retry_scheduled task_id=%s obj_id=%s state=%s attempt=%s next_attempt_at=%s",
+        task.get("task_id"), task.get("obj_id"), state, attempts, next_attempt_at.isoformat(),
+    )
+    return {"status": state, "provider_message_id": provider_message_id}
+
+
 async def deliver_claimed_reminder(db, task):
-    """Deliver one already-claimed reminder. Never touches other domains."""
-    token = task.get("lease_token")
+    """Deliver one claimed reminder with bounded retries and lease fencing."""
+    attempts = int(task.get("attempts") or 0)
+    if attempts > MAX_DELIVERY_ATTEMPTS:
+        return _mark_terminal(db, task, error="max_delivery_attempts_exceeded", reason="max_attempts")
+
     recipient, phone = resolve_recipient(db, task)
     if not recipient or not phone:
-        db[COLLECTION].update_one(
-            {"_id": task["_id"], "status": "processing", "lease_token": token},
-            {"$set": {"status": "failed_terminal", "error": "active_recipient_phone_missing",
-                      "updated_at": utc_now()},
-             "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""},
-             "$push": {"history": {"at": utc_now(), "state": "failed_terminal",
-                                    "reason": "active_recipient_phone_missing"}}},
+        return _mark_terminal(
+            db, task, error="active_recipient_phone_missing",
+            reason="active_recipient_phone_missing",
         )
-        return {"status": "failed_terminal", "provider_message_id": None}
-    from .whatsapp_client import send_whatsapp_message_detailed
+
     from config import Config
     from bson import ObjectId
+
+    obj_id = str(task.get("obj_id") or "").strip()
+    if not obj_id:
+        return _mark_terminal(db, task, error="captacion_id_missing", reason="task_entity_missing")
     try:
-        captacion = Config.get_captacion_collection(db).find_one({"_id": ObjectId(task["obj_id"])})
+        captacion = Config.get_captacion_collection(db).find_one({"_id": ObjectId(obj_id)})
     except Exception:
-        captacion = None
+        captacion = Config.get_captacion_collection(db).find_one({"_id": obj_id})
     if not captacion:
-        db[COLLECTION].update_one(
-            {"_id": task["_id"], "status": "processing", "lease_token": token},
-            {"$set": {"status": "failed_terminal", "error": "captacion_not_found", "updated_at": utc_now()},
-             "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""}},
-        )
-        return {"status": "failed_terminal", "provider_message_id": None}
+        return _mark_terminal(db, task, error="captacion_not_found", reason="captacion_not_found")
+
     try:
+        # reminder_text generates and immediately verifies the URL. No provider
+        # call is made if the dedicated secret or the token is invalid.
         content = reminder_text(task, captacion)
-    except ValueError as exc:
-        db[COLLECTION].update_one(
-            {"_id": task["_id"], "status": "processing", "lease_token": token},
-            {"$set": {"status": "failed_terminal", "error": str(exc), "updated_at": utc_now()},
-             "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""},
-             "$push": {"history": {"at": utc_now(), "state": "failed_terminal",
-                                    "reason": "invalid_unicode_input"}}},
+    except Exception as exc:
+        from chatbot.followup_tracking import FollowupConfigurationError, FollowupTokenError
+
+        if isinstance(exc, (FollowupConfigurationError, FollowupTokenError)):
+            return _mark_retryable_failure(db, task, error=str(exc) or type(exc).__name__)
+        return _mark_terminal(
+            db, task, error=str(exc) or type(exc).__name__, reason="message_preflight_failed",
         )
-        return {"status": "failed_terminal", "provider_message_id": None}
-    result = await send_whatsapp_message_detailed(phone, content)
+
+    from .whatsapp_client import send_whatsapp_message_detailed
+
+    try:
+        result = await asyncio.wait_for(
+            send_whatsapp_message_detailed(phone, content),
+            timeout=PROVIDER_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[CAPTACION_REMINDER] reminder_delivery_failed task_id=%s obj_id=%s reason=provider_timeout",
+            task.get("task_id"), obj_id,
+        )
+        result = {
+            "success": False,
+            "delivery_status": "delivery_unknown",
+            "provider_call_uncertain": True,
+        }
+    except Exception as exc:
+        logger.warning(
+            "[CAPTACION_REMINDER] reminder_delivery_failed task_id=%s obj_id=%s reason=%s",
+            task.get("task_id"), obj_id, type(exc).__name__,
+        )
+        result = {
+            "success": False,
+            "delivery_status": "provider_exception",
+            "provider_call_uncertain": False,
+        }
+
     now = utc_now()
     current_state = canonical_captacion_state(captacion)
     masked_phone = "****" + str(phone)[-4:]
     content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-    update_filter = {"_id": task["_id"], "status": "processing", "lease_token": token}
+    update_filter = _claimed_filter(task)
     if result.get("success"):
         db[COLLECTION].update_one(update_filter, {
             "$set": {"status": "notified", "provider_called": True,
                      "provider_message_id": result.get("provider_message_id"),
                      "actually_delivered": True, "delivered_at": now, "sent_at": now,
-                     "recipient_user_id": str(recipient["_id"]),
-                     "target_user_id": str(recipient["_id"]),
+                     "recipient_user_id": str(recipient.get("_id") or task.get("recipient_user_id") or ""),
+                     "target_user_id": str(recipient.get("_id") or task.get("target_user_id") or ""),
                      "recipient_name": recipient.get("nombre"),
                      "recipient_phone_masked": masked_phone,
                      "state_at_delivery": current_state,
@@ -206,10 +384,10 @@ async def deliver_claimed_reminder(db, task):
                      "message_content": content, "content_hash": content_hash,
                      "late_delivery_reason": task.get("late_delivery_reason"),
                      "updated_at": now},
-            "$unset": {"lease_owner": "", "lease_token": "", "lease_until": "", "next_attempt_at": ""},
-            "$push": {"delivery_attempts": {"at": now, "accepted": True,
-                                              "provider_message_id": result.get("provider_message_id")},
-                      "history": {"at": now, "state": "notified", "reason": "provider_accepted"}},
+             "$unset": _clear_lease_update(clear_next_attempt=True),
+             "$push": {"delivery_attempts": {"at": now, "accepted": True,
+                                               "provider_message_id": result.get("provider_message_id")},
+                        "history": {"at": now, "state": "notified", "reason": "provider_accepted"}},
         })
         try:
             from .followup_tracking import record_followup_event
@@ -222,16 +400,18 @@ async def deliver_claimed_reminder(db, task):
             # Historical tasks intentionally remain legacy_unattributed.
             pass
         return {"status": "notified", "provider_message_id": result.get("provider_message_id")}
+
     state = "delivery_unknown" if result.get("delivery_status") == "delivery_unknown" else "failed_retryable"
-    db[COLLECTION].update_one(update_filter, {
-        "$set": {"status": state, "provider_called": bool(result.get("provider_call_uncertain")),
-                 "updated_at": now, "next_attempt_at": now + timedelta(minutes=5),
-                 "last_error": result.get("delivery_status")},
-        "$unset": {"lease_owner": "", "lease_token": "", "lease_until": ""},
-        "$push": {"delivery_attempts": {"at": now, "accepted": False,
-                                          "delivery_status": result.get("delivery_status")}},
-    })
-    return {"status": state, "provider_message_id": None}
+    return _mark_retryable_failure(
+        db,
+        task,
+        error=str(result.get("delivery_status") or "provider_rejected"),
+        state=state,
+        provider_called=bool(result.get("provider_call_uncertain")),
+        provider_message_id=result.get("provider_message_id"),
+        now=now,
+    )
+
 
 async def process_one_due_reminder(db, *, worker_id: str, task_id=None):
     task = claim_due_reminder(db, worker_id=worker_id, task_id=task_id)

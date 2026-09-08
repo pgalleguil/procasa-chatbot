@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 from statistics import median
 import time
 import uuid
@@ -19,7 +20,12 @@ from typing import Any, Mapping
 from pymongo.errors import DuplicateKeyError
 
 
-TRACKING_VERSION = "followup_tracking_v1"
+logger = logging.getLogger(__name__)
+
+TOKEN_VERSION = 2
+TRACKING_VERSION = "followup_tracking_v2"
+LEGACY_TRACKING_VERSION = "followup_tracking_v1"
+TRACKING_VERSIONS = frozenset({TRACKING_VERSION, LEGACY_TRACKING_VERSION})
 EVENT_COLLECTION = "followup_events"
 DETAIL_OPEN_UNIQUES_COLLECTION = "captacion_detail_open_uniques"
 EVENT_TYPES = frozenset({
@@ -40,6 +46,10 @@ class FollowupTokenError(ValueError):
     """The token or its referenced task cannot be used for attribution."""
 
 
+class FollowupConfigurationError(RuntimeError):
+    """The process cannot safely issue or validate a signed follow-up token."""
+
+
 def ensure_followup_indexes(db) -> None:
     global _INDEXES_READY_DB_IDS
     db_key = id(getattr(db, "client", db))
@@ -58,6 +68,17 @@ def ensure_followup_indexes(db) -> None:
     task_create_index = getattr(task_collection, "create_index", None)
     if task_create_index:
         task_create_index("task_id", name="crm_task_lifecycle_id")
+        # Do not collide with historical v1/legacy duplicates. New v2 tasks
+        # are protected by a partial unique key instead.
+        task_create_index(
+            [("idempotency_key", 1)],
+            unique=True,
+            partialFilterExpression={
+                "followup_tracking_version": TRACKING_VERSION,
+                "idempotency_key": {"$exists": True},
+            },
+            name="crm_task_captacion_v2_idempotency",
+        )
     unique_collection = db[DETAIL_OPEN_UNIQUES_COLLECTION]
     unique_create_index = getattr(unique_collection, "create_index", None)
     if unique_create_index:
@@ -69,10 +90,13 @@ def ensure_followup_indexes(db) -> None:
     _INDEXES_READY_DB_IDS.add(db_key)
 
 
-def _secret() -> bytes:
+def _secret(version: int) -> bytes:
     from config import Config
 
-    return str(Config.SECRET_KEY).encode("utf-8")
+    try:
+        return Config.require_followup_token_secret(version=version).encode("utf-8")
+    except RuntimeError as exc:
+        raise FollowupConfigurationError("followup_token_configuration_invalid") from exc
 
 
 def _encode(value: bytes) -> str:
@@ -83,14 +107,26 @@ def _decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def _sign(body: str) -> str:
-    return _encode(hmac.new(_secret(), body.encode("ascii"), hashlib.sha256).digest())
+def _sign(body: str, *, version: int) -> str:
+    return _encode(hmac.new(_secret(version), body.encode("ascii"), hashlib.sha256).digest())
 
 
-def issue_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None) -> str:
+def _issue_token_for_version(
+    task_id: Any,
+    *,
+    expires_at: Any = None,
+    now: Any = None,
+    version: int = TOKEN_VERSION,
+) -> str:
     task_value = str(task_id or "").strip()
     if not task_value:
         raise FollowupTokenError("followup_task_id_missing")
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        raise FollowupTokenError("followup_token_invalid")
+    if version not in {1, TOKEN_VERSION}:
+        raise FollowupTokenError("followup_token_invalid")
     current = now or datetime.now(timezone.utc)
     if isinstance(current, datetime):
         if current.tzinfo is None:
@@ -102,48 +138,141 @@ def issue_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = Non
     if isinstance(expiry, datetime):
         if expiry.tzinfo is None:
             expiry = expiry.replace(tzinfo=timezone.utc)
-        expiry_epoch = max(expiry.timestamp(), current_epoch) + TOKEN_TTL.total_seconds()
+        # The task's scheduled execution is the lifetime anchor.  A delayed
+        # worker must not silently extend the link from its delivery time.
+        expiry_epoch = expiry.timestamp() + TOKEN_TTL.total_seconds()
     else:
         expiry_epoch = current_epoch + TOKEN_TTL.total_seconds()
-    payload = {"v": 1, "task_id": task_value, "exp": int(expiry_epoch)}
+    payload = {"v": version, "task_id": task_value, "exp": int(expiry_epoch)}
     body = _encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-    return f"{body}.{_sign(body)}"
+    try:
+        signature = _sign(body, version=version)
+    except FollowupConfigurationError:
+        logger.error(
+            "[FOLLOWUP] token_issue_failed task_id=%s token_version=%s",
+            task_value,
+            version,
+        )
+        raise
+    return f"{body}.{signature}"
+
+
+def issue_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None) -> str:
+    """Issue a new v2 token. New code cannot accidentally mint legacy v1."""
+    return _issue_token_for_version(task_id, expires_at=expires_at, now=now, version=TOKEN_VERSION)
+
+
+def _issue_legacy_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None) -> str:
+    """Issue v1 only for an explicitly enabled legacy delivery path."""
+    return _issue_token_for_version(task_id, expires_at=expires_at, now=now, version=1)
 
 
 def verify_followup_token(token: str, *, now: Any = None) -> dict[str, Any]:
     raw = str(token or "").strip()
     try:
         body, signature = raw.split(".", 1)
-        expected = _sign(body)
-        if not hmac.compare_digest(signature, expected):
-            raise FollowupTokenError("followup_token_invalid")
         payload = json.loads(_decode(body).decode("utf-8"))
-        if payload.get("v") != 1 or not str(payload.get("task_id") or "").strip():
+        if not isinstance(payload, dict):
             raise FollowupTokenError("followup_token_invalid")
-        current = now.timestamp() if isinstance(now, datetime) else time.time()
-        if int(payload.get("exp") or 0) < int(current):
+        version = int(payload.get("v") or 0)
+        if version not in {1, TOKEN_VERSION}:
+            raise FollowupTokenError("followup_token_invalid")
+        expected = _sign(body, version=version)
+        if not hmac.compare_digest(signature, expected):
+            logger.warning(
+                "[FOLLOWUP] token_validation_failed token_version=%s reason=signature_mismatch",
+                version,
+            )
+            raise FollowupTokenError("followup_token_invalid")
+        if not str(payload.get("task_id") or "").strip() or not int(payload.get("exp") or 0):
+            logger.warning(
+                "[FOLLOWUP] token_validation_failed token_version=%s reason=payload_invalid",
+                version,
+            )
+            raise FollowupTokenError("followup_token_invalid")
+        current_value = now or datetime.now(timezone.utc)
+        if isinstance(current_value, datetime):
+            if current_value.tzinfo is None:
+                current_value = current_value.replace(tzinfo=timezone.utc)
+            current = current_value.timestamp()
+        else:
+            current = time.time()
+        if int(payload["exp"]) < int(current):
+            logger.info(
+                "[FOLLOWUP] token_expired task_id=%s token_version=%s",
+                str(payload.get("task_id")),
+                version,
+            )
             raise FollowupTokenError("followup_token_expired")
         return payload
+    except FollowupConfigurationError:
+        logger.error("[FOLLOWUP] token_validation_failed reason=configuration_invalid")
+        raise
     except FollowupTokenError:
         raise
-    except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError):
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError, UnicodeDecodeError, OverflowError):
+        logger.warning("[FOLLOWUP] token_validation_failed token_version=unknown reason=malformed")
         raise FollowupTokenError("followup_token_invalid")
 
 
 def is_tracked_task(task: Mapping[str, Any] | None) -> bool:
-    return bool(task and task.get("followup_tracking_version") == TRACKING_VERSION)
+    return bool(task and task.get("followup_tracking_version") in TRACKING_VERSIONS)
 
 
-def task_query(task_id: Any) -> dict[str, Any]:
-    return {"task_id": str(task_id), "followup_tracking_version": TRACKING_VERSION}
+def tracking_version_for_token(version: Any) -> str | None:
+    try:
+        normalized = int(version)
+    except (TypeError, ValueError):
+        return None
+    return {
+        TOKEN_VERSION: TRACKING_VERSION,
+        1: LEGACY_TRACKING_VERSION,
+    }.get(normalized)
 
 
-def find_tracked_task(db, task_id: Any) -> dict[str, Any] | None:
-    return db["crm_tasks"].find_one(task_query(task_id))
+def task_query(task_id: Any, *, token_version: Any = None) -> dict[str, Any]:
+    query = {"task_id": str(task_id)}
+    tracking_version = tracking_version_for_token(token_version) if token_version is not None else None
+    if tracking_version:
+        query["followup_tracking_version"] = tracking_version
+    else:
+        query["followup_tracking_version"] = {"$in": list(TRACKING_VERSIONS)}
+    return query
+
+
+def find_tracked_task(db, task_id: Any, *, token_version: Any = None) -> dict[str, Any] | None:
+    if token_version is None:
+        # Two explicit lookups preserve compatibility with lightweight test
+        # doubles and avoid an unbounded version fallback.
+        for version in (TOKEN_VERSION, 1):
+            task = db["crm_tasks"].find_one(task_query(task_id, token_version=version))
+            if task:
+                return task
+        return None
+    tracking_version = tracking_version_for_token(token_version)
+    if not tracking_version:
+        return None
+    return db["crm_tasks"].find_one(task_query(task_id, token_version=token_version))
 
 
 def task_target_id(task: Mapping[str, Any]) -> str:
     return str(task.get("recipient_user_id") or task.get("target_user_id") or "").strip()
+
+
+def task_recipient_id(task: Mapping[str, Any]) -> str:
+    """Return the explicit recipient identity, without legacy fallbacks."""
+    return str(task.get("recipient_user_id") or "").strip()
+
+
+def expected_actor_id(task: Mapping[str, Any], token_version: Any) -> str:
+    """Resolve the actor allowed by a token version."""
+    try:
+        version = int(token_version)
+    except (TypeError, ValueError):
+        version = TOKEN_VERSION
+    if version == TOKEN_VERSION:
+        return task_recipient_id(task)
+    return task_target_id(task)
 
 
 def task_entity_id(task: Mapping[str, Any]) -> str:
@@ -159,20 +288,48 @@ def task_followup_cycle_id(task: Mapping[str, Any]) -> str | None:
     ).strip() or None
 
 
-def build_followup_open_url(task: Mapping[str, Any], *, base_url: str | None = None) -> str | None:
+def build_followup_open_url(
+    task: Mapping[str, Any], *, base_url: str | None = None, emitted_at: Any = None
+) -> str | None:
     if not is_tracked_task(task) or not task.get("task_id"):
         return None
     from config import Config
     from urllib.parse import quote
 
-    token = issue_followup_token(task["task_id"], expires_at=task.get("execute_at"))
+    task_version = 2 if task.get("followup_tracking_version") == TRACKING_VERSION else 1
+    issue = issue_followup_token if task_version == TOKEN_VERSION else _issue_legacy_followup_token
+    token = issue(task["task_id"], expires_at=task.get("execute_at"), now=emitted_at)
+    # A generated link is never sent until the same process proves that its
+    # validator accepts it. This catches configuration drift before delivery.
+    validated = verify_followup_token(token)
+    if validated.get("task_id") != str(task["task_id"]) or int(validated.get("v") or 0) != task_version:
+        raise FollowupTokenError("followup_token_invalid")
     base = str(base_url or Config.CRM_BASE_URL).rstrip("/")
+    if not base:
+        raise FollowupConfigurationError("followup_base_url_missing")
     return f"{base}/followup/open/{quote(token, safe='')}"
+
+
+def validate_followup_token_runtime() -> dict[str, Any]:
+    """Run a local v2 issue/verify probe during application startup."""
+    from config import Config
+
+    config_status = Config.validate_followup_token_configuration()
+    if not config_status.get("valid"):
+        return config_status
+    probe_now = datetime.now(timezone.utc)
+    token = issue_followup_token("__startup_followup_probe__", now=probe_now)
+    payload = verify_followup_token(token, now=probe_now)
+    if payload.get("v") != TOKEN_VERSION or payload.get("task_id") != "__startup_followup_probe__":
+        raise FollowupConfigurationError("followup_token_runtime_probe_failed")
+    return {"valid": True, "version": TOKEN_VERSION, "probe": "ok", "production": bool(Config.IS_PRODUCTION)}
 
 
 def _event_id(task_id: str, event_type: str, management_event_id: str | None = None) -> str:
     if event_type == "followup_management_created" and management_event_id:
         return f"followup:{task_id}:{event_type}:{management_event_id}"
+    if event_type == "reminder_clicked":
+        return f"followup:{task_id}:{event_type}"
     return f"followup:{task_id}:{event_type}:{uuid.uuid4()}"
 
 
@@ -440,16 +597,16 @@ def record_followup_event(
 
 def record_followup_open(db, *, token: str, entity_id: Any, actor_user_id: Any = None) -> dict[str, Any]:
     payload = verify_followup_token(token)
-    task = find_tracked_task(db, payload["task_id"])
+    task = find_tracked_task(db, payload["task_id"], token_version=payload.get("v"))
     if not task:
         raise FollowupTokenError("followup_task_not_found")
     if task.get("status") in TERMINAL_UNATTRIBUTABLE_STATUSES or task.get("resolution") in {"superseded", "superseded_duplicate"}:
         raise FollowupTokenError("followup_task_unavailable")
     if str(entity_id) != task_entity_id(task):
         raise FollowupTokenError("followup_entity_mismatch")
-    expected_actor = task_target_id(task)
-    if actor_user_id and expected_actor and str(actor_user_id) != expected_actor:
-        raise FollowupTokenError("followup_actor_mismatch")
+    expected_actor = expected_actor_id(task, payload.get("v"))
+    if not actor_user_id or not expected_actor or str(actor_user_id) != expected_actor:
+        raise FollowupTokenError("followup_actor_forbidden")
     return record_detail_open(
         db,
         entity_id=entity_id,
@@ -470,16 +627,16 @@ def record_followup_management(
     followup_cycle_id: Any = None,
 ) -> dict[str, Any]:
     payload = verify_followup_token(token)
-    task = find_tracked_task(db, payload["task_id"])
+    task = find_tracked_task(db, payload["task_id"], token_version=payload.get("v"))
     if not task:
         raise FollowupTokenError("followup_task_not_found")
     if task.get("status") in TERMINAL_UNATTRIBUTABLE_STATUSES or task.get("resolution") in {"superseded", "superseded_duplicate"}:
         raise FollowupTokenError("followup_task_unavailable")
     if str(entity_id) != task_entity_id(task):
         raise FollowupTokenError("followup_entity_mismatch")
-    expected_actor = task_target_id(task)
-    if expected_actor and str(executive_id) != expected_actor:
-        raise FollowupTokenError("followup_actor_mismatch")
+    expected_actor = expected_actor_id(task, payload.get("v"))
+    if not expected_actor or not executive_id or str(executive_id) != expected_actor:
+        raise FollowupTokenError("followup_actor_forbidden")
     when = occurred_at or datetime.now(timezone.utc)
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)

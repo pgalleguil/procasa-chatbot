@@ -15,6 +15,7 @@ from captacion_kpis import (
     DISCARDED_STATES,
 )
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
 from owner_confidence import (
@@ -1555,16 +1556,29 @@ def update_captacion_status(
     followup_error = None
     if next_followup and not operation_already_applied:
         update_fields["gestion.next_followup"] = next_followup
-        # Crear tarea en crm_tasks
+        # Persist the task now; issue the signed URL only when the worker
+        # reaches execute_at and is ready to send WhatsApp.
         try:
-            # Handle formats: "2023-12-31 15:00" or ISO
+            from chatbot.followup_tracking import (
+                TRACKING_VERSION as FOLLOWUP_TRACKING_VERSION,
+                ensure_followup_indexes,
+                record_followup_event,
+            )
+
+            creator_id = str((user_doc or {}).get("_id") or "").strip()
+            if not creator_id:
+                logger.error(
+                    "[FOLLOWUP] token_issue_failed obj_id=%s reason=creator_missing",
+                    obj_id,
+                )
+                raise ValueError("followup_creator_missing")
+
+            # Handle formats: "2023-12-31 15:00" or ISO.
             date_str = next_followup.replace("T", " ").replace("Z", "")
             try:
                 execute_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
             except ValueError:
                 execute_at = datetime.fromisoformat(date_str)
-            
-            # Localize to Chile
             if execute_at.tzinfo is None:
                 execute_at = CHILE_TZ.localize(execute_at)
 
@@ -1573,51 +1587,77 @@ def update_captacion_status(
             if any("?" in str(value or "") for value in (audit_note, old_status)):
                 logger.error("Rejected captacion reminder with degraded Unicode input")
                 return False
-            # Deduplicación por captación: el teléfono es un dummy, así que
-            # usamos obj_id para evitar crear 2 o 3 recordatorios para la misma gestión.
-            db["crm_tasks"].update_many(
-                {"lead_type": "captacion", "obj_id": obj_id_str, "status": "pending"},
-                {"$set": {"status": "completed", "resolved_at": now, "resolution": "superseded"}}
+            idempotency_key = (
+                f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}"
+                f":{creator_id}"
             )
-                
-            task = {
-                "task_id": str(uuid.uuid4()),
-                "message_domain": "captacion_reminder",
-                "message_type": "scheduled_reminder",
-                "recipient_role": "executive",
-                "target_user_id": str((user_doc or {}).get("_id") or ""),
-                "recipient_user_id": str((user_doc or {}).get("_id") or ""),
-                "recipient_name": (user_doc or {}).get("nombre") or user_name,
-                "state_at_creation": old_status,
-                "audit_note": audit_note,
-                "idempotency_key": f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}:{str((user_doc or {}).get('_id') or user_name)}",
-                "lead_type": "captacion",
-                "followup_tracking_version": "followup_tracking_v1",
-                "attribution_status": "attributed",
-                "phone": "+56900000000",
-                "obj_id": obj_id_str,
-                "target_name": user_name,
-                "type": "REMINDER_CAPTACION",
-                "status": "pending",
-                "scheduled_at": execute_at,
-                "execute_at": execute_at,
-                "attempts": 0,
-                "created_at": now,
-                "note": (
-                    str(notes).strip() if notes and str(notes).strip()
-                    else f"Contactar captación: {current_doc.get('title') or current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})"
-                ),
-                "agent": user_name
-            }
-            db["crm_tasks"].insert_one(task)
-            try:
-                from chatbot.followup_tracking import record_followup_event
-                record_followup_event(
-                    db, task=task, event_type="reminder_scheduled",
-                    occurred_at=now, source="captacion_crm",
+            ensure_followup_indexes(db)
+            existing_task = db["crm_tasks"].find_one({
+                "idempotency_key": idempotency_key,
+                "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+            })
+            if not existing_task:
+                # Historical v1 tasks with the same key must not block a new
+                # v2 task. Only pending tasks are superseded.
+                db["crm_tasks"].update_many(
+                    {"lead_type": "captacion", "obj_id": obj_id_str, "status": "pending"},
+                    {"$set": {"status": "completed", "resolved_at": now, "resolution": "superseded"}}
                 )
-            except ValueError:
-                pass
+                inserted_new = True
+                task = {
+                    "task_id": str(uuid.uuid4()),
+                    "message_domain": "captacion_reminder",
+                    "message_type": "scheduled_reminder",
+                    "recipient_role": "executive",
+                    "created_by_user_id": creator_id,
+                    "target_user_id": creator_id,
+                    "recipient_user_id": creator_id,
+                    "recipient_name": (user_doc or {}).get("nombre") or user_name,
+                    "state_at_creation": old_status,
+                    "audit_note": audit_note,
+                    "idempotency_key": idempotency_key,
+                    "lead_type": "captacion",
+                    "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+                    "followup_token_version": 2,
+                    "attribution_status": "attributed",
+                    "phone": "+56900000000",
+                    "obj_id": obj_id_str,
+                    "target_name": user_name,
+                    "type": "REMINDER_CAPTACION",
+                    "status": "pending",
+                    "scheduled_at": execute_at,
+                    "execute_at": execute_at,
+                    "attempts": 0,
+                    "created_at": now,
+                    "note": (
+                        str(notes).strip() if notes and str(notes).strip()
+                        else f"Contactar captación: {current_doc.get('title') or current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})"
+                    ),
+                    "agent": user_name,
+                }
+                try:
+                    db["crm_tasks"].insert_one(task)
+                except DuplicateKeyError:
+                    # A concurrent retry may win the v2 partial unique index.
+                    inserted_new = False
+                    task = db["crm_tasks"].find_one({
+                        "idempotency_key": idempotency_key,
+                        "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+                    })
+                    if not task:
+                        raise
+                if inserted_new:
+                    try:
+                        record_followup_event(
+                            db,
+                            task=task,
+                            event_type="reminder_scheduled",
+                            occurred_at=now,
+                            source="captacion_crm",
+                            actor_user_id=creator_id,
+                        )
+                    except ValueError:
+                        pass
         except Exception as e:
             logger.error(f"Error scheduling captacion task: {e}")
             followup_error = e

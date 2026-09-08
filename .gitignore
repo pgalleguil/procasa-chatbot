@@ -76,6 +76,7 @@ tests/*
 !tests/test_crm_sla_alert_sender.py
 !tests/test_team_management_p0_contract.py
 !tests/test_properties_inventory_p0_contract.py
+!tests/test_captacion_followup_v2.py
 scraper*/
 reports/
 

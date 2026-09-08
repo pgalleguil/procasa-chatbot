@@ -52,7 +52,7 @@ _WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="proc
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import requests
 from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query, BackgroundTasks
@@ -105,12 +105,16 @@ from captacion_workforce import (
     upsert_membership,
 )
 from chatbot.followup_tracking import (
+    FollowupConfigurationError,
     FollowupTokenError,
     build_followup_open_url,
+    expected_actor_id,
     find_tracked_task,
     record_captacion_detail_open,
     record_followup_event,
     record_followup_open,
+    task_entity_id,
+    validate_followup_token_runtime,
     verify_followup_token,
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
@@ -893,6 +897,15 @@ lead_processing_queue = None  # Se inicializará en lifespan
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+
+    # Follow-up v2 must be able to issue and verify its dedicated token before
+    # any reminder worker starts. A missing production secret is fatal.
+    followup_config = validate_followup_token_runtime()
+    logger.info(
+        "[FOLLOWUP_CONFIG] token_version=2 configured=%s production=%s",
+        followup_config.get("valid"),
+        followup_config.get("production"),
+    )
     
     # Install phone redaction on all loggers
     from chatbot.storage import install_log_redaction
@@ -4345,32 +4358,138 @@ async def view_captaciones(
 
 @app.get("/followup/open/{signed_token}")
 async def open_followup_link(request: Request, signed_token: str):
-    """Attribute a WhatsApp follow-up click, then preserve the old detail UX."""
+    """Consume a personal follow-up link only after full CRM authorization."""
+    payload = {}
     try:
         payload = verify_followup_token(signed_token)
-        db = get_db()
-        task = find_tracked_task(db, payload["task_id"])
-        if not task:
-            raise FollowupTokenError("followup_task_not_found")
-        if task.get("lead_type") == "captacion":
-            entity_id = task.get("obj_id")
-            target = f"/captacion/{entity_id}"
-        else:
-            entity_id = task.get("lead_id")
-            target = f"/crm/lead-id/{entity_id}"
-        if not entity_id:
-            raise FollowupTokenError("followup_entity_missing")
-        record_followup_event(
-            db,
-            task=task,
-            event_type="reminder_clicked",
-            source="whatsapp_followup",
+
+        def _load_followup_task():
+            from chatbot.storage import get_db
+
+            task = find_tracked_task(
+                get_db(), payload["task_id"], token_version=payload.get("v")
+            )
+            if not task:
+                logger.warning(
+                    "[FOLLOWUP] task_not_found task_id=%s token_version=%s",
+                    payload.get("task_id"), payload.get("v"),
+                )
+                raise FollowupTokenError("followup_task_not_found")
+            if (
+                task.get("status") in {"failed_terminal", "cancelled"}
+                or task.get("resolution") in {"superseded", "superseded_duplicate"}
+            ):
+                logger.info(
+                    "[FOLLOWUP] task_not_found task_id=%s token_version=%s reason=unavailable",
+                    payload.get("task_id"), payload.get("v"),
+                )
+                raise FollowupTokenError("followup_task_unavailable")
+            if not task_entity_id(task):
+                raise FollowupTokenError("followup_entity_missing")
+            return task
+
+        task = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _load_followup_task
+        )
+        try:
+            user = await get_current_user_doc(request)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                user = None
+            else:
+                raise
+        if not user:
+            next_url = f"/followup/open/{quote(signed_token, safe='')}"
+            response = RedirectResponse(
+                url="/?" + urlencode({"error": "sesion_expirada", "next": next_url})
+            )
+            response.set_cookie(
+                "login_next", next_url, httponly=True, secure=True,
+                samesite="lax", max_age=600,
+            )
+            logger.info(
+                "[FOLLOWUP] access_denied task_id=%s token_version=%s reason=anonymous",
+                payload.get("task_id"), payload.get("v"),
+            )
+            return response
+
+        def _resolve_and_authorize_followup():
+            from chatbot.storage import get_db
+
+            db = get_db()
+            entity_id = task_entity_id(task)
+            expected_recipient = expected_actor_id(task, payload.get("v"))
+            current_user_id = str(user.get("_id") or "").strip()
+            if not expected_recipient or not current_user_id or current_user_id != expected_recipient:
+                logger.warning(
+                    "[FOLLOWUP] recipient_mismatch task_id=%s obj_id=%s token_version=%s",
+                    task.get("task_id"), entity_id, payload.get("v"),
+                )
+                raise FollowupTokenError("followup_actor_forbidden")
+
+            if task.get("lead_type") == "captacion":
+                captacion = get_captacion_detail(entity_id)
+                if not captacion:
+                    raise FollowupTokenError("followup_entity_missing")
+                if not can_manage_captacion(user, captacion):
+                    logger.warning(
+                        "[FOLLOWUP] access_denied task_id=%s obj_id=%s token_version=%s reason=crm_permission",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_access_denied")
+                target = f"/captacion/{entity_id}"
+            else:
+                from bson import ObjectId as BsonObjectId
+                try:
+                    lead = db["leads"].find_one({"_id": BsonObjectId(entity_id)})
+                except Exception:
+                    raise FollowupTokenError("followup_entity_missing")
+                if not lead:
+                    raise FollowupTokenError("followup_entity_missing")
+                detail = get_lead_detail_data(lead.get("phone") or "", lead_doc=lead)
+                if not detail or not (
+                    can_administer_leads(user.get("rol"))
+                    or lead_is_assigned_to_user(detail, user)
+                ):
+                    logger.warning(
+                        "[FOLLOWUP] access_denied task_id=%s obj_id=%s token_version=%s reason=crm_permission",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_access_denied")
+                target = f"/crm/lead-id/{entity_id}"
+
+            # Attribute only after identity and current CRM permission pass.
+            record_followup_event(
+                db,
+                task=task,
+                event_type="reminder_clicked",
+                source="whatsapp_followup",
+                actor_user_id=current_user_id,
+            )
+            return target
+
+        target = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _resolve_and_authorize_followup
         )
         separator = "&" if "?" in target else "?"
         target = f"{target}{separator}followup_token={quote(signed_token, safe='')}"
-        return RedirectResponse(url=target, status_code=302)
+        response = RedirectResponse(url=target, status_code=302)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except FollowupConfigurationError:
+        logger.error("[FOLLOWUP] token_validation_failed reason=configuration_invalid")
+        raise HTTPException(status_code=503, detail="followup_configuration_invalid")
     except FollowupTokenError as exc:
-        raise HTTPException(status_code=410, detail=str(exc))
+        code = str(exc)
+        if code == "followup_task_not_found":
+            logger.warning(
+                "[FOLLOWUP] task_not_found task_id=%s token_version=%s",
+                payload.get("task_id"), payload.get("v"),
+            )
+        if code in {"followup_actor_forbidden", "followup_access_denied"}:
+            raise HTTPException(status_code=403, detail=code)
+        raise HTTPException(status_code=410, detail=code)
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(
@@ -4421,9 +4540,20 @@ async def view_captacion_detail_route(
                 )
 
             await loop.run_in_executor(_WEB_THREAD_POOL, _record_captacion_followup_open)
-        except FollowupTokenError:
-            logger.info("[FOLLOWUP] captacion open was not attributable: obj_id=%s", obj_id)
-            await loop.run_in_executor(_WEB_THREAD_POOL, _record_unattributed_open, "direct")
+        except FollowupConfigurationError:
+            logger.error(
+                "[FOLLOWUP] token_validation_failed obj_id=%s reason=configuration_invalid",
+                obj_id,
+            )
+            raise HTTPException(status_code=503, detail="followup_configuration_invalid")
+        except FollowupTokenError as exc:
+            code = str(exc)
+            logger.warning(
+                "[FOLLOWUP] token_validation_failed obj_id=%s reason=%s",
+                obj_id, code,
+            )
+            status_code = 403 if code in {"followup_actor_forbidden", "followup_access_denied"} else 410
+            raise HTTPException(status_code=status_code, detail=code)
     else:
         await loop.run_in_executor(_WEB_THREAD_POOL, _record_unattributed_open)
 

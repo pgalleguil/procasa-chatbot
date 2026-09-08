@@ -7,6 +7,14 @@ env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
 class Config:
+    # === Entorno de ejecución ===
+    APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).strip().lower()
+    IS_PRODUCTION = (
+        APP_ENV in {"production", "prod", "live"}
+        or os.getenv("RENDER", "").strip().lower() == "true"
+        or bool(os.getenv("RENDER_SERVICE_ID"))
+    )
+
     # === Claves externas ===
     XAI_API_KEY = os.getenv("XAI_API_KEY")
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", XAI_API_KEY)
@@ -256,6 +264,42 @@ class Config:
     @staticmethod
     def get_captacion_collection(db):
         return db[Config.CAPTACION_COLLECTION_NAME]
+
+    # === Seguimientos de captación: configuración criptográfica dedicada ===
+    # No existe fallback intencionalmente. Los tokens nuevos deben detenerse
+    # si la clave dedicada no fue inyectada por el entorno.
+    FOLLOWUP_TOKEN_SECRET = os.getenv("FOLLOWUP_TOKEN_SECRET")
+    FOLLOWUP_V1_COMPAT_ENABLED = os.getenv("FOLLOWUP_V1_COMPAT_ENABLED", "true").strip().lower() == "true"
+    FOLLOWUP_TOKEN_MIN_SECRET_LENGTH = 32
+
+    @classmethod
+    def require_followup_token_secret(cls, *, version: int = 2) -> str:
+        """Return the secret for one explicit token version, never a fallback."""
+        if version == 2:
+            value = str(cls.FOLLOWUP_TOKEN_SECRET or "").strip()
+            if not value or len(value) < cls.FOLLOWUP_TOKEN_MIN_SECRET_LENGTH:
+                raise RuntimeError("FOLLOWUP_TOKEN_SECRET is missing or too short")
+            return value
+        if version == 1 and cls.FOLLOWUP_V1_COMPAT_ENABLED:
+            # v1 is legacy-only and is selected by its payload version. It is
+            # never used to issue new tokens.
+            value = str(cls.SECRET_KEY or "").strip()
+            if value:
+                return value
+        raise RuntimeError("followup_token_legacy_compatibility_unavailable")
+
+    @classmethod
+    def validate_followup_token_configuration(cls) -> dict:
+        """Validate startup prerequisites without exposing any secret value."""
+        try:
+            cls.require_followup_token_secret(version=2)
+        except RuntimeError as exc:
+            if cls.IS_PRODUCTION:
+                raise RuntimeError(
+                    "FOLLOWUP_TOKEN_SECRET must be configured before production startup"
+                ) from exc
+            return {"valid": False, "reason": "followup_token_secret_missing", "production": False}
+        return {"valid": True, "version": 2, "production": bool(cls.IS_PRODUCTION)}
 
     @staticmethod
     def validate_adjudicator_model() -> None:

@@ -9,13 +9,25 @@ import datetime as _dt
 from uuid import uuid4 as _uuid4
 
 from bson import ObjectId
+import mongomock
 import pytest
 
 
 # Load chatbot modules before api_captacion to break circular imports
 import chatbot.constants  # noqa
 import captacion_management  # noqa
-import api_captacion  # noqa
+
+# api_captacion performs a legacy index bootstrap at import time.  Keep this
+# test hermetic by providing an in-memory database only during that import;
+# individual tests replace api_captacion.get_db with their own fake database.
+import chatbot.storage as _storage
+_import_db = mongomock.MongoClient()["api_captacion_import"]
+_original_storage_get_db = _storage.get_db
+_storage.get_db = lambda: _import_db
+try:
+    import api_captacion  # noqa
+finally:
+    _storage.get_db = _original_storage_get_db
 from api_captacion import update_captacion_status
 
 
@@ -200,6 +212,45 @@ def _patch_env(monkeypatch):
 
 
 # Tests
+def test_scheduled_reminder_persists_identity_pending_without_token(_patch_env, monkeypatch):
+    db = _patch_env
+    import api_captacion as _api_captacion
+    monkeypatch.setattr(
+        _api_captacion,
+        "uuid",
+        type("_uuid", (), {"uuid4": staticmethod(lambda: "test-uuid")}),
+    )
+    prop = _property_doc()
+    db["propiedades_captacion"].insert_one(prop)
+
+    assert update_captacion_status(
+        str(prop["_id"]),
+        "En gestion",
+        notes="Programar próximo contacto",
+        user_name="Ana",
+        user_doc=_user_doc(),
+        next_followup="2026-07-23 12:00",
+    ) is True
+
+    tasks = db["crm_tasks"]._docs
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["followup_tracking_version"] == "followup_tracking_v2"
+    assert task["followup_token_version"] == 2
+    assert task["created_by_user_id"] == "u1"
+    assert task["recipient_user_id"] == "u1"
+    assert task["target_user_id"] == "u1"
+    assert task["status"] == "pending"
+    assert "token" not in task
+
+    scheduled_events = [
+        event for event in db["followup_events"]._docs
+        if event.get("event_type") == "reminder_scheduled"
+    ]
+    assert scheduled_events
+    assert scheduled_events[-1]["actor_user_id"] == "u1"
+
+
 def test_state_persists_empty_bitacora(_patch_env):
     """Estado + status_history persistidos; sin nota vacia."""
     db = _patch_env

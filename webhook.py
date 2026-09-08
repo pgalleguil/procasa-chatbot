@@ -85,6 +85,7 @@ from api_captacion import (
     update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
+    normalize_captacion_property_type,
     _parse_captacion_price_bound,
     get_personal_templates, save_personal_template, delete_personal_template,
     warm_captacion_shared_catalogs,
@@ -3389,6 +3390,8 @@ async def view_captaciones(
     operacion: str = Query(None),
     telefono: str = Query(None),
     portal: str = Query(None),
+    tipo: str = Query(None),
+    tipo_propiedad: str = Query(None, alias="tipo_propiedad"),
     moneda: str = Query(None),
     monto_desde: str = Query(None),
     monto_hasta: str = Query(None),
@@ -3456,6 +3459,7 @@ async def view_captaciones(
     user_id = str(user["_id"])
     user_email = user.get("email", "")
     current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
+    selected_property_type = normalize_captacion_property_type(tipo or tipo_propiedad)
     selected_price_currency = str(moneda or "").strip().upper()
     if selected_price_currency not in {"UF", "CLP"}:
         selected_price_currency = "CLP" if "arr" in str(operacion or "").lower() else "UF"
@@ -3540,6 +3544,7 @@ async def view_captaciones(
                 operacion_filter=operacion,
                 telefono_filter=telefono,
                 portal_filter=portal,
+                property_type_filter=selected_property_type,
                 classification_filter=classification,
                 price_currency=selected_price_currency,
                 price_min=monto_desde,
@@ -3650,6 +3655,7 @@ async def view_captaciones(
     current_estado = estado
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
+    current_tipo = selected_property_type
     current_portal = portal or ""
     current_classification = classification or ""
 
@@ -3678,6 +3684,7 @@ async def view_captaciones(
             "telefono": current_telefono,
             "comuna": current_comunas,
             "operacion": current_operacion,
+            "tipo": current_tipo,
             "portal": current_portal,
             "moneda": selected_price_currency if (monto_desde or monto_hasta) else "",
             "monto_desde": monto_desde or "",
@@ -4034,7 +4041,7 @@ async def view_captaciones(
         }
     else:
         items_total = await list_task
-    items, total_count, available_ops, available_portals = items_total
+    items, total_count, available_ops, available_portals, available_property_types = items_total
     _perf["list_done"] = time.perf_counter()
     _captacion_diag["catalogs_ms"] = round(
         _executives_catalog_elapsed.get("ms", (time.perf_counter() - _executives_catalog_started) * 1000), 1
@@ -4135,6 +4142,7 @@ async def view_captaciones(
     current_estado = estado
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
+    current_tipo = selected_property_type
     current_moneda = selected_price_currency
     current_monto_desde = str(monto_desde or "").strip()
     current_monto_hasta = str(monto_hasta or "").strip()
@@ -4198,12 +4206,14 @@ async def view_captaciones(
         "current_ejecutivo": current_ejecutivo,
         "current_operacion": current_operacion,
         "current_telefono": current_telefono,
+        "current_tipo": current_tipo,
         "current_moneda": current_moneda,
         "current_monto_desde": current_monto_desde,
         "current_monto_hasta": current_monto_hasta,
         "invalid_price_range": invalid_price_range,
         "current_portal": current_portal,
         "available_portals": available_portals,
+        "available_property_types": available_property_types,
         "current_order": current_order,
         "current_classification": current_classification,
         "current_sort_by": ",".join(sort_keys),

@@ -5,6 +5,7 @@ from chatbot.constants import CHILE_TZ
 import logging
 import uuid
 import re
+import unicodedata
 import time as _perf_time
 from captacion_kpis import (
     VISIBLE_CLASSIFICATION_STATES,
@@ -170,6 +171,49 @@ def format_captacion_portal_label(origin):
         "mercadolibre": "MercadoLibre",
     }
     return known_labels.get(value.casefold(), value.replace("_", " ").replace("-", " ").title())
+
+
+def normalize_captacion_property_type(value):
+    """Agrupa singular/plural y abreviaturas comunes del tipo de propiedad."""
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", raw_value)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = re.sub(r"[_-]+", " ", normalized.casefold())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    aliases = {
+        "casas": "casa",
+        "departamentos": "departamento",
+        "depto": "departamento",
+        "deptos": "departamento",
+        "dpto": "departamento",
+        "dptos": "departamento",
+        "oficinas": "oficina",
+        "locales": "local",
+        "parcelas": "parcela",
+        "terrenos": "terreno",
+        "sitios": "sitio",
+        "bodegas": "bodega",
+        "estacionamientos": "estacionamiento",
+        "galpones": "galpon",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    if len(normalized) > 4 and normalized.endswith("s"):
+        normalized = normalized[:-1]
+    return normalized
+
+
+def _captacion_property_type_pattern(value):
+    """Incluye variantes históricas al filtrar por el tipo normalizado."""
+    canonical = normalize_captacion_property_type(value)
+    variants = {
+        "casa": ("casa", "casas"),
+        "departamento": ("departamento", "departamentos", "depto", "deptos", "dpto", "dptos"),
+    }.get(canonical, (canonical, f"{canonical}s" if canonical else ""))
+    variants = [re.escape(variant) for variant in variants if variant]
+    return re.compile(r"^\s*(?:" + "|".join(variants) + r")\s*$", re.I)
 
 
 def _parse_captacion_price_bound(value):
@@ -569,7 +613,7 @@ def resolve_operacion(details: dict) -> str:
     return "VENTA"
 
 
-def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, classification_filter=None, price_currency=None, price_min=None, price_max=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, property_type_filter=None, classification_filter=None, price_currency=None, price_min=None, price_max=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
     _l_start = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
@@ -665,6 +709,50 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         add_condition({"$or": [
             {"operacion": op_pattern},
             {"tipo_operacion": op_pattern},
+        ]})
+
+    # Catálogo normalizado para que "casa" y "casas" aparezcan como una sola opción.
+    type_catalog_query = dict(query)
+    if "$and" in type_catalog_query:
+        type_catalog_query["$and"] = list(type_catalog_query["$and"])
+    type_cache_key = repr(type_catalog_query)
+    type_cache = getattr(get_captacion_list, "_property_type_cache", {})
+    type_cache_record = type_cache.get(type_cache_key)
+    type_cache_ttl = 300
+    if type_cache_record and (get_chile_now() - type_cache_record[0]).total_seconds() < type_cache_ttl:
+        available_property_types = type_cache_record[1]
+    else:
+        type_rows = list(coll.aggregate([
+            {"$match": type_catalog_query},
+            {"$project": {"tipo_catalogo": {"$ifNull": [
+                "$tipo_propiedad",
+                {"$ifNull": ["$property_type", {"$ifNull": ["$details.tipo_propiedad", "$details.tipo"]}]},
+            ]}}},
+            {"$match": {"tipo_catalogo": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$tipo_catalogo"}},
+        ]))
+        type_values = {}
+        for row in type_rows:
+            canonical_value = normalize_captacion_property_type(row.get("_id"))
+            if canonical_value:
+                type_values.setdefault(canonical_value, canonical_value)
+        available_property_types = [
+            {"value": value, "label": value.title()}
+            for value in sorted(type_values.values(), key=lambda item: item.casefold())
+        ]
+        type_cache[type_cache_key] = (get_chile_now(), available_property_types)
+        if len(type_cache) > 128:
+            oldest_key = min(type_cache, key=lambda key: type_cache[key][0])
+            type_cache.pop(oldest_key, None)
+        get_captacion_list._property_type_cache = type_cache
+
+    if property_type_filter:
+        property_type_pattern = _captacion_property_type_pattern(property_type_filter)
+        add_condition({"$or": [
+            {"tipo_propiedad": property_type_pattern},
+            {"property_type": property_type_pattern},
+            {"details.tipo_propiedad": property_type_pattern},
+            {"details.tipo": property_type_pattern},
         ]})
 
     price_condition = _captacion_price_range_condition(
@@ -1091,7 +1179,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     )
     
     if return_portals:
-        return items_paginated, total_count, available_ops, available_portals
+        return items_paginated, total_count, available_ops, available_portals, available_property_types
     return items_paginated, total_count, available_ops
 
 

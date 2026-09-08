@@ -1863,6 +1863,7 @@
             height: 100%;
             border-radius: 0;
         }
+
         /* El contenido descriptivo de las tarjetas usa peso normal; los
            valores KPI principales conservan su énfasis visual. */
         .captacion-card .captacion-card__title,
@@ -1895,11 +1896,13 @@
         .captacion-card .captacion-card__portal-bar-name {
             font-weight: 400;
         }
+
         /* Los títulos de cada tarjeta mantienen su jerarquía visual. */
         .captacion-card .captacion-card__title,
         .captacion-card .kpi-model-label {
             font-weight: 800;
         }
+
         @media (max-width: 992px) {
             .kpi-card.captacion-card { min-height: 282px; }
             .captacion-card .kpi-model-body {
@@ -2634,6 +2637,49 @@
             gap: 6px;
         }
 
+        .captacion-filter-toolbar .captacion-advanced-filter {
+            display: none;
+        }
+
+        .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-filter {
+            display: flex;
+        }
+
+        .captacion-advanced-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            align-self: end;
+            gap: 8px;
+            height: 46px;
+            min-height: 46px;
+            padding: 0 14px;
+            border: 1px solid var(--input-border);
+            border-radius: 12px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: .82rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .captacion-advanced-toggle:hover,
+        .captacion-advanced-toggle:focus-visible,
+        .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-toggle {
+            border-color: color-mix(in srgb, var(--accent) 72%, var(--input-border));
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .captacion-advanced-toggle i {
+            transition: transform .18s ease;
+        }
+
+        .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-toggle i {
+            transform: rotate(180deg);
+        }
+
         .captacion-filter-toolbar .filter-control-label {
             color: var(--text-secondary);
             font-size: 0.72rem;
@@ -2708,7 +2754,7 @@
 
         .captacion-price-filter-inline {
             display: grid;
-            grid-template-columns: minmax(64px, .8fr) repeat(2, minmax(0, 1fr));
+            grid-template-columns: minmax(64px, 0.8fr) repeat(2, minmax(0, 1fr));
             gap: 6px;
             width: 100%;
             min-width: 0;
@@ -2724,7 +2770,7 @@
             border: 1px solid var(--input-border);
             border-radius: 12px;
             color: var(--input-text);
-            font-size: .88rem;
+            font-size: 0.88rem;
         }
 
         .captacion-price-filter-inline input:focus {
@@ -2742,14 +2788,16 @@
             min-width: 0;
             margin: 0;
             color: #fbbf24;
-            font-size: .66rem;
+            font-size: 0.66rem;
             line-height: 1.25;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .captacion-price-filter-error.is-visible { display: inline; }
+        .captacion-price-filter-error.is-visible {
+            display: inline;
+        }
 
         .captacion-price-label-row {
             display: flex;
@@ -2759,7 +2807,14 @@
             min-height: 12px;
         }
 
-        .captacion-price-label-row .filter-control-label { flex: 0 0 auto; }
+        .captacion-price-label-row .filter-control-label {
+            flex: 0 0 auto;
+        }
+
+        .filter-control.is-active .captacion-price-filter-inline input,
+        .filter-control.is-active .captacion-price-filter-inline select {
+            border-color: color-mix(in srgb, var(--accent) 72%, var(--input-border));
+        }
 
         .captacion-filter-toolbar .commune-picker summary {
             padding: 0 16px;
@@ -2958,6 +3013,265 @@
 
             .captacion-filter-toolbar .sort-help {
                 white-space: normal;
+            }
+        }
+
+        /* Filtros principales en una sola línea y filtros secundarios en una
+           segunda fila desplegable. */
+        .captacion-filter-toolbar .filter-bar {
+            display: block;
+        }
+
+        .captacion-primary-filter-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .captacion-advanced-filter-row {
+            display: grid;
+            grid-template-columns: minmax(175px, .9fr) minmax(360px, 2.1fr) 180px minmax(185px, 1.05fr) minmax(185px, 1.05fr);
+            gap: 10px;
+            align-items: end;
+            max-height: 0;
+            margin-top: 0;
+            overflow: hidden;
+            padding-top: 0;
+            border-top: 1px solid transparent;
+            opacity: 0;
+            pointer-events: none;
+            visibility: hidden;
+            transition: max-height 220ms ease, margin-top 220ms ease, padding-top 220ms ease, border-color 220ms ease, opacity 180ms ease, visibility 0s linear 220ms;
+        }
+
+        .captacion-advanced-filter-row.is-agent {
+            grid-template-columns: minmax(175px, .95fr) minmax(360px, 2.1fr) 180px minmax(185px, 1.1fr);
+        }
+
+        .captacion-filter-portal {
+            min-width: 0;
+        }
+
+        .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-filter-row {
+            max-height: 230px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top-color: color-mix(in srgb, var(--border-color) 62%, transparent);
+            opacity: 1;
+            pointer-events: auto;
+            visibility: visible;
+            transition-delay: 0s;
+        }
+
+        .captacion-filter-toolbar .filter-control-label {
+            font-size: 0.66rem;
+            font-weight: 500;
+            letter-spacing: 0.09em;
+        }
+
+        .captacion-filter-toolbar .search-box,
+        .captacion-filter-toolbar select,
+        .captacion-filter-toolbar .commune-picker summary,
+        .captacion-filter-toolbar .btn-filter,
+        .captacion-filter-toolbar .captacion-advanced-toggle,
+        .captacion-price-filter-inline input,
+        .captacion-currency-segmented {
+            height: 42px;
+            min-height: 42px;
+            border-radius: 10px;
+        }
+
+        .captacion-filter-toolbar .search-box input,
+        .captacion-filter-toolbar select,
+        .captacion-filter-toolbar .commune-picker summary,
+        .captacion-price-filter-inline input {
+            border-color: color-mix(in srgb, var(--input-border) 76%, transparent);
+        }
+
+        .captacion-filter-toolbar .search-box input:focus,
+        .captacion-filter-toolbar select:focus,
+        .captacion-filter-toolbar .commune-picker summary:focus-visible,
+        .captacion-price-filter-inline input:focus {
+            border-color: color-mix(in srgb, var(--accent) 76%, var(--input-border));
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+        }
+
+        .captacion-filter-toolbar .captacion-advanced-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border-color));
+            background: transparent;
+            color: var(--accent-hover);
+            cursor: pointer;
+            padding: 0 14px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .captacion-filter-toolbar .captacion-advanced-toggle i {
+            font-size: 0.68rem;
+            transition: transform 180ms ease;
+        }
+
+        .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-toggle i {
+            transform: rotate(180deg);
+        }
+
+        .captacion-filter-toolbar .captacion-advanced-toggle:hover,
+        .captacion-filter-toolbar .captacion-advanced-toggle:focus-visible {
+            border-color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 10%, transparent);
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        .captacion-filter-toolbar .btn-filter {
+            min-width: 124px;
+            padding: 0 16px;
+        }
+
+        .captacion-price-filter-inline {
+            grid-template-columns: minmax(82px, 0.78fr) repeat(2, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .captacion-price-filter-inline select.captacion-currency-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            min-height: 1px;
+            padding: 0;
+            border: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .captacion-currency-segmented {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            width: 100%;
+            min-width: 0;
+            overflow: hidden;
+            border: 1px solid color-mix(in srgb, var(--input-border) 76%, transparent);
+            background: color-mix(in srgb, var(--bg-card) 78%, var(--bg-elevated));
+        }
+
+        .captacion-currency-option {
+            border: 0;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.76rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            transition: background 160ms ease, color 160ms ease;
+        }
+
+        .captacion-currency-option + .captacion-currency-option {
+            border-left: 1px solid color-mix(in srgb, var(--input-border) 70%, transparent);
+        }
+
+        .captacion-currency-option:hover,
+        .captacion-currency-option:focus-visible {
+            color: var(--text-primary);
+            background: color-mix(in srgb, var(--accent) 10%, transparent);
+            outline: none;
+        }
+
+        .captacion-currency-option.is-selected {
+            background: color-mix(in srgb, var(--accent) 82%, #111827);
+            color: #fff;
+        }
+
+        .captacion-price-label-row {
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px 8px;
+        }
+
+        .captacion-filter-portal select {
+            min-width: 0;
+            padding-left: 11px;
+            padding-right: 28px;
+            font-size: 0.82rem;
+        }
+
+        .filter-toolbar-meta {
+            align-items: stretch;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .filter-toolbar-status {
+            width: 100%;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .captacion-advanced-filter-row,
+            .captacion-filter-toolbar .captacion-advanced-toggle i,
+            .captacion-currency-option {
+                transition: none;
+            }
+        }
+
+        .captacion-primary-filter-row .captacion-advanced-toggle,
+        .captacion-primary-filter-row .btn-filter {
+            width: 100%;
+            margin: 0;
+        }
+
+        @media (max-width: 1200px) and (min-width: 769px) {
+            .captacion-primary-filter-row {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
+            .captacion-advanced-filter-row,
+            .captacion-advanced-filter-row.is-agent {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-filter-row {
+                max-height: 420px;
+            }
+
+            .captacion-filter-amount {
+                grid-column: span 2;
+            }
+
+            .captacion-primary-filter-row .captacion-advanced-toggle,
+            .captacion-primary-filter-row .btn-filter {
+                justify-self: stretch;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .captacion-primary-filter-row,
+            .captacion-advanced-filter-row {
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 9px;
+            }
+
+            .captacion-advanced-filter-row {
+                margin-top: 0;
+            }
+
+            .captacion-filter-toolbar .filter-bar.show-advanced .captacion-advanced-filter-row {
+                max-height: 760px;
+                margin-top: 9px;
+            }
+
+            .captacion-primary-filter-row .captacion-advanced-toggle,
+            .captacion-primary-filter-row .btn-filter {
+                width: 100%;
             }
         }
 
@@ -4114,7 +4428,9 @@
 
         <div class="table-container">
             <div class="captacion-filter-toolbar">
-            <form action="/captacion" method="GET" class="filter-bar" onsubmit="return validateCaptacionPriceRange(this)">
+            {% set captacion_advanced_open = current_tipo or current_monto_desde or current_monto_hasta or current_portal or current_estado or current_ejecutivo or current_sorts or (current_order and current_order != 'prioridad') %}
+            <form action="/captacion" method="GET" class="filter-bar{% if captacion_advanced_open %} show-advanced{% endif %}" onsubmit="return validateCaptacionPriceRange(this)">
+                <div class="captacion-primary-filter-row">
                 <div class="filter-control filter-control-phone {{ 'is-active' if current_telefono else '' }}">
                     <label class="filter-control-label" for="captacion-telefono">Teléfono</label>
                     <div class="search-box">
@@ -4154,21 +4470,51 @@
                         {% endif %}
                     </select>
                 </div>
-                <div class="filter-control {{ 'is-active' if current_monto_desde or current_monto_hasta else '' }}">
+                <div class="filter-control filter-control-order {{ 'is-active' if current_order and not current_sorts and current_order != 'prioridad' else '' }}">
+                    <label class="filter-control-label" for="captacion-orden">Ordenar por</label>
+                    <select id="captacion-orden" name="orden" onchange="this.form.elements.sort_by.value=''; this.form.elements.sort_dir.value=''; this.form.submit()" aria-label="Ordenar captaciones">
+                        <option value="" {% if not current_order %}selected{% endif %} {% if not current_order %}disabled{% endif %}>Orden actual por columna</option>
+                        <option value="prioridad" {% if current_order == 'prioridad' %}selected{% endif %}>Prioridad de gestión</option>
+                        <option value="recientes" {% if current_order == 'recientes' %}selected{% endif %}>Más recientes</option>
+                        <option value="probabilidad" {% if current_order == 'probabilidad' %}selected{% endif %}>Mayor probabilidad de dueño</option>
+                        <option value="antiguas" {% if current_order == 'antiguas' %}selected{% endif %}>Más antiguas en portal</option>
+                        <option value="ultima_gestion" {% if current_order == 'ultima_gestion' %}selected{% endif %}>Última gestión</option>
+                    </select>
+                </div>
+                <button type="button" class="captacion-advanced-toggle" aria-controls="captacion-advanced-filters" aria-expanded="{{ 'true' if captacion_advanced_open else 'false' }}" onclick="toggleCaptacionAdvancedFilters(this)">
+                    <span>Más filtros</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </button>
+                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
+                </div>
+                <div id="captacion-advanced-filters" class="captacion-advanced-filter-row{% if user_role not in ['supervisor', 'admin', 'jefatura'] %} is-agent{% endif %}">
+                <div class="filter-control captacion-filter-type {{ 'is-active' if current_tipo else '' }}">
+                    <label class="filter-control-label" for="captacion-tipo">Tipo</label>
+                    <select id="captacion-tipo" name="tipo" onchange="this.form.submit()" aria-label="Filtrar por tipo de propiedad">
+                        <option value="">Todos los tipos</option>
+                        {% for property_type_option in available_property_types %}
+                        <option value="{{ property_type_option.value }}" {% if current_tipo|lower == property_type_option.value|lower %}selected{% endif %}>{{ property_type_option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="filter-control captacion-filter-amount {{ 'is-active' if current_monto_desde or current_monto_hasta else '' }}">
                     <div class="captacion-price-label-row">
-                        <label class="filter-control-label" for="captacion-moneda">Monto</label>
+                        <label class="filter-control-label" for="captacion-moneda">Precio publicado</label>
                         <div class="captacion-price-filter-error{% if invalid_price_range %} is-visible{% endif %}" role="alert">Desde no puede ser mayor que hasta.</div>
                     </div>
                     <div class="captacion-price-filter-inline">
-                        <select id="captacion-moneda" name="moneda" aria-label="Moneda del monto" onchange="this.form.dataset.priceCurrencyTouched='1'; formatCaptacionPriceFields(this.form);">
+                        <div class="captacion-currency-segmented" role="group" aria-label="Moneda del precio publicado">
+                            <button type="button" class="captacion-currency-option{% if current_moneda == 'UF' %} is-selected{% endif %}" data-currency="UF" aria-pressed="{{ 'true' if current_moneda == 'UF' else 'false' }}" onclick="selectCaptacionCurrency(this)">UF</button>
+                            <button type="button" class="captacion-currency-option{% if current_moneda == 'CLP' %} is-selected{% endif %}" data-currency="CLP" aria-pressed="{{ 'true' if current_moneda == 'CLP' else 'false' }}" onclick="selectCaptacionCurrency(this)">CLP</button>
+                        </div>
+                        <select id="captacion-moneda" class="captacion-currency-input" name="moneda" aria-label="Moneda del precio publicado" onchange="this.form.dataset.priceCurrencyTouched='1'; formatCaptacionPriceFields(this.form);">
                             <option value="UF" {% if current_moneda == 'UF' %}selected{% endif %}>UF</option>
                             <option value="CLP" {% if current_moneda == 'CLP' %}selected{% endif %}>$ CLP</option>
                         </select>
-                        <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Desde" value="{{ current_monto_desde }}" aria-label="Monto desde">
-                        <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Hasta" value="{{ current_monto_hasta }}" aria-label="Monto hasta">
+                        <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Desde" value="{{ current_monto_desde }}" aria-label="Precio publicado desde">
+                        <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Hasta" value="{{ current_monto_hasta }}" aria-label="Precio publicado hasta">
                     </div>
                 </div>
-                <div class="filter-control {{ 'is-active' if current_portal else '' }}">
+                <div class="filter-control captacion-filter-portal {{ 'is-active' if current_portal else '' }}">
                     <label class="filter-control-label" for="captacion-portal">Portal</label>
                     <select id="captacion-portal" name="portal" onchange="this.form.submit()" aria-label="Filtrar por portal">
                         <option value="">Todos los portales</option>
@@ -4177,7 +4523,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="filter-control {{ 'is-active' if current_estado else '' }}">
+                <div class="filter-control captacion-filter-state {{ 'is-active' if current_estado else '' }}">
                     <label class="filter-control-label" for="captacion-estado">Estado</label>
                     <select id="captacion-estado" name="estado" onchange="this.form.submit()">
                         <option value="">Cualquier estado</option>
@@ -4199,7 +4545,7 @@
                     </select>
                 </div>
                 {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
-                <div class="filter-control {{ 'is-active' if current_ejecutivo else '' }}">
+                <div class="filter-control captacion-filter-executive {{ 'is-active' if current_ejecutivo else '' }}">
                     <label class="filter-control-label" for="captacion-ejecutivo">Ejecutivo</label>
                     <select id="captacion-ejecutivo" name="ejecutivo" onchange="this.form.submit()">
                         <option value="">Cualquier Ejecutivo</option>
@@ -4209,16 +4555,6 @@
                     </select>
                 </div>
                 {% endif %}
-                <div class="filter-control filter-control-order {{ 'is-active' if current_order and not current_sorts and current_order != 'prioridad' else '' }}">
-                    <label class="filter-control-label" for="captacion-orden">Ordenar por</label>
-                    <select id="captacion-orden" name="orden" onchange="this.form.elements.sort_by.value=''; this.form.elements.sort_dir.value=''; this.form.submit()" aria-label="Ordenar captaciones">
-                        <option value="" {% if not current_order %}selected{% endif %} {% if not current_order %}disabled{% endif %}>Orden actual por columna</option>
-                        <option value="prioridad" {% if current_order == 'prioridad' %}selected{% endif %}>Prioridad de gestión</option>
-                        <option value="recientes" {% if current_order == 'recientes' %}selected{% endif %}>Más recientes</option>
-                        <option value="probabilidad" {% if current_order == 'probabilidad' %}selected{% endif %}>Mayor probabilidad de dueño</option>
-                        <option value="antiguas" {% if current_order == 'antiguas' %}selected{% endif %}>Más antiguas en portal</option>
-                        <option value="ultima_gestion" {% if current_order == 'ultima_gestion' %}selected{% endif %}>Última gestión</option>
-                    </select>
                 </div>
                 <input type="hidden" name="sort_by" value="{{ current_sort_by }}">
                 <input type="hidden" name="sort_dir" value="{{ current_sort_dir }}">
@@ -4230,10 +4566,9 @@
                 {% elif temporal_filter_kind == 'week' %}
                 <input type="hidden" name="gestion_semana" value="{{ temporal_filter_value }}">
                 {% endif %}
-                <button type="submit" class="btn-filter"><i class="fa-solid fa-filter me-1"></i> Filtrar</button>
             </form>
 
-            {% set has_active_filters = current_telefono or current_comunas or current_operacion or current_monto_desde or current_monto_hasta or current_portal or current_estado or current_ejecutivo %}
+            {% set has_active_filters = current_telefono or current_comunas or current_operacion or current_tipo or current_portal or current_estado or current_ejecutivo or current_monto_desde or current_monto_hasta %}
             {% set has_any_filters = has_active_filters or temporal_filter_kind %}
             <div class="filter-toolbar-meta">
                 {% if has_any_filters %}
@@ -4256,6 +4591,11 @@
                     {% if current_operacion %}
                     <button type="button" class="active-filter-chip" data-filter-param="operacion" onclick="clearCaptacionFilter(this)" title="Quitar filtro de operación">
                         {{ current_operacion|title }} <span class="chip-close" aria-hidden="true">×</span>
+                    </button>
+                    {% endif %}
+                    {% if current_tipo %}
+                    <button type="button" class="active-filter-chip" data-filter-param="tipo" onclick="clearCaptacionFilter(this)" title="Quitar filtro de tipo">
+                        Tipo: {{ current_tipo|replace('_', ' ')|title }} <span class="chip-close" aria-hidden="true">×</span>
                     </button>
                     {% endif %}
                     {% if current_monto_desde or current_monto_hasta %}
@@ -4288,7 +4628,7 @@
                 </div>
                 {% endif %}
                 <div class="filter-toolbar-status">
-                    <span class="filter-result-count">{{ total_count }} resultados</span>
+                    <span class="filter-result-count">{{ "{:,}".format(total_count|int).replace(",", ".") }} resultados</span>
                     {% if temporal_context %}<span class="captacion-temporal-context">{{ temporal_context }}</span>{% endif %}
                     <div class="sort-help">
                         <span class="sort-help-text" aria-label="Ordena haciendo clic en los encabezados" title="Haz clic en un encabezado para ordenar; vuelve a hacer clic para cambiar la dirección."><i class="fa-solid fa-arrow-down-a-z" aria-hidden="true"></i></span>
@@ -4478,7 +4818,7 @@
                     <button type="button" class="commune-picker-done">Listo</button>
                     </div>
                 </details>
-                <select name="operacion" onchange="this.form.submit()">
+                <select name="operacion" onchange="syncCaptacionPriceCurrency(this); this.form.submit()">
                     <option value="">Todas las operaciones</option>
                     {% if 'venta' in available_ops %}
                     <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
@@ -4494,7 +4834,6 @@
                     </select>
                     <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto desde" value="{{ current_monto_desde }}" aria-label="Monto desde">
                     <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto hasta" value="{{ current_monto_hasta }}" aria-label="Monto hasta">
-                    <div class="captacion-price-filter-error{% if invalid_price_range %} is-visible{% endif %}" role="alert">Desde no puede ser mayor que hasta.</div>
                 </div>
                 <select name="estado" onchange="this.form.submit()">
                     <option value="">Cualquier estado</option>
@@ -5004,6 +5343,32 @@
                 && window.innerWidth > 576;
         }
 
+        function toggleCaptacionAdvancedFilters(button) {
+            const form = button?.form;
+            if (!form) return;
+            const isOpen = form.classList.toggle('show-advanced');
+            button.setAttribute('aria-expanded', String(isOpen));
+        }
+
+        function clearCaptacionFilter(button) {
+            const params = new URLSearchParams(window.location.search);
+            const parameter = button?.dataset?.filterParam;
+            const value = button?.dataset?.filterValue;
+            if (!parameter) return;
+
+            if (parameter === 'precio') {
+                ['moneda', 'monto_desde', 'monto_hasta'].forEach(item => params.delete(item));
+            } else if (parameter === 'comuna' && value !== undefined) {
+                const remaining = params.getAll(parameter).filter(item => item !== value);
+                params.delete(parameter);
+                remaining.forEach(item => params.append(parameter, item));
+            } else {
+                params.delete(parameter);
+            }
+            params.set('page', '1');
+            window.location.search = params.toString();
+        }
+
         function captacionPriceCurrency(input) {
             return String(input?.form?.querySelector('select[name="moneda"]')?.value || 'UF').toUpperCase();
         }
@@ -5017,17 +5382,29 @@
         function formatCaptacionPriceValue(rawValue, currency) {
             const raw = String(rawValue || '').trim();
             if (!raw) return '';
+
+            // Los puntos son únicamente separadores visuales; se eliminan
+            // antes de volver a construir el valor formateado.
             const clean = raw.replace(/\./g, '').replace(/[^0-9,]/g, '');
             if (!clean) return '';
-            if (currency === 'CLP') return groupCaptacionPriceThousands(clean.replace(/\D/g, ''));
+
+            if (currency === 'CLP') {
+                return groupCaptacionPriceThousands(clean.replace(/\D/g, ''));
+            }
+
             const commaIndex = clean.lastIndexOf(',');
             const hasDecimalSeparator = commaIndex >= 0;
             const integerPart = hasDecimalSeparator ? clean.slice(0, commaIndex) : clean;
-            const decimalPart = hasDecimalSeparator ? clean.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2) : '';
+            const decimalPart = hasDecimalSeparator
+                ? clean.slice(commaIndex + 1).replace(/\D/g, '').slice(0, 2)
+                : '';
             const integerDigits = integerPart.replace(/\D/g, '');
             if (!integerDigits && !decimalPart) return '';
+
             const groupedInteger = groupCaptacionPriceThousands(integerDigits || '0');
-            return hasDecimalSeparator ? `${groupedInteger},${decimalPart}` : groupedInteger;
+            return hasDecimalSeparator
+                ? `${groupedInteger},${decimalPart}`
+                : groupedInteger;
         }
 
         function formatCaptacionPriceInput(input) {
@@ -5039,12 +5416,39 @@
             (form || document).querySelectorAll('[data-captacion-price-input]').forEach(formatCaptacionPriceInput);
         }
 
+        function syncCaptacionCurrencySegments(form) {
+            if (!form) return;
+            const currency = String(form.querySelector('select[name="moneda"]')?.value || 'UF').toUpperCase();
+            form.querySelectorAll('.captacion-currency-option').forEach(button => {
+                const isSelected = String(button.dataset.currency || '').toUpperCase() === currency;
+                button.classList.toggle('is-selected', isSelected);
+                button.setAttribute('aria-pressed', String(isSelected));
+            });
+            form.querySelectorAll('[data-captacion-price-input]').forEach(input => {
+                input.setAttribute('inputmode', currency === 'UF' ? 'decimal' : 'numeric');
+            });
+        }
+
+        function selectCaptacionCurrency(button) {
+            const form = button?.form;
+            const currency = String(button?.dataset?.currency || '').toUpperCase();
+            const select = form?.querySelector('select[name="moneda"]');
+            if (!form || !select || !['UF', 'CLP'].includes(currency)) return;
+            select.value = currency;
+            form.dataset.priceCurrencyTouched = '1';
+            syncCaptacionCurrencySegments(form);
+            formatCaptacionPriceFields(form);
+        }
+
         function parseCaptacionPriceForValidation(input) {
             if (!input) return null;
             const currency = captacionPriceCurrency(input);
             const raw = String(input.value || '').replace(/\./g, '').replace(/[^0-9,]/g, '');
             if (!raw) return null;
-            const normalized = currency === 'UF' ? raw.replace(',', '.') : raw.replace(/,/g, '');
+
+            const normalized = currency === 'UF'
+                ? raw.replace(',', '.')
+                : raw.replace(/,/g, '');
             const parsed = Number(normalized);
             return Number.isFinite(parsed) ? parsed : null;
         }
@@ -5056,6 +5460,7 @@
             const from = parseCaptacionPriceForValidation(fromInput);
             const to = parseCaptacionPriceForValidation(toInput);
             const invalid = from !== null && to !== null && from > to;
+
             priceInline?.classList.toggle('is-invalid', invalid);
             form?.querySelector('.captacion-price-filter-error')?.classList.toggle('is-visible', invalid);
             if (invalid) {
@@ -5085,35 +5490,18 @@
             const to = form?.querySelector('[name="monto_hasta"]')?.value;
             if (!currency || form?.dataset?.priceCurrencyTouched === '1' || from || to) return;
             currency.value = String(operationSelect.value || '').toLowerCase().includes('arr') ? 'CLP' : 'UF';
-        }
-
-        function clearCaptacionFilter(button) {
-            const params = new URLSearchParams(window.location.search);
-            const parameter = button?.dataset?.filterParam;
-            const value = button?.dataset?.filterValue;
-            if (!parameter) return;
-
-            if (parameter === 'precio') {
-                ['moneda', 'monto_desde', 'monto_hasta'].forEach(item => params.delete(item));
-            } else if (parameter === 'comuna' && value !== undefined) {
-                const remaining = params.getAll(parameter).filter(item => item !== value);
-                params.delete(parameter);
-                remaining.forEach(item => params.append(parameter, item));
-            } else {
-                params.delete(parameter);
-            }
-            params.set('page', '1');
-            window.location.search = params.toString();
+            syncCaptacionCurrencySegments(form);
         }
 
         function clearCaptacionFilters() {
             const params = new URLSearchParams(window.location.search);
-            ['telefono', 'comuna', 'operacion', 'moneda', 'monto_desde', 'monto_hasta', 'portal', 'estado', 'ejecutivo', 'classification', 'gestion_fecha', 'gestion_semana'].forEach(parameter => params.delete(parameter));
+            ['telefono', 'comuna', 'operacion', 'tipo', 'tipo_propiedad', 'portal', 'estado', 'ejecutivo', 'classification', 'moneda', 'monto_desde', 'monto_hasta', 'gestion_fecha', 'gestion_semana'].forEach(parameter => params.delete(parameter));
             params.set('page', '1');
             window.location.search = params.toString();
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('form').forEach(syncCaptacionCurrencySegments);
             formatCaptacionPriceFields();
             document.querySelectorAll('[data-team-sort="week"]').forEach(button => {
                 let descending = true;

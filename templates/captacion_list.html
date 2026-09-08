@@ -2950,7 +2950,7 @@
             color: var(--accent-hover);
         }
 
-        .captacion-filter-toolbar + .table-responsive {
+        .captacion-filter-toolbar + #captacion-results > .table-responsive {
             margin-top: 0;
         }
 
@@ -4427,9 +4427,9 @@
         </section>
 
         <div class="table-container">
-            <div class="captacion-filter-toolbar">
+            <div id="captacion-filter-toolbar" class="captacion-filter-toolbar">
             {% set captacion_advanced_open = current_tipo or current_monto_desde or current_monto_hasta or current_portal or current_estado or current_ejecutivo or current_sorts or (current_order and current_order != 'prioridad') %}
-            <form action="/captacion" method="GET" class="filter-bar{% if captacion_advanced_open %} show-advanced{% endif %}" onsubmit="return validateCaptacionPriceRange(this)">
+            <form action="/captacion" method="GET" class="filter-bar{% if captacion_advanced_open %} show-advanced{% endif %}" onsubmit="return submitCaptacionFilters(this)">
                 <div class="captacion-primary-filter-row">
                 <div class="filter-control filter-control-phone {{ 'is-active' if current_telefono else '' }}">
                     <label class="filter-control-label" for="captacion-telefono">Teléfono</label>
@@ -4460,7 +4460,7 @@
                 </div>
                 <div class="filter-control {{ 'is-active' if current_operacion else '' }}">
                     <label class="filter-control-label" for="captacion-operacion">Operación</label>
-                    <select id="captacion-operacion" name="operacion" onchange="syncCaptacionPriceCurrency(this); this.form.submit()">
+                    <select id="captacion-operacion" name="operacion" onchange="syncCaptacionPriceCurrency(this)">
                         <option value="">Todas las operaciones</option>
                         {% if 'venta' in available_ops %}
                         <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
@@ -4472,7 +4472,7 @@
                 </div>
                 <div class="filter-control filter-control-order {{ 'is-active' if current_order and not current_sorts and current_order != 'prioridad' else '' }}">
                     <label class="filter-control-label" for="captacion-orden">Ordenar por</label>
-                    <select id="captacion-orden" name="orden" onchange="this.form.elements.sort_by.value=''; this.form.elements.sort_dir.value=''; this.form.submit()" aria-label="Ordenar captaciones">
+                    <select id="captacion-orden" name="orden" onchange="this.form.elements.sort_by.value=''; this.form.elements.sort_dir.value=''" aria-label="Ordenar captaciones">
                         <option value="" {% if not current_order %}selected{% endif %} {% if not current_order %}disabled{% endif %}>Orden actual por columna</option>
                         <option value="prioridad" {% if current_order == 'prioridad' %}selected{% endif %}>Prioridad de gestión</option>
                         <option value="recientes" {% if current_order == 'recientes' %}selected{% endif %}>Más recientes</option>
@@ -4489,7 +4489,7 @@
                 <div id="captacion-advanced-filters" class="captacion-advanced-filter-row{% if user_role not in ['supervisor', 'admin', 'jefatura'] %} is-agent{% endif %}">
                 <div class="filter-control captacion-filter-type {{ 'is-active' if current_tipo else '' }}">
                     <label class="filter-control-label" for="captacion-tipo">Tipo</label>
-                    <select id="captacion-tipo" name="tipo" onchange="this.form.submit()" aria-label="Filtrar por tipo de propiedad">
+                    <select id="captacion-tipo" name="tipo" aria-label="Filtrar por tipo de propiedad">
                         <option value="">Todos los tipos</option>
                         {% for property_type_option in available_property_types %}
                         <option value="{{ property_type_option.value }}" {% if current_tipo|lower == property_type_option.value|lower %}selected{% endif %}>{{ property_type_option.label }}</option>
@@ -4516,7 +4516,7 @@
                 </div>
                 <div class="filter-control captacion-filter-portal {{ 'is-active' if current_portal else '' }}">
                     <label class="filter-control-label" for="captacion-portal">Portal</label>
-                    <select id="captacion-portal" name="portal" onchange="this.form.submit()" aria-label="Filtrar por portal">
+                    <select id="captacion-portal" name="portal" aria-label="Filtrar por portal">
                         <option value="">Todos los portales</option>
                         {% for portal_option in available_portals %}
                         <option value="{{ portal_option.value }}" {% if current_portal == portal_option.value %}selected{% endif %}>{{ portal_option.label }}</option>
@@ -4525,7 +4525,7 @@
                 </div>
                 <div class="filter-control captacion-filter-state {{ 'is-active' if current_estado else '' }}">
                     <label class="filter-control-label" for="captacion-estado">Estado</label>
-                    <select id="captacion-estado" name="estado" onchange="this.form.submit()">
+                    <select id="captacion-estado" name="estado">
                         <option value="">Cualquier estado</option>
                         <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
                         <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
@@ -4547,7 +4547,7 @@
                 {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                 <div class="filter-control captacion-filter-executive {{ 'is-active' if current_ejecutivo else '' }}">
                     <label class="filter-control-label" for="captacion-ejecutivo">Ejecutivo</label>
-                    <select id="captacion-ejecutivo" name="ejecutivo" onchange="this.form.submit()">
+                    <select id="captacion-ejecutivo" name="ejecutivo">
                         <option value="">Cualquier Ejecutivo</option>
                         {% for exec in executives %}
                         <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}</option>
@@ -4638,6 +4638,7 @@
             </div>
             </div>
 
+            <div id="captacion-results">
             <div class="table-responsive">
                 <table class="prop-table">
                     <thead>
@@ -4734,6 +4735,7 @@
                 </div>
             </div>
             {% endif %}
+            </div>
         </div>
     </div>
 
@@ -4818,7 +4820,7 @@
                     <button type="button" class="commune-picker-done">Listo</button>
                     </div>
                 </details>
-                <select name="operacion" onchange="syncCaptacionPriceCurrency(this); this.form.submit()">
+                <select name="operacion" onchange="syncCaptacionPriceCurrency(this)">
                     <option value="">Todas las operaciones</option>
                     {% if 'venta' in available_ops %}
                     <option value="venta" {% if current_operacion=='venta' %}selected{% endif %}>Venta</option>
@@ -4835,7 +4837,7 @@
                     <input type="text" name="monto_desde" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto desde" value="{{ current_monto_desde }}" aria-label="Monto desde">
                     <input type="text" name="monto_hasta" inputmode="{{ 'decimal' if current_moneda == 'UF' else 'numeric' }}" autocomplete="off" data-captacion-price-input onkeydown="return preventCaptacionPricePoint(event, this)" oninput="formatCaptacionPriceInput(this)" placeholder="Monto hasta" value="{{ current_monto_hasta }}" aria-label="Monto hasta">
                 </div>
-                <select name="estado" onchange="this.form.submit()">
+                <select name="estado">
                     <option value="">Cualquier estado</option>
                     <option value="Por contactar" {% if current_estado=='Por contactar' %}selected{% endif %}>Por contactar</option>
                     <option value="Contacto exitoso" {% if current_estado=='Contacto exitoso' %}selected{% endif %}>Contacto exitoso</option>
@@ -4854,7 +4856,7 @@
                     <option value="GESTION" {% if current_estado=='GESTION' %}selected{% endif %}>En Gestión (Legado)</option>
                 </select>
                 {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
-                <select name="ejecutivo" onchange="this.form.submit()">
+                <select name="ejecutivo">
                     <option value="">Cualquier Ejecutivo</option>
                     {% for exec in executives %}
                     <option value="{{ exec }}" {% if current_ejecutivo==exec %}selected{% endif %}>{{ exec }}</option>
@@ -5207,6 +5209,128 @@
                 button.addEventListener('click', () => button.closest('.commune-picker')?.removeAttribute('open'));
             });
             animateCaptacionKpis();
+        });
+
+        function setCaptacionFilterLoading(form, loading) {
+            if (!form) return;
+            form.setAttribute('aria-busy', String(loading));
+            const button = form.querySelector('.btn-filter');
+            if (!button) return;
+            if (loading) {
+                button.dataset.originalHtml = button.innerHTML;
+                button.disabled = true;
+                button.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Filtrando...';
+            } else {
+                button.disabled = false;
+                if (button.dataset.originalHtml) {
+                    button.innerHTML = button.dataset.originalHtml;
+                    delete button.dataset.originalHtml;
+                }
+            }
+        }
+
+        function bindCaptacionFilterControls(root) {
+            if (!root) return;
+            root.querySelectorAll('.commune-picker-done').forEach(button => {
+                if (button.dataset.captacionBound === '1') return;
+                button.dataset.captacionBound = '1';
+                button.addEventListener('click', () => button.closest('.commune-picker')?.removeAttribute('open'));
+            });
+        }
+
+        function bindCaptacionSortHeaders(root) {
+            root?.querySelectorAll('.sortable').forEach(th => {
+                if (th.dataset.captacionSortBound === '1') return;
+                th.dataset.captacionSortBound = '1';
+                th.addEventListener('click', () => {
+                    const col = th.dataset.col;
+                    const params = new URLSearchParams(window.location.search);
+                    let columns = (params.get('sort_by') || '').split(',').filter(Boolean);
+                    let directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
+                    while (directions.length < columns.length) directions.push('desc');
+                    const existing = columns.indexOf(col);
+
+                    if (existing === -1) {
+                        columns.push(col);
+                        directions.push('desc');
+                    } else if (directions[existing] === 'desc') {
+                        directions[existing] = 'asc';
+                    } else {
+                        columns.splice(existing, 1);
+                        directions.splice(existing, 1);
+                    }
+
+                    if (columns.length) {
+                        params.set('sort_by', columns.join(','));
+                        params.set('sort_dir', directions.join(','));
+                    } else {
+                        params.delete('sort_by');
+                        params.delete('sort_dir');
+                    }
+                    params.delete('orden');
+                    params.set('page', '1');
+                    window.location.search = params.toString();
+                });
+            });
+        }
+
+        async function loadCaptacionFilteredView(url, { pushHistory = true, form = null } = {}) {
+            const currentToolbar = document.querySelector('#captacion-filter-toolbar');
+            const currentResults = document.querySelector('#captacion-results');
+            if (!currentToolbar || !currentResults) throw new Error('No se encontró el bloque de resultados de Captación');
+
+            const keepAdvancedOpen = Boolean(form?.classList.contains('show-advanced'));
+            const response = await fetch(url.toString(), {
+                headers: {
+                    Accept: 'text/html',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+            if (!response.ok) throw new Error(`Respuesta HTTP ${response.status}`);
+
+            const html = await response.text();
+            const nextDocument = new DOMParser().parseFromString(html, 'text/html');
+            const nextToolbar = nextDocument.querySelector('#captacion-filter-toolbar');
+            const nextResults = nextDocument.querySelector('#captacion-results');
+            if (!nextToolbar || !nextResults) throw new Error('La respuesta no contiene el listado de Captación');
+
+            const nextForm = nextToolbar.querySelector('.filter-bar');
+            if (keepAdvancedOpen && nextForm) {
+                nextForm.classList.add('show-advanced');
+                nextToolbar.querySelector('.captacion-advanced-toggle')?.setAttribute('aria-expanded', 'true');
+            }
+
+            currentToolbar.replaceWith(nextToolbar);
+            currentResults.replaceWith(nextResults);
+            if (pushHistory) window.history.pushState({ captacionFilters: true }, '', url.toString());
+
+            bindCaptacionFilterControls(nextToolbar);
+            bindCaptacionSortHeaders(nextResults);
+            nextToolbar.querySelectorAll('form').forEach(syncCaptacionCurrencySegments);
+            formatCaptacionPriceFields(nextToolbar);
+        }
+
+        function submitCaptacionFilters(form) {
+            if (!validateCaptacionPriceRange(form)) return false;
+            const url = new URL(form.getAttribute('action') || '/captacion', window.location.href);
+            url.search = new URLSearchParams(new FormData(form)).toString();
+            url.searchParams.set('page', '1');
+            setCaptacionFilterLoading(form, true);
+
+            loadCaptacionFilteredView(url, { form })
+                .catch(error => {
+                    console.error('No se pudo actualizar Captación sin recargar:', error);
+                    window.location.assign(url.toString());
+                })
+                .finally(() => setCaptacionFilterLoading(form, false));
+            return false;
+        }
+
+        window.addEventListener('popstate', () => {
+            loadCaptacionFilteredView(new URL(window.location.href), { pushHistory: false })
+                .catch(() => window.location.reload());
         });
 
         // Al volver desde el detalle, el navegador puede restaurar el listado

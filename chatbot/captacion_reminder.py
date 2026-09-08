@@ -49,6 +49,10 @@ def _retry_delay(attempts: int) -> timedelta:
 def _claim_filter(now: datetime) -> dict[str, Any]:
     return {
         "message_domain": DOMAIN,
+        # Every captacion reminder delivery must have an unambiguous current
+        # recipient. Historical rows without this identity stay untouched and
+        # reportable instead of being sent through a legacy fallback.
+        "recipient_user_id": {"$exists": True, "$nin": [None, ""]},
         "$or": [
             {
                 "status": "pending",
@@ -220,6 +224,32 @@ def _claimed_filter(task: dict[str, Any]) -> dict[str, Any]:
     return {"_id": task["_id"], "status": "processing", "lease_token": task.get("lease_token")}
 
 
+def _promote_legacy_unsent_task(db, task, *, now: datetime):
+    """Promote a safely identified unsent legacy task before token issuance."""
+    from .followup_tracking import TOKEN_VERSION, TRACKING_VERSION
+
+    if task.get("followup_tracking_version") == TRACKING_VERSION:
+        return task
+    promoted = db[COLLECTION].find_one_and_update(
+        _claimed_filter(task),
+        {
+            "$set": {
+                "followup_tracking_version": TRACKING_VERSION,
+                "followup_token_version": TOKEN_VERSION,
+                "updated_at": now,
+            }
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not promoted:
+        raise RuntimeError("followup_claim_lost_before_v2_promotion")
+    logger.info(
+        "[CAPTACION_REMINDER] legacy_task_promoted task_id=%s token_version=2",
+        task.get("task_id"),
+    )
+    return promoted
+
+
 def _clear_lease_update(*, clear_next_attempt: bool = False) -> dict[str, Any]:
     fields = {
         "lease_owner": "",
@@ -304,6 +334,8 @@ async def deliver_claimed_reminder(db, task):
     if attempts > MAX_DELIVERY_ATTEMPTS:
         return _mark_terminal(db, task, error="max_delivery_attempts_exceeded", reason="max_attempts")
 
+    now = utc_now()
+    task = _promote_legacy_unsent_task(db, task, now=now)
     recipient, phone = resolve_recipient(db, task)
     if not recipient or not phone:
         return _mark_terminal(

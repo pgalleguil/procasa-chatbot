@@ -253,7 +253,10 @@ def test_long_future_reminder_emits_at_delivery_and_expires_from_execute_at(v2_s
         created_at=created_at,
         execute_at=execute_at,
         scheduled_at=execute_at,
+        followup_tracking_version=LEGACY_TRACKING_VERSION,
+        followup_token_version=1,
     )
+    task.pop("created_by_user_id")
     db = _db_with_task(task)
     db["usuarios"].insert_one({"_id": "user-1", "nombre": "Ana", "telefono": "56911111111", "is_active": True})
     db["propiedades_captacion"].insert_one({"_id": property_id, "gestion": {"estado_captacion": "Sin respuesta", "notas": []}})
@@ -274,7 +277,68 @@ def test_long_future_reminder_emits_at_delivery_and_expires_from_execute_at(v2_s
     assert payload["exp"] == int((execute_at + timedelta(days=90)).timestamp())
     saved = db["crm_tasks"].find_one({"_id": task["_id"]})
     assert saved["created_at"].replace(tzinfo=timezone.utc) == created_at
+    assert saved["followup_tracking_version"] == TRACKING_VERSION
+    assert saved["followup_token_version"] == TOKEN_VERSION
     assert "token" not in saved
+
+
+@pytest.mark.parametrize("legacy_status", ["failed_retryable", "delivery_unknown", "processing"])
+def test_legacy_unsent_retryable_and_stale_states_promote_to_v2(v2_secret, monkeypatch, legacy_status):
+    import chatbot.captacion_reminder as reminder_module
+    import chatbot.followup_tracking as tracking_module
+
+    property_id = ObjectId()
+    extra = {
+        "followup_tracking_version": LEGACY_TRACKING_VERSION,
+        "followup_token_version": 1,
+        "recipient_user_id": "user-1",
+    }
+    if legacy_status in {"failed_retryable", "delivery_unknown"}:
+        extra["next_attempt_at"] = UTC_NOW - timedelta(seconds=1)
+    else:
+        extra["processing_lease_until"] = UTC_NOW - timedelta(seconds=1)
+        extra["lease_token"] = "stale-legacy-token"
+    task = _task(obj_id=str(property_id), status=legacy_status, **extra)
+    db = _db_with_task(task)
+    db["usuarios"].insert_one({"_id": "user-1", "nombre": "Ana", "telefono": "56911111111", "is_active": True})
+    db["propiedades_captacion"].insert_one({"_id": property_id, "gestion": {"estado_captacion": "Sin respuesta", "notas": []}})
+    emitted_versions = []
+    original_issue = tracking_module.issue_followup_token
+
+    def capture_issue(task_id, *, expires_at=None, now=None):
+        emitted_versions.append(2)
+        return original_issue(task_id, expires_at=expires_at, now=now)
+
+    monkeypatch.setattr(tracking_module, "issue_followup_token", capture_issue)
+
+    async def fake_send(phone, content):
+        return {"success": True, "provider_message_id": "provider-legacy"}
+
+    monkeypatch.setattr("chatbot.whatsapp_client.send_whatsapp_message_detailed", fake_send)
+    result = asyncio.run(reminder_module.process_one_due_reminder(db, worker_id="worker-legacy"))
+
+    saved = db["crm_tasks"].find_one({"_id": task["_id"]})
+    assert result["status"] == "notified"
+    assert emitted_versions == [2]
+    assert saved["followup_tracking_version"] == TRACKING_VERSION
+    assert saved["followup_token_version"] == TOKEN_VERSION
+    assert "token" not in saved
+
+
+def test_legacy_unsent_task_without_recipient_is_not_claimed(v2_secret):
+    task = _task(
+        status="pending",
+        followup_tracking_version=LEGACY_TRACKING_VERSION,
+        followup_token_version=1,
+    )
+    task.pop("recipient_user_id")
+    task.pop("target_user_id")
+    db = _db_with_task(task)
+
+    assert claim_due_reminder(db, worker_id="worker-unsafe", now=UTC_NOW) is None
+    saved = db["crm_tasks"].find_one({"_id": task["_id"]})
+    assert saved["status"] == "pending"
+    assert "followup_tracking_version" not in saved or saved["followup_tracking_version"] == LEGACY_TRACKING_VERSION
 
 
 def test_delivery_unknown_is_retryable_and_schedules_next_attempt(v2_secret, monkeypatch):

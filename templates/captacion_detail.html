@@ -936,43 +936,12 @@
             border-color: #10b981;
         }
 
-        /* Post-send toast */
         .tiny-count {
             font-size: 0.7rem;
             opacity: 0.7;
             background: rgba(255, 255, 255, 0.1);
             padding: 1px 5px;
             border-radius: 8px;
-        }
-
-        #postSendToast {
-            position: fixed;
-            bottom: 28px;
-            right: 28px;
-            background: rgba(16, 185, 129, 0.95);
-            color: #fff;
-            padding: 12px 20px;
-            border-radius: 12px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            z-index: 9999;
-            display: none;
-            gap: 10px;
-            align-items: center;
-            animation: slideInRight 0.3s ease;
-        }
-
-        @keyframes slideInRight {
-            from {
-                transform: translateX(80px);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
         }
 
         .tpl-info {
@@ -1361,9 +1330,9 @@
                             </div>
 
                             <div class="col-12">
-                                <label class="info-label">Bitácora</label>
+                                <label class="info-label">Notas de gestión (opcional)</label>
                                 <textarea class="form-control" id="notes" rows="3"
-                                    placeholder="Escribe el resultado de tu gestión aquí..."></textarea>
+                                    placeholder="Agrega una nota sobre esta gestión..."></textarea>
                             </div>
 
                             <div class="col-12 mt-2">
@@ -1627,52 +1596,6 @@
                 </div>
             </div>
 
-            <!-- POST-SEND TOAST -->
-            <div id="postSendToast" style="display:none;"></div>
-
-            <!-- FEEDBACK LOOP MODAL -->
-            <div class="modal fade" id="feedbackModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title"><i
-                                    class="fa-solid fa-clock-rotate-left me-2 text-warning"></i>Bitácora de
-                                Gestión</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                                aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body text-center">
-                            <p class="mb-4 text-secondary">Confirma el resultado. Abrir otra aplicación no cuenta como gestión.</p>
-                            <div class="d-grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-                                <button type="button" class="btn btn-outline-secondary" onclick="confirmManagementResult('no_answer')"><i class="fa-solid fa-phone-slash me-2"></i>No respondió</button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="confirmManagementResult('busy')"><i class="fa-solid fa-clock me-2"></i>Ocupado</button>
-                                <button type="button" class="btn btn-outline-danger" onclick="confirmManagementResult('invalid_number')"><i class="fa-solid fa-triangle-exclamation me-2"></i>Número inválido</button>
-                                <button type="button" class="btn btn-outline-success" onclick="confirmManagementResult('contacted')"><i class="fa-solid fa-circle-check me-2"></i>Contactado</button>
-                                <button type="button" class="btn btn-outline-primary" onclick="confirmManagementResult('callback_requested')"><i class="fa-solid fa-calendar me-2"></i>Solicita llamada posterior</button>
-                                <button type="button" class="btn btn-outline-success" onclick="confirmManagementResult('message_sent')"><i class="fa-solid fa-paper-plane me-2"></i>Mensaje enviado</button>
-                            </div>
-                            <div class="text-start mt-4">
-                                <label for="commercialResult" class="form-label text-secondary">Resultado comercial (opcional)</label>
-                                <select class="form-select" id="commercialResult">
-                                    <option value="">Sin resultado comercial</option>
-                                    <option value="not_interested">No interesado</option>
-                                    <option value="captured">Captada</option>
-                                    <option value="broker_identified">Corredor identificado</option>
-                                    <option value="in_progress">Continúa en gestión</option>
-                                    <option value="unavailable">Propiedad no disponible</option>
-                                </select>
-                            </div>
-                            <textarea class="form-control mt-4" id="feedbackNotes" rows="2"
-                                placeholder="Opcional: Detalles adicionales de la gestión..."></textarea>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="confirmManagementResult('cancel')"
-                                style="background: rgba(255,255,255,0.1); border: none;">Cancelar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- defer: el parser HTML no se bloquea mientras bajan estos scripts -->
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
             <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
@@ -1780,9 +1703,6 @@
                     }
                 }
 
-                let pendingManagementAttempt = null;
-                let externalAppWasHidden = false;
-                let confirmationDisplayed = false;
                 const CAPTACION_METRICS_REFRESH_KEY = 'captacionMetricsUpdatedAt';
 
                 function notifyCaptacionMetricsUpdated() {
@@ -1793,78 +1713,20 @@
                     }
                 }
 
-                async function createManagementAttempt(action, channel, message, template_used) {
-                    const payload = {
-                        id: "{{ prop.id|default(prop._id) }}",
-                        action: action,
-                        channel: channel,
-                        message: message,
-                        phone: document.getElementById('wa-telefono') ? document.getElementById('wa-telefono').value : '',
-                        result: 'pending_confirmation',
-                        template_used: template_used || "",
-                        followup_token: followupContextToken || null
-                    };
-                    const response = await fetch('/api/captacion/log_action', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await response.json();
-                    if (!response.ok || data.status !== 'ok' || !data.attempt_id) {
-                        throw new Error(data.detail || data.message || 'No fue posible iniciar la gestión');
-                    }
-                    pendingManagementAttempt = {
-                        attempt_id: data.attempt_id,
-                        channel: channel,
-                        initiated_at: Date.now()
-                    };
-                    sessionStorage.setItem('captacionPendingManagement', JSON.stringify(pendingManagementAttempt));
-                    externalAppWasHidden = false;
-                    confirmationDisplayed = false;
-                    return pendingManagementAttempt;
-                }
-
-                function showManagementConfirmation() {
-                    if (!pendingManagementAttempt || confirmationDisplayed) return;
-                    confirmationDisplayed = true;
-                    const modalElement = document.getElementById('feedbackModal');
-                    bootstrap.Modal.getOrCreateInstance(modalElement).show();
-                }
-
-                function scheduleManagementConfirmation() {
-                    setTimeout(() => {
-                        if (pendingManagementAttempt && !document.hidden) showManagementConfirmation();
-                    }, 1400);
-                }
-
-                async function startCallManagement(event) {
+                function startCallManagement(event) {
                     event.preventDefault();
                     const phone = document.getElementById('wa-telefono').value;
-                    try {
-                        await createManagementAttempt('call', 'tel', 'Llamada iniciada a ' + phone, '');
-                        scheduleManagementConfirmation();
-                        window.location.href = 'tel:' + phone;
-                    } catch (error) {
-                        alert(error.message);
-                    }
+                    window.location.href = 'tel:' + phone;
                     return false;
                 }
 
-                async function startMessageManagement(event) {
+                function startMessageManagement(event) {
                     event.preventDefault();
                     const link = event.currentTarget;
                     const destination = link.href;
-                    const message = document.getElementById('commMessage').value;
-                    const template = typeof currentSelectedTemplateLabel !== 'undefined' ? currentSelectedTemplateLabel : 'Mensaje Libre';
-                    try {
-                        await createManagementAttempt('message', currentCommChannel, message, template);
-                        bootstrap.Modal.getInstance(document.getElementById('commModal'))?.hide();
-                        scheduleManagementConfirmation();
-                        if (currentCommChannel === 'email') window.location.href = destination;
-                        else window.open(destination, '_blank', 'noopener');
-                    } catch (error) {
-                        alert(error.message);
-                    }
+                    bootstrap.Modal.getInstance(document.getElementById('commModal'))?.hide();
+                    if (currentCommChannel === 'email') window.location.href = destination;
+                    else window.open(destination, '_blank', 'noopener');
                     return false;
                 }
 
@@ -2740,67 +2602,6 @@
                     syncCommButtons();
                 });
 
-                async function confirmManagementResult(result) {
-                    if (!pendingManagementAttempt) return;
-                    const notes = document.getElementById('feedbackNotes').value;
-                    const buttons = document.querySelectorAll('#feedbackModal button');
-                    buttons.forEach(button => button.disabled = true);
-                    try {
-                        const response = await fetch('/api/captacion/confirm_action', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                attempt_id: pendingManagementAttempt.attempt_id,
-                                result,
-                                commercial_result: (result === 'contacted' || result === 'callback_requested')
-                                    ? (document.getElementById('commercialResult')?.value || null)
-                                    : null,
-                                notes,
-                                followup_token: followupContextToken || null
-                            })
-                        });
-                        const data = await response.json();
-                        if (!response.ok || data.status !== 'ok') throw new Error(data.detail || 'No fue posible confirmar');
-                        sessionStorage.removeItem('captacionPendingManagement');
-                        pendingManagementAttempt = null;
-                        bootstrap.Modal.getInstance(document.getElementById('feedbackModal'))?.hide();
-                        document.getElementById('feedbackNotes').value = '';
-                        const commercialResult = document.getElementById('commercialResult');
-                        if (commercialResult) commercialResult.value = '';
-                        if (result !== 'cancel') notifyCaptacionMetricsUpdated();
-                        const toast = document.getElementById('postSendToast');
-                        if (toast && result !== 'cancel') {
-                            toast.style.display = 'flex';
-                            toast.innerHTML = data.credited
-                                ? '<i class="fa-solid fa-circle-check"></i> Propiedad gestionada y acreditada'
-                                : '<i class="fa-solid fa-circle-info"></i> Gestión confirmada; la propiedad ya contaba hoy';
-                            setTimeout(() => { toast.style.display = 'none'; }, 4000);
-                        }
-                    } catch (error) {
-                        alert(error.message);
-                    } finally {
-                        buttons.forEach(button => button.disabled = false);
-                    }
-                }
-
-                document.addEventListener('visibilitychange', () => {
-                    if (document.hidden && pendingManagementAttempt) externalAppWasHidden = true;
-                    if (!document.hidden && externalAppWasHidden) showManagementConfirmation();
-                });
-                window.addEventListener('focus', () => {
-                    if (pendingManagementAttempt && Date.now() - pendingManagementAttempt.initiated_at > 700) showManagementConfirmation();
-                });
-                document.addEventListener('DOMContentLoaded', () => {
-                    try {
-                        const stored = JSON.parse(sessionStorage.getItem('captacionPendingManagement') || 'null');
-                        if (stored?.attempt_id) {
-                            pendingManagementAttempt = stored;
-                            scheduleManagementConfirmation();
-                        }
-                    } catch (_) {
-                        sessionStorage.removeItem('captacionPendingManagement');
-                    }
-                });
             </script>
 
             <!-- LEAD VERIFICATION MODAL -->

@@ -18,6 +18,10 @@ LEAD_ALIAS_PATHS: tuple[tuple[str, str], ...] = (
     ("mercadolibre", "prospecto.codigo_mercadolibre"),
     ("yapo", "prospecto.codigo_yapo"),
 )
+CONTEXTUAL_LEAD_ALIAS_FIELDS: tuple[str, ...] = (
+    "prospecto.codigo_propiedad",
+    "prospecto.propiedad_codigo",
+)
 
 # These publication structures were verified against the current master.
 # portal_inmobiliario.code contains the MercadoLibre identifier (MLC...), so
@@ -41,6 +45,25 @@ def normalize_identifier(value: Any) -> Optional[str]:
         normalized = unicodedata.normalize("NFKC", str(value)).strip()
         return normalized or None
     return None
+
+
+def normalize_portal_source(value: Any) -> Optional[str]:
+    """Normalize only verified source labels; never merges portal ID spaces."""
+
+    normalized = normalize_identifier(value)
+    if not normalized:
+        return None
+    key = normalized.casefold().replace(" ", "").replace("_", "").replace("-", "")
+    aliases = {
+        "toctoc": "toctoc",
+        "mercadolibre": "mercadolibre",
+        "yapo": "yapo",
+        "portalinmobiliario": "portal_inmobiliario",
+        "chilepropiedades": "chilepropiedades",
+        "proppit": "proppit",
+        "procasa": "procasa",
+    }
+    return aliases.get(key)
 
 
 def _path_value(document: Mapping[str, Any], path: str) -> Any:
@@ -83,7 +106,13 @@ def _iter_master_aliases(document: Mapping[str, Any]) -> Iterable[tuple[AliasKey
 class PropertyIdentityResolver:
     """Resolve leads against a frozen, in-memory master index."""
 
-    def __init__(self, properties: Iterable[Mapping[str, Any]]) -> None:
+    def __init__(
+        self,
+        properties: Iterable[Mapping[str, Any]],
+        *,
+        enable_contextual_aliases: bool = True,
+    ) -> None:
+        self.enable_contextual_aliases = enable_contextual_aliases
         self._canonical_index: dict[str, set[str]] = defaultdict(set)
         self._alias_index: dict[AliasKey, set[str]] = defaultdict(set)
         self._alias_path_index: dict[AliasKey, set[str]] = defaultdict(set)
@@ -121,7 +150,34 @@ class PropertyIdentityResolver:
             value = normalize_identifier(prospecto.get(field_name))
             if value:
                 aliases.append((AliasKey(source, value), path))
+        if self.enable_contextual_aliases:
+            source_value = next(
+                (
+                    prospecto.get(field_name)
+                    for field_name in (
+                        "origen",
+                        "fuente_lead",
+                        "portal_origen",
+                        "origen_anuncio",
+                        "plataforma_origen",
+                    )
+                    if prospecto.get(field_name) is not None
+                ),
+                None,
+            )
+            source = normalize_portal_source(source_value)
+            if source == "toctoc":
+                for path in CONTEXTUAL_LEAD_ALIAS_FIELDS:
+                    field_name = path.rsplit(".", 1)[-1]
+                    value = normalize_identifier(prospecto.get(field_name))
+                    if value:
+                        aliases.append((AliasKey(source, value), f"{path}[source=toctoc]"))
         return aliases
+
+    def lead_aliases(self, lead: Mapping[str, Any]) -> tuple[tuple[AliasKey, str], ...]:
+        """Expose the verified lead alias candidates for metrics only."""
+
+        return tuple(self._lead_aliases(lead))
 
     def resolve(self, lead: Mapping[str, Any]) -> PropertyIdentityResolution:
         prospecto = lead.get("prospecto")
@@ -193,5 +249,9 @@ class PropertyIdentityResolver:
         )
 
 
-def build_property_identity_resolver(properties: Iterable[Mapping[str, Any]]) -> PropertyIdentityResolver:
-    return PropertyIdentityResolver(properties)
+def build_property_identity_resolver(
+    properties: Iterable[Mapping[str, Any]],
+    *,
+    enable_contextual_aliases: bool = True,
+) -> PropertyIdentityResolver:
+    return PropertyIdentityResolver(properties, enable_contextual_aliases=enable_contextual_aliases)

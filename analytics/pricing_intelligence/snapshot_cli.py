@@ -19,7 +19,7 @@ from .lead_linkage import LeadLinkageService
 from .property_identity import build_property_identity_resolver, normalize_identifier
 from .snapshot_builder import PropertySnapshotBuilder
 from .snapshot_repository import PROPOSED_COLLECTION, PROPOSED_IDEMPOTENT_INDEX
-from .time_utils import BUSINESS_TZ, UTC, to_utc
+from .time_utils import BUSINESS_TZ, UTC, is_in_previous_window, to_utc
 
 
 PROPERTY_PROJECTION = {
@@ -45,6 +45,46 @@ LEAD_PROJECTION = {
     "prospecto.codigo": 1,
     "prospecto.codigo_mercadolibre": 1,
     "prospecto.codigo_yapo": 1,
+    "prospecto.origen": 1,
+    "prospecto.fuente_lead": 1,
+    "prospecto.portal_origen": 1,
+    "prospecto.origen_anuncio": 1,
+    "prospecto.plataforma_origen": 1,
+    "prospecto.codigo_propiedad": 1,
+    "prospecto.propiedad_codigo": 1,
+    "prospecto.codigo_referencia": 1,
+    "prospecto.codigo_externo": 1,
+    "prospecto.codigo_externo_aportado": 1,
+    "prospecto.codigo_interno": 1,
+    "prospecto.codigo_interno_procasa": 1,
+    "prospecto.codigo_procasa": 1,
+    "prospecto.external_id_origen": 1,
+    "prospecto.codigo_consultado": 1,
+    "prospecto.codigo_detectado": 1,
+    "prospecto.codigo_encontrado": 1,
+    "prospecto.codigo_interes": 1,
+    "prospecto.codigo_mencionado": 1,
+    "prospecto.codigo_propiedad_aludida": 1,
+    "prospecto.codigo_propiedad_interes": 1,
+    "prospecto.codigo_propiedad_interno": 1,
+    "prospecto.codigo_sugerido": 1,
+    "prospecto.url": 1,
+    "prospecto.url_yapo": 1,
+    "prospecto.link_yapo": 1,
+    "prospecto.link_mercadolibre": 1,
+    "prospecto.link_mercado_libre": 1,
+    "prospecto.link_portal": 1,
+    "prospecto.link_pendiente": 1,
+    "prospecto.link_detectado": 1,
+    "prospecto.link_externo": 1,
+    "prospecto.ultimo_link_visto": 1,
+    "prospecto.enlace": 1,
+    "prospecto.enlace_ml": 1,
+    "prospecto.enlace_externo": 1,
+    "prospecto.enlace_portalinmobiliario": 1,
+    "prospecto.propiedad_link": 1,
+    "prospecto.origen_link": 1,
+    "prospecto.debug_link": 1,
 }
 HISTORY_PROJECTION = {
     "_id": 0,
@@ -91,37 +131,85 @@ def _publication_counts(snapshots: Iterable[Any]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def _exact_link_count(metrics: Mapping[str, Any]) -> int:
+    counts = metrics.get("counts_by_status", {})
+    return int(counts.get("EXACT_CANONICAL", 0)) + int(counts.get("EXACT_ALIAS", 0))
+
+
+def _eligible_lead_counts(records: Iterable[Any], as_of: datetime) -> dict[str, int]:
+    records = list(records)
+    return {
+        "7d": sum(
+            record.created_at is not None
+            and is_in_previous_window(record.created_at, as_of, 7)
+            for record in records
+            if record.status.value in {"EXACT_CANONICAL", "EXACT_ALIAS"}
+        ),
+        "30d": sum(
+            record.created_at is not None
+            and is_in_previous_window(record.created_at, as_of, 30)
+            for record in records
+            if record.status.value in {"EXACT_CANONICAL", "EXACT_ALIAS"}
+        ),
+    }
+
+
 def _build_report(
     *,
     as_of: datetime,
     properties: list[Mapping[str, Any]],
     snapshots: Iterable[Any],
     errors: Iterable[str],
-    linkage_metrics: Mapping[str, Any],
-    linkage_records: Iterable[Any],
+    leads: Iterable[Mapping[str, Any]],
+    v1_service: LeadLinkageService,
+    v1_records: Iterable[Any],
+    v2_service: LeadLinkageService,
+    v2_records: Iterable[Any],
+    legacy_code_sets: Mapping[str, set[str]],
 ) -> dict[str, Any]:
     snapshots = list(snapshots)
-    records = list(linkage_records)
+    leads = list(leads)
+    v1_records = list(v1_records)
+    v2_records = list(v2_records)
     errors = list(errors)
+    v2_metrics = v2_service.metrics(v2_records)
+    v1_metrics = v1_service.metrics(v1_records)
     conflict_candidates = {
         candidate
-        for record in records
+        for record in v2_records
         if record.status.value == "CONFLICT"
         for candidate in record.resolution.candidates
     }
     ambiguous_candidates = {
         candidate
-        for record in records
+        for record in v2_records
         if record.status.value == "AMBIGUOUS"
         for candidate in record.resolution.candidates
     }
+    v1_exact = _exact_link_count(v1_metrics)
+    v2_exact = _exact_link_count(v2_metrics)
+    gain = v2_exact - v1_exact
     return {
         "snapshot_date_local": as_of.astimezone(BUSINESS_TZ).date().isoformat(),
         "cutoff_utc": to_utc(as_of).isoformat(),
         "properties_processed": len(properties),
         "snapshots_built": len(snapshots),
         "errors": {"count": len(errors), "types": sorted(set(errors))},
-        "linkage": dict(linkage_metrics),
+        "linkage": dict(v2_metrics),
+        "linkage_v1": dict(v1_metrics),
+        "linkage_v2": dict(v2_metrics),
+        "coverage_gain_vs_v1": {
+            "absolute_leads": gain,
+            "percentage_points": round(gain / len(v2_records) * 100, 2) if v2_records else 0.0,
+            "relative_to_total": round(gain / len(v2_records), 6) if v2_records else 0.0,
+        },
+        "unmatched_reason_distribution_v1": v1_service.unmatched_reason_distribution(
+            leads, legacy_code_sets
+        ),
+        "unmatched_reason_distribution_v2": v2_service.unmatched_reason_distribution(
+            leads, legacy_code_sets
+        ),
+        "unmatched_diagnostic_dimensions_v1": v1_service.unmatched_diagnostic_dimensions(leads),
         "coverage": _coverage(snapshots),
         "publication_states_by_portal": _publication_counts(snapshots),
         "linked_leads_previous_7d": {
@@ -137,6 +225,20 @@ def _build_report(
         ),
         "properties_with_identity_conflict": len(conflict_candidates),
         "properties_with_ambiguous_alias": len(ambiguous_candidates),
+        "target_input_impact": {
+            "v1": {
+                "exact_linked_leads": v1_exact,
+                "distinct_linked_properties": v1_metrics["distinct_linked_properties"],
+                "eligible_leads_previous_7d": _eligible_lead_counts(v1_records, as_of)["7d"],
+                "eligible_leads_previous_30d": _eligible_lead_counts(v1_records, as_of)["30d"],
+            },
+            "v2": {
+                "exact_linked_leads": v2_exact,
+                "distinct_linked_properties": v2_metrics["distinct_linked_properties"],
+                "eligible_leads_previous_7d": _eligible_lead_counts(v2_records, as_of)["7d"],
+                "eligible_leads_previous_30d": _eligible_lead_counts(v2_records, as_of)["30d"],
+            },
+        },
         "external_listing_views": "NOT_AVAILABLE_V1",
         "persistence": {
             "mongo_writes": 0,
@@ -173,9 +275,15 @@ def _load_sources(args: argparse.Namespace, as_of: datetime):
     identity_properties = properties
     if args.sample is not None or requested_code:
         identity_properties = list(property_collection.find({}, IDENTITY_PROJECTION).sort("codigo", 1))
-    resolver = build_property_identity_resolver(identity_properties)
-    linkage_service = LeadLinkageService(resolver)
-    linkage_records = linkage_service.link_leads(leads)
+    v1_resolver = build_property_identity_resolver(
+        identity_properties,
+        enable_contextual_aliases=False,
+    )
+    v1_service = LeadLinkageService(v1_resolver)
+    v1_records = v1_service.link_leads(leads)
+    v2_resolver = build_property_identity_resolver(identity_properties, enable_contextual_aliases=True)
+    v2_service = LeadLinkageService(v2_resolver)
+    v2_records = v2_service.link_leads(leads)
 
     history_query: dict[str, Any] = {}
     property_codes = [normalize_identifier(item.get("codigo")) for item in properties]
@@ -188,8 +296,19 @@ def _load_sources(args: argparse.Namespace, as_of: datetime):
         .batch_size(250)
     )
 
+    legacy_code_sets: dict[str, set[str]] = {}
+    for collection_name in ("universo_cartera", "universo_obelix", "ingresos_supervisados"):
+        legacy_code_sets[collection_name] = {
+            code
+            for code in (
+                normalize_identifier(document.get("codigo"))
+                for document in db[collection_name].find({}, {"_id": 0, "codigo": 1}).batch_size(250)
+            )
+            if code
+        }
+
     builder = PropertySnapshotBuilder(
-        linkage_records,
+        v2_records,
         source_collection=getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360"),
         now_fn=lambda: as_of,
     )
@@ -199,7 +318,7 @@ def _load_sources(args: argparse.Namespace, as_of: datetime):
         separate_price_events=history,
         property_code=requested_code,
     )
-    return client, properties, linkage_service, linkage_records, result
+    return client, properties, leads, v1_service, v1_records, v2_service, v2_records, legacy_code_sets, result
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -227,14 +346,28 @@ def main(argv: list[str] | None = None) -> int:
     as_of = datetime.now(BUSINESS_TZ)
     client = None
     try:
-        client, properties, linkage_service, linkage_records, result = _load_sources(args, as_of)
+        (
+            client,
+            properties,
+            leads,
+            v1_service,
+            v1_records,
+            v2_service,
+            v2_records,
+            legacy_code_sets,
+            result,
+        ) = _load_sources(args, as_of)
         report = _build_report(
             as_of=as_of,
             properties=properties,
             snapshots=result.snapshots,
             errors=result.errors,
-            linkage_metrics=linkage_service.metrics(linkage_records),
-            linkage_records=linkage_records,
+            leads=leads,
+            v1_service=v1_service,
+            v1_records=v1_records,
+            v2_service=v2_service,
+            v2_records=v2_records,
+            legacy_code_sets=legacy_code_sets,
         )
         if args.report_json:
             output_path = Path(args.report_json)

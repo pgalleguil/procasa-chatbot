@@ -42,10 +42,32 @@ La prioridad es `lead.prospecto.codigo` contra `codigo` de
   real `publicaciones.portal_inmobiliario.publicaciones.*.code`.
 - `prospecto.codigo_yapo` contra `publicaciones.yapo.publicaciones.*.code`.
 
+Cuando `prospecto.origen` normaliza inequívocamente a `toctoc`,
+`prospecto.codigo_propiedad` y `prospecto.propiedad_codigo` se aceptan solo
+contra un alias TOCTOC único. Sin fuente TOCTOC no se resuelven.
+
 La estructura interna del identificador no se modifica: se aplica únicamente
 Unicode NFKC, trim y conversión segura de scalar string/int a string.
 Los aliases tienen namespace (`mercadolibre:...`, `yapo:...`). No se usan
 direcciones, teléfonos, emails, nombres, fuzzy matching ni LLM.
+
+La normalización de etiquetas de portal conserva namespaces separados. Por
+ejemplo, `TocToc`, `toc toc` y `TOCTOC` pueden identificar la etiqueta TOCTOC,
+pero nunca convierten un ID TOCTOC en un ID MercadoLibre o Yapo.
+
+Unmatched is a valid analytical outcome and must not be converted into a match
+through heuristic inference.
+
+Los códigos canonical ausentes de la maestra actual pueden compararse de forma
+diagnóstica con `universo_cartera`, `universo_obelix` e
+`ingresos_supervisados`, pero nunca se resuelven operativamente contra una
+colección legacy. Un código encontrado solo allí permanece `UNMATCHED`.
+
+La V2 agrega únicamente aliases contextuales TOCTOC para
+`codigo_propiedad`/`propiedad_codigo` cuando el origen declarado es TOCTOC y
+existe exactamente un candidato. La cobertura ganada se reporta por separado
+de la calidad; los casos `UNMATCHED`, `AMBIGUOUS` y `CONFLICT` permanecen
+explícitos.
 
 ## Precio y publicación
 

@@ -77,6 +77,10 @@ tests/*
 !tests/test_team_management_p0_contract.py
 !tests/test_properties_inventory_p0_contract.py
 !tests/test_captacion_followup_v2.py
+!tests/pricing_intelligence/
+!tests/pricing_intelligence/**
+tests/pricing_intelligence/__pycache__/
+tests/pricing_intelligence/__pycache__/**
 scraper*/
 reports/
 

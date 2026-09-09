@@ -3686,6 +3686,9 @@ async def view_captaciones(
             if index < len(raw_sort_dirs) and raw_sort_dirs[index] in ("asc", "desc")
             else "desc"
         )
+        # La vista mantiene un solo criterio activo para que el orden sea
+        # predecible al cambiar de columna.
+        break
     current_sorts = {
         key: {"direction": sort_dirs[index], "priority": index + 1}
         for index, key in enumerate(sort_keys)

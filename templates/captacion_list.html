@@ -4644,16 +4644,16 @@
                     <thead>
                         <tr>
                             {% set comuna_sort = current_sorts.get('comuna') %}
-                            <th class="sortable" data-col="comuna" title="{{ 'Orden actual: ascendente.' if comuna_sort and comuna_sort.direction == 'asc' else 'Orden actual: descendente.' if comuna_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Comuna {% if comuna_sort %}<span class="sort-direction">{{ '↑ asc.' if comuna_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
+                            <th class="sortable" data-col="comuna" title="{{ 'Orden actual: ascendente.' if comuna_sort and comuna_sort.direction == 'asc' else 'Orden actual: descendente.' if comuna_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Comuna {% if comuna_sort %}<span class="sort-direction">{{ '↑ asc.' if comuna_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             <th>Origen</th>
                             <th>Operación</th>
                             {% set precio_sort = current_sorts.get('precio') %}
-                            <th class="text-center sortable" data-col="precio" title="{{ 'Orden actual: ascendente.' if precio_sort and precio_sort.direction == 'asc' else 'Orden actual: descendente.' if precio_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Precio {% if precio_sort %}<span class="sort-direction">{{ '↑ asc.' if precio_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}{% if precio_sort %}<span class="sort-priority">{{ precio_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="precio" title="{{ 'Orden actual: ascendente.' if precio_sort and precio_sort.direction == 'asc' else 'Orden actual: descendente.' if precio_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Precio {% if precio_sort %}<span class="sort-direction">{{ '↑ asc.' if precio_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             {% set probability_sort = current_sorts.get('owner_probability') %}
-                            <th class="text-center sortable" data-col="owner_probability" title="Probabilidad estimada según evidencia del publicador. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Probabilidad de dueño {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}{% if probability_sort %}<span class="sort-priority">{{ probability_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="owner_probability" title="Probabilidad estimada según evidencia del publicador. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Probabilidad de dueño {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             <th class="text-center">Estado</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
-                            <th class="text-center sortable" data-col="antiguedad" title="{{ 'Orden actual: ascendente.' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'Orden actual: descendente.' if antiguedad_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Antigüedad {% if antiguedad_sort %}<span class="sort-direction">{{ '↑ asc.' if antiguedad_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="antiguedad" title="{{ 'Orden actual: ascendente.' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'Orden actual: descendente.' if antiguedad_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Antigüedad {% if antiguedad_sort %}<span class="sort-direction">{{ '↑ asc.' if antiguedad_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -5243,35 +5243,65 @@
                 if (th.dataset.captacionSortBound === '1') return;
                 th.dataset.captacionSortBound = '1';
                 th.addEventListener('click', () => {
-                    const col = th.dataset.col;
-                    const params = new URLSearchParams(window.location.search);
-                    let columns = (params.get('sort_by') || '').split(',').filter(Boolean);
-                    let directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
-                    while (directions.length < columns.length) directions.push('desc');
-                    const existing = columns.indexOf(col);
-
-                    if (existing === -1) {
-                        columns.push(col);
-                        directions.push('desc');
-                    } else if (directions[existing] === 'desc') {
-                        directions[existing] = 'asc';
-                    } else {
-                        columns.splice(existing, 1);
-                        directions.splice(existing, 1);
-                    }
-
-                    if (columns.length) {
-                        params.set('sort_by', columns.join(','));
-                        params.set('sort_dir', directions.join(','));
-                    } else {
-                        params.delete('sort_by');
-                        params.delete('sort_dir');
-                    }
-                    params.delete('orden');
-                    params.set('page', '1');
-                    window.location.search = params.toString();
+                    applyCaptacionSort(th.dataset.col);
                 });
             });
+        }
+
+        function buildCaptacionSortUrl(col) {
+            const params = new URLSearchParams(window.location.search);
+            let columns = (params.get('sort_by') || '').split(',').filter(Boolean);
+            let directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
+            while (directions.length < columns.length) directions.push('desc');
+            const existing = columns.indexOf(col);
+
+            if (existing === -1) {
+                // Mantener un solo criterio evita conflictos entre columnas.
+                columns = [col];
+                directions = ['desc'];
+            } else if (directions[existing] === 'desc') {
+                columns = [col];
+                directions = ['asc'];
+            } else {
+                columns = [];
+                directions = [];
+            }
+
+            if (columns.length) {
+                params.set('sort_by', columns.join(','));
+                params.set('sort_dir', directions.join(','));
+            } else {
+                params.delete('sort_by');
+                params.delete('sort_dir');
+            }
+            params.delete('orden');
+            params.set('page', '1');
+            return new URL(`${window.location.pathname}?${params.toString()}`, window.location.href);
+        }
+
+        function applyCaptacionSort(col) {
+            const url = buildCaptacionSortUrl(col);
+            loadCaptacionFilteredView(url)
+                .catch(() => window.location.assign(url.toString()));
+        }
+
+        function normalizeCaptacionSortUrl() {
+            const form = document.querySelector('#captacion-filter-toolbar form');
+            if (!form) return;
+            const sortBy = (form.querySelector('input[name="sort_by"]')?.value || '').trim();
+            const sortDir = (form.querySelector('input[name="sort_dir"]')?.value || '').trim();
+            const url = new URL(window.location.href);
+            if (sortBy) {
+                url.searchParams.set('sort_by', sortBy);
+                url.searchParams.set('sort_dir', sortDir || 'desc');
+                url.searchParams.delete('orden');
+            } else {
+                url.searchParams.delete('sort_by');
+                url.searchParams.delete('sort_dir');
+            }
+            if (url.toString() !== window.location.href) {
+                window.history.replaceState({ captacionFilters: true }, '', url.toString());
+            }
         }
 
         async function loadCaptacionFilteredView(url, { pushHistory = true, form = null } = {}) {
@@ -5365,45 +5395,20 @@
 
         document.querySelectorAll('.sortable').forEach(th => {
             th.addEventListener('click', function () {
-                const col = this.dataset.col;
-                const params = new URLSearchParams(window.location.search);
-                const columns = (params.get('sort_by') || '').split(',').filter(Boolean);
-                const directions = (params.get('sort_dir') || '').split(',').filter(Boolean);
-                while (directions.length < columns.length) directions.push('desc');
-                const existing = columns.indexOf(col);
-
-                if (existing === -1) {
-                    columns.push(col);
-                    directions.push('desc');
-                } else if (directions[existing] === 'desc') {
-                    directions[existing] = 'asc';
-                } else {
-                    columns.splice(existing, 1);
-                    directions.splice(existing, 1);
-                }
-
-                // Un encabezado debe tomar el control del ordenamiento;
-                // si queda `orden`, el backend prioriza el selector y
-                // descarta sort_by/sort_dir.
-                params.delete('orden');
-                if (columns.length) {
-                    params.set('sort_by', columns.join(','));
-                    params.set('sort_dir', directions.join(','));
-                } else {
-                    params.delete('sort_by');
-                    params.delete('sort_dir');
-                }
-                params.set('page', '1');
-                window.location.search = params.toString();
+                applyCaptacionSort(this.dataset.col);
             });
         });
+
+        normalizeCaptacionSortUrl();
 
         function clearSorting() {
             const params = new URLSearchParams(window.location.search);
             params.delete('sort_by');
             params.delete('sort_dir');
             params.set('page', '1');
-            window.location.search = params.toString();
+            const url = new URL(`${window.location.pathname}?${params.toString()}`, window.location.href);
+            loadCaptacionFilteredView(url)
+                .catch(() => window.location.assign(url.toString()));
         }
 
         function applyCaptacionTemporalFilter(kind, value) {

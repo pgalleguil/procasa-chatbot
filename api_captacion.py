@@ -944,6 +944,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             continue
         direction = 1 if index < len(sort_dirs) and sort_dirs[index] == "asc" else -1
         sort_specs.append((key, direction))
+        # Mantener un único criterio evita resultados ambiguos al cambiar
+        # de columna desde el listado.
+        break
     # Proyección mínima de la vista de listado. La anterior era de exclusión
     # y seguía trayendo clasificación completa, imágenes, metadata del scrape
     # y otros payloads que la tabla no renderiza. Se conservan los alias que

@@ -1135,6 +1135,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "comuna": norm["comuna"],
             "comuna_slug": norm["comuna_slug"],
             "operacion": op_display,
+            "tipo_propiedad": (
+                normalize_captacion_property_type(norm.get("tipo_propiedad")) or "S/I"
+            ).title(),
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
             "precio_display": norm["precio_display"],

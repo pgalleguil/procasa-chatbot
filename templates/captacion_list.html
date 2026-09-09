@@ -4647,6 +4647,7 @@
                             <th class="sortable" data-col="comuna" title="{{ 'Orden actual: ascendente.' if comuna_sort and comuna_sort.direction == 'asc' else 'Orden actual: descendente.' if comuna_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Comuna {% if comuna_sort %}<span class="sort-direction">{{ '↑ asc.' if comuna_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             <th>Origen</th>
                             <th>Operación</th>
+                            <th>Tipo</th>
                             {% set precio_sort = current_sorts.get('precio') %}
                             <th class="text-center sortable" data-col="precio" title="{{ 'Orden actual: ascendente.' if precio_sort and precio_sort.direction == 'asc' else 'Orden actual: descendente.' if precio_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Precio {% if precio_sort %}<span class="sort-direction">{{ '↑ asc.' if precio_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             {% set probability_sort = current_sorts.get('owner_probability') %}
@@ -4663,6 +4664,9 @@
                             <td data-label="Origen"><div class="mobile-cell-value">{{ item.portal_label }}</div></td>
                             <td data-label="Operación">
                                 <div class="mobile-cell-value"><span class="operation-text">{{ item.operacion|title }}</span></div>
+                            </td>
+                            <td data-label="Tipo">
+                                <div class="mobile-cell-value">{{ item.tipo_propiedad }}</div>
                             </td>
                             <td class="text-center price-cell" data-label="Precio">
                                 <div class="mobile-cell-value">

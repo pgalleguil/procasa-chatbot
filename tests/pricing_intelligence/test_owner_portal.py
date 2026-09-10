@@ -184,6 +184,31 @@ def test_internal_access_is_required(monkeypatch):
     assert exc.value.status_code == 401
 
 
+def test_production_host_never_uses_local_preview_bypass(monkeypatch):
+    async def deny(_request):
+        raise HTTPException(status_code=401, detail="CRM authentication required")
+
+    monkeypatch.setenv("OWNER_PORTAL_PREVIEW_DEV_MODE", "true")
+    monkeypatch.setattr("owner_portal.security._existing_crm_user", deny)
+    scope = {"type": "http", "method": "GET", "path": "/owner-portal-preview/6786", "headers": [], "client": ("10.0.0.8", 80), "query_string": b"", "scheme": "https", "server": ("example.onrender.com", 443)}
+    with pytest.raises(HTTPException) as exc:
+        import asyncio
+        asyncio.run(require_internal_preview(Request(scope)))
+    assert exc.value.status_code == 401
+
+
+def test_missing_crm_user_document_is_rejected(monkeypatch):
+    async def missing(_request):
+        return None
+
+    monkeypatch.setattr("owner_portal.security._existing_crm_user", missing)
+    scope = {"type": "http", "method": "GET", "path": "/owner-portal-preview/6786", "headers": [], "client": ("10.0.0.8", 80), "query_string": b"", "scheme": "https", "server": ("example.onrender.com", 443)}
+    with pytest.raises(HTTPException) as exc:
+        import asyncio
+        asyncio.run(require_internal_preview(Request(scope)))
+    assert exc.value.status_code == 401
+
+
 def test_no_photo_fallback(monkeypatch):
     db = make_db(master_doc("S1"))
     response = internal_client(monkeypatch, db).get("/owner-portal-preview/S1")

@@ -24,7 +24,10 @@ async def _existing_crm_user(request: Request) -> Any:
         if dependency is None:
             raise RuntimeError("CRM auth dependency is unavailable")
         result = dependency(request)
-        return await result if inspect.isawaitable(result) else result
+        user = await result if inspect.isawaitable(result) else result
+        if not user:
+            raise HTTPException(status_code=401, detail="CRM authentication required")
+        return user
     except HTTPException:
         raise
     except Exception as exc:
@@ -37,4 +40,7 @@ async def require_internal_preview(request: Request) -> Any:
     dev_mode = os.getenv("OWNER_PORTAL_PREVIEW_DEV_MODE", "false").strip().lower() == "true"
     if dev_mode and _is_local_request(request):
         return {"auth": "local_dev_gate"}
-    return await _existing_crm_user(request)
+    user = await _existing_crm_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="CRM authentication required")
+    return user

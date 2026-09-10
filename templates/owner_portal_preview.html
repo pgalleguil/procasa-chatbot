@@ -3,62 +3,250 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Portal del propietario · PROCASA SUCRE</title>
+  <title>Informe de mercado · {{ view.property_code }} · PROCASA SUCRE</title>
   <style>
-    :root { --ink:#192638; --muted:#687586; --line:#e6ebf0; --paper:#f7f9fb; --brand:#123e5a; --accent:#d6a84f; --ok:#2d775e; }
-    * { box-sizing:border-box; }
-    body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
-    .shell { max-width:1120px; margin:0 auto; padding:22px 20px 48px; }
-    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:5px 0 28px; }
-    .brand { font-weight:800; letter-spacing:.08em; color:var(--brand); font-size:14px; }
-    .scope { color:var(--muted); font-size:12px; border:1px solid var(--line); border-radius:999px; padding:6px 10px; background:#fff; }
-    .hero { background:linear-gradient(130deg,#123e5a,#1f6072); border-radius:22px; padding:30px; color:#fff; display:flex; justify-content:space-between; gap:24px; align-items:flex-end; }
-    .eyebrow { color:#f2d48b; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; }
-    h1 { font-size:clamp(28px,5vw,48px); line-height:1.05; margin:9px 0 12px; max-width:680px; }
-    .hero p { margin:0; color:#d9e8ed; max-width:640px; }
-    .updated { color:#d9e8ed; font-size:12px; margin-top:12px; }
-    .hero-photo { width:220px; height:145px; object-fit:cover; border-radius:14px; border:1px solid #ffffff55; }
-    .hero-placeholder { width:220px; height:145px; border-radius:14px; display:grid; place-items:center; background:#ffffff18; color:#d9e8ed; text-align:center; padding:20px; }
-    section { margin-top:24px; }
-    .section-title { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
-    h2 { font-size:19px; margin:0; }
-    .note { color:var(--muted); font-size:13px; }
-    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-    .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:17px; min-width:0; box-shadow:0 4px 16px #1f334a08; }
-    .metric-label { color:var(--muted); font-size:12px; }
-    .metric-value { font-size:24px; font-weight:750; margin-top:4px; overflow-wrap:anywhere; }
-    .metric-sub { color:var(--muted); font-size:12px; margin-top:3px; }
-    .two { display:grid; grid-template-columns:1.1fr .9fr; gap:12px; }
-    .facts { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-    .facts .card { padding:13px; }
-    .bar { height:9px; background:#edf1f3; border-radius:99px; overflow:hidden; margin:13px 0 8px; }
-    .bar span { display:block; height:100%; width:67%; background:var(--accent); border-radius:99px; }
-    .status { color:var(--ok); font-weight:700; }
-    .placeholder { border:1px dashed #b7c4ce; background:#fbfcfd; }
-    .footer-note { color:var(--muted); font-size:12px; margin-top:24px; }
-    @media (max-width: 800px) { .grid { grid-template-columns:repeat(2,1fr); } .facts { grid-template-columns:repeat(2,1fr); } .two { grid-template-columns:1fr; } .hero-photo,.hero-placeholder { width:170px; } }
-    @media (max-width: 700px) { .shell { padding:15px 14px 34px; } header { padding-bottom:18px; } .hero { padding:22px; display:block; } .hero-photo,.hero-placeholder { width:100%; height:180px; margin-top:18px; } .grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; } .facts { grid-template-columns:repeat(2,1fr); } .card { padding:14px; } .metric-value { font-size:20px; } }
+    :root {
+      --ink: #1d2935;
+      --ink-soft: #4d5b64;
+      --muted: #7a8587;
+      --paper: #f5f1ea;
+      --paper-deep: #ebe4d8;
+      --card: #fffdf9;
+      --line: #ded7cb;
+      --navy: #183b4b;
+      --teal: #2e6868;
+      --sand: #c79a58;
+      --shadow: 0 24px 60px rgba(37, 45, 46, .08);
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--paper); }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.65 Georgia, 'Times New Roman', serif; }
+    a { color: inherit; }
+    .report { max-width: 1220px; margin: 0 auto; padding: 28px 40px 60px; }
+    .masthead { display:flex; justify-content:space-between; align-items:center; gap:20px; padding: 0 0 30px; }
+    .brand { color: var(--navy); font: 700 12px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing: .2em; }
+    .edition { color: var(--muted); font: 11px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+    .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .86fr); min-height: 510px; overflow: hidden; background: var(--navy); color: #fdf9f2; box-shadow: var(--shadow); }
+    .hero-copy { display:flex; flex-direction:column; justify-content:space-between; padding: 54px 56px 48px; }
+    .kicker { color: #dcc28c; font: 700 11px/1.3 ui-sans-serif, system-ui, sans-serif; letter-spacing: .2em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { max-width: 660px; margin: 18px 0 22px; font-size: clamp(42px, 5.3vw, 76px); line-height: .98; font-weight: 400; letter-spacing: -.045em; }
+    .dek { max-width: 560px; color: #d5e0df; font-size: 18px; line-height: 1.55; }
+    .hero-bottom { display:flex; align-items:flex-end; justify-content:space-between; gap:26px; padding-top: 46px; }
+    .price-label, .small-label { color: #a9c0bd; font: 10px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+    .price { margin-top: 5px; color: #fff7e7; font: 400 clamp(30px, 4vw, 48px)/1.1 Georgia, serif; letter-spacing: -.03em; }
+    .price-clp { color: #bdd0ca; font: 13px/1.3 ui-sans-serif, system-ui, sans-serif; }
+    .hero-meta { color:#d5e0df; font: 12px/1.7 ui-sans-serif, system-ui, sans-serif; text-align:right; }
+    .hero-media { position:relative; min-height: 510px; background: linear-gradient(145deg, #2d6969, #a88554); }
+    .hero-media::after { content:''; position:absolute; inset:0; background:linear-gradient(180deg, transparent 46%, rgba(15, 37, 44, .38)); pointer-events:none; }
+    .hero-photo { display:block; width:100%; height:100%; min-height:510px; object-fit:cover; }
+    .hero-placeholder { position:relative; display:grid; place-items:end start; height:100%; min-height:510px; padding:34px; overflow:hidden; color:#f8f0df; font: 700 12px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+    .hero-placeholder::before, .hero-placeholder::after { content:''; position:absolute; border:1px solid rgba(255,255,255,.32); transform:rotate(-16deg); }
+    .hero-placeholder::before { width:72%; height:52%; top:12%; right:-12%; }
+    .hero-placeholder::after { width:52%; height:76%; bottom:-20%; left:12%; }
+    .hero-placeholder span { position:relative; z-index:1; }
+    .section { padding: 76px 0 0; }
+    .section-rule { display:flex; align-items:baseline; justify-content:space-between; gap:24px; border-top:1px solid var(--line); padding-top:18px; margin-bottom:32px; }
+    .section-index { color:var(--sand); font:700 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing:.15em; }
+    h2 { max-width: 700px; margin-bottom:0; font-size: clamp(29px, 3.5vw, 48px); line-height:1.08; font-weight:400; letter-spacing:-.035em; }
+    h3 { margin-bottom: 10px; color:var(--navy); font-size:24px; line-height:1.15; font-weight:400; }
+    .section-intro { max-width: 680px; color:var(--ink-soft); font-size:18px; }
+    .summary-grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }
+    .summary-item { min-height:132px; padding:22px 20px; background:var(--card); }
+    .summary-item .value { margin-top:11px; color:var(--navy); font-size:30px; line-height:1.05; letter-spacing:-.04em; }
+    .summary-item .label { color:var(--muted); font: 10px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+    .summary-story { display:grid; grid-template-columns: .72fr 1.28fr; gap:42px; margin-top:30px; padding: 30px 0 0; border-top: 1px solid var(--line); }
+    .summary-story p { max-width:660px; color:var(--ink-soft); font-size:20px; line-height:1.48; }
+    .context-grid { display:grid; grid-template-columns: 1.15fr .85fr; gap: 58px; align-items:start; }
+    .context-copy p { max-width:720px; color:var(--ink-soft); font-size:19px; line-height:1.55; }
+    .indicator { padding:25px 0 20px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .indicator-value { color:var(--navy); font-size:38px; line-height:1.1; }
+    .indicator-meta { margin-top:8px; color:var(--muted); font:11px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    .source-list { margin:28px 0 0; padding:0; list-style:none; color:var(--ink-soft); font:12px/1.7 ui-sans-serif, system-ui, sans-serif; }
+    .source-list li { display:inline; }
+    .source-list li:not(:last-child)::after { content:'  ·  '; color:var(--sand); }
+    .source-list a { color:var(--teal); text-decoration-thickness:1px; text-underline-offset:3px; }
+    .market-sheet { display:grid; grid-template-columns: .9fr 1.1fr; gap: 42px; padding:34px; background:var(--card); border:1px solid var(--line); }
+    .market-lead { color:var(--ink-soft); font-size:18px; }
+    .market-metrics { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:1px; align-content:start; background:var(--line); }
+    .market-metric { padding:18px; background:var(--card); }
+    .market-metric .metric-value { margin-top:7px; color:var(--navy); font-size:27px; line-height:1.1; }
+    .metric-label { color:var(--muted); font:10px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing:.1em; text-transform:uppercase; }
+    .market-source { grid-column:1 / -1; margin-top:22px; color:var(--muted); font:11px/1.6 ui-sans-serif, system-ui, sans-serif; }
+    .scope-note { margin:18px 0 0; color:var(--muted); font:12px/1.65 ui-sans-serif, system-ui, sans-serif; }
+    .positioning { display:grid; grid-template-columns: .72fr 1.28fr; gap:50px; align-items:center; }
+    .positioning-copy p { max-width:500px; color:var(--ink-soft); font-size:18px; }
+    .range-figure { padding:28px 0 8px; }
+    .range-track { position:relative; height:7px; margin:34px 0 13px; background:var(--paper-deep); border-radius:8px; }
+    .range-track::before { content:''; position:absolute; inset:0 50% 0 0; background:#9db4aa; border-radius:8px; }
+    .range-marker { position:absolute; top:50%; width:18px; height:18px; border:4px solid var(--card); border-radius:50%; background:var(--navy); box-shadow:0 0 0 1px var(--navy); transform:translate(-50%, -50%); }
+    .range-labels { display:flex; justify-content:space-between; gap:14px; color:var(--muted); font:12px/1.4 ui-sans-serif, system-ui, sans-serif; }
+    .position-label { margin-top:25px; color:var(--teal); font-size:20px; }
+    .range-caption { margin-top:8px; color:var(--muted); font:11px/1.6 ui-sans-serif, system-ui, sans-serif; }
+    .activity { display:grid; grid-template-columns: .88fr 1.12fr; gap:54px; align-items:start; }
+    .activity-story { color:var(--ink-soft); font-size:20px; line-height:1.5; }
+    .activity-metrics { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:1px; background:var(--line); }
+    .activity-metric { padding:24px; background:var(--card); }
+    .activity-metric .value { color:var(--navy); font-size:42px; line-height:1; }
+    .activity-metric .label { margin-top:12px; color:var(--muted); font:11px/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing:.08em; text-transform:uppercase; }
+    .history { max-width:760px; padding:24px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .history-line { display:flex; justify-content:space-between; gap:20px; color:var(--ink-soft); font-size:18px; }
+    .history-date { color:var(--muted); font:11px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    .footer { display:flex; justify-content:space-between; gap:30px; margin-top:82px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font:11px/1.6 ui-sans-serif, system-ui, sans-serif; }
+    .footer strong { color:var(--navy); font-weight:700; letter-spacing:.12em; }
+    @media (max-width: 900px) {
+      .report { padding:24px 24px 44px; }
+      .hero { grid-template-columns:1fr; }
+      .hero-media, .hero-photo, .hero-placeholder { min-height:340px; }
+      .summary-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+      .context-grid, .market-sheet, .positioning, .activity, .summary-story { grid-template-columns:1fr; gap:24px; }
+    }
+    @media (max-width: 560px) {
+      .report { padding:18px 16px 34px; }
+      .masthead { align-items:flex-start; padding-bottom:20px; }
+      .edition { max-width:140px; text-align:right; }
+      .hero-copy { padding:34px 24px 28px; }
+      h1 { font-size:45px; }
+      .dek { font-size:16px; }
+      .hero-bottom { display:block; padding-top:34px; }
+      .hero-meta { margin-top:22px; text-align:left; }
+      .hero-media, .hero-photo, .hero-placeholder { min-height:260px; }
+      .section { padding-top:52px; }
+      .section-rule { display:block; margin-bottom:24px; }
+      .section-index { display:block; margin-bottom:12px; }
+      .summary-grid, .market-metrics, .activity-metrics { grid-template-columns:1fr 1fr; }
+      .summary-item { min-height:110px; padding:16px 13px; }
+      .summary-item .value { font-size:24px; }
+      .market-sheet { padding:22px 18px; }
+      .market-metric { padding:15px 12px; }
+      .market-metric .metric-value { font-size:22px; }
+      .activity-metric { padding:18px 14px; }
+      .activity-metric .value { font-size:34px; }
+      .footer { display:block; margin-top:54px; }
+      .footer strong { display:block; margin-bottom:8px; }
+    }
   </style>
 </head>
 <body>
-<main class="shell">
-  <header><div class="brand">PROCASA SUCRE</div><div class="scope">Vista experimental · PROCASA_SUCRE</div></header>
-  <div class="hero">
-    <div><div class="eyebrow">Portal del propietario</div><h1>{{ view.property_type }} en {{ view.commune }}</h1><p>Código {{ view.property_code }} · Información comercial clara para acompañar decisiones.</p><div class="updated">Datos actualizados al {{ view.data_updated_at }}</div></div>
-    {% if view.main_image_url %}<img class="hero-photo" src="{{ view.main_image_url }}" alt="Fotografía de la propiedad">{% else %}<div class="hero-placeholder">Fotografía no disponible en la fuente actual</div>{% endif %}
-  </div>
-  <section><div class="section-title"><h2>Resumen de la propiedad</h2><span class="note">Datos actuales verificados</span></div>
-    <div class="facts"><div class="card"><div class="metric-label">Operación</div><div class="metric-value">{{ view.operation }}</div></div><div class="card"><div class="metric-label">Superficie construida</div><div class="metric-value">{{ view.built_area_m2 or 'No disponible' }}{% if view.built_area_m2 %} m²{% endif %}</div></div><div class="card"><div class="metric-label">Dormitorios</div><div class="metric-value">{{ view.bedrooms or 'No disponible' }}</div></div><div class="card"><div class="metric-label">Baños</div><div class="metric-value">{{ view.bathrooms or 'No disponible' }}</div></div></div>
+<main class="report">
+  <header class="masthead">
+    <div class="brand">PROCASA SUCRE</div>
+    <div class="edition">Informe digital de mercado y desempeño · corte {{ view.data_updated_at }}</div>
+  </header>
+
+  <section class="hero" aria-labelledby="report-title">
+    <div class="hero-copy">
+      <div>
+        <div class="kicker">Informe privado de propiedad · código {{ view.property_code }}</div>
+        <h1 id="report-title">{{ view.property_type }}<br>en {{ view.commune }}</h1>
+        <p class="dek">Una lectura clara del momento comercial de la propiedad y del mercado que la rodea.</p>
+      </div>
+      <div class="hero-bottom">
+        {% if view.current_price_uf or view.current_price_clp %}
+        <div>
+          <div class="price-label">Precio publicado</div>
+          {% if view.current_price_uf %}<div class="price">{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</div>{% endif %}
+          {% if view.current_price_clp %}<div class="price-clp">${{ '{:,.0f}'.format(view.current_price_clp).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div>{% endif %}
+        </div>
+        {% endif %}
+        <div class="hero-meta">{{ view.property_type }} · {{ view.commune }}<br>Código {{ view.property_code }}<br>Actualizado al {{ view.data_updated_at }}</div>
+      </div>
+    </div>
+    <div class="hero-media">
+      {% if view.main_image_url %}<img class="hero-photo" src="{{ view.main_image_url }}" alt="Fotografía de {{ view.property_type }} en {{ view.commune }}">{% else %}<div class="hero-placeholder"><span>Lectura editorial<br>de la propiedad</span></div>{% endif %}
+    </div>
   </section>
-  <section><div class="section-title"><h2>Actividad comercial</h2><span class="note">Sin métricas externas del aviso</span></div>
-    <div class="grid"><div class="card"><div class="metric-label">Consultas recibidas · 7 días</div><div class="metric-value">{{ view.inquiries_previous_7d }}</div><div class="metric-sub">vinculaciones exactas de esta propiedad</div></div><div class="card"><div class="metric-label">Consultas recibidas · 30 días</div><div class="metric-value">{{ view.inquiries_previous_30d }}</div><div class="metric-sub">vinculaciones exactas de esta propiedad</div></div><div class="card"><div class="metric-label">Precio publicado</div><div class="metric-value">{% if view.current_price_uf %}{{ view.current_price_uf }} UF{% elif view.current_price_clp %}${{ '{:,.0f}'.format(view.current_price_clp) }}{% else %}No disponible{% endif %}</div><div class="metric-sub">fuente maestra actual</div></div><div class="card"><div class="metric-label">Visitas</div><div class="metric-value">No disponible</div><div class="metric-sub">V1 no verifica asistencia</div></div></div>
+
+  <section class="section" aria-labelledby="summary-title">
+    <div class="section-rule"><span class="section-index">01 · Una mirada</span><h2 id="summary-title">El momento de la propiedad</h2></div>
+    <div class="summary-grid">
+      {% if view.current_price_uf or view.current_price_clp %}<div class="summary-item"><div class="label">Precio publicado</div><div class="value">{% if view.current_price_uf %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}${{ '{:,.0f}'.format(view.current_price_clp).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% endif %}</div></div>{% endif %}
+      <div class="summary-item"><div class="label">Consultas · 30 días</div><div class="value">{{ view.inquiries_previous_30d }}</div></div>
+      {% if view.built_area_m2 %}<div class="summary-item"><div class="label">Superficie construida</div><div class="value">{{ '{:,.0f}'.format(view.built_area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²</div></div>{% endif %}
+      {% if view.comparable_count >= 5 %}<div class="summary-item"><div class="label">Comparables válidos</div><div class="value">{{ view.comparable_count }}</div></div>{% endif %}
+    </div>
+    <div class="summary-story">
+      <h3>En pocas palabras</h3>
+      <p>{% if view.inquiries_previous_30d > 0 %}La propiedad ha recibido {{ view.inquiries_previous_30d }} consulta{% if view.inquiries_previous_30d != 1 %}s{% endif %} en los últimos 30 días. Su precio actual se lee junto a la oferta observable de {{ view.commune }}.{% else %}Durante los últimos 30 días no se registraron consultas vinculadas a este código. La lectura de precio se complementa con la oferta observable de {{ view.commune }}.{% endif %}</p>
+    </div>
   </section>
-  <section><div class="section-title"><h2>Posicionamiento de mercado</h2><span class="note">Datos descriptivos</span></div>
-    <div class="two"><div class="card"><div class="metric-label">Precio mediano de comparables</div><div class="metric-value">{% if view.market_data_available %}{{ view.market_median_uf }} UF{% else %}No disponible{% endif %}</div><div class="metric-sub">{% if view.market_data_available %}Comparables válidos con criterios homogéneos.{% else %}Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.{% endif %}</div>{% if view.market_data_available %}<div class="bar"><span></span></div><div class="metric-sub">{{ view.comparable_count }} comparables válidos · rango {{ view.market_low_uf }}–{{ view.market_high_uf }} UF</div>{% else %}<div class="metric-sub">{{ view.comparable_count }} observaciones; mínimo requerido: 5</div>{% endif %}</div><div class="card"><div class="metric-label">Contexto comunal</div><div class="metric-value">{% if view.market_data_available and view.market_uf_m2 %}{{ view.market_uf_m2 }} UF/m²{% else %}No disponible{% endif %}</div><div class="metric-sub">Se muestra solo con suficientes comparables; no es una tasación automática.</div></div></div>
+
+  <section class="section" aria-labelledby="national-title">
+    <div class="section-rule"><span class="section-index">02 · Contexto Chile</span><h2 id="national-title">¿Qué está pasando en el mercado inmobiliario en Chile?</h2></div>
+    <div class="context-grid">
+      <div class="context-copy">
+        <p>{{ view.national_context_note }}</p>
+        <ul class="source-list">
+          <li><a href="https://si3.bcentral.cl/siete/ES/Siete/Cuadro/CAP_TASA_INTERES/MN_TASA_INTERES_09/TSF_27?idSerie=F022.VIV.TIP.MA03.UF.Z.M" target="_blank" rel="noreferrer">Banco Central · tasas de vivienda</a></li>
+          <li><a href="https://www.ine.gob.cl/estadisticas-por-tema/precios-e-inflacion/indice-de-precios-al-consumidor" target="_blank" rel="noreferrer">INE · IPC</a></li>
+          <li><a href="https://centrodeestudios.minvu.gob.cl/estadisticas-habitacionales/" target="_blank" rel="noreferrer">MINVU · estadísticas habitacionales</a></li>
+        </ul>
+      </div>
+      <div>
+        {% for indicator in view.national_indicators %}
+        <div class="indicator">
+          <div class="small-label">{{ indicator.indicator_id }}</div>
+          <div class="indicator-value">${{ '{:,.2f}'.format(indicator.value).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div>
+          <div class="indicator-meta">{{ indicator.unit }} · periodo {{ indicator.period }} · {{ indicator.source_name }}{% if indicator.source_url %} · <a href="{{ indicator.source_url }}" target="_blank" rel="noreferrer">fuente</a>{% endif %}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
   </section>
-  <section><div class="section-title"><h2>Historial de precio</h2><span class="note">{% if view.previous_price and view.last_price_change_at %}Cambio verificable{% else %}Evolución no disponible{% endif %}</span></div><div class="card">{% if view.previous_price and view.last_price_change_at %}<div>{{ view.last_price_change_at }} · {{ view.previous_price.uf or view.previous_price.clp }} → {{ view.current_price_uf or view.current_price_clp }}</div>{% else %}<div class="note">Se requiere evidencia verificable de precio anterior y fecha de cambio.</div>{% endif %}</div></section>
-  <section><div class="two"><div class="card placeholder"><div class="metric-label">Recomendación de precio</div><h2>Próximamente</h2><p class="note">No se calcula recomendación en V1.</p></div><div class="card placeholder"><div class="metric-label">Acciones sobre el precio</div><h2>Próximamente</h2><p class="note">La autorización no está habilitada en V1.</p></div></div></section>
-  <p class="footer-note">Prototipo interno de apoyo a decisiones. No reemplaza una tasación profesional ni habilita cambios, autorizaciones, notificaciones o firmas.</p>
+
+  {% if view.local_context and view.local_context.available %}
+  <section class="section" aria-labelledby="local-title">
+    <div class="section-rule"><span class="section-index">03 · Territorio</span><h2 id="local-title">El pulso de {{ view.local_context.geography }}</h2></div>
+    <div class="market-sheet">
+      <div>
+        <h3>{{ view.local_context.property_type }} · {{ view.local_context.geography }}</h3>
+        <p class="market-lead">{% if view.local_context.public_uf_m2 and view.local_context.effective_uf_m2 %}El corte comunal muestra {{ '{:,.2f}'.format(view.local_context.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m² publicados y {{ '{:,.2f}'.format(view.local_context.effective_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m² efectivos.{% elif view.local_context.public_uf_m2 %}El corte comunal muestra {{ '{:,.2f}'.format(view.local_context.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m² publicados.{% else %}La lectura comunal se presenta con la oferta y los comparables válidos del corte disponible.{% endif %}</p>
+        {% if view.regional_context_note %}<p class="scope-note">{{ view.regional_context_note }}</p>{% endif %}
+      </div>
+      <div class="market-metrics">
+        {% if view.local_context.public_uf_m2 %}<div class="market-metric"><div class="metric-label">UF/m² publicado</div><div class="metric-value">{{ '{:,.2f}'.format(view.local_context.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div></div>{% endif %}
+        {% if view.local_context.price_variation_12m_pct is not none %}<div class="market-metric"><div class="metric-label">Variación · 12 meses</div><div class="metric-value">{{ '{:+,.1f}'.format(view.local_context.price_variation_12m_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}%</div></div>{% endif %}
+        {% if view.local_context.active_listings %}<div class="market-metric"><div class="metric-label">Oferta activa</div><div class="metric-value">{{ '{:,.0f}'.format(view.local_context.active_listings).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div></div>{% endif %}
+        {% if view.local_context.trend %}<div class="market-metric"><div class="metric-label">Tendencia de publicaciones</div><div class="metric-value">{{ view.local_context.trend|capitalize }}</div></div>{% endif %}
+        <div class="market-source">{{ view.local_context.source_name }}{% if view.local_context.source_reference %} · {{ view.local_context.source_reference }}{% endif %}{% if view.local_context.retrieved_at %} · actualizado {{ view.local_context.retrieved_at[:10] }}{% endif %}</div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if view.positioning %}
+  <section class="section" aria-labelledby="position-title">
+    <div class="section-rule"><span class="section-index">04 · Posicionamiento</span><h2 id="position-title">Una referencia para leer el precio</h2></div>
+    <div class="positioning">
+      <div class="positioning-copy">
+        <h3>{{ view.positioning.label }}</h3>
+        <p>La posición se calcula frente al rango descriptivo de {{ view.positioning.comparable_count }} propiedades con comuna, tipo, operación, precio y superficie válidos. Es una referencia de mercado, no una tasación.</p>
+      </div>
+      <div class="range-figure" aria-label="Rango de precios observados">
+        <div class="range-track"><span class="range-marker" style="left:{{ view.positioning.marker_pct }}%"></span></div>
+        <div class="range-labels"><span>{{ '{:,.0f}'.format(view.positioning.low_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span>Precio {{ '{:,.0f}'.format(view.positioning.price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span>{{ '{:,.0f}'.format(view.positioning.high_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span></div>
+        <div class="range-caption">Rango observado · mínimo y máximo de comparables válidos del corte</div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="section" aria-labelledby="activity-title">
+    <div class="section-rule"><span class="section-index">05 · Actividad</span><h2 id="activity-title">Lo que la actividad nos cuenta</h2></div>
+    <div class="activity">
+      <p class="activity-story">{% if view.inquiries_previous_30d > 0 %}La conversación comercial reciente registra {{ view.inquiries_previous_30d }} consulta{% if view.inquiries_previous_30d != 1 %}s{% endif %} en 30 días. El ritmo de la última semana fue de {{ view.inquiries_previous_7d }}.{% else %}La propiedad no registra consultas vinculadas en los últimos 30 días. Este dato describe actividad registrada, no la calidad de cada contacto.{% endif %}</p>
+      <div class="activity-metrics"><div class="activity-metric"><div class="value">{{ view.inquiries_previous_7d }}</div><div class="label">Consultas · últimos 7 días</div></div><div class="activity-metric"><div class="value">{{ view.inquiries_previous_30d }}</div><div class="label">Consultas · últimos 30 días</div></div></div>
+    </div>
+  </section>
+
+  {% if view.previous_price and view.last_price_change_at %}
+  <section class="section" aria-labelledby="history-title">
+    <div class="section-rule"><span class="section-index">06 · Evolución</span><h2 id="history-title">Un cambio verificable</h2></div>
+    <div class="history"><div class="history-line"><span>{{ view.previous_price.uf or view.previous_price.clp }} → {{ view.current_price_uf or view.current_price_clp }}</span><span class="history-date">{{ view.last_price_change_at[:10] }}</span></div></div>
+  </section>
+  {% endif %}
+
+  <footer class="footer"><div><strong>PROCASA SUCRE</strong><br>Informe de lectura comercial para la propiedad {{ view.property_code }}.</div><div>Datos cortados al {{ view.data_updated_at }}<br>La lectura acompaña decisiones; no reemplaza una tasación profesional.</div></footer>
 </main>
 </body>
 </html>

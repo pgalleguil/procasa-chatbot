@@ -14,7 +14,9 @@ contiene documentos Mongo completos, PII ni campos internos del CRM.
 | Identidad | `property_code`, `property_type`, `operation`, `commune`, `region` | `universo_cartera_prop360` |
 | Presentación | `main_image_url`, `current_price_uf`, `current_price_clp`, `bedrooms`, `bathrooms`, `parking`, `built_area_m2`, `land_area_m2` | Maestro Prop360 + `propiedades_captacion` para imagen |
 | Actividad comercial | `inquiries_previous_7d`, `inquiries_previous_30d` | `leads` + resolver V2; solo `EXACT_CANONICAL`/`EXACT_ALIAS` |
-| Mercado | `comparable_count`, `market_median_uf`, `market_low_uf`, `market_high_uf`, `market_uf_m2`, `market_data_available`, `market_as_of` | `propiedades_captacion` + `mercado_comunal` |
+| Mercado | `comparable_count`, `market_median_uf`, `market_low_uf`, `market_high_uf`, `market_uf_m2`, `market_data_available`, `market_as_of`, `local_context`, `positioning` | `propiedades_captacion` + `mercado_comunal` |
+| Chile | `national_indicators`, `national_context_note` | `uf_cache` interno; fuentes institucionales enlazadas en la plantilla |
+| Alcance | `regional_context_note` | Determinista; explica cuando sólo existe lectura comunal |
 | Precio | `current_price`, `previous_price`, `last_price_change_at` | Maestro actual + snapshot/historial verificable |
 | Metadata | `as_of`, `data_updated_at`, `data_quality`, `recommendation` | Cutoff único; `recommendation` permanece `null` |
 
@@ -31,9 +33,13 @@ anteriores y no se utiliza para renderizar la ruta.
 - Las consultas usan el mismo cutoff en 7 y 30 días. `CONFLICT`, `AMBIGUOUS` y
   `UNMATCHED` quedan excluidos.
 - El mercado requiere al menos cinco comparables con misma comuna, tipo y
-  operación, precio UF finito y mayor que cero, superficie finita y mayor que
-  cero, y fecha no anterior a un año ni igual/futura respecto del cutoff cuando
-  existe. No se convierte CLP a UF.
+  operación normalizados de forma exacta, precio UF finito y mayor que cero,
+  superficie finita y mayor que cero, y fecha no anterior a un año ni
+  igual/futura respecto del cutoff cuando existe. No se convierte CLP a UF.
+- Para conservar la evidencia de la fuente, la superficie se lee en este orden:
+  `superficie`, `superficie_construida`, `m2_construidos`, `m2_totales`. Los dos
+  últimos campos se habilitaron sólo después de auditar que contienen los
+  valores numéricos del universo de comparables de Viña del Mar.
 - Con cero a cuatro comparables, `market_data_available=false` y las métricas
   estadísticas son `null`.
 - No se aplican winsorization, IQR trimming, percentiles ni ML. La auditoría de
@@ -162,3 +168,24 @@ La auditoría específica del Caso A encontró cero filas de comparables, por lo
 que su distribución observada es `n=0` y no existen outliers evaluables para
 ese caso. Un barrido global de `propiedades_captacion` se agotó por timeout de
 Mongo durante esta validación y no se usa como evidencia estadística.
+
+## Rediseño editorial local
+
+La ruta continúa siendo una vista de sólo lectura, pero la plantilla se presenta
+como informe narrativo: portada editorial, resumen ejecutivo, contexto Chile,
+contexto comunal, posicionamiento sólo cuando hay al menos cinco comparables y
+actividad registrada. Los bloques de historial y recomendación se omiten cuando
+no tienen evidencia, en vez de mostrar tarjetas vacías.
+
+`MarketIndicatorV1` exige explícitamente:
+`indicator_id`, `scope`, `geography`, `value`, `unit`, `period`, `source_name`,
+`source_url`, `retrieved_at` y `valid_until`. La UF se lee desde el snapshot
+interno existente (`uf_cache`); la vista no consume APIs externas por pageview.
+La tasa hipotecaria del Banco Central, el IPC del INE y las estadísticas
+habitacionales del MINVU quedan como fuentes institucionales de contexto
+enlazadas, sin inventar un valor que no esté persistido en un snapshot fechado.
+
+Para el caso 6448, el match exacto de `mercado_comunal` se complementa con
+`match_key = comuna_normalizada|tipo_normalizado` cuando el legado varía en
+mayúsculas o acentos. El posicionamiento usa sólo el rango de los comparables
+válidos observados y se expresa de forma neutral; no es tasación ni recomendación.

@@ -216,11 +216,11 @@ def test_no_photo_fallback(monkeypatch):
     assert "hero-placeholder" in response.text
 
 
-def test_no_price_is_explicit(monkeypatch):
+def test_missing_price_is_hidden_without_placeholder(monkeypatch):
     db = make_db(master_doc("S1", price=False), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     response = internal_client(monkeypatch, db).get("/owner-portal-preview/S1")
     assert response.status_code == 200
-    assert "No disponible" in response.text
+    assert "Precio publicado" not in response.text
 
 
 def test_external_views_are_not_exposed(monkeypatch):
@@ -238,20 +238,20 @@ def test_visits_are_not_claimed_as_completed(monkeypatch):
     db = make_db(master_doc("S1"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text.casefold()
     assert "visitas realizadas" not in text
-    assert "no verifica asistencia" in text
+    assert "no verifica asistencia" not in text
 
 
 def test_responsive_render_contract(monkeypatch):
     db = make_db(master_doc("S1"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text
     assert 'name="viewport"' in text
-    assert "@media (max-width: 700px)" in text
+    assert "@media (max-width: 560px)" in text
 
 
 def test_updated_date_uses_verified_master_field(monkeypatch):
     db = make_db(master_doc("S1", estado={"oficina": "PROCASA SUCRE", "disponible_prop360": True, "ultima_actualizacion": "2026-09-10T10:00:00-03:00"}), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text
-    assert "Datos actualizados al 10/09/2026" in text
+    assert "corte 10/09/2026" in text
 
 
 def test_market_below_minimum_hides_representative_median_and_range():
@@ -372,6 +372,59 @@ def test_market_requires_same_commune_type_and_operation():
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), [])
     market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
     assert market["comparables_count"] == 1
+
+
+def test_market_normalizes_labels_and_uses_verified_surface_fallbacks():
+    doc = master_doc("V1", **{
+        "ubicacion": {"region": "Valparaiso", "comuna": "Viña del Mar", "sector": "Centro"},
+    })
+    db = make_db(doc, market=False)
+    db["mercado_comunal"].insert_one({
+        "match_key": "vina del mar|departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 68.23},
+        "rangos_precio_venta": {"min_uf": 1288, "max_uf": 3799},
+    })
+    for index in range(5):
+        db["propiedades_captacion"].insert_one({
+            "comuna": "Vina Del Mar",
+            "tipo_propiedad": "departamento",
+            "operacion": "Venta",
+            "precio_uf": 3000 + index * 100,
+            "m2_construidos": 60 + index,
+        })
+    prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "V1"}), [])
+    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    assert market["comparables_count"] == 5
+    assert market["median_price_uf"] == 3200
+    assert market["median_uf_m2"] == 51.61
+
+
+def test_market_indicator_contract_is_dated_and_source_backed():
+    db = make_db(master_doc("UF1"))
+    db["uf_cache"].insert_one({
+        "valor": 40846.11,
+        "fecha": "2026-08-10",
+        "fuente": "mindicador.cl",
+        "actualizado_at": "2026-08-10T16:11:16+00:00",
+    })
+    view = service.get_owner_portal_property_view(db, "UF1", datetime(2026, 9, 10, tzinfo=timezone.utc))
+    assert view is not None
+    indicator = view.to_dict()["national_indicators"][0]
+    assert set(indicator) == {
+        "indicator_id", "scope", "geography", "value", "unit", "period",
+        "source_name", "source_url", "retrieved_at", "valid_until",
+    }
+    assert indicator["period"] == "10/08/2026"
+    assert indicator["source_url"] == "https://mindicador.cl/"
+
+
+def test_editorial_template_omits_empty_operational_placeholders(monkeypatch):
+    db = make_db(master_doc("ED1"), captures=[{"listing_id": "ED1", "image_urls": ["https://img/e.jpg"]}])
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/ED1").text.casefold()
+    assert "próximamente" not in text
+    assert "no verifica asistencia" not in text
+    assert "recomendación de precio" not in text
+    assert "autorización" not in text
 
 
 def test_invalid_prices_and_surfaces_are_excluded_from_market():

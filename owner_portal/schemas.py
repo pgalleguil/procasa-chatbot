@@ -37,6 +37,11 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "data_updated_at",
         "data_quality",
         "recommendation",
+        "national_indicators",
+        "national_context_note",
+        "regional_context_note",
+        "local_context",
+        "positioning",
     }
 )
 
@@ -92,6 +97,106 @@ class OwnerPortalDataQualityV1:
 
 
 @dataclass(frozen=True)
+class MarketIndicatorV1:
+    """A dated, source-backed market indicator safe for owner-facing use."""
+
+    indicator_id: str
+    scope: str
+    geography: str
+    value: float | str | None
+    unit: str
+    period: str
+    source_name: str
+    source_url: str | None
+    retrieved_at: str
+    valid_until: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "indicator_id": self.indicator_id,
+            "scope": self.scope,
+            "geography": self.geography,
+            "value": self.value,
+            "unit": self.unit,
+            "period": self.period,
+            "source_name": self.source_name,
+            "source_url": self.source_url,
+            "retrieved_at": self.retrieved_at,
+            "valid_until": self.valid_until,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalMarketContextV1:
+    """Descriptive local snapshot; it is not a valuation or recommendation."""
+
+    scope: str
+    geography: str
+    property_type: str
+    available: bool
+    comparables_count: int
+    median_price_uf: float | None
+    median_uf_m2: float | None
+    public_uf_m2: float | None
+    effective_uf_m2: float | None
+    price_variation_12m_pct: float | None
+    active_listings: int | None
+    total_listings: int | None
+    trend: str | None
+    liquidity: str | None
+    competition: str | None
+    range_price_uf: tuple[float | None, float | None]
+    source_name: str | None
+    source_reference: str | None
+    retrieved_at: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "geography": self.geography,
+            "property_type": self.property_type,
+            "available": self.available,
+            "comparables_count": self.comparables_count,
+            "median_price_uf": self.median_price_uf,
+            "median_uf_m2": self.median_uf_m2,
+            "public_uf_m2": self.public_uf_m2,
+            "effective_uf_m2": self.effective_uf_m2,
+            "price_variation_12m_pct": self.price_variation_12m_pct,
+            "active_listings": self.active_listings,
+            "total_listings": self.total_listings,
+            "trend": self.trend,
+            "liquidity": self.liquidity,
+            "competition": self.competition,
+            "range_price_uf": list(self.range_price_uf),
+            "source_name": self.source_name,
+            "source_reference": self.source_reference,
+            "retrieved_at": self.retrieved_at,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalPositioningV1:
+    """A neutral position inside the observed comparable range."""
+
+    price_uf: float
+    low_uf: float
+    high_uf: float
+    marker_pct: float
+    label: str
+    comparable_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "price_uf": self.price_uf,
+            "low_uf": self.low_uf,
+            "high_uf": self.high_uf,
+            "marker_pct": self.marker_pct,
+            "label": self.label,
+            "comparable_count": self.comparable_count,
+        }
+
+
+@dataclass(frozen=True)
 class OwnerPortalPropertyViewV1:
     """The only data shape that the owner-facing template may receive."""
 
@@ -124,6 +229,11 @@ class OwnerPortalPropertyViewV1:
     data_updated_at: str
     data_quality: OwnerPortalDataQualityV1
     recommendation: None = None
+    national_indicators: tuple[MarketIndicatorV1, ...] = ()
+    national_context_note: str | None = None
+    regional_context_note: str | None = None
+    local_context: OwnerPortalMarketContextV1 | None = None
+    positioning: OwnerPortalPositioningV1 | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize only explicit allowlisted fields; never expose source docs."""
@@ -158,6 +268,11 @@ class OwnerPortalPropertyViewV1:
             "data_updated_at": self.data_updated_at,
             "data_quality": self.data_quality.to_dict(),
             "recommendation": None,
+            "national_indicators": [item.to_dict() for item in self.national_indicators],
+            "national_context_note": self.national_context_note,
+            "regional_context_note": self.regional_context_note,
+            "local_context": self.local_context.to_dict() if self.local_context else None,
+            "positioning": self.positioning.to_dict() if self.positioning else None,
         }
 
 
@@ -302,3 +417,32 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         extra = set(quality) - OWNER_PORTAL_QUALITY_ALLOWLIST
         if extra:
             raise ValueError(f"Disallowed quality fields: {sorted(extra)}")
+    indicators = payload.get("national_indicators")
+    if isinstance(indicators, (list, tuple)):
+        expected = {
+            "indicator_id", "scope", "geography", "value", "unit", "period",
+            "source_name", "source_url", "retrieved_at", "valid_until",
+        }
+        for indicator in indicators:
+            if isinstance(indicator, Mapping):
+                extra = set(indicator) - expected
+                if extra:
+                    raise ValueError(f"Disallowed market indicator fields: {sorted(extra)}")
+    local_context = payload.get("local_context")
+    if isinstance(local_context, Mapping):
+        expected = {
+            "scope", "geography", "property_type", "available", "comparables_count",
+            "median_price_uf", "median_uf_m2", "public_uf_m2", "effective_uf_m2",
+            "price_variation_12m_pct", "active_listings", "total_listings", "trend",
+            "liquidity", "competition", "range_price_uf", "source_name",
+            "source_reference", "retrieved_at",
+        }
+        extra = set(local_context) - expected
+        if extra:
+            raise ValueError(f"Disallowed local context fields: {sorted(extra)}")
+    positioning = payload.get("positioning")
+    if isinstance(positioning, Mapping):
+        expected = {"price_uf", "low_uf", "high_uf", "marker_pct", "label", "comparable_count"}
+        extra = set(positioning) - expected
+        if extra:
+            raise ValueError(f"Disallowed positioning fields: {sorted(extra)}")

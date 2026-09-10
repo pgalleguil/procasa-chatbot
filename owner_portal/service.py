@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import statistics
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
@@ -18,8 +19,11 @@ from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, is_in_previou
 
 from .schemas import (
     OwnerPortalDataQualityV1,
+    OwnerPortalMarketContextV1,
     OwnerPortalPriceV1,
+    OwnerPortalPositioningV1,
     OwnerPortalPropertyViewV1,
+    MarketIndicatorV1,
 )
 
 OFFICE_SCOPE = "PROCASA_SUCRE"
@@ -156,6 +160,41 @@ def _text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalized_label(value: Any) -> str:
+    """Normalize human labels for exact semantic matching, not fuzzy search."""
+
+    text = _text(value) or ""
+    decomposed = unicodedata.normalize("NFKD", text)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(without_marks.casefold().split())
+
+
+def _market_match_key(commune: Any, property_type: Any) -> str:
+    return f"{_normalized_label(commune)}|{_normalized_label(property_type)}"
+
+
+def _text_variants(value: Any) -> list[str]:
+    """Build a small bounded set of exact Mongo values used by legacy datasets."""
+
+    raw = _text(value)
+    if not raw:
+        return []
+    decomposed = unicodedata.normalize("NFKD", raw)
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    values = {
+        raw,
+        raw.casefold(),
+        raw.lower(),
+        raw.title(),
+        raw.upper(),
+        without_marks,
+        without_marks.casefold(),
+        without_marks.title(),
+        without_marks.upper(),
+    }
+    return sorted(value for value in values if value)
 
 
 def _operation(doc: Mapping[str, Any]) -> str | None:
@@ -520,6 +559,8 @@ def _format_timestamp(value: Any) -> str | None:
 def _format_date(value: Any) -> str | None:
     if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
         return datetime.strptime(value.strip(), "%Y-%m-%d").strftime("%d/%m/%Y")
+    if isinstance(value, str) and re.fullmatch(r"\d{2}/\d{2}/\d{4}", value.strip()):
+        return value.strip()
     parsed = _parse_date(value)
     if parsed is None:
         return None
@@ -540,32 +581,50 @@ def _as_of_or_now(as_of: datetime | None) -> datetime:
 def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = None) -> dict[str, Any]:
     as_of = _as_of_or_now(as_of)
     commune, property_type = prop["commune"], prop["property_type"]
+    aggregate_projection = {
+        "_id": 0,
+        "mercado_venta": 1,
+        "rangos_precio_venta": 1,
+        "indicadores_mercado": 1,
+        "updated_at": 1,
+        "fecha_actualizacion": 1,
+        "as_of": 1,
+        "fecha_corte": 1,
+        "source": 1,
+    }
     aggregate = db[MARKET_COLLECTION].find_one(
         {"comuna": commune, "tipo_propiedad": property_type},
-        {
-            "_id": 0,
-            "mercado_venta": 1,
-            "rangos_precio_venta": 1,
-            "indicadores_mercado": 1,
-            "updated_at": 1,
-            "fecha_actualizacion": 1,
-            "as_of": 1,
-            "fecha_corte": 1,
-        },
+        aggregate_projection,
     ) or {}
+    if not aggregate:
+        # The source contains stable match_key values while older rows vary in
+        # accents/casing. This remains an exact normalized lookup, never fuzzy.
+        aggregate = db[MARKET_COLLECTION].find_one(
+            {"match_key": _market_match_key(commune, property_type)},
+            aggregate_projection,
+        ) or {}
     return _comparables(db, prop, aggregate, as_of)
 
 
 def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any], as_of: datetime) -> dict[str, Any]:
-    query = {"comuna": prop["commune"], "tipo_propiedad": prop["property_type"], "operacion": "venta"}
+    query = {
+        "comuna": {"$in": _text_variants(prop["commune"])},
+        "tipo_propiedad": {"$in": _text_variants(prop["property_type"])},
+        "operacion": {"$in": _text_variants("venta")},
+    }
     rows = list(
         db[CAPTACION_COLLECTION].find(
             query,
             {
                 "_id": 0,
+                "comuna": 1,
+                "tipo_propiedad": 1,
+                "operacion": 1,
                 "precio_uf": 1,
                 "superficie": 1,
                 "superficie_construida": 1,
+                "m2_construidos": 1,
+                "m2_totales": 1,
                 "fecha_publicacion": 1,
                 "updated_at": 1,
             },
@@ -575,8 +634,22 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
     as_of_utc = as_of.astimezone(timezone.utc)
     valid: list[tuple[float, float]] = []
     for row in rows:
+        if _normalized_label(row.get("comuna")) != _normalized_label(prop["commune"]):
+            continue
+        if _normalized_label(row.get("tipo_propiedad")) != _normalized_label(prop["property_type"]):
+            continue
+        if _normalized_label(row.get("operacion")) != "venta":
+            continue
         price = _number(row.get("precio_uf"))
-        surface = _number(row.get("superficie") or row.get("superficie_construida"))
+        surface = next(
+            (
+                number
+                for field in ("superficie", "superficie_construida", "m2_construidos", "m2_totales")
+                for number in [_number(row.get(field))]
+                if number is not None and number > 0
+            ),
+            None,
+        )
         when = _parse_date(row.get("fecha_publicacion") or row.get("updated_at"))
         if price is None or price <= 0 or surface is None or surface <= 0:
             continue
@@ -605,6 +678,8 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             "aggregate": dict(market_sale),
             "indicators": dict(indicators),
             "range_reference": dict(ranges),
+            "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
+            "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
             "market_as_of": market_as_of,
             "explanation": "Comparables descriptivos: misma comuna, tipo y operación; precio y superficie válidos; fecha reciente cuando está disponible.",
         }
@@ -618,9 +693,145 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
         "aggregate": dict(market_sale),
         "indicators": dict(indicators),
         "range_reference": dict(ranges),
+        "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
+        "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
         "market_as_of": market_as_of,
         "explanation": "Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.",
     }
+
+
+def _integer(value: Any) -> int | None:
+    number = _number(value)
+    return int(number) if number is not None else None
+
+
+def _market_context_dto(
+    prop: Mapping[str, Any],
+    market: Mapping[str, Any],
+) -> OwnerPortalMarketContextV1 | None:
+    """Build the small, source-labelled local snapshot used by the template."""
+
+    aggregate = market.get("aggregate") if isinstance(market.get("aggregate"), Mapping) else {}
+    indicators = market.get("indicators") if isinstance(market.get("indicators"), Mapping) else {}
+    ranges = market.get("range_reference") if isinstance(market.get("range_reference"), Mapping) else {}
+    if not aggregate and not indicators and not ranges and not market.get("market_as_of"):
+        return None
+    sale = aggregate
+    source = market.get("source")
+    source_ref = None
+    if isinstance(source, Mapping):
+        filename = _text(source.get("filename"))
+        report_date = _format_date(source.get("report_date") or source.get("fecha_reporte"))
+        source_ref = " · ".join(item for item in (filename, f"corte {report_date}" if report_date else None) if item)
+    return OwnerPortalMarketContextV1(
+        scope="comuna",
+        geography=_text(prop.get("commune")) or "",
+        property_type=_text(prop.get("property_type")) or "",
+        available=True,
+        comparables_count=int(market.get("comparables_count") or 0),
+        median_price_uf=_number(market.get("median_price_uf")),
+        median_uf_m2=_number(market.get("median_uf_m2")),
+        public_uf_m2=_number(sale.get("uf_m2_publicacion_actual")),
+        effective_uf_m2=_number(sale.get("uf_m2_venta_efectiva_actual")),
+        price_variation_12m_pct=_number(sale.get("variacion_uf_m2_12m")),
+        active_listings=_integer(sale.get("publicaciones_activas")),
+        total_listings=_integer(sale.get("publicaciones_totales")),
+        trend=_text(sale.get("tendencia_publicaciones")),
+        liquidity=_text(indicators.get("liquidez")),
+        competition=_text(indicators.get("nivel_competencia")),
+        range_price_uf=tuple(market.get("range_price_uf") or [None, None]),
+        source_name="mercado_comunal · snapshot interno",
+        source_reference=source_ref or "mercado_comunal",
+        retrieved_at=_format_timestamp(
+            market.get("aggregate_retrieved_at")
+            or market.get("aggregate_updated_at")
+            or market.get("market_as_of")
+        ),
+    )
+
+
+def _positioning(
+    current_price_uf: float | None,
+    market: Mapping[str, Any],
+) -> OwnerPortalPositioningV1 | None:
+    if current_price_uf is None or market.get("comparables_count", 0) < 5:
+        return None
+    low, high = market.get("range_price_uf") or (None, None)
+    if low is None or high is None or low <= 0 or high < low:
+        return None
+    if high == low:
+        marker = 50.0
+    else:
+        marker = 8.0 + 84.0 * max(0.0, min(1.0, (current_price_uf - low) / (high - low)))
+    if current_price_uf < low:
+        label = "Por debajo del rango observado"
+    elif current_price_uf > high:
+        label = "Por encima del rango observado"
+    else:
+        label = "Dentro del rango observado"
+    return OwnerPortalPositioningV1(
+        price_uf=round(current_price_uf, 2),
+        low_uf=round(low, 2),
+        high_uf=round(high, 2),
+        marker_pct=round(marker, 1),
+        label=label,
+        comparable_count=int(market.get("comparables_count") or 0),
+    )
+
+
+def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, ...]:
+    """Read the existing UF snapshot; never call a public source per pageview."""
+
+    row = db["uf_cache"].find_one(
+        {},
+        {"_id": 0, "valor": 1, "fecha": 1, "fuente": 1, "actualizado_at": 1, "valid_until": 1},
+        sort=[("fecha", -1)],
+    )
+    if not isinstance(row, Mapping):
+        return ()
+    value = _number(row.get("valor"))
+    if value is None or value <= 0:
+        return ()
+    period = _format_date(row.get("fecha")) or _text(row.get("fecha")) or ""
+    retrieved_at = _format_timestamp(row.get("actualizado_at")) or _format_as_of(as_of)
+    return (
+        MarketIndicatorV1(
+            indicator_id="uf_reference",
+            scope="nacional",
+            geography="Chile",
+            value=round(value, 2),
+            unit="CLP por UF",
+            period=period,
+            source_name=_text(row.get("fuente")) or "UF · snapshot interno",
+            source_url="https://mindicador.cl/",
+            retrieved_at=retrieved_at,
+            valid_until=_format_date(row.get("valid_until")),
+        ),
+    )
+
+
+def _national_context_note(indicators: tuple[MarketIndicatorV1, ...]) -> str:
+    if indicators:
+        return (
+            "El mercado chileno se interpreta con tres referencias: la UF para comparar valores, "
+            "el costo del financiamiento y la evolución de precios. Este corte incorpora la UF "
+            "desde un snapshot interno fechado; las cifras macro se consultan en fuentes "
+            "institucionales y no se llaman en tiempo real durante la visita."
+        )
+    return (
+        "La lectura nacional se ordena alrededor de la UF, el financiamiento hipotecario y la "
+        "evolución de precios. En este corte se priorizan fuentes institucionales fechadas y "
+        "no se realizan llamadas externas durante la visita."
+    )
+
+
+def _regional_context_note(prop: Mapping[str, Any]) -> str:
+    region = _text(prop.get("region")) or "la región"
+    commune = _text(prop.get("commune")) or "la comuna"
+    return (
+        f"{region}: el corte disponible no contiene una serie regional comparable; por eso la "
+        f"lectura se concentra en {commune}, sin inferir un promedio para toda la región."
+    )
 
 
 def _snapshot(db: Any, code: str, as_of: datetime) -> dict[str, Any] | None:
@@ -718,6 +929,9 @@ def get_owner_portal_property_view(
     snapshot = _snapshot(db, code, cutoff)
     leads = _lead_metrics_for_property(db, doc, cutoff)
     market = _market_context(db, prop, cutoff)
+    national_indicators = _national_indicators(db, cutoff)
+    local_context = _market_context_dto(prop, market)
+    positioning = _positioning(prop["price_uf"], market)
 
     previous_uf = _number(snapshot.get("previous_price_uf")) if snapshot else None
     previous_clp = _number(snapshot.get("previous_price_clp")) if snapshot else None
@@ -771,6 +985,11 @@ def get_owner_portal_property_view(
         data_updated_at=_format_date(cutoff) or "Fecha no disponible",
         data_quality=data_quality,
         recommendation=None,
+        national_indicators=national_indicators,
+        national_context_note=_national_context_note(national_indicators),
+        regional_context_note=_regional_context_note(prop),
+        local_context=local_context,
+        positioning=positioning,
     )
 
 

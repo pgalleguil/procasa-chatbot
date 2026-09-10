@@ -16,12 +16,14 @@ from .schemas import (
     OwnerPortalAccessV1,
     OwnerPortalActivityPointV1,
     OwnerPortalComparableCohortV1,
+    OwnerPortalComparableExampleV1,
     OwnerPortalEventV1,
     OwnerPortalMarketContextV1,
     OwnerPortalPublicationV1,
     OwnerPortalPositioningV1,
     OwnerPortalPropertyViewV1,
     OwnerPortalTimelineEventV1,
+    PriceResponseSimulationV1,
 )
 
 __all__ = [
@@ -38,10 +40,12 @@ __all__ = [
     "MarketIndicatorV1",
     "MarketIntelligenceSnapshotV1",
     "DemandForecastViewV1",
+    "PriceResponseSimulationV1",
     "OwnerPortalActivityPointV1",
     "OwnerPortalTimelineEventV1",
     "OwnerPortalPublicationV1",
     "OwnerPortalComparableCohortV1",
+    "OwnerPortalComparableExampleV1",
     "OwnerPortalMarketContextV1",
     "OwnerPortalPositioningV1",
 ]

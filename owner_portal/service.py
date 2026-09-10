@@ -23,6 +23,7 @@ from .schemas import (
     OwnerPortalDataQualityV1,
     OwnerPortalActivityPointV1,
     OwnerPortalComparableCohortV1,
+    OwnerPortalComparableExampleV1,
     OwnerPortalMarketContextV1,
     OwnerPortalPriceV1,
     OwnerPortalPublicationV1,
@@ -40,6 +41,7 @@ SNAPSHOT_COLLECTION = "pricing_intelligence_property_snapshots_v1"
 MASTER_COLLECTION = "universo_cartera_prop360"
 CAPTACION_COLLECTION = "propiedades_captacion"
 MARKET_COLLECTION = "mercado_comunal"
+MARKET_INTELLIGENCE_COLLECTION = "market_intelligence_snapshots_v1"
 
 MASTER_PROJECTION = {
     "_id": 0,
@@ -132,6 +134,8 @@ _MASTER_ALIAS_PORTALS: tuple[tuple[str, str], ...] = (
 _IDENTITY_CACHE: dict[int, tuple[Any, tuple[dict[str, Any], ...]]] = {}
 _MARKET_CONTEXT_CACHE: dict[tuple[int, str, str, str], tuple[float, Any, dict[str, Any]]] = {}
 _MARKET_CONTEXT_CACHE_TTL_SECONDS = 30.0
+_NATIONAL_INDICATORS_CACHE: dict[int, tuple[float, Any, tuple[MarketIndicatorV1, ...]]] = {}
+_NATIONAL_INDICATORS_CACHE_TTL_SECONDS = 30.0
 
 
 def _path(doc: Mapping[str, Any], dotted: str) -> Any:
@@ -732,6 +736,9 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
                 "m2_totales": 1,
                 "dormitorios": 1,
                 "banos": 1,
+                "listing_id": 1,
+                "source_portal": 1,
+                "origen": 1,
                 "fecha_publicacion": 1,
                 "updated_at": 1,
             },
@@ -740,6 +747,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
     cutoff = as_of.astimezone(timezone.utc) - timedelta(days=365)
     as_of_utc = as_of.astimezone(timezone.utc)
     valid: list[dict[str, Any]] = []
+    seen_listing_ids: set[str] = set()
     for row in rows:
         if _normalized_label(row.get("comuna")) != _normalized_label(prop["commune"]):
             continue
@@ -762,20 +770,30 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             continue
         if when is not None and (when < cutoff or when >= as_of_utc):
             continue
+        listing_id = normalize_identifier(row.get("listing_id"))
+        if listing_id and listing_id in seen_listing_ids:
+            continue
+        if listing_id:
+            seen_listing_ids.add(listing_id)
         valid.append(
             {
                 "price_uf": price,
                 "surface_m2": surface,
                 "bedrooms": _number(row.get("dormitorios")),
                 "bathrooms": _number(row.get("banos")),
+                "portal": _text(row.get("source_portal") or row.get("origen")),
+                "listing_id": listing_id,
                 "when": when,
             }
         )
     market_sale = aggregate.get("mercado_venta") if isinstance(aggregate.get("mercado_venta"), Mapping) else {}
     indicators = aggregate.get("indicadores_mercado") if isinstance(aggregate.get("indicadores_mercado"), Mapping) else {}
     ranges = aggregate.get("rangos_precio_venta") if isinstance(aggregate.get("rangos_precio_venta"), Mapping) else {}
+    source = aggregate.get("source") if isinstance(aggregate.get("source"), Mapping) else {}
     market_as_of = _format_date(
-        aggregate.get("as_of")
+        source.get("fecha_reporte")
+        or source.get("report_date")
+        or aggregate.get("as_of")
         or aggregate.get("fecha_corte")
         or aggregate.get("fecha_actualizacion")
         or aggregate.get("updated_at")
@@ -833,6 +851,44 @@ def _percentile(values: Iterable[float], quantile: float) -> float | None:
     return round(value, 2)
 
 
+def _comparable_examples(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    median_uf: float,
+) -> tuple[OwnerPortalComparableExampleV1, ...]:
+    """Select up to three anonymous examples only when the portal is known."""
+
+    candidates = [
+        row for row in rows
+        if _text(row.get("portal"))
+        and _number(row.get("price_uf")) is not None
+        and _number(row.get("surface_m2")) is not None
+    ]
+    candidates.sort(
+        key=lambda row: (
+            abs(float(row["price_uf"]) - median_uf),
+            str(row.get("portal") or ""),
+            str(row.get("listing_id") or ""),
+        )
+    )
+    examples: list[OwnerPortalComparableExampleV1] = []
+    for index, row in enumerate(candidates[:3]):
+        price = float(row["price_uf"])
+        surface = float(row["surface_m2"])
+        examples.append(
+            OwnerPortalComparableExampleV1(
+                label=f"Comparable {chr(65 + index)}",
+                price_uf=round(price, 2),
+                surface_m2=round(surface, 2),
+                bedrooms=_number(row.get("bedrooms")),
+                bathrooms=_number(row.get("bathrooms")),
+                uf_m2=round(price / surface, 2),
+                portal=_text(row.get("portal")) or "Portal no especificado",
+            )
+        )
+    return tuple(examples)
+
+
 def _cohort_statistics(
     rows: list[Mapping[str, Any]],
     *,
@@ -872,6 +928,7 @@ def _cohort_statistics(
         broad_count=int(counts["broad"]),
         similar_count=int(counts["similar"]),
         high_similarity_count=int(counts["high_similarity"]),
+        examples=_comparable_examples(rows, median_uf=median),
     )
 
 
@@ -973,8 +1030,16 @@ def _market_context_dto(
         median_uf_m2=_number(market.get("median_uf_m2")),
         public_uf_m2=_number(sale.get("uf_m2_publicacion_actual")),
         effective_uf_m2=_number(sale.get("uf_m2_venta_efectiva_actual")),
+        effective_uf_m2_semantics=(
+            "Valor agregado reportado por el informe comunal; no corresponde a una transacción individual verificable."
+            if _number(sale.get("uf_m2_venta_efectiva_actual")) is not None else None
+        ),
         price_variation_12m_pct=_number(sale.get("variacion_uf_m2_12m")),
         active_listings=_integer(sale.get("publicaciones_activas")),
+        active_listings_semantics=(
+            "Publicaciones activas observadas en el corte; no equivale a propiedades únicas."
+            if _integer(sale.get("publicaciones_activas")) is not None else None
+        ),
         total_listings=_integer(sale.get("publicaciones_totales")),
         trend=_text(sale.get("tendencia_publicaciones")),
         liquidity=_text(indicators.get("liquidez")),
@@ -1023,50 +1088,116 @@ def _positioning(
     )
 
 
+def _stored_national_indicators(db: Any) -> list[MarketIndicatorV1]:
+    """Read valid upstream snapshots only; the portal never ingests them."""
+
+    try:
+        rows = list(
+            db[MARKET_INTELLIGENCE_COLLECTION].find(
+                {"scope": "nacional", "status": "valid"},
+                {
+                    "_id": 0,
+                    "indicator_id": 1,
+                    "scope": 1,
+                    "geography": 1,
+                    "value": 1,
+                    "unit": 1,
+                    "reference_period": 1,
+                    "source_name": 1,
+                    "source_reference": 1,
+                    "retrieved_at_utc": 1,
+                    "source_published_at": 1,
+                },
+            ).sort("reference_period", -1).limit(3)
+        )
+    except Exception:
+        return []
+    result: list[MarketIndicatorV1] = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not _text(row.get("indicator_id")):
+            continue
+        value = row.get("value")
+        if _number(value) is None:
+            continue
+        result.append(
+            MarketIndicatorV1(
+                indicator_id=_text(row.get("indicator_id")) or "",
+                scope=_text(row.get("scope")) or "nacional",
+                geography=_text(row.get("geography")) or "Chile",
+                value=round(float(value), 6),
+                unit=_text(row.get("unit")) or "",
+                period=_text(row.get("reference_period")) or "",
+                source_name=_text(row.get("source_name")) or "Fuente oficial",
+                source_url=_text(row.get("source_reference")),
+                retrieved_at=_text(row.get("retrieved_at_utc")) or "",
+                valid_until=None,
+            )
+        )
+    return result
+
+
 def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, ...]:
-    """Read the existing UF snapshot; never call a public source per pageview."""
+    """Read stored snapshots and UF cache; never call a public source per pageview."""
+
+    market_client = getattr(db, "client", db)
+    cache_key = id(market_client)
+    now = time.monotonic()
+    cached = _NATIONAL_INDICATORS_CACHE.get(cache_key)
+    if cached is not None and cached[1] is market_client and now - cached[0] < _NATIONAL_INDICATORS_CACHE_TTL_SECONDS:
+        return cached[2]
+
+    result = _stored_national_indicators(db)
 
     row = db["uf_cache"].find_one(
         {},
         {"_id": 0, "valor": 1, "fecha": 1, "fuente": 1, "actualizado_at": 1, "valid_until": 1},
         sort=[("fecha", -1)],
     )
-    if not isinstance(row, Mapping):
-        return ()
-    value = _number(row.get("valor"))
-    if value is None or value <= 0:
-        return ()
-    period = _format_date(row.get("fecha")) or _text(row.get("fecha")) or ""
-    retrieved_at = _format_timestamp(row.get("actualizado_at")) or _format_as_of(as_of)
-    return (
-        MarketIndicatorV1(
-            indicator_id="uf_reference",
-            scope="nacional",
-            geography="Chile",
-            value=round(value, 2),
-            unit="CLP por UF",
-            period=period,
-            source_name=_text(row.get("fuente")) or "UF · snapshot interno",
-            source_url="https://mindicador.cl/",
-            retrieved_at=retrieved_at,
-            valid_until=_format_date(row.get("valid_until")),
-        ),
-    )
+    if isinstance(row, Mapping):
+        value = _number(row.get("valor"))
+        if value is not None and value > 0:
+            period = _format_date(row.get("fecha")) or _text(row.get("fecha")) or ""
+            retrieved_at = _format_timestamp(row.get("actualizado_at")) or _format_as_of(as_of)
+            result.insert(
+                0,
+                MarketIndicatorV1(
+                    indicator_id="uf_reference",
+                    scope="nacional",
+                    geography="Chile",
+                    value=round(value, 2),
+                    unit="CLP por UF",
+                    period=period,
+                    source_name=_text(row.get("fuente")) or "UF · snapshot interno",
+                    source_url="https://mindicador.cl/",
+                    retrieved_at=retrieved_at,
+                    valid_until=_format_date(row.get("valid_until")),
+                ),
+            )
+    unique: list[MarketIndicatorV1] = []
+    seen: set[str] = set()
+    for indicator in result:
+        if indicator.indicator_id in seen:
+            continue
+        seen.add(indicator.indicator_id)
+        unique.append(indicator)
+    final = tuple(unique[:3])
+    _NATIONAL_INDICATORS_CACHE[cache_key] = (now, market_client, final)
+    if len(_NATIONAL_INDICATORS_CACHE) > 32:
+        oldest_key = min(_NATIONAL_INDICATORS_CACHE, key=lambda key: _NATIONAL_INDICATORS_CACHE[key][0])
+        _NATIONAL_INDICATORS_CACHE.pop(oldest_key, None)
+    return final
 
 
 def _national_context_note(indicators: tuple[MarketIndicatorV1, ...]) -> str:
     if indicators:
         return (
-            "Para vender, la UF ofrece una unidad estable para leer el precio publicado junto con la oferta comunal; "
-            "no equivale por sí sola a un valor de cierre. Para arrendar, este contexto nacional funciona como marco "
-            "general y no calcula un canon ni una proyección de demanda.\n\n"
-            "Los indicadores se incorporan desde cortes fechados y se muestran como observaciones, no como causalidad "
-            "ni como recomendación automática."
+            "La UF ayuda a comparar precios publicados en una unidad común. Las referencias nacionales tienen su propia "
+            "fecha y fuente: sirven como contexto, pero no explican por sí solas la respuesta de una propiedad ni "
+            "sustituyen una tasación."
         )
     return (
-        "Para vender, el contexto nacional ayuda a ordenar la lectura del precio publicado y su unidad de comparación. "
-        "Para arrendar, sirve como marco general, pero este informe no calcula un canon ni proyecta demanda.\n\n"
-        "El corte prioriza referencias institucionales fechadas y evita consultas externas durante cada visita."
+        "El contexto nacional ayuda a ordenar la lectura del precio publicado. Cuando una referencia está disponible, "
+        "se muestra con su propia fecha y fuente; la página no consulta fuentes externas durante cada visita."
     )
 
 

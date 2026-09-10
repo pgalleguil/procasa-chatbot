@@ -205,8 +205,10 @@ class OwnerPortalMarketContextV1:
     median_uf_m2: float | None
     public_uf_m2: float | None
     effective_uf_m2: float | None
+    effective_uf_m2_semantics: str | None
     price_variation_12m_pct: float | None
     active_listings: int | None
+    active_listings_semantics: str | None
     total_listings: int | None
     trend: str | None
     liquidity: str | None
@@ -227,8 +229,10 @@ class OwnerPortalMarketContextV1:
             "median_uf_m2": self.median_uf_m2,
             "public_uf_m2": self.public_uf_m2,
             "effective_uf_m2": self.effective_uf_m2,
+            "effective_uf_m2_semantics": self.effective_uf_m2_semantics,
             "price_variation_12m_pct": self.price_variation_12m_pct,
             "active_listings": self.active_listings,
+            "active_listings_semantics": self.active_listings_semantics,
             "total_listings": self.total_listings,
             "trend": self.trend,
             "liquidity": self.liquidity,
@@ -271,6 +275,30 @@ class OwnerPortalPositioningV1:
 
 
 @dataclass(frozen=True)
+class OwnerPortalComparableExampleV1:
+    """Anonymous comparable example with no address, contact or source ID."""
+
+    label: str
+    price_uf: float
+    surface_m2: float
+    bedrooms: float | None
+    bathrooms: float | None
+    uf_m2: float
+    portal: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "label": self.label,
+            "price_uf": self.price_uf,
+            "surface_m2": self.surface_m2,
+            "bedrooms": self.bedrooms,
+            "bathrooms": self.bathrooms,
+            "uf_m2": self.uf_m2,
+            "portal": self.portal,
+        }
+
+
+@dataclass(frozen=True)
 class OwnerPortalComparableCohortV1:
     """Selected statistical cohort and the rules used to build it."""
 
@@ -290,6 +318,7 @@ class OwnerPortalComparableCohortV1:
     broad_count: int
     similar_count: int
     high_similarity_count: int
+    examples: tuple[OwnerPortalComparableExampleV1, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -309,6 +338,7 @@ class OwnerPortalComparableCohortV1:
             "broad_count": self.broad_count,
             "similar_count": self.similar_count,
             "high_similarity_count": self.high_similarity_count,
+            "examples": [item.to_dict() for item in self.examples],
         }
 
 
@@ -346,6 +376,21 @@ class DemandForecastViewV1:
     upper_bound: float
     model_version: str
     generated_at: str
+
+
+@dataclass(frozen=True)
+class PriceResponseSimulationV1:
+    """Future causal/response contract only; no calculation is executed in V1."""
+
+    scenario_price: float
+    expected_inquiries_30d: float
+    baseline_expected_inquiries_30d: float
+    delta_expected: float
+    lower_bound: float
+    upper_bound: float
+    model_version: str
+    training_cutoff: str
+    confidence_status: str
 
 
 @dataclass(frozen=True)
@@ -454,6 +499,8 @@ OWNER_PORTAL_EVENT_NAMES = frozenset(
         "price_authorized",
         "price_rejected",
         "contact_executive_clicked",
+        "price_scenario_changed",
+        "price_scenario_preset_selected",
     }
 )
 
@@ -466,6 +513,8 @@ EVENT_METADATA_ALLOWLIST: dict[str, frozenset[str]] = {
     "price_authorized": frozenset({"surface"}),
     "price_rejected": frozenset({"surface", "reason_code"}),
     "contact_executive_clicked": frozenset({"surface", "channel"}),
+    "price_scenario_changed": frozenset({"surface"}),
+    "price_scenario_preset_selected": frozenset({"surface", "preset"}),
 }
 
 _PII_KEY_PARTS = (
@@ -624,7 +673,8 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         expected = {
             "scope", "geography", "property_type", "available", "comparables_count",
             "median_price_uf", "median_uf_m2", "public_uf_m2", "effective_uf_m2",
-            "price_variation_12m_pct", "active_listings", "total_listings", "trend",
+            "effective_uf_m2_semantics", "price_variation_12m_pct", "active_listings",
+            "active_listings_semantics", "total_listings", "trend",
             "liquidity", "competition", "range_price_uf", "source_name",
             "source_reference", "retrieved_at",
         }
@@ -645,11 +695,21 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         expected = {
             "level", "label", "count", "p10_uf", "p25_uf", "median_uf", "p75_uf",
             "p90_uf", "median_uf_m2", "surface_rule", "bedroom_rule", "bathroom_rule",
-            "date_rule", "broad_count", "similar_count", "high_similarity_count",
+            "date_rule", "broad_count", "similar_count", "high_similarity_count", "examples",
         }
         extra = set(cohort) - expected
         if extra:
             raise ValueError(f"Disallowed comparable cohort fields: {sorted(extra)}")
+        examples = cohort.get("examples")
+        if isinstance(examples, (list, tuple)):
+            expected_example = {
+                "label", "price_uf", "surface_m2", "bedrooms", "bathrooms", "uf_m2", "portal",
+            }
+            for example in examples:
+                if isinstance(example, Mapping):
+                    extra = set(example) - expected_example
+                    if extra:
+                        raise ValueError(f"Disallowed comparable example fields: {sorted(extra)}")
     snapshot = payload.get("market_intelligence_snapshot")
     if isinstance(snapshot, Mapping):
         expected = {"snapshot_id", "scope", "geography", "indicators", "source_name", "retrieved_at", "valid_until"}

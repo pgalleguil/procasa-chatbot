@@ -16,8 +16,11 @@ from owner_portal.schemas import (
     OWNER_PORTAL_VIEW_ALLOWLIST,
     OwnerPortalAccessV1,
     OwnerPortalEventV1,
+    PriceResponseSimulationV1,
     assert_owner_portal_payload_allowlisted,
 )
+from market_intelligence.models import MarketIntelligenceSnapshotV1
+from market_intelligence.sources import OFFICIAL_SOURCES, run_dry_run
 
 
 def master_doc(code: str, office: str = "PROCASA SUCRE", *, active: bool = True, price: bool = True, photo_code: str | None = None, **extra):
@@ -593,7 +596,191 @@ def test_structural_redesign_has_navigation_and_client_side_scenario(monkeypatch
 def test_deterministic_observation_is_rendered_only_from_observed_data(monkeypatch):
     db = make_db(master_doc("OBSERVED"))
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/OBSERVED").text
-    assert "Qué estamos observando" in text
-    assert "No se registraron consultas vinculadas durante los últimos 30 días." in text
+    assert "Las señales de tu propiedad" in text
+    assert "Durante este período no se registraron consultas vinculadas." in text
     assert "debería bajar" not in text.casefold()
     assert "sobrevalorada" not in text.casefold()
+
+
+def _scenario_db(code="SCENARIO"):
+    db = make_db(master_doc(code), market=False)
+    db["mercado_comunal"].insert_one({
+        "comuna": "Santiago",
+        "tipo_propiedad": "Departamento",
+        "source": {"fecha_reporte": "28/04/2026", "filename": "santiago_departamento.pdf"},
+        "mercado_venta": {
+            "uf_m2_publicacion_actual": 55.23,
+            "uf_m2_venta_efectiva_actual": 56.07,
+            "variacion_uf_m2_12m": -9.98,
+            "publicaciones_activas": 9215,
+            "publicaciones_totales": 68325,
+        },
+    })
+    for index in range(12):
+        db["propiedades_captacion"].insert_one({
+            "listing_id": f"safe-cmp-{index}",
+            "comuna": "Santiago",
+            "tipo_propiedad": "Departamento",
+            "operacion": "venta",
+            "precio_uf": 2700 + index * 100,
+            "superficie": 60 + index % 4,
+            "dormitorios": 2,
+            "banos": 2,
+            "source_portal": "Yapo",
+        })
+    return db
+
+
+def test_scenario_counts_use_owner_facing_labels_and_no_approximate_symbol(monkeypatch):
+    text = internal_client(monkeypatch, _scenario_db()).get("/owner-portal-preview/SCENARIO").text
+    assert "Propiedades con menor precio" in text
+    assert "Propiedades con mayor precio" in text
+    assert "data-scenario-below" in text
+    assert "data-scenario-above" in text
+    assert "≈" not in text
+
+
+def test_scenario_presets_use_real_current_p75_and_median_values(monkeypatch):
+    text = internal_client(monkeypatch, _scenario_db()).get("/owner-portal-preview/SCENARIO").text
+    assert 'data-scenario-preset="current" data-value="3200.0"' in text
+    assert 'data-scenario-preset="p75"' in text
+    assert 'data-scenario-preset="median"' in text
+    assert "Cercano al P75" in text
+    assert "Cercano a la mediana" in text
+    assert "data-scenario-narrative" in text
+    assert "no es una predicción de demanda" in text.casefold()
+    assert "expected_inquiries" not in text
+
+
+def test_local_market_semantics_and_cutoff_are_explicit(monkeypatch):
+    db = _scenario_db()
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/SCENARIO").text
+    assert "Datos de mercado · corte 28/04/2026" in text
+    assert "Publicaciones activas observadas" in text
+    assert "UF/m² publicado" in text
+    assert "UF/m² efectivo" in text
+    assert "uf_m2_venta_efectiva_actual" in text
+    assert "Actualizado al " in text
+    assert "Datos de mercado · corte 28/04/2026" in text
+    view = service.get_owner_portal_property_view(db, "SCENARIO", datetime(2026, 9, 10, 15, tzinfo=timezone.utc))
+    assert view is not None
+    assert view.data_updated_at == "10/09/2026"
+    assert view.market_as_of == "28/04/2026"
+    assert view.local_context is not None
+    assert view.local_context.active_listings_semantics == (
+        "Publicaciones activas observadas en el corte; no equivale a propiedades únicas."
+    )
+    assert view.local_context.effective_uf_m2_semantics is not None
+
+
+def test_comparable_examples_are_bounded_and_anonymous(monkeypatch):
+    db = _scenario_db()
+    view = service.get_owner_portal_property_view(db, "SCENARIO", datetime.now(timezone.utc))
+    assert view is not None and view.comparable_cohort is not None
+    assert len(view.comparable_cohort.examples) <= 3
+    payload = view.to_dict()
+    assert all("listing_id" not in example for example in payload["comparable_cohort"]["examples"])
+    rendered = internal_client(monkeypatch, db).get("/owner-portal-preview/SCENARIO").text
+    assert "safe-cmp-" not in rendered
+    assert "Comparable A" in rendered
+    assert "teléfono" in rendered
+    assert "dirección" in rendered
+
+
+def test_navigation_contract_handles_scrollspy_and_direct_hash():
+    from pathlib import Path
+
+    template = Path("templates/owner_portal_preview.html").read_text(encoding="utf-8")
+    assert "IntersectionObserver" in template
+    assert "scroll-margin-top:118px" in template
+    assert "hashTarget.scrollIntoView" in template
+    assert "history.pushState" in template
+    assert "event.preventDefault()" in template
+
+
+def test_future_scenario_events_are_contract_only():
+    from owner_portal.analytics import portal_event_contract
+
+    changed = portal_event_contract(
+        "price_scenario_changed",
+        property_code="SCENARIO",
+        metadata={"surface": "simulator"},
+        event_at="2026-09-10T15:00:00+00:00",
+    )
+    preset = portal_event_contract(
+        "price_scenario_preset_selected",
+        property_code="SCENARIO",
+        metadata={"surface": "simulator", "preset": "median"},
+        event_at="2026-09-10T15:00:00+00:00",
+    )
+    assert changed.event_name == "price_scenario_changed"
+    assert preset.metadata == {"surface": "simulator", "preset": "median"}
+
+
+def test_market_intelligence_snapshot_v1_has_exact_source_boundary():
+    snapshot = MarketIntelligenceSnapshotV1(
+        indicator_id="mortgage_rate_uf",
+        scope="nacional",
+        geography="Chile",
+        value=4.04,
+        unit="porcentaje anualizado",
+        reference_period="2026-08",
+        source_name="Banco Central de Chile",
+        source_reference="https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx",
+        retrieved_at_utc="2026-09-10T15:00:00+00:00",
+        source_published_at=None,
+        status="valid",
+        provenance={"endpoint": "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"},
+    )
+    assert set(snapshot.to_dict()) == {
+        "indicator_id", "scope", "geography", "value", "unit", "reference_period",
+        "source_name", "source_reference", "retrieved_at_utc", "source_published_at",
+        "status", "provenance",
+    }
+
+
+def test_market_intelligence_dry_run_does_not_write_or_use_token(monkeypatch):
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("network must not be called without a token")
+
+    monkeypatch.delenv("BCCH_BDE_API_TOKEN", raising=False)
+    monkeypatch.setattr("market_intelligence.sources.urllib.request.urlopen", forbidden)
+    result = run_dry_run(token=None)
+    assert result["mode"] == "dry-run"
+    assert result["writes"] == 0
+    assert result["mongo_writes"] == 0
+    assert result["pageview_fetches"] == 0
+    assert len(result["records"]) == len(OFFICIAL_SOURCES) == 3
+    assert all(record["status"] == "not_configured" for record in result["records"])
+    assert all(record["provenance"]["parsing_status"] == "blocked_missing_api_token" for record in result["records"])
+    assert all("BCCH_BDE_API_TOKEN" not in str(record) for record in result["records"])
+    assert all(record["value"] is None for record in result["records"])
+
+
+def test_pageview_does_not_fetch_official_sources(monkeypatch):
+    db = _scenario_db()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("pageview attempted an external fetch")
+
+    monkeypatch.setattr("urllib.request.urlopen", forbidden)
+    view = service.get_owner_portal_property_view(db, "SCENARIO", datetime.now(timezone.utc))
+    assert view is not None
+
+
+def test_owner_portal_renders_at_most_three_primary_signals_and_ml_is_hidden(monkeypatch):
+    text = internal_client(monkeypatch, _scenario_db()).get("/owner-portal-preview/SCENARIO").text
+    assert text.count("<li><strong>") <= 3
+    assert "DemandForecastViewV1" not in text
+    assert "forecast" not in text.casefold()
+    assert "PriceResponseSimulationV1" not in text
+
+
+def test_price_response_simulation_future_contract_is_defined_without_calculation():
+    from dataclasses import fields
+
+    assert {field.name for field in fields(PriceResponseSimulationV1)} == {
+        "scenario_price", "expected_inquiries_30d", "baseline_expected_inquiries_30d",
+        "delta_expected", "lower_bound", "upper_bound", "model_version",
+        "training_cutoff", "confidence_status",
+    }

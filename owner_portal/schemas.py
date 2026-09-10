@@ -23,6 +23,10 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "land_area_m2",
         "inquiries_previous_7d",
         "inquiries_previous_30d",
+        "inquiries_previous_90d",
+        "activity_series",
+        "timeline",
+        "publications",
         "comparable_count",
         "market_median_uf",
         "market_low_uf",
@@ -42,6 +46,8 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "regional_context_note",
         "local_context",
         "positioning",
+        "comparable_cohort",
+        "market_intelligence_snapshot",
     }
 )
 
@@ -93,6 +99,66 @@ class OwnerPortalDataQualityV1:
             "market_data_available": self.market_data_available,
             "price_history_available": self.price_history_available,
             "lead_linkage_available": self.lead_linkage_available,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalPublicationV1:
+    """A publication whose current state is explicitly verified upstream."""
+
+    portal_id: str
+    portal_name: str
+    url: str | None
+    published_at: str | None
+    updated_at: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "portal_id": self.portal_id,
+            "portal_name": self.portal_name,
+            "url": self.url,
+            "published_at": self.published_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalActivityPointV1:
+    """One real weekly bucket of exact linked inquiries."""
+
+    period: str
+    label: str
+    count: int
+    x: int
+    y: int
+    height: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "period": self.period,
+            "label": self.label,
+            "count": self.count,
+            "x": self.x,
+            "y": self.y,
+            "height": self.height,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalTimelineEventV1:
+    """A human-readable event backed by a verified date, without lead PII."""
+
+    period: str
+    label: str
+    detail: str
+    source: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "period": self.period,
+            "label": self.label,
+            "detail": self.detail,
+            "source": self.source,
         }
 
 
@@ -176,24 +242,110 @@ class OwnerPortalMarketContextV1:
 
 @dataclass(frozen=True)
 class OwnerPortalPositioningV1:
-    """A neutral position inside the observed comparable range."""
+    """A neutral position over robust percentiles of the selected cohort."""
 
     price_uf: float
-    low_uf: float
-    high_uf: float
+    p10_uf: float
+    p25_uf: float
+    median_uf: float
+    p75_uf: float
+    p90_uf: float
     marker_pct: float
     label: str
     comparable_count: int
+    cohort_label: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "price_uf": self.price_uf,
-            "low_uf": self.low_uf,
-            "high_uf": self.high_uf,
+            "p10_uf": self.p10_uf,
+            "p25_uf": self.p25_uf,
+            "median_uf": self.median_uf,
+            "p75_uf": self.p75_uf,
+            "p90_uf": self.p90_uf,
             "marker_pct": self.marker_pct,
             "label": self.label,
             "comparable_count": self.comparable_count,
+            "cohort_label": self.cohort_label,
         }
+
+
+@dataclass(frozen=True)
+class OwnerPortalComparableCohortV1:
+    """Selected statistical cohort and the rules used to build it."""
+
+    level: str
+    label: str
+    count: int
+    p10_uf: float
+    p25_uf: float
+    median_uf: float
+    p75_uf: float
+    p90_uf: float
+    median_uf_m2: float | None
+    surface_rule: str
+    bedroom_rule: str
+    bathroom_rule: str
+    date_rule: str
+    broad_count: int
+    similar_count: int
+    high_similarity_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "level": self.level,
+            "label": self.label,
+            "count": self.count,
+            "p10_uf": self.p10_uf,
+            "p25_uf": self.p25_uf,
+            "median_uf": self.median_uf,
+            "p75_uf": self.p75_uf,
+            "p90_uf": self.p90_uf,
+            "median_uf_m2": self.median_uf_m2,
+            "surface_rule": self.surface_rule,
+            "bedroom_rule": self.bedroom_rule,
+            "bathroom_rule": self.bathroom_rule,
+            "date_rule": self.date_rule,
+            "broad_count": self.broad_count,
+            "similar_count": self.similar_count,
+            "high_similarity_count": self.high_similarity_count,
+        }
+
+
+@dataclass(frozen=True)
+class MarketIntelligenceSnapshotV1:
+    """Persisted/cacheable intelligence boundary between ingestion and UI."""
+
+    snapshot_id: str
+    scope: str
+    geography: str
+    indicators: tuple[MarketIndicatorV1, ...]
+    source_name: str
+    retrieved_at: str
+    valid_until: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "snapshot_id": self.snapshot_id,
+            "scope": self.scope,
+            "geography": self.geography,
+            "indicators": [item.to_dict() for item in self.indicators],
+            "source_name": self.source_name,
+            "retrieved_at": self.retrieved_at,
+            "valid_until": self.valid_until,
+        }
+
+
+@dataclass(frozen=True)
+class DemandForecastViewV1:
+    """Future contract only; no instance is created or rendered in this phase."""
+
+    forecast_horizon: str
+    expected_inquiries: float
+    lower_bound: float
+    upper_bound: float
+    model_version: str
+    generated_at: str
 
 
 @dataclass(frozen=True)
@@ -215,6 +367,10 @@ class OwnerPortalPropertyViewV1:
     land_area_m2: float | None
     inquiries_previous_7d: int
     inquiries_previous_30d: int
+    inquiries_previous_90d: int
+    activity_series: tuple[OwnerPortalActivityPointV1, ...]
+    timeline: tuple[OwnerPortalTimelineEventV1, ...]
+    publications: tuple[OwnerPortalPublicationV1, ...]
     comparable_count: int
     market_median_uf: float | None
     market_low_uf: float | None
@@ -234,6 +390,8 @@ class OwnerPortalPropertyViewV1:
     regional_context_note: str | None = None
     local_context: OwnerPortalMarketContextV1 | None = None
     positioning: OwnerPortalPositioningV1 | None = None
+    comparable_cohort: OwnerPortalComparableCohortV1 | None = None
+    market_intelligence_snapshot: MarketIntelligenceSnapshotV1 | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize only explicit allowlisted fields; never expose source docs."""
@@ -254,6 +412,10 @@ class OwnerPortalPropertyViewV1:
             "land_area_m2": self.land_area_m2,
             "inquiries_previous_7d": self.inquiries_previous_7d,
             "inquiries_previous_30d": self.inquiries_previous_30d,
+            "inquiries_previous_90d": self.inquiries_previous_90d,
+            "activity_series": [item.to_dict() for item in self.activity_series],
+            "timeline": [item.to_dict() for item in self.timeline],
+            "publications": [item.to_dict() for item in self.publications],
             "comparable_count": self.comparable_count,
             "market_median_uf": self.market_median_uf,
             "market_low_uf": self.market_low_uf,
@@ -273,6 +435,11 @@ class OwnerPortalPropertyViewV1:
             "regional_context_note": self.regional_context_note,
             "local_context": self.local_context.to_dict() if self.local_context else None,
             "positioning": self.positioning.to_dict() if self.positioning else None,
+            "comparable_cohort": self.comparable_cohort.to_dict() if self.comparable_cohort else None,
+            "market_intelligence_snapshot": (
+                self.market_intelligence_snapshot.to_dict()
+                if self.market_intelligence_snapshot else None
+            ),
         }
 
 
@@ -428,6 +595,30 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
                 extra = set(indicator) - expected
                 if extra:
                     raise ValueError(f"Disallowed market indicator fields: {sorted(extra)}")
+    publications = payload.get("publications")
+    if isinstance(publications, (list, tuple)):
+        expected = {"portal_id", "portal_name", "url", "published_at", "updated_at"}
+        for publication in publications:
+            if isinstance(publication, Mapping):
+                extra = set(publication) - expected
+                if extra:
+                    raise ValueError(f"Disallowed publication fields: {sorted(extra)}")
+    activity = payload.get("activity_series")
+    if isinstance(activity, (list, tuple)):
+        expected = {"period", "label", "count", "x", "y", "height"}
+        for point in activity:
+            if isinstance(point, Mapping):
+                extra = set(point) - expected
+                if extra:
+                    raise ValueError(f"Disallowed activity fields: {sorted(extra)}")
+    timeline = payload.get("timeline")
+    if isinstance(timeline, (list, tuple)):
+        expected = {"period", "label", "detail", "source"}
+        for event in timeline:
+            if isinstance(event, Mapping):
+                extra = set(event) - expected
+                if extra:
+                    raise ValueError(f"Disallowed timeline fields: {sorted(extra)}")
     local_context = payload.get("local_context")
     if isinstance(local_context, Mapping):
         expected = {
@@ -442,7 +633,37 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
             raise ValueError(f"Disallowed local context fields: {sorted(extra)}")
     positioning = payload.get("positioning")
     if isinstance(positioning, Mapping):
-        expected = {"price_uf", "low_uf", "high_uf", "marker_pct", "label", "comparable_count"}
+        expected = {
+            "price_uf", "p10_uf", "p25_uf", "median_uf", "p75_uf", "p90_uf",
+            "marker_pct", "label", "comparable_count", "cohort_label",
+        }
         extra = set(positioning) - expected
         if extra:
             raise ValueError(f"Disallowed positioning fields: {sorted(extra)}")
+    cohort = payload.get("comparable_cohort")
+    if isinstance(cohort, Mapping):
+        expected = {
+            "level", "label", "count", "p10_uf", "p25_uf", "median_uf", "p75_uf",
+            "p90_uf", "median_uf_m2", "surface_rule", "bedroom_rule", "bathroom_rule",
+            "date_rule", "broad_count", "similar_count", "high_similarity_count",
+        }
+        extra = set(cohort) - expected
+        if extra:
+            raise ValueError(f"Disallowed comparable cohort fields: {sorted(extra)}")
+    snapshot = payload.get("market_intelligence_snapshot")
+    if isinstance(snapshot, Mapping):
+        expected = {"snapshot_id", "scope", "geography", "indicators", "source_name", "retrieved_at", "valid_until"}
+        extra = set(snapshot) - expected
+        if extra:
+            raise ValueError(f"Disallowed market snapshot fields: {sorted(extra)}")
+        snapshot_indicators = snapshot.get("indicators")
+        if isinstance(snapshot_indicators, (list, tuple)):
+            expected_indicator = {
+                "indicator_id", "scope", "geography", "value", "unit", "period",
+                "source_name", "source_url", "retrieved_at", "valid_until",
+            }
+            for indicator in snapshot_indicators:
+                if isinstance(indicator, Mapping):
+                    extra = set(indicator) - expected_indicator
+                    if extra:
+                        raise ValueError(f"Disallowed snapshot indicator fields: {sorted(extra)}")

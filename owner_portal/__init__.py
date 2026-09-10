@@ -10,12 +10,18 @@ from .service import (
     select_preview_property_code,
 )
 from .schemas import (
+    DemandForecastViewV1,
     MarketIndicatorV1,
+    MarketIntelligenceSnapshotV1,
     OwnerPortalAccessV1,
+    OwnerPortalActivityPointV1,
+    OwnerPortalComparableCohortV1,
     OwnerPortalEventV1,
     OwnerPortalMarketContextV1,
+    OwnerPortalPublicationV1,
     OwnerPortalPositioningV1,
     OwnerPortalPropertyViewV1,
+    OwnerPortalTimelineEventV1,
 )
 
 __all__ = [
@@ -30,6 +36,12 @@ __all__ = [
     "OwnerPortalEventV1",
     "OwnerPortalPropertyViewV1",
     "MarketIndicatorV1",
+    "MarketIntelligenceSnapshotV1",
+    "DemandForecastViewV1",
+    "OwnerPortalActivityPointV1",
+    "OwnerPortalTimelineEventV1",
+    "OwnerPortalPublicationV1",
+    "OwnerPortalComparableCohortV1",
     "OwnerPortalMarketContextV1",
     "OwnerPortalPositioningV1",
 ]

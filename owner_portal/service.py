@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import statistics
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
@@ -18,11 +19,16 @@ from analytics.pricing_intelligence.property_identity import (
 from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, is_in_previous_window, parse_aware_datetime
 
 from .schemas import (
+    MarketIntelligenceSnapshotV1,
     OwnerPortalDataQualityV1,
+    OwnerPortalActivityPointV1,
+    OwnerPortalComparableCohortV1,
     OwnerPortalMarketContextV1,
     OwnerPortalPriceV1,
+    OwnerPortalPublicationV1,
     OwnerPortalPositioningV1,
     OwnerPortalPropertyViewV1,
+    OwnerPortalTimelineEventV1,
     MarketIndicatorV1,
 )
 
@@ -124,6 +130,8 @@ _MASTER_ALIAS_PORTALS: tuple[tuple[str, str], ...] = (
 )
 
 _IDENTITY_CACHE: dict[int, tuple[Any, tuple[dict[str, Any], ...]]] = {}
+_MARKET_CONTEXT_CACHE: dict[tuple[int, str, str, str], tuple[float, Any, dict[str, Any]]] = {}
+_MARKET_CONTEXT_CACHE_TTL_SECONDS = 30.0
 
 
 def _path(doc: Mapping[str, Any], dotted: str) -> Any:
@@ -476,6 +484,75 @@ def _eligible_score(doc: Mapping[str, Any], image_count: int) -> tuple[int, str]
     return sum(values), str(doc.get("codigo") or "")
 
 
+_PUBLICATION_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("portal_inmobiliario", "Portal Inmobiliario", ("url_pi", "url_mercado_libre")),
+    ("toctoc", "TOCTOC", ("url_toctoc",)),
+    ("yapo", "Yapo", ("url_yapo",)),
+    ("chilepropiedades", "ChilePropiedades", ()),
+    ("proppit", "Proppit", ("url_proppit",)),
+    ("procasa", "Procasa", ("url_procasa",)),
+)
+
+
+def _verified_publication(record: Mapping[str, Any]) -> bool:
+    published = record.get("publicada")
+    state = record.get("estado")
+    return published is True or state in {1, "1", "active", "activo", "publicada"}
+
+
+def _publication_presence(
+    doc: Mapping[str, Any],
+    captures: Iterable[Mapping[str, Any]],
+) -> tuple[OwnerPortalPublicationV1, ...]:
+    """Expose only portal records with an explicit published/active signal."""
+
+    capture_by_id = {
+        normalize_identifier(item.get("listing_id")): item
+        for item in captures
+        if normalize_identifier(item.get("listing_id"))
+    }
+    publications = doc.get("publicaciones")
+    if not isinstance(publications, Mapping):
+        return ()
+    result: list[OwnerPortalPublicationV1] = []
+    for portal_id, portal_name, url_fields in _PUBLICATION_CATALOG:
+        portal = publications.get(portal_id)
+        if not isinstance(portal, Mapping):
+            continue
+        records = portal.get("publicaciones")
+        candidates = list(records.values()) if isinstance(records, Mapping) else []
+        for record in candidates:
+            if not isinstance(record, Mapping) or not _verified_publication(record):
+                continue
+            url = _text(record.get("url"))
+            if not url:
+                for field in url_fields:
+                    candidate = portal.get(field)
+                    if isinstance(candidate, list):
+                        candidate = candidate[0] if candidate else None
+                    url = _text(candidate)
+                    if url:
+                        break
+            if url and not url.casefold().startswith(("http://", "https://")):
+                url = None
+            identifiers = {
+                normalize_identifier(record.get("code")),
+                normalize_identifier(record.get("code_unique")),
+            }
+            capture = next((capture_by_id.get(identifier) for identifier in identifiers if identifier), None)
+            result.append(
+                OwnerPortalPublicationV1(
+                    portal_id=portal_id,
+                    portal_name=portal_name,
+                    url=url,
+                    published_at=_format_date(capture.get("fecha_publicacion")) if capture else None,
+                    updated_at=_format_date(capture.get("updated_at")) if capture else None,
+                )
+            )
+            break
+    return tuple(result)
+
+
 def select_preview_property_code(db: Any) -> str | None:
     """Choose a real active SUCRE property deterministically, never hardcoded."""
 
@@ -521,15 +598,19 @@ def select_preview_property_code(db: Any) -> str | None:
     return best[1] if best else None
 
 
-def _safe_property(doc: Mapping[str, Any], image_urls: list[str]) -> dict[str, Any]:
+def _safe_property(
+    doc: Mapping[str, Any],
+    image_urls: list[str],
+    captures: Iterable[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
     price = _price(doc)
     return {
         "code": _text(doc.get("codigo")),
-        "operation": _operation(doc) or "No disponible",
-        "property_type": _text(_path(doc, "metadata.tipo_propiedad")) or _operation(doc) or "No disponible",
-        "region": _text(_path(doc, "ubicacion.region")) or "No disponible",
-        "commune": _text(_path(doc, "ubicacion.comuna")) or "No disponible",
-        "sector": _text(_path(doc, "ubicacion.sector")) or "No disponible",
+        "operation": _operation(doc) or "",
+        "property_type": _text(_path(doc, "metadata.tipo_propiedad")) or "",
+        "region": _text(_path(doc, "ubicacion.region")) or "",
+        "commune": _text(_path(doc, "ubicacion.comuna")) or "",
+        "sector": _text(_path(doc, "ubicacion.sector")) or "",
         "bedrooms": _number(_path(doc, "caracteristicas.dormitorios")),
         "bathrooms": _number(_path(doc, "caracteristicas.banos")),
         "parking": _number(_path(doc, "caracteristicas.estacionamientos")),
@@ -539,12 +620,20 @@ def _safe_property(doc: Mapping[str, Any], image_urls: list[str]) -> dict[str, A
         "price_clp": price["clp"],
         "updated_at_label": _format_date(_path(doc, "estado.ultima_actualizacion")),
         "image_urls": image_urls[:8],
+        "publications": _publication_presence(doc, captures),
     }
 
 
 def _parse_date(value: Any) -> datetime | None:
     if value is None:
         return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if re.fullmatch(r"\d{2}/\d{2}/\d{4}", normalized):
+            try:
+                return datetime.strptime(normalized, "%d/%m/%Y").replace(tzinfo=BUSINESS_TZ)
+            except ValueError:
+                return None
     try:
         return parse_aware_datetime(value, field_name="publication_date")
     except (TypeError, ValueError):
@@ -581,6 +670,17 @@ def _as_of_or_now(as_of: datetime | None) -> datetime:
 def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = None) -> dict[str, Any]:
     as_of = _as_of_or_now(as_of)
     commune, property_type = prop["commune"], prop["property_type"]
+    market_client = getattr(db, "client", db)
+    cache_key = (
+        id(market_client),
+        _market_match_key(commune, property_type),
+        as_of.astimezone(timezone.utc).date().isoformat(),
+        _text(prop.get("operation")) or "",
+    )
+    now = time.monotonic()
+    cached = _MARKET_CONTEXT_CACHE.get(cache_key)
+    if cached is not None and cached[1] is market_client and now - cached[0] < _MARKET_CONTEXT_CACHE_TTL_SECONDS:
+        return cached[2]
     aggregate_projection = {
         "_id": 0,
         "mercado_venta": 1,
@@ -603,7 +703,12 @@ def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = N
             {"match_key": _market_match_key(commune, property_type)},
             aggregate_projection,
         ) or {}
-    return _comparables(db, prop, aggregate, as_of)
+    result = _comparables(db, prop, aggregate, as_of)
+    _MARKET_CONTEXT_CACHE[cache_key] = (now, market_client, result)
+    if len(_MARKET_CONTEXT_CACHE) > 64:
+        oldest_key = min(_MARKET_CONTEXT_CACHE, key=lambda key: _MARKET_CONTEXT_CACHE[key][0])
+        _MARKET_CONTEXT_CACHE.pop(oldest_key, None)
+    return result
 
 
 def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any], as_of: datetime) -> dict[str, Any]:
@@ -625,6 +730,8 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
                 "superficie_construida": 1,
                 "m2_construidos": 1,
                 "m2_totales": 1,
+                "dormitorios": 1,
+                "banos": 1,
                 "fecha_publicacion": 1,
                 "updated_at": 1,
             },
@@ -632,7 +739,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
     )
     cutoff = as_of.astimezone(timezone.utc) - timedelta(days=365)
     as_of_utc = as_of.astimezone(timezone.utc)
-    valid: list[tuple[float, float]] = []
+    valid: list[dict[str, Any]] = []
     for row in rows:
         if _normalized_label(row.get("comuna")) != _normalized_label(prop["commune"]):
             continue
@@ -655,7 +762,15 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             continue
         if when is not None and (when < cutoff or when >= as_of_utc):
             continue
-        valid.append((price, surface))
+        valid.append(
+            {
+                "price_uf": price,
+                "surface_m2": surface,
+                "bedrooms": _number(row.get("dormitorios")),
+                "bathrooms": _number(row.get("banos")),
+                "when": when,
+            }
+        )
     market_sale = aggregate.get("mercado_venta") if isinstance(aggregate.get("mercado_venta"), Mapping) else {}
     indicators = aggregate.get("indicadores_mercado") if isinstance(aggregate.get("indicadores_mercado"), Mapping) else {}
     ranges = aggregate.get("rangos_precio_venta") if isinstance(aggregate.get("rangos_precio_venta"), Mapping) else {}
@@ -666,11 +781,10 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
         or aggregate.get("updated_at")
     )
     if len(valid) >= 5:
-        prices = [item[0] for item in valid]
-        uf_m2 = [price / surface for price, surface in valid]
+        prices = [item["price_uf"] for item in valid]
+        uf_m2 = [item["price_uf"] / item["surface_m2"] for item in valid]
         return {
             "minimum_comparables": 5,
-            "source": "propiedades_captacion + mercado_comunal",
             "comparables_count": len(valid),
             "median_price_uf": round(statistics.median(prices), 2),
             "median_uf_m2": round(statistics.median(uf_m2), 2),
@@ -678,6 +792,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             "aggregate": dict(market_sale),
             "indicators": dict(indicators),
             "range_reference": dict(ranges),
+            "valid_rows": valid,
             "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
             "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
             "market_as_of": market_as_of,
@@ -685,7 +800,6 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
         }
     return {
         "minimum_comparables": 5,
-        "source": "mercado_comunal",
         "comparables_count": len(valid),
         "median_price_uf": None,
         "median_uf_m2": None,
@@ -693,6 +807,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
         "aggregate": dict(market_sale),
         "indicators": dict(indicators),
         "range_reference": dict(ranges),
+        "valid_rows": valid,
         "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
         "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
         "market_as_of": market_as_of,
@@ -703,6 +818,131 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
 def _integer(value: Any) -> int | None:
     number = _number(value)
     return int(number) if number is not None else None
+
+
+def _percentile(values: Iterable[float], quantile: float) -> float | None:
+    ordered = sorted(float(value) for value in values if math.isfinite(float(value)))
+    if not ordered:
+        return None
+    if len(ordered) == 1:
+        return round(ordered[0], 2)
+    position = (len(ordered) - 1) * quantile
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    value = ordered[lower] if lower == upper else ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+    return round(value, 2)
+
+
+def _cohort_statistics(
+    rows: list[Mapping[str, Any]],
+    *,
+    level: str,
+    label: str,
+    surface_rule: str,
+    bedroom_rule: str,
+    bathroom_rule: str,
+    date_rule: str,
+    counts: Mapping[str, int],
+) -> OwnerPortalComparableCohortV1 | None:
+    if len(rows) < 8:
+        return None
+    prices = [float(row["price_uf"]) for row in rows]
+    p10 = _percentile(prices, .10)
+    p25 = _percentile(prices, .25)
+    median = _percentile(prices, .50)
+    p75 = _percentile(prices, .75)
+    p90 = _percentile(prices, .90)
+    if None in {p10, p25, median, p75, p90}:
+        return None
+    uf_m2 = [float(row["price_uf"]) / float(row["surface_m2"]) for row in rows]
+    return OwnerPortalComparableCohortV1(
+        level=level,
+        label=label,
+        count=len(rows),
+        p10_uf=p10,
+        p25_uf=p25,
+        median_uf=median,
+        p75_uf=p75,
+        p90_uf=p90,
+        median_uf_m2=_percentile(uf_m2, .50),
+        surface_rule=surface_rule,
+        bedroom_rule=bedroom_rule,
+        bathroom_rule=bathroom_rule,
+        date_rule=date_rule,
+        broad_count=int(counts["broad"]),
+        similar_count=int(counts["similar"]),
+        high_similarity_count=int(counts["high_similarity"]),
+    )
+
+
+def _select_comparable_cohort(
+    prop: Mapping[str, Any],
+    market: Mapping[str, Any],
+) -> OwnerPortalComparableCohortV1 | None:
+    """Select the most similar cohort with the explicit N>=8 guard."""
+
+    broad = list(market.get("valid_rows") or [])
+    target_surface = _number(prop.get("built_area_m2")) or _number(prop.get("land_area_m2"))
+    target_bedrooms = _number(prop.get("bedrooms"))
+    target_bathrooms = _number(prop.get("bathrooms"))
+
+    def dimension_matches(row: Mapping[str, Any], field: str, target: float | None, tolerance: float) -> bool:
+        value = _number(row.get(field))
+        return target is None or value is None or abs(value - target) <= tolerance
+
+    similar = [
+        row for row in broad
+        if target_surface is not None
+        and abs(float(row["surface_m2"]) - target_surface) / target_surface <= .25
+        and dimension_matches(row, "bedrooms", target_bedrooms, 1)
+    ]
+    high_similarity = [
+        row for row in broad
+        if target_surface is not None
+        and abs(float(row["surface_m2"]) - target_surface) / target_surface <= .20
+        and target_bedrooms is not None
+        and _number(row.get("bedrooms")) is not None
+        and abs(float(row["bedrooms"]) - target_bedrooms) <= 1
+        and target_bathrooms is not None
+        and _number(row.get("bathrooms")) is not None
+        and abs(float(row["bathrooms"]) - target_bathrooms) <= 1
+        and row.get("when") is not None
+    ]
+    counts = {"broad": len(broad), "similar": len(similar), "high_similarity": len(high_similarity)}
+    common_date_rule = "fecha dentro de 365 días o ausente; ausencia aceptada"
+    selected = (
+        _cohort_statistics(
+            high_similarity,
+            level="high_similarity",
+            label="Alta similitud",
+            surface_rule="superficie ±20%",
+            bedroom_rule="dormitorios iguales o ±1",
+            bathroom_rule="baños iguales o ±1",
+            date_rule="fecha reciente válida",
+            counts=counts,
+        )
+        or _cohort_statistics(
+            similar,
+            level="similar",
+            label="Propiedades similares",
+            surface_rule="superficie ±25%",
+            bedroom_rule="dormitorios iguales o ±1 cuando existen",
+            bathroom_rule="sin filtro adicional",
+            date_rule=common_date_rule,
+            counts=counts,
+        )
+        or _cohort_statistics(
+            broad,
+            level="broad",
+            label="Mercado amplio",
+            surface_rule="misma comuna, tipo y operación; superficie válida",
+            bedroom_rule="sin filtro adicional",
+            bathroom_rule="sin filtro adicional",
+            date_rule=common_date_rule,
+            counts=counts,
+        )
+    )
+    return selected
 
 
 def _market_context_dto(
@@ -752,30 +992,34 @@ def _market_context_dto(
 
 def _positioning(
     current_price_uf: float | None,
-    market: Mapping[str, Any],
+    cohort: OwnerPortalComparableCohortV1 | None,
 ) -> OwnerPortalPositioningV1 | None:
-    if current_price_uf is None or market.get("comparables_count", 0) < 5:
+    if current_price_uf is None or cohort is None:
         return None
-    low, high = market.get("range_price_uf") or (None, None)
-    if low is None or high is None or low <= 0 or high < low:
+    p10, p90 = cohort.p10_uf, cohort.p90_uf
+    if p10 <= 0 or p90 < p10:
         return None
-    if high == low:
+    if p90 == p10:
         marker = 50.0
     else:
-        marker = 8.0 + 84.0 * max(0.0, min(1.0, (current_price_uf - low) / (high - low)))
-    if current_price_uf < low:
-        label = "Por debajo del rango observado"
-    elif current_price_uf > high:
-        label = "Por encima del rango observado"
+        marker = 8.0 + 84.0 * max(0.0, min(1.0, (current_price_uf - p10) / (p90 - p10)))
+    if current_price_uf < cohort.p25_uf:
+        label = "Bajo el tramo central observado"
+    elif current_price_uf > cohort.p75_uf:
+        label = "Sobre el tramo central observado"
     else:
-        label = "Dentro del rango observado"
+        label = "Dentro del tramo central observado"
     return OwnerPortalPositioningV1(
         price_uf=round(current_price_uf, 2),
-        low_uf=round(low, 2),
-        high_uf=round(high, 2),
+        p10_uf=p10,
+        p25_uf=cohort.p25_uf,
+        median_uf=cohort.median_uf,
+        p75_uf=cohort.p75_uf,
+        p90_uf=p90,
         marker_pct=round(marker, 1),
         label=label,
-        comparable_count=int(market.get("comparables_count") or 0),
+        comparable_count=cohort.count,
+        cohort_label=cohort.label,
     )
 
 
@@ -813,15 +1057,37 @@ def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, .
 def _national_context_note(indicators: tuple[MarketIndicatorV1, ...]) -> str:
     if indicators:
         return (
-            "El mercado chileno se interpreta con tres referencias: la UF para comparar valores, "
-            "el costo del financiamiento y la evolución de precios. Este corte incorpora la UF "
-            "desde un snapshot interno fechado; las cifras macro se consultan en fuentes "
-            "institucionales y no se llaman en tiempo real durante la visita."
+            "Para vender, la UF ofrece una unidad estable para leer el precio publicado junto con la oferta comunal; "
+            "no equivale por sí sola a un valor de cierre. Para arrendar, este contexto nacional funciona como marco "
+            "general y no calcula un canon ni una proyección de demanda.\n\n"
+            "Los indicadores se incorporan desde cortes fechados y se muestran como observaciones, no como causalidad "
+            "ni como recomendación automática."
         )
     return (
-        "La lectura nacional se ordena alrededor de la UF, el financiamiento hipotecario y la "
-        "evolución de precios. En este corte se priorizan fuentes institucionales fechadas y "
-        "no se realizan llamadas externas durante la visita."
+        "Para vender, el contexto nacional ayuda a ordenar la lectura del precio publicado y su unidad de comparación. "
+        "Para arrendar, sirve como marco general, pero este informe no calcula un canon ni proyecta demanda.\n\n"
+        "El corte prioriza referencias institucionales fechadas y evita consultas externas durante cada visita."
+    )
+
+
+def _market_intelligence_snapshot(
+    db: Any,
+    as_of: datetime,
+) -> MarketIntelligenceSnapshotV1 | None:
+    """Expose the current internal market snapshot boundary, without ingestion."""
+
+    indicators = _national_indicators(db, as_of)
+    if not indicators:
+        return None
+    period = indicators[0].period.replace("/", "-")
+    return MarketIntelligenceSnapshotV1(
+        snapshot_id=f"uf_cache:{period}",
+        scope="nacional",
+        geography="Chile",
+        indicators=indicators,
+        source_name="UF · snapshot interno",
+        retrieved_at=indicators[0].retrieved_at,
+        valid_until=indicators[0].valid_until,
     )
 
 
@@ -870,6 +1136,11 @@ def _lead_metrics_for_property(
         and record.property_code == property_code
     ]
     cutoff = as_of.astimezone(timezone.utc)
+    exact_lead_dates = tuple(
+        record.created_at.astimezone(timezone.utc)
+        for record in linked
+        if record.created_at is not None
+    )
     return {
         "total_linked_sucre": len(linked),
         "distinct_properties": 1 if linked else 0,
@@ -877,6 +1148,8 @@ def _lead_metrics_for_property(
         "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
         "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in linked),
         "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
+        "property_previous_90d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 90) for record in linked),
+        "exact_lead_dates": exact_lead_dates,
         "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in linked),
         "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in linked),
         "excluded_other_office_linked": 0,
@@ -904,6 +1177,137 @@ def _lead_metrics(db: Any, property_code: str, as_of: datetime) -> dict[str, Any
     return _lead_metrics_for_property(db, docs[0], as_of)
 
 
+_MONTH_LABELS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def _activity_series(
+    exact_lead_dates: Iterable[datetime],
+    as_of: datetime,
+) -> tuple[OwnerPortalActivityPointV1, ...]:
+    """Build up to twelve weekly buckets from exact linked lead timestamps."""
+
+    as_of_utc = as_of.astimezone(timezone.utc)
+    current_week = as_of_utc.date() - timedelta(days=as_of_utc.weekday())
+    first_week = current_week - timedelta(days=7 * 11)
+    counts: dict[datetime.date, int] = {}
+    for value in exact_lead_dates:
+        if value is None:
+            continue
+        timestamp = value.astimezone(timezone.utc)
+        if timestamp >= as_of_utc:
+            continue
+        week = timestamp.date() - timedelta(days=timestamp.weekday())
+        if first_week <= week <= current_week:
+            counts[week] = counts.get(week, 0) + 1
+    if not counts:
+        return ()
+    maximum = max(counts.values())
+    points: list[OwnerPortalActivityPointV1] = []
+    for index in range(12):
+        week = first_week + timedelta(days=7 * index)
+        count = counts.get(week, 0)
+        height = 0 if count == 0 else 28 + round(112 * count / maximum)
+        points.append(
+            OwnerPortalActivityPointV1(
+                period=week.isoformat(),
+                label=f"{week.day:02d} {_MONTH_LABELS[week.month - 1]}",
+                count=count,
+                x=16 + index * 58,
+                y=164 - height,
+                height=height,
+            )
+        )
+    return tuple(points)
+
+
+def _timeline(
+    publications: Iterable[OwnerPortalPublicationV1],
+    *,
+    updated_at_label: str | None,
+    previous_price: OwnerPortalPriceV1 | None,
+    last_price_change_at: str | None,
+    exact_lead_dates: Iterable[datetime],
+) -> tuple[OwnerPortalTimelineEventV1, ...]:
+    """Create a short timeline from dates already verified in source records."""
+
+    events: list[tuple[datetime, OwnerPortalTimelineEventV1]] = []
+
+    for publication in publications:
+        if not publication.published_at:
+            continue
+        event_date = _parse_date(publication.published_at)
+        if event_date is None:
+            continue
+        events.append(
+            (
+                event_date,
+                OwnerPortalTimelineEventV1(
+                    period=publication.published_at,
+                    label=f"Publicación activa en {publication.portal_name}",
+                    detail="Registro de publicación con fecha verificada.",
+                    source=publication.portal_name,
+                ),
+            )
+        )
+
+    if previous_price is not None and last_price_change_at:
+        event_date = _parse_date(last_price_change_at)
+        if event_date is not None:
+            events.append(
+                (
+                    event_date,
+                    OwnerPortalTimelineEventV1(
+                        period=_format_date(event_date) or last_price_change_at,
+                        label="Cambio de precio registrado",
+                        detail="El historial interno registra una variación anterior del precio.",
+                        source="historial de propiedad",
+                    ),
+                )
+            )
+
+    if updated_at_label:
+        event_date = _parse_date(updated_at_label)
+        if event_date is not None:
+            events.append(
+                (
+                    event_date,
+                    OwnerPortalTimelineEventV1(
+                        period=updated_at_label,
+                        label="Actualización de ficha",
+                        detail="Fecha de actualización disponible en la ficha maestra.",
+                        source="ficha maestra",
+                    ),
+                )
+            )
+
+    by_local_date: dict[datetime.date, int] = {}
+    for value in exact_lead_dates:
+        if value is None:
+            continue
+        timestamp = value.astimezone(timezone.utc)
+        by_local_date[timestamp.date()] = by_local_date.get(timestamp.date(), 0) + 1
+    for day, count in by_local_date.items():
+        event_date = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
+        events.append(
+            (
+                event_date,
+                OwnerPortalTimelineEventV1(
+                    period=event_date.astimezone(BUSINESS_TZ).strftime("%d/%m/%Y"),
+                    label="Consulta registrada",
+                    detail=(
+                        f"{count} consulta registrada en esta fecha."
+                        if count == 1
+                        else f"{count} consultas registradas en esta fecha."
+                    ),
+                    source="registro de consultas",
+                ),
+            )
+        )
+
+    events.sort(key=lambda item: item[0], reverse=True)
+    return tuple(item[1] for item in events[:12])
+
+
 def get_owner_portal_property_view(
     db: Any,
     property_code: str,
@@ -924,14 +1328,12 @@ def get_owner_portal_property_view(
             if image not in image_urls:
                 image_urls.append(image)
 
-    prop = _safe_property(doc, image_urls)
+    prop = _safe_property(doc, image_urls, captures)
     code = prop["code"] or str(property_code)
     snapshot = _snapshot(db, code, cutoff)
     leads = _lead_metrics_for_property(db, doc, cutoff)
     market = _market_context(db, prop, cutoff)
     national_indicators = _national_indicators(db, cutoff)
-    local_context = _market_context_dto(prop, market)
-    positioning = _positioning(prop["price_uf"], market)
 
     previous_uf = _number(snapshot.get("previous_price_uf")) if snapshot else None
     previous_clp = _number(snapshot.get("previous_price_clp")) if snapshot else None
@@ -943,7 +1345,38 @@ def get_owner_portal_property_view(
     last_price_change_at = _format_timestamp(snapshot.get("last_price_change_at")) if snapshot else None
     price_history_available = previous_price is not None and last_price_change_at is not None
     current_price = OwnerPortalPriceV1(uf=prop["price_uf"], clp=prop["price_clp"])
-    market_available = bool(market.get("comparables_count", 0) >= 5)
+    cohort = _select_comparable_cohort(prop, market)
+    selected_market = dict(market)
+    if cohort is None:
+        selected_market.update(
+            {
+                "comparables_count": 0,
+                "median_price_uf": None,
+                "median_uf_m2": None,
+                "range_price_uf": [None, None],
+            }
+        )
+    else:
+        selected_market.update(
+            {
+                "comparables_count": cohort.count,
+                "median_price_uf": cohort.median_uf,
+                "median_uf_m2": cohort.median_uf_m2,
+                "range_price_uf": [cohort.p10_uf, cohort.p90_uf],
+            }
+        )
+    local_context = _market_context_dto(prop, selected_market)
+    positioning = _positioning(prop["price_uf"], cohort)
+    activity_series = _activity_series(leads.get("exact_lead_dates", ()), cutoff)
+    timeline = _timeline(
+        prop["publications"],
+        updated_at_label=prop.get("updated_at_label"),
+        previous_price=previous_price,
+        last_price_change_at=last_price_change_at,
+        exact_lead_dates=leads.get("exact_lead_dates", ()),
+    )
+    market_intelligence_snapshot = _market_intelligence_snapshot(db, cutoff)
+    market_available = cohort is not None
     data_quality = OwnerPortalDataQualityV1(
         photo_available=bool(image_urls),
         price_available=current_price.uf is not None or current_price.clp is not None,
@@ -971,18 +1404,22 @@ def get_owner_portal_property_view(
         land_area_m2=prop["land_area_m2"],
         inquiries_previous_7d=leads["property_previous_7d"],
         inquiries_previous_30d=leads["property_previous_30d"],
-        comparable_count=market["comparables_count"],
-        market_median_uf=market["median_price_uf"] if market_available else None,
-        market_low_uf=market["range_price_uf"][0] if market_available else None,
-        market_high_uf=market["range_price_uf"][1] if market_available else None,
-        market_uf_m2=market["median_uf_m2"] if market_available else None,
+        inquiries_previous_90d=leads.get("property_previous_90d", 0),
+        activity_series=activity_series,
+        timeline=timeline,
+        publications=prop["publications"],
+        comparable_count=selected_market["comparables_count"],
+        market_median_uf=selected_market["median_price_uf"] if market_available else None,
+        market_low_uf=selected_market["range_price_uf"][0] if market_available else None,
+        market_high_uf=selected_market["range_price_uf"][1] if market_available else None,
+        market_uf_m2=selected_market["median_uf_m2"] if market_available else None,
         market_data_available=market_available,
         market_as_of=market.get("market_as_of"),
         current_price=current_price,
         previous_price=previous_price,
         last_price_change_at=last_price_change_at,
         as_of=_format_as_of(cutoff),
-        data_updated_at=_format_date(cutoff) or "Fecha no disponible",
+        data_updated_at=_format_date(cutoff) or "",
         data_quality=data_quality,
         recommendation=None,
         national_indicators=national_indicators,
@@ -990,6 +1427,8 @@ def get_owner_portal_property_view(
         regional_context_note=_regional_context_note(prop),
         local_context=local_context,
         positioning=positioning,
+        comparable_cohort=cohort,
+        market_intelligence_snapshot=market_intelligence_snapshot,
     )
 
 

@@ -515,3 +515,57 @@ def test_access_schema_has_hash_only_and_no_raw_token():
     assert "raw_token" not in payload
     assert "token" not in payload
     assert payload["token_hash"] == "sha256:example"
+
+
+def test_percentiles_and_cohort_hierarchy_use_robust_statistics():
+    assert service._percentile([10, 20, 30, 40, 50], 0.10) == 14.0
+    assert service._percentile([10, 20, 30, 40, 50], 0.50) == 30.0
+    prop = service._safe_property(master_doc("COHORT"), [])
+    rows = [
+        {"price_uf": 2000 + index * 100, "surface_m2": 65 + index % 3, "bedrooms": 2, "bathrooms": 2, "when": datetime.now(timezone.utc)}
+        for index in range(10)
+    ]
+    cohort = service._select_comparable_cohort(prop, {"valid_rows": rows})
+    assert cohort is not None
+    assert cohort.level == "high_similarity"
+    assert cohort.count == 10
+    assert cohort.p10_uf <= cohort.p25_uf <= cohort.median_uf <= cohort.p75_uf <= cohort.p90_uf
+
+
+def test_activity_series_contains_only_real_weekly_dates():
+    as_of = datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc)
+    dates = (as_of - timedelta(days=2), as_of - timedelta(days=40))
+    points = service._activity_series(dates, as_of)
+    assert len(points) == 12
+    assert all(point.period and len(point.period) == 10 for point in points)
+    assert sum(point.count for point in points) == 2
+    assert service._activity_series((as_of - timedelta(days=200),), as_of) == ()
+
+
+def test_verified_portals_are_the_only_presence_records(monkeypatch):
+    doc = master_doc("PORTALS")
+    doc["publicaciones"] = {
+        "yapo": {"publicaciones": {"venta": {"code": "YA-1", "estado": "active", "url": "https://yapo.example/YA-1"}}},
+        "toctoc": {"publicaciones": {"venta": {"code": "TO-1", "estado": "draft", "url": "https://toctoc.example/TO-1"}}},
+    }
+    db = make_db(doc, captures=[{"listing_id": "YA-1", "image_urls": ["https://img/ya.jpg"], "fecha_publicacion": "2026-09-01"}])
+    view = service.get_owner_portal_property_view(db, "PORTALS", datetime.now(timezone.utc))
+    assert view is not None
+    assert [item.portal_name for item in view.publications] == ["Yapo"]
+    assert view.publications[0].published_at == "01/09/2026"
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/PORTALS").text
+    assert "Yapo" in text
+    assert "TOCTOC" not in text
+
+
+def test_premium_template_contract_hides_future_and_extreme_range_language(monkeypatch):
+    db = make_db(master_doc("PREMIUM"), captures=[{"listing_id": "PREMIUM", "image_urls": ["https://img/p.jpg"]}])
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/PREMIUM").text
+    assert "/static/logo.png" in text
+    assert "Tu propiedad, en una mirada" in text
+    assert "El mercado inmobiliario chileno hoy" not in text
+    assert "min_uf" not in text
+    assert "max_uf" not in text
+    assert "DemandForecastViewV1" not in text
+    assert "forecast" not in text.casefold()
+    assert "@media (prefers-reduced-motion: reduce)" in text

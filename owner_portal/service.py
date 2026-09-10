@@ -95,6 +95,30 @@ IDENTITY_PROJECTION = {
     "publicaciones.procasa.publicaciones": 1,
 }
 
+LEAD_PROJECTION = {
+    "_id": 1,
+    "created_at": 1,
+    "prospecto.codigo": 1,
+    "prospecto.codigo_mercadolibre": 1,
+    "prospecto.codigo_yapo": 1,
+    "prospecto.codigo_propiedad": 1,
+    "prospecto.propiedad_codigo": 1,
+    "prospecto.origen": 1,
+    "prospecto.fuente_lead": 1,
+    "prospecto.portal_origen": 1,
+    "prospecto.origen_anuncio": 1,
+    "prospecto.plataforma_origen": 1,
+}
+
+_MASTER_ALIAS_PORTALS: tuple[tuple[str, str], ...] = (
+    ("mercadolibre", "portal_inmobiliario"),
+    ("yapo", "yapo"),
+    ("toctoc", "toctoc"),
+    ("chilepropiedades", "chilepropiedades"),
+    ("proppit", "proppit"),
+    ("procasa", "procasa"),
+)
+
 _IDENTITY_CACHE: dict[int, tuple[Any, tuple[dict[str, Any], ...]]] = {}
 
 
@@ -238,6 +262,159 @@ def _identity_properties(db: Any) -> tuple[dict[str, Any], ...]:
     cached = tuple(documents)
     _IDENTITY_CACHE[cache_key] = (client, cached)
     return cached
+
+
+def _mongo_identifier_variants(values: Iterable[Any]) -> list[str | int]:
+    """Return exact normalized IDs plus numeric variants for mixed Mongo types."""
+
+    variants: list[str | int] = []
+    seen: set[tuple[type, str]] = set()
+    for value in values:
+        normalized = normalize_identifier(value)
+        if not normalized:
+            continue
+        candidates: list[str | int] = [normalized]
+        if normalized.isdigit():
+            try:
+                candidates.append(int(normalized))
+            except ValueError:
+                pass
+        for candidate in candidates:
+            key = (type(candidate), str(candidate))
+            if key not in seen:
+                seen.add(key)
+                variants.append(candidate)
+    return variants
+
+
+def _verified_property_alias_values(property_doc: Mapping[str, Any]) -> dict[str, set[str]]:
+    """Extract the namespace-aware aliases approved by the V2 resolver."""
+
+    values: dict[str, set[str]] = {
+        "mercadolibre": set(),
+        "yapo": set(),
+        "toctoc": set(),
+    }
+    publications = property_doc.get("publicaciones")
+    if not isinstance(publications, Mapping):
+        return values
+    for source, portal_key in _MASTER_ALIAS_PORTALS:
+        portal = publications.get(portal_key)
+        if not isinstance(portal, Mapping):
+            continue
+        records = portal.get("publicaciones")
+        if isinstance(records, Mapping):
+            for record in records.values():
+                if not isinstance(record, Mapping):
+                    continue
+                for field_name in ("code", "code_unique"):
+                    normalized = normalize_identifier(record.get(field_name))
+                    if normalized and source in values:
+                        values[source].add(normalized)
+        if portal_key == "chilepropiedades":
+            for field_name in ("codigo_venta", "codigo_arriendo"):
+                normalized = normalize_identifier(portal.get(field_name))
+                if normalized and source in values:
+                    values[source].add(normalized)
+    return values
+
+
+def _lead_candidate_query(property_doc: Mapping[str, Any]) -> dict[str, Any]:
+    """Build the narrow lead query using only verified, namespaced identifiers."""
+
+    code = normalize_identifier(property_doc.get("codigo"))
+    aliases = _verified_property_alias_values(property_doc)
+    clauses: list[dict[str, Any]] = []
+    if code:
+        clauses.append({"prospecto.codigo": {"$in": _mongo_identifier_variants([code])}})
+    if aliases["mercadolibre"]:
+        clauses.append({"prospecto.codigo_mercadolibre": {"$in": _mongo_identifier_variants(aliases["mercadolibre"])}})
+    if aliases["yapo"]:
+        clauses.append({"prospecto.codigo_yapo": {"$in": _mongo_identifier_variants(aliases["yapo"])}})
+    if aliases["toctoc"]:
+        toctoc_values = _mongo_identifier_variants(aliases["toctoc"])
+        clauses.extend(
+            [
+                {"prospecto.codigo_propiedad": {"$in": toctoc_values}},
+                {"prospecto.propiedad_codigo": {"$in": toctoc_values}},
+            ]
+        )
+    return {"$or": clauses} if clauses else {"_id": {"$exists": False}}
+
+
+def _master_alias_match_expression(alias_values: Mapping[str, set[str]]) -> dict[str, Any] | None:
+    """Build a server-side alias collision predicate without materializing master."""
+
+    expressions: list[dict[str, Any]] = []
+    for source, portal_key in _MASTER_ALIAS_PORTALS:
+        values = _mongo_identifier_variants(alias_values.get(source, set()))
+        if not values:
+            continue
+        records_path = f"$publicaciones.{portal_key}.publicaciones"
+        mapped_fields = {
+            field_name: {
+                "$map": {
+                    "input": {"$objectToArray": {"$ifNull": [records_path, {}]}},
+                    "as": "record",
+                    "in": f"$$record.v.{field_name}",
+                }
+            }
+            for field_name in ("code", "code_unique")
+        }
+        for mapped in mapped_fields.values():
+            expressions.extend({"$in": [value, mapped]} for value in values)
+        if portal_key == "chilepropiedades":
+            for field_name in ("codigo_venta", "codigo_arriendo"):
+                for value in values:
+                    expressions.append({"$eq": [f"$publicaciones.{portal_key}.{field_name}", value]})
+    return {"$expr": {"$or": expressions}} if expressions else None
+
+
+def _lead_alias_values(leads: Iterable[Mapping[str, Any]], resolver: Any) -> dict[str, set[str]]:
+    values: dict[str, set[str]] = {source: set() for source, _ in _MASTER_ALIAS_PORTALS}
+    for lead in leads:
+        for alias, _path in resolver.lead_aliases(lead):
+            values.setdefault(alias.source, set()).add(alias.external_id)
+    return values
+
+
+def _property_identity_candidates(
+    db: Any,
+    property_doc: Mapping[str, Any],
+    leads: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fetch only canonical/alias collision candidates needed by these leads."""
+
+    leads = list(leads)
+    identity_docs: dict[str, dict[str, Any]] = {}
+    current_code = normalize_identifier(property_doc.get("codigo"))
+    if current_code:
+        identity_docs[current_code] = dict(property_doc)
+
+    canonical_values = {
+        normalized
+        for lead in leads
+        for normalized in [normalize_identifier(_path(lead, "prospecto.codigo"))]
+        if normalized and normalized != current_code
+    }
+    if canonical_values:
+        for doc in db[MASTER_COLLECTION].find(
+            {"codigo": {"$in": _mongo_identifier_variants(canonical_values)}},
+            IDENTITY_PROJECTION,
+        ):
+            code = normalize_identifier(doc.get("codigo"))
+            if code:
+                identity_docs[code] = doc
+
+    resolver = build_property_identity_resolver([property_doc], enable_contextual_aliases=True)
+    alias_values = _lead_alias_values(leads, resolver)
+    alias_expression = _master_alias_match_expression(alias_values)
+    if alias_expression:
+        for doc in db[MASTER_COLLECTION].find(alias_expression, IDENTITY_PROJECTION):
+            code = normalize_identifier(doc.get("codigo"))
+            if code:
+                identity_docs[code] = doc
+    return list(identity_docs.values())
 
 
 def _captacion_by_ids(db: Any, listing_ids: Iterable[str]) -> list[dict[str, Any]]:
@@ -455,47 +632,65 @@ def _snapshot(db: Any, code: str, as_of: datetime) -> dict[str, Any] | None:
     )
 
 
-def _lead_metrics(db: Any, property_code: str, as_of: datetime) -> dict[str, Any]:
-    properties = _identity_properties(db)
-    sucre_codes = {
-        str(item.get("codigo"))
-        for item in properties
-        if item.get("codigo") is not None and _path(item, SUCRE_OFFICE_FIELD) == SUCRE_OFFICE_VALUE
-    }
+def _lead_metrics_for_property(
+    db: Any,
+    property_doc: Mapping[str, Any],
+    as_of: datetime,
+) -> dict[str, Any]:
+    """Resolve only leads that can identify this property.
+
+    ``created_at`` is intentionally filtered in Python.  The live collection
+    contains mostly ISO strings with mixed offsets plus a small number of
+    missing/naive values, so a Mongo temporal predicate would not preserve the
+    existing ``parse_aware_datetime`` semantics.
+    """
+
+    property_code = normalize_identifier(property_doc.get("codigo")) or ""
+    lead_query = _lead_candidate_query(property_doc)
+    leads = list(db["leads"].find(lead_query, LEAD_PROJECTION))
+    properties = _property_identity_candidates(db, property_doc, leads)
     resolver = build_property_identity_resolver(properties, enable_contextual_aliases=True)
-    service = LeadLinkageService(resolver)
-    lead_projection = {
-        "_id": 1,
-        "created_at": 1,
-        "prospecto.codigo": 1,
-        "prospecto.codigo_mercadolibre": 1,
-        "prospecto.codigo_yapo": 1,
-        "prospecto.codigo_propiedad": 1,
-        "prospecto.propiedad_codigo": 1,
-        "prospecto.origen": 1,
-        "prospecto.fuente_lead": 1,
-        "prospecto.portal_origen": 1,
-        "prospecto.origen_anuncio": 1,
-        "prospecto.plataforma_origen": 1,
-    }
-    leads = list(db["leads"].find({}, lead_projection))
-    records = service.link_leads(leads)
-    linked = [record for record in records if record.status in {LinkageStatus.EXACT_CANONICAL, LinkageStatus.EXACT_ALIAS}]
-    sucre = [record for record in linked if record.property_code in sucre_codes]
-    property_records = [record for record in sucre if record.property_code == property_code]
+    linkage = LeadLinkageService(resolver)
+    records = linkage.link_leads(leads)
+    linked = [
+        record
+        for record in records
+        if record.status in {LinkageStatus.EXACT_CANONICAL, LinkageStatus.EXACT_ALIAS}
+        and record.property_code == property_code
+    ]
     cutoff = as_of.astimezone(timezone.utc)
     return {
-        "total_linked_sucre": len(sucre),
-        "distinct_properties": len({record.property_code for record in sucre}),
-        "previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in sucre),
-        "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in sucre),
-        "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in property_records),
-        "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in property_records),
-        "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in sucre),
-        "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in sucre),
-        "excluded_other_office_linked": sum(record.property_code is not None and record.property_code not in sucre_codes for record in linked),
-        "global_quality": service.metrics(records),
+        "total_linked_sucre": len(linked),
+        "distinct_properties": 1 if linked else 0,
+        "previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in linked),
+        "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
+        "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in linked),
+        "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
+        "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in linked),
+        "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in linked),
+        "excluded_other_office_linked": 0,
+        "global_quality": linkage.metrics(records),
     }
+
+
+def _lead_metrics(db: Any, property_code: str, as_of: datetime) -> dict[str, Any]:
+    """Compatibility wrapper for callers that only have a property code."""
+
+    docs = _find_master(db, str(property_code), projection=MASTER_PUBLICATION_PROJECTION)
+    if not docs:
+        return {
+            "total_linked_sucre": 0,
+            "distinct_properties": 0,
+            "previous_7d": 0,
+            "previous_30d": 0,
+            "property_previous_7d": 0,
+            "property_previous_30d": 0,
+            "exact_canonical": 0,
+            "exact_alias": 0,
+            "excluded_other_office_linked": 0,
+            "global_quality": {},
+        }
+    return _lead_metrics_for_property(db, docs[0], as_of)
 
 
 def get_owner_portal_property_view(
@@ -521,7 +716,7 @@ def get_owner_portal_property_view(
     prop = _safe_property(doc, image_urls)
     code = prop["code"] or str(property_code)
     snapshot = _snapshot(db, code, cutoff)
-    leads = _lead_metrics(db, code, cutoff)
+    leads = _lead_metrics_for_property(db, doc, cutoff)
     market = _market_context(db, prop, cutoff)
 
     previous_uf = _number(snapshot.get("previous_price_uf")) if snapshot else None

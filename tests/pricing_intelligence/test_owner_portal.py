@@ -109,6 +109,48 @@ def test_owner_counts_only_exact_consultations_for_open_property():
     assert view.inquiries_previous_30d == 1
 
 
+def test_property_view_uses_scoped_lead_lookup_without_global_identity_materialization(monkeypatch):
+    db = make_db(
+        master_doc("S1", photo_code="S1"),
+        master_doc("S2", photo_code="S2"),
+        leads=[
+            {"_id": "l1", "created_at": datetime.now(timezone.utc).isoformat(), "prospecto": {"codigo": "S1"}},
+            {"_id": "l2", "created_at": datetime.now(timezone.utc).isoformat(), "prospecto": {"codigo": "S2"}},
+        ],
+    )
+    observed_lead_queries = []
+    original_leads = db["leads"]
+
+    class RecordingCollection:
+        def find(self, query=None, *args, **kwargs):
+            if query is None:
+                query = {}
+            observed_lead_queries.append(query)
+            return original_leads.find(query, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(original_leads, name)
+
+    class RecordingDb:
+        def __getitem__(self, name):
+            return RecordingCollection() if name == "leads" else db[name]
+
+        def __getattr__(self, name):
+            return getattr(db, name)
+
+    monkeypatch.setattr(service, "_identity_properties", lambda _db: pytest.fail("global identity cache must not be used"))
+    view = service.get_owner_portal_property_view(
+        RecordingDb(),
+        "S1",
+        datetime.now(timezone.utc) + timedelta(seconds=1),
+    )
+    assert view is not None
+    assert view.inquiries_previous_7d == 1
+    assert observed_lead_queries
+    assert all(query != {} for query in observed_lead_queries)
+    assert "$or" in observed_lead_queries[0]
+
+
 def test_preview_only_sucre(monkeypatch):
     db = make_db(master_doc("S1"), master_doc("O1", office="PROCASA VILLARRICA"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     client = internal_client(monkeypatch, db)
@@ -331,8 +373,8 @@ def test_single_as_of_is_reused_by_leads_and_market(monkeypatch):
     observed: list[datetime] = []
     monkeypatch.setattr(
         service,
-        "_lead_metrics",
-        lambda _db, _code, cutoff: (observed.append(cutoff) or {"property_previous_7d": 0, "property_previous_30d": 0}),
+        "_lead_metrics_for_property",
+        lambda _db, _property_doc, cutoff: (observed.append(cutoff) or {"property_previous_7d": 0, "property_previous_30d": 0}),
     )
     monkeypatch.setattr(
         service,

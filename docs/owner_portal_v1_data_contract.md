@@ -114,31 +114,49 @@ cambio de precio.
 
 ## Performance y query audit
 
-El baseline se mide contra Mongo real sobre el Caso A con varias ejecuciones
-read-only. La primera ejecución puede cargar la identidad maestra completa para
-el resolver V2; las ejecuciones posteriores reutilizan ese índice en memoria.
+El benchmark se ejecutó contra Mongo real sobre el Caso A (`6786`), con tres
+calentamientos no medidos y veinte solicitudes secuenciales medidas. La versión
+anterior cargaba la identidad maestra completa (1.965 documentos), leía toda
+`leads` (1.232 documentos observados en la auditoría) y hacía `COLLSCAN` sobre
+`propiedades_captacion`.
 
-Baseline observado el 10/09/2026, cinco ejecuciones directas del servicio:
+| Métrica | Antes | Optimizado |
+|---|---:|---:|
+| Mínimo | — | 591,5 ms |
+| P50 | 2.906 ms | 599,7 ms |
+| P90 | 27.078 ms | 618,1 ms |
+| P95 | — | 626,2 ms |
+| Máximo | 43.179 ms | 673,6 ms |
+| Media | — | 606,6 ms |
+| Consultas por request | 6 cálidas / 26 fría | 7 |
 
-| Métrica | Resultado |
-|---|---:|
-| P50 | 2.906 ms |
-| P90 | 27.078 ms |
-| Máximo | 43.179 ms |
-| Lecturas primera ejecución | 26 operaciones (`find`/`find_one`) |
-| Lecturas ejecuciones cálidas | 6 operaciones (`find`/`find_one`) |
+La versión optimizada consulta la propiedad por `codigo`, obtiene leads sólo
+por identificadores verificados y namespaced del anuncio, y trae únicamente
+propiedades maestras necesarias para resolver conflictos de esos candidatos.
+La ventana temporal se conserva en Python porque `leads.created_at` contiene
+strings ISO con offsets mixtos, un valor naive y faltantes; así se preserva
+`parse_aware_datetime` y `is_in_previous_window` sin cambiar la semántica V2.
 
-La primera ejecución carga por lotes la identidad maestra completa para el
-resolver V2. En cada request se lee la propiedad, publicaciones/imágenes,
-leads, snapshot, agregado de mercado y comparables; el resolver evita volver a
-cargar la maestra completa después de calentarse. No se implementa una gran
-optimización en esta fase.
+| Consulta | Explain antes | Explain después |
+|---|---|---|
+| Propiedad `codigo=6786` + oficina | `IXSCAN`, 1 doc / 1 key | `IXSCAN`, 1 doc / 1 key |
+| Mercado comuna + tipo | `IXSCAN`, 1 doc / 1 key | `IXSCAN`, 1 doc / 1 key |
+| Leads por identificadores | `COLLSCAN`, 1 retorno / 1.232 docs / 0 keys | `OR` + `IXSCAN`, 1 retorno / 1 doc / 9 keys |
+| Comparables comuna + tipo + operación | `COLLSCAN`, 19.357 docs / 0 keys | `IXSCAN`, 0 docs / 0 keys |
 
-Query audit exacto: en frío se leen los 1.965 documentos de identidad de la
-maestra en lotes de 100; en cada request se lee la colección `leads` completa y
-se resuelven los 1.231 leads; los comparables se leen completos para el grupo
-comuna/tipo/operación solicitado. Esto queda como cuello de botella conocido,
-no como una optimización pendiente de esta fase.
+Índices nuevos justificados por el explain:
+
+- `leads.prospecto.codigo`
+- `leads.prospecto.codigo_mercadolibre`
+- `leads.prospecto.codigo_yapo`
+- `leads.prospecto.codigo_propiedad`
+- `leads.prospecto.propiedad_codigo`
+- `propiedades_captacion.(comuna, tipo_propiedad, operacion)`
+
+El índice único existente `mercado_comunal.(comuna, tipo_propiedad)` ya cubría
+el agregado y no se duplicó. El Caso A no tiene comparables que cumplan el
+grupo solicitado; por eso su resultado sigue siendo `comparables=0` y no hay
+distribución estadística evaluable.
 
 La auditoría específica del Caso A encontró cero filas de comparables, por lo
 que su distribución observada es `n=0` y no existen outliers evaluables para

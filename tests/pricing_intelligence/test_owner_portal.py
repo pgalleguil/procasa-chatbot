@@ -562,10 +562,38 @@ def test_premium_template_contract_hides_future_and_extreme_range_language(monke
     db = make_db(master_doc("PREMIUM"), captures=[{"listing_id": "PREMIUM", "image_urls": ["https://img/p.jpg"]}])
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/PREMIUM").text
     assert "/static/logo.png" in text
-    assert "Tu propiedad, en una mirada" in text
+    assert "Tu propiedad hoy" in text
     assert "El mercado inmobiliario chileno hoy" not in text
     assert "min_uf" not in text
     assert "max_uf" not in text
     assert "DemandForecastViewV1" not in text
     assert "forecast" not in text.casefold()
     assert "@media (prefers-reduced-motion: reduce)" in text
+
+
+def test_structural_redesign_has_navigation_and_client_side_scenario(monkeypatch):
+    db = make_db(master_doc("REDESIGN"), captures=[{"listing_id": "REDESIGN", "image_urls": ["https://img/r.jpg"]}])
+    for index in range(10):
+        db["propiedades_captacion"].insert_one({
+            "listing_id": f"cmp-{index}", "comuna": "Santiago", "tipo_propiedad": "Departamento",
+            "operacion": "venta", "precio_uf": 3000 + index * 100, "superficie": 65 + index % 3,
+            "dormitorios": 2, "banos": 2,
+        })
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/REDESIGN").text
+    for anchor in ("#resumen", "#actividad", "#mercado", "#comparables", "#escenarios"):
+        assert anchor in text
+    assert 'class="kpi-strip' in text
+    assert 'type="range"' in text
+    assert "data-scenario" in text
+    assert "Esto no es una predicción de demanda." in text
+    assert "DemandForecastViewV1" not in text
+    assert "forecast" not in text.casefold()
+
+
+def test_deterministic_observation_is_rendered_only_from_observed_data(monkeypatch):
+    db = make_db(master_doc("OBSERVED"))
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/OBSERVED").text
+    assert "Qué estamos observando" in text
+    assert "No se registraron consultas vinculadas durante los últimos 30 días." in text
+    assert "debería bajar" not in text.casefold()
+    assert "sobrevalorada" not in text.casefold()

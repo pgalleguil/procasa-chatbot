@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portal del propietario · PROCASA SUCRE</title>
+  <style>
+    :root { --ink:#192638; --muted:#687586; --line:#e6ebf0; --paper:#f7f9fb; --brand:#123e5a; --accent:#d6a84f; --ok:#2d775e; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    .shell { max-width:1120px; margin:0 auto; padding:22px 20px 48px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:5px 0 28px; }
+    .brand { font-weight:800; letter-spacing:.08em; color:var(--brand); font-size:14px; }
+    .scope { color:var(--muted); font-size:12px; border:1px solid var(--line); border-radius:999px; padding:6px 10px; background:#fff; }
+    .hero { background:linear-gradient(130deg,#123e5a,#1f6072); border-radius:22px; padding:30px; color:#fff; display:flex; justify-content:space-between; gap:24px; align-items:flex-end; }
+    .eyebrow { color:#f2d48b; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.12em; }
+    h1 { font-size:clamp(28px,5vw,48px); line-height:1.05; margin:9px 0 12px; max-width:680px; }
+    .hero p { margin:0; color:#d9e8ed; max-width:640px; }
+    .hero-photo { width:220px; height:145px; object-fit:cover; border-radius:14px; border:1px solid #ffffff55; }
+    .hero-placeholder { width:220px; height:145px; border-radius:14px; display:grid; place-items:center; background:#ffffff18; color:#d9e8ed; text-align:center; padding:20px; }
+    section { margin-top:24px; }
+    .section-title { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:10px; }
+    h2 { font-size:19px; margin:0; }
+    .note { color:var(--muted); font-size:13px; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:17px; min-width:0; box-shadow:0 4px 16px #1f334a08; }
+    .metric-label { color:var(--muted); font-size:12px; }
+    .metric-value { font-size:24px; font-weight:750; margin-top:4px; overflow-wrap:anywhere; }
+    .metric-sub { color:var(--muted); font-size:12px; margin-top:3px; }
+    .two { display:grid; grid-template-columns:1.1fr .9fr; gap:12px; }
+    .facts { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .facts .card { padding:13px; }
+    .bar { height:9px; background:#edf1f3; border-radius:99px; overflow:hidden; margin:13px 0 8px; }
+    .bar span { display:block; height:100%; width:67%; background:var(--accent); border-radius:99px; }
+    .status { color:var(--ok); font-weight:700; }
+    .placeholder { border:1px dashed #b7c4ce; background:#fbfcfd; }
+    .footer-note { color:var(--muted); font-size:12px; margin-top:24px; }
+    @media (max-width: 800px) { .grid { grid-template-columns:repeat(2,1fr); } .two { grid-template-columns:1fr; } .hero-photo,.hero-placeholder { width:170px; } }
+    @media (max-width: 700px) { .shell { padding:15px 14px 34px; } header { padding-bottom:18px; } .hero { padding:22px; display:block; } .hero-photo,.hero-placeholder { width:100%; height:180px; margin-top:18px; } .grid { grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; } .facts { grid-template-columns:repeat(2,1fr); } .card { padding:14px; } .metric-value { font-size:20px; } }
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header><div class="brand">PROCASA SUCRE</div><div class="scope">Vista experimental · {{ view.office_scope }}</div></header>
+  <div class="hero">
+    <div><div class="eyebrow">Portal del propietario</div><h1>{{ view.property.property_type }} en {{ view.property.commune }}</h1><p>Código {{ view.property.code }} · Información comercial clara para acompañar decisiones.</p></div>
+    {% if view.has_photo %}<img class="hero-photo" src="{{ view.property.image_urls[0] }}" alt="Fotografía de la propiedad">{% else %}<div class="hero-placeholder">Fotografía no disponible en la fuente actual</div>{% endif %}
+  </div>
+  <section><div class="section-title"><h2>Resumen de la propiedad</h2><span class="note">Datos actuales verificados</span></div>
+    <div class="facts"><div class="card"><div class="metric-label">Operación</div><div class="metric-value">{{ view.property.operation }}</div></div><div class="card"><div class="metric-label">Superficie construida</div><div class="metric-value">{{ view.property.built_area_m2 or 'No disponible' }}{% if view.property.built_area_m2 %} m²{% endif %}</div></div><div class="card"><div class="metric-label">Dormitorios</div><div class="metric-value">{{ view.property.bedrooms or 'No disponible' }}</div></div><div class="card"><div class="metric-label">Baños</div><div class="metric-value">{{ view.property.bathrooms or 'No disponible' }}</div></div></div>
+  </section>
+  <section><div class="section-title"><h2>Indicadores de desempeño</h2><span class="note">Sin métricas externas del aviso</span></div>
+    <div class="grid"><div class="card"><div class="metric-label">Leads últimos 7 días</div><div class="metric-value">{{ view.lead_metrics.previous_7d }}</div><div class="metric-sub">en alcance PROCASA SUCRE</div></div><div class="card"><div class="metric-label">Leads últimos 30 días</div><div class="metric-value">{{ view.lead_metrics.previous_30d }}</div><div class="metric-sub">en alcance PROCASA SUCRE</div></div><div class="card"><div class="metric-label">Precio publicado</div><div class="metric-value">{% if view.property.price_uf %}{{ view.property.price_uf }} UF{% elif view.property.price_clp %}${{ '{:,.0f}'.format(view.property.price_clp) }}{% else %}No disponible{% endif %}</div><div class="metric-sub">fuente maestra actual</div></div><div class="card"><div class="metric-label">Visitas</div><div class="metric-value">No disponible</div><div class="metric-sub">V1 no verifica asistencia</div></div></div>
+  </section>
+  <section><div class="section-title"><h2>Posicionamiento de mercado</h2><span class="note">{{ view.market.source }}</span></div>
+    <div class="two"><div class="card"><div class="metric-label">Precio mediano de comparables</div><div class="metric-value">{% if view.market.median_price_uf %}{{ view.market.median_price_uf }} UF{% else %}No disponible{% endif %}</div><div class="metric-sub">{{ view.market.explanation }}</div><div class="bar"><span></span></div><div class="metric-sub">{{ view.market.comparables_count }} observaciones con criterios válidos</div></div><div class="card"><div class="metric-label">UF/m² de publicación</div><div class="metric-value">{% if view.market.median_uf_m2 %}{{ view.market.median_uf_m2 }}{% else %}No disponible{% endif %}</div><div class="metric-sub">Contexto descriptivo comunal; no es una tasación automática.</div></div></div>
+  </section>
+  <section><div class="section-title"><h2>Historial de precio</h2><span class="note">{% if view.snapshot.price_history %}Cambio verificable{% else %}Evolución no disponible{% endif %}</span></div><div class="card">{% if view.snapshot.price_history %}{% for item in view.snapshot.price_history %}<div>{{ item.date }} · {{ item.previous_uf }} UF → {{ item.current_uf }} UF</div>{% endfor %}{% else %}<div class="note">Se requiere más de un punto histórico confiable para mostrar una evolución.</div>{% endif %}</div></section>
+  <section><div class="two"><div class="card placeholder"><div class="metric-label">Recomendación de precio</div><h2>Próximamente</h2><p class="note">{{ view.recommendation.message }}</p></div><div class="card placeholder"><div class="metric-label">Acciones sobre el precio</div><h2>Próximamente</h2><p class="note">{{ view.future_action.message }}</p></div></div></section>
+  <p class="footer-note">Prototipo interno de apoyo a decisiones. No reemplaza una tasación profesional ni habilita cambios, autorizaciones, notificaciones o firmas.</p>
+</main>
+</body>
+</html>

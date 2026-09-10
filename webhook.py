@@ -1253,6 +1253,12 @@ app.include_router(visitas_router)
 from api_crm_weekly_report import router as crm_weekly_router
 app.include_router(crm_weekly_router)
 
+# Internal, read-only PROCASA SUCRE owner portal prototype.  The router uses
+# the existing FastAPI application and remains fail-closed outside local dev
+# mode or an authenticated CRM session.
+from owner_portal.router import router as owner_portal_router
+app.include_router(owner_portal_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_db,

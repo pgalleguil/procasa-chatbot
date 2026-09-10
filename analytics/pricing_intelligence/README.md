@@ -167,3 +167,79 @@ python -m analytics.pricing_intelligence.snapshot_cli --persist --confirm-produc
 interactiva. La configuración Mongo debe estar disponible mediante las
 variables de entorno existentes del proyecto. Esta V1 no copia `.env` al
 worktree ni escribe en colecciones operacionales.
+
+## Owner Portal PROCASA SUCRE (prototipo interno)
+
+Esta fase agrega una vista experimental de Customer-facing Analytics para
+PROCASA SUCRE. No crea snapshots nuevos: lee la maestra existente, los
+snapshots generales ya persistidos y las fuentes de mercado. `office_scope` es
+una dimensión de lectura (`PROCASA_SUCRE`), no una colección ni una copia por
+oficina.
+
+### Regla de identidad de oficina
+
+La regla canónica y reutilizable es:
+
+```text
+is_procasa_sucre_property(doc)
+  == (doc["estado"]["oficina"] == "PROCASA SUCRE")
+```
+
+El campo y valor fueron auditados en `universo_cartera_prop360`. No se usan
+alias para `INMOBILIARIA SUCRE SPA`, nombres de ejecutivos, comuna, dirección
+ni coincidencia difusa. La resolución de leads V2 se ejecuta sobre la maestra
+completa y el filtro SUCRE se aplica después, por código resuelto.
+
+### Arquitectura
+
+```text
+webhook.py (FastAPI existente)
+  └─ owner_portal/router.py
+       ├─ security.py       CRM auth existente o gate local explícito
+       ├─ service.py         lecturas/proyecciones y reglas explicables
+       ├─ analytics.py       contrato futuro de eventos, sin persistencia
+       └─ templates/owner_portal_preview.html
+```
+
+Las rutas locales son `/owner-portal-preview` (selección automática) y
+`/owner-portal-preview/{property_code}` (validación de un código). No son
+rutas públicas anónimas ni existen tokens de producción. El servicio es
+read-only y no importa ni ejecuta modelos de machine learning.
+
+### Datos y límites de la vista
+
+- Identidad, precio actual, características, publicaciones e imágenes se
+  muestran únicamente desde campos verificados y proyectados.
+- Leads: solo enlaces `EXACT_CANONICAL` o `EXACT_ALIAS` de V2; conflictos,
+  ambiguos y no enlazados quedan fuera del alcance SUCRE.
+- Mercado: comparables descriptivos por comuna, tipo y operación, con precio y
+  superficie válidos y fecha reciente cuando existe. `mercado_comunal` aporta
+  contexto agregado; no se presenta una tasación ni una recomendación
+  automática.
+- Historial: la evolución no se dibuja cuando no hay suficientes puntos
+  históricos. `tasaciones_final` no se usa como valor automático.
+- No existe fuente confiable ni contrato para pageviews, impresiones o CTR.
+  Los registros de `visitas` actuales prueban intención, autorización o firma,
+  pero no asistencia completada; por eso V1 muestra esa métrica como no
+  disponible.
+
+### Seguridad, instrumentación y fases futuras
+
+El propietario no usa directamente el login del CRM en el diseño final. En
+esta fase la preview exige el usuario autenticado existente o
+`OWNER_PORTAL_PREVIEW_DEV_MODE=true` desde localhost. No se implementan token
+público, OTP, firma, autorización o modificación de precio, emails ni
+scheduler.
+
+El contrato futuro de eventos es:
+`portal_opened`, `market_section_viewed`, `price_history_viewed`,
+`pricing_recommendation_viewed`, `price_authorization_started`,
+`price_authorized`, `price_rejected` y `contact_executive_clicked`, con
+`event_name`, `property_code`, `event_at`, `session_id`, `portal_token_id`
+futuro y metadata mínima permitida. El prototipo no persiste eventos.
+
+En una fase posterior, Predictive Analytics podría construir
+`property_week`, ventanas rolling, targets y entrenamiento con separación
+temporal. Esta fase solo entrega Commercial Analytics, Pricing Intelligence,
+Decision Support y Data Instrumentation descriptiva; no hace inferencia ni
+recomendación ML.

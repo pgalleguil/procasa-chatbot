@@ -25,8 +25,8 @@ def master_doc(code: str, office: str = "PROCASA SUCRE", *, active: bool = True,
         "ubicacion": {"region": "Metropolitana", "comuna": "Santiago", "sector": "Centro"},
         "caracteristicas": {"dormitorios": 2, "banos": 2, "superficie_construida": 65},
         "publicaciones": {"yapo": {"publicaciones": {"venta": {"code": photo_code or code}}}},
-        **extra,
     }
+    doc.update(extra)
     return doc
 
 
@@ -80,6 +80,25 @@ def test_other_office_leads_are_not_sucre():
     view = service.build_owner_portal_view(db, "S1")
     assert view["lead_metrics"]["total_linked_sucre"] == 0
     assert view["lead_metrics"]["excluded_other_office_linked"] == 1
+
+
+def test_owner_counts_only_exact_consultations_for_open_property():
+    now = datetime.now(timezone.utc)
+    db = make_db(
+        master_doc("S1", photo_code="S1"),
+        master_doc("S2", photo_code="S2"),
+        captures=[
+            {"listing_id": "S1", "image_urls": ["https://img/s1.jpg"]},
+            {"listing_id": "S2", "image_urls": ["https://img/s2.jpg"]},
+        ],
+        leads=[
+            {"_id": "l1", "created_at": now.isoformat(), "prospecto": {"codigo": "S1"}},
+            {"_id": "l2", "created_at": now.isoformat(), "prospecto": {"codigo": "S2"}},
+        ],
+    )
+    view = service.build_owner_portal_view(db, "S1")
+    assert view["lead_metrics"]["property_previous_7d"] == 1, view["lead_metrics"]
+    assert view["lead_metrics"]["property_previous_30d"] == 1, view["lead_metrics"]
 
 
 def test_preview_only_sucre(monkeypatch):
@@ -136,6 +155,8 @@ def test_external_views_are_not_exposed(monkeypatch):
     assert "impression" not in text
     assert "ctr" not in text
     assert "visualizaciones del aviso" not in text
+    assert "tiempo real" not in text
+    assert "Leads" not in text
 
 
 def test_visits_are_not_claimed_as_completed(monkeypatch):
@@ -150,6 +171,33 @@ def test_responsive_render_contract(monkeypatch):
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text
     assert 'name="viewport"' in text
     assert "@media (max-width: 700px)" in text
+
+
+def test_updated_date_uses_verified_master_field(monkeypatch):
+    db = make_db(master_doc("S1", estado={"oficina": "PROCASA SUCRE", "disponible_prop360": True, "ultima_actualizacion": "2026-09-10T10:00:00-03:00"}), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
+    text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text
+    assert "Datos actualizados al 10/09/2026" in text
+
+
+def test_market_below_minimum_hides_representative_median_and_range():
+    db = make_db(master_doc("S1"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
+    prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), ["https://img/s.jpg"])
+    market = service._market_context(db, prop)
+    assert market["minimum_comparables"] == 5
+    assert market["comparables_count"] == 0
+    assert market["median_price_uf"] is None
+    assert market["range_price_uf"] == [None, None]
+
+
+def test_market_at_minimum_exposes_descriptive_median():
+    db = make_db(master_doc("S1"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
+    for index in range(5):
+        db["propiedades_captacion"].insert_one({"listing_id": f"cmp-{index}", "comuna": "Santiago", "tipo_propiedad": "Departamento", "operacion": "venta", "precio_uf": 3000 + index * 100, "superficie": 60 + index})
+    prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), ["https://img/s.jpg"])
+    market = service._market_context(db, prop)
+    assert market["comparables_count"] == 5
+    assert market["median_price_uf"] == 3200
+    assert market["range_price_uf"] == [3000, 3400]
 
 
 def test_no_ml_execution():

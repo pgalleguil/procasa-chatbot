@@ -30,6 +30,7 @@ MASTER_PROJECTION = {
     "codigo": 1,
     "estado.oficina": 1,
     "estado.disponible_prop360": 1,
+    "estado.ultima_actualizacion": 1,
     "tipo_operacion": 1,
     "metadata.tipo_propiedad": 1,
     "ubicacion.region": 1,
@@ -43,6 +44,51 @@ MASTER_PROJECTION = {
     "publicaciones": 1,
     "historial_cambios": 1,
 }
+
+MASTER_BASE_PROJECTION = {
+    "_id": 0,
+    "codigo": 1,
+    "estado.oficina": 1,
+    "estado.disponible_prop360": 1,
+    "estado.ultima_actualizacion": 1,
+    "tipo_operacion": 1,
+    "metadata.tipo_propiedad": 1,
+    "ubicacion.region": 1,
+    "ubicacion.comuna": 1,
+    "ubicacion.sector": 1,
+    "caracteristicas.dormitorios": 1,
+    "caracteristicas.banos": 1,
+    "caracteristicas.estacionamientos": 1,
+    "caracteristicas.superficie_construida": 1,
+    "caracteristicas.superficie_terreno": 1,
+}
+
+MASTER_PUBLICATION_PROJECTION = {
+    **MASTER_BASE_PROJECTION,
+    "publicaciones.portal_inmobiliario.publicaciones": 1,
+    "publicaciones.yapo.publicaciones": 1,
+    "publicaciones.toctoc.publicaciones": 1,
+    "publicaciones.chilepropiedades.publicaciones": 1,
+    "publicaciones.chilepropiedades.codigo_venta": 1,
+    "publicaciones.chilepropiedades.codigo_arriendo": 1,
+    "publicaciones.proppit.publicaciones": 1,
+    "publicaciones.procasa.publicaciones": 1,
+}
+
+IDENTITY_PROJECTION = {
+    "_id": 0,
+    "codigo": 1,
+    "publicaciones.portal_inmobiliario.publicaciones": 1,
+    "publicaciones.yapo.publicaciones": 1,
+    "publicaciones.toctoc.publicaciones": 1,
+    "publicaciones.chilepropiedades.publicaciones": 1,
+    "publicaciones.chilepropiedades.codigo_venta": 1,
+    "publicaciones.chilepropiedades.codigo_arriendo": 1,
+    "publicaciones.proppit.publicaciones": 1,
+    "publicaciones.procasa.publicaciones": 1,
+}
+
+_IDENTITY_CACHE: dict[int, tuple[Any, tuple[dict[str, Any], ...]]] = {}
 
 
 def _path(doc: Mapping[str, Any], dotted: str) -> Any:
@@ -136,11 +182,50 @@ def _image_urls(captacion: Mapping[str, Any]) -> list[str]:
     return urls
 
 
-def _find_master(db: Any, code: str | None = None) -> list[dict[str, Any]]:
+def _find_master(
+    db: Any,
+    code: str | None = None,
+    *,
+    projection: Mapping[str, int] | None = None,
+) -> list[dict[str, Any]]:
     query = {SUCRE_OFFICE_FIELD: SUCRE_OFFICE_VALUE}
     if code is not None:
         query["codigo"] = str(code)
-    return list(db[MASTER_COLLECTION].find(query, MASTER_PROJECTION))
+    return list(db[MASTER_COLLECTION].find(query, projection or MASTER_PROJECTION))
+
+
+def _find_master_in_batches(
+    db: Any,
+    query: Mapping[str, Any],
+    projection: Mapping[str, int],
+    *,
+    batch_size: int = 100,
+) -> list[dict[str, Any]]:
+    """Avoid a long Mongo cursor for large publication-heavy documents."""
+
+    documents: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        chunk = list(db[MASTER_COLLECTION].find(query, projection).skip(offset).limit(batch_size))
+        if not chunk:
+            break
+        documents.extend(chunk)
+        offset += len(chunk)
+        if len(chunk) < batch_size:
+            break
+    return documents
+
+
+def _identity_properties(db: Any) -> tuple[dict[str, Any], ...]:
+    client = getattr(db, "client", db)
+    cache_key = id(client)
+    cached_entry = _IDENTITY_CACHE.get(cache_key)
+    if cached_entry is not None and cached_entry[0] is client:
+        return cached_entry[1]
+    documents = _find_master_in_batches(db, {}, IDENTITY_PROJECTION)
+    cached = tuple(documents)
+    _IDENTITY_CACHE[cache_key] = (client, cached)
+    return cached
 
 
 def _captacion_by_ids(db: Any, listing_ids: Iterable[str]) -> list[dict[str, Any]]:
@@ -166,7 +251,22 @@ def _eligible_score(doc: Mapping[str, Any], image_count: int) -> tuple[int, str]
 def select_preview_property_code(db: Any) -> str | None:
     """Choose a real active SUCRE property deterministically, never hardcoded."""
 
-    documents = _find_master(db)
+    base_documents = _find_master_in_batches(
+        db,
+        {SUCRE_OFFICE_FIELD: SUCRE_OFFICE_VALUE},
+        MASTER_BASE_PROJECTION,
+    )
+    ranked_base = sorted(
+        (doc for doc in base_documents if is_active_property(doc)),
+        key=lambda doc: _eligible_score(doc, 0),
+        reverse=True,
+    )
+    candidate_codes = [str(doc["codigo"]) for doc in ranked_base[:200] if doc.get("codigo") is not None]
+    documents = _find_master_in_batches(
+        db,
+        {SUCRE_OFFICE_FIELD: SUCRE_OFFICE_VALUE, "codigo": {"$in": candidate_codes}},
+        MASTER_PUBLICATION_PROJECTION,
+    )
     listing_ids_by_code = {
         str(doc.get("codigo")): _publication_listing_ids(doc)
         for doc in documents
@@ -209,6 +309,7 @@ def _safe_property(doc: Mapping[str, Any], image_urls: list[str]) -> dict[str, A
         "land_area_m2": _number(_path(doc, "caracteristicas.superficie_terreno")),
         "price_uf": price["uf"],
         "price_clp": price["clp"],
+        "updated_at_label": _format_date(_path(doc, "estado.ultima_actualizacion")),
         "image_urls": image_urls[:8],
     }
 
@@ -220,6 +321,15 @@ def _parse_date(value: Any) -> datetime | None:
         return parse_aware_datetime(value, field_name="publication_date")
     except (TypeError, ValueError):
         return None
+
+
+def _format_date(value: Any) -> str | None:
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
+        return datetime.strptime(value.strip(), "%Y-%m-%d").strftime("%d/%m/%Y")
+    parsed = _parse_date(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone().strftime("%d/%m/%Y")
 
 
 def _market_context(db: Any, prop: Mapping[str, Any]) -> dict[str, Any]:
@@ -255,6 +365,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any])
         prices = [item[0] for item in valid]
         uf_m2 = [price / surface for price, surface in valid]
         return {
+            "minimum_comparables": 5,
             "source": "propiedades_captacion + mercado_comunal",
             "comparables_count": len(valid),
             "median_price_uf": round(statistics.median(prices), 2),
@@ -266,15 +377,16 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any])
             "explanation": "Comparables descriptivos: misma comuna, tipo y operación; precio y superficie válidos; fecha reciente cuando está disponible.",
         }
     return {
+        "minimum_comparables": 5,
         "source": "mercado_comunal",
         "comparables_count": len(valid),
         "median_price_uf": None,
-        "median_uf_m2": _number(market_sale.get("uf_m2_publicacion_actual")),
-        "range_price_uf": [ranges.get("min_uf"), ranges.get("max_uf")] if ranges else [None, None],
+        "median_uf_m2": None,
+        "range_price_uf": [None, None],
         "aggregate": dict(market_sale),
         "indicators": dict(indicators),
         "range_reference": dict(ranges),
-        "explanation": "Mediana de comparables no disponible en V1; se muestra contexto agregado de mercado comunal.",
+        "explanation": "Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.",
     }
 
 
@@ -282,8 +394,8 @@ def _snapshot(db: Any, code: str) -> dict[str, Any] | None:
     return db[SNAPSHOT_COLLECTION].find_one({"property_code": code}, {"_id": 0}, sort=[("snapshot_date_local", -1)])
 
 
-def _lead_metrics(db: Any, sucre_codes: set[str]) -> dict[str, Any]:
-    properties = list(db[MASTER_COLLECTION].find({}, MASTER_PROJECTION))
+def _lead_metrics(db: Any, sucre_codes: set[str], property_code: str | None = None) -> dict[str, Any]:
+    properties = _identity_properties(db)
     resolver = build_property_identity_resolver(properties, enable_contextual_aliases=True)
     service = LeadLinkageService(resolver)
     lead_projection = {
@@ -304,12 +416,15 @@ def _lead_metrics(db: Any, sucre_codes: set[str]) -> dict[str, Any]:
     records = service.link_leads(leads)
     linked = [record for record in records if record.status in {LinkageStatus.EXACT_CANONICAL, LinkageStatus.EXACT_ALIAS}]
     sucre = [record for record in linked if record.property_code in sucre_codes]
-    now = datetime.now(timezone.utc)
+    property_records = [record for record in sucre if record.property_code == property_code]
+    now = datetime.now(timezone.utc) + timedelta(microseconds=1)
     return {
         "total_linked_sucre": len(sucre),
         "distinct_properties": len({record.property_code for record in sucre}),
         "previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 7) for record in sucre),
         "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 30) for record in sucre),
+        "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 7) for record in property_records),
+        "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 30) for record in property_records),
         "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in sucre),
         "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in sucre),
         "excluded_other_office_linked": sum(record.property_code is not None and record.property_code not in sucre_codes for record in linked),
@@ -358,10 +473,12 @@ def build_owner_portal_view(db: Any, property_code: str) -> dict[str, Any]:
                 image_urls.append(image)
     prop = _safe_property(doc, image_urls)
     code = prop["code"] or str(property_code)
-    master_sucre = _find_master(db)
+    master_sucre = _find_master(db, projection=MASTER_BASE_PROJECTION)
     sucre_codes = {str(item.get("codigo")) for item in master_sucre if item.get("codigo") is not None}
     snapshot = _snapshot(db, code)
-    leads = _lead_metrics(db, sucre_codes)
+    if not prop.get("updated_at_label") and snapshot and snapshot.get("snapshot_date_local"):
+        prop["updated_at_label"] = _format_date(snapshot["snapshot_date_local"])
+    leads = _lead_metrics(db, sucre_codes, code)
     # History is intentionally unavailable with only the current daily snapshot.
     lead_history = {"available": False, "reason": "Histórico insuficiente para una evolución confiable en V1.", "points": []}
     visits = {"status": "NOT_AVAILABLE_V1", "reason": "Los registros actuales prueban intención, autorización o firma; no asistencia completada."}

@@ -1,7 +1,9 @@
 # Pricing Intelligence V1
 
-Esta capa es una base analítica **read-only** y prospectiva. No crea
-colecciones, índices, snapshots persistidos, rutas web, correos ni modelos.
+Esta capa es una base analítica prospectiva. Construye snapshots sin efectos
+operacionales y, únicamente con `--persist --confirm-production-write`, puede
+escribir en las dos colecciones V1 nuevas descritas más abajo. No modifica
+colecciones operacionales, rutas web, correos, scheduler ni modelos.
 
 ## Problema de negocio
 
@@ -17,7 +19,7 @@ La unidad futura será `property × period`. El material base de esta fase es
 El snapshot diario permite construir después semanas, ventanas de 7/30 días,
 rolling windows, lags, cambios de precio y backtesting temporal.
 
-## Regla as-of
+## Regla as-of y semántica diaria
 
 Todas las features temporales cumplen estrictamente:
 
@@ -29,9 +31,18 @@ Los timestamps deben ser timezone-aware. La zona de negocio es
 `America/Santiago` y los cálculos también se normalizan a UTC. Un evento
 exactamente igual al cutoff queda fuera.
 
-V1 solo permite el snapshot operacional de la fecha local actual. No se puede
-usar `as_of` de una fecha anterior para etiquetar el snapshot actual como
-histórico. El builder falla con `HistoricalSnapshotNotSupported`.
+El snapshot observa el estado disponible en el cutoff explícito de la
+ejecución. No representa "todo el día" ni se reconstruye históricamente: V1
+solo permite el snapshot operacional de la fecha local actual. El builder
+falla con `HistoricalSnapshotNotSupported` si se intenta etiquetar una fecha
+histórica. Todos los documentos de un run comparten exactamente un mismo
+`as_of_local` y `as_of_utc`, capturados una sola vez al inicio lógico del run.
+
+La granularidad es como máximo un snapshot por `property_code` y
+`snapshot_date_local`. El documento es inmutable después de insertarse. En
+fases posteriores, los snapshots históricos podrán formar `property_week` y
+features rolling sin usar información futura; los targets futuros no forman
+parte del snapshot diario.
 
 ## Identidad
 
@@ -103,25 +114,56 @@ Los modelos V1 no almacenan email, teléfono, RUT, nombre, mensajes ni
 dirección completa. Solo se conservan comuna y región. El CLI usa proyecciones
 Mongo sin campos personales y genera reportes sin PII.
 
-## Persistencia futura
+## Persistencia V1
 
-La colección propuesta es `pricing_intelligence_property_snapshots_v1`.
-El índice candidato, todavía no ejecutado, es:
+Las únicas colecciones autorizadas son:
+
+- `pricing_intelligence_property_snapshots_v1`: documentos diarios
+  inmutables, con `_id = v1:{snapshot_date_local}:{normalized_safe_property_code}`.
+- `pricing_intelligence_snapshot_runs_v1`: ledger auditable de cada run, sin
+  PII, con estado `RUNNING`, `COMPLETED`, `PARTIAL` o `FAILED`.
+
+El `_id` es determinístico; no se usa UUID para snapshots. Los UUID se usan
+solo para `run_id`. La escritura de snapshots es `insert_many` por lotes de
+250, sin `upsert`, `replace_one` ni actualización de documentos existentes.
+Si el `_id` ya existe, se valida fecha, código, schema y contenido; si es
+igual se cuenta como `skipped_existing`, y si difiere se aborta por
+`INCONSISTENT_SNAPSHOT_STATE`.
+
+Los reruns del mismo día son idempotentes. Un run completo se informa como
+`ALREADY_COMPLETE` sin crear otro ledger. Un run `RUNNING`/`PARTIAL` reutiliza
+su cutoff original y llena únicamente snapshots faltantes. Snapshots
+existentes sin un run coherente abortan. Un cambio superior a ±20% en el
+conteo de propiedades de la maestra frente al último run completo anterior
+aborta con `SOURCE_COUNT_ANOMALY`; el cambio de leads es solo advertencia
+analítica.
+
+Índices creados exclusivamente en estas colecciones:
 
 ```text
-(snapshot_date_local, property_code)
+pricing_intelligence_property_snapshots_v1:
+  snapshot_date_local
+  (property_code, snapshot_date_local)
+pricing_intelligence_snapshot_runs_v1:
+  snapshot_date_local
+  status
 ```
 
-`SnapshotRepository.persist()` permanece bloqueado intencionalmente. La CLI
-solo llama a `build` y exige `--dry-run`.
+La protección PII valida claves recursivamente y aborta si encuentra email,
+phone/teléfono, RUT, nombres de propietario, mensajes, dirección, user agent,
+IP o variantes normalizadas. Nunca elimina silenciosamente una clave
+prohibida.
 
 ## Ejecución
 
 ```bash
 python -m analytics.pricing_intelligence.snapshot_cli --dry-run --sample 25
 python -m analytics.pricing_intelligence.snapshot_cli --dry-run --report-json report.json
+python -m analytics.pricing_intelligence.snapshot_cli --persist --confirm-production-write
 ```
 
-La configuración Mongo debe estar disponible mediante las variables de entorno
-existentes del proyecto. Esta V1 no copia `.env` al worktree ni escribe en
-MongoDB.
+`--dry-run` y `--persist` son mutuamente excluyentes. `--persist` no admite
+`--sample` ni `--property-code` y exige la confirmación explícita no
+interactiva. La configuración Mongo debe estar disponible mediante las
+variables de entorno existentes del proyecto. Esta V1 no copia `.env` al
+worktree ni escribe en colecciones operacionales.

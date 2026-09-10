@@ -10,6 +10,28 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, Mapping, Optional, Tuple
+import unicodedata
+from urllib.parse import quote
+
+
+def _snapshot_identity_value(value: Any, *, field_name: str) -> str:
+    """Return a deterministic, separator-safe identity component."""
+
+    if isinstance(value, date):
+        text = value.isoformat()
+    else:
+        text = unicodedata.normalize("NFKC", str(value)).strip()
+    if not text or any(ord(character) < 32 for character in text):
+        raise ValueError(f"{field_name} must be a non-empty safe scalar")
+    return quote(text, safe="-._~")
+
+
+def snapshot_document_id(snapshot_date_local: date | str, property_code: Any) -> str:
+    """Stable V1 identity: one property and one local snapshot date."""
+
+    date_value = _snapshot_identity_value(snapshot_date_local, field_name="snapshot_date_local")
+    code_value = _snapshot_identity_value(property_code, field_name="property_code")
+    return f"v1:{date_value}:{code_value}"
 
 
 class LinkageStatus(str, Enum):
@@ -164,12 +186,14 @@ class PropertyDailySnapshotV1:
     provenance: Mapping[str, Any]
     listed_at: Optional[datetime] = None
     days_published: Optional[int] = None
+    run_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         def iso(value: Optional[datetime]) -> Optional[str]:
             return value.isoformat() if value is not None else None
 
         return {
+            "_id": snapshot_document_id(self.snapshot_date_local, self.property_code),
             "schema_version": self.schema_version,
             "property_code": self.property_code,
             "snapshot_date_local": self.snapshot_date_local.isoformat(),
@@ -197,4 +221,5 @@ class PropertyDailySnapshotV1:
             "provenance": dict(self.provenance),
             "listed_at": iso(self.listed_at),
             "days_published": self.days_published,
+            **({"run_id": self.run_id} if self.run_id is not None else {}),
         }

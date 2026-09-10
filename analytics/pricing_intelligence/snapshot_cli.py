@@ -18,8 +18,15 @@ from config import Config
 from .lead_linkage import LeadLinkageService
 from .property_identity import build_property_identity_resolver, normalize_identifier
 from .snapshot_builder import PropertySnapshotBuilder
-from .snapshot_repository import PROPOSED_COLLECTION, PROPOSED_IDEMPOTENT_INDEX
-from .time_utils import BUSINESS_TZ, UTC, is_in_previous_window, to_utc
+from .snapshot_repository import (
+    PROPOSED_COLLECTION,
+    PROPOSED_IDEMPOTENT_INDEX,
+    RUN_COLLECTION,
+    SNAPSHOT_COLLECTION,
+    PersistenceError,
+    SnapshotRepository,
+)
+from .time_utils import BUSINESS_TZ, UTC, is_in_previous_window, parse_aware_datetime, to_utc
 
 
 PROPERTY_PROJECTION = {
@@ -123,6 +130,35 @@ def _coverage(snapshots: Iterable[Any]) -> dict[str, Any]:
     }
 
 
+def _quality_metrics(
+    snapshots: Iterable[Any],
+    leads: Iterable[Mapping[str, Any]],
+    linkage_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    snapshots = list(snapshots)
+    leads = list(leads)
+    coverage = _coverage(snapshots)
+    status_counts = linkage_metrics.get("counts_by_status", {})
+    exact = _exact_link_count(linkage_metrics)
+    return {
+        "field_coverage": coverage,
+        "publications": {
+            "properties_with_publication_data": sum(
+                item.data_quality.publication_data_available for item in snapshots
+            ),
+            "publication_states": _publication_counts(snapshots),
+        },
+        "linked_lead_rate": {
+            "exact_linked_leads": exact,
+            "total_leads": len(leads),
+            "pct": _percentage(exact, len(leads)),
+        },
+        "conflicts": int(status_counts.get("CONFLICT", 0)),
+        "unmatched": int(status_counts.get("UNMATCHED", 0)),
+        "invalid_timestamps": int(linkage_metrics.get("records_with_timestamp_error", 0)),
+    }
+
+
 def _publication_counts(snapshots: Iterable[Any]) -> dict[str, int]:
     counts: Counter[str] = Counter()
     for snapshot in snapshots:
@@ -166,6 +202,8 @@ def _build_report(
     v2_service: LeadLinkageService,
     v2_records: Iterable[Any],
     legacy_code_sets: Mapping[str, set[str]],
+    persistence: Mapping[str, Any] | None = None,
+    source_counts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     snapshots = list(snapshots)
     leads = list(leads)
@@ -189,6 +227,7 @@ def _build_report(
     v1_exact = _exact_link_count(v1_metrics)
     v2_exact = _exact_link_count(v2_metrics)
     gain = v2_exact - v1_exact
+    quality_metrics = _quality_metrics(snapshots, leads, v2_metrics)
     return {
         "snapshot_date_local": as_of.astimezone(BUSINESS_TZ).date().isoformat(),
         "cutoff_utc": to_utc(as_of).isoformat(),
@@ -211,6 +250,11 @@ def _build_report(
         ),
         "unmatched_diagnostic_dimensions_v1": v1_service.unmatched_diagnostic_dimensions(leads),
         "coverage": _coverage(snapshots),
+        "quality_metrics": quality_metrics,
+        "source_counts": dict(source_counts or {
+            "master_properties": len(properties),
+            "leads": len(leads),
+        }),
         "publication_states_by_portal": _publication_counts(snapshots),
         "linked_leads_previous_7d": {
             "properties_with_signal": sum(item.linked_leads_previous_7d > 0 for item in snapshots),
@@ -241,8 +285,10 @@ def _build_report(
         },
         "external_listing_views": "NOT_AVAILABLE_V1",
         "persistence": {
-            "mongo_writes": 0,
+            **dict(persistence or {"mongo_writes": 0}),
             "collection_proposed": PROPOSED_COLLECTION,
+            "snapshot_collection": SNAPSHOT_COLLECTION,
+            "run_collection": RUN_COLLECTION,
             "future_index_documented_only": list(PROPOSED_IDEMPOTENT_INDEX),
         },
     }
@@ -318,12 +364,40 @@ def _load_sources(args: argparse.Namespace, as_of: datetime):
         separate_price_events=history,
         property_code=requested_code,
     )
-    return client, properties, leads, v1_service, v1_records, v2_service, v2_records, legacy_code_sets, result
+    source_counts = {
+        "master_properties": len(properties),
+        "leads": len(leads),
+        "price_history_events": len(history),
+        "legacy_universo_cartera_codes": len(legacy_code_sets["universo_cartera"]),
+        "legacy_universo_obelix_codes": len(legacy_code_sets["universo_obelix"]),
+        "legacy_ingresos_supervisados_codes": len(legacy_code_sets["ingresos_supervisados"]),
+    }
+    return (
+        client,
+        db,
+        properties,
+        leads,
+        v1_service,
+        v1_records,
+        v2_service,
+        v2_records,
+        legacy_code_sets,
+        history,
+        source_counts,
+        result,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Pricing Intelligence V1 read-only dry-run")
-    parser.add_argument("--dry-run", action="store_true", help="único modo permitido en V1")
+    parser = argparse.ArgumentParser(description="Pricing Intelligence V1 snapshot builder/persister")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="construye y reporta sin escribir Mongo")
+    mode.add_argument("--persist", action="store_true", help="persiste únicamente las colecciones V1 nuevas")
+    parser.add_argument(
+        "--confirm-production-write",
+        action="store_true",
+        help="confirmación obligatoria junto con --persist; no es interactiva",
+    )
     parser.add_argument("--sample", type=int, default=None, help="limita la muestra de propiedades")
     parser.add_argument("--property-code", default=None, help="procesa una propiedad exacta")
     parser.add_argument("--report-json", default=None, help="ruta local para reporte JSON sin PII")
@@ -333,12 +407,23 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not args.dry_run:
+    if not args.dry_run and not args.persist:
         print(
-            "ABORTADO: pricing_intelligence V1 solo permite --dry-run; "
-            "la persistencia Mongo todavía está deshabilitada.",
+            "ABORTADO: pricing_intelligence solo permite --dry-run o --persist; indique exactamente uno.",
             file=sys.stderr,
         )
+        return 2
+    if args.confirm_production_write and not args.persist:
+        print("ABORTADO: --confirm-production-write solo puede usarse con --persist.", file=sys.stderr)
+        return 2
+    if args.persist and not args.confirm_production_write:
+        print(
+            "ABORTADO: --persist exige --confirm-production-write; no se solicitará confirmación interactiva.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.persist and (args.sample is not None or args.property_code):
+        print("ABORTADO: --persist no admite --sample ni --property-code.", file=sys.stderr)
         return 2
     if args.sample is not None and args.sample <= 0:
         parser.error("--sample debe ser mayor que cero")
@@ -348,6 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         (
             client,
+            db,
             properties,
             leads,
             v1_service,
@@ -355,8 +441,39 @@ def main(argv: list[str] | None = None) -> int:
             v2_service,
             v2_records,
             legacy_code_sets,
+            history,
+            source_counts,
             result,
         ) = _load_sources(args, as_of)
+        if args.persist:
+            repository = SnapshotRepository(
+                PropertySnapshotBuilder(
+                    v2_records,
+                    source_collection=getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360"),
+                    now_fn=lambda: as_of,
+                ),
+                db,
+            )
+            same_day_run = repository.run_collection.find_one(
+                {
+                    "snapshot_date_local": as_of.astimezone(BUSINESS_TZ).date().isoformat(),
+                    "status": {"$in": ["RUNNING", "PARTIAL", "COMPLETED"]},
+                },
+                sort=[("started_at_utc", -1)],
+            )
+            if same_day_run is not None:
+                original_cutoff = parse_aware_datetime(
+                    same_day_run["as_of_local"], field_name="run.as_of_local"
+                )
+                if original_cutoff != as_of:
+                    as_of = original_cutoff
+                    result = PropertySnapshotBuilder(
+                        v2_records,
+                        source_collection=getattr(
+                            Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360"
+                        ),
+                        now_fn=lambda: as_of,
+                    ).build(properties, as_of=as_of, separate_price_events=history)
         report = _build_report(
             as_of=as_of,
             properties=properties,
@@ -368,15 +485,43 @@ def main(argv: list[str] | None = None) -> int:
             v2_service=v2_service,
             v2_records=v2_records,
             legacy_code_sets=legacy_code_sets,
+            source_counts=source_counts,
         )
+        if args.persist:
+            if result.errors:
+                raise PersistenceError(
+                    "BUILD_ERRORS: no se persiste un lote con errores de construcción"
+                )
+            linkage_metrics = v2_service.metrics(v2_records)
+            quality_metrics = report["quality_metrics"]
+            persistence_result = SnapshotRepository(
+                PropertySnapshotBuilder(v2_records, now_fn=lambda: as_of),
+                db,
+            ).persist(
+                result.snapshots,
+                confirm_production_write=True,
+                builder_version=(result.snapshots[0].provenance.get("builder_version") if result.snapshots else None),
+                source_counts=source_counts,
+                linkage_metrics=linkage_metrics,
+                quality_metrics=quality_metrics,
+                error_summary=result.errors,
+                expected_properties=int(source_counts["master_properties"]),
+            )
+            report["persistence"] = {
+                **report["persistence"],
+                **persistence_result.to_dict(),
+                "mongo_writes": persistence_result.inserted_snapshots,
+                "operational_collections_modified": 0,
+            }
         if args.report_json:
             output_path = Path(args.report_json)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(report, ensure_ascii=False, sort_keys=True, default=str))
         return 0
     except Exception as exc:
-        print(f"DRY-RUN ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        label = "PERSIST" if args.persist else "DRY-RUN"
+        print(f"{label} ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
     finally:
         if client is not None:

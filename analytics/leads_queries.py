@@ -3533,14 +3533,78 @@ def query_demand_capture_dashboard(
         "estado.ejecutivo": 1, "estado.captador": 1, "estado.responsable": 1,
         "tipo_operacion": 1, "ubicacion.comuna": 1, "ubicacion.region": 1, "caracteristicas.dormitorios": 1,
     }
-    property_docs = list(db["universo_cartera_prop360"].find({}, property_projection))
+    # El inventario es una lectura relativamente pequeña, pero Atlas puede
+    # entregar un getMore por encima del socket timeout local cuando se pide
+    # el cursor con el batch por defecto. Un batch explícito reduce cada
+    # respuesta y evita que la pestaña completa se caiga por ese detalle de
+    # transporte.
+    data_degraded = False
+    property_inventory_complete = True
+    try:
+        property_docs = list(
+            db["universo_cartera_prop360"].find({}, property_projection).batch_size(50)
+        )
+    except NetworkTimeout:
+        # Si la lectura amplia se corta, conservar al menos la cartera activa
+        # de Procasa Sucre para que la vista siga siendo útil y explícitamente
+        # degradada, en vez de devolver un error de servidor.
+        data_degraded = True
+        property_inventory_complete = False
+        logger.warning(
+            "[DEMAND_CAPTURE] inventory snapshot timeout; retrying with active Sucre inventory"
+        )
+        try:
+            property_docs = list(
+                db["universo_cartera_prop360"].find(
+                    _active_cartera_filter(DEMAND_CAPTURE_CANONICAL_OFFICE),
+                    property_projection,
+                ).batch_size(50)
+            )
+        except NetworkTimeout:
+            property_docs = []
+            logger.warning(
+                "[DEMAND_CAPTURE] active inventory timeout; rendering without inventory evidence"
+            )
     lead_pipeline = [
         _normalized_created_at_stage(),
         {"$match": _build_test_lead_exclusion_match()},
         {"$project": {"created_at": 1, "prospecto": 1, "lifecycle": 1, "stage": 1}},
     ]
-    lead_docs = list(db["leads"].aggregate(lead_pipeline))
-    return build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
+    lead_history_complete = True
+    try:
+        lead_docs = list(db["leads"].aggregate(lead_pipeline).batch_size(50))
+    except NetworkTimeout:
+        # La pestaña puede seguir entregando cartera y demanda reciente si el
+        # escaneo histórico completo de leads está lento en Atlas. El prefiltro
+        # indexado conserva el período visible y evita dejar la vista en 500.
+        data_degraded = True
+        lead_history_complete = False
+        logger.warning(
+            "[DEMAND_CAPTURE] leads historical aggregate timeout; retrying with period prefilter"
+        )
+        start_utc, end_utc = _build_chile_period_bounds(period_start, period_end)
+        period_pipeline = [
+            _cohort_indexed_prefilter(start_utc, end_utc),
+            _normalized_created_at_stage(),
+            {"$match": _build_test_lead_exclusion_match()},
+            {"$project": {"created_at": 1, "prospecto": 1, "lifecycle": 1, "stage": 1}},
+        ]
+        try:
+            lead_docs = list(db["leads"].aggregate(period_pipeline).batch_size(50))
+        except NetworkTimeout:
+            lead_docs = []
+            logger.warning(
+                "[DEMAND_CAPTURE] period leads aggregate timeout; rendering inventory without lead evidence"
+            )
+    payload = build_demand_capture_contract(property_docs, lead_docs, period_start, period_end, filters)
+    if data_degraded:
+        payload.setdefault("meta", {}).update({
+            "data_status": "degraded",
+            "degraded": True,
+            "property_inventory_complete": property_inventory_complete,
+            "lead_history_complete": lead_history_complete,
+        })
+    return payload
 
 
 def query_capture_simulation_dataset(period_end: Optional[str] = None) -> dict:
@@ -4599,12 +4663,33 @@ def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: lis
     docs = {str(doc.get("_id")): doc for doc in [*current_docs, *period_docs] if doc.get("_id") is not None}
     if not docs:
         return {}
-    events = _profile_query(profile, "crm_events", "find_activity_and_results", lambda: db["crm_events"].find(
-        {"lead_id": {"$in": [doc.get("_id") for doc in docs.values()]}},
-        {"lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
-         "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
-         "assignment_cycle_id": 1},
-    ))
+    event_projection = {
+        "lead_id": 1, "type": 1, "result": 1, "meta": 1, "confirmed": 1,
+        "actor": 1, "actor_type": 1, "timestamp": 1, "occurred_at": 1,
+        "assignment_cycle_id": 1,
+    }
+    # Mantiene el mismo universo y proyección, pero evita que Atlas tenga que
+    # resolver un único $in demasiado grande para el timeout local.
+    lead_ids = [doc.get("_id") for doc in docs.values()]
+    events = []
+    activity_evidence_degraded = False
+    for offset in range(0, len(lead_ids), 250):
+        batch_ids = lead_ids[offset:offset + 250]
+        try:
+            events.extend(_profile_query(profile, "crm_events", "find_activity_and_results", lambda batch_ids=batch_ids: db["crm_events"].find(
+                {"lead_id": {"$in": batch_ids}},
+                event_projection,
+            )))
+        except NetworkTimeout:
+            # La actividad es evidencia complementaria; no debe impedir que
+            # la pestaña operativa renderice el stock, SLA y carga del equipo.
+            # Cortamos los lotes restantes para evitar encadenar timeouts de
+            # Atlas durante una única solicitud.
+            activity_evidence_degraded = True
+            logger.warning(
+                "[OPS_ACTIVITY] crm_events timeout; rendering operational data without remaining activity evidence"
+            )
+            break
     period_ids = {str(doc.get("_id")) for doc in period_docs if doc.get("_id") is not None}
     signals = defaultdict(lambda: {"current_activity": False, "period_activity": False,
                                    "period_result": False, "result": None,
@@ -4657,6 +4742,8 @@ def _ops_collect_activity_signals(db, current_docs: list[dict], period_docs: lis
         if signal["result_events"]:
             signal["result"] = signal["result_events"][-1]["result"]
             signal["result_event_count"] = len(signal["result_events"])
+    if profile is not None and activity_evidence_degraded:
+        profile["activity_evidence_degraded"] = True
     return dict(signals)
 
 

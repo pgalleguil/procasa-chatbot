@@ -4210,8 +4210,125 @@
             .geo-mobile-south-stack { display:grid; grid-template-rows:minmax(0,1fr) 64px; gap:8px; height:232px; }
             .geo-mobile-south-stack > svg { height:auto!important; min-height:0; }
         }
+        /* --- Gestión Captación: reutiliza el lenguaje de las vistas analíticas --- */
+        .capture-management-dashboard{display:grid;gap:16px;min-width:0}
+        .capture-management-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--border-color)}
+        .capture-management-title{margin:0;font-size:25px;letter-spacing:-.025em}
+        .capture-management-subtitle{margin:5px 0 0;color:var(--text-secondary);font-size:11px}
+        .capture-management-period{color:var(--text-secondary);font-size:10px;white-space:nowrap}
+        .capture-management-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+        .capture-management-kpi{display:grid;gap:7px;min-height:112px;padding:14px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;overflow:hidden}
+        .capture-management-kpi-label{color:var(--text-secondary);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+        .capture-management-kpi-value{font-size:28px;line-height:1;font-weight:850;font-variant-numeric:tabular-nums}
+        .capture-management-kpi-value small{color:var(--text-secondary);font-size:12px;font-weight:650}
+        .capture-management-kpi-meta{color:var(--text-secondary);font-size:9px;line-height:1.35;font-variant-numeric:tabular-nums}
+        .capture-management-progress{height:7px;margin-top:1px;border:1px solid rgba(148,163,184,.18);border-radius:99px;background:var(--bg-elevated);overflow:hidden}
+        .capture-quality-bar{display:flex;height:7px;margin-top:1px;border:1px solid rgba(148,163,184,.18);border-radius:99px;background:var(--bg-elevated);overflow:hidden}.capture-quality-bar i{display:block;height:100%;min-width:0;transition:width .65s cubic-bezier(.22,.61,.36,1)}.capture-quality-bar .is-corridor{background:linear-gradient(90deg,#38bdf8,#34d399)}.capture-quality-bar .is-no-corridor{background:#64748b}
+        .capture-management-progress i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);box-shadow:0 0 10px rgba(99,102,241,.28);transition:width .65s cubic-bezier(.22,.61,.36,1)}
+        .capture-management-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}.capture-management-layout > .capture-management-panel:nth-child(2){width:min(72%,900px);box-sizing:border-box}
+        .capture-management-panel{min-width:0;align-self:start;padding:16px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px}
+        .capture-management-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+        .capture-management-panel-head h3{margin:0;font-size:13px}.capture-management-panel-head p{margin:4px 0 0;color:var(--text-secondary);font-size:9px}.capture-management-panel-meta{color:var(--text-secondary);font-size:9px;white-space:nowrap}
+        .capture-period-insights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:13px;padding-top:12px;border-top:1px solid color-mix(in srgb,var(--border-color) 68%,transparent)}.capture-period-insight{display:grid;align-content:start;gap:4px;min-width:0;padding:0 14px;border-right:1px solid color-mix(in srgb,var(--border-color) 52%,transparent)}.capture-period-insight:first-child{padding-left:0}.capture-period-insight:last-child{padding-right:0;border-right:0}.capture-period-insight-label{color:var(--text-muted);font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.capture-period-insight-value{color:var(--text-primary);font-size:17px;font-weight:850;font-variant-numeric:tabular-nums;line-height:1.1}.capture-period-insight-copy{overflow:hidden;color:var(--text-secondary);font-size:9px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}.capture-period-insight-meta{overflow:hidden;color:var(--text-muted);font-size:8px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+        .capture-week-chart,.capture-executive-chart{display:grid;gap:11px}
+        .capture-executive-chart{grid-template-columns:1fr;row-gap:12px}
+        .capture-week-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:9px}.capture-week-day{color:var(--text-secondary);font-size:10px;font-weight:750}.capture-week-track,.capture-executive-track{height:8px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}.capture-week-track i,.capture-executive-track i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#38bdf8);transition:width .65s cubic-bezier(.22,.61,.36,1)}.capture-week-row.is-today .capture-week-day{color:var(--text-primary)}.capture-week-values{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}.capture-week-values b{color:var(--text-primary);font-size:10px}
+        .capture-period-chart{display:block;min-height:184px}.capture-period-legend{display:flex;align-items:center;gap:12px;margin:-2px 0 7px;color:var(--text-secondary);font-size:9px;white-space:nowrap}.capture-period-legend span{display:inline-flex;align-items:center;gap:5px}.capture-period-legend i{display:inline-block;width:18px;height:2px;border-radius:99px;background:#8b5cf6}.capture-period-legend .is-comparable i{height:0;border-top:2px dashed #94a3b8;background:transparent}.capture-period-legend .is-target i{height:2px;border-top:0;background:#f59e0b}.capture-period-visual{position:relative;height:168px;min-width:0}.capture-period-visual svg{display:block;width:100%;height:100%;overflow:visible}.capture-period-grid{stroke:var(--border-color);stroke-width:.35;opacity:.5}.capture-period-line,.capture-period-area{vector-effect:non-scaling-stroke}.capture-period-line{stroke-dasharray:900;stroke-dashoffset:900}.capture-period-area{opacity:0}.capture-period-line.is-comparable{stroke-dasharray:5 4}.capture-period-zone{cursor:crosshair}.capture-period-guide{position:absolute;top:3px;bottom:3px;width:1px;background:var(--text-secondary);opacity:0;pointer-events:none;transition:opacity 120ms ease}.capture-period-dot{opacity:0;transition:opacity 120ms ease}.capture-period-tooltip{position:absolute;z-index:3;top:5px;min-width:132px;padding:8px 10px;border:1px solid var(--border-color);border-radius:8px;background:color-mix(in srgb,var(--bg-card) 94%,#000 6%);box-shadow:0 8px 20px rgba(2,6,23,.24);font-size:9px;line-height:1.45;pointer-events:none}.capture-period-tooltip[hidden]{display:none}.capture-period-tooltip span,.capture-period-tooltip strong,.capture-period-tooltip small{display:block}.capture-period-tooltip span{color:var(--text-secondary);font-weight:750}.capture-period-tooltip strong{margin-top:2px;color:var(--text-primary);font-size:10px}.capture-period-tooltip small{color:var(--text-secondary)}.capture-period-labels{display:grid;grid-template-columns:repeat(var(--capture-period-points),minmax(0,1fr));gap:0;margin:2px 0 0;color:var(--text-secondary);font-size:8px;font-variant-numeric:tabular-nums;text-align:center}.capture-period-labels span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.capture-management-reveal .capture-period-line{animation:captureTrendDraw 1.12s cubic-bezier(.16,1,.3,1) .08s forwards}.capture-management-reveal .capture-period-area{animation:captureTrendArea .55s ease .28s forwards}.capture-management-reveal .capture-period-dot{animation:captureTrendDot .24s ease 1s forwards}@keyframes captureTrendDraw{to{stroke-dashoffset:0}}@keyframes captureTrendArea{to{opacity:1}}@keyframes captureTrendDot{to{opacity:1}}
+        .capture-executive-row{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto 8px;align-items:center;gap:6px 10px}.capture-executive-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:750}.capture-executive-meta{display:flex;align-items:flex-end;gap:2px;color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}.capture-executive-meta b{color:var(--text-primary);font-size:10px}.capture-executive-meta small{font:inherit;color:inherit}.capture-executive-track{grid-column:1/-1}.capture-executive-row.is-met .capture-executive-meta{color:var(--text-secondary)}.capture-executive-row.is-met .capture-executive-meta b{color:var(--text-primary)}.capture-executive-row.is-pending .capture-executive-track i{background:linear-gradient(90deg,#8b5cf6,#6366f1)}
+        .capture-period-head-tools{display:flex;align-items:center;gap:12px}.capture-period-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid color-mix(in srgb,var(--border-color) 72%,transparent);border-radius:8px;background:color-mix(in srgb,var(--bg-elevated) 46%,transparent)}.capture-period-switch button{border:0;border-radius:5px;padding:5px 8px;background:transparent;color:var(--text-secondary);font:inherit;font-size:9px;font-weight:800;cursor:pointer}.capture-period-switch button:hover,.capture-period-switch button:focus-visible{color:var(--text-primary)}.capture-period-switch button.is-active{background:color-mix(in srgb,var(--accent) 22%,var(--bg-card));color:var(--text-primary)}.capture-period-legend .is-daily-bar i{height:7px;border-radius:2px;background:#8b5cf6}.capture-period-legend .is-daily-target i{height:0;border-top:2px dashed #f59e0b;background:transparent}.capture-period-daily-bar{fill:#8b5cf6;fill-opacity:.82;transition:fill-opacity .16s ease}.capture-period-daily-bar:hover{fill-opacity:1}.capture-period-daily-target{pointer-events:none}.capture-management-reveal .capture-period-daily-bar{animation:captureDailyBarIn .42s ease both}@keyframes captureDailyBarIn{from{opacity:0;transform:scaleY(.18);transform-box:fill-box;transform-origin:bottom}to{opacity:1;transform:scaleY(1)}}
+        .capture-responses-panel{display:grid;gap:18px}.capture-responses-panel .capture-management-panel-head{align-items:center;margin-bottom:0}.capture-responses-panel .capture-management-panel-head h3{font-size:16px;letter-spacing:-.015em}.capture-responses-panel .capture-management-panel-head p{font-size:10px}.capture-response-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.capture-response-kpi{display:grid;gap:5px;min-height:76px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--border-color) 76%,transparent);border-radius:10px;background:color-mix(in srgb,var(--bg-elevated) 35%,transparent)}.capture-response-kpi-label{color:var(--text-secondary);font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.capture-response-kpi-value{font-size:22px;line-height:1;font-weight:850;font-variant-numeric:tabular-nums}.capture-response-kpi-meta{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.capture-response-kpi-meta b{color:var(--text-primary)}.capture-response-kpi.is-positive{border-color:color-mix(in srgb,#34d399 35%,var(--border-color))}.capture-response-kpi.is-positive .capture-response-kpi-value{color:#7ee2b5}.capture-response-analysis{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,.85fr);gap:18px}.capture-response-subsection{min-width:0;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--border-color) 72%,transparent)}.capture-response-subhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}.capture-response-subhead h4{margin:0;color:var(--text-primary);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}.capture-response-subhead span{color:var(--text-secondary);font-size:9px}.capture-response-bars{display:grid;gap:8px}.capture-response-bar{display:grid;grid-template-columns:minmax(128px,.72fr) minmax(120px,2fr) auto;align-items:center;gap:10px;position:relative;min-width:0}.capture-response-bar-label{overflow:hidden;color:var(--text-secondary);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.capture-response-bar-label b{margin-right:4px;color:var(--text-primary);font-variant-numeric:tabular-nums}.capture-response-bar-track{height:8px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--border-color) 38%,transparent)}.capture-response-bar-fill{height:100%;min-width:2px;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);transition:width .35s cubic-bezier(.22,.61,.36,1)}.capture-response-bar-fill.is-positive{background:linear-gradient(90deg,#34d399,#22c55e)}.capture-response-bar-fill.is-attention{background:linear-gradient(90deg,#64748b,#94a3b8)}.capture-response-bar-fill.is-outcome{background:linear-gradient(90deg,#818cf8,#a78bfa)}.capture-response-bar-pct{min-width:42px;color:var(--text-secondary);font-size:9px;text-align:right;font-variant-numeric:tabular-nums}.capture-response-reading{padding-left:18px;border-left:1px solid color-mix(in srgb,var(--border-color) 55%,transparent)}.capture-response-reading-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.capture-response-reading-item{display:grid;gap:4px;padding:10px;border-radius:8px;background:color-mix(in srgb,var(--bg-elevated) 38%,transparent)}.capture-response-reading-item strong{font-size:18px;line-height:1;font-weight:850;font-variant-numeric:tabular-nums}.capture-response-reading-item span{color:var(--text-secondary);font-size:9px}.capture-response-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin:-3px 0 12px;color:var(--text-secondary);font-size:9px}.capture-response-legend span{display:inline-flex;align-items:center;gap:5px}.capture-response-legend i{width:8px;height:8px;border-radius:3px;background:#8b5cf6}.capture-response-legend .is-outcome i{background:#a78bfa}.capture-response-legend .is-attention i{background:#94a3b8}.capture-response-legend .is-other i{background:#475569}.capture-response-stacks{display:grid;gap:9px}.capture-response-stack-row{display:grid;grid-template-columns:minmax(150px,.28fr) minmax(0,1fr) auto;align-items:center;gap:14px}.capture-response-stack-name{overflow:hidden;color:var(--text-primary);font-size:10px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}.capture-response-stack-track{display:flex;height:13px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--border-color) 38%,transparent)}.capture-response-stack-track i{display:block;min-width:0;height:100%;transition:width .35s ease}.capture-response-stack-track .is-operational{background:#7c6ee6}.capture-response-stack-track .is-outcome{background:#a78bfa}.capture-response-stack-track .is-attention{background:#94a3b8}.capture-response-stack-track .is-other{background:#475569}.capture-response-stack-total{min-width:75px;color:var(--text-secondary);font-size:9px;text-align:right;font-variant-numeric:tabular-nums}.capture-response-stack-total b{color:var(--text-primary);font-size:11px}.capture-response-table-wrap{overflow-x:auto}.capture-response-table{width:100%;border-collapse:collapse;min-width:720px}.capture-response-table th,.capture-response-table td{padding:8px 9px;border-bottom:1px solid color-mix(in srgb,var(--border-color) 52%,transparent);color:var(--text-secondary);font-size:9px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.capture-response-table th:first-child,.capture-response-table td:first-child{text-align:left}.capture-response-table th{color:var(--text-secondary);font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.capture-response-table th button{padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer}.capture-response-table th button:hover,.capture-response-table th button:focus-visible{color:var(--text-primary)}.capture-response-table th button::after{content:' ↕';opacity:.4}.capture-response-table th button.is-active::after{content:attr(data-sort-indicator);opacity:1;color:var(--accent)}.capture-response-table td:first-child{color:var(--text-primary);font-weight:750}.capture-response-table td b{color:var(--text-primary);font-size:10px}.capture-response-attention{display:grid;gap:0;padding:14px 0 0;border-top:1px solid color-mix(in srgb,var(--border-color) 72%,transparent)}.capture-response-attention-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.capture-response-attention-item{display:grid;gap:3px;padding:9px 10px;border-radius:8px;background:color-mix(in srgb,var(--bg-elevated) 34%,transparent)}.capture-response-attention-item strong{color:var(--text-primary);font-size:10px}.capture-response-attention-item span{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.capture-response-attention-item.is-empty{opacity:.6}.capture-response-bar[data-response-tooltip],.capture-response-stack-track[data-response-tooltip]{position:relative}.capture-response-bar[data-response-tooltip]::after,.capture-response-stack-track[data-response-tooltip]::after{content:attr(data-response-tooltip);position:absolute;z-index:10;left:50%;bottom:calc(100% + 8px);width:max-content;max-width:300px;padding:7px 9px;border:1px solid var(--border-color);border-radius:7px;background:color-mix(in srgb,var(--bg-card) 96%,#000 4%);box-shadow:0 8px 20px rgba(2,6,23,.22);color:var(--text-primary);font-size:9px;font-weight:650;line-height:1.35;white-space:pre-line;pointer-events:none;opacity:0;transform:translate(-50%,4px);transition:opacity 140ms ease,transform 140ms ease}.capture-response-bar[data-response-tooltip]:hover::after,.capture-response-bar[data-response-tooltip]:focus-visible::after,.capture-response-stack-track[data-response-tooltip]:hover::after,.capture-response-stack-track[data-response-tooltip]:focus-visible::after{opacity:1;transform:translate(-50%,0)}
+        .capture-management-reading{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card);overflow:hidden}.capture-reading-item{display:grid;gap:5px;padding:14px 16px;border-right:1px solid var(--border-color)}.capture-reading-item:last-child{border-right:0}.capture-reading-label{color:var(--text-secondary);font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.capture-reading-value{font-size:22px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums}.capture-reading-copy{font-size:10px;line-height:1.35}.capture-reading-meta{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.capture-management-empty{padding:14px 0;color:var(--text-secondary);font-size:10px}.capture-management-pending .capture-management-kpi,.capture-management-pending .capture-management-panel,.capture-management-pending .capture-management-reading{opacity:0;transform:translateY(6px)}.capture-management-reveal .capture-management-kpi,.capture-management-reveal .capture-management-panel,.capture-management-reveal .capture-management-reading{animation:captureSectionIn .38s ease both}.capture-management-reveal .capture-management-kpi:nth-child(2){animation-delay:.04s}.capture-management-reveal .capture-management-kpi:nth-child(3){animation-delay:.08s}.capture-management-reveal .capture-management-kpi:nth-child(4){animation-delay:.12s}.capture-management-reveal .capture-management-layout{animation-delay:.16s}.capture-management-reveal .capture-management-reading{animation-delay:.22s}@keyframes captureSectionIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+        @media(max-width:1100px){.capture-management-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-management-layout{grid-template-columns:1fr}.capture-management-layout > .capture-management-panel:nth-child(2){width:min(78%,900px)}.capture-response-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-response-analysis{grid-template-columns:1fr}.capture-response-reading{padding-left:0;border-left:0}}
+        .capture-management-dashboard{gap:18px}
+        .capture-management-kpis{grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+        .capture-management-kpi{min-height:122px;padding:16px;background:var(--bg-card);border-color:color-mix(in srgb,var(--border-color) 74%,transparent);transition:border-color .2s ease,transform .2s ease}
+        .capture-management-kpi:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--border-color));transform:translateY(-2px)}
+        .capture-management-kpi-value{font-size:30px}
+        .capture-management-kpi-value small{font-size:12px}
+        .capture-team-panel,.capture-responses-panel{width:100%;box-sizing:border-box}
+        .capture-team-switch{display:inline-flex;align-items:center;gap:3px;padding:3px;border:1px solid color-mix(in srgb,var(--border-color) 76%,transparent);border-radius:9px;background:color-mix(in srgb,var(--bg-elevated) 54%,transparent)}
+        .capture-team-switch button{border:0;border-radius:6px;padding:6px 9px;background:transparent;color:var(--text-secondary);font:inherit;font-size:9px;font-weight:800;cursor:pointer}
+        .capture-team-switch button:hover,.capture-team-switch button:focus-visible{color:var(--text-primary)}
+        .capture-team-switch button.is-active{background:color-mix(in srgb,var(--accent) 22%,var(--bg-card));color:var(--text-primary)}
+        .capture-team-view{display:grid;gap:10px}
+        .capture-team-row{display:grid;grid-template-columns:minmax(150px,.48fr) minmax(220px,1.6fr) auto;align-items:center;gap:12px;min-width:0;padding:7px 0;border-bottom:1px solid color-mix(in srgb,var(--border-color) 44%,transparent)}
+        .capture-team-row:last-child{border-bottom:0}
+        .capture-team-name{min-width:0;overflow:hidden;color:var(--text-primary);font-size:11px;font-weight:760;text-overflow:ellipsis;white-space:nowrap}
+        .capture-team-track{height:10px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--border-color) 42%,transparent)}
+        .capture-team-fill{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#7c5ce8,#38bdf8);transition:width .45s cubic-bezier(.22,.61,.36,1)}
+        .capture-team-meta{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+        .capture-team-meta b{color:var(--text-primary);font-size:11px}
+        .capture-team-stack{display:flex;height:14px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--border-color) 42%,transparent)}
+        .capture-team-stack i{display:block;height:100%;min-width:0;cursor:pointer;opacity:.86;transition:width .35s ease,opacity .16s ease,filter .16s ease}
+        .capture-team-stack .is-operational{background:#7c6ee6}.capture-team-stack .is-result{background:#a78bfa}.capture-team-stack .is-attention{background:#94a3b8}.capture-team-stack .is-other{background:#475569}.capture-team-stack.is-hovering i.is-dimmed{filter:saturate(.65);opacity:.28}.capture-team-stack i.is-active,.capture-team-stack i:hover,.capture-team-stack i:focus-visible{filter:brightness(1.16) saturate(1.05);opacity:1;outline:0}
+        .capture-response-legend i.is-operational,.capture-team-stack .is-operational{background:#7c6ee6}.capture-response-legend i.is-result,.capture-team-stack .is-result{background:#34d399}.capture-response-legend i.is-corridor,.capture-team-stack .is-corridor{background:#38bdf8}.capture-response-legend i.is-no-response,.capture-team-stack .is-no-response{background:#f59e0b}.capture-response-legend i.is-discard,.capture-team-stack .is-discard{background:#94a3b8}.capture-response-legend i.is-other,.capture-team-stack .is-other{background:#475569}
+        .capture-response-legend .capture-response-legend-item{cursor:help;transition:color .16s ease,opacity .16s ease}.capture-response-legend .capture-response-legend-item.is-active{color:var(--text-primary)}.capture-response-legend .capture-response-legend-item.is-dimmed{opacity:.32}
+        .capture-team-tooltip{position:fixed;z-index:1400;display:grid;width:min(270px,calc(100vw - 20px));gap:4px;padding:10px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card);box-shadow:var(--shadow-card);color:var(--text-secondary);font-size:10.5px;line-height:1.35;pointer-events:none}.capture-team-tooltip[hidden]{display:none}.capture-team-tooltip strong{color:var(--text-primary);font-size:12px}.capture-team-tooltip .capture-team-tooltip-group{color:var(--text-muted);font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.capture-team-tooltip small{color:var(--text-secondary);font-size:10px}
+        .capture-team-detail{overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:rgba(167,139,250,.78) rgba(148,163,184,.10);scrollbar-gutter:stable}.capture-team-detail::-webkit-scrollbar{height:7px}.capture-team-detail::-webkit-scrollbar-track{background:rgba(148,163,184,.09);border-radius:999px}.capture-team-detail::-webkit-scrollbar-thumb{background:linear-gradient(90deg,rgba(99,102,241,.88),rgba(167,139,250,.94));border:2px solid transparent;background-clip:padding-box;border-radius:999px;min-width:64px}.capture-team-detail::-webkit-scrollbar-thumb:hover{background:linear-gradient(90deg,#6366f1,#a78bfa);background-clip:padding-box}.capture-team-detail table{width:100%;border-collapse:collapse;min-width:720px}.capture-team-detail th,.capture-team-detail td{padding:8px 9px;border-bottom:1px solid color-mix(in srgb,var(--border-color) 48%,transparent);color:var(--text-secondary);font-size:9px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.capture-team-detail th:first-child,.capture-team-detail td:first-child{text-align:left}.capture-team-detail th{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.capture-team-detail td:first-child,.capture-team-detail td b{color:var(--text-primary);font-weight:750}.capture-team-detail tfoot tr.is-total td{border-top:1px solid color-mix(in srgb,var(--border-color) 78%,transparent);border-bottom:0;background:color-mix(in srgb,var(--bg-elevated) 34%,transparent);color:var(--text-primary);font-weight:800}.capture-team-detail tfoot tr.is-total td b{font-weight:850}
+        .capture-status-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:22px}
+        .capture-status-column{min-width:0}.capture-status-column + .capture-status-column{padding-left:22px;border-left:1px solid color-mix(in srgb,var(--border-color) 48%,transparent)}
+        .capture-status-column h4{margin:0 0 12px;color:var(--text-primary);font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}.capture-status-column p{margin:-6px 0 12px;color:var(--text-secondary);font-size:9px}
+        .capture-status-bars{display:grid;gap:10px}.capture-status-bar{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(100px,1.4fr) auto;align-items:center;gap:10px}.capture-status-label{overflow:hidden;color:var(--text-secondary);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.capture-status-label b{margin-right:4px;color:var(--text-primary);font-variant-numeric:tabular-nums}.capture-status-track{height:8px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--border-color) 40%,transparent)}.capture-status-track i{display:block;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#7c6ee6,#38bdf8);transition:width .35s ease}.capture-status-pct{color:var(--text-secondary);font-size:9px;text-align:right;font-variant-numeric:tabular-nums}.capture-status-empty{color:var(--text-secondary);font-size:10px}
+        .capture-response-attention{margin-top:18px;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--border-color) 58%,transparent)}.capture-response-attention-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-response-attention-item{background:transparent;padding:7px 0}.capture-response-attention-item strong{font-size:10px}.capture-response-attention-item span{font-size:9px}
+        @media(max-width:980px){.capture-management-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-status-grid{grid-template-columns:1fr}.capture-status-column + .capture-status-column{padding-left:0;border-left:0;padding-top:16px;border-top:1px solid color-mix(in srgb,var(--border-color) 48%,transparent)}}
+        @media(max-width:680px){.capture-management-head{align-items:flex-start;flex-direction:column;gap:7px}.capture-management-title{font-size:22px}.capture-management-period{white-space:normal}.capture-management-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.capture-management-kpi{min-height:100px;padding:12px}.capture-management-kpi-value{font-size:24px}.capture-management-panel{padding:13px}.capture-management-panel-head{flex-direction:column;gap:8px}.capture-team-switch{width:100%}.capture-team-switch button{flex:1}.capture-team-row{grid-template-columns:minmax(105px,.8fr) minmax(90px,1.5fr) auto;gap:7px}.capture-team-meta{font-size:8px}.capture-status-bar{grid-template-columns:minmax(100px,.8fr) minmax(90px,1.5fr) auto;gap:7px}.capture-response-attention-grid{grid-template-columns:1fr}.capture-management-reading{grid-template-columns:1fr}.capture-reading-item{border-right:0;border-bottom:1px solid var(--border-color)}.capture-reading-item:last-child{border-bottom:0}}
+        .capture-management-reveal .capture-response-bar-fill,.capture-management-reveal .capture-response-stack-track i{animation:captureResponseBarIn .35s cubic-bezier(.22,.61,.36,1) both}@keyframes captureResponseBarIn{from{transform:scaleX(0);transform-origin:left}to{transform:scaleX(1);transform-origin:left}}
+        @media(prefers-reduced-motion:reduce){.capture-management-reveal .capture-management-kpi,.capture-management-reveal .capture-management-panel,.capture-management-reveal .capture-management-reading{animation:none;opacity:1;transform:none}.capture-management-reveal .capture-response-bar-fill,.capture-management-reveal .capture-response-stack-track i{animation:none}.capture-management-progress i,.capture-quality-bar i,.capture-week-track i,.capture-executive-track i{transition:none}.capture-period-line,.capture-period-area,.capture-period-dot{animation:none!important;stroke-dashoffset:0!important;opacity:1!important}}
     </style>
     <link rel="stylesheet" href="/static/css/sidebar_glass.css?v=20260825-3">
+    <style>
+        .capture-period-daily-target { pointer-events:none; opacity:.68; }
+        .capture-management-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}
+        .capture-management-two-column{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+        .capture-control-table-wrap{overflow-x:auto;scrollbar-width:thin}
+        .capture-control-table,.capture-mini-table{width:100%;border-collapse:collapse;min-width:980px}
+        #viewCaptacion{max-width:100%;overflow-x:clip}
+        body:has(#viewCaptacion:not([hidden])){overflow-x:clip}
+        body:has(#viewCaptacion:not([hidden])) .main-content{overflow-x:clip;overflow-y:auto}
+        body:has(#viewCaptacion:not([hidden])):has(#captureManagementDashboard.capture-management-pending){overflow-y:hidden}
+        body:has(#viewCaptacion:not([hidden])):has(#captureManagementDashboard.capture-management-pending) .main-content{overflow-y:hidden}
+        #viewCaptacion .capture-followup-table-wrap{width:100%;overflow:hidden}
+        #viewCaptacion .capture-followup-table-wrap .capture-mini-table{width:100%;min-width:0;table-layout:fixed}
+        #viewCaptacion .capture-followup-table-wrap td{word-break:break-word}
+        .capture-control-table th,.capture-control-table td,.capture-mini-table th,.capture-mini-table td{padding:8px 9px;border-bottom:1px solid color-mix(in srgb,var(--border-color) 52%,transparent);color:var(--text-secondary);font-size:9px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+        .capture-control-table th:first-child,.capture-control-table td:first-child,.capture-mini-table th:first-child,.capture-mini-table td:first-child{text-align:left}
+        .capture-control-table th,.capture-mini-table th{color:var(--text-secondary);font-size:8px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+        .capture-control-table td:first-child,.capture-mini-table td:first-child{color:var(--text-primary);font-weight:750}
+        .capture-aging-summary,.capture-followup-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin-bottom:14px}
+        .capture-followup-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+        .capture-aging-summary span,.capture-followup-summary span{display:grid;gap:3px;padding:9px 8px;border-radius:8px;background:color-mix(in srgb,var(--bg-elevated) 38%,transparent)}
+        .capture-aging-summary b,.capture-followup-summary b{font-size:16px;line-height:1;color:var(--text-primary)}
+        .capture-aging-summary small,.capture-followup-summary small{font-size:8px;color:var(--text-secondary)}
+        .capture-followup-summary .is-alert{border:1px solid color-mix(in srgb,#f59e0b 48%,var(--border-color));background:color-mix(in srgb,#f59e0b 9%,transparent)}
+        .capture-attention-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+        .capture-attention-case{display:grid;gap:4px;padding:10px;border:1px solid color-mix(in srgb,var(--border-color) 66%,transparent);border-radius:9px;background:color-mix(in srgb,var(--bg-elevated) 30%,transparent);text-decoration:none}
+        .capture-attention-case:hover{border-color:color-mix(in srgb,var(--accent) 48%,var(--border-color))}
+        .capture-attention-case strong{color:var(--text-primary);font-size:10px}.capture-attention-case span{overflow:hidden;color:var(--text-primary);font-size:10px;text-overflow:ellipsis;white-space:nowrap}.capture-attention-case small{color:var(--text-secondary);font-size:8px;line-height:1.3}
+        @media(max-width:1200px){.capture-management-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-attention-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media(max-width:820px){.capture-management-two-column{grid-template-columns:1fr}.capture-attention-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-aging-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+        @media(max-width:560px){.capture-management-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-attention-grid{grid-template-columns:1fr}}
+        .capture-period-line.is-target,.capture-period-line.is-current { stroke-dasharray:1; stroke-dashoffset:1; }
+        .capture-period-legend .is-daily-target i { height:2px; border-top:0; background:#f59e0b; }
+        .capture-period-legend .is-target i { height:2px; border-top:0; background:#f59e0b; }
+        .capture-management-reveal .capture-period-daily-target { animation:captureDailyTargetIn .5s ease both; }
+        @keyframes captureDailyTargetIn { from { opacity:0; } to { opacity:.68; } }
+        .capture-results-funnel-panel{display:grid;gap:14px}.capture-results-funnel-method{display:block;margin-top:6px;color:var(--text-muted);font-size:10px;font-weight:500}.capture-results-funnel-stack{display:grid;gap:8px;position:relative;min-height:0}.capture-results-funnel-stage{position:relative;z-index:1;display:grid;justify-items:center;gap:7px;min-width:0}.capture-results-funnel-stage-bar{display:flex;width:var(--stage-width);max-width:100%;min-width:0;height:22px;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--border-color) 72%,transparent);transform:scaleX(.02);transform-origin:center;transition:transform .3s cubic-bezier(.16,1,.3,1),filter .16s ease}.portal-funnel-stack.portal-funnel-reveal .capture-results-funnel-stage-bar{transform:scaleX(1)}.capture-results-funnel-stage-bar i{display:block;width:100%;height:100%;background:var(--result-color,#7c6ee6);opacity:.88}.capture-results-funnel-stage:hover .capture-results-funnel-stage-bar,.capture-results-funnel-stage.is-selected .capture-results-funnel-stage-bar{filter:brightness(1.16) saturate(1.05)}.capture-results-funnel-stage.is-selected .portal-funnel-stage-label{color:var(--text-primary)}.capture-results-funnel-stage[data-capture-result]{cursor:pointer}.capture-results-funnel-note{margin:0;padding-top:6px;border-top:1px solid color-mix(in srgb,var(--border-color) 55%,transparent);color:var(--text-muted);font-size:10px;line-height:1.35}
+        @media(max-width:680px){.capture-results-funnel-stage .portal-funnel-stage-label span{font-size:9px}.capture-results-funnel-stage-bar{height:19px}}
+        #viewCaptacion{max-width:100%;overflow-x:clip}
+        body:has(#viewCaptacion:not([hidden])){overflow-x:clip}
+        body:has(#viewCaptacion:not([hidden])) .main-content{overflow-x:clip;overflow-y:auto}
+        body:has(#viewCaptacion:not([hidden])):has(#captureManagementDashboard.capture-management-pending){overflow-y:hidden}
+        body:has(#viewCaptacion:not([hidden])):has(#captureManagementDashboard.capture-management-pending) .main-content{overflow-y:hidden}
+        .capture-filter-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:-7px}.capture-filter-label{color:var(--text-secondary);font-size:9px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}.capture-filter-chip,.capture-clear-filters{border:1px solid var(--border-color);border-radius:999px;background:var(--bg-card);color:var(--text-primary);font:inherit;font-size:10px;padding:5px 9px;cursor:pointer}.capture-filter-chip:after{content:' ×';color:var(--text-secondary)}.capture-clear-filters{color:#a78bfa;font-weight:750}.capture-filter-chip:hover,.capture-clear-filters:hover{border-color:#8b5cf6;background:rgba(139,92,246,.08)}
+        .capture-backlog-stat{display:grid;gap:3px;min-width:0;width:100%;box-sizing:border-box;text-align:left;padding:10px 11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated);color:var(--text-primary);font:inherit;cursor:pointer}.capture-backlog-stat b{font-size:20px}.capture-backlog-stat span{font-size:9px;color:var(--text-secondary)}.capture-backlog-stat.is-alert{border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.06)}.capture-backlog-stat:hover{border-color:#8b5cf6}.capture-backlog-headline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:-2px 0 12px}.capture-backlog-rows{display:grid;gap:9px}.capture-backlog-row{display:grid;grid-template-columns:105px minmax(0,1fr) 42px;align-items:center;gap:8px}.capture-backlog-row-name{font-size:9px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.capture-backlog-row-total{font-size:9px;text-align:right;color:var(--text-secondary)}.capture-backlog-stack{display:flex;height:12px;overflow:hidden;border-radius:99px;background:var(--bg-elevated)}.capture-backlog-segment{min-width:2px;height:100%;border-right:1px solid rgba(15,23,42,.42);cursor:pointer}.capture-aging-summary{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.capture-aging-summary span{cursor:pointer}.capture-backlog-segment:hover{filter:brightness(1.35)}
+        .capture-team-row[data-capture-executive],.capture-team-segment,.capture-status-bar[data-capture-result],.capture-source-card,.capture-attention-cause{cursor:pointer}.capture-team-row[data-capture-executive]:hover .capture-team-name,.capture-team-row.is-selected .capture-team-name{color:#a78bfa}.capture-team-row.is-selected{outline:1px solid rgba(139,92,246,.55);outline-offset:4px;border-radius:6px}.capture-status-bar.is-selected .capture-status-track{box-shadow:0 0 0 2px rgba(139,92,246,.35)}
+        .capture-team-detail-compact{overflow:hidden}.capture-team-detail-compact table{width:100%;min-width:0;table-layout:fixed}.capture-team-detail-compact th,.capture-team-detail-compact td{padding:9px 7px;font-size:9px;vertical-align:middle}.capture-team-detail-compact th{font-size:8px}.capture-team-detail-compact th:first-child,.capture-team-detail-compact td:first-child{width:18%}.capture-team-detail-compact td b{display:block;color:var(--text-primary);font-size:11px}.capture-team-detail-compact td small{color:var(--text-secondary);font-size:8px}
+        .capture-followup-table-wrap{width:100%;overflow:hidden}.capture-followup-table-wrap .capture-mini-table{width:100%;min-width:0;table-layout:fixed}.capture-followup-table-wrap th,.capture-followup-table-wrap td{font-size:9px;padding:8px 6px}.capture-followup-table-wrap td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.capture-followup-table-wrap a{color:#a78bfa}.capture-followup-more{margin-top:10px;border:0;background:none;color:#a78bfa;font:inherit;font-size:10px;font-weight:750;cursor:pointer}
+        .capture-source-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.capture-source-card{display:grid;gap:8px;min-width:0;width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated);color:var(--text-primary);font:inherit;text-align:left}.capture-source-card:hover,.capture-source-card.is-selected{border-color:#8b5cf6;background:rgba(139,92,246,.08)}.capture-source-card-head{display:flex;justify-content:space-between;gap:8px;min-width:0}.capture-source-card-head strong{font-size:11px}.capture-source-card-head span{font-size:9px;color:var(--text-secondary)}.capture-source-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;min-width:0}.capture-source-card-grid span{display:grid;gap:2px;min-width:0;color:var(--text-secondary);font-size:8px}.capture-source-card-grid b{color:var(--text-primary);font-size:11px;overflow:hidden;text-overflow:ellipsis}
+        .capture-attention-causes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:12px}.capture-attention-cause{display:grid;gap:3px;min-width:0;padding:9px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated);text-align:left;color:var(--text-primary);font:inherit}.capture-attention-cause:hover,.capture-attention-cause.is-selected{border-color:#f59e0b;background:rgba(245,158,11,.08)}.capture-attention-cause b{font-size:17px}.capture-attention-cause span{font-size:8px;color:var(--text-secondary);line-height:1.25}.capture-management-panel{overflow:hidden}
+        @media(max-width:1100px){.capture-attention-causes{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-team-detail-compact th,.capture-team-detail-compact td{padding-left:5px;padding-right:5px}}
+        @media(max-width:680px){.capture-source-cards,.capture-attention-grid{grid-template-columns:1fr}.capture-attention-causes{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-backlog-row{grid-template-columns:82px minmax(0,1fr) 34px}.capture-aging-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-team-detail-compact{overflow-x:auto}.capture-team-detail-compact table{min-width:680px}}
+    </style>
     <script src="/static/js/app_theme_sync.js?v=20260825-1"></script>
 </head>
 
@@ -4285,6 +4402,7 @@
                 <button class="dash-tab" data-tab="leads"><span>Gestión del Equipo Comercial</span></button>
                 <button class="dash-tab" data-tab="properties"><span>Demanda &amp; Captación</span></button>
                 <button class="dash-tab" data-tab="channels"><span>Portales &amp; Costos</span></button>
+                <button class="dash-tab" data-tab="captacion"><span>Gestión Captación</span></button>
             </nav>
             <div class="mobile-tab-select seq-el seq-static" aria-label="Vista del dashboard">
                 <select id="mobileTabSelect" aria-label="Vista del dashboard">
@@ -4292,6 +4410,7 @@
                     <option value="leads">Gestión del Equipo Comercial</option>
                     <option value="properties">Demanda &amp; Captación</option>
                     <option value="channels">Portales &amp; Costos</option>
+                    <option value="captacion">Gestión Captación</option>
                 </select>
             </div>
             {% endif %}
@@ -4622,6 +4741,40 @@
                     </section>
                     <aside class="team-drawer" id="opsCasesDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">EVIDENCIA</div><h3 id="opsCasesTitle">Casos que requieren intervención</h3><p id="opsCasesMeta">—</p></div><button class="team-drawer-close" id="opsCasesClose" type="button" aria-label="Cerrar casos">×</button></div><div id="opsCasesList" class="team-case-list"></div></aside><aside class="team-drawer" id="opsResultsDrawer" hidden><div class="team-drawer-head"><div><div class="team-section-kicker">RESULTADOS DEL PERÍODO</div><h3>Resultados de contacto</h3><p id="opsResultsMeta">—</p></div><button class="team-drawer-close" id="opsResultsClose" type="button" aria-label="Cerrar resultados">×</button></div><div id="opsResultsList" class="team-case-list"></div></aside>
                 </div>
+            </div>{% endif %}
+            {% if not territorial_review|default(false) %}<div id="viewCaptacion" hidden>
+                <section class="capture-management-dashboard capture-management-pending" id="captureManagementDashboard" aria-labelledby="captureManagementTitle" aria-busy="true">
+                    <header class="capture-management-head">
+                        <div><h2 class="capture-management-title" id="captureManagementTitle">Gestión Captación</h2><p class="capture-management-subtitle">Control de cartera, actividad, resultados y pendientes del equipo.</p></div><span class="capture-management-period" id="captureManagementPeriod">—</span>
+                    </header>
+                    <div id="captureFilterChips" class="capture-filter-chips" hidden aria-live="polite"><span class="capture-filter-label">Filtros activos</span><div id="captureFilterChipList"></div><button type="button" id="captureClearFilters" class="capture-clear-filters">Limpiar filtros</button></div>
+                    <div class="capture-management-kpis" id="captureManagementKpis">
+                        <article class="capture-management-kpi" title="Stock actual: propiedades asignadas a ejecutivos activos, sin depender del período seleccionado."><span class="capture-management-kpi-label">Cartera asignada actual</span><strong class="capture-management-kpi-value" id="captureKpiAssigned">—</strong><span class="capture-management-kpi-meta" id="captureKpiAssignedMeta">—</span></article>
+                        <article class="capture-management-kpi" title="Propiedades distintas con gestión acreditada dentro del período seleccionado."><span class="capture-management-kpi-label">Propiedades únicas gestionadas</span><strong class="capture-management-kpi-value" id="captureKpiManaged">—</strong><span class="capture-management-kpi-meta" id="captureKpiManagedMeta">—</span></article>
+                        <article class="capture-management-kpi" title="Propiedades únicas gestionadas de la cartera actual dividido por propiedades asignadas actuales."><span class="capture-management-kpi-label">Cobertura cartera actual</span><strong class="capture-management-kpi-value" id="captureKpiCoverage">—</strong><span class="capture-management-kpi-meta" id="captureKpiCoverageMeta">—</span></article>
+                        <article class="capture-management-kpi" title="Gestiones acreditadas, comparadas contra la meta del período seleccionado."><span class="capture-management-kpi-label">Gestiones acreditadas</span><strong class="capture-management-kpi-value" id="captureKpiCredited">—</strong><div class="capture-management-progress"><i id="captureKpiCreditedProgress"></i></div><span class="capture-management-kpi-meta" id="captureKpiCreditedMeta">—</span></article>
+                        <article class="capture-management-kpi" title="Contactos efectivos dividido por intentos de contacto acreditados del período."><span class="capture-management-kpi-label">Contactabilidad</span><strong class="capture-management-kpi-value" id="captureKpiContactability">—</strong><span class="capture-management-kpi-meta" id="captureKpiContactabilityMeta">—</span></article>
+                        <article class="capture-management-kpi" title="Propiedades únicas con resultado de captación confirmado."><span class="capture-management-kpi-label">Captaciones únicas</span><strong class="capture-management-kpi-value" id="captureKpiCaptured">—</strong><span class="capture-management-kpi-meta" id="captureKpiCapturedMeta">—</span></article>
+                    </div>
+                    <article class="capture-management-panel capture-trend-panel">
+                        <div class="capture-management-panel-head"><div><h3 id="captureWeekChartTitle">Evolución diaria de gestiones</h3><p id="captureWeekChartDescription">Gestiones realizadas frente a la meta de días hábiles.</p></div><div class="capture-period-head-tools"><span class="capture-management-panel-meta" id="captureWeekChartMeta">—</span><div class="capture-period-switch" role="tablist" aria-label="Vista de evolución"><button type="button" class="is-active" data-capture-period-view="diario" role="tab" aria-selected="true">Diario</button><button type="button" data-capture-period-view="acumulado" role="tab" aria-selected="false">Acumulado</button></div></div></div>
+                        <div class="capture-week-chart" id="captureWeekChart"></div>
+                        <div class="capture-period-insights" id="capturePeriodInsights" aria-live="polite"></div>
+                    </article>
+                    <article class="capture-management-panel capture-team-panel">
+                        <div class="capture-management-panel-head"><div><h3 id="captureExecutiveChartTitle">Desempeño del equipo</h3><p id="captureExecutiveChartDescription">Una vista única para comparar cobertura, composición y detalle.</p></div><div class="capture-team-switch" role="tablist" aria-label="Vista del equipo"><button type="button" class="is-active" data-capture-team-view="coverage" role="tab" aria-selected="true">Cobertura</button><button type="button" data-capture-team-view="composition" role="tab" aria-selected="false">Composición</button><button type="button" data-capture-team-view="detail" role="tab" aria-selected="false">Detalle</button></div></div>
+                        <div class="capture-executive-chart capture-team-view" id="captureExecutiveChart"></div><div class="capture-team-tooltip" id="captureTeamTooltip" role="tooltip" hidden></div>
+                    </article>
+                    <div class="capture-management-two-column">
+                        <article class="capture-management-panel"><div class="capture-management-panel-head"><div><h3>Backlog y antigüedad actual</h3><p>Pendientes sin primera gestión o aún en estado de contacto.</p></div><span class="capture-management-panel-meta" id="captureBacklogMeta">—</span></div><div class="capture-backlog-headline"><button type="button" class="capture-backlog-stat" id="captureBacklogTeamButton"><b id="captureBacklogTeamValue">—</b><span>Backlog equipo</span></button><button type="button" class="capture-backlog-stat is-alert" id="captureBacklogUnassignedButton"><b id="captureBacklogUnassignedValue">—</b><span>Sin responsable</span></button></div><div id="captureAgingSummary" class="capture-aging-summary"></div><div id="captureBacklogRows" class="capture-backlog-rows"></div></article>
+                        <article class="capture-management-panel"><div class="capture-management-panel-head"><div><h3>Seguimientos</h3><p>Compromisos actuales; no se mezclan con la producción del período.</p></div><span class="capture-management-panel-meta" id="captureFollowupMeta">—</span></div><div id="captureFollowupSummary" class="capture-followup-summary"></div><div class="capture-followup-table-wrap"><table class="capture-mini-table"><thead><tr><th>Vence</th><th>Propiedad</th><th>Ejecutivo</th><th>Estado</th><th>Atraso</th><th>Acción</th></tr></thead><tbody id="captureFollowupTableBody"></tbody></table></div><button type="button" class="capture-followup-more" id="captureFollowupMore" hidden>Ver vencidos</button></article>
+                    </div>
+                    <div class="capture-management-two-column">
+                        <article class="capture-management-panel capture-results-funnel-panel"><div class="capture-management-panel-head"><div><h3>Resultados de gestión</h3><p>Composición de resultados válidos del período seleccionado.</p><small class="capture-results-funnel-method">% calculado sobre gestiones acreditadas</small></div><span class="capture-management-panel-meta" id="captureResultsMeta">—</span></div><div id="captureResultsBars" class="portal-funnel-stack capture-results-funnel-stack" role="group" aria-label="Resultados de gestión del período"></div><p class="capture-results-funnel-note">Haz clic en un resultado para filtrar el tablero.</p></article>
+                        <article class="capture-management-panel"><div class="capture-management-panel-head"><div><h3>Origen de la cartera</h3><p>Rendimiento por fuente sobre la cartera actual asignada.</p></div><span class="capture-management-panel-meta" id="captureSourceMeta">—</span></div><div id="captureSourceCards" class="capture-source-cards"></div></article>
+                    </div>
+                    <article class="capture-management-panel"><div class="capture-management-panel-head"><div><h3>Requiere intervención</h3><p>Causas agregadas primero; evidencia acotada para actuar.</p></div><span class="capture-management-panel-meta" id="captureAttentionMeta">—</span></div><div id="captureAttentionCauses" class="capture-attention-causes"></div><div id="captureAttentionCases" class="capture-attention-grid"></div></article>
+                </section>
             </div>{% endif %}
             <div id="viewProperties"{% if not territorial_review|default(false) %} hidden{% endif %}>
                 <section class="inventory-dashboard" aria-labelledby="inventoryTitle">
@@ -5005,7 +5158,7 @@
                 const urlPreset = CommercialPeriods.validPreset(params.get('period_preset'));
                 COMPARE = CommercialPeriods.validComparison(params.get('compare')) || 'auto';
                 $('pCompare').value = COMPARE;
-                INITIAL_TAB = ['executive','leads','properties','channels'].includes(params.get('tab')) ? params.get('tab') : 'executive';
+                INITIAL_TAB = ['executive','leads','properties','channels','captacion'].includes(params.get('tab')) ? params.get('tab') : 'executive';
                 INITIAL_EXECUTIVE = (params.get('executive') || '').trim();
                 OPS_SCOPE = INITIAL_EXECUTIVE;
 
@@ -6134,9 +6287,10 @@
             }
 
             async function loadData(mode) {
-                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewChannels') && !$('viewChannels').hidden ? 'channels' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
+                const activeTab = $('viewLeads') && !$('viewLeads').hidden ? 'leads' : $('viewProperties') && !$('viewProperties').hidden ? 'properties' : $('viewChannels') && !$('viewChannels').hidden ? 'channels' : $('viewCaptacion') && !$('viewCaptacion').hidden ? 'captacion' : $('viewExecutive') && !$('viewExecutive').hidden ? 'executive' : null;
                 if (activeTab === 'leads') return loadOperationalData();
                 if (activeTab === 'properties') return loadInventoryData(mode === 'refresh');
+                if (activeTab === 'captacion') return loadCaptacionManagementData();
                 if (activeTab !== 'executive' && activeTab !== 'channels') return null;
                 const frontendStartedAt = performance.now();
                 const periodSnapshot = {start: FILTERS.period_start, end: FILTERS.period_end, compare: COMPARE, preset: FILTERS.period_preset};
@@ -8331,6 +8485,42 @@
     .foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--line); color: #94a3b8; font-size: 10px; display: flex; justify-content: space-between; }
     @page { size: A4; margin: 14mm 13mm 16mm; }
     @media print { body { margin: 0; } .report-card { break-inside: avoid; } }
+</style>
+<style>
+        /* --- Gestión Captación: reutiliza el lenguaje de las vistas analíticas --- */
+        .capture-management-dashboard{display:grid;gap:16px;min-width:0}
+        .capture-management-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding-bottom:12px;border-bottom:1px solid var(--border-color)}
+        .capture-management-title{margin:0;font-size:25px;letter-spacing:-.025em}
+        .capture-management-subtitle{margin:5px 0 0;color:var(--text-secondary);font-size:11px}
+        .capture-management-period{color:var(--text-secondary);font-size:10px;white-space:nowrap}
+        .capture-management-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+        .capture-management-kpi{display:grid;gap:7px;min-height:112px;padding:14px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;overflow:hidden}
+        .capture-management-kpi-label{color:var(--text-secondary);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+        .capture-management-kpi-value{font-size:28px;line-height:1;font-weight:850;font-variant-numeric:tabular-nums}
+        .capture-management-kpi-value small{color:var(--text-secondary);font-size:12px;font-weight:650}
+        .capture-management-kpi-meta{color:var(--text-secondary);font-size:9px;line-height:1.35;font-variant-numeric:tabular-nums}
+        .capture-management-progress{height:7px;margin-top:1px;border:1px solid rgba(148,163,184,.18);border-radius:99px;background:var(--bg-elevated);overflow:hidden}
+        .capture-management-progress i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#6366f1 58%,#38bdf8);box-shadow:0 0 10px rgba(99,102,241,.28);transition:width .65s cubic-bezier(.22,.61,.36,1)}
+        .capture-management-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+        .capture-management-panel{min-width:0;padding:16px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px}
+        .capture-management-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+        .capture-management-panel-head h3{margin:0;font-size:13px}.capture-management-panel-head p{margin:4px 0 0;color:var(--text-secondary);font-size:9px}.capture-management-panel-meta{color:var(--text-secondary);font-size:9px;white-space:nowrap}
+        .capture-week-chart,.capture-executive-chart{display:grid;gap:11px}
+        .capture-week-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:9px}.capture-week-day{color:var(--text-secondary);font-size:10px;font-weight:750}.capture-week-track,.capture-executive-track{height:8px;border-radius:99px;background:var(--bg-elevated);overflow:hidden}.capture-week-track i,.capture-executive-track i{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#8b5cf6,#38bdf8);transition:width .65s cubic-bezier(.22,.61,.36,1)}.capture-week-row.is-today .capture-week-day{color:var(--text-primary)}.capture-week-values{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}.capture-week-values b{color:var(--text-primary);font-size:10px}
+        .capture-executive-row{display:grid;grid-template-columns:minmax(105px,.65fr) minmax(0,1.2fr) auto;align-items:center;gap:9px}.capture-executive-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;font-weight:750}.capture-executive-meta{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap}.capture-executive-row.is-met .capture-executive-meta{color:#34d399}.capture-executive-row.is-pending .capture-executive-track i{background:linear-gradient(90deg,#8b5cf6,#6366f1)}
+        .capture-management-reading{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--border-color);border-radius:12px;background:var(--bg-card);overflow:hidden}.capture-reading-item{display:grid;gap:5px;padding:14px 16px;border-right:1px solid var(--border-color)}.capture-reading-item:last-child{border-right:0}.capture-reading-label{color:var(--text-secondary);font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}.capture-reading-value{font-size:22px;font-weight:850;line-height:1;font-variant-numeric:tabular-nums}.capture-reading-copy{font-size:10px;line-height:1.35}.capture-reading-meta{color:var(--text-secondary);font-size:9px;font-variant-numeric:tabular-nums}.capture-management-empty{padding:14px 0;color:var(--text-secondary);font-size:10px}.capture-management-pending .capture-management-kpi,.capture-management-pending .capture-management-panel,.capture-management-pending .capture-management-reading{opacity:0;transform:translateY(6px)}.capture-management-reveal .capture-management-kpi,.capture-management-reveal .capture-management-panel,.capture-management-reveal .capture-management-reading{animation:captureSectionIn .38s ease both}.capture-management-reveal .capture-management-kpi:nth-child(2){animation-delay:.04s}.capture-management-reveal .capture-management-kpi:nth-child(3){animation-delay:.08s}.capture-management-reveal .capture-management-kpi:nth-child(4){animation-delay:.12s}.capture-management-reveal .capture-management-layout{animation-delay:.16s}.capture-management-reveal .capture-management-reading{animation-delay:.22s}@keyframes captureSectionIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+        @media(max-width:1100px){.capture-management-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-management-layout{grid-template-columns:1fr}}
+        @media(max-width:680px){.capture-management-head{align-items:flex-start;flex-direction:column;gap:7px}.capture-management-title{font-size:22px}.capture-management-period{white-space:normal}.capture-management-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.capture-management-kpi{min-height:100px;padding:12px}.capture-management-kpi-value{font-size:24px}.capture-management-panel{padding:13px}.capture-management-panel-head{flex-direction:column;gap:5px}.capture-management-reading{grid-template-columns:1fr}.capture-reading-item{border-right:0;border-bottom:1px solid var(--border-color)}.capture-reading-item:last-child{border-bottom:0}.capture-executive-row{grid-template-columns:minmax(90px,.7fr) minmax(0,1fr) auto;gap:6px}.capture-executive-meta{font-size:8px}.capture-period-insights{grid-template-columns:1fr;gap:9px}.capture-period-insight,.capture-period-insight:first-child,.capture-period-insight:last-child{padding:7px 0;border-right:0;border-bottom:1px solid color-mix(in srgb,var(--border-color) 52%,transparent)}.capture-period-insight:last-child{border-bottom:0}}
+        .capture-filter-chips{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:-7px}.capture-filter-label{color:var(--text-secondary);font-size:9px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}.capture-filter-chip,.capture-clear-filters{border:1px solid var(--border-color);border-radius:999px;background:var(--bg-card);color:var(--text-primary);font:inherit;font-size:10px;padding:5px 9px;cursor:pointer}.capture-filter-chip:after{content:' ×';color:var(--text-secondary)}.capture-clear-filters{color:#8b5cf6;font-weight:750}.capture-filter-chip:hover,.capture-clear-filters:hover{border-color:#8b5cf6;background:rgba(139,92,246,.08)}
+        .capture-team-row[data-capture-executive],.capture-team-segment,.capture-status-bar[data-capture-result],.capture-source-card,.capture-attention-cause{cursor:pointer}.capture-team-row[data-capture-executive]:hover .capture-team-name,.capture-team-row.is-selected .capture-team-name{color:#a78bfa}.capture-team-row.is-selected{outline:1px solid rgba(139,92,246,.55);outline-offset:4px;border-radius:6px}.capture-status-bar.is-selected .capture-status-track{box-shadow:0 0 0 2px rgba(139,92,246,.35)}
+        .capture-team-detail-compact{overflow:hidden}.capture-team-detail-compact table{width:100%;min-width:0;table-layout:fixed}.capture-team-detail-compact th,.capture-team-detail-compact td{padding:9px 7px;font-size:9px;vertical-align:middle}.capture-team-detail-compact th{font-size:8px}.capture-team-detail-compact th:first-child,.capture-team-detail-compact td:first-child{width:18%}.capture-team-detail-compact td b{display:block;color:var(--text-primary);font-size:11px}.capture-team-detail-compact td small{color:var(--text-secondary);font-size:8px}.capture-team-detail-compact .capture-detail-stack{display:grid;gap:2px}.capture-team-detail-compact .capture-detail-stack span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .capture-backlog-headline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:-2px 0 12px}.capture-backlog-stat{display:grid;gap:3px;text-align:left;padding:10px 11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated);color:var(--text-primary);cursor:pointer}.capture-backlog-stat b{font-size:20px}.capture-backlog-stat span{font-size:9px;color:var(--text-secondary)}.capture-backlog-stat.is-alert{border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.06)}.capture-backlog-stat:hover{border-color:#8b5cf6}.capture-backlog-rows{display:grid;gap:9px}.capture-backlog-row{display:grid;grid-template-columns:105px minmax(0,1fr) 42px;align-items:center;gap:8px}.capture-backlog-row-name{font-size:9px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.capture-backlog-row-total{font-size:9px;text-align:right;color:var(--text-secondary)}.capture-backlog-stack{display:flex;height:12px;overflow:hidden;border-radius:99px;background:var(--bg-elevated)}.capture-backlog-segment{min-width:2px;height:100%;border-right:1px solid rgba(15,23,42,.42);cursor:pointer;transition:filter .18s ease}.capture-backlog-segment:hover{filter:brightness(1.35)}.capture-aging-summary{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}.capture-aging-summary span{cursor:pointer}.capture-followup-table-wrap{overflow:hidden}.capture-followup-table-wrap table{width:100%;min-width:0;table-layout:fixed}.capture-followup-table-wrap th,.capture-followup-table-wrap td{font-size:9px;padding:8px 6px}.capture-followup-table-wrap th:nth-child(1){width:13%}.capture-followup-table-wrap th:nth-child(2){width:27%}.capture-followup-table-wrap th:nth-child(3){width:17%}.capture-followup-table-wrap th:nth-child(4){width:17%}.capture-followup-table-wrap th:nth-child(5){width:12%}.capture-followup-table-wrap th:nth-child(6){width:14%}.capture-followup-table-wrap td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.capture-followup-table-wrap a{color:#a78bfa}.capture-followup-more{margin-top:10px;border:0;background:none;color:#a78bfa;font:inherit;font-size:10px;font-weight:750;cursor:pointer}.capture-source-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.capture-source-card{display:grid;gap:8px;padding:11px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated)}.capture-source-card:hover,.capture-source-card.is-selected{border-color:#8b5cf6;background:rgba(139,92,246,.08)}.capture-source-card-head{display:flex;justify-content:space-between;gap:8px}.capture-source-card-head strong{font-size:11px}.capture-source-card-head span{font-size:9px;color:var(--text-secondary)}.capture-source-card-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.capture-source-card-grid span{display:grid;gap:2px;color:var(--text-secondary);font-size:8px}.capture-source-card-grid b{color:var(--text-primary);font-size:11px}.capture-attention-causes{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:12px}.capture-attention-cause{display:grid;gap:3px;padding:9px;border:1px solid var(--border-color);border-radius:9px;background:var(--bg-elevated);text-align:left;color:var(--text-primary)}.capture-attention-cause:hover,.capture-attention-cause.is-selected{border-color:#f59e0b;background:rgba(245,158,11,.08)}.capture-attention-cause b{font-size:17px}.capture-attention-cause span{font-size:8px;color:var(--text-secondary);line-height:1.25}.capture-attention-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-attention-case{min-width:0}.capture-management-panel{overflow:hidden}
+        @media(max-width:1100px){.capture-attention-causes{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-team-detail-compact th,.capture-team-detail-compact td{padding-left:5px;padding-right:5px}.capture-team-detail-compact th{font-size:7px}.capture-team-detail-compact td{font-size:8px}.capture-team-detail-compact td b{font-size:10px}}
+        @media(max-width:680px){.capture-source-cards,.capture-attention-grid{grid-template-columns:1fr}.capture-attention-causes{grid-template-columns:repeat(2,minmax(0,1fr))}.capture-backlog-row{grid-template-columns:82px minmax(0,1fr) 34px}.capture-aging-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.capture-team-detail-compact{overflow-x:auto}.capture-team-detail-compact table{min-width:680px}}
+        @media(prefers-reduced-motion:reduce){.capture-management-reveal .capture-management-kpi,.capture-management-reveal .capture-management-panel,.capture-management-reveal .capture-management-reading{animation:none;opacity:1;transform:none}.capture-management-progress i,.capture-week-track i,.capture-executive-track i{transition:none}}
+        #viewCaptacion .capture-source-card{min-width:0;width:100%;box-sizing:border-box}
+        #viewCaptacion .capture-source-card-grid{min-width:0}
+        #viewCaptacion .capture-source-card-grid span{min-width:0}
 </style></head>
 <body>
     <div class="cover">
@@ -8570,6 +8760,783 @@
              function geoRender(){ if(!GEO_DATA||typeof d3==='undefined')return; const rows=GEO_LEVEL==='region'?geoRows('region'):geoD3CommuneRows(GEO_REGION_KEY);$('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button=>button.classList.toggle('active',button.dataset.geoMetric===GEO_METRIC));if(GEO_LEVEL==='region'){geoRenderNationalTiles(rows);$('geoMapStatus')?.remove();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();geoSyncMobileHero();demandRefreshTerritorialPeriodText();return;}geoD3RenderCommunes();$('geoLegend').innerHTML=geoD3Legend(rows.map(geoValue));geoDetail();demandRefreshTerritorialPeriodText();}
             function geoInit(data){const geography=data.demand_intelligence?.geography;if(!geography||typeof d3==='undefined')return;GEO_DATA={payload:data};if(REVIEW_MODE){$('geoBackButton')?.remove();$('geoMapStatus')?.remove();$('geoDetail')?.querySelector('h4')?.remove();$('geoTopTerritories')?.closest('.geo-top-wrap')?.remove();}const load=Promise.all([fetch('/static/geo/chile-regiones.geojson').then(response=>response.json()),fetch('/static/geo/chile-comunas.geojson').then(response=>response.json())]).then(([regions,communes])=>{GEO_DATA.regions=regions;GEO_DATA.communes=communes;geoRender();}).catch(()=>{if($('geoMapStatus'))$('geoMapStatus').textContent='No fue posible cargar las geometrías oficiales.';});$('geoMetricSelect')?.querySelectorAll('[data-geo-metric]').forEach(button=>button.addEventListener('click',()=>{GEO_METRIC=button.dataset.geoMetric;GEO_RANK_EXPANDED=false;geoRender();}));return load;}
 
+            // --- Gestión Captación (vista supervisiva semanal) ---
+            let CAPTACION_MANAGEMENT_DATA = null;
+            let CAPTACION_MANAGEMENT_REQUEST = 0;
+            const captureNumber = value => new Intl.NumberFormat('es-CL').format(Number(value) || 0);
+            const capturePercent = value => `${(Number(value) || 0).toLocaleString('es-CL', {minimumFractionDigits:1, maximumFractionDigits:1})}%`;
+            const captureText = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+            const captureWidth = (value, total) => total > 0 ? Math.min(100, Math.max(0, (Number(value) || 0) / total * 100)) : 0;
+
+            function captureSetProgress(id, value) {
+                const element = $(id);
+                if (element) requestAnimationFrame(() => { element.style.width = `${Math.min(100, Math.max(0, Number(value) || 0))}%`; });
+            }
+
+            function captureRenderWeek(data) {
+                const executives = Array.isArray(data.executives) ? data.executives : [];
+                const byDate = new Map();
+                executives.forEach(executive => (executive.daily || []).forEach(item => {
+                    if (!item.date) return;
+                    const current = byDate.get(item.date) || {label:item.label, date:item.date, count:0, target:0, today:false, future:true};
+                    current.count += Number(item.count) || 0;
+                    current.target += Number(item.target) || 0;
+                    current.today = current.today || Boolean(item.today);
+                    current.future = current.future && Boolean(item.future);
+                    byDate.set(item.date, current);
+                }));
+                let rows = [...byDate.values()].sort((a,b) => a.date.localeCompare(b.date));
+                if (Boolean(data.period_selected) && rows.length > 7) {
+                    const grouped = new Map();
+                    rows.forEach(item => {
+                        const day = new Date(`${item.date}T12:00:00`);
+                        const monday = new Date(day);
+                        monday.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+                        const key = monday.toISOString().slice(0,10);
+                        const sunday = new Date(monday);
+                        sunday.setDate(monday.getDate() + 6);
+                        const selectedStart = data.period_start ? new Date(`${data.period_start}T12:00:00`) : monday;
+                        const selectedEnd = data.period_end ? new Date(`${data.period_end}T12:00:00`) : sunday;
+                        const visibleStart = monday < selectedStart ? selectedStart : monday;
+                        const visibleEnd = sunday > selectedEnd ? selectedEnd : sunday;
+                        const mondayLabel = visibleStart.toLocaleDateString('es-CL', {day:'2-digit', month:'short'}).replace('.', '');
+                        const sundayLabel = visibleEnd.toLocaleDateString('es-CL', {day:'2-digit', month:'short'}).replace('.', '');
+                        const current = grouped.get(key) || {label: mondayLabel === sundayLabel ? captureText(mondayLabel) : `${captureText(mondayLabel)}–${captureText(sundayLabel)}`, date:key, count:0, target:0, today:false, future:true};
+                        current.count += item.count;
+                        current.target += item.target;
+                        current.today = current.today || item.today;
+                        current.future = current.future && item.future;
+                        grouped.set(key, current);
+                    });
+                    rows = [...grouped.values()].sort((a,b) => a.date.localeCompare(b.date));
+                }
+                const root = $('captureWeekChart');
+                if (!root) return;
+                root.innerHTML = rows.map(row => `<div class="capture-week-row${row.today ? ' is-today' : ''}"><span class="capture-week-day">${captureText(row.label)}</span><div class="capture-week-track"><i style="width:${captureWidth(row.count, row.target)}%"></i></div><span class="capture-week-values"><b>${captureNumber(row.count)}</b> / ${captureNumber(row.target)}${row.future ? ' · próximo' : ''}</span></div>`).join('');
+                $('captureWeekChartMeta').textContent = `${captureNumber(data.week_count)} gestiones · ${captureNumber(data.week_goal)} meta`;
+            }
+
+            function capturePeriodChartGroups(data) {
+                const source = Array.isArray(data.period_series) ? data.period_series : [];
+                if (!source.length) return [];
+                // Cada punto representa un día del rango seleccionado. Se
+                // mantienen todos los días en la geometría; solo se espacian
+                // las etiquetas del eje cuando el rango es largo para evitar
+                // que se superpongan visualmente.
+                return source.map(item => ({
+                    ...item,
+                    weekday: new Date(`${item.date}T12:00:00`).toLocaleDateString('es-CL', {weekday:'long'}).replace(/^./, value => value.toUpperCase()),
+                    isWeekend: [0, 6].includes(new Date(`${item.date}T12:00:00`).getDay()),
+                    label: new Date(`${item.date}T12:00:00`).toLocaleDateString('es-CL', {day:'2-digit', month:'short'}).replace('.', ''),
+                }));
+            }
+
+            let CAPTURE_PERIOD_VIEW = 'diario';
+            function captureBindPeriodViewControls() {
+                document.querySelectorAll('[data-capture-period-view]').forEach(button => {
+                    const active = button.dataset.capturePeriodView === CAPTURE_PERIOD_VIEW;
+                    button.classList.toggle('is-active', active);
+                    button.setAttribute('aria-selected', active ? 'true' : 'false');
+                    if (!button.dataset.bound) {
+                        button.dataset.bound = '1';
+                        button.addEventListener('click', () => {
+                            CAPTURE_PERIOD_VIEW = button.dataset.capturePeriodView || 'diario';
+                            captureRenderPeriodChart(CAPTACION_MANAGEMENT_DATA || {});
+                        });
+                    }
+                });
+            }
+            function captureRenderPeriodInsights(data, points, view) {
+                const root = $('capturePeriodInsights');
+                if (!root) return;
+                if (!points.length) { root.innerHTML = ''; root.hidden = true; return; }
+                const number = value => captureNumber(Number(value) || 0);
+                const percent = (value, total) => capturePercent(total > 0 ? (Number(value) || 0) / total * 100 : 0);
+                const item = (label, value, copy, meta) => `<article class="capture-period-insight"><span class="capture-period-insight-label">${captureText(label)}</span><strong class="capture-period-insight-value">${value}</strong><span class="capture-period-insight-copy">${captureText(copy)}</span><span class="capture-period-insight-meta">${captureText(meta)}</span></article>`;
+                root.hidden = false;
+                if (view === 'diario') {
+                    const total = points.reduce((sum, point) => sum + (Number(point.current) || 0), 0);
+                    const target = points.reduce((sum, point) => sum + (Number(point.target) || 0), 0);
+                    const peak = points.reduce((best, point) => Number(point.current) > Number(best.current) ? point : best, points[0]);
+                    const weekend = points.filter(point => point.isWeekend).reduce((sum, point) => sum + (Number(point.current) || 0), 0);
+                    const weekendDays = points.filter(point => point.isWeekend).length;
+                    root.innerHTML = [
+                        item('Pico de actividad', `${number(peak.current)} gestiones`, `${peak.weekday || 'Día'} · ${peak.label || ''}`, 'Mayor producción registrada en un día'),
+                        item('Cumplimiento hábil', percent(total, target), `${number(total)} de ${number(target)} gestiones`, `${points.filter(point => Number(point.target) > 0).length} días con meta`),
+                        item('Actividad sin meta', `${number(weekend)} gestiones`, weekendDays ? `${number(weekendDays)} días de fin de semana` : 'Sin días de fin de semana', 'La producción real se mantiene en su fecha')
+                    ].join('');
+                    return;
+                }
+                const final = points[points.length - 1];
+                const actual = Number(final.current_cumulative) || 0;
+                const target = Number(final.target_cumulative) || 0;
+                const comparable = Number(final.comparable_cumulative) || 0;
+                const gap = actual - target;
+                const vsComparable = actual - comparable;
+                root.innerHTML = [
+                    item('Avance final', `${number(actual)} de ${number(target)}`, `${percent(actual, target)} de meta`, `${points.filter(point => Number(point.target) > 0).length} días con meta`),
+                    item('Brecha a meta', `${number(Math.abs(gap))} gestiones`, gap >= 0 ? 'sobre la meta acumulada' : 'bajo la meta acumulada', `Meta acumulada: ${number(target)}`),
+                    item('Vs. comparable', `${vsComparable >= 0 ? '+' : ''}${number(vsComparable)}`, `${number(actual)} actual · ${number(comparable)} comparable`, 'Diferencia acumulada al cierre del período')
+                ].join('');
+            }
+            function captureRenderDailyPeriodChart(data) {
+                const root = $('captureWeekChart');
+                const points = capturePeriodChartGroups(data);
+                if (!root || !points.length) return;
+                root.classList.add('capture-period-chart');
+                const nums = points.map(item => Number(item.current) || 0);
+                const targets = points.map(item => Number(item.target) || 0);
+                const days = nums.length;
+                const maxValue = Math.max(...nums, ...targets, 1);
+                const W = 100, H = 44, PAD = 4;
+                const xAt = index => (index + .5) / days * W;
+                const yAt = value => H - PAD - (Number(value || 0) / maxValue) * (H - PAD * 2);
+                const targetPathGroups = [];
+                let targetGroup = [];
+                targets.forEach((value, index) => {
+                    if (value > 0) targetGroup.push([xAt(index), yAt(value)]);
+                    else if (targetGroup.length) { targetPathGroups.push(targetGroup); targetGroup = []; }
+                });
+                if (targetGroup.length) targetPathGroups.push(targetGroup);
+                const targetPaths = targetPathGroups.flatMap(group => {
+                    if (group.length > 1) return [tcSmooth(group)];
+                    const [x, y] = group[0];
+                    return [`M${Math.max(PAD, x - 1).toFixed(2)},${y.toFixed(2)}L${Math.min(W - PAD, x + 1).toFixed(2)},${y.toFixed(2)}`];
+                });
+                const grid = [.25, .5, .75].map(ratio => { const y = (H - PAD) - ratio * (H - PAD * 2); return `<line class="capture-period-grid" x1="${PAD}" x2="${W - PAD}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"/>`; }).join('');
+                const barWidth = Math.max(1.2, Math.min(3.8, 72 / days));
+                const bars = nums.map((value, index) => { const y = yAt(value), date = points[index]?.date || ''; return `<rect class="capture-period-daily-bar" data-capture-date="${captureText(date)}" x="${(xAt(index) - barWidth / 2).toFixed(2)}" y="${y.toFixed(2)}" width="${barWidth.toFixed(2)}" height="${Math.max(.4, H - PAD - y).toFixed(2)}" rx=".7"/>`; }).join('');
+                const step = Math.max(1, Math.ceil(days / 9));
+                const labels = points.map((item, index) => `<span>${index === 0 || index === days - 1 || index % step === 0 ? captureText(item.label) : ''}</span>`).join('');
+                root.innerHTML = `<div class="capture-period-legend"><span class="is-daily-bar"><i></i>Gestiones</span><span class="is-daily-target"><i></i>Meta día hábil</span></div><div class="capture-period-visual"><svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label="Gestiones realizadas frente a la meta de días hábiles">${grid}${bars}${targetPaths.map(path => `<path class="capture-period-daily-target" d="${path}" fill="none" stroke="#f59e0b" stroke-width="1.25" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}<rect class="capture-period-zone" x="0" y="0" width="100" height="44" fill="transparent" pointer-events="all"/></svg><div class="capture-period-guide"></div><div class="capture-period-tooltip" hidden></div></div><div class="capture-period-labels" style="--capture-period-points:${points.length}">${labels}</div>`;
+                const svg = root.querySelector('svg');
+                const zone = root.querySelector('.capture-period-zone');
+                const guide = root.querySelector('.capture-period-guide');
+                const tooltip = root.querySelector('.capture-period-tooltip');
+                const showAt = index => { const safeIndex = Math.max(0, Math.min(days - 1, index)); const item = points[safeIndex]; const actual = nums[safeIndex]; const target = targets[safeIndex]; const hasTarget = target > 0; const delta = actual - target; const snapX = xAt(safeIndex); if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = '.28'; } if (tooltip) { tooltip.innerHTML = `<span>${captureText(item.weekday)} ${captureText(item.label)}</span><strong>${captureNumber(actual)} gestiones</strong>${hasTarget ? `<small>Meta: ${captureNumber(target)}</small><small>${delta >= 0 ? '+' : ''}${captureNumber(delta)} sobre meta</small>` : '<small>Sin meta programada</small>'}`; tooltip.style.left = snapX + '%'; tooltip.style.transform = snapX > 72 ? 'translateX(calc(-100% - 6px))' : snapX < 28 ? 'translateX(6px)' : 'translateX(-50%)'; tooltip.hidden = false; } };
+                const hide = () => { if (guide) guide.style.opacity = '0'; if (tooltip) tooltip.hidden = true; };
+                const indexFromEvent = event => { const rect = svg.getBoundingClientRect(); return Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * (days - 1)); };
+                if (zone && svg && window.matchMedia('(hover: hover)').matches) { zone.addEventListener('mousemove', event => showAt(indexFromEvent(event))); zone.addEventListener('mouseleave', hide); }
+                root.querySelectorAll('[data-capture-date]').forEach(bar => bar.addEventListener('click', () => captureSetFilter('selectedDate', bar.dataset.captureDate)));
+                $('captureWeekChartTitle').textContent = 'Evolución diaria de gestiones';
+                $('captureWeekChartDescription').textContent = 'Gestiones realizadas frente a la meta de días hábiles.';
+                $('captureWeekChartMeta').textContent = `${captureNumber(data.week_count)} gestiones · ${captureNumber(points.filter(item => Number(item.target) > 0).length)} días con meta`;
+                captureRenderPeriodInsights(data, points, 'diario');
+            }
+            function captureRenderPeriodChart(data) {
+                captureBindPeriodViewControls();
+                if (CAPTURE_PERIOD_VIEW === 'diario') { captureRenderDailyPeriodChart(data); return; }
+                $('captureWeekChartTitle').textContent = 'Avance acumulado del período';
+                $('captureWeekChartDescription').textContent = 'Gestiones acumuladas frente a la meta y el período comparable.';
+                const root = $('captureWeekChart');
+                const points = capturePeriodChartGroups(data);
+                if (!root || !points.length) {
+                    if (root) root.classList.remove('capture-period-chart');
+                    captureRenderWeek(data);
+                    return;
+                }
+                root.classList.add('capture-period-chart');
+                const values = points.flatMap(item => [
+                    Number(item.current_cumulative) || 0,
+                    Number(item.comparable_cumulative) || 0,
+                    Number(item.target_cumulative) || 0,
+                ]);
+                const maxValue = Math.max(...values, 1);
+                const W = 100, H = 44, PAD = 4;
+                const xAt = (index) => points.length === 1 ? W / 2 : PAD + (index / (points.length - 1)) * (W - PAD * 2);
+                const yAt = (value) => H - PAD - ((Number(value) || 0) / (maxValue * 1.12)) * (H - PAD * 2);
+                const pathFor = key => {
+                    const coords = points.map((item, index) => [xAt(index), yAt(item[key])]);
+                    return coords.length > 1 ? tcSmooth(coords) : `M${coords[0][0].toFixed(2)},${coords[0][1].toFixed(2)}`;
+                };
+                const currentPath = pathFor('current_cumulative');
+                const comparablePath = pathFor('comparable_cumulative');
+                const targetPath = pathFor('target_cumulative');
+                const areaPath = `${currentPath} L${xAt(points.length - 1).toFixed(2)},${H} L${xAt(0).toFixed(2)},${H} Z`;
+                const targetVisible = points.some(item => (Number(item.target_cumulative) || 0) > 0);
+                const grid = [0.25, 0.5, 0.75].map(ratio => {
+                    const y = (H - PAD) - ratio * (H - PAD * 2);
+                    return `<line class="capture-period-grid" x1="${PAD}" x2="${W - PAD}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"/>`;
+                }).join('');
+                const labelStep = Math.max(1, Math.ceil(points.length / 9));
+                const labels = points.map((item, index) => {
+                    const visible = index === 0 || index === points.length - 1 || index % labelStep === 0;
+                    return `<span>${visible ? captureText(item.label) : ''}</span>`;
+                }).join('');
+                root.innerHTML = `<div class="capture-period-legend"><span><i></i>Actual</span><span class="is-comparable"><i></i>Comparable</span><span class="is-target"><i></i>Meta</span></div><div class="capture-period-visual"><svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label="Evolución acumulada actual, comparable y meta"><defs><linearGradient id="capturePeriodGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#8b5cf6" stop-opacity=".18"/><stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/></linearGradient></defs>${grid}<path class="capture-period-area" d="${areaPath}" fill="url(#capturePeriodGradient)"/><path class="capture-period-line is-comparable" d="${comparablePath}" fill="none" stroke="#94a3b8" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/>${targetVisible ? `<path class="capture-period-line is-target" pathLength="1" d="${targetPath}" fill="none" stroke="#f59e0b" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>` : ''}<path class="capture-period-line is-current" pathLength="1" d="${currentPath}" fill="none" stroke="#8b5cf6" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><rect class="capture-period-zone" x="0" y="0" width="100" height="44" fill="transparent" pointer-events="all"/></svg><div class="capture-period-guide"></div><div class="capture-period-tooltip" hidden></div></div><div class="capture-period-labels" style="--capture-period-points:${points.length}">${labels}</div>`;
+                const svg = root.querySelector('svg');
+                const zone = root.querySelector('.capture-period-zone');
+                const guide = root.querySelector('.capture-period-guide');
+                const tooltip = root.querySelector('.capture-period-tooltip');
+                const showAt = index => {
+                    const safeIndex = Math.max(0, Math.min(points.length - 1, index));
+                    const item = points[safeIndex];
+                    const snapX = xAt(safeIndex);
+                    if (guide) { guide.style.left = snapX + '%'; guide.style.opacity = '.28'; }
+                    if (tooltip) {
+                        tooltip.innerHTML = `<span>${captureText(item.weekday)} · ${captureText(item.label)}</span><strong>Actual acumulado: ${captureNumber(item.current_cumulative)} gestiones</strong><small>Comparable: ${captureNumber(item.comparable_cumulative)} gestiones</small><small>Meta: ${captureNumber(item.target_cumulative)} gestiones</small>`;
+                        tooltip.style.left = snapX + '%';
+                        tooltip.style.transform = snapX > 72 ? 'translateX(calc(-100% - 6px))' : snapX < 28 ? 'translateX(6px)' : 'translateX(-50%)';
+                        tooltip.hidden = false;
+                    }
+                };
+                const hide = () => { if (guide) guide.style.opacity = '0'; if (tooltip) tooltip.hidden = true; };
+                const indexFromEvent = event => {
+                    const rect = svg.getBoundingClientRect();
+                    const viewX = ((event.clientX - rect.left) / rect.width) * W;
+                    const x = Math.max(0, Math.min(1, (viewX - PAD) / (W - PAD * 2)));
+                    return Math.round(x * (points.length - 1));
+                };
+                if (zone && svg && window.matchMedia('(hover: hover)').matches) {
+                    zone.addEventListener('mousemove', event => showAt(indexFromEvent(event)));
+                    zone.addEventListener('mouseleave', hide);
+                }
+                if (zone && svg) zone.addEventListener('click', event => { const rect = svg.getBoundingClientRect(); const index = Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * (points.length - 1)); captureSetFilter('selectedDate', points[index]?.date || null); });
+                $('captureWeekChartMeta').textContent = `${captureNumber(data.week_count)} actual · ${captureNumber(data.period_comparable_count)} comparable · ${captureNumber(data.week_goal)} meta`;
+                captureRenderPeriodInsights(data, points, 'acumulado');
+            }
+
+            function captureStatusLabel(status) {
+                return ({CUMPLIDO:'Cumplida', EN_PROGRESO:'En progreso', INCUMPLIDO:'Pendiente', FUTURO:'Próxima', EXENTO:'Exenta', SIN_META:'Sin meta'})[status] || 'Sin estado';
+            }
+
+            /* Legacy captación renderers kept as historical reference; active renderers are defined below.
+            function captureRenderExecutives(data) {
+                const executives = [...(Array.isArray(data.executives) ? data.executives : [])].sort((a, b) => {
+                    const coverageA = Number(a.managed_coverage_pct) || 0;
+                    const coverageB = Number(b.managed_coverage_pct) || 0;
+                    return coverageB - coverageA
+                        || (Number(b.managed_count) || 0) - (Number(a.managed_count) || 0)
+                        || (Number(b.week_count) || 0) - (Number(a.week_count) || 0)
+                        || String(a.name || '').localeCompare(String(b.name || ''));
+                });
+                const root = $('captureExecutiveChart');
+                if (!root) return;
+                const selectedPeriod = Boolean(data.period_selected);
+                root.innerHTML = executives.length ? executives.map(executive => {
+                    const assigned = Number(executive.assigned_count) || 0;
+                    const managed = Number(executive.managed_count) || 0;
+                    const periodCoverage = capturePercent(captureWidth(managed, assigned));
+                    const secondary = selectedPeriod ? `${captureNumber(executive.week_count)} gest. · ${periodCoverage} de cartera` : `${captureNumber(executive.week_count)}/${captureNumber(executive.week_goal)} meta · ${captureStatusLabel(executive.today_status)}`;
+                    return `<div class="capture-executive-row ${executive.met_today ? 'is-met' : 'is-pending'}"><span class="capture-executive-name" title="${captureText(executive.name)}">${captureText(executive.name)}</span><span class="capture-executive-meta" title="${captureNumber(managed)} propiedades gestionadas de ${captureNumber(assigned)} asignadas"><b>${captureNumber(managed)}/${captureNumber(assigned)}</b><small>${secondary}</small></span><div class="capture-executive-track"><i style="width:${captureWidth(managed, assigned)}%"></i></div></div>`;
+                }).join('') : '<div class="capture-management-empty">Sin integrantes activos para mostrar.</div>';
+                $('captureExecutiveChartMeta').textContent = `${captureNumber(executives.length)} ejecutivos activos`;
+            }
+
+            let CAPTURE_RESPONSE_TABLE_SORT = {key:'total', direction:'desc'};
+            function captureResponsePct(value, total) {
+                return capturePercent(captureWidth(value, total));
+            }
+            function captureResponseTone(key) {
+                if (key === 'captado') return 'is-positive';
+                if (['por_contactar', 'en_gestion', 'message_enviado', 'contactado'].includes(key)) return 'is-operational';
+                if (['corredor', 'no_interesado', 'propiedad_no_disponible', 'publicacion_expirada', 'numero_invalido', 'descartado'].includes(key)) return 'is-outcome';
+                return 'is-attention';
+            }
+            function captureRenderResponses(data) {
+                const kpisRoot = $('captureResponseKpis');
+                const barsRoot = $('captureResponseBars');
+                const readingRoot = $('captureResponseReading');
+                const stacksRoot = $('captureResponseStacks');
+                const tableRoot = $('captureResponseTableBody');
+                const attentionRoot = $('captureResponseAttention');
+                const attentionGrid = $('captureResponseAttentionGrid');
+                if (!kpisRoot || !barsRoot || !readingRoot || !stacksRoot || !tableRoot) return;
+
+                const breakdown = [...(Array.isArray(data.response_breakdown) ? data.response_breakdown : [])]
+                    .map(item => ({...item, count:Number(item.count) || 0}))
+                    .filter(item => item.count > 0)
+                    .sort((a, b) => b.count - a.count || String(a.label || '').localeCompare(String(b.label || '')));
+                const responseTotal = Number(data.response_total) || breakdown.reduce((sum, item) => sum + item.count, 0);
+                const countFor = key => breakdown.find(item => item.key === key)?.count || 0;
+                const pctFor = value => captureResponsePct(value, responseTotal);
+                const priorityKpis = [
+                    {key:'total', label:'Total gestiones', count:responseTotal},
+                    {key:'por_contactar', label:'Por contactar', count:countFor('por_contactar')},
+                    {key:'en_gestion', label:'En gestión', count:countFor('en_gestion')},
+                    {key:'corredor', label:'Corredor', count:countFor('corredor')},
+                    {key:'captado', label:'Captado', count:countFor('captado'), positive:true},
+                ];
+                kpisRoot.innerHTML = priorityKpis.map(item => `<article class="capture-response-kpi ${item.positive ? 'is-positive' : ''}"><span class="capture-response-kpi-label">${item.label}</span><strong class="capture-response-kpi-value">${captureNumber(item.count)}</strong>${item.key === 'total' ? '<span class="capture-response-kpi-meta">Universo del período</span>' : `<span class="capture-response-kpi-meta"><b>${pctFor(item.count)}</b> del total</span>`}</article>`).join('');
+
+                barsRoot.innerHTML = breakdown.length ? breakdown.map(item => {
+                    const pct = pctFor(item.count);
+                    const tooltip = `${item.label}: ${captureNumber(item.count)} gestiones · ${pct} del total`;
+                    return `<div class="capture-response-bar" tabindex="0" data-response-tooltip="${captureText(tooltip)}" aria-label="${captureText(tooltip)}"><span class="capture-response-bar-label"><b>${captureNumber(item.count)}</b>${captureText(item.label)}</span><div class="capture-response-bar-track"><i class="capture-response-bar-fill ${captureResponseTone(item.key)}" style="width:${captureWidth(item.count, responseTotal)}%"></i></div><span class="capture-response-bar-pct">${pct}</span></div>`;
+                }).join('') : '<div class="capture-management-empty">Sin resultados registrados en el período.</div>';
+
+                const readingItems = [
+                    {label:'Corredores', count:countFor('corredor')},
+                    {label:'Por contactar', count:countFor('por_contactar')},
+                    {label:'En gestión', count:countFor('en_gestion')},
+                    {label:'Captados', count:countFor('captado')},
+                ];
+                readingRoot.innerHTML = readingItems.map(item => `<div class="capture-response-reading-item"><strong>${pctFor(item.count)}</strong><span>${item.label}</span></div>`).join('');
+
+                const executives = Array.isArray(data.executives) && data.executives.length ? data.executives : [data];
+                const groupedKeys = ['por_contactar', 'en_gestion', 'corredor', 'captado', 'no_respondio'];
+                const stackDefinitions = [
+                    {key:'por_contactar', label:'Por contactar', tone:'is-operational'},
+                    {key:'en_gestion', label:'En gestión', tone:'is-operational'},
+                    {key:'corredor', label:'Corredor', tone:'is-outcome'},
+                    {key:'captado', label:'Captado', tone:'is-positive'},
+                    {key:'no_respondio', label:'Sin respuesta', tone:'is-attention'},
+                    {key:'otros', label:'Otros', tone:'is-other'},
+                ];
+                const executiveRows = executives.map(executive => {
+                    const responses = [...(Array.isArray(executive.response_breakdown) ? executive.response_breakdown : [])]
+                        .map(item => ({...item, count:Number(item.count) || 0}))
+                        .filter(item => item.count > 0)
+                        .sort((a, b) => b.count - a.count || String(a.label || '').localeCompare(String(b.label || '')));
+                    const responseMap = Object.fromEntries(responses.map(item => [item.key, item.count]));
+                    const total = Number(executive.response_total) || responses.reduce((sum, item) => sum + item.count, 0);
+                    const grouped = {};
+                    groupedKeys.forEach(key => grouped[key] = responseMap[key] || 0);
+                    grouped.otros = Math.max(0, total - groupedKeys.reduce((sum, key) => sum + grouped[key], 0));
+                    const exact = responses.length ? responses.map(item => `${item.label}: ${captureNumber(item.count)}`).join(' · ') : 'Sin respuestas';
+                    const name = executive.name || 'Sin nombre';
+                    return {name, total, grouped, responses, exact, percent:key => captureResponsePct(grouped[key] || 0, total)};
+                });
+                stacksRoot.innerHTML = executiveRows.length ? executiveRows.map(row => {
+                    const tooltip = `${row.name} · ${captureNumber(row.total)} gestiones\n${row.exact}`;
+                    const segments = stackDefinitions.filter(definition => row.grouped[definition.key] > 0).map(definition => `<i class="${definition.tone}" style="width:${captureWidth(row.grouped[definition.key], row.total)}%" title="${captureText(`${definition.label}: ${captureNumber(row.grouped[definition.key])} · ${row.percent(definition.key)}`)}"></i>`).join('');
+                    return `<div class="capture-response-stack-row"><span class="capture-response-stack-name">${captureText(row.name)}</span><div class="capture-response-stack-track" tabindex="0" data-response-tooltip="${captureText(tooltip)}" aria-label="${captureText(tooltip)}">${segments}</div><span class="capture-response-stack-total"><b>${captureNumber(row.total)}</b> gestiones</span></div>`;
+                }).join('') : '<div class="capture-management-empty">Sin ejecutivos con gestiones en el período.</div>';
+
+                const renderTable = () => {
+                    const sorted = [...executiveRows].sort((a, b) => {
+                        const key = CAPTURE_RESPONSE_TABLE_SORT.key;
+                        const valueA = key === 'total' ? a.total : a.grouped[key] / Math.max(1, a.total);
+                        const valueB = key === 'total' ? b.total : b.grouped[key] / Math.max(1, b.total);
+                        return (valueB - valueA) * (CAPTURE_RESPONSE_TABLE_SORT.direction === 'desc' ? 1 : -1) || a.name.localeCompare(b.name);
+                    });
+                    const tableKeys = ['por_contactar', 'en_gestion', 'corredor', 'captado'];
+                    tableRoot.innerHTML = sorted.length ? sorted.map(row => `<tr><td>${captureText(row.name)}</td><td><b>${captureNumber(row.total)}</b></td>${tableKeys.map(key => `<td><b>${captureNumber(row.grouped[key])}</b> · ${row.percent(key)}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">Sin ejecutivos con gestiones en el período.</td></tr>';
+                    document.querySelectorAll('.capture-response-table th button[data-response-sort]').forEach(button => {
+                        const active = button.dataset.responseSort === CAPTURE_RESPONSE_TABLE_SORT.key;
+                        button.classList.toggle('is-active', active);
+                        button.dataset.sortIndicator = active ? (CAPTURE_RESPONSE_TABLE_SORT.direction === 'desc' ? ' ↓' : ' ↑') : ' ↕';
+                    });
+                };
+                renderTable();
+                const table = document.querySelector('.capture-response-table');
+                if (table && !table.dataset.bound) {
+                    table.dataset.bound = '1';
+                    table.addEventListener('click', event => {
+                        const button = event.target.closest('button[data-response-sort]');
+                        if (!button) return;
+                        const key = button.dataset.responseSort;
+                        CAPTURE_RESPONSE_TABLE_SORT = CAPTURE_RESPONSE_TABLE_SORT.key === key
+                            ? {key, direction:CAPTURE_RESPONSE_TABLE_SORT.direction === 'desc' ? 'asc' : 'desc'}
+                            : {key, direction:'desc'};
+                        captureRenderResponses(CAPTACION_MANAGEMENT_DATA || data);
+                    });
+                }
+
+                const attentionCandidates = [
+                    {label:'Mayor por contactar', rows:executiveRows.filter(row => row.grouped.por_contactar > 0), value:row => row.grouped.por_contactar, format:row => `${captureNumber(row.grouped.por_contactar)} · ${row.percent('por_contactar')}`},
+                    {label:'Mayor concentración de corredor', rows:executiveRows.filter(row => row.grouped.corredor > 0), value:row => row.grouped.corredor / Math.max(1, row.total), format:row => `${captureNumber(row.grouped.corredor)} · ${row.percent('corredor')}`},
+                    {label:'Más sin respuesta', rows:executiveRows.filter(row => row.grouped.no_respondio > 0), value:row => row.grouped.no_respondio, format:row => `${captureNumber(row.grouped.no_respondio)} · ${row.percent('no_respondio')}`},
+                ];
+                const attentionItems = attentionCandidates.map(candidate => {
+                    const row = candidate.rows.sort((a, b) => candidate.value(b) - candidate.value(a) || a.name.localeCompare(b.name))[0];
+                    return row ? `<div class="capture-response-attention-item"><strong>${candidate.label}</strong><span>${captureText(row.name)} · ${candidate.format(row)}</span></div>` : '';
+                }).filter(Boolean);
+                if (attentionRoot && attentionGrid) {
+                    attentionGrid.innerHTML = attentionItems.join('');
+                    attentionRoot.hidden = !attentionItems.length;
+                }
+                $('captureResponsesMeta').textContent = `${captureNumber(responseTotal)} gestiones válidas`;
+            }
+
+            function captureRenderReading(data) {
+                const week = Number(data.week_count) || 0;
+                const goal = Number(data.week_goal) || 0;
+                const members = Number(data.member_count) || 0;
+                const selectedPeriod = Boolean(data.period_selected);
+                $('captureManagementReading').innerHTML = `<div class="capture-reading-item"><span class="capture-reading-label">${selectedPeriod ? 'Avance del período' : 'Avance semanal'}</span><strong class="capture-reading-value">${capturePercent(captureWidth(week, goal))}</strong><span class="capture-reading-copy">${captureNumber(week)} gestiones registradas</span><span class="capture-reading-meta">${selectedPeriod ? 'Meta del período' : 'Meta semanal'}: ${captureNumber(goal)} · Esperado al corte: ${captureNumber(data.expected_to_date)}</span></div><div class="capture-reading-item"><span class="capture-reading-label">Cobertura del equipo</span><strong class="capture-reading-value">${captureNumber(data.executives_met_today)}/${captureNumber(members)}</strong><span class="capture-reading-copy">ejecutivos cumplieron la meta de hoy</span><span class="capture-reading-meta">${captureNumber(data.executives_pending_today)} pendientes</span></div><div class="capture-reading-item"><span class="capture-reading-label">Calidad de actividad</span><strong class="capture-reading-value">${captureNumber(data.effective_contacts)}</strong><span class="capture-reading-copy">contactos efectivos</span><span class="capture-reading-meta">${captureNumber(data.contact_attempts)} intentos · ${captureNumber(data.captures)} captaciones</span></div>`;
+            }
+
+            function captureRenderPeriod(data) {
+                const dates = (data.executives || []).flatMap(executive => (executive.daily || []).map(item => item.date).filter(Boolean)).sort();
+                if (!dates.length) return;
+                const format = value => new Date(`${value}T12:00:00`).toLocaleDateString('es-CL', {day:'2-digit', month:'short'}).replace('.', '');
+                $('captureManagementPeriod').textContent = `${format(dates[0])} – ${format(dates[dates.length - 1])} · ${data.period_selected ? 'período seleccionado' : 'semana operativa'}`;
+                const selectedPeriod = Boolean(data.period_selected);
+                $('captureWeekChartTitle').textContent = CAPTURE_PERIOD_VIEW === 'diario' ? 'Evolución diaria de gestiones' : 'Avance acumulado del período';
+                $('captureWeekChartDescription').textContent = CAPTURE_PERIOD_VIEW === 'diario' ? 'Gestiones realizadas frente a la meta de días hábiles.' : 'Gestiones acumuladas frente a la meta y el período comparable.';
+            }
+            */
+
+            // Vista ejecutiva consolidada: mantiene el contrato de datos y
+            // elimina las repeticiones del diseño anterior.
+            let CAPTURE_TEAM_VIEW = 'coverage';
+            let CAPTURE_FOLLOWUPS_EXPANDED = false;
+            const CAPTURE_FILTERS = {selectedExecutive:null, selectedResult:null, selectedOrigin:null, selectedAging:null, selectedDate:null, selectedCause:null, selectedAssignment:null};
+            const CAPTURE_FILTER_LABELS = {selectedExecutive:'Ejecutivo', selectedResult:'Resultado', selectedOrigin:'Origen', selectedAging:'Antigüedad', selectedDate:'Día', selectedCause:'Causa', selectedAssignment:'Asignación'};
+            function captureClearFilter(key) { CAPTURE_FILTERS[key] = null; if (key === 'selectedExecutive') CAPTURE_FOLLOWUPS_EXPANDED = false; renderCaptacionManagement(CAPTACION_MANAGEMENT_DATA || {}); }
+            function captureSetFilter(key, value) { CAPTURE_FILTERS[key] = CAPTURE_FILTERS[key] === value ? null : value; renderCaptacionManagement(CAPTACION_MANAGEMENT_DATA || {}); }
+            function captureActiveFilters() { return Object.entries(CAPTURE_FILTERS).filter(([, value]) => value != null && value !== '').map(([key, value]) => ({key, value})); }
+            function captureRenderFilterChips() {
+                const wrap = $('captureFilterChips'), list = $('captureFilterChipList');
+                const active = captureActiveFilters();
+                if (!wrap || !list) return;
+                wrap.hidden = !active.length;
+                list.innerHTML = active.map(({key, value}) => `<button type="button" class="capture-filter-chip" data-capture-clear-filter="${captureText(key)}">${captureText(CAPTURE_FILTER_LABELS[key] || key)}: ${captureText(value)}</button>`).join('');
+                list.querySelectorAll('[data-capture-clear-filter]').forEach(button => button.addEventListener('click', () => captureClearFilter(button.dataset.captureClearFilter)));
+                const clear = $('captureClearFilters');
+                if (clear) clear.onclick = () => { Object.keys(CAPTURE_FILTERS).forEach(key => CAPTURE_FILTERS[key] = null); CAPTURE_FOLLOWUPS_EXPANDED = false; renderCaptacionManagement(CAPTACION_MANAGEMENT_DATA || {}); };
+            }
+            function captureApplyLocalFilters(data) {
+                const out = {...data, kpis:{...(data.kpis || {})}};
+                let executives = Array.isArray(data.executives) ? [...data.executives] : [];
+                const selectedExecutive = CAPTURE_FILTERS.selectedExecutive;
+                if (selectedExecutive && selectedExecutive !== 'Sin asignar') executives = executives.filter(row => row.name === selectedExecutive);
+                if (selectedExecutive && selectedExecutive !== 'Sin asignar') {
+                    const row = executives[0];
+                    if (row) {
+                        out.kpis.assigned_current = Number(row.assigned_count) || 0;
+                        out.kpis.managed_unique_period = Number(row.managed_unique_period ?? row.managed_unique_current_portfolio ?? row.managed_current_portfolio ?? row.managed_count) || 0;
+                        out.kpis.managed_unique_current_portfolio = Number(row.managed_unique_current_portfolio ?? row.managed_current_portfolio ?? row.managed_count) || 0;
+                        out.kpis.coverage_current_pct = Number(row.managed_coverage_pct) || 0;
+                        out.kpis.credited = Number(row.credited_count) || 0;
+                        out.kpis.contact_attempts = Number(row.attempts) || 0;
+                        out.kpis.effective_contacts = Number(row.effective_contacts) || 0;
+                        out.kpis.contactability_pct = row.contactability_pct == null ? null : Number(row.contactability_pct);
+                        out.kpis.captures_unique = Number(row.captures_unique) || 0;
+                    }
+                }
+                out.executives = executives;
+                if (selectedExecutive && selectedExecutive !== 'Sin asignar') {
+                    const row = executives[0];
+                    out.response_breakdown = row?.response_breakdown || [];
+                    out.response_total = Number(row?.response_total) || 0;
+                    out.followups = {...(data.followups || {}), overdue_items:(data.followups?.overdue_items || []).filter(item => item.executive === selectedExecutive)};
+                    out.attention = {...(data.attention || {}), cases:(data.attention?.cases || []).filter(item => item.executive === selectedExecutive)};
+                    out.backlog = {...(data.backlog || {}), by_executive:(data.backlog?.by_executive || []).filter(item => item.name === selectedExecutive), total:Number(row?.backlog) || 0};
+                    out.aging = {...(data.aging || {}), by_executive:(data.aging?.by_executive || []).filter(item => item.name === selectedExecutive)};
+                }
+                if (CAPTURE_FILTERS.selectedResult) {
+                    const key = CAPTURE_FILTERS.selectedResult;
+                    out.response_breakdown = (out.response_breakdown || []).filter(item => item.key === key);
+                    out.response_total = (out.response_breakdown || []).reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+                    out.executives = (out.executives || []).map(row => ({...row, response_breakdown:(row.response_breakdown || []).filter(item => item.key === key), response_total:(row.response_breakdown || []).filter(item => item.key === key).reduce((sum, item) => sum + (Number(item.count) || 0), 0)}));
+                    out.kpis.credited = out.response_total;
+                }
+                if (CAPTURE_FILTERS.selectedOrigin) out.source_performance = (data.source_performance || []).filter(row => row.label === CAPTURE_FILTERS.selectedOrigin);
+                if (CAPTURE_FILTERS.selectedAssignment === 'unassigned') { out.executives = []; out.backlog = {...(data.backlog || {}), total:0, by_executive:[]}; out.aging = {...(data.aging || {}), by_executive:[], team:{}}; out.followups = {...(data.followups || {}), overdue_items:[]}; }
+                if (CAPTURE_FILTERS.selectedAging) out.aging = {...out.aging, selected_bucket:CAPTURE_FILTERS.selectedAging};
+                return out;
+            }
+            function captureResponseItems(executive) {
+                return (Array.isArray(executive?.response_breakdown) ? executive.response_breakdown : [])
+                    .map(item => ({...item, count:Number(item.count) || 0}))
+                    .filter(item => item.count > 0);
+            }
+            function captureResponseMap(executive) {
+                return Object.fromEntries(captureResponseItems(executive).map(item => [item.key, item.count]));
+            }
+            function captureGroupValue(map, keys) {
+                return keys.reduce((sum, key) => sum + (Number(map[key]) || 0), 0);
+            }
+            function captureExecutiveGroups(executive) {
+                const map = captureResponseMap(executive);
+                return [
+                    {key:'operativos', label:'Operativos', keys:['por_contactar','en_gestion','mensaje_enviado','contactado','correo_enviado'], tone:'is-operational'},
+                    {key:'resultados', label:'Resultados', keys:['captado'], tone:'is-result'},
+                    {key:'corredor', label:'Corredor', keys:['corredor'], tone:'is-corridor'},
+                    {key:'sin_respuesta', label:'Sin respuesta', keys:['no_respondio','ocupado','solicita_llamada_posterior'], tone:'is-no-response'},
+                    {key:'descartes', label:'Descartes', keys:['descartado','propiedad_no_disponible','publicacion_expirada','no_interesado','numero_invalido'], tone:'is-discard'},
+                    {key:'otros', label:'Otros', keys:[], tone:'is-other'},
+                ].map(group => ({...group, value:captureGroupValue(map, group.keys)}));
+            }
+            function captureResponsePercent(value, total) {
+                return capturePercent(total > 0 ? Number(value || 0) / total * 100 : 0);
+            }
+            function captureRenderKpis(data) {
+                const kpis = data.kpis || {};
+                const assigned = Number(kpis.assigned_current) || 0;
+                const managed = Number(kpis.managed_unique_period) || 0;
+                const coverage = Number(kpis.coverage_current_pct);
+                const credited = Number(kpis.credited) || 0;
+                const goal = Number(kpis.credited_goal) || Number(data.week_goal) || 0;
+                const attempts = Number(kpis.contact_attempts) || 0;
+                const effective = Number(kpis.effective_contacts) || 0;
+                const captures = Number(kpis.captures_unique) || 0;
+                const contactability = kpis.contactability_pct == null ? null : Number(kpis.contactability_pct);
+                const periodLabel = data.period_start && data.period_end ? `${data.period_start} – ${data.period_end}` : 'Período operativo';
+                if ($('captureKpiAssigned')) $('captureKpiAssigned').textContent = captureNumber(assigned);
+                if ($('captureKpiAssignedMeta')) $('captureKpiAssignedMeta').textContent = 'Stock actual asignado al equipo';
+                if ($('captureKpiManaged')) $('captureKpiManaged').textContent = captureNumber(managed);
+                if ($('captureKpiManagedMeta')) $('captureKpiManagedMeta').textContent = `${captureNumber(kpis.managed_unique_current_portfolio)} sobre la cartera actual · período: ${captureNumber(managed)}`;
+                if ($('captureKpiCoverage')) $('captureKpiCoverage').textContent = coverage == null ? '—' : capturePercent(coverage);
+                if ($('captureKpiCoverageMeta')) $('captureKpiCoverageMeta').textContent = `${captureNumber(kpis.managed_unique_current_portfolio)} gestionadas / ${captureNumber(assigned)} asignadas`;
+                if ($('captureKpiCredited')) $('captureKpiCredited').innerHTML = `${captureNumber(credited)} <small>de ${captureNumber(goal)}</small>`;
+                if ($('captureKpiCreditedMeta')) $('captureKpiCreditedMeta').textContent = `${capturePercent(captureWidth(credited, goal))} de avance · ${captureNumber(Math.max(0, goal - credited))} brecha a meta`;
+                if ($('captureKpiContactability')) $('captureKpiContactability').textContent = contactability == null ? '—' : capturePercent(contactability);
+                if ($('captureKpiContactabilityMeta')) $('captureKpiContactabilityMeta').textContent = `${captureNumber(effective)} efectivos / ${captureNumber(attempts)} intentos`;
+                if ($('captureKpiCaptured')) $('captureKpiCaptured').textContent = captureNumber(captures);
+                if ($('captureKpiCapturedMeta')) $('captureKpiCapturedMeta').textContent = `${capturePercent(Number(kpis.capture_rate_managed_pct) || 0)} sobre únicas gestionadas`;
+                captureSetProgress('captureKpiCreditedProgress', captureWidth(credited, goal));
+                if ($('captureManagementPeriod')) $('captureManagementPeriod').textContent = periodLabel;
+            }
+            function captureBindCompositionInteractions() {
+                const root = $('captureExecutiveChart');
+                const tooltip = $('captureTeamTooltip');
+                if (!root || !tooltip || root.dataset.compositionTooltipBound) return;
+                root.dataset.compositionTooltipBound = '1';
+                if (tooltip.parentElement !== document.body) document.body.appendChild(tooltip);
+                let activeSegment = null;
+                const clear = () => {
+                    root.querySelectorAll('.capture-team-stack').forEach(stack => {
+                        stack.classList.remove('is-hovering');
+                        stack.querySelectorAll('.capture-team-segment').forEach(segment => segment.classList.remove('is-active', 'is-dimmed'));
+                    });
+                    root.querySelectorAll('.capture-response-legend-item').forEach(item => item.classList.remove('is-active', 'is-dimmed'));
+                    activeSegment = null;
+                    tooltip.hidden = true;
+                };
+                const highlightGroup = groupKey => {
+                    root.querySelectorAll('.capture-team-stack').forEach(stack => stack.classList.add('is-hovering'));
+                    root.querySelectorAll('.capture-team-segment').forEach(segment => {
+                        const isMatch = segment.dataset.captureGroupKey === groupKey;
+                        segment.classList.toggle('is-active', isMatch);
+                        segment.classList.toggle('is-dimmed', !isMatch);
+                    });
+                    root.querySelectorAll('.capture-response-legend-item').forEach(item => {
+                        const isMatch = item.dataset.captureGroupKey === groupKey;
+                        item.classList.toggle('is-active', isMatch);
+                        item.classList.toggle('is-dimmed', !isMatch);
+                    });
+                };
+                const position = segment => {
+                    const rect = segment.getBoundingClientRect();
+                    const margin = 10;
+                    const gap = 10;
+                    const width = Math.min(270, window.innerWidth - margin * 2);
+                    tooltip.style.width = width + 'px';
+                    const height = tooltip.offsetHeight;
+                    const clampLeft = left => Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+                    const candidates = [
+                        {left:rect.left + rect.width / 2 - width / 2, top:rect.top - height - gap},
+                        {left:rect.right + gap, top:rect.top + rect.height / 2 - height / 2},
+                        {left:rect.left - width - gap, top:rect.top + rect.height / 2 - height / 2},
+                        {left:rect.left + rect.width / 2 - width / 2, top:rect.bottom + gap},
+                    ].map(candidate => ({...candidate, left:clampLeft(candidate.left)}));
+                    const fits = candidate => candidate.top >= margin && candidate.top + height <= window.innerHeight - margin;
+                    const chosen = candidates.find(fits) || candidates[3];
+                    tooltip.style.left = chosen.left + 'px';
+                    tooltip.style.top = Math.max(margin, Math.min(window.innerHeight - height - margin, chosen.top)) + 'px';
+                };
+                const show = segment => {
+                    if (!segment.dataset.captureGroupKey) return;
+                    highlightGroup(segment.dataset.captureGroupKey);
+                    activeSegment = segment;
+                    tooltip.innerHTML = segment.dataset.captureTooltip || '';
+                    tooltip.hidden = false;
+                    position(segment);
+                };
+                root.addEventListener('pointerover', event => {
+                    const segment = event.target.closest?.('.capture-team-segment');
+                    const legendItem = event.target.closest?.('.capture-response-legend-item');
+                    if (segment && root.contains(segment)) show(segment);
+                    else if (legendItem && root.contains(legendItem)) highlightGroup(legendItem.dataset.captureGroupKey);
+                });
+                root.addEventListener('pointerout', event => {
+                    const fromInteractive = event.target.closest?.('.capture-team-segment, .capture-response-legend-item');
+                    const toInteractive = event.relatedTarget?.closest?.('.capture-team-segment, .capture-response-legend-item');
+                    if (fromInteractive && !toInteractive) clear();
+                });
+                root.addEventListener('focusin', event => {
+                    const segment = event.target.closest?.('.capture-team-segment');
+                    const legendItem = event.target.closest?.('.capture-response-legend-item');
+                    if (segment) show(segment);
+                    else if (legendItem) highlightGroup(legendItem.dataset.captureGroupKey);
+                });
+                root.addEventListener('focusout', event => { if (!event.relatedTarget?.closest?.('.capture-team-segment, .capture-response-legend-item')) clear(); });
+                window.addEventListener('scroll', clear, true);
+                window.addEventListener('resize', () => { if (activeSegment && !tooltip.hidden) position(activeSegment); });
+            }
+            function captureRenderExecutives(data) {
+                const root = $('captureExecutiveChart');
+                if (!root) return;
+                const teamTooltip = $('captureTeamTooltip');
+                if (teamTooltip) teamTooltip.hidden = true;
+                const responsesPanel = $('captureResponsesPanel');
+                if (responsesPanel) {
+                    const hideResponses = CAPTURE_TEAM_VIEW === 'detail';
+                    responsesPanel.hidden = hideResponses;
+                    responsesPanel.setAttribute('aria-hidden', hideResponses ? 'true' : 'false');
+                }
+                const executives = [...(Array.isArray(data.executives) ? data.executives : [])].sort((a, b) => (Number(b.managed_coverage_pct) || 0) - (Number(a.managed_coverage_pct) || 0) || (Number(b.managed_count) || 0) - (Number(a.managed_count) || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+                document.querySelectorAll('[data-capture-team-view]').forEach(button => {
+                    const active = button.dataset.captureTeamView === CAPTURE_TEAM_VIEW;
+                    button.classList.toggle('is-active', active);
+                    button.setAttribute('aria-selected', active ? 'true' : 'false');
+                    if (!button.dataset.bound) {
+                        button.dataset.bound = '1';
+                        button.addEventListener('click', () => { CAPTURE_TEAM_VIEW = button.dataset.captureTeamView || 'coverage'; captureRenderExecutives(CAPTACION_MANAGEMENT_DATA || data); });
+                    }
+                });
+                const descriptions = {coverage:'Gestiones registradas sobre la cartera asignada a cada integrante.',composition:'Distribución de los resultados de gestión de cada integrante.',detail:'Comparación exacta por ejecutivo: cantidad y porcentaje de cada resultado.'};
+                if ($('captureExecutiveChartDescription')) $('captureExecutiveChartDescription').textContent = descriptions[CAPTURE_TEAM_VIEW];
+                if ($('captureExecutiveChartMeta')) $('captureExecutiveChartMeta').textContent = `${captureNumber(executives.length)} ejecutivos activos`;
+                if (!executives.length) { root.innerHTML = '<div class="capture-status-empty">Sin integrantes activos para mostrar.</div>'; return; }
+                if (CAPTURE_TEAM_VIEW === 'detail') {
+                    root.innerHTML = `<div class="capture-team-detail-compact"><table><thead><tr><th>Ejecutivo</th><th>Cobertura</th><th>Actividad</th><th>Contactabilidad</th><th>Captadas</th><th>Vencidos</th><th>Backlog</th><th>1ª gestión</th></tr></thead><tbody>${executives.map(row => { const managed = Number(row.managed_unique_current_portfolio ?? row.managed_current_portfolio ?? row.managed_count) || 0, assigned = Number(row.assigned_count) || 0, attempts = Number(row.attempts) || 0, effective = Number(row.effective_contacts) || 0; return `<tr data-capture-executive="${captureText(row.name)}"><td><b>${captureText(row.name)}</b></td><td title="${captureText(`${managed} de ${assigned} asignadas`)}"><b>${captureNumber(managed)} / ${captureNumber(assigned)}</b><small>${capturePercent(Number(row.managed_coverage_pct) || 0)}</small></td><td><b>${captureNumber(row.credited_count)}</b><small>acreditadas</small></td><td title="${captureText(`${effective} efectivos de ${attempts} intentos`)}"><b>${captureNumber(effective)} / ${captureNumber(attempts)}</b><small>${row.contactability_pct == null ? '—' : capturePercent(row.contactability_pct)}</small></td><td><b>${captureNumber(row.captures_unique)}</b></td><td><b>${captureNumber(row.followups_overdue)}</b></td><td><b>${captureNumber(row.backlog)}</b></td><td title="${row.first_action_p50_minutes == null ? 'Sin muestra' : captureText(`${captureNumber(row.first_action_p50_minutes)} minutos`)}"><b>${captureHumanizeMinutes(row.first_action_p50_minutes)}</b><small>mediana</small></td></tr>`; }).join('')}</tbody></table></div>`;
+                    root.querySelectorAll('[data-capture-executive]').forEach(row => row.addEventListener('click', () => captureSetFilter('selectedExecutive', row.dataset.captureExecutive)));
+                    return;
+                }
+                if (CAPTURE_TEAM_VIEW === 'composition') {
+                    const legend = captureExecutiveGroups(executives[0]).map(group => `<span class="capture-response-legend-item" data-capture-group-key="${captureText(group.key)}" role="button" tabindex="0"><i class="${group.tone}" aria-hidden="true"></i>${group.label}</span>`).join('');
+                    root.innerHTML = `<div class="capture-response-legend" aria-label="Leyenda de composición">${legend}</div>${executives.map(executive => { const total = Number(executive.response_total) || 0, groups = captureExecutiveGroups(executive), groupedTotal = groups.slice(0,-1).reduce((sum, group) => sum + group.value, 0), other = Math.max(0, total - groupedTotal); groups[groups.length - 1].value = other; const segments = groups.filter(group => group.value > 0).map(group => { const detail = group.keys.length ? captureResponseItems(executive).filter(item => group.keys.includes(item.key)).map(item => `${item.label}: ${captureNumber(item.count)}`).join(' · ') : 'Otros resultados'; const tooltip = `<strong>${captureText(executive.name)}</strong><span class="capture-team-tooltip-group">${captureText(group.label)}</span><span>${captureNumber(group.value)} gestiones</span><small>${captureResponsePercent(group.value, total)} del total del ejecutivo</small><small>${captureText(detail)}</small>`; return `<i class="capture-team-segment ${group.tone}" style="width:${captureWidth(group.value, total)}%" data-capture-group-key="${captureText(group.key)}" data-capture-tooltip="${captureText(tooltip)}" tabindex="0" aria-label="${captureText(executive.name + ', ' + group.label + ': ' + captureNumber(group.value) + ' gestiones')}"></i>`; }).join(''); return `<div class="capture-team-row" data-capture-executive="${captureText(executive.name)}"><span class="capture-team-name">${captureText(executive.name)}</span><div class="capture-team-stack">${segments}</div><span class="capture-team-meta"><b>${captureNumber(total)}</b> gestiones</span></div>`; }).join('')}`;
+                    root.querySelectorAll('[data-capture-executive]').forEach(row => row.addEventListener('click', event => { if (event.target.closest('.capture-team-segment')) return; captureSetFilter('selectedExecutive', row.dataset.captureExecutive); }));
+                    captureBindCompositionInteractions();
+                    return;
+                }
+                root.innerHTML = executives.map(executive => { const assigned = Number(executive.assigned_count) || 0, managed = Number(executive.managed_unique_current_portfolio ?? executive.managed_current_portfolio ?? executive.managed_count) || 0, coverage = captureWidth(managed, assigned); return `<div class="capture-team-row${CAPTURE_FILTERS.selectedExecutive === executive.name ? ' is-selected' : ''}" data-capture-executive="${captureText(executive.name)}"><span class="capture-team-name" title="${captureText(executive.name)}">${captureText(executive.name)}</span><div class="capture-team-track"><i class="capture-team-fill" style="width:${coverage}%"></i></div><span class="capture-team-meta"><b>${captureNumber(managed)}/${captureNumber(assigned)}</b> · ${capturePercent(coverage)}</span></div>`; }).join('');
+                root.querySelectorAll('[data-capture-executive]').forEach(row => row.addEventListener('click', () => captureSetFilter('selectedExecutive', row.dataset.captureExecutive)));
+            }
+            function captureRenderResponses(data) {
+                const barsRoot = $('captureResultsBars');
+                if (!barsRoot) return;
+                const breakdown = [...(Array.isArray(data.response_breakdown) ? data.response_breakdown : [])].map(item => ({...item, count:Number(item.count) || 0})).filter(item => item.count > 0).sort((a, b) => b.count - a.count || String(a.label || '').localeCompare(String(b.label || '')));
+                const responseTotal = Number(data.response_total) || breakdown.reduce((sum, item) => sum + item.count, 0);
+                const maxCount = Math.max(1, ...breakdown.map(item => item.count));
+                const captureResultColor = key => {
+                    const normalized = String(key || '').toLowerCase();
+                    if (normalized.includes('capt')) return '#34d399';
+                    if (normalized.includes('corredor') || normalized.includes('contact') || normalized.includes('mensaje')) return '#38bdf8';
+                    if (normalized.includes('seguimiento') || normalized.includes('por_contactar') || normalized.includes('llamar') || normalized.includes('ocupad')) return '#fbbf24';
+                    if (normalized.includes('descart') || normalized.includes('expir') || normalized.includes('interesado') || normalized.includes('invalid') || normalized.includes('no_disponible')) return '#64748b';
+                    return '#8b7cf6';
+                };
+                barsRoot.innerHTML = breakdown.length ? breakdown.map(item => {
+                    const pct = captureResponsePercent(item.count, responseTotal);
+                    const width = Math.max(12, item.count / maxCount * 100);
+                    const tooltip = `${item.label}: ${captureNumber(item.count)} gestiones · ${pct} del total`;
+                    const selected = CAPTURE_FILTERS.selectedResult === item.key ? ' is-selected' : '';
+                    return `<div class="portal-funnel-stage-row capture-results-funnel-stage${selected}" data-capture-result="${captureText(item.key)}" aria-label="${captureText(tooltip)}" title="${captureText(tooltip)}"><div class="portal-funnel-stage-label"><span>${captureText(item.label)}</span><strong>${captureNumber(item.count)}</strong><small>${pct}</small></div><div class="portal-funnel-stage-rail"><div class="capture-results-funnel-stage-bar" style="--stage-width:${width}%;"><i style="--result-color:${captureResultColor(item.key)}"></i></div></div></div>`;
+                }).join('') : '<div class="capture-status-empty">Sin resultados registrados en el período.</div>';
+                barsRoot.classList.remove('portal-funnel-reveal');
+                barsRoot.querySelectorAll('[data-capture-result]').forEach(row => row.addEventListener('click', () => captureSetFilter('selectedResult', row.dataset.captureResult)));
+                barsRoot.querySelector('.capture-results-funnel-silhouette')?.remove();
+                const stackRect = barsRoot.getBoundingClientRect();
+                if (breakdown.length && stackRect.width && stackRect.height) {
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.classList.add('portal-funnel-silhouette', 'capture-results-funnel-silhouette');
+                    svg.setAttribute('viewBox', `0 0 ${stackRect.width} ${stackRect.height}`);
+                    const bounds = [...barsRoot.querySelectorAll('.capture-results-funnel-stage')].map(row => {
+                        const rect = row.querySelector('.capture-results-funnel-stage-bar')?.getBoundingClientRect();
+                        if (!rect) return null;
+                        return {left:rect.left - stackRect.left, right:rect.right - stackRect.left, y:rect.top - stackRect.top + rect.height / 2};
+                    });
+                    for (let index = 0; index < bounds.length - 1; index += 1) {
+                        const current = bounds[index], next = bounds[index + 1];
+                        if (!current || !next) continue;
+                        [['left','left'],['right','right']].forEach(([from, to]) => {
+                            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                            line.setAttribute('x1', current[from]); line.setAttribute('y1', current.y); line.setAttribute('x2', next[to]); line.setAttribute('y2', next.y); svg.appendChild(line);
+                        });
+                    }
+                    barsRoot.insertBefore(svg, barsRoot.firstChild);
+                }
+                requestAnimationFrame(() => barsRoot.classList.add('portal-funnel-reveal'));
+                if ($('captureResultsMeta')) $('captureResultsMeta').textContent = `${captureNumber(responseTotal)} gestiones acreditadas · ${captureNumber(breakdown.length)} resultados`;
+            }
+
+            const captureFormatDate = value => value ? new Date(value).toLocaleDateString('es-CL', {day:'2-digit', month:'short'}).replace('.', '') : '—';
+            const captureFormatMinutes = value => value == null ? '—' : `${captureNumber(value)} min`;
+            const captureHumanizeMinutes = value => { if (value == null || !Number.isFinite(Number(value))) return '—'; const minutes = Math.max(0, Math.round(Number(value))); if (minutes < 60) return `${minutes} min`; const hours = Math.floor(minutes / 60), days = Math.floor(hours / 24), restHours = hours % 24; return days ? `${days} d${restHours ? ` ${restHours} h` : ''}` : `${hours} h`; };
+            const captureAgingColor = key => ({d_0_1:'#34d399',d_2_3:'#22d3ee',d_4_5:'#60a5fa',d_6_10:'#fbbf24',d_11_20:'#fb923c',d_21_30:'#f97316',d_31_60:'#ef4444',gt_60:'#b91c1c',missing_date:'#64748b'})[key] || '#64748b';
+            function captureRenderControl(data) {
+                const rows = Array.isArray(data.executives) ? data.executives : [], aging = data.aging || {}, labels = aging.labels || {}, order = ['d_0_1','d_2_3','d_4_5','d_6_10','d_11_20','d_21_30','d_31_60','gt_60','missing_date'];
+                const agingSummary = $('captureAgingSummary');
+                if (agingSummary) agingSummary.innerHTML = order.map(key => `<span class="${CAPTURE_FILTERS.selectedAging === key ? 'is-selected' : ''}" data-capture-aging="${key}"><b>${captureNumber(aging.team?.[key])}</b><small>${captureText(labels[key] || key)}</small></span>`).join('');
+                agingSummary?.querySelectorAll('[data-capture-aging]').forEach(item => item.addEventListener('click', () => captureSetFilter('selectedAging', item.dataset.captureAging)));
+                const rowsRoot = $('captureBacklogRows');
+                const backlogRows = (aging.by_executive || []).filter(row => (data.backlog?.by_executive || []).some(item => item.name === row.name && Number(item.backlog) > 0));
+                if (rowsRoot) rowsRoot.innerHTML = backlogRows.map(row => { const total = Number((data.backlog?.by_executive || []).find(item => item.name === row.name)?.backlog) || 0; return `<div class="capture-backlog-row"><span class="capture-backlog-row-name" title="${captureText(row.name)}">${captureText(row.name)}</span><div class="capture-backlog-stack">${order.map(key => { const count = Number(row.buckets?.[key]) || 0; return count ? `<i class="capture-backlog-segment" data-capture-aging="${key}" style="width:${captureWidth(count,total)}%;background:${captureAgingColor(key)}" title="${captureText(`${labels[key] || key}: ${captureNumber(count)}`)}"></i>` : ''; }).join('')}</div><span class="capture-backlog-row-total">${captureNumber(total)}</span></div>`; }).join('') || '<div class="capture-management-empty">Sin backlog actual.</div>';
+                rowsRoot?.querySelectorAll('[data-capture-aging]').forEach(item => item.addEventListener('click', () => captureSetFilter('selectedAging', item.dataset.captureAging)));
+                if ($('captureBacklogTeamValue')) $('captureBacklogTeamValue').textContent = captureNumber(data.backlog?.total);
+                if ($('captureBacklogUnassignedValue')) $('captureBacklogUnassignedValue').textContent = captureNumber(data.backlog?.unassigned);
+                if ($('captureBacklogMeta')) $('captureBacklogMeta').textContent = `${captureNumber(data.backlog?.total)} pendientes actuales`;
+                const teamButton = $('captureBacklogTeamButton'); if (teamButton && !teamButton.dataset.bound) { teamButton.dataset.bound = '1'; teamButton.addEventListener('click', () => captureClearFilter('selectedAssignment')); }
+                const unassigned = $('captureBacklogUnassignedButton'); if (unassigned && !unassigned.dataset.bound) { unassigned.dataset.bound = '1'; unassigned.addEventListener('click', () => captureSetFilter('selectedAssignment', 'unassigned')); }
+            }
+            function captureRenderFollowups(data) {
+                const followups = data.followups || {};
+                if ($('captureFollowupSummary')) $('captureFollowupSummary').innerHTML = `<span><b>${captureNumber(followups.today)}</b><small>Hoy</small></span><span class="is-alert"><b>${captureNumber(followups.overdue)}</b><small>Vencidos</small></span><span><b>${captureNumber(followups.upcoming)}</b><small>Próximos</small></span>`;
+                const body = $('captureFollowupTableBody');
+                const rows = followups.overdue_items || [];
+                const visibleRows = CAPTURE_FOLLOWUPS_EXPANDED ? rows : rows.slice(0, 8);
+                const lateDays = row => { const time = Date.parse(row.next_followup || ''); return Number.isFinite(time) ? Math.max(1, Math.floor((Date.now() - time) / 86400000)) : null; };
+                if (body) body.innerHTML = visibleRows.map(row => `<tr><td title="${captureText(row.next_followup || '')}">${captureFormatDate(row.next_followup)}</td><td><a href="${captureText(row.action_url)}" title="${captureText(row.title)}">${captureText(row.title)}</a></td><td>${captureText(row.executive)}</td><td>${captureText(row.status)}</td><td>${lateDays(row) == null ? '—' : `${captureNumber(lateDays(row))} d`}</td><td><a href="${captureText(row.action_url)}">Abrir</a></td></tr>`).join('') || '<tr><td colspan="6">No hay seguimientos vencidos.</td></tr>';
+                const more = $('captureFollowupMore');
+                if (more) { more.hidden = rows.length <= 8; more.textContent = CAPTURE_FOLLOWUPS_EXPANDED ? 'Mostrar menos' : `Ver los ${captureNumber(followups.overdue)} vencidos`; if (!more.dataset.bound) { more.dataset.bound = '1'; more.addEventListener('click', () => { CAPTURE_FOLLOWUPS_EXPANDED = !CAPTURE_FOLLOWUPS_EXPANDED; captureRenderFollowups(CAPTACION_MANAGEMENT_DATA || data); }); } }
+                if ($('captureFollowupMeta')) $('captureFollowupMeta').textContent = `${captureNumber(followups.overdue)} vencidos · ${captureNumber(visibleRows.length)} visibles`;
+            }
+            function captureRenderAttention(data) {
+                const attention = data.attention || {}, counts = attention.counts || {}, causeLabels = {no_first_management:'Sin primera gestión',overdue_followups:'Seguimientos vencidos',unassigned:'Sin responsable',backlog_critical:'Backlog > 10 días',anomalies:'Anomalías de datos'}, causesRoot = $('captureAttentionCauses'), root = $('captureAttentionCases');
+                const causeKeys = Object.keys(causeLabels).filter(key => Number(counts[key]) > 0).slice(0, 5);
+                if (causesRoot) { causesRoot.innerHTML = causeKeys.map(key => `<button type="button" class="capture-attention-cause${CAPTURE_FILTERS.selectedCause === key ? ' is-selected' : ''}" data-capture-cause="${key}"><b>${captureNumber(counts[key])}</b><span>${captureText(causeLabels[key])}</span></button>`).join(''); causesRoot.querySelectorAll('[data-capture-cause]').forEach(button => button.addEventListener('click', () => { const key = button.dataset.captureCause; CAPTURE_FILTERS.selectedCause = CAPTURE_FILTERS.selectedCause === key ? null : key; if (key === 'unassigned') CAPTURE_FILTERS.selectedAssignment = CAPTURE_FILTERS.selectedAssignment === 'unassigned' ? null : 'unassigned'; renderCaptacionManagement(CAPTACION_MANAGEMENT_DATA || data); })); }
+                let cases = (attention.cases || []).slice();
+                if (CAPTURE_FILTERS.selectedCause) { const key = CAPTURE_FILTERS.selectedCause; cases = cases.filter(item => key === 'unassigned' ? item.executive === 'Sin asignar' : key === 'overdue_followups' ? /vencid/i.test(item.reason || '') : key === 'no_first_management' ? /gesti[oó]n|contactar/i.test(item.reason || '') : key === 'backlog_critical' ? /backlog|antigüedad|d[ií]a/i.test(item.reason || '') : key === 'anomalies' ? /anomal/i.test(item.reason || '') : true); }
+                if (root) root.innerHTML = cases.slice(0, 10).map(item => `<a class="capture-attention-case" href="${captureText(item.action_url)}"><strong>${captureText(item.reason)}</strong><span>${captureText(item.title)}</span><small>${captureText(item.executive)} · ${captureText(item.commune)} · ${captureText(item.status)}</small></a>`).join('') || '<div class="capture-management-empty">Sin casos priorizados.</div>';
+                if ($('captureAttentionMeta')) $('captureAttentionMeta').textContent = `${captureNumber(attention.total)} señales · ${captureNumber(Math.min(10, cases.length))} casos mostrados`;
+            }
+            function captureRenderSources(data) {
+                const rows = data.source_performance || [], root = $('captureSourceCards');
+                if (root) root.innerHTML = rows.map(row => `<button type="button" class="capture-source-card${CAPTURE_FILTERS.selectedOrigin === row.label ? ' is-selected' : ''}" data-capture-origin="${captureText(row.label)}"><div class="capture-source-card-head"><strong>${captureText(row.label)}</strong><span>${row.coverage_pct == null ? '—' : capturePercent(row.coverage_pct)} cobertura</span></div><div class="capture-source-card-grid"><span>Asignadas<b>${captureNumber(row.assigned)}</b></span><span>Gestionadas<b>${captureNumber(row.managed_unique)}</b></span><span>Contactabilidad<b>${row.contactability_pct == null ? '—' : capturePercent(row.contactability_pct)}</b></span><span>Intentos<b>${captureNumber(row.attempts)}</b></span><span>Efectivos<b>${captureNumber(row.effective_contacts)}</b></span><span>Captadas<b>${captureNumber(row.captures_unique)}</b></span></div></button>`).join('') || '<div class="capture-management-empty">Sin fuentes para mostrar.</div>';
+                root?.querySelectorAll('[data-capture-origin]').forEach(card => card.addEventListener('click', () => captureSetFilter('selectedOrigin', card.dataset.captureOrigin)));
+                if ($('captureSourceMeta')) $('captureSourceMeta').textContent = `${captureNumber(rows.length)} orígenes`;
+            }
+
+            function renderCaptacionManagement(data) {
+                const viewData = captureApplyLocalFilters(data || {});
+                captureRenderFilterChips();
+                captureRenderKpis(viewData);
+                captureRenderPeriodChart(viewData);
+                captureRenderExecutives(viewData);
+                captureRenderResponses(viewData);
+                captureRenderControl(viewData);
+                captureRenderFollowups(viewData);
+                captureRenderAttention(viewData);
+                captureRenderSources(viewData);
+                const root = $('captureManagementDashboard');
+                if (root) { root.classList.remove('capture-management-pending'); root.classList.add('capture-management-reveal'); root.setAttribute('aria-busy', 'false'); }
+            }
+
+            function captureRenderError() {
+                const message = '<div class="capture-management-empty">No fue posible actualizar la gestión de captación. Intenta nuevamente.</div>';
+                if ($('captureWeekChart')) $('captureWeekChart').innerHTML = message;
+                if ($('captureExecutiveChart')) $('captureExecutiveChart').innerHTML = message;
+                const root = $('captureManagementDashboard');
+                if (root) { root.classList.remove('capture-management-pending'); root.setAttribute('aria-busy', 'false'); }
+            }
+
+            async function loadCaptacionManagementData() {
+                const requestId = ++CAPTACION_MANAGEMENT_REQUEST;
+                const root = $('captureManagementDashboard');
+                if (root) { root.classList.remove('capture-management-reveal'); root.classList.add('capture-management-pending'); root.setAttribute('aria-busy', 'true'); }
+                try {
+                    const params = new URLSearchParams();
+                    if (FILTERS.period_start) params.set('period_start', FILTERS.period_start);
+                    if (FILTERS.period_end) params.set('period_end', FILTERS.period_end);
+                    const query = params.toString();
+                    const response = await fetch(`/api/leads-dashboard/captacion-management${query ? `?${query}` : ''}`, {headers:{Accept:'application/json'}, credentials:'same-origin', cache:'no-store'});
+                    if (!response.ok) throw new Error(`Gestión de captación ${response.status}`);
+                    const data = await response.json();
+                    if (requestId !== CAPTACION_MANAGEMENT_REQUEST) return null;
+                    CAPTACION_MANAGEMENT_DATA = data;
+                    renderCaptacionManagement(data);
+                    return data;
+                } catch (error) {
+                    if (requestId === CAPTACION_MANAGEMENT_REQUEST) captureRenderError();
+                    throw error;
+                }
+            }
+
             // --- 5. INIT ---
             document.addEventListener('DOMContentLoaded', () => {
                 readUrlFilters();
@@ -8597,15 +9564,21 @@
                         execView.style.visibility = 'hidden';
                         resetExecutiveReveal(false);
                     }
-                    const ids = ['executive', 'leads', 'properties', 'channels'];
+                    const ids = ['executive', 'leads', 'properties', 'channels', 'captacion'];
                     ids.forEach(id => {
                         const el = document.getElementById('view' + id.charAt(0).toUpperCase() + id.slice(1));
                         if (el) el.hidden = (id !== tabId);
                     });
+                    if (tabId === 'captacion') {
+                        const scrollRoot = document.querySelector('.main-content');
+                        if (scrollRoot) scrollRoot.scrollTo({top:0, left:0, behavior:'auto'});
+                        window.scrollTo({top:0, left:0, behavior:'auto'});
+                    }
                     const msel = $('mobileTabSelect');
                     if (msel) msel.value = tabId;
                     if (tabId === 'leads') loadOperationalData().catch(e=>console.error('Error cargando gestión operativa:', e));
                     if (tabId === 'properties') loadInventoryData().catch(e=>console.error('Error cargando inventario:', e));
+                    if (tabId === 'captacion') loadCaptacionManagementData().catch(e=>console.error('Error cargando gestión de captación:', e));
                     if (tabId === 'channels') {
                         portalHeaderHasRendered = false;
                         if (OVERVIEW) renderPortalAnalysis();
@@ -8709,6 +9682,7 @@
                     });
                 }
                 document.addEventListener('click', e => { const btn=e.target.closest('[data-ops-priority]'); if(btn){ const el=$('opsPriorityFilter'); if(el){el.value=btn.dataset.opsPriority; loadOperationalData().catch(err=>console.error(err)); el.scrollIntoView({behavior:'smooth',block:'center'}); } } const leadBtn=e.target.closest('[data-lead-id]'); if(leadBtn && leadBtn.dataset.leadId) window.open('/crm?lead_id='+encodeURIComponent(leadBtn.dataset.leadId),'_blank'); });
+                document.addEventListener('click', e => { if (!e.target.closest('#captureClearFilters')) return; Object.keys(CAPTURE_FILTERS).forEach(key => CAPTURE_FILTERS[key] = null); CAPTURE_FOLLOWUPS_EXPANDED = false; renderCaptacionManagement(CAPTACION_MANAGEMENT_DATA || {}); });
 
                 document.querySelectorAll('#presetSeg button').forEach(btn => {
                     btn.addEventListener('click', () => setPeriod(btn.dataset.p));

@@ -23,9 +23,6 @@ from analytics.demand_forecast import (
     forecast_metrics,
     naive_moving_average,
 )
-from review_fixtures import territorial_review_payload
-
-
 def prop(code, *, venta=True, arriendo=False, tipo="Casa", comuna="Santiago", responsable="Ana", leads=0):
     return {
         "codigo": code,
@@ -127,20 +124,6 @@ def test_territorial_review_final_navigation_uses_one_map_and_preserves_zone_sta
     assert "GEO_ZONE = button.dataset.geoZone" in template
     assert "projection = d3.geoMercator().fitExtent(extent, collection)" in template
     assert "Escala comunal dentro de la región" in template
-
-
-def test_review_fixture_contains_sanitized_rm_communal_demand():
-    payload = territorial_review_payload()
-    communes = payload["demand_intelligence"]["geography"]["commune"]
-    assert sum(row["leads"] for row in communes) == 175
-    assert all(row["region_geo_key"] == "metropolitana" for row in communes)
-    values = {row["name"]: row["leads"] for row in communes}
-    assert values["Santiago"] == 48
-    assert values["Puente Alto"] == 20
-    assert values["Quilicura"] == 19
-    assert values["Ñuñoa"] == 17
-    assert values["Providencia"] == 12
-    assert {row["name"] for row in communes if row["top_segments"]} == {"Santiago", "Ñuñoa", "Providencia"}
 
 
 def test_review_communal_frontend_merges_geojson_and_uses_regional_metric_contract():
@@ -403,81 +386,6 @@ def test_official_geojson_reconciles_administrative_regions_and_communes():
     assert len({row["properties"].get("Comuna") for row in administrative_communes}) == 345
 
 
-def test_public_review_fixture_is_sanitized_and_deterministic():
-    first = territorial_review_payload()
-    second = territorial_review_payload()
-    regions = first["demand_intelligence"]["geography"]["region"]
-    assert first == second
-    assert len(regions) == 16
-    assert sum(row["leads"] for row in regions) == 297
-    assert first["inventory"]["active"] == 442
-    assert all("phone" not in str(first).lower() and "email" not in str(first).lower() for _ in [0])
-
-
-def test_review_mode_isolated_from_private_navigation_and_overview_loads():
-    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
-    assert "territorial-review-mode" in template
-    assert "api/review/leads-dashboard" in template
-    assert "if (REVIEW_MODE)" in template
-    assert "territorial-review-mode .sidebar-main-nav" in template
-    assert "territorial-review-mode #sessionWarningModal" in template
-
-
-def test_review_template_does_not_render_private_views_or_session_modal():
-    from jinja2 import Template
-
-    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
-    rendered = Template(template).render(territorial_review=True, public_demo=False, user_role="")
-    assert '<div id="viewExecutive"' not in rendered
-    assert '<div id="viewLeads"' not in rendered
-    assert '<div id="viewChannels"' not in rendered
-    assert '<div class="modal fade" id="sessionWarningModal"' not in rendered
-    assert 'Listado Leads' not in rendered
-    assert 'Captaciones</span>' not in rendered
-    assert 'Convenios</span>' not in rendered
-    assert 'Órdenes de Visita</span>' not in rendered
-    assert 'Cerrar Sesión' not in rendered
-    assert 'Sesión por' not in rendered
-
-
-def test_review_hardening_uses_production_responsive_css_and_generic_commune_contract():
-    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
-    assert ".geo-mobile-fold-select { display:flex" in template
-    assert "body.territorial-review-mode .geo-mobile-fold-select" not in template
-    assert "body.territorial-review-mode .geo-mobile-hero" not in template
-    assert ".geo-folded-panel .geo-feature { opacity:1; }" in template
-    assert ".attr('opacity',.55).transition().duration(240).attr('opacity',1)" in template
-    assert "communes_by_region" in template
-    assert "geo.communes_by_region?.[regionKey]" in template
-    assert "if(key!=='metropolitana')return" not in template
-    assert "DEMAND_BREAKDOWN_REGION=key" in template
-    assert "DEMAND_BREAKDOWN_REGION=null" in template
-
-
-def test_review_fixture_exposes_grouped_region_drilldown_examples():
-    payload = territorial_review_payload()
-    row = payload["demand_intelligence"]["dimensions"]["type"][0]
-    grouped = row["geo_breakdown"]["communes_by_region"]
-    assert "metropolitana" in grouped
-    assert "valparaiso" in grouped
-    assert "maule" in grouped
-    assert any(item["name"] == "Valparaíso" for item in grouped["valparaiso"])
-    assert any(item["name"] == "Talca" for item in grouped["maule"])
-
-
-def test_review_mode_exposes_complete_sanitized_demand_capture_surface():
-    template = (Path(__file__).resolve().parents[1] / "templates/leads_dashboard.html").read_text(encoding="utf-8")
-    payload = territorial_review_payload()
-    assert "#viewProperties > .inventory-dashboard > *:not(.geo-demand-panel)" not in template
-    assert all(marker in template for marker in ("CONTEXTO PROCASA SUCRE", "SEÑALES DE DEMANDA", "MATRIZ DEMANDA VS CARTERA", "Oportunidades de Captación", "Validación histórica", "Simulador de Captación", "BENCHMARK RED PROCASA", "inventory-secondary"))
-    assert len(payload["opportunities"]) >= 6
-    assert len(payload["demand_intelligence"]["dimensions"]["type"]) >= 5
-    assert len(payload["demand_intelligence"]["dimensions"]["operation"]) == 4
-    assert {row["quadrant"] for row in payload["demand_intelligence"]["dimensions"]["type"]} == {"Oportunidad de captación", "Cobertura estratégica", "Sobreexposición relativa", "Menor señal actual"}
-    assert payload["review_simulator"]["available"] is True
-    assert payload["benchmark"]["note"].startswith("Benchmark interno")
-
-
 def test_review_info_controls_keep_sur_as_the_only_visible_zone():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
     assert "dashboard-info-button" in template
@@ -488,20 +396,6 @@ def test_review_info_controls_keep_sur_as_the_only_visible_zone():
     assert "data-geo-fold=\"SUR_INSET\"" in template
     assert "const labels = {north: 'Norte', center: 'Centro', south: 'Sur'}" in template
     assert "SIMULACIÓN DE CAPTACIÓN · SOLO LECTURA" in template
-
-
-def test_review_fixture_uses_production_realistic_dimensions_and_bands():
-    payload = territorial_review_payload()
-    dimensions = payload["demand_intelligence"]["dimensions"]
-    assert {row["segment"] for row in dimensions["zone_rm"]} == {"Oriente", "Centro", "Poniente", "Norte", "Sur"}
-    assert sum(row["leads"] for row in dimensions["zone_rm"]) == 175
-    assert not any("Proyecto" in row["segment"] or "Temporada" in row["segment"] for row in dimensions["operation"])
-    assert {row["recommendation"] for row in payload["opportunities"]} <= {"Demanda reciente alta", "Demanda reciente media", "Demanda reciente baja", "Sin evidencia suficiente"}
-    assert sum(row["leads"] for row in dimensions["operation"]) == payload["demand"]["leads"] == 297
-    assert sum(row["stock_sucre"] for row in dimensions["operation"]) == payload["inventory"]["active"] == 442
-    assert all((row["recommendation"] == "Sin evidencia suficiente" if row["historical_leads_total"] < 5 or row["historical_properties_with_demand"] < 3 else row["recommendation"] == ("Demanda reciente alta" if row["recency"]["w0_leads"] >= 5 else "Demanda reciente media" if row["recency"]["w0_leads"] >= 1 else "Demanda reciente baja")) for row in payload["opportunities"])
-    assert payload["opportunities"][2]["recommendation"] == "Demanda reciente alta"
-    assert payload["opportunities"][5]["recommendation"] == "Demanda reciente media"
 
 
 def test_review_half_upper_uses_explicit_tooltips_global_bubble_scale_and_real_scatter():
@@ -603,10 +497,6 @@ def test_capture_simulator_exposes_match_quality_and_explains_territorial_fallba
 
 def test_segment_breakdown_and_territorial_tooltips_are_explicit_and_reconciled():
     template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
-    payload = territorial_review_payload()
-    segment = payload["demand_intelligence"]["dimensions"]["type"][0]
-    assert segment["geo_breakdown"]["regions"]
-    assert segment["geo_breakdown"]["components"]
     assert "data-segment-breakdown" in template
     assert "Dónde se concentra este segmento" in template
     assert "data-segment-geo-level" in template
@@ -614,31 +504,6 @@ def test_segment_breakdown_and_territorial_tooltips_are_explicit_and_reconciled(
     assert "regionalShare=region?.leads>0" in template
     assert "setBubbleScale=k=>bubbles.attr('r',item=>radius(item.row.leads)/k)" in template
     assert "prefers-reduced-motion: reduce" in template
-
-
-def test_review_visual_semantic_hardening_contracts():
-    from jinja2 import Template
-
-    template = Path(__file__).parents[1].joinpath("templates", "leads_dashboard.html").read_text(encoding="utf-8")
-    rendered = Template(template).render(territorial_review=True, public_demo=False, user_role="")
-
-    assert ".geo-demand-panel {\n            width:100%;\n            max-width:none;" in template
-    assert "border-radius:14px;" in template
-    assert "geoD3PresentationFeature" in template
-    assert "meanLatitude > -60" in template
-    assert "islas · inset" not in rendered
-    assert "map.dataset.geoMetric = GEO_METRIC;" in template
-    assert ".style('fill', item => GEO_METRIC === 'leads'" in template
-    assert "function geoShowTooltip(event, row, region)" in template
-    assert "demandPP(selected.gap_pp)" in template
-    assert "geo-gap-track" in template
-    assert "data-target-width=\"${Math.max(0, Math.min(100, Number(row.demand_share_pct || 0)))}%\"" in template
-    assert "const target=bar.dataset.targetWidth||bar.style.width" in template
-    assert "DEMAND_OPEN_SEGMENT" in template
-    assert "Ocultar desglose ⌃" in template
-    assert "output.hidden = true;" in template
-    for marker in ("Listado Leads", "Captaciones", "Cerrar Sesión", "Resumen Ejecutivo", "Gestión del Equipo", "sessionWarningModal"):
-        assert marker not in rendered
 
 
 def test_attribution_reports_identifiable_office_coverage_separately():

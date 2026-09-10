@@ -6353,95 +6353,10 @@ async def reassign_unassigned_leads_loop():
             await asyncio.sleep(60)
 
 async def cache_prewarmer_loop():
-    """
-    PRE-WARMING DE CACHE: precalienta el overview real del Leads Dashboard.
-    El reporte ejecutivo antiguo no alimenta /api/leads-dashboard/overview,
-    por lo que no evitaba el primer request lento de week/month/today.
-    """
-    logger.info("[CACHE_WARMER] Iniciando pre-warming de cache leads-intelligence (smart mode)...")
-    # Espera inicial para no competir con el startup
-    await asyncio.sleep(30)
-    local_warm_in_progress = False
-    cache_key = "leads_dashboard_overview_v1"
-    lock_key = "lock_cache_prewarm_leads_intel_v1"
-    while True:
-        try:
-            # Evitar solapes locales de warm si el ciclo previo no cerró aún.
-            if local_warm_in_progress:
-                await asyncio.sleep(30)
-                continue
-
-            from chatbot.storage import get_db
-            from datetime import timezone
-            db = get_db()
-            now_utc = datetime.now(timezone.utc)
-
-            # 1) Skip inteligente: si el lock/ciclo aún está vigente, no
-            # recalcular todos los rangos en cada vuelta.
-            loop_ref = asyncio.get_running_loop()
-            cache_doc = await loop_ref.run_in_executor(
-                _WORKER_THREAD_POOL,
-                lambda: db["cache_store"].find_one({"_id": cache_key}, {"expires_at": 1})
-            )
-            expires_at = cache_doc.get("expires_at") if cache_doc else None
-            if expires_at:
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                ttl_left = (expires_at - now_utc).total_seconds()
-                if ttl_left > 120:
-                    logger.debug(f"[CACHE_WARMER] Skip: cache vigente ({ttl_left:.0f}s restantes)")
-                    await asyncio.sleep(60)
-                    continue
-
-            # 2) Lock distribuido: evita prewarm simultáneo entre instancias/restarts.
-            lock_until = now_utc + timedelta(seconds=90)
-            def _acquire_lock():
-                try:
-                    return db["cache_locks"].find_one_and_update(
-                        {"_id": lock_key, "$or": [{"expires_at": {"$exists": False}}, {"expires_at": {"$lte": now_utc}}]},
-                        {"$set": {"expires_at": lock_until, "updated_at": now_utc}},
-                        upsert=True, return_document=ReturnDocument.AFTER
-                    )
-                except DuplicateKeyError:
-                    # Otra instancia ganó el upsert simultáneamente.
-                    return None
-            lock_doc = await loop_ref.run_in_executor(_WORKER_THREAD_POOL, _acquire_lock)
-            if not lock_doc:
-                logger.debug("[CACHE_WARMER] Skip: lock activo en otra instancia")
-                await asyncio.sleep(60)
-                continue
-
-            local_warm_in_progress = True
-            loop = asyncio.get_running_loop()
-            t0 = time.time()
-            # Warmer pool dedicado: evita competir con workers de procesamiento.
-            # Los nombres de preset generan la misma clave canónica que las
-            # peticiones del frontend, incluso cuando este envía fechas explícitas.
-            warm_specs = (("today", "Hoy"), ("week", "Semana"), ("month", "Mes"), ("30d", "30 días"))
-            for preset, label in warm_specs:
-                await asyncio.wait_for(
-                    loop.run_in_executor(
-                        _WARMER_THREAD_POOL,
-                        lambda p=preset: get_leads_dashboard_overview(
-                            compare="auto", period_preset=p,
-                        ),
-                    ),
-                    timeout=25.0,
-                )
-                logger.info("[CACHE_WARMER] overview %s precalentado", label)
-            elapsed_ms = (time.time() - t0) * 1000
-            logger.debug(f"[CACHE_WARMER] LEADS_INTELLIGENCE: cache pre-warmed en {elapsed_ms:.0f}ms")
-            # Liberar lock explícitamente tras warm exitoso.
-            await loop_ref.run_in_executor(_WORKER_THREAD_POOL, lambda: db["cache_locks"].update_one({"_id": lock_key}, {"$set": {"expires_at": now_utc}}))
-        except asyncio.TimeoutError:
-            logger.warning("[CACHE_WARMER] Timeout >8s; se omite este ciclo para evitar jitter")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.warning(f"[CACHE_WARMER] Error al pre-warm cache: {e}")
-        finally:
-            local_warm_in_progress = False
-        await asyncio.sleep(60)
+    """Keep dashboard refresh demand-driven; do not calculate while idle."""
+    logger.info("[DASHBOARD_CACHE] background warmer disabled; refresh is demand-driven")
+    await asyncio.Event().wait()
+    return
 
 async def event_loop_monitor_loop():
     """

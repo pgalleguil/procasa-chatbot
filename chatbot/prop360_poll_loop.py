@@ -119,6 +119,11 @@ def _persist_cycle_status(status: str, extra: dict | None = None) -> None:
         logger.error("[PROP360_POLL] status persist failed:\n%s", traceback.format_exc())
 
 
+async def _persist_cycle_status_off_loop(status: str, extra: dict | None = None) -> None:
+    """Persist the heartbeat without executing PyMongo on the event loop."""
+    await asyncio.to_thread(_persist_cycle_status, status, extra)
+
+
 def run_prop360_poll_cycle(db=None) -> dict:
     """One full poll cycle. Returns metrics dict; never raises."""
     if not _feature_enabled():
@@ -312,7 +317,9 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
         first = False
         if not _in_business_hours():
             _update_health_heartbeat(status="idle", reason="outside_business_hours")
-            _persist_cycle_status("idle", {"mode": None, "reason": "outside_business_hours"})
+            await _persist_cycle_status_off_loop(
+                "idle", {"mode": None, "reason": "outside_business_hours"}
+            )
             logger.info("[PROP360_POLL] Fuera de horario laboral; siguiente ciclo en apertura.")
             continue
         try:
@@ -321,7 +328,7 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
         except Exception:
             _update_health_heartbeat(status="error")
             tb = traceback.format_exc()
-            _persist_cycle_status("error", {"traceback": tb[-2000:]})
+            await _persist_cycle_status_off_loop("error", {"traceback": tb[-2000:]})
             logger.error("[PROP360_POLL] Loop cycle error:\n%s", tb)
         await _sleep_until_next_slot(interval)
 

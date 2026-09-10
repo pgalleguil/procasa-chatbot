@@ -12,7 +12,6 @@ import re
 import secrets
 import traceback
 import threading
-import subprocess
 import concurrent.futures
 import inspect
 from concurrent.futures import ThreadPoolExecutor
@@ -157,7 +156,6 @@ CAPTACION_GOAL_EXCLUDED_EXECUTIVES = ("Pablo Galleguillos",)
 
 # --- BLOCKING DETECTOR (temporal forensics) ---
 _ORIG_TIME_SLEEP = time.sleep
-_ORIG_SUBPROCESS_RUN = subprocess.run
 _ORIG_FUTURE_RESULT = concurrent.futures.Future.result
 
 def _in_event_loop_thread() -> bool:
@@ -171,38 +169,6 @@ def _forensic_sleep(seconds):
     if _in_event_loop_thread():
         logger.warning(f"[BLOCKING_DETECTOR] time.sleep({seconds}) llamado dentro de async/event loop")
     return _ORIG_TIME_SLEEP(seconds)
-
-def _forensic_subprocess_run(*args, **kwargs):
-    if _in_event_loop_thread():
-        try:
-            stack = inspect.stack()
-            project_frames = [
-                fr for fr in stack
-                if fr.filename and ("\\ChatBot_v4_Grok\\" in fr.filename or "/ChatBot_v4_Grok/" in fr.filename)
-            ]
-            short = " > ".join(
-                f"{os.path.basename(fr.filename)}:{fr.function}:{fr.lineno}" for fr in project_frames[:5]
-            ) if project_frames else "stack_no_disponible"
-            logger.warning(f"[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop stack={short}")
-        except Exception:
-            logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
-        logger.info("[ASYNC_FIX] subprocess forced to threadpool")
-        result_box = {}
-        error_box = {}
-
-        def _runner():
-            try:
-                result_box["value"] = asyncio.run(asyncio.to_thread(_ORIG_SUBPROCESS_RUN, *args, **kwargs))
-            except Exception as exc:
-                error_box["error"] = exc
-
-        t = threading.Thread(target=_runner, daemon=True)
-        t.start()
-        t.join()
-        if "error" in error_box:
-            raise error_box["error"]
-        return result_box.get("value")
-    return _ORIG_SUBPROCESS_RUN(*args, **kwargs)
 
 def _forensic_future_result(self, *args, **kwargs):
     if _in_event_loop_thread():
@@ -222,7 +188,6 @@ def _forensic_future_result(self, *args, **kwargs):
     return _ORIG_FUTURE_RESULT(self, *args, **kwargs)
 
 time.sleep = _forensic_sleep
-subprocess.run = _forensic_subprocess_run
 concurrent.futures.Future.result = _forensic_future_result
 
 # CONFIGURACIÓN ZONA HORARIA CHILE
@@ -1147,10 +1112,16 @@ async def lifespan(app: FastAPI):
     cb_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
+    if non_hot_digest_task is not None:
+        non_hot_digest_task.cancel()
+    if prop360_task is not None:
+        prop360_task.cancel()
     try:
         await asyncio.gather(
             n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
+            *([non_hot_digest_task] if non_hot_digest_task is not None else []),
+            *([prop360_task] if prop360_task is not None else []),
             return_exceptions=True
         )
     except Exception as e:

@@ -14,7 +14,13 @@ from analytics.pricing_intelligence.property_identity import (
     build_property_identity_resolver,
     normalize_identifier,
 )
-from analytics.pricing_intelligence.time_utils import is_in_previous_window, parse_aware_datetime
+from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, is_in_previous_window, parse_aware_datetime
+
+from .schemas import (
+    OwnerPortalDataQualityV1,
+    OwnerPortalPriceV1,
+    OwnerPortalPropertyViewV1,
+)
 
 OFFICE_SCOPE = "PROCASA_SUCRE"
 SUCRE_OFFICE_FIELD = "estado.oficina"
@@ -78,6 +84,7 @@ MASTER_PUBLICATION_PROJECTION = {
 IDENTITY_PROJECTION = {
     "_id": 0,
     "codigo": 1,
+    "estado.oficina": 1,
     "publicaciones.portal_inmobiliario.publicaciones": 1,
     "publicaciones.yapo.publicaciones": 1,
     "publicaciones.toctoc.publicaciones": 1,
@@ -137,7 +144,12 @@ def _price(doc: Mapping[str, Any]) -> dict[str, float | None]:
     if not isinstance(block, Mapping):
         block = _path(doc, "tipo_operacion.precio_venta") or _path(doc, "tipo_operacion.precio_arriendo")
     block = block if isinstance(block, Mapping) else {}
-    return {"uf": _number(block.get("precio_uf")), "clp": _number(block.get("precio_clp"))}
+    uf = _number(block.get("precio_uf"))
+    clp = _number(block.get("precio_clp"))
+    return {
+        "uf": uf if uf is not None and uf > 0 else None,
+        "clp": clp if clp is not None and clp > 0 else None,
+    }
 
 
 def is_procasa_sucre_property(property_doc: Mapping[str, Any]) -> bool:
@@ -323,44 +335,86 @@ def _parse_date(value: Any) -> datetime | None:
         return None
 
 
+def _format_timestamp(value: Any) -> str | None:
+    parsed = _parse_date(value)
+    return parsed.astimezone(timezone.utc).isoformat() if parsed else None
+
+
 def _format_date(value: Any) -> str | None:
     if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
         return datetime.strptime(value.strip(), "%Y-%m-%d").strftime("%d/%m/%Y")
     parsed = _parse_date(value)
     if parsed is None:
         return None
-    return parsed.astimezone().strftime("%d/%m/%Y")
+    return parsed.astimezone(BUSINESS_TZ).strftime("%d/%m/%Y")
 
 
-def _market_context(db: Any, prop: Mapping[str, Any]) -> dict[str, Any]:
+def _format_as_of(as_of: datetime) -> str:
+    return as_of.astimezone(timezone.utc).isoformat()
+
+
+def _as_of_or_now(as_of: datetime | None) -> datetime:
+    value = as_of if as_of is not None else datetime.now(BUSINESS_TZ) + timedelta(microseconds=1)
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("as_of must be timezone-aware")
+    return value
+
+
+def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = None) -> dict[str, Any]:
+    as_of = _as_of_or_now(as_of)
     commune, property_type = prop["commune"], prop["property_type"]
     aggregate = db[MARKET_COLLECTION].find_one(
         {"comuna": commune, "tipo_propiedad": property_type},
-        {"_id": 0, "mercado_venta": 1, "rangos_precio_venta": 1, "indicadores_mercado": 1},
+        {
+            "_id": 0,
+            "mercado_venta": 1,
+            "rangos_precio_venta": 1,
+            "indicadores_mercado": 1,
+            "updated_at": 1,
+            "fecha_actualizacion": 1,
+            "as_of": 1,
+            "fecha_corte": 1,
+        },
     ) or {}
-    return _comparables(db, prop, aggregate)
+    return _comparables(db, prop, aggregate, as_of)
 
 
-def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any]) -> dict[str, Any]:
+def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any], as_of: datetime) -> dict[str, Any]:
     query = {"comuna": prop["commune"], "tipo_propiedad": prop["property_type"], "operacion": "venta"}
-    rows = list(db[CAPTACION_COLLECTION].find(query, {"_id": 0, "precio_uf": 1, "precio_clp": 1, "superficie": 1, "superficie_construida": 1, "fecha_publicacion": 1, "updated_at": 1}))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=365)
+    rows = list(
+        db[CAPTACION_COLLECTION].find(
+            query,
+            {
+                "_id": 0,
+                "precio_uf": 1,
+                "superficie": 1,
+                "superficie_construida": 1,
+                "fecha_publicacion": 1,
+                "updated_at": 1,
+            },
+        )
+    )
+    cutoff = as_of.astimezone(timezone.utc) - timedelta(days=365)
+    as_of_utc = as_of.astimezone(timezone.utc)
     valid: list[tuple[float, float]] = []
     for row in rows:
         price = _number(row.get("precio_uf"))
-        if price is None:
-            price_clp = _number(row.get("precio_clp"))
-            price = price_clp  # CLP is retained only for validity; no conversion is invented.
         surface = _number(row.get("superficie") or row.get("superficie_construida"))
         when = _parse_date(row.get("fecha_publicacion") or row.get("updated_at"))
-        if price is None or surface is None or surface <= 0:
+        if price is None or price <= 0 or surface is None or surface <= 0:
             continue
-        if when is not None and when < cutoff:
+        if when is not None and (when < cutoff or when >= as_of_utc):
             continue
         valid.append((price, surface))
     market_sale = aggregate.get("mercado_venta") if isinstance(aggregate.get("mercado_venta"), Mapping) else {}
     indicators = aggregate.get("indicadores_mercado") if isinstance(aggregate.get("indicadores_mercado"), Mapping) else {}
     ranges = aggregate.get("rangos_precio_venta") if isinstance(aggregate.get("rangos_precio_venta"), Mapping) else {}
+    market_as_of = _format_date(
+        aggregate.get("as_of")
+        or aggregate.get("fecha_corte")
+        or aggregate.get("fecha_actualizacion")
+        or aggregate.get("updated_at")
+    )
     if len(valid) >= 5:
         prices = [item[0] for item in valid]
         uf_m2 = [price / surface for price, surface in valid]
@@ -374,6 +428,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any])
             "aggregate": dict(market_sale),
             "indicators": dict(indicators),
             "range_reference": dict(ranges),
+            "market_as_of": market_as_of,
             "explanation": "Comparables descriptivos: misma comuna, tipo y operación; precio y superficie válidos; fecha reciente cuando está disponible.",
         }
     return {
@@ -386,16 +441,27 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any])
         "aggregate": dict(market_sale),
         "indicators": dict(indicators),
         "range_reference": dict(ranges),
+        "market_as_of": market_as_of,
         "explanation": "Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.",
     }
 
 
-def _snapshot(db: Any, code: str) -> dict[str, Any] | None:
-    return db[SNAPSHOT_COLLECTION].find_one({"property_code": code}, {"_id": 0}, sort=[("snapshot_date_local", -1)])
+def _snapshot(db: Any, code: str, as_of: datetime) -> dict[str, Any] | None:
+    local_date = as_of.astimezone(BUSINESS_TZ).date().isoformat()
+    return db[SNAPSHOT_COLLECTION].find_one(
+        {"property_code": code, "snapshot_date_local": {"$lte": local_date}},
+        {"_id": 0},
+        sort=[("snapshot_date_local", -1)],
+    )
 
 
-def _lead_metrics(db: Any, sucre_codes: set[str], property_code: str | None = None) -> dict[str, Any]:
+def _lead_metrics(db: Any, property_code: str, as_of: datetime) -> dict[str, Any]:
     properties = _identity_properties(db)
+    sucre_codes = {
+        str(item.get("codigo"))
+        for item in properties
+        if item.get("codigo") is not None and _path(item, SUCRE_OFFICE_FIELD) == SUCRE_OFFICE_VALUE
+    }
     resolver = build_property_identity_resolver(properties, enable_contextual_aliases=True)
     service = LeadLinkageService(resolver)
     lead_projection = {
@@ -417,14 +483,14 @@ def _lead_metrics(db: Any, sucre_codes: set[str], property_code: str | None = No
     linked = [record for record in records if record.status in {LinkageStatus.EXACT_CANONICAL, LinkageStatus.EXACT_ALIAS}]
     sucre = [record for record in linked if record.property_code in sucre_codes]
     property_records = [record for record in sucre if record.property_code == property_code]
-    now = datetime.now(timezone.utc) + timedelta(microseconds=1)
+    cutoff = as_of.astimezone(timezone.utc)
     return {
         "total_linked_sucre": len(sucre),
         "distinct_properties": len({record.property_code for record in sucre}),
-        "previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 7) for record in sucre),
-        "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 30) for record in sucre),
-        "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 7) for record in property_records),
-        "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, now, 30) for record in property_records),
+        "previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in sucre),
+        "previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in sucre),
+        "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in property_records),
+        "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in property_records),
         "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in sucre),
         "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in sucre),
         "excluded_other_office_linked": sum(record.property_code is not None and record.property_code not in sucre_codes for record in linked),
@@ -432,68 +498,148 @@ def _lead_metrics(db: Any, sucre_codes: set[str], property_code: str | None = No
     }
 
 
-def _safe_snapshot(snapshot: Mapping[str, Any] | None, prop: Mapping[str, Any]) -> dict[str, Any]:
-    if not snapshot:
-        return {
-            "available": False,
-            "reason": "No existe snapshot V1 para esta propiedad.",
-            "leads_7d": 0,
-            "leads_30d": 0,
-            "price_history": [],
-        }
-    history: list[dict[str, Any]] = []
-    changed = snapshot.get("last_price_change_at")
-    previous_uf = _number(snapshot.get("previous_price_uf"))
-    current_uf = _number(snapshot.get("current_price_uf"))
-    if changed and previous_uf is not None and current_uf is not None:
-        history.append({"date": str(changed)[:10], "previous_uf": previous_uf, "current_uf": current_uf})
-    return {
-        "available": True,
-        "snapshot_date": snapshot.get("snapshot_date_local"),
-        "leads_7d": int(snapshot.get("linked_leads_previous_7d") or 0),
-        "leads_30d": int(snapshot.get("linked_leads_previous_30d") or 0),
-        "price_history": history,
-    }
+def get_owner_portal_property_view(
+    db: Any,
+    property_code: str,
+    as_of: datetime,
+) -> OwnerPortalPropertyViewV1 | None:
+    """Build one explicit, read-only, PII-free owner portal DTO."""
 
+    cutoff = _as_of_or_now(as_of)
+    docs = _find_master(db, str(property_code), projection=MASTER_PUBLICATION_PROJECTION)
+    if not docs or not is_procasa_sucre_property(docs[0]) or not is_active_property(docs[0]):
+        return None
 
-def build_owner_portal_view(db: Any, property_code: str) -> dict[str, Any]:
-    """Build a single PII-free view. No writes, models, or recommendation actions."""
-
-    docs = _find_master(db, str(property_code))
-    if not docs or not is_procasa_sucre_property(docs[0]):
-        return {"status": "not_found", "office_scope": OFFICE_SCOPE, "property_code": str(property_code)}
     doc = docs[0]
-    if not is_active_property(doc):
-        return {"status": "not_found", "office_scope": OFFICE_SCOPE, "property_code": str(property_code)}
     captures = _captacion_by_ids(db, _publication_listing_ids(doc))
     image_urls: list[str] = []
     for capture in captures:
         for image in _image_urls(capture):
             if image not in image_urls:
                 image_urls.append(image)
+
     prop = _safe_property(doc, image_urls)
     code = prop["code"] or str(property_code)
-    master_sucre = _find_master(db, projection=MASTER_BASE_PROJECTION)
-    sucre_codes = {str(item.get("codigo")) for item in master_sucre if item.get("codigo") is not None}
-    snapshot = _snapshot(db, code)
-    if not prop.get("updated_at_label") and snapshot and snapshot.get("snapshot_date_local"):
-        prop["updated_at_label"] = _format_date(snapshot["snapshot_date_local"])
-    leads = _lead_metrics(db, sucre_codes, code)
-    # History is intentionally unavailable with only the current daily snapshot.
-    lead_history = {"available": False, "reason": "Histórico insuficiente para una evolución confiable en V1.", "points": []}
-    visits = {"status": "NOT_AVAILABLE_V1", "reason": "Los registros actuales prueban intención, autorización o firma; no asistencia completada."}
+    snapshot = _snapshot(db, code, cutoff)
+    leads = _lead_metrics(db, code, cutoff)
+    market = _market_context(db, prop, cutoff)
+
+    previous_uf = _number(snapshot.get("previous_price_uf")) if snapshot else None
+    previous_clp = _number(snapshot.get("previous_price_clp")) if snapshot else None
+    previous_price = (
+        OwnerPortalPriceV1(uf=previous_uf, clp=previous_clp)
+        if previous_uf is not None or previous_clp is not None
+        else None
+    )
+    last_price_change_at = _format_timestamp(snapshot.get("last_price_change_at")) if snapshot else None
+    price_history_available = previous_price is not None and last_price_change_at is not None
+    current_price = OwnerPortalPriceV1(uf=prop["price_uf"], clp=prop["price_clp"])
+    market_available = bool(market.get("comparables_count", 0) >= 5)
+    data_quality = OwnerPortalDataQualityV1(
+        photo_available=bool(image_urls),
+        price_available=current_price.uf is not None or current_price.clp is not None,
+        surface_available=prop["built_area_m2"] is not None or prop["land_area_m2"] is not None,
+        bedrooms_available=prop["bedrooms"] is not None,
+        bathrooms_available=prop["bathrooms"] is not None,
+        parking_available=prop["parking"] is not None,
+        market_data_available=market_available,
+        price_history_available=price_history_available,
+        lead_linkage_available=True,
+    )
+    return OwnerPortalPropertyViewV1(
+        property_code=code,
+        property_type=prop["property_type"],
+        operation=prop["operation"],
+        commune=prop["commune"],
+        region=prop["region"],
+        main_image_url=image_urls[0] if image_urls else None,
+        current_price_uf=current_price.uf,
+        current_price_clp=current_price.clp,
+        bedrooms=prop["bedrooms"],
+        bathrooms=prop["bathrooms"],
+        parking=prop["parking"],
+        built_area_m2=prop["built_area_m2"],
+        land_area_m2=prop["land_area_m2"],
+        inquiries_previous_7d=leads["property_previous_7d"],
+        inquiries_previous_30d=leads["property_previous_30d"],
+        comparable_count=market["comparables_count"],
+        market_median_uf=market["median_price_uf"] if market_available else None,
+        market_low_uf=market["range_price_uf"][0] if market_available else None,
+        market_high_uf=market["range_price_uf"][1] if market_available else None,
+        market_uf_m2=market["median_uf_m2"] if market_available else None,
+        market_data_available=market_available,
+        market_as_of=market.get("market_as_of"),
+        current_price=current_price,
+        previous_price=previous_price,
+        last_price_change_at=last_price_change_at,
+        as_of=_format_as_of(cutoff),
+        data_updated_at=_format_date(cutoff) or "Fecha no disponible",
+        data_quality=data_quality,
+        recommendation=None,
+    )
+
+
+def build_owner_portal_view(
+    db: Any,
+    property_code: str,
+    as_of: datetime | None = None,
+) -> dict[str, Any]:
+    """Compatibility adapter for legacy internal callers; the router uses the DTO directly."""
+
+    dto = get_owner_portal_property_view(db, property_code, _as_of_or_now(as_of))
+    if dto is None:
+        return {"status": "not_found", "office_scope": OFFICE_SCOPE, "property_code": str(property_code)}
+    payload = dto.to_dict()
     return {
         "status": "ok",
         "office_scope": OFFICE_SCOPE,
-        "property_code": code,
+        "property_code": dto.property_code,
         "machine_learning_status": "NOT_EXECUTED",
-        "property": prop,
-        "has_photo": bool(image_urls),
-        "snapshot": _safe_snapshot(snapshot, prop),
-        "lead_metrics": leads,
-        "lead_history": lead_history,
-        "market": _market_context(db, prop),
-        "visits": visits,
-        "recommendation": {"status": "PLACEHOLDER", "message": "Recomendación de precio disponible en una fase futura; no se calcula ni se autoriza aquí."},
-        "future_action": {"status": "PLACEHOLDER", "message": "La autorización o modificación de precio no está habilitada en este prototipo."},
+        "property": {
+            "code": dto.property_code,
+            "operation": dto.operation,
+            "property_type": dto.property_type,
+            "region": dto.region,
+            "commune": dto.commune,
+            "bedrooms": dto.bedrooms,
+            "bathrooms": dto.bathrooms,
+            "parking": dto.parking,
+            "built_area_m2": dto.built_area_m2,
+            "land_area_m2": dto.land_area_m2,
+            "price_uf": dto.current_price_uf,
+            "price_clp": dto.current_price_clp,
+            "updated_at_label": dto.data_updated_at,
+            "image_urls": [dto.main_image_url] if dto.main_image_url else [],
+        },
+        "has_photo": dto.main_image_url is not None,
+        "snapshot": {
+            "available": dto.previous_price is not None,
+            "price_history": (
+                [{"date": dto.last_price_change_at, "previous_uf": dto.previous_price.uf, "current_uf": dto.current_price_uf}]
+                if dto.previous_price and dto.last_price_change_at
+                else []
+            ),
+        },
+        "lead_metrics": {
+            "previous_7d": dto.inquiries_previous_7d,
+            "previous_30d": dto.inquiries_previous_30d,
+            "property_previous_7d": dto.inquiries_previous_7d,
+            "property_previous_30d": dto.inquiries_previous_30d,
+            "total_linked_sucre": None,
+            "excluded_other_office_linked": None,
+        },
+        "market": {
+            "comparables_count": dto.comparable_count,
+            "median_price_uf": dto.market_median_uf,
+            "median_uf_m2": dto.market_uf_m2,
+            "range_price_uf": [dto.market_low_uf, dto.market_high_uf],
+            "minimum_comparables": 5,
+            "market_as_of": dto.market_as_of,
+            "explanation": "Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.",
+            "source": "mercado_comunal + propiedades_captacion",
+        },
+        "visits": {"status": "NOT_AVAILABLE_V1", "reason": "V1 no verifica asistencia."},
+        "recommendation": {"status": "PLACEHOLDER", "message": "Recomendación no calculada en V1."},
+        "future_action": {"status": "PLACEHOLDER", "message": "La autorización no está habilitada en V1."},
+        "dto_payload": payload,
     }

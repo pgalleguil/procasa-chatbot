@@ -1078,6 +1078,7 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
     assert "@keyframes portal-marquee" in text
     assert "animation-play-state:paused" in text
+    assert "flex:0 0 auto" in text
     assert "portal-marquee-sequence + .portal-marquee-sequence" in text
     assert "overflow-x:auto" in text
     assert "touch-action:pan-x" in text
@@ -1089,6 +1090,10 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "/static/portal_logos/chilepropiedades.png" in text
     assert "/static/portal_logos/proppit.png" in text
     assert "border:0" in text
+    assert "filter:grayscale(1)" in text
+    assert "filter:none" in text
+    assert 'id="portal-publication-links"' in text
+    assert "window.open(url, '_blank'" in text
     assert "portal-channel small" not in text
     assert '.portal-channel:has(.portal-logo[src="/static/logo.png"])::after' in text
     assert "owner_email" not in text
@@ -1107,6 +1112,20 @@ def test_marketplace_publication_uses_verified_mercado_libre_logo_mapping(monkey
     text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/MERCADO-LIBRE").text
     assert 'data-portal-id="mercadolibre"' in text
     assert 'src="/static/portal_logos/mercado-libre.png"' in text
+
+
+def test_portal_inmobiliario_and_mercado_libre_keep_their_verified_urls_separate(monkeypatch):
+    doc = master_doc("MARKETPLACE-URLS")
+    doc["publicaciones"] = {
+        "portal_inmobiliario": {
+            "url_pi": "https://portalinmobiliario.cl/MLC-PI-1",
+            "url_mercado_libre": "https://www.mercadolibre.cl/MLC-ML-1",
+            "publicaciones": {"venta": {"code": "ML-1", "estado": "active", "url": "https://www.mercadolibre.cl/MLC-ML-1"}},
+        }
+    }
+    text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/MARKETPLACE-URLS").text
+    assert '"portal_id":"portal_inmobiliario","url":"https://portalinmobiliario.cl/MLC-PI-1"' in text
+    assert '"portal_id":"mercadolibre","url":"https://www.mercadolibre.cl/MLC-ML-1"' in text
 
 
 def test_convergent_template_has_mobile_and_reduced_motion_contract():

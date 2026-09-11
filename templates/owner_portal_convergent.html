@@ -127,16 +127,18 @@
     .portal-marquee::after { right:0; background:linear-gradient(270deg,var(--white),transparent); }
     .portal-marquee-track { display:flex; width:max-content; animation:portal-marquee var(--portal-marquee-duration,34s) linear infinite; will-change:transform; }
     .portal-marquee:hover .portal-marquee-track,.portal-marquee:focus-within .portal-marquee-track { animation-play-state:paused; }
-    .portal-marquee-sequence { display:flex; flex:0 0 max-content; gap:14px; min-width:100%; padding:14px; }
+    .portal-marquee-sequence { display:flex; flex:0 0 auto; gap:14px; padding:14px 7px; }
     .portal-channel { display:flex; flex:0 0 170px; flex-direction:column; justify-content:center; min-height:58px; padding:9px 14px 10px; border:0; border-bottom:2px solid transparent; color:var(--navy); background:transparent; transition:color .25s ease,border-color .25s ease,transform .25s ease; }
     .portal-channel:hover,.portal-channel:focus-visible { border-bottom-color:var(--gold); color:var(--navy); background:transparent; transform:scale(1.03); outline:none; }
     .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { color:var(--gold-dark); }
     .portal-wordmark { display:block; overflow:hidden; color:var(--navy); font-size:14px; font-weight:850; letter-spacing:.02em; text-overflow:ellipsis; white-space:nowrap; filter:grayscale(1); opacity:.68; transition:color .25s ease,filter .25s ease,opacity .25s ease; }
     .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { filter:none; opacity:1; }
-    .portal-logo { display:block; width:132px; height:36px; object-fit:contain; object-position:left center; filter:none; mix-blend-mode:multiply; opacity:.9; transition:opacity .25s ease; }
-    .portal-channel:hover .portal-logo,.portal-channel:focus-visible .portal-logo { opacity:1; }
+    .portal-logo { display:block; width:132px; height:36px; object-fit:contain; object-position:left center; filter:grayscale(1); mix-blend-mode:multiply; opacity:.68; transition:filter .25s ease,opacity .25s ease; }
+    .portal-channel:hover .portal-logo,.portal-channel:focus-visible .portal-logo,.portal-channel.is-logo-active .portal-logo { filter:none; opacity:1; }
     .portal-channel:has(.portal-logo[src="/static/logo.png"]) .portal-logo { display:none; }
-    .portal-channel:has(.portal-logo[src="/static/logo.png"])::after { content:"PROCASA"; display:block; color:var(--navy); font-size:17px; font-weight:850; letter-spacing:.14em; line-height:1; }
+    .portal-channel:has(.portal-logo[src="/static/logo.png"])::after { content:"PROCASA"; display:block; color:var(--muted); font-size:17px; font-weight:850; letter-spacing:.14em; line-height:1; transition:color .25s ease; }
+    .portal-channel:has(.portal-logo[src="/static/logo.png"]):hover::after,.portal-channel:has(.portal-logo[src="/static/logo.png"]):focus-visible::after,.portal-channel.is-logo-active:has(.portal-logo[src="/static/logo.png"])::after { color:var(--navy); }
+    .portal-channel[data-publication-url]:not([data-publication-url=""]) { cursor:pointer; }
     .portal-empty { padding:15px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
     @keyframes portal-marquee { from { transform:translateX(0); } to { transform:translateX(-50%); } }
     .timeline { position:relative; display:grid; gap:0; }
@@ -286,8 +288,29 @@
   </main>
   <footer class="footer"><img class="footer-logo" src="/static/logo.png" alt="PROCASA"><div><strong>PROCASA SUCRE</strong><br>Informe del propietario · Propiedad {{ view.property_code }} · corte {{ view.data_updated_at }}</div><div class="footer-right">Lectura descriptiva basada en registros fechados.<br>La publicación no reemplaza una tasación profesional.</div></footer>
 </div>
+<script type="application/json" id="portal-publication-links">[{% for publication in view.publications or [] %}{"portal_id":{{ publication.portal_id|tojson }},"url":{{ publication.url|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]</script>
 <script>
 (() => {
+  const publicationLinks = JSON.parse(document.getElementById('portal-publication-links')?.textContent || '[]');
+  const publicationUrls = new Map(publicationLinks.map((publication) => [publication.portal_id, publication.url]));
+  document.querySelectorAll('.portal-channel').forEach((channel) => {
+    if (!channel.closest('[aria-hidden="true"]')) {
+      channel.addEventListener('pointerenter', () => channel.classList.add('is-logo-active'));
+      channel.addEventListener('pointerleave', () => channel.classList.remove('is-logo-active'));
+      channel.addEventListener('focus', () => channel.classList.add('is-logo-active'));
+      channel.addEventListener('blur', () => channel.classList.remove('is-logo-active'));
+    }
+    const url = publicationUrls.get(channel.dataset.portalId);
+    if (!url || channel.closest('[aria-hidden="true"]')) return;
+    channel.dataset.publicationUrl = url;
+    channel.setAttribute('role', 'link');
+    channel.addEventListener('click', () => window.open(url, '_blank', 'noopener,noreferrer'));
+    channel.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      window.open(url, '_blank', 'noopener,noreferrer');
+    });
+  });
   const links = [...document.querySelectorAll('.report-nav a')];
   const sections = links.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

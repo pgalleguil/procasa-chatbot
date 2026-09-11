@@ -541,15 +541,16 @@ def _publication_presence(
         for record in candidates:
             if not isinstance(record, Mapping) or not _verified_publication(record):
                 continue
-            url = _text(record.get("url"))
+            url = None
+            for field in url_fields:
+                candidate = portal.get(field)
+                if isinstance(candidate, list):
+                    candidate = candidate[0] if candidate else None
+                url = _text(candidate)
+                if url:
+                    break
             if not url:
-                for field in url_fields:
-                    candidate = portal.get(field)
-                    if isinstance(candidate, list):
-                        candidate = candidate[0] if candidate else None
-                    url = _text(candidate)
-                    if url:
-                        break
+                url = _text(record.get("url"))
             if url and not url.casefold().startswith(("http://", "https://")):
                 url = None
             identifiers = {

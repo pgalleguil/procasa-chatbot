@@ -27,7 +27,7 @@ from .crm_sla_reassignment_worker import (
     validate_worker_configuration,
 )
 from .crm_sla_worker_lease import LeaseSettings, renew_leader_lease
-from .storage import get_async_db
+from .storage import get_async_db, get_db
 
 
 logger = logging.getLogger(__name__)
@@ -239,11 +239,22 @@ async def run_crm_sla_shadow_worker(
         return
     try:
         raw_db = get_async_db()
-        await raw_db.command("ping")
+        # Motor's command path can remain pending indefinitely in the Render
+        # runtime even though the application's synchronous Mongo client is
+        # healthy.  Keep the startup guard read-only and non-blocking by
+        # probing that existing client in the worker thread; the A1 snapshot
+        # below remains the authoritative async read-path check.
+        await asyncio.wait_for(
+            asyncio.to_thread(lambda: get_db().command("ping")),
+            timeout=15.0,
+        )
         # Historical cold load is allowed at startup, but no cycle can be
         # evaluated until both it and the A1 live path return successfully.
-        await _default_performance_snapshot(
-            datetime.now(timezone.utc), db=raw_db, shadow_live_capacity=True,
+        await asyncio.wait_for(
+            _default_performance_snapshot(
+                datetime.now(timezone.utc), db=raw_db, shadow_live_capacity=True,
+            ),
+            timeout=60.0,
         )
     except Exception as exc:
         _set_status(status, status="disabled", health="SHADOW_STALE", last_error=type(exc).__name__)

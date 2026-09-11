@@ -231,9 +231,6 @@ class Config:
     # Un único kill switch controla lookup, identidad, auto-match y gate de
     # asignación. No existen flags operativos separados.
     PHONE_LEARNING_ENABLED = os.getenv("PHONE_LEARNING_ENABLED", "false").strip().lower() == "true"
-    PHONE_LEARNING_CP_ONLY = False  # marcador histórico, no flag operativo
-    PHONE_LEARNING_ACTIVATED_AT = os.getenv("PHONE_LEARNING_ACTIVATED_AT", "").strip()
-    PHONE_LEARNING_PRODUCTION_ACTIVATED_AT = os.getenv("PHONE_LEARNING_PRODUCTION_ACTIVATED_AT", "").strip()
 
     # === Modelos DeepSeek / compatibilidad heredada ===
     # DeepSeek V4 Flash es el modelo único de producción. No permitir que un

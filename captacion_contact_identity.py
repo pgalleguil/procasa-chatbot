@@ -19,6 +19,7 @@ from chatbot.phone_utils import normalize_phone_strict
 
 COLLECTION = "captacion_contact_identity"
 METRICS_COLLECTION = "captacion_phone_learning_metrics"
+ACTIVATION_RECORD_ID = "phone-learning:activation:production:v1"
 IDENTITY_VERSION = "contact-identity-v2"
 SUPPORTED_PORTALS = frozenset({"chilepropiedades", "yapo", "toctoc"})
 PHONE_SOURCES = frozenset({"SCRAPER", "EXECUTIVE", "IMPORT", "UNKNOWN_LEGACY"})
@@ -52,13 +53,14 @@ def _utc(value: Any = None) -> datetime:
     return datetime.now(timezone.utc)
 
 
-def phone_learning_activation_at() -> datetime | None:
-    """Return the fixed prospective activation instant in UTC."""
-    raw = str(
-        getattr(Config, "PHONE_LEARNING_PRODUCTION_ACTIVATED_AT", "")
-        or getattr(Config, "PHONE_LEARNING_ACTIVATED_AT", "")
-        or ""
-    ).strip()
+def phone_learning_enabled() -> bool:
+    return bool(getattr(Config, "PHONE_LEARNING_ENABLED", False))
+
+
+def _parse_utc_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    raw = str(value or "").strip()
     if not raw:
         return None
     try:
@@ -69,8 +71,49 @@ def phone_learning_activation_at() -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def phone_learning_enabled() -> bool:
-    return bool(getattr(Config, "PHONE_LEARNING_ENABLED", False))
+def ensure_phone_learning_activation(db, *, now: Any = None) -> dict[str, Any] | None:
+    """Register the first active production start exactly once.
+
+    This writes only the operational activation record. It never updates
+    properties, identities, evidence, assignments, or management events.
+    """
+    if not phone_learning_enabled() or not getattr(Config, "IS_PRODUCTION", False):
+        return None
+    activation_at = _utc(now)
+    collection = db[METRICS_COLLECTION]
+    document = {
+        "_id": ACTIVATION_RECORD_ID,
+        "feature": "phone_learning",
+        "version": "v1",
+        "activated_at": activation_at,
+        "environment": "production",
+        "metric_scope": "post_activation",
+        "created_at": activation_at,
+    }
+    try:
+        collection.update_one(
+            {"_id": ACTIVATION_RECORD_ID},
+            {"$setOnInsert": document},
+            upsert=True,
+        )
+        return collection.find_one({"_id": ACTIVATION_RECORD_ID}) or document
+    except Exception as exc:
+        logger.error(
+            "[CP_PHONE_LEARNING] activation_record_unavailable error=%s",
+            type(exc).__name__,
+        )
+        return None
+
+
+def phone_learning_activation_at(db=None) -> datetime | None:
+    """Read the immutable production activation timestamp from Mongo."""
+    if db is None:
+        return None
+    try:
+        record = db[METRICS_COLLECTION].find_one({"_id": ACTIVATION_RECORD_ID}) or {}
+    except Exception:
+        return None
+    return _parse_utc_timestamp(record.get("activated_at"))
 
 
 def phone_learning_global_lookup_enabled() -> bool:
@@ -236,7 +279,7 @@ def _record_broker_feedback_metric(db, *, event_id: str, has_phone: bool, occurr
     """
     if not phone_learning_enabled():
         return
-    activation_at = phone_learning_activation_at()
+    activation_at = phone_learning_activation_at(db)
     if activation_at and occurred_at < activation_at:
         return
     metric_key = f"phone-learning:{activation_at.isoformat() if activation_at else 'unbounded'}"
@@ -831,4 +874,3 @@ def revoke_human_feedback(
                 original_event_id, type(exc).__name__,
             )
     return updated
-

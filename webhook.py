@@ -893,6 +893,13 @@ async def lifespan(app: FastAPI):
         logger.info(f"MongoDB ping: {(_p1-_p0)*1000:.0f}ms preconnect OK")
         await get_async_db().command("ping")
         logger.info("MongoDB preconnect: OK")
+        from captacion_contact_identity import ensure_phone_learning_activation
+        activation_record = ensure_phone_learning_activation(get_db())
+        if activation_record:
+            logger.info(
+                "[CP_PHONE_LEARNING] production_activation_at=%s",
+                activation_record.get("activated_at"),
+            )
     except Exception as e:
         logger.warning(f"MongoDB preconnect warning: {e}")
 

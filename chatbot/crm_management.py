@@ -35,6 +35,12 @@ class StaleAssignmentCycleError(ValueError):
     code = "stale_assignment_cycle"
 
 
+class LeadReassignedSlaLockedError(ValueError):
+    """The old owner attempted management after an SLA reassignment commit."""
+
+    code = "LEAD_REASSIGNED_SLA_LOCKED"
+
+
 class ScheduledTimeTooSoonError(ValueError):
     """A reminder or visit was scheduled too close to the current time."""
 
@@ -144,6 +150,37 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if (not actor_can_manage_any_cycle and
             str(cycle.get("assigned_to_user_id")) != str(actor_user_id)):
         raise PermissionError("management actor does not own the active cycle")
+    # The shared gate is intentionally opt-in. When enabled, claim human
+    # management before persisting the result so a reassignment transaction
+    # cannot win the same cycle concurrently.
+    from config import Config
+    if getattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", False):
+        from .crm_assignment_cycle_gate import (
+            CycleGateStatus,
+            claim_cycle_for_human_management,
+            protection_type_for_management_result,
+        )
+        protection_type = protection_type_for_management_result(result_type)
+        if not protection_type:
+            raise ValueError("human management evidence is not protectable")
+        gate_result = claim_cycle_for_human_management(
+            db,
+            lead_id=lead_id,
+            assignment_cycle_id=assignment_cycle_id,
+            actor_user_id=actor_user_id,
+            protection_type=protection_type,
+            occurred_at=occurred,
+            actor_can_manage_any_cycle=actor_can_manage_any_cycle,
+        )
+        if gate_result.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value:
+            raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
+        if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
+            raise PermissionError("management cycle gate owner mismatch")
+        if gate_result.status not in {
+            CycleGateStatus.CLAIMED.value,
+            CycleGateStatus.ALREADY_PROTECTED.value,
+        }:
+            raise ValueError(f"management cycle gate rejected: {gate_result.status}")
     # The actor may be a supervisor recording the result on behalf of the
     # assigned executive.  Audit fields keep the actor, while follow-up work
     # belongs to the executive who owns this assignment cycle.

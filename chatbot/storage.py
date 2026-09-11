@@ -315,6 +315,53 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None, 
 
     db = get_db()
     now = datetime.now(CHILE_TZ)
+    # When explicitly enabled, an authenticated human outbound message claims
+    # protection before persistence. Automated messages and clicks do not.
+    if role == "assistant" and lead_id and isinstance(metadata, dict):
+        actor_type = str(metadata.get("actor_type") or "").strip().lower()
+        if actor_type == "human_agent":
+            from config import Config
+            if getattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", False):
+                from .crm_assignment_cycle_gate import (
+                    CycleGateStatus,
+                    HumanProtectionType,
+                    claim_cycle_for_human_management,
+                )
+                active_cycle = db["crm_assignment_cycles"].find_one({
+                    "lead_id": lead_id,
+                    "cycle_status": "active",
+                    "unassigned_at": None,
+                })
+                if active_cycle:
+                    operation = str(metadata.get("operation") or "").lower()
+                    if "email" in operation:
+                        protection_type = HumanProtectionType.EMAIL.value
+                    elif "call" in operation or "phone" in operation:
+                        protection_type = HumanProtectionType.CALL.value
+                    elif "whatsapp" in operation or "wa" in operation:
+                        protection_type = HumanProtectionType.WHATSAPP.value
+                    else:
+                        protection_type = HumanProtectionType.HUMAN_OUTREACH.value
+                    gate_result = claim_cycle_for_human_management(
+                        db,
+                        lead_id=lead_id,
+                        assignment_cycle_id=active_cycle.get("assignment_cycle_id"),
+                        actor_user_id=metadata.get("actor_id") or "",
+                        protection_type=protection_type,
+                        occurred_at=now,
+                    )
+                    if gate_result.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value:
+                        from .crm_management import LeadReassignedSlaLockedError
+                        raise LeadReassignedSlaLockedError(
+                            LeadReassignedSlaLockedError.code
+                        )
+                    if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
+                        raise PermissionError("human message actor does not own active cycle")
+                    if gate_result.status not in {
+                        CycleGateStatus.CLAIMED.value,
+                        CycleGateStatus.ALREADY_PROTECTED.value,
+                    }:
+                        raise ValueError(f"human message gate rejected: {gate_result.status}")
     message = {
         "role": role,
         "content": str(content),

@@ -202,7 +202,8 @@ background_tasks_status = {
     "prop360_poll": {"status": "starting", "last_heartbeat": None},
     "ficha_sync": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
-    "lead_processing": {"status": "starting", "last_heartbeat": None}
+    "lead_processing": {"status": "starting", "last_heartbeat": None},
+    "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
 }
 _OAUTH_HTTP_CLIENT = None
 
@@ -955,6 +956,26 @@ async def lifespan(app: FastAPI):
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
     sla_alert_task = None
+    sla_reassignment_task = None
+
+    # Controlled prospective SLA worker. The runtime performs all guards:
+    # explicit shadow cutover, read-only snapshotting, global lease and write
+    # blocking. It is scheduled only when both shadow switches are on.
+    if Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED and Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED:
+        try:
+            from chatbot.crm_sla_reassignment_runtime import run_crm_sla_shadow_worker
+            sla_reassignment_task = asyncio.create_task(
+                run_crm_sla_shadow_worker(status=background_tasks_status["crm_sla_reassignment_shadow"])
+            )
+        except Exception:
+            background_tasks_status["crm_sla_reassignment_shadow"].update({"status": "error", "health": "CONFIG_ERROR"})
+            logger.exception("[SLA_SHADOW_ERROR] worker startup bridge failed")
+    else:
+        logger.info(
+            "[SLA_SHADOW_START] status=DISABLED worker=%s shadow=%s",
+            Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED,
+            Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED,
+        )
 
     # CRM SLA Alert orchestrator — exclusive domain, behind feature flag.
     # The wrapper below publishes liveness + last-cycle stats to
@@ -1114,6 +1135,8 @@ async def lifespan(app: FastAPI):
     cb_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
+    if sla_reassignment_task is not None:
+        sla_reassignment_task.cancel()
     if non_hot_digest_task is not None:
         non_hot_digest_task.cancel()
     if prop360_task is not None:
@@ -1122,6 +1145,7 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(
             n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
+            *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),
             *([prop360_task] if prop360_task is not None else []),
             return_exceptions=True

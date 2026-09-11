@@ -6,6 +6,7 @@ import logging
 import uuid
 import re
 import unicodedata
+import threading
 import time as _perf_time
 from captacion_kpis import (
     VISIBLE_CLASSIFICATION_STATES,
@@ -33,6 +34,7 @@ from captacion_management import (
     start_management_attempt,
 )
 from captacion_materialized import build_captacion_materialized_fields
+from captacion_assignment_eligibility import assignment_classification_priority
 from captacion_contact_identity import (
     get_contact_identity_evidence,
     normalize_phone,
@@ -2791,10 +2793,17 @@ BROKER_GUARD_TERMS = (
 )
 
 BROKER_GUARD_FIELDS = (
-    "company_name", "broker_brand", "publicador_visible", "contact_name",
-    "contact_logo_alt", "listing_advertiser", "seller_jsonld_name",
-    "seller_name", "seller_text",
+    "company_name", "broker_brand", "publicador_visible",
+    "contact_logo_alt", "contact_badges_text",
 )
+
+DISTRIBUTION_STATES = ("DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO")
+DISTRIBUTION_TERMINAL_STATES = {
+    "Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
+    "Telefono invalido", "Teléfono inválido", "Propiedad no disponible",
+    "Publicacion expirada", "Publicación expirada", "No interesado",
+}
+_DISTRIBUTION_RUN_LOCK = threading.Lock()
 
 
 def _has_broker_identity(doc: dict) -> bool:
@@ -2810,116 +2819,295 @@ def _has_broker_identity(doc: dict) -> bool:
     return any(term in norm for term in BROKER_GUARD_TERMS)
 
 
-def distribute_sourced_leads():
-    """Distribuye propiedades nuevas sin asignar. Versión simplificada para background loop."""
-    from bson import ObjectId
-    db = get_db()
-    coll = get_captacion_collection(db)
+def _distribution_unassigned_clause() -> dict:
+    """Require the canonical assignment id to be empty for idempotency.
 
-    agents = list(db["usuarios"].find({
-        "is_active": True,
-        "rol": "agente",
-        "comunas_interes_norm": {"$exists": True, "$ne": []}
-    }))
-    if not agents:
-        logger.info("[DISTRIBUCION] 0 agentes elegibles.")
-        return 0
-
-    comuna_to_agents = {}
-    for a in agents:
-        aid = str(a["_id"])
-        for cn in a.get("comunas_interes_norm", []):
-            comuna_to_agents.setdefault(cn, []).append(aid)
-
-    eligible_query = {
-        "origen": "toctoc",
-        "gestion.semantic_review_hold": {"$ne": True},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
+    Legacy documents may retain an old display name while their canonical
+    executive id is null; that name must not make them disappear from the
+    normal pool. The atomic id guard is the source of truth for concurrency.
+    """
+    return {
         "$or": [
             {"gestion.ejecutivo_id": {"$exists": False}},
             {"gestion.ejecutivo_id": None},
+            {"gestion.ejecutivo_id": ""},
         ]
     }
-    props = list(coll.find(eligible_query))
-    from captacion_assignment_eligibility import calculate_assignment_eligibility
-    props = [
-        p for p in props
-        if calculate_assignment_eligibility(
-            p,
-            contact_identity=(get_contact_identity_evidence(db, p) if phone_learning_global_lookup_enabled() else None),
-        )["assignment_ready"]
-    ]
-    # Nunca redistribuir un contacto que ya tuvo gestión humana (notas,
-    # actividades, fecha_ultima_gestion, eventos). Evita molestar a un
-    # ejecutivo que ya lo trabajó y evitar que pase a otro ejecutivo.
-    try:
-        from redistribute_captacion import has_management_evidence
-        events_coll = db["captacion_management_events"]
-        protected = 0
-        kept = []
-        for p in props:
-            has_ev, _ = has_management_evidence(p, events_coll)
-            if has_ev:
-                protected += 1
-            else:
-                kept.append(p)
-        props = kept
-        if protected > 0:
-            logger.info(f"[DISTRIBUCION] {protected} contactos protegidos por gestión previa (no redistribuidos).")
-    except Exception as e:
-        logger.warning(f"[DISTRIBUCION] No se pudo aplicar guard de gestión previa: {e}")
-    # Defensa en profundidad: aunque la clasificación haya fallado y marque
-    # INCIERTO/assignment_ready, nunca asignar al equipo un publicador con
-    # identidad comercial de corredor (RE/MAX, inmobiliarias, etc.).
-    broker_guard = 0
-    kept = []
-    for p in props:
-        if _has_broker_identity(p):
-            broker_guard += 1
-        else:
-            kept.append(p)
-    props = kept
-    if broker_guard > 0:
-        logger.warning(f"[DISTRIBUCION] {broker_guard} propiedades con identidad de corredor bloqueadas (guard comercial).")
-    logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
 
-    assigned = 0
-    now = datetime.now(timezone.utc)
-    wl = {a["_id"]: 0 for a in agents}
 
-    for p in props:
-        slug = p.get("comuna_slug") or normalize_commune_canonical(p.get("comuna") or "")
-        if not slug:
+def _distribution_sort_key(document: dict) -> tuple:
+    captured_at = get_captacion_capture_datetime(document)
+    captured_epoch = captured_at.timestamp() if captured_at else 0.0
+    return (
+        assignment_classification_priority(document),
+        -captured_epoch,
+        str(document.get("_id") or document.get("listing_id") or document.get("url") or ""),
+    )
+
+
+def _distribution_open_workloads(db, agent_ids: list[str]) -> dict[str, int]:
+    if not agent_ids:
+        return {}
+    rows = db[Config.CAPTACION_COLLECTION_NAME].aggregate([
+        {"$match": {
+            "gestion.ejecutivo_id": {"$in": agent_ids},
+            "gestion.estado": {"$nin": list(DISTRIBUTION_TERMINAL_STATES)},
+        }},
+        {"$group": {"_id": "$gestion.ejecutivo_id", "count": {"$sum": 1}}},
+    ])
+    return {str(row.get("_id")): int(row.get("count") or 0) for row in rows}
+
+
+def _build_bounded_distribution_plan(
+    properties: list[dict],
+    agents: list[dict],
+    open_workload: dict[str, int],
+    *,
+    batch_size: int,
+    max_per_agent: int,
+    max_open: int,
+) -> tuple[list[tuple[dict, str]], dict[str, int]]:
+    """Select a bounded, priority-ordered plan without mutating Mongo."""
+    agents_by_id = {agent["id"]: agent for agent in agents}
+    commune_to_agents: dict[str, list[str]] = {}
+    for agent in agents:
+        for commune in agent.get("comunas_interes_norm") or []:
+            commune_to_agents.setdefault(commune, []).append(agent["id"])
+    run_load = {agent_id: 0 for agent_id in agents_by_id}
+    stats = {"no_coverage": 0, "capacity": 0, "selected": 0}
+    plan: list[tuple[dict, str]] = []
+
+    for prop in sorted(properties, key=_distribution_sort_key):
+        if len(plan) >= max(0, int(batch_size)):
+            break
+        slug = prop.get("comuna_slug") or normalize_commune_canonical(prop.get("comuna") or "")
+        candidate_ids = commune_to_agents.get(slug, [])
+        if not candidate_ids:
+            stats["no_coverage"] += 1
             continue
-        candidates = comuna_to_agents.get(slug, [])
-        if not candidates:
+        available_ids = [
+            agent_id for agent_id in candidate_ids
+            if open_workload.get(agent_id, 0) + run_load.get(agent_id, 0) < max_open
+            and run_load.get(agent_id, 0) < max_per_agent
+        ]
+        if not available_ids:
+            stats["capacity"] += 1
             continue
-        # Ponderado: menor workload
-        best = min(candidates, key=lambda aid: wl.get(aid, 0))
-        wl[best] = wl.get(best, 0) + 1
-
-        from bson import ObjectId
-        oid = p["_id"] if isinstance(p["_id"], ObjectId) else ObjectId(p["_id"])
-        cycle = new_assignment_cycle(property_id=p["_id"], user_id=best, assigned_at=now, reason="weighted_commune_background")
-        coll.update_one(
-            {"_id": oid,
-             "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
-             "gestion.semantic_review_hold": {"$ne": True},
-             "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
-            {"$set": {
-                "gestion.ejecutivo_id": best,
-                "gestion.ejecutivo_asignado": db["usuarios"].find_one({"_id": ObjectId(best) if len(best) == 24 else best}).get("nombre", ""),
-                "gestion.fecha_asignacion": now,
-                "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
-                "gestion.first_valid_action_at": None,
-                "gestion.asignacion_version": "v1_weighted_commune_background",
-                "gestion.estado": "NUEVO",
-            }}
+        best_id = min(
+            available_ids,
+            key=lambda agent_id: (
+                open_workload.get(agent_id, 0) + run_load.get(agent_id, 0),
+                agents_by_id[agent_id]["name"].casefold(),
+            ),
         )
-        assigned += 1
+        plan.append((prop, best_id))
+        run_load[best_id] += 1
+        stats["selected"] += 1
+    return plan, stats
 
-    logger.info(f"[DISTRIBUCION] Asignadas: {assigned}")
-    return assigned
+
+def _record_distribution_metrics(db, metrics: dict) -> None:
+    try:
+        db[Config.CAPTACION_DISTRIBUTION_METRICS_COLLECTION].insert_one(metrics)
+    except Exception:
+        logger.exception("[DISTRIBUCION] No se pudo registrar métrica de corrida")
+
+
+def _atomic_assign_distribution_candidate(db, coll, events_coll, document, agent, now):
+    """Re-evaluate and assign one candidate with an atomic unassigned guard."""
+    from bson import ObjectId
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    from redistribute_captacion import has_management_evidence
+
+    fresh = coll.find_one({"_id": document["_id"]})
+    if not fresh:
+        return "stale"
+    has_ev, _ = has_management_evidence(fresh, events_coll)
+    if has_ev:
+        return "managed"
+    identity = get_contact_identity_evidence(db, fresh) if phone_learning_global_lookup_enabled() else None
+    decision = calculate_assignment_eligibility(fresh, contact_identity=identity)
+    if not decision["assignment_ready"]:
+        if "contact_identity_broker_confirmed" in decision["assignment_block_reasons"]:
+            return "phone"
+        return "quality"
+    if _has_broker_identity(fresh):
+        return "quality"
+
+    slug = fresh.get("comuna_slug") or normalize_commune_canonical(fresh.get("comuna") or "")
+    if not slug or slug not in set(agent.get("comunas_interes_norm") or []):
+        return "no_coverage"
+    oid = fresh["_id"] if isinstance(fresh["_id"], ObjectId) else ObjectId(str(fresh["_id"]))
+    cycle = new_assignment_cycle(
+        property_id=fresh["_id"], user_id=agent["id"], assigned_at=now, reason="weighted_commune_background"
+    )
+    result = coll.update_one(
+        {
+            "_id": oid,
+            "origen": "toctoc",
+            "classification.state": {"$in": list(DISTRIBUTION_STATES)},
+            "gestion.semantic_review_hold": {"$ne": True},
+            **_distribution_unassigned_clause(),
+        },
+        {"$set": {
+            "gestion.ejecutivo_id": agent["id"],
+            "gestion.ejecutivo_asignado": agent["name"],
+            "gestion.fecha_asignacion": now,
+            "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
+            "gestion.first_valid_action_at": None,
+            "gestion.asignacion_version": "v2_bounded_weighted_commune",
+            "gestion.estado": "NUEVO",
+        }},
+    )
+    return "assigned" if result.modified_count else "already_assigned"
+
+
+def distribute_sourced_leads():
+    """Distribute one bounded, balanced batch from the normal Toctoc pool."""
+    started_at = datetime.now(timezone.utc)
+    run_id = str(uuid.uuid4())
+    metrics = {
+        "_id": run_id,
+        "run_id": run_id,
+        "started_at": started_at,
+        "source": "post_scrape_or_manual_distribution",
+        "portal_scope": ["toctoc"],
+        "batch_requested": int(Config.CAPTACION_DISTRIBUTION_BATCH_SIZE),
+        "batch_selected": 0,
+        "evaluated": 0,
+        "eligible_found": 0,
+        "assigned": 0,
+        "assigned_by_classification": {state: 0 for state in DISTRIBUTION_STATES},
+        "assigned_by_portal": {"toctoc": 0},
+        "assigned_by_executive": {},
+        "active_agents": 0,
+        "open_workload_before": {},
+        "max_open_per_executive": int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE),
+        "max_per_executive_per_run": int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE),
+        "skipped_by_phone": 0,
+        "skipped_by_quality": 0,
+        "skipped_by_capacity": 0,
+        "skipped_already_assigned": 0,
+        "skipped_managed": 0,
+        "skipped_no_coverage": 0,
+        "errors": 0,
+    }
+    if not _DISTRIBUTION_RUN_LOCK.acquire(blocking=False):
+        metrics["skipped_concurrent_run"] = 1
+        metrics["finished_at"] = datetime.now(timezone.utc)
+        _record_distribution_metrics(get_db(), metrics)
+        return 0
+
+    try:
+        db = get_db()
+        coll = get_captacion_collection(db)
+        events_coll = db["captacion_management_events"]
+        from redistribute_captacion import has_management_evidence
+        agents_raw = list(db["usuarios"].find({
+            "is_active": True,
+            "rol": "agente",
+            "comunas_interes_norm": {"$exists": True, "$ne": []},
+        }))
+        agents = []
+        for raw in agents_raw:
+            agents.append({
+                "id": str(raw["_id"]),
+                "name": raw.get("nombre") or str(raw["_id"]),
+                "comunas_interes_norm": list(raw.get("comunas_interes_norm") or []),
+            })
+        if not agents:
+            logger.info("[DISTRIBUCION] 0 agentes elegibles.")
+            return 0
+
+        agent_by_id = {agent["id"]: agent for agent in agents}
+        open_workload = _distribution_open_workloads(db, list(agent_by_id))
+        metrics["active_agents"] = len(agents)
+        metrics["open_workload_before"] = dict(open_workload)
+        max_open = int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE)
+        max_per_agent = int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE)
+        batch_size = int(Config.CAPTACION_DISTRIBUTION_BATCH_SIZE)
+
+        eligible_query = {
+            "origen": "toctoc",
+            "gestion.semantic_review_hold": {"$ne": True},
+            "classification.state": {"$in": list(DISTRIBUTION_STATES)},
+            **_distribution_unassigned_clause(),
+        }
+        raw_props = list(coll.find(eligible_query))
+        metrics["evaluated"] = len(raw_props)
+        props = []
+        for prop in raw_props:
+            identity = get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None
+            from captacion_assignment_eligibility import calculate_assignment_eligibility
+            decision = calculate_assignment_eligibility(prop, contact_identity=identity)
+            if not decision["assignment_ready"]:
+                if "contact_identity_broker_confirmed" in decision["assignment_block_reasons"]:
+                    metrics["skipped_by_phone"] += 1
+                else:
+                    metrics["skipped_by_quality"] += 1
+                continue
+            has_ev, _ = has_management_evidence(prop, events_coll)
+            if has_ev:
+                metrics["skipped_managed"] += 1
+                continue
+            if _has_broker_identity(prop):
+                metrics["skipped_by_quality"] += 1
+                continue
+            props.append(prop)
+        metrics["eligible_found"] = len(props)
+        plan, plan_stats = _build_bounded_distribution_plan(
+            props,
+            agents,
+            open_workload,
+            batch_size=batch_size,
+            max_per_agent=max_per_agent,
+            max_open=max_open,
+        )
+        metrics["batch_selected"] = len(plan)
+        metrics["skipped_no_coverage"] = plan_stats["no_coverage"]
+        metrics["skipped_by_capacity"] = plan_stats["capacity"]
+        now = datetime.now(timezone.utc)
+
+        for prop, best_id in plan:
+            try:
+                status = _atomic_assign_distribution_candidate(
+                    db, coll, events_coll, prop, agent_by_id[best_id], now
+                )
+            except Exception:
+                metrics["errors"] += 1
+                logger.exception("[DISTRIBUCION] Error asignando property_id=%s", prop.get("_id"))
+                continue
+            if status == "assigned":
+                state = str((prop.get("classification") or {}).get("state") or "INCIERTO")
+                metrics["assigned"] += 1
+                metrics["assigned_by_classification"][state] = metrics["assigned_by_classification"].get(state, 0) + 1
+                metrics["assigned_by_portal"]["toctoc"] += 1
+                agent_name = agent_by_id[best_id]["name"]
+                metrics["assigned_by_executive"][agent_name] = metrics["assigned_by_executive"].get(agent_name, 0) + 1
+            elif status == "phone":
+                metrics["skipped_by_phone"] += 1
+            elif status in {"quality", "stale"}:
+                metrics["skipped_by_quality"] += 1
+            elif status == "managed":
+                metrics["skipped_managed"] += 1
+            elif status == "no_coverage":
+                metrics["skipped_no_coverage"] += 1
+            elif status == "already_assigned":
+                metrics["skipped_already_assigned"] += 1
+
+        metrics["remaining_in_snapshot"] = max(0, metrics["eligible_found"] - metrics["assigned"])
+        logger.info(
+            "[DISTRIBUCION] run=%s evaluadas=%s elegibles=%s batch=%s asignadas=%s phone=%s calidad=%s capacidad=%s",
+            run_id, metrics["evaluated"], metrics["eligible_found"], metrics["batch_selected"],
+            metrics["assigned"], metrics["skipped_by_phone"], metrics["skipped_by_quality"],
+            metrics["skipped_by_capacity"],
+        )
+        return metrics["assigned"]
+    finally:
+        metrics["finished_at"] = datetime.now(timezone.utc)
+        metrics["duration_ms"] = round((metrics["finished_at"] - started_at).total_seconds() * 1000, 1)
+        _record_distribution_metrics(locals().get("db") or get_db(), metrics)
+        _DISTRIBUTION_RUN_LOCK.release()
 
 
 def redistribute_inactive_agent_captaciones(dry_run=True):

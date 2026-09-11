@@ -52,6 +52,20 @@ class Config:
         "CAPTACION_PRODUCTION_GROUP", CAPTACION_WEEKLY_GROUP_ID or DAILY_REPORT_GROUP_ID or ""
     ).strip()
     CAPTACION_TEST_MODE = os.getenv("CAPTACION_TEST_MODE", "true").lower() == "true"
+    # Distribution safety controls. Current operation has 7 active agents with
+    # an approximate 10-contact daily target; the safe default admits two new
+    # captaciones per agent per run (14 total) and stops an agent above the
+    # current observed open-workload ceiling plus a small headroom.
+    CAPTACION_DISTRIBUTION_BATCH_SIZE = max(1, int(os.getenv("CAPTACION_DISTRIBUTION_BATCH_SIZE", "14")))
+    CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE = max(
+        1, int(os.getenv("CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE", "2"))
+    )
+    CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE = max(
+        1, int(os.getenv("CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE", "350"))
+    )
+    CAPTACION_DISTRIBUTION_METRICS_COLLECTION = os.getenv(
+        "CAPTACION_DISTRIBUTION_METRICS_COLLECTION", "captacion_distribution_runs"
+    )
     CAPTACION_DAILY_PRODUCTION_ENABLED = os.getenv("CAPTACION_DAILY_PRODUCTION_ENABLED", "false").lower() == "true"
     CAPTACION_DAILY_DELIVERY_COLLECTION = os.getenv(
         "CAPTACION_DAILY_DELIVERY_COLLECTION", "captacion_daily_deliveries"

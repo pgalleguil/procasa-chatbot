@@ -25,6 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from chatbot.storage import get_db
 from bson import ObjectId
+from captacion_assignment_eligibility import calculate_assignment_eligibility, is_chilepropiedades_document
+from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -83,7 +85,16 @@ def has_management_evidence(prop, events_coll):
     return False, None
 
 
-def is_eligible(prop):
+def is_eligible(prop, db=None):
+    if is_chilepropiedades_document(prop):
+        contact_identity = get_contact_identity_evidence(db, prop) if db is not None else None
+        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
+    if db is not None and phone_learning_global_lookup_enabled():
+        contact_identity = get_contact_identity_evidence(db, prop)
+        if contact_identity:
+            decision = calculate_assignment_eligibility(prop, contact_identity=contact_identity)
+            if not decision["assignment_ready"]:
+                return False
     c = prop.get("classification") or {}
     if c.get("state") not in VISIBLE_CLASSIFICATION_STATES: return False
     if not c.get("assignment_ready"): return False
@@ -99,7 +110,7 @@ def stock_pendiente(agent_id, coll, events_coll):
     for p in coll.find({"gestion.ejecutivo_id": agent_id}):
         g = p.get("gestion") or {}
         if g.get("estado") in TERMINAL_STATES: continue
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if not has_ev:
             count += 1
@@ -140,7 +151,7 @@ def run(dry_run=True):
         if aid not in agents: continue
         estado = (p.get("gestion") or {}).get("estado")
         if estado in TERMINAL_STATES: continue
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if has_ev:
             agent_managed[aid].append(p)
@@ -170,7 +181,7 @@ def run(dry_run=True):
     ))
     pool = []
     for p in all_unassigned:
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if has_ev: continue
         pool.append(p)
@@ -426,7 +437,7 @@ def run(dry_run=True):
     # 4. Elegibles sin agente
     remaining = 0
     for p in coll.find({"$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]}):
-        if is_eligible(p):
+        if is_eligible(p, db=db):
             has_ev, _ = has_management_evidence(p, events_coll)
             if not has_ev:
                 remaining += 1

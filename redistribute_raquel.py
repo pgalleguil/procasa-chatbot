@@ -55,8 +55,15 @@ def is_abierta(g):
     return True
 
 
-def is_eligible(p):
+def is_eligible(p, db=None):
     """True si la propiedad es apta para captacion (clasificacion + assignment_ready)."""
+    if db is not None:
+        from captacion_assignment_eligibility import calculate_assignment_eligibility
+        from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
+        if phone_learning_global_lookup_enabled():
+            identity = get_contact_identity_evidence(db, p)
+            if not calculate_assignment_eligibility(p, contact_identity=identity)["assignment_ready"]:
+                return False
     c = p.get("classification") or {}
     state = c.get("state", "")
     if state not in VISIBLE_CLASSIFICATION_STATES:
@@ -120,7 +127,7 @@ def run(dry_run=True):
     abiertas_elegibles = []
     abiertas_no_elegibles = []
     for p in abiertas:
-        if is_eligible(p):
+        if is_eligible(p, db=db):
             abiertas_elegibles.append(p)
         else:
             abiertas_no_elegibles.append(p)

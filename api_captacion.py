@@ -33,6 +33,11 @@ from captacion_management import (
     start_management_attempt,
 )
 from captacion_materialized import build_captacion_materialized_fields
+from captacion_contact_identity import (
+    get_contact_identity_evidence,
+    normalize_phone,
+    phone_learning_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1777,7 +1782,7 @@ def update_captacion_status(
 
     return True
 
-def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):
+def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema", user_id=None, return_details=False):
     db = get_db()
     
     try:
@@ -1791,11 +1796,13 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         if not current_doc:
             return False
         
-    details = current_doc.get("details", {})
+    details = current_doc.get("details", {}) or {}
     
     update_fields = {}
     audit_changes = []
     now = get_chile_now()
+    contact_identity = None
+    known_broker_match = None
     
     nombre_limpio = str(nombre or "").strip()
     nombre_actual = str(details.get("publicador") or "").strip()
@@ -1810,22 +1817,44 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         })
         
     if telefono:
-        clean_phone = "".join(filter(str.isdigit, str(telefono)))
-        if clean_phone != details.get("whatsapp_phone"):
+        clean_phone = normalize_phone(telefono)
+        if not clean_phone:
+            logger.warning("[CAPTACION_CONTACT] invalid_phone_rejected property_id=%s", obj_id)
+            return False
+        previous_phone = normalize_phone(
+            current_doc.get("telefono_normalizado")
+            or details.get("whatsapp_phone")
+            or details.get("telefono")
+        )
+        if clean_phone != previous_phone:
+            phone_actor = str(user_id or user_name or "Sistema")
+            old_version = current_doc.get("phone_version") or 0
+            try:
+                next_version = int(old_version) + 1
+            except (TypeError, ValueError):
+                next_version = 1
             update_fields["details.whatsapp_phone"] = clean_phone
             updated_doc = dict(current_doc)
             updated_details = dict(details)
             updated_details["whatsapp_phone"] = clean_phone
             updated_doc["details"] = updated_details
-            update_fields["telefono_normalizado"] = build_captacion_materialized_fields(
-                updated_doc
-            )["telefono_normalizado"]
+            update_fields["telefono_normalizado"] = clean_phone
+            update_fields["phone_normalized"] = clean_phone
+            update_fields["phone_source"] = "EXECUTIVE"
+            update_fields["phone_added_at"] = now
+            update_fields["phone_added_by"] = phone_actor
+            update_fields["phone_original_value"] = str(telefono)
+            update_fields["phone_version"] = next_version
             audit_changes.append({
                 "timestamp": now,
                 "user": user_name,
                 "field": "telefono",
                 "old_value": details.get("whatsapp_phone"),
-                "new_value": clean_phone
+                "new_value": clean_phone,
+                "phone_normalized": clean_phone,
+                "phone_source": "EXECUTIVE",
+                "phone_added_by": phone_actor,
+                "phone_version": next_version,
             })
             
     if email and email != details.get("email"):
@@ -1861,10 +1890,42 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             try:
                 log_event(str(obj_id), EventType.REGISTER_PHONE.value, user_name, {
                     "phone_registered": telefono,
+                    "phone_normalized": normalize_phone(telefono),
+                    "phone_source": "EXECUTIVE",
                     "source": "captacion"
                 })
             except Exception as e:
                 logger.error(f"Error logging register phone event: {e}")
+
+    if telefono and phone_learning_enabled():
+        lookup_doc = dict(current_doc)
+        lookup_details = dict(details)
+        lookup_doc["details"] = lookup_details
+        normalized_phone = normalize_phone(telefono)
+        lookup_details["whatsapp_phone"] = normalized_phone
+        for key in ("telefono_normalizado", "phone_normalized", "whatsapp_phone", "contact_phone", "telefono"):
+            lookup_doc[key] = normalized_phone
+        contact_identity = get_contact_identity_evidence(db, lookup_doc)
+        if contact_identity and str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED":
+            from captacion_management import record_known_broker_auto_match
+            known_broker_match = record_known_broker_auto_match(
+                db,
+                property_doc=lookup_doc,
+                identity=contact_identity,
+                actor_user_id=user_id,
+                actor_name=user_name,
+                now=now,
+            )
+
+    if return_details:
+        return {
+            "ok": True,
+            "known_broker_auto_match": bool(known_broker_match and known_broker_match.get("matched")),
+            "message": (known_broker_match or {}).get("message"),
+            "identity_status": (contact_identity or {}).get("status"),
+            "identity_id": str((contact_identity or {}).get("_id") or (contact_identity or {}).get("identity_key") or ""),
+            "known_broker_event_id": (known_broker_match or {}).get("event_id"),
+        }
 
     return True
 

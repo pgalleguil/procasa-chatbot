@@ -4238,10 +4238,12 @@ async def api_update_captacion_contact(request: Request):
                 telefono=data.get("telefono"),
                 email=data.get("email"),
                 notas=data.get("notas"),
-                user_name=user_name
+                user_name=user_name,
+                user_id=str((user_doc or {}).get("_id") or user_name or "Sistema"),
+                return_details=True,
             )
         )
-        return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
+        return {"status": "ok", **result} if result else {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:
         raise
     except Exception as e:

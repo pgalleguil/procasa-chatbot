@@ -116,8 +116,15 @@ def run_distribution(dry_run=True):
     }
     
     all_targets = list(coll.find(target_query))
-    from captacion_assignment_eligibility import assignment_eligibility
-    all_targets = [p for p in all_targets if assignment_eligibility(p)[0]]
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
+    all_targets = [
+        p for p in all_targets
+        if calculate_assignment_eligibility(
+            p,
+            contact_identity=(get_contact_identity_evidence(db, p) if phone_learning_global_lookup_enabled() else None),
+        )["assignment_ready"]
+    ]
     logger.info(f"Propiedades objetivo: {len(all_targets)}")
     
     # Separar por estado

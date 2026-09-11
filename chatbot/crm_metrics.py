@@ -17,6 +17,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 from .utils import calculate_business_minutes
+from captacion_contact_identity import normalize_phone
 
 METRIC_VERSION = "crm_metrics_v1"
 INSTRUMENTATION_CUTOVER = "2026-07-20T00:00:00-04:00"
@@ -110,13 +111,6 @@ def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
                 day.year, day.month, day.day, BUSINESS_START_HOUR, 0, 0
             ))
             return opening.astimezone(timezone.utc)
-
-
-def normalize_phone(value: Any) -> str:
-    from .phone_utils import normalize_phone_strict
-
-    normalized = normalize_phone_strict(str(value or ""))
-    return re.sub(r"\D", "", normalized or str(value or ""))
 
 
 @dataclass(frozen=True)

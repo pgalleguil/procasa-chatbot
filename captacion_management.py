@@ -19,6 +19,11 @@ from captacion_workforce import (
     localize,
 )
 from config import Config
+from captacion_contact_identity import (
+    phone_learning_enabled,
+    record_human_feedback,
+    revoke_human_feedback,
+)
 
 
 ATTEMPT_COLLECTION = "captacion_action_attempts"
@@ -50,6 +55,7 @@ VALID_CREDIT_EVENT_TYPES = {
     "management_confirmed",
     "manual_decision_confirmed",
     "capture_confirmed",
+    "known_broker_auto_match",
 }
 
 # Catálogo compartido por /captacion y sus reportes. Sus claves son los
@@ -79,6 +85,12 @@ COMMERCIAL_OUTCOME_DEFINITIONS = {
     "not_interested": ("no_interesado", "No interesado", "closed_without_capture", 70),
     "invalid_number": ("numero_invalido", "Número inválido", "closed_without_capture", 70),
     "captured": ("captado", "Captado", "captured", 100),
+    "known_broker_auto_match": (
+        "known_broker_auto_match",
+        "Corredor conocido (depuración automática)",
+        "closed_without_capture",
+        70,
+    ),
 }
 COMMERCIAL_RESULT_VALUES = set(COMMERCIAL_OUTCOME_DEFINITIONS)
 CONTACT_RESULT_VALUES = set(VALID_RESULTS)
@@ -88,6 +100,7 @@ COMMERCIAL_RESULT_STATUS = {
     "not_interested": "No interesado",
     "captured": "Captado",
     "broker_identified": "Corredor",
+    "known_broker_auto_match": "Corredor",
     "discarded": "Descartado",
     "unavailable": "Propiedad no disponible",
     "listing_expired": "Publicación expirada",
@@ -119,6 +132,31 @@ MANUAL_DECISION_RULES = {
 }
 
 _INDEXES_READY = False
+
+
+def _record_contact_identity_feedback(db, property_doc: dict, event: dict, commercial_result: str | None) -> None:
+    """Persist human broker/owner feedback globally without rewriting listings."""
+    portal = str(property_doc.get("origen") or property_doc.get("source_portal") or "").strip().lower()
+    if portal not in {"chilepropiedades", "chilepropiedades.cl"} and not phone_learning_enabled():
+        return
+    classification = {
+        "broker_identified": "CORREDOR",
+        "captured": "OWNER",
+    }.get(str(commercial_result or ""))
+    if not classification:
+        return
+    try:
+        record_human_feedback(
+            db,
+            property_doc=property_doc,
+            event=event,
+            classification=classification,
+        )
+    except Exception:
+        # Feedback persistence must not make a valid CRM status change fail.
+        # The management event remains the source evidence for a retry/audit.
+        import logging
+        logging.getLogger(__name__).exception("No se pudo persistir identidad de contacto")
 
 
 def ensure_management_indexes(db) -> None:
@@ -340,6 +378,144 @@ def ensure_assignment_cycle(db, property_doc: dict) -> str:
     return cycle_id
 
 
+def record_known_broker_auto_match(
+    db,
+    *,
+    property_doc: dict,
+    identity: dict,
+    actor_user_id,
+    actor_name: str = "",
+    now=None,
+) -> dict:
+    """Credit a visible phone lookup, never as a real contact attempt."""
+    if not phone_learning_enabled():
+        return {"matched": False, "credited": False, "reason": "global_lookup_disabled"}
+    if str(identity.get("status") or "").upper() != "CORREDOR_CONFIRMED":
+        return {"matched": False, "credited": False, "reason": "identity_not_human_broker"}
+
+    property_id = clean_id(property_doc.get("_id") or property_doc.get("listing_id"))
+    actor_id = clean_id(actor_user_id)
+    identity_key = str(identity.get("identity_key") or "")
+    if not property_id or not actor_id or not identity_key:
+        return {"matched": False, "credited": False, "reason": "missing_match_context"}
+
+    occurred_at = now or datetime.now(timezone.utc)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    occurred_at = occurred_at.astimezone(timezone.utc)
+    cycle_id = ensure_assignment_cycle(db, property_doc)
+    dedup_key = f"known-broker-auto-match:{property_id}:{cycle_id}:{identity_key}"
+    ledger = db[LEDGER_COLLECTION]
+    existing = ledger.find_one({"dedup_key": dedup_key})
+
+    evidence = list(identity.get("evidence") or [])
+    human_evidence = [item for item in evidence if item.get("source") == "HUMAN_FEEDBACK"]
+    origin_evidence = human_evidence[0] if human_evidence else (evidence[0] if evidence else {})
+    phone = str(identity.get("phone_normalized") or "")
+    audit = {
+        "phone_masked": f"***{phone[-4:]}" if phone else "(sin teléfono)",
+        "identity_id": str(identity.get("_id") or identity_key),
+        "identity_key": identity_key,
+        "current_portal": str(property_doc.get("origen") or property_doc.get("source_portal") or "").strip().lower(),
+        "current_property_id": property_id,
+        "confirmation_origin_portal": origin_evidence.get("portal") or (identity.get("confirmed_portals") or [""])[0],
+        "confirmation_origin_event_id": origin_evidence.get("event_id") or "",
+        "original_confirmation_at": origin_evidence.get("occurred_at") or identity.get("last_human_confirmation_at"),
+        "current_executive_id": actor_id,
+        "current_executive_name": str(actor_name or ""),
+        "matched_at": occurred_at,
+        "state_before": str((property_doc.get("gestion") or {}).get("estado") or ""),
+        "result_after": "known_broker_auto_match",
+    }
+    if existing:
+        _mark_known_broker_property(db, property_doc, existing.get("event_id"), occurred_at, actor_name, write_history=False)
+        return {
+            "matched": True,
+            "credited": bool(existing.get("credited")),
+            "event_id": existing.get("event_id"),
+            "audit": existing.get("audit") or audit,
+            "message": "Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.",
+        }
+
+    event_id = str(uuid.uuid4())
+    event = {
+        "event_id": event_id,
+        "event_type": "known_broker_auto_match",
+        "credited": True,
+        "commercially_valid": True,
+        "dedup_key": dedup_key,
+        "property_id": property_id,
+        "assignment_cycle_id": cycle_id,
+        "actor_user_id": actor_id,
+        "actor_name_snapshot": str(actor_name or ""),
+        "action": "phone_lookup",
+        "channel": "crm",
+        "result": "known_broker_auto_match",
+        "commercial_result": "known_broker_auto_match",
+        "contact_result": None,
+        "contact_attempt": False,
+        "contact_effective": False,
+        "notes": "Coincidencia automática por teléfono previamente confirmado por un humano.",
+        "occurred_at": occurred_at,
+        "local_date": localize(occurred_at, DEFAULT_TIMEZONE).date().isoformat(),
+        "timezone": DEFAULT_TIMEZONE,
+        "source_system": "captacion_crm",
+        "migration_version": LEDGER_VERSION,
+        "legacy_inferred": False,
+        "identity_id": audit["identity_id"],
+        "identity_key": identity_key,
+        "identity_status": identity.get("status"),
+        "audit": audit,
+    }
+    write = ledger.update_one({"dedup_key": dedup_key}, {"$setOnInsert": event}, upsert=True)
+    if not getattr(write, "upserted_id", None):
+        existing = ledger.find_one({"dedup_key": dedup_key}) or event
+        _mark_known_broker_property(db, property_doc, existing.get("event_id"), occurred_at, actor_name, write_history=False)
+        return {
+            "matched": True,
+            "credited": bool(existing.get("credited")),
+            "event_id": existing.get("event_id"),
+            "audit": existing.get("audit") or audit,
+            "message": "Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.",
+        }
+
+    _mark_known_broker_property(db, property_doc, event_id, occurred_at, actor_name, write_history=True)
+    recalculate_daily_metric(db, actor_id, localize(occurred_at, DEFAULT_TIMEZONE).date(), now=occurred_at)
+    audit_management_patterns(db, event)
+    bump_captacion_kpi_revision(db)
+    return {
+        "matched": True,
+        "credited": True,
+        "event_id": event_id,
+        "audit": audit,
+        "message": "Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.",
+    }
+
+
+def _mark_known_broker_property(db, property_doc: dict, event_id, occurred_at, actor_name, *, write_history: bool) -> None:
+    """Close the current property idempotently after a known-broker match."""
+    collection = Config.get_captacion_collection(db)
+    current_status = str((property_doc.get("gestion") or {}).get("estado") or "")
+    update = {
+        "$set": {
+            "gestion.estado": "Corredor",
+            "gestion.estado_captacion": "Corredor",
+            "gestion.fecha_ultima_gestion": occurred_at,
+            "gestion.known_broker_auto_match": True,
+            "gestion.known_broker_auto_match_event_id": event_id,
+        }
+    }
+    if write_history and current_status != "Corredor":
+        update["$push"] = {"gestion.status_history": {
+            "timestamp": occurred_at,
+            "from_state": current_status,
+            "to_state": "Corredor",
+            "user": str(actor_name or ""),
+            "source": "KNOWN_BROKER_AUTO_MATCH",
+        }}
+    collection.update_one({"_id": property_doc.get("_id")}, update)
+
+
 def management_dedup_key(property_id, actor_user_id, occurred_at, timezone_name=DEFAULT_TIMEZONE) -> str:
     local = localize(occurred_at, timezone_name)
     return f"{clean_id(property_id)}:{clean_id(actor_user_id)}:{local.date().isoformat()}"
@@ -473,7 +649,26 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
-    credited, resolved_event_id = _write_credited_event_or_observation(db, event)
+    try:
+        credited, resolved_event_id = _write_credited_event_or_observation(db, event)
+    except DuplicateKeyError:
+        if not operation_id:
+            raise
+        existing_operation = db[LEDGER_COLLECTION].find_one({
+            "operation_id": operation_id,
+            "property_id": property_id,
+            "actor_user_id": actor_user_id,
+        })
+        if not existing_operation:
+            raise
+        return {
+            "status": "confirmed" if existing_operation.get("credited") else "not_credited",
+            "credited": bool(existing_operation.get("credited")),
+            "event_id": existing_operation.get("event_id"),
+            "property_id": property_id,
+            "assignment_cycle_id": existing_operation.get("assignment_cycle_id"),
+            "reason": existing_operation.get("non_credit_reason"),
+        }
     db[ATTEMPT_COLLECTION].update_one(
         {"attempt_id": attempt["attempt_id"], "status": "pending_confirmation"},
         {"$set": {
@@ -485,6 +680,7 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
             "ledger_event_id": resolved_event_id,
         }},
     )
+    property_doc_for_feedback = None
     if credited:
         if commercial_result_value in COMMERCIAL_RESULT_STATUS:
             candidates = [attempt["property_id"]]
@@ -495,6 +691,7 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
             for candidate in candidates:
                 property_doc = Config.get_captacion_collection(db).find_one({"_id": candidate})
                 if property_doc:
+                    property_doc_for_feedback = property_doc
                     current_status = (property_doc.get("gestion") or {}).get("estado_captacion") or (property_doc.get("gestion") or {}).get("estado") or "NUEVO"
                     Config.get_captacion_collection(db).update_one(
                         {"_id": candidate},
@@ -510,6 +707,8 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
                         }}},
                     )
                     break
+        if property_doc_for_feedback is not None:
+            _record_contact_identity_feedback(db, property_doc_for_feedback, event, commercial_result_value)
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
         audit_management_patterns(db, event)
@@ -655,27 +854,9 @@ def record_manual_management_decision(
         "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
     }
-    try:
-        credited, resolved_event_id = _write_credited_event_or_observation(db, event)
-    except DuplicateKeyError:
-        if not operation_id:
-            raise
-        existing_operation = db[LEDGER_COLLECTION].find_one({
-            "operation_id": operation_id,
-            "property_id": property_id,
-            "actor_user_id": actor_user_id,
-        })
-        if not existing_operation:
-            raise
-        return {
-            "status": "confirmed" if existing_operation.get("credited") else "not_credited",
-            "credited": bool(existing_operation.get("credited")),
-            "event_id": existing_operation.get("event_id"),
-            "property_id": property_id,
-            "assignment_cycle_id": existing_operation.get("assignment_cycle_id"),
-            "reason": existing_operation.get("non_credit_reason"),
-        }
+    credited, resolved_event_id = _write_credited_event_or_observation(db, event)
     if credited:
+        _record_contact_identity_feedback(db, property_doc, event, decision["result"])
         _record_first_action_for_cycle(db, event)
         recalculate_daily_metric(db, actor_user_id, local.date(), now=occurred_at)
         audit_management_patterns(db, event)
@@ -940,7 +1121,7 @@ def reverse_management_event(db, *, event_id, actor_user: dict, reason, replacem
         valid_statuses = {
             "Por contactar", "En gestión", "Contacto exitoso", "Sin respuesta",
             "Teléfono inválido", "Reunión agendada", "Corredor", "Descartado",
-            "Captado", "Propiedad no disponible", "Publicación expirada", "No interesado",
+            "Captado", "Propiedad no disponible", "Publicación expirada", "No interesado", "Duplicado",
         }
         if replacement_status not in valid_statuses:
             raise ValueError("replacement_status no permitido")
@@ -980,6 +1161,9 @@ def reverse_management_event(db, *, event_id, actor_user: dict, reason, replacem
         "legacy_inferred": False,
     }
     db[LEDGER_COLLECTION].insert_one(reversal)
+    original_result = str(original.get("result") or original.get("commercial_result") or "")
+    if original_result in {"broker_identified", "captured"}:
+        revoke_human_feedback(db, original_event_id=original["event_id"], revocation_event=reversal)
     if replacement_status:
         Config.get_captacion_collection(db).update_one(
             {"_id": property_storage_id},
@@ -1034,3 +1218,5 @@ def audit_management_patterns(db, event: dict) -> list[dict]:
             upsert=True,
         )
     return [{"type": kind, "detail": detail} for kind, detail in findings]
+
+

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import re
 
 from captacion_kpis import AVAILABLE_STATES
+from captacion_contact_identity import normalize_phone as normalize_identity_phone
 
 
 CAPTACION_SORT_DATE_FIELDS = (
@@ -82,9 +83,7 @@ def normalize_sort_date(value):
 
 
 def normalize_phone(value):
-    if value is None:
-        return ""
-    return "".join(char for char in str(value) if char.isdigit())
+    return normalize_identity_phone(value)
 
 
 def build_captacion_materialized_fields(document):

@@ -1260,13 +1260,14 @@
                                         onclick="startCallManagement(event)">
                                         <i class="fa-solid fa-phone"></i>
                                     </button>
-                                    <button type="button" id="btn-whatsapp" class="btn btn-wa-custom" title="WhatsApp"
-                                        data-bs-toggle="modal" data-bs-target="#commModal"
-                                        onclick="openCommPanel('owner', 'wa')">
-                                        <i class="fa-brands fa-whatsapp"></i>
-                                    </button>
-                                </div>
-                            </div>
+                                     <button type="button" id="btn-whatsapp" class="btn btn-wa-custom" title="WhatsApp"
+                                         data-bs-toggle="modal" data-bs-target="#commModal"
+                                         onclick="openCommPanel('owner', 'wa')">
+                                         <i class="fa-brands fa-whatsapp"></i>
+                                     </button>
+                                 </div>
+                                <div id="known-broker-auto-match-alert" class="alert alert-warning mt-3 mb-0 d-none" role="status"></div>
+                             </div>
 
                             <div class="col-md-6">
                                 <label class="info-label">Email</label>
@@ -1753,6 +1754,11 @@
                         });
                         const data = await res.json();
                         if (data.status === 'ok') {
+                            const knownBrokerAlert = document.getElementById('known-broker-auto-match-alert');
+                            if (knownBrokerAlert && data.known_broker_auto_match && data.message) {
+                                knownBrokerAlert.textContent = data.message;
+                                knownBrokerAlert.classList.remove('d-none');
+                            }
                             // Update last saved state
                             lastSavedPhone = payload.telefono;
                             lastSavedEmail = payload.email;

@@ -135,9 +135,6 @@
     .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { filter:none; opacity:1; }
     .portal-logo { display:block; width:132px; height:36px; object-fit:contain; object-position:left center; filter:grayscale(1); mix-blend-mode:multiply; opacity:.68; transition:filter .25s ease,opacity .25s ease; }
     .portal-channel:hover .portal-logo,.portal-channel:focus-visible .portal-logo,.portal-channel.is-logo-active .portal-logo { filter:none; opacity:1; }
-    .portal-channel:has(.portal-logo[src="/static/logo.png"]) .portal-logo { display:none; }
-    .portal-channel:has(.portal-logo[src="/static/logo.png"])::after { content:"PROCASA"; display:block; color:var(--muted); font-size:17px; font-weight:850; letter-spacing:.14em; line-height:1; transition:color .25s ease; }
-    .portal-channel:has(.portal-logo[src="/static/logo.png"]):hover::after,.portal-channel:has(.portal-logo[src="/static/logo.png"]):focus-visible::after,.portal-channel.is-logo-active:has(.portal-logo[src="/static/logo.png"])::after { color:var(--navy); }
     .portal-channel[data-publication-url]:not([data-publication-url=""]) { cursor:pointer; }
     .portal-empty { padding:15px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
     @keyframes portal-marquee { from { transform:translateX(0); } to { transform:translateX(-50%); } }

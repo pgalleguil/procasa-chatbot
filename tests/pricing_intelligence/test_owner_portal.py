@@ -1095,7 +1095,8 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert 'id="portal-publication-links"' in text
     assert "window.open(url, '_blank'" in text
     assert "portal-channel small" not in text
-    assert '.portal-channel:has(.portal-logo[src="/static/logo.png"])::after' in text
+    assert 'portal_logo_paths.get(publication.portal_id)' in text
+    assert "'procasa': '/static/logo.png'" in text
     assert "owner_email" not in text
     assert "owner_phone" not in text
     assert "direccion_exacta" not in text

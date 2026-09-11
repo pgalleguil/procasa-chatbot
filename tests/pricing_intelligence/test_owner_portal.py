@@ -1083,15 +1083,30 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "touch-action:pan-x" in text
     assert "prefers-reduced-motion:reduce" in text
     assert "/static/portal_logos/portal-inmobiliario.png" in text
+    assert "/static/portal_logos/mercado-libre.png" in text
     assert "/static/portal_logos/toctoc.png" in text
     assert "/static/portal_logos/yapo.png" in text
     assert "/static/portal_logos/chilepropiedades.png" in text
     assert "/static/portal_logos/proppit.png" in text
     assert "border:0" in text
     assert "portal-channel small" not in text
+    assert '.portal-channel:has(.portal-logo[src="/static/logo.png"])::after' in text
     assert "owner_email" not in text
     assert "owner_phone" not in text
     assert "direccion_exacta" not in text
+
+
+def test_marketplace_publication_uses_verified_mercado_libre_logo_mapping(monkeypatch):
+    doc = master_doc("MERCADO-LIBRE")
+    doc["publicaciones"] = {
+        "portal_inmobiliario": {
+            "url_mercado_libre": "https://www.mercadolibre.cl/MLC-1",
+            "publicaciones": {"venta": {"code": "ML-1", "estado": "active"}},
+        }
+    }
+    text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/MERCADO-LIBRE").text
+    assert 'data-portal-id="mercadolibre"' in text
+    assert 'src="/static/portal_logos/mercado-libre.png"' in text
 
 
 def test_convergent_template_has_mobile_and_reduced_motion_contract():

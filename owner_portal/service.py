@@ -84,6 +84,10 @@ MASTER_BASE_PROJECTION = {
 MASTER_PUBLICATION_PROJECTION = {
     **MASTER_BASE_PROJECTION,
     "publicaciones.portal_inmobiliario.publicaciones": 1,
+    "publicaciones.portal_inmobiliario.url_pi": 1,
+    "publicaciones.portal_inmobiliario.url_mercado_libre": 1,
+    "publicaciones.mercadolibre.publicaciones": 1,
+    "publicaciones.mercadolibre.url_mercado_libre": 1,
     "publicaciones.yapo.publicaciones": 1,
     "publicaciones.toctoc.publicaciones": 1,
     "publicaciones.chilepropiedades.publicaciones": 1,
@@ -98,6 +102,10 @@ IDENTITY_PROJECTION = {
     "codigo": 1,
     "estado.oficina": 1,
     "publicaciones.portal_inmobiliario.publicaciones": 1,
+    "publicaciones.portal_inmobiliario.url_pi": 1,
+    "publicaciones.portal_inmobiliario.url_mercado_libre": 1,
+    "publicaciones.mercadolibre.publicaciones": 1,
+    "publicaciones.mercadolibre.url_mercado_libre": 1,
     "publicaciones.yapo.publicaciones": 1,
     "publicaciones.toctoc.publicaciones": 1,
     "publicaciones.chilepropiedades.publicaciones": 1,
@@ -490,6 +498,7 @@ def _eligible_score(doc: Mapping[str, Any], image_count: int) -> tuple[int, str]
 
 _PUBLICATION_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("portal_inmobiliario", "Portal Inmobiliario", ("url_pi", "url_mercado_libre")),
+    ("mercadolibre", "Mercado Libre", ("url_mercado_libre",)),
     ("toctoc", "TOCTOC", ("url_toctoc",)),
     ("yapo", "Yapo", ("url_yapo",)),
     ("chilepropiedades", "ChilePropiedades", ()),
@@ -521,6 +530,10 @@ def _publication_presence(
     result: list[OwnerPortalPublicationV1] = []
     for portal_id, portal_name, url_fields in _PUBLICATION_CATALOG:
         portal = publications.get(portal_id)
+        if portal_id == "mercadolibre" and not isinstance(portal, Mapping):
+            legacy_portal = publications.get("portal_inmobiliario")
+            if isinstance(legacy_portal, Mapping) and _text(legacy_portal.get("url_mercado_libre")):
+                portal = legacy_portal
         if not isinstance(portal, Mapping):
             continue
         records = portal.get("publicaciones")

@@ -135,6 +135,8 @@
     .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { filter:none; opacity:1; }
     .portal-logo { display:block; width:132px; height:36px; object-fit:contain; object-position:left center; filter:none; mix-blend-mode:multiply; opacity:.9; transition:opacity .25s ease; }
     .portal-channel:hover .portal-logo,.portal-channel:focus-visible .portal-logo { opacity:1; }
+    .portal-channel:has(.portal-logo[src="/static/logo.png"]) .portal-logo { display:none; }
+    .portal-channel:has(.portal-logo[src="/static/logo.png"])::after { content:"PROCASA"; display:block; color:var(--navy); font-size:17px; font-weight:850; letter-spacing:.14em; line-height:1; }
     .portal-empty { padding:15px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
     @keyframes portal-marquee { from { transform:translateX(0); } to { transform:translateX(-50%); } }
     .timeline { position:relative; display:grid; gap:0; }
@@ -232,7 +234,7 @@
   </style>
 </head>
 <body>
-{% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
+{% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
 <div class="report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
   <header class="site-header">
     <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-wordmark">PROCASA</span><span class="brand-office">PROCASA SUCRE</span></div>

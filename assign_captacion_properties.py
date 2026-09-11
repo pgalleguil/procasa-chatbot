@@ -84,34 +84,16 @@ def run_distribution(dry_run=True):
         for c_norm in a.get("comunas_interes_norm", []):
             comuna_to_agents[c_norm].append(a)
     
-    # 2. Propiedades objetivo
-    # DUENO: VALID or SKIPPED_EXPLICIT_OWNER (no DeepSeek needed)
-    # INCIERTO: only VALID (DeepSeek required)
-    # Never: CORREDOR, PENDING, ERROR, NO_DESCRIPTION, missing semantic_check, on hold
-    # IMPORTANT: single $or combining both state conditions and ejecutivo conditions
+    # 2. Propiedades objetivo. The central post-classification gate owns
+    # eligibility; this query must not reimpose historical assignment_ready or
+    # semantic_check requirements on global INCIERTO handling.
     target_query = {
         "origen": "toctoc",
-        "classification.assignment_ready": True,
         "gestion.semantic_review_hold": {"$ne": True},
-        "$and": [
-            {
-                "$or": [
-                    {
-                        "classification.state": "DUEÑO_SEGURO",
-                        "classification.semantic_check.status": {"$in": ["VALID", "SKIPPED_EXPLICIT_OWNER"]}
-                    },
-                    {
-                        "classification.state": "INCIERTO",
-                        "classification.semantic_check.status": "VALID"
-                    }
-                ]
-            },
-            {
-                "$or": [
-                    {"gestion.ejecutivo_id": {"$exists": False}},
-                    {"gestion.ejecutivo_id": None},
-                ]
-            }
+        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
+        "$or": [
+            {"gestion.ejecutivo_id": {"$exists": False}},
+            {"gestion.ejecutivo_id": None},
         ]
     }
     
@@ -338,8 +320,7 @@ def apply_assignments(db, coll, assignments, report):
             {
                 "_id": prop_oid,
                 "origen": "toctoc",
-                "classification.assignment_ready": True,
-                "classification.exclude_from_assignment": {"$ne": True},
+                "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
                 "gestion.semantic_review_hold": {"$ne": True},
                 "$or": [
                     {"gestion.ejecutivo_id": {"$exists": False}},

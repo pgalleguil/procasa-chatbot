@@ -94,11 +94,11 @@ def is_eligible(prop, db=None):
         contact_identity = get_contact_identity_evidence(db, prop) if db is not None else None
         return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
     if db is not None and phone_learning_global_lookup_enabled():
+        # The central gate is authoritative for every portal. Do not fall
+        # back to the persisted assignment_ready flag: older Yapo/Toctoc
+        # uncertain records intentionally predate the global policy.
         contact_identity = get_contact_identity_evidence(db, prop)
-        if contact_identity:
-            decision = calculate_assignment_eligibility(prop, contact_identity=contact_identity)
-            if not decision["assignment_ready"]:
-                return False
+        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
     c = prop.get("classification") or {}
     if c.get("state") not in VISIBLE_CLASSIFICATION_STATES: return False
     if not c.get("assignment_ready"): return False

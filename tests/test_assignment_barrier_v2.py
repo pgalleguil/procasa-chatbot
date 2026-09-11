@@ -23,13 +23,13 @@ def test_incierto_with_valid_deepseek_can_be_assigned():
     assert eligible is True
 
 
-def test_incierto_inconsistent_probability_blocked():
+def test_incierto_inconsistent_probability_does_not_block_global_policy():
     doc = base_doc()
     doc["classification"]["state"] = "INCIERTO"
     doc["classification"]["owner_probability"] = 0.75
     eligible, reasons = assignment_eligibility(doc)
-    assert eligible is False
-    assert "owner_probability_inconsistent_with_state" in reasons
+    assert eligible is True
+    assert "owner_probability_inconsistent_with_state" not in reasons
 
 
 def test_pending_or_unpersisted_deepseek_is_blocked():

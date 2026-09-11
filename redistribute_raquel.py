@@ -62,8 +62,9 @@ def is_eligible(p, db=None):
         from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
         if phone_learning_global_lookup_enabled():
             identity = get_contact_identity_evidence(db, p)
-            if not calculate_assignment_eligibility(p, contact_identity=identity)["assignment_ready"]:
-                return False
+            # The central gate is authoritative for every portal. Historical
+            # assignment_ready flags must not veto a newly global INCIERTO.
+            return bool(calculate_assignment_eligibility(p, contact_identity=identity)["assignment_ready"])
     c = p.get("classification") or {}
     state = c.get("state", "")
     if state not in VISIBLE_CLASSIFICATION_STATES:

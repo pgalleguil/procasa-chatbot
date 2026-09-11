@@ -1,10 +1,10 @@
 """Central, auditable assignment gate.
 
-ChilePropiedades admits ``INCIERTO`` listings to the operational pool. The
-classification remains unchanged; only the assignment eligibility changes.
+Each portal keeps its own classifier and persisted Mongo state. This module
+only applies the shared post-classification policy: owner-strong,
+owner-probable, and uncertain listings may enter the operational pool;
+probable/strong broker states and invalid or blocked documents may not.
 Human-confirmed broker phone identity remains a higher-priority exclusion.
-Other origins keep their previous compatibility behavior until they are
-migrated in their own controlled change.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 from config import Config
 
 
-ASSIGNMENT_GATE_VERSION = "chilepropiedades-assignment-gate-v4-incierto-assignable"
+ASSIGNMENT_GATE_VERSION = "global-assignment-gate-v1-incierto-assignable"
 CHILEPROPIEDADES_ORIGINS = frozenset({"chilepropiedades", "chilepropiedades.cl"})
 OWNER_STATES = frozenset({"DUEÑO_SEGURO", "DUEÑO_PROBABLE"})
 ASSIGNABLE_STATES = OWNER_STATES | frozenset({"INCIERTO"})
@@ -59,33 +59,38 @@ def assignment_classification_priority(document: dict[str, Any]) -> int:
 
 
 def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Compatibility path for origins outside the approved CP scope."""
+    """Apply the global gate while preserving portal-specific classification.
+
+    Historical ``assignment_ready`` and owner-probability fields were written
+    by portal-specific pipelines. They remain compatibility checks for owner
+    states, but cannot veto a valid ``INCIERTO`` classification: the global
+    policy explicitly makes that state assignable unless another independent
+    blocker applies.
+    """
     cls = doc.get("classification") or {}
     gestion = doc.get("gestion") or {}
     reasons: list[str] = []
     state = normalize_classification_state(cls.get("state") or cls.get("final_state"))
     if state not in FINAL_STATES and state != "INCIERTO":
         reasons.append("classification_not_assignable")
-    if cls.get("assignment_ready") is not True:
+    if state != "INCIERTO" and cls.get("assignment_ready") is not True:
         reasons.append("classification_not_final_or_not_persisted")
     if gestion.get("semantic_review_hold") is True or cls.get("manual_review_required") is True or doc.get("manual_review_required") is True:
         reasons.append("manual_review_pending")
-    if cls.get("exclude_from_assignment") is True or gestion.get("exclude_from_assignment") is True:
+    if (state != "INCIERTO" and cls.get("exclude_from_assignment") is True) or gestion.get("exclude_from_assignment") is True:
         reasons.append("explicitly_excluded")
-    try:
-        owner_probability = float(cls.get("owner_probability"))
-    except (TypeError, ValueError):
-        owner_probability = None
-    if owner_probability is None:
-        reasons.append("owner_probability_missing")
-    elif state == "INCIERTO":
-        if owner_probability < 0.50 or owner_probability >= 0.70:
+    if state != "INCIERTO":
+        try:
+            owner_probability = float(cls.get("owner_probability"))
+        except (TypeError, ValueError):
+            owner_probability = None
+        if owner_probability is None:
+            reasons.append("owner_probability_missing")
+        elif state == "DUEÑO_PROBABLE":
+            if owner_probability < 0.70 or owner_probability >= 0.90:
+                reasons.append("owner_probability_inconsistent_with_state")
+        elif state == "DUEÑO_SEGURO" and owner_probability < 0.90:
             reasons.append("owner_probability_inconsistent_with_state")
-    elif state == "DUEÑO_PROBABLE":
-        if owner_probability < 0.70 or owner_probability >= 0.90:
-            reasons.append("owner_probability_inconsistent_with_state")
-    elif state == "DUEÑO_SEGURO" and owner_probability < 0.90:
-        reasons.append("owner_probability_inconsistent_with_state")
     stage = str(doc.get("scrape_stage") or "").lower()
     html_status = str(doc.get("html_validation_status") or "").upper()
     if state == "AD_REMOVED" or stage in {"ad_removed", "needs_rescrape", "incomplete", "processing_blocked", "classified_from_listing"}:
@@ -171,9 +176,9 @@ def calculate_assignment_eligibility(
 ) -> dict[str, Any]:
     """Return the complete assignment decision for one document.
 
-    For ChilePropiedades, only an owner classification is assignable. The
-    legacy ``assignment_ready`` flag and every owner-probability value are
-    deliberately ignored when deciding this result.
+    The portal's original state is never rewritten. The global
+    post-classification policy is applied here, including the
+    human-confirmed broker phone gate.
     """
     if not is_chilepropiedades_document(document):
         eligible, reasons = _legacy_assignment_eligibility(document)
@@ -205,7 +210,7 @@ def calculate_assignment_eligibility(
             "assignment_ready": not reasons,
             "exclude_from_assignment": bool(reasons),
             "assignment_block_reasons": reasons,
-            "eligibility_version": "legacy-compatible-v3",
+            "eligibility_version": ASSIGNMENT_GATE_VERSION,
             "effective_state": effective_state,
             "effective_reason": effective_reason,
             "phone_identity_audit": identity_audit,

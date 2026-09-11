@@ -37,6 +37,7 @@ from captacion_contact_identity import (
     get_contact_identity_evidence,
     normalize_phone,
     phone_learning_enabled,
+    phone_learning_global_lookup_enabled,
 )
 
 logger = logging.getLogger(__name__)
@@ -2832,8 +2833,6 @@ def distribute_sourced_leads():
 
     eligible_query = {
         "origen": "toctoc",
-        "classification.assignment_ready": True,
-        "classification.exclude_from_assignment": {"$ne": True},
         "gestion.semantic_review_hold": {"$ne": True},
         "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
         "$or": [
@@ -2842,8 +2841,14 @@ def distribute_sourced_leads():
         ]
     }
     props = list(coll.find(eligible_query))
-    from captacion_assignment_eligibility import assignment_eligibility
-    props = [p for p in props if assignment_eligibility(p)[0]]
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    props = [
+        p for p in props
+        if calculate_assignment_eligibility(
+            p,
+            contact_identity=(get_contact_identity_evidence(db, p) if phone_learning_global_lookup_enabled() else None),
+        )["assignment_ready"]
+    ]
     # Nunca redistribuir un contacto que ya tuvo gestión humana (notas,
     # actividades, fecha_ultima_gestion, eventos). Evita molestar a un
     # ejecutivo que ya lo trabajó y evitar que pase a otro ejecutivo.
@@ -2898,8 +2903,7 @@ def distribute_sourced_leads():
         cycle = new_assignment_cycle(property_id=p["_id"], user_id=best, assigned_at=now, reason="weighted_commune_background")
         coll.update_one(
             {"_id": oid,
-             "classification.assignment_ready": True,
-             "classification.exclude_from_assignment": {"$ne": True},
+             "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
              "gestion.semantic_review_hold": {"$ne": True},
              "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
             {"$set": {
@@ -2942,11 +2946,18 @@ def redistribute_inactive_agent_captaciones(dry_run=True):
     properties = list(coll.find({
         "origen": {"$in": ["toctoc", "yapo"]},
         "classification.state": {"$in": eligible_states},
-        "classification.exclude_from_assignment": {"$ne": True},
         "gestion.semantic_review_hold": {"$ne": True},
         "gestion.estado": "NUEVO",
         "gestion.ejecutivo_asignado": {"$in": inactive_names},
     }).sort("_id", 1))
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    properties = [
+        prop for prop in properties
+        if calculate_assignment_eligibility(
+            prop,
+            contact_identity=(get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None),
+        )["assignment_ready"]
+    ]
 
     workloads = {aid: 0 for aid in agents_by_id}
     active_names = [a.get("nombre") for a in active_agents]

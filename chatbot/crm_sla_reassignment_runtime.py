@@ -177,9 +177,9 @@ def _health_for_duration(duration_ms: float, *, critical_consecutive: int) -> tu
     return "SHADOW_CRITICAL", "CONTINUE"
 
 
-def _set_status(status: Mapping[str, Any], **values: Any) -> None:
-    if hasattr(status, "update"):
-        status.update(values)
+def _set_status(target: Mapping[str, Any], **values: Any) -> None:
+    if hasattr(target, "update"):
+        target.update(values)
 
 
 async def _lease_heartbeat(

@@ -25,7 +25,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from chatbot.storage import get_db
 from bson import ObjectId
-from captacion_assignment_eligibility import calculate_assignment_eligibility, is_chilepropiedades_document
+from captacion_assignment_eligibility import (
+    assignment_classification_priority,
+    calculate_assignment_eligibility,
+    is_chilepropiedades_document,
+)
 from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -193,6 +197,11 @@ def run(dry_run=True):
     for p in pool:
         slug = norm(p.get("comuna_slug") or p.get("comuna"))
         if slug: pool_by_comuna[slug].append(p)
+
+    # Feed stronger owner evidence first while preserving the existing
+    # workload-balancing allocator. This is an order, not a new score.
+    for slug in pool_by_comuna:
+        pool_by_comuna[slug].sort(key=assignment_classification_priority)
 
     # ── Distribucion con balance por stock_pendiente ───────────────────
     stock_sim = dict(agent_stock)

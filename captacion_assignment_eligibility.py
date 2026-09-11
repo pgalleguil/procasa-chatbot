@@ -1,9 +1,10 @@
 """Central, auditable assignment gate.
 
-ChilePropiedades is intentionally fail-closed here: the persisted probability
-and legacy assignment flags never override the classification state. Other
-origins keep their previous compatibility behavior until they are migrated in
-their own controlled change.
+ChilePropiedades admits ``INCIERTO`` listings to the operational pool. The
+classification remains unchanged; only the assignment eligibility changes.
+Human-confirmed broker phone identity remains a higher-priority exclusion.
+Other origins keep their previous compatibility behavior until they are
+migrated in their own controlled change.
 """
 from __future__ import annotations
 
@@ -14,13 +15,26 @@ from typing import Any
 from config import Config
 
 
-ASSIGNMENT_GATE_VERSION = "chilepropiedades-assignment-gate-v3"
+ASSIGNMENT_GATE_VERSION = "chilepropiedades-assignment-gate-v4-incierto-assignable"
 CHILEPROPIEDADES_ORIGINS = frozenset({"chilepropiedades", "chilepropiedades.cl"})
 OWNER_STATES = frozenset({"DUEÑO_SEGURO", "DUEÑO_PROBABLE"})
+ASSIGNABLE_STATES = OWNER_STATES | frozenset({"INCIERTO"})
+CLASSIFICATION_ASSIGNMENT_PRIORITY = {
+    "DUEÑO_SEGURO": 0,
+    "DUEÑO_PROBABLE": 1,
+    "INCIERTO": 2,
+}
 # Kept for callers that imported the old constant; the CP decision itself uses
-# the normalized OWNER_STATES set above.
+# the normalized ASSIGNABLE_STATES set above.
 FINAL_STATES = frozenset({"DUEÑO_SEGURO", "DUENO_SEGURO", "DUEÑO_PROBABLE", "DUENO_PROBABLE"})
 COMMERCIAL_TERMS = ("inmobiliaria", "corredor", "corredora", "propiedades", "real estate", "broker")
+COMMERCIAL_IDENTITY_FIELDS = (
+    "company_name",
+    "broker_brand",
+    "contact_logo_alt",
+    "publicador_visible",
+    "contact_badges_text",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -33,6 +47,15 @@ def is_chilepropiedades_document(doc: dict[str, Any]) -> bool:
 def normalize_classification_state(value: Any) -> str:
     state = str(value or "").strip().upper()
     return state.replace("DUENO", "DUEÑO")
+
+
+def assignment_classification_priority(document: dict[str, Any]) -> int:
+    """Return the stable operational order without creating a new score."""
+    classification = document.get("classification") or {}
+    state = normalize_classification_state(
+        classification.get("state") or classification.get("final_state")
+    )
+    return CLASSIFICATION_ASSIGNMENT_PRIORITY.get(state, len(CLASSIFICATION_ASSIGNMENT_PRIORITY))
 
 
 def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -193,8 +216,8 @@ def calculate_assignment_eligibility(
     if not getattr(Config, "PHONE_LEARNING_ENABLED", False):
         contact_identity = None
     reasons = _contact_identity_reasons(contact_identity)
-    if state not in OWNER_STATES:
-        reasons.append("classification_not_owner")
+    if state not in ASSIGNABLE_STATES:
+        reasons.append("classification_not_assignable")
 
     stage = str(document.get("scrape_stage") or "").lower()
     html_status = str(document.get("html_validation_status") or "").upper()
@@ -215,7 +238,7 @@ def calculate_assignment_eligibility(
 
     commercial_values = " ".join(
         str(document.get(key) or "")
-        for key in ("company_name", "broker_brand", "publicador_visible", "contact_name", "listing_advertiser", "seller_jsonld_name", "seller_name", "publisher_type", "seller_type", "contact_badges_text")
+        for key in COMMERCIAL_IDENTITY_FIELDS
     ).lower()
     profile = cls.get("publisher_profile_context") or document.get("publisher_profile_context") or {}
     if profile.get("commercial_identity_confirmed") or profile.get("confirmed_broker_count", 0):
@@ -242,7 +265,7 @@ def calculate_assignment_eligibility(
             effective_state=effective_state,
             reason=effective_reason,
         )
-    eligible = state in OWNER_STATES and not reasons
+    eligible = state in ASSIGNABLE_STATES and not reasons
     return {
         "assignment_ready": eligible,
         "exclude_from_assignment": not eligible,
@@ -300,5 +323,3 @@ def mark_assignment_readiness(doc: dict[str, Any]) -> dict[str, Any]:
     """Compatibility helper; it no longer trusts historical flags."""
     apply_assignment_eligibility_fields(doc)
     return doc
-
-

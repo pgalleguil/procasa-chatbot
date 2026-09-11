@@ -103,6 +103,78 @@ def _commercial_insight(view: dict) -> str:
     return f"{first} {second}"
 
 
+def _diagnosis_payload(view: dict, payload: dict) -> dict:
+    """Build a short, deterministic diagnosis from facts already in the DTO."""
+
+    inquiries = int(view.get("inquiries_previous_30d") or 0)
+    publications = len(view.get("publications") or [])
+    comparable_cohort = view.get("comparable_cohort") or {}
+    comparable_count = int(comparable_cohort.get("count") or 0)
+    current_price = (view.get("current_price") or {}).get("uf")
+    delta = payload.get("market_delta_pct")
+
+    if publications >= 5:
+        exposure_value, exposure_state, exposure_tone = f"{publications} canales", "Alta", "positive"
+    elif publications:
+        exposure_value, exposure_state, exposure_tone = f"{publications} canales", "Intermedia", "neutral"
+    else:
+        exposure_value, exposure_state, exposure_tone = "Sin canales", "Limitada", "attention"
+
+    if inquiries == 0:
+        response_value, response_state, response_tone = "0 consultas", "Sin consultas", "attention"
+    elif inquiries == 1:
+        response_value, response_state, response_tone = "1 consulta", "Señal puntual", "neutral"
+    else:
+        response_value, response_state, response_tone = f"{inquiries} consultas", "Actividad registrada", "positive"
+
+    if delta is None or comparable_count == 0:
+        price_value, price_state, price_tone = "Sin muestra", "Sin comparables", "neutral"
+    elif delta > 5:
+        price_value, price_state, price_tone = f"{_format_owner_number(delta, 1)}%", "Sobre la mediana", "attention"
+    elif delta < -5:
+        price_value, price_state, price_tone = f"{_format_owner_number(delta, 1)}%", "Bajo la mediana", "neutral"
+    else:
+        price_value, price_state, price_tone = f"{_format_owner_number(delta, 1)}%", "En rango central", "positive"
+
+    sentences: list[str] = []
+    if inquiries == 1:
+        sentences.append("Durante los últimos 30 días se registró 1 consulta vinculada a esta propiedad.")
+    elif inquiries:
+        sentences.append(f"Durante los últimos 30 días se registraron {inquiries} consultas vinculadas a esta propiedad.")
+    else:
+        sentences.append("Durante los últimos 30 días no se registraron consultas vinculadas a esta propiedad.")
+    if publications:
+        sentences.append(f"La publicación mantiene presencia en {publications} canales verificados.")
+    if current_price is not None and comparable_count and delta is not None:
+        relation = "por encima" if delta > 0 else "por debajo" if delta < 0 else "en línea con"
+        sentences.append(
+            f"El precio actual de {_format_owner_number(current_price, 0)} UF se encuentra "
+            f"{relation} de la mediana de {comparable_count} publicaciones comparables observadas."
+        )
+    narrative = " ".join(sentences[:3])
+
+    if inquiries == 0:
+        conclusion = (
+            "La señal principal del corte es la ausencia de consultas registradas; "
+            "la propiedad mantiene la exposición verificable que se indica arriba."
+            if publications
+            else "La señal principal del corte es la ausencia de consultas registradas y de canales verificados."
+        )
+    elif delta is not None and abs(delta) > 5:
+        conclusion = "La señal comercial principal del corte es la posición relativa del precio frente a las publicaciones comparables observadas."
+    else:
+        conclusion = "La lectura conjunta muestra actividad registrada y una posición de precio dentro de la referencia disponible."
+
+    payload["diagnosis_narrative"] = narrative
+    payload["diagnosis_conclusion"] = conclusion
+    payload["diagnosis_signals"] = [
+        {"label": "Exposición", "value": exposure_value, "state": exposure_state, "tone": exposure_tone, "detail": "Publicaciones verificadas"},
+        {"label": "Respuesta", "value": response_value, "state": response_state, "tone": response_tone, "detail": "Últimos 30 días"},
+        {"label": "Precio", "value": price_value, "state": price_state, "tone": price_tone, "detail": "Frente a publicaciones comparables"},
+    ]
+    return payload
+
+
 def _convergent_payload(view: dict) -> dict:
     """Add small presentation-only labels without changing the shared DTO."""
 
@@ -240,6 +312,12 @@ def _convergent_payload(view: dict) -> dict:
         payload["position_translation"] = "No hay una lectura posicional suficiente para esta muestra."
 
     payload["commercial_insight"] = _commercial_insight(view)
+    payload["pricing_recommendation"] = (
+        dict(view["recommendation"])
+        if isinstance(view.get("recommendation"), dict)
+        else None
+    )
+    _diagnosis_payload(view, payload)
     return payload
 
 

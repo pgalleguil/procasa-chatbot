@@ -439,9 +439,9 @@
     .section { padding:54px 0 34px; border-bottom:0; }
     .section-heading { margin-bottom:20px; padding-bottom:0; border-bottom:0; }
     .section-heading h2 { font-size:clamp(31px,3.35vw,46px); }
-    #desempeno .performance-grid { gap:14px; }
-    #desempeno .chart-area { padding:26px 27px 21px; border:1px solid rgba(32,56,61,.12); border-radius:22px; background:rgba(255,255,255,.88); box-shadow:0 14px 32px rgba(29,42,44,.055); }
-    #desempeno .insight { min-height:100%; padding:29px 29px 27px; border:1px solid rgba(160,125,63,.22); border-top:3px solid var(--gold); border-radius:22px; background:linear-gradient(150deg,#f6f1e7,#eee7d9); box-shadow:0 14px 32px rgba(29,42,44,.065); }
+    #diagnostico .performance-grid { gap:14px; }
+    #diagnostico .chart-area { padding:26px 27px 21px; border:1px solid rgba(32,56,61,.12); border-radius:22px; background:rgba(255,255,255,.88); box-shadow:0 14px 32px rgba(29,42,44,.055); }
+    #diagnostico .insight { min-height:100%; padding:29px 29px 27px; border:1px solid rgba(160,125,63,.22); border-top:3px solid var(--gold); border-radius:22px; background:linear-gradient(150deg,#f6f1e7,#eee7d9); box-shadow:0 14px 32px rgba(29,42,44,.065); }
     #mercado .market-grid { gap:14px; padding:25px; border:1px solid rgba(32,56,61,.12); border-radius:24px; background:rgba(255,255,255,.9); box-shadow:0 18px 42px rgba(29,42,44,.065); }
     #mercado .distribution-wrap { padding:19px 24px 9px 4px; }
     #mercado .market-side { padding:25px 23px 21px 25px; border:1px solid rgba(160,125,63,.25); border-left:3px solid var(--gold); border-radius:18px; background:linear-gradient(150deg,#faf6ed,#f2eadb); box-shadow:none; }
@@ -486,8 +486,8 @@
       .kpi { min-height:111px; padding:17px 14px 16px; border-radius:14px; }
       .kpi:nth-child(4) { box-shadow:0 10px 22px rgba(32,56,61,.14); }
       .section { padding:40px 0 28px; }
-      #desempeno .chart-area { padding:20px 16px 17px; border-radius:18px; }
-      #desempeno .insight { padding:22px 20px; border-radius:18px; }
+      #diagnostico .chart-area { padding:20px 16px 17px; border-radius:18px; }
+      #diagnostico .insight { padding:22px 20px; border-radius:18px; }
       #mercado .market-grid { padding:14px; border-radius:18px; }
       #mercado .distribution-wrap { padding:13px 4px 5px; }
       #mercado .market-side { padding:21px 18px; border-radius:15px; }
@@ -502,6 +502,120 @@
       .footer { margin-top:30px; padding-left:0; padding-right:0; }
     }
   </style>
+  <style id="v9-structure">
+    .hero-photo-metrics { position:absolute; z-index:3; right:20px; bottom:20px; display:grid; grid-template-columns:repeat(3,minmax(102px,1fr)); min-width:360px; border:1px solid rgba(255,255,255,.6); border-radius:16px; overflow:hidden; background:rgba(255,255,255,.93); box-shadow:0 12px 28px rgba(25,35,35,.16); backdrop-filter:blur(8px); }
+    .site-header .brand-emblem { width:118px; height:80px; flex:0 0 118px; overflow:hidden; }
+    .site-header .brand-emblem img { width:131px; height:131px; max-width:none; transform:translate(-6px,-39px); }
+    .hero-photo-metrics div { min-width:0; padding:12px 14px 11px; border-right:1px solid rgba(32,56,61,.12); }
+    .hero-photo-metrics div:last-child { border-right:0; }
+    .hero-photo-metrics span { display:block; color:var(--muted); font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+    .hero-photo-metrics strong { display:block; margin-top:5px; color:var(--navy); font:400 20px/1 Georgia,serif; letter-spacing:-.04em; }
+    .diagnosis-shell { display:grid; grid-template-columns:1.06fr .94fr; gap:14px; align-items:stretch; margin-bottom:20px; }
+    .diagnosis-copy { display:flex; flex-direction:column; justify-content:center; min-width:0; padding:27px 29px; border:1px solid rgba(32,56,61,.12); border-left:3px solid var(--gold); border-radius:22px; background:linear-gradient(110deg,#fffefa,#f7f3eb); box-shadow:0 14px 30px rgba(29,42,44,.045); }
+    .diagnosis-copy > p { max-width:620px; margin:13px 0 0; color:var(--navy); font:400 clamp(18px,2vw,25px)/1.28 Georgia,serif; letter-spacing:-.025em; }
+    .diagnosis-conclusion { margin-top:18px; padding-top:14px; border-top:1px solid rgba(164,131,73,.28); color:var(--muted); font-size:12px; line-height:1.6; }
+    .diagnosis-signals { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .diagnosis-signal { display:flex; flex-direction:column; justify-content:space-between; min-width:0; min-height:154px; padding:17px 15px 15px; border:1px solid rgba(32,56,61,.12); border-top:3px solid var(--sage-dark); border-radius:18px; background:rgba(255,255,255,.9); box-shadow:0 12px 27px rgba(29,42,44,.045); }
+    .diagnosis-signal.tone-attention { border-top-color:var(--gold); background:#fbf7ef; }
+    .diagnosis-signal.tone-neutral { border-top-color:#9aa3a0; }
+    .signal-top { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; color:var(--muted); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+    .signal-top b { color:var(--gold-dark); font-size:9px; text-align:right; }
+    .diagnosis-signal strong { margin-top:22px; color:var(--navy); font:400 clamp(18px,1.8vw,25px)/1 Georgia,serif; letter-spacing:-.04em; overflow-wrap:anywhere; }
+    .diagnosis-signal small { margin-top:6px; color:var(--muted); font-size:9px; line-height:1.35; }
+    .performance-heading { margin-top:25px; padding-top:23px; border-top:1px solid rgba(32,56,61,.12); }
+    .performance-heading h3 { margin:0; color:var(--navy); font:400 clamp(23px,2.6vw,33px)/1 Georgia,serif; letter-spacing:-.045em; }
+    .proposal-shell { padding:26px 27px 28px; border:1px solid rgba(32,56,61,.12); border-radius:24px; background:rgba(255,255,255,.86); box-shadow:0 18px 42px rgba(29,42,44,.06); }
+    .proposal-intro { max-width:690px; }
+    .proposal-intro h3 { margin:7px 0 0; color:var(--navy); font:400 27px/1.08 Georgia,serif; letter-spacing:-.04em; }
+    .proposal-intro p { margin:10px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }
+    .strategy-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:22px; }
+    .strategy-card { min-width:0; padding:19px 18px 17px; border:1px solid rgba(32,56,61,.13); border-radius:17px; background:#fff; }
+    .strategy-card.is-recommended { border-color:var(--gold); background:linear-gradient(145deg,#fbf6ea,#fff); box-shadow:0 11px 24px rgba(164,131,73,.12); }
+    .strategy-top { display:flex; align-items:flex-start; justify-content:space-between; gap:9px; min-height:31px; color:var(--navy); font-size:12px; font-weight:850; }
+    .strategy-top b { color:var(--gold-dark); font-size:8px; letter-spacing:.08em; white-space:nowrap; }
+    .strategy-card > strong { display:block; margin-top:19px; color:var(--navy); font:400 24px/1 Georgia,serif; letter-spacing:-.04em; overflow-wrap:anywhere; }
+    .strategy-card > small { display:block; margin-top:6px; color:var(--muted); font-size:10px; }
+    .strategy-card > p { margin:15px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+    .authorization-panel { display:flex; align-items:center; justify-content:space-between; gap:25px; margin-top:19px; padding:22px 23px; border-radius:19px; color:#fff; background:linear-gradient(135deg,#20383d,#2b4a4c); box-shadow:0 15px 30px rgba(32,56,61,.16); }
+    .authorization-panel .eyebrow { color:#d0b477; }
+    .authorization-panel h3 { margin:5px 0 0; font:400 25px/1.08 Georgia,serif; }
+    .authorization-panel p { max-width:650px; margin:9px 0 0; color:rgba(255,255,255,.7); font-size:12px; }
+    .authorization-panel .hero-cta { flex:0 0 auto; margin-top:0; border-color:#d0b477; color:var(--navy); background:#d0b477; }
+    .authorization-modal { position:fixed; z-index:50; inset:0; display:grid; place-items:center; padding:20px; background:rgba(18,31,33,.58); }
+    .authorization-modal[hidden] { display:none; }
+    .authorization-dialog { position:relative; width:min(100%,560px); padding:29px; border-radius:20px; background:#fffefa; box-shadow:0 25px 70px rgba(0,0,0,.25); }
+    .authorization-close { position:absolute; top:13px; right:16px; border:0; color:var(--muted); background:transparent; font-size:25px; cursor:pointer; }
+    .authorization-dialog h3 { margin:7px 28px 0 0; color:var(--navy); font:400 29px/1.06 Georgia,serif; }
+    .authorization-dialog > p { color:var(--muted); font-size:13px; }
+    .authorization-facts { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:19px 0; }
+    .authorization-facts span { padding:11px; border:1px solid var(--line); border-radius:10px; color:var(--muted); font-size:9px; }
+    .authorization-facts strong { display:block; margin-top:6px; color:var(--navy); font-size:12px; }
+    .authorization-check { display:flex; gap:10px; align-items:flex-start; padding:13px; border:1px solid rgba(164,131,73,.3); border-radius:12px; background:#fbf7ef; color:var(--navy); font-size:11px; line-height:1.5; }
+    .authorization-check input { margin-top:3px; accent-color:var(--gold-dark); }
+    .authorization-actions { display:flex; gap:10px; margin-top:20px; }
+    .authorization-actions .hero-cta { margin-top:0; cursor:pointer; }
+    .authorization-actions .hero-cta:disabled { cursor:not-allowed; opacity:.45; }
+    .authorization-secondary { padding:11px 17px; border:1px solid var(--line); color:var(--navy); background:transparent; font-size:12px; font-weight:800; cursor:pointer; }
+    @media (max-width:880px) {
+      .hero-photo-metrics { right:15px; bottom:15px; min-width:0; width:calc(100% - 30px); }
+      .diagnosis-shell { grid-template-columns:1fr; }
+      .strategy-grid { grid-template-columns:1fr; }
+      .authorization-panel { align-items:flex-start; flex-direction:column; }
+    }
+    @media (min-width:881px) {
+      .site-header { min-height:76px; }
+      .report-nav { min-height:38px; padding-top:8px; padding-bottom:7px; }
+      .hero, .hero-photo { min-height:390px; }
+      .hero-copy { padding:40px 48px 42px; }
+      .kpi { min-height:104px; padding:16px 18px 15px; }
+      .section { padding-top:37px; padding-bottom:24px; }
+      .section-heading { margin-bottom:14px; }
+      .diagnosis-copy { padding:21px 24px; }
+      .diagnosis-copy > p { font-size:21px; }
+      .diagnosis-signal { min-height:126px; padding:14px 13px 13px; }
+      .diagnosis-signal strong { margin-top:14px; }
+      .performance-heading { margin-top:18px; padding-top:18px; }
+      #diagnostico .chart-area { padding:20px 22px 17px; }
+      #diagnostico .insight { padding:22px 23px 20px; }
+      .chart { height:158px; }
+      #mercado .market-grid { padding:18px; }
+      #mercado .distribution-wrap { padding:12px 18px 7px 4px; }
+      #mercado .distribution { height:84px; margin-top:18px; }
+      #mercado .market-side { padding:18px 18px 14px; }
+      #mercado .comparables { padding:16px 18px 5px; }
+      #contexto .context-narrative { padding:15px 18px; }
+      #contexto .context-item { padding:18px 18px 16px; }
+      #gestion .presence-block, #gestion .management-block:not(.presence-block) { padding:20px; }
+      #gestion .portal-channel { min-height:65px; }
+      .proposal-shell { padding:20px 22px 21px; }
+      .strategy-grid { margin-top:15px; }
+      .strategy-card { padding:15px 15px 14px; }
+      .strategy-card > strong { margin-top:13px; }
+      .strategy-card > p { margin-top:10px; }
+      .closing { margin-top:24px; padding-top:18px; padding-bottom:18px; }
+      .footer { margin-top:28px; padding-top:18px; padding-bottom:24px; }
+    }
+    @media (max-width:620px) {
+      .site-header .brand-emblem { width:100px; height:66px; flex-basis:100px; }
+      .site-header .brand-emblem img { width:108px; height:108px; transform:translate(-4px,-32px); }
+      .hero-photo-metrics { grid-template-columns:repeat(3,1fr); }
+      .hero-photo-metrics div { padding:10px 8px; }
+      .hero-photo-metrics span { font-size:8px; letter-spacing:.02em; }
+      .hero-photo-metrics strong { font-size:17px; }
+      .diagnosis-copy { padding:22px 20px; border-radius:18px; }
+      .diagnosis-copy > p { font-size:20px; }
+      .diagnosis-signals { grid-template-columns:1fr; gap:8px; }
+      .diagnosis-signal { min-height:0; padding:15px; }
+      .diagnosis-signal strong { margin-top:13px; }
+      .performance-heading { margin-top:20px; padding-top:19px; }
+      .proposal-shell { padding:21px 17px 20px; border-radius:18px; }
+      .proposal-intro h3 { font-size:24px; }
+      .authorization-panel { padding:19px 17px; border-radius:16px; }
+      .authorization-dialog { padding:24px 19px; }
+      .authorization-facts { grid-template-columns:repeat(2,1fr); }
+      .authorization-actions { flex-wrap:wrap; }
+    }
+  </style>
 </head>
 <body>
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
@@ -510,12 +624,12 @@
     <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-office">SUCRE</span></div>
     <div class="header-meta">Actualización de propiedad · {{ view.property_updated_at or '—' }}<br>Corte del informe · {{ view.data_updated_at }}</div>
   </header>
-  <nav class="report-nav" aria-label="Navegación del informe"><a href="#desempeno">Resumen</a><a href="#mercado">Mercado</a><a href="#gestion">Gestión PROCASA</a><a href="#contexto">Contexto</a></nav>
+  <nav class="report-nav" aria-label="Navegación del informe"><a href="#diagnostico">Diagnóstico</a><a href="#mercado">Mercado</a><a href="#contexto">Contexto</a><a href="#gestion">Gestión</a><a href="#propuesta">Propuesta</a></nav>
 
   <main>
     <section class="hero" aria-labelledby="report-title">
-      <div class="hero-copy"><div class="eyebrow">Su propiedad, nuestro compromiso</div><h1 id="report-title">Informe de desempeño de su propiedad</h1><p class="hero-subtitle">Conozca cómo ha respondido el mercado a su publicación y revise el contexto comercial de su propiedad.</p><div class="hero-meta"><span>{{ view.property_type }}</span><span>{{ view.commune }}</span><span>Código {{ view.property_code }}</span></div><div class="property-facts" aria-label="Datos actuales de su propiedad">{% if view.built_area_m2 is not none %}<span><strong>Superficie</strong> {{ '{:,.0f}'.format(view.built_area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²</span>{% elif view.land_area_m2 is not none %}<span><strong>Terreno</strong> {{ '{:,.0f}'.format(view.land_area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²</span>{% endif %}{% if view.bedrooms is not none %}<span><strong>Dormitorios</strong> {{ '{:,.0f}'.format(view.bedrooms) }}</span>{% endif %}{% if view.bathrooms is not none %}<span><strong>Baños</strong> {{ '{:,.0f}'.format(view.bathrooms) }}</span>{% endif %}{% if view.parking is not none %}<span><strong>Estacionamientos</strong> {{ '{:,.0f}'.format(view.parking) }}</span>{% endif %}</div><a class="hero-cta" href="#desempeno">Revisar desempeño <span aria-hidden="true">↓</span></a></div>
-      <div class="hero-photo">{% if view.main_image_url %}<img src="{{ view.main_image_url }}" alt="Fotografía de {{ view.property_type }} en {{ view.commune }}" onerror="this.classList.add('image-failed')"><div class="hero-photo-placeholder" aria-hidden="true"><span aria-hidden="true"></span></div>{% else %}<div class="hero-photo-placeholder" aria-label="Composición visual PROCASA"><span aria-hidden="true"></span></div>{% endif %}</div>
+      <div class="hero-copy"><div class="eyebrow">Informe personalizado para propietario</div><h1 id="report-title">Qué está pasando con su propiedad.</h1><p class="hero-subtitle">Este informe reúne la respuesta registrada de su publicación, referencias comparables y el contexto disponible para orientar la conversación sobre los próximos pasos.</p><div class="hero-meta"><span>{{ view.property_type }}</span><span>{{ view.commune }}</span><span>Código {{ view.property_code }}</span></div><div class="property-facts" aria-label="Datos actuales de su propiedad">{% if view.built_area_m2 is not none %}<span><strong>Superficie</strong> {{ '{:,.0f}'.format(view.built_area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²</span>{% elif view.land_area_m2 is not none %}<span><strong>Terreno</strong> {{ '{:,.0f}'.format(view.land_area_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} m²</span>{% endif %}{% if view.bedrooms is not none %}<span><strong>Dormitorios</strong> {{ '{:,.0f}'.format(view.bedrooms) }}</span>{% endif %}{% if view.bathrooms is not none %}<span><strong>Baños</strong> {{ '{:,.0f}'.format(view.bathrooms) }}</span>{% endif %}{% if view.parking is not none %}<span><strong>Estacionamientos</strong> {{ '{:,.0f}'.format(view.parking) }}</span>{% endif %}</div><a class="hero-cta" href="#diagnostico">Revisar desempeño <span aria-hidden="true">↓</span></a></div>
+      <div class="hero-photo">{% if view.main_image_url %}<img src="{{ view.main_image_url }}" alt="Fotografía de {{ view.property_type }} en {{ view.commune }}" onerror="this.classList.add('image-failed')"><div class="hero-photo-placeholder" aria-hidden="true"><span aria-hidden="true"></span></div>{% else %}<div class="hero-photo-placeholder" aria-label="Composición visual PROCASA"><span aria-hidden="true"></span></div>{% endif %}<div class="hero-photo-metrics" aria-label="Resumen ejecutivo de su propiedad"><div><span>Precio publicado</span><strong>{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</strong></div><div><span>Consultas · 30 días</span><strong>{{ view.inquiries_previous_30d }}</strong></div><div><span>Portales activos</span><strong>{{ view.publications|length }}</strong></div></div></div>
     </section>
 
     <section class="kpi-strip" aria-label="Indicadores principales">
@@ -525,8 +639,10 @@
       <div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">▥</span>{{ view.position_kpi_label }}</div><div class="kpi-value">{{ view.position_descriptor }}</div><div class="kpi-detail">{{ view.position_kpi_detail }}</div></div>
     </section>
 
-    <section class="section" id="desempeno" aria-labelledby="desempeno-title">
-      <div class="section-heading"><div><div class="eyebrow">Actividad comercial</div><h2 id="desempeno-title">Resumen de desempeño</h2></div><p>Consultas vinculadas a su propiedad, agrupadas por semana y respaldadas por registros fechados.</p></div>
+    <section class="section" id="diagnostico" aria-labelledby="diagnostico-title">
+      <div class="section-heading"><div><div class="eyebrow">Diagnóstico personalizado</div><h2 id="diagnostico-title">La lectura de su propiedad, hoy.</h2></div><p>Una síntesis factual de exposición, respuesta y posición de precio a partir del corte disponible.</p></div>
+      <div class="diagnosis-shell"><div class="diagnosis-copy"><div class="eyebrow">Lectura ejecutiva</div><p>{{ view.diagnosis_narrative }}</p><div class="diagnosis-conclusion">{{ view.diagnosis_conclusion }}</div></div><div class="diagnosis-signals" aria-label="Señales de su propiedad">{% for signal in view.diagnosis_signals %}<article class="diagnosis-signal tone-{{ signal.tone }}"><div class="signal-top"><span>{{ signal.label }}</span><b>{{ signal.state }}</b></div><strong>{{ signal.value }}</strong><small>{{ signal.detail }}</small></article>{% endfor %}</div></div>
+      <div class="section-heading performance-heading"><div><div class="eyebrow">Actividad comercial</div><h3>Resumen de desempeño</h3></div><p>Consultas vinculadas a su propiedad, agrupadas por semana y respaldadas por registros fechados.</p></div>
       <div class="performance-grid"><div class="chart-area"><div class="chart-label">Consultas recibidas por semana</div>{% if view.activity_series %}<div class="chart" aria-label="Consultas recibidas por semana, últimos doce períodos"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main">{% for point in view.activity_series %}<div class="bar-group"><span class="bar-value">{{ point.count }}</span><span class="bar" style="--bar-height:{{ [point.height, 3]|max }}px" data-tooltip="{{ point.label }} · {{ point.count }} consultas" title="{{ point.label }} · {{ point.count }}"></span><span class="bar-label">{{ point.label }}</span></div>{% endfor %}</div></div><p class="chart-note">Últimos doce períodos semanales · las barras muestran consultas vinculadas, no visitas.</p>{% else %}<div class="chart" aria-label="Sin consultas vinculadas"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main"><span class="empty-bar" aria-hidden="true"></span></div></div><p class="chart-note">No se registraron consultas vinculadas durante los últimos treinta días.</p>{% endif %}<p class="activity-range-note"><strong>Consultas vinculadas</strong> · 7 días: {{ view.inquiries_previous_7d }} · 30 días: {{ view.inquiries_previous_30d }} · 90 días: {{ view.inquiries_previous_90d }}</p></div><aside class="insight"><div class="insight-icon" aria-hidden="true">⌁</div><div class="eyebrow">Lectura comercial</div><h3>Actividad registrada</h3><p>{{ view.commercial_insight }}</p></aside></div>
     </section>
 
@@ -542,7 +658,7 @@
     </section>{% endif %}
 
     <section class="section" id="contexto" aria-labelledby="contexto-title">
-      <div class="section-heading"><div><div class="eyebrow">Lectura local</div><h2 id="contexto-title">Contexto del mercado</h2></div><p>Factores observables del corte disponible en {{ view.commune }}. Se muestran solo señales respaldadas por datos persistidos.</p></div>
+      <div class="section-heading"><div><div class="eyebrow">Contexto económico y sectorial</div><h2 id="contexto-title">El comprador también está tomando decisiones en un entorno más exigente.</h2></div><p>Factores observables del corte disponible en {{ view.commune }}. Se muestran solo señales respaldadas por datos persistidos.</p></div>
       {% if view.local_market_narrative %}<p class="context-narrative">{{ view.local_market_narrative }}</p>{% endif %}<div class="context-grid"><div class="context-item"><div class="context-icon" aria-hidden="true">◫</div><h3>Precio por m² publicado</h3><p>{% if local and local.public_uf_m2 is not none %}{{ '{:,.2f}'.format(local.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m² publicados en la comuna.{% else %}No hay un indicador local suficiente para mostrar.{% endif %}</p></div><div class="context-item"><div class="context-icon" aria-hidden="true">↕</div><h3>Evolución observada</h3><p>{% if local and local.price_variation_12m_pct is not none %}El indicador publicado presenta una variación de {{ '{:+,.1f}'.format(local.price_variation_12m_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}% en 12 meses.{% else %}No hay una variación temporal persistida para este corte.{% endif %}</p></div><div class="context-item"><div class="context-icon" aria-hidden="true">□</div><h3>Oferta observable</h3><p>{% if local and local.active_listings is not none %}Se observaron {{ '{:,.0f}'.format(local.active_listings).replace(',', 'X').replace('.', ',').replace('X', '.') }} publicaciones activas en el corte; son avisos observados y no necesariamente propiedades únicas.{% else %}No hay un conteo de publicaciones activo disponible.{% endif %}</p></div></div>
       {% if view.national_context_available %}<div class="national-context"><div class="eyebrow">Contexto Chile</div><h3>Referencias nacionales vigentes</h3><p>{{ view.national_context_note }}</p><div class="national-grid">{% for indicator in view.national_indicators[:3] %}<div class="national-item"><strong>{% if indicator.indicator_id == 'mortgage_rate_uf' %}Tasa promedio de créditos de vivienda{% elif indicator.indicator_id == 'housing_price_index' %}Índice de precios de vivienda{% elif indicator.indicator_id == 'ipc_monthly_change' %}IPC mensual{% else %}{{ indicator.indicator_id }}{% endif %}</strong><span>{{ '{:,.2f}'.format(indicator.value).replace(',', 'X').replace('.', ',').replace('X', '.') }} {{ indicator.unit }}</span><small>{{ indicator.period }} · {{ indicator.source_name }}</small></div>{% endfor %}</div></div>{% endif %}
       <details><summary>Fuentes y metodología</summary><p>La ficha de su propiedad y su fecha de actualización provienen de <strong>universo_cartera_prop360</strong>. Las publicaciones comparables individuales provienen de <strong>propiedades_captacion</strong>; cada referencia conserva su propia fecha útil cuando existe y no representa una transacción. El contexto agregado de comuna y tipo proviene de <strong>{{ local.source_name if local else 'mercado_comunal · snapshot interno' }}</strong>, con corte {{ view.market_as_of or 'no disponible' }}. Las referencias nacionales solo aparecen cuando existen al menos dos snapshots internos vigentes; la página no consulta fuentes externas durante la visita.</p></details>
@@ -551,6 +667,17 @@
     <section class="section" id="gestion" aria-labelledby="gestion-title">
       <div class="section-heading"><div><div class="eyebrow">Actividad verificable</div><h2 id="gestion-title">Gestión PROCASA</h2></div><p>Presencia activa y eventos comerciales registrados para su propiedad, sin exponer registros internos.</p></div>
       <div class="management-grid"><div class="management-block presence-block"><div class="presence-heading"><div><div class="eyebrow">Presencia comercial</div><h3>Su propiedad, visible en múltiples canales</h3><p class="presence-copy">Actualmente mantenemos publicación verificada en los siguientes portales inmobiliarios.</p></div><div class="presence-count" aria-label="{{ view.publications|length }} canales activos"><strong>{{ view.publications|length }}</strong><span>canales activos</span></div></div>{% if view.publications %}<div class="portal-marquee" data-portal-marquee style="--portal-marquee-duration:34s" aria-label="Canales con publicación verificada"><div class="portal-marquee-track">{% for sequence in range(2) %}<div class="portal-marquee-sequence"{% if sequence == 1 %} aria-hidden="true"{% endif %}>{% for publication in view.publications %}<div class="portal-channel" data-portal-id="{{ publication.portal_id }}" aria-label="{{ publication.portal_name }} · publicación verificada"{% if sequence == 0 %} tabindex="0"{% endif %} title="{{ publication.portal_name }}">{% if portal_logo_paths.get(publication.portal_id) %}<img class="portal-logo" src="{{ portal_logo_paths.get(publication.portal_id) }}" alt="{{ publication.portal_name }}">{% else %}<span class="portal-wordmark">{{ publication.portal_name }}</span>{% endif %}</div>{% endfor %}</div>{% endfor %}</div></div>{% else %}<div class="portal-empty">No hay portales confirmados. Mostraremos aquí los canales cuando exista una publicación activa verificable.</div>{% endif %}<p class="chart-note">{{ view.publications|length }} canales con presencia verificada al momento del informe.</p></div><div class="management-block"><h3>Registros recientes</h3><div class="timeline">{% if view.timeline %}{% for event in view.timeline[:5] %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">{{ event.label }}</div><div class="timeline-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="timeline-date">{{ event.period }}</div></div>{% endfor %}{% else %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">Sin eventos recientes visibles</div><div class="timeline-detail">No hay un registro fechado suficiente para mostrar.</div></div><div class="timeline-date">—</div></div>{% endif %}{% if view.has_activity_history %}<details class="activity-history"><summary>Ver actividad anterior</summary>{% for event in view.timeline[5:] %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">{{ event.label }}</div><div class="timeline-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="timeline-date">{{ event.period }}</div></div>{% endfor %}</details>{% endif %}</div></div></div>
+    </section>
+
+    <section class="section proposal-section" id="propuesta" aria-labelledby="propuesta-title">
+      <div class="section-heading"><div><div class="eyebrow">Estrategia para conversar</div><h2 id="propuesta-title">Tres decisiones posibles. Una recomendación.</h2></div><p>Las alternativas se presentan para facilitar la conversación con su ejecutivo. No se muestran precios alternativos sin una recomendación calculada y respaldada.</p></div>
+      {% if view.pricing_recommendation %}
+      {% set recommendation = view.pricing_recommendation %}
+      <div class="proposal-shell proposal-ready"><div class="proposal-intro"><div class="eyebrow">Propuesta calculada para esta propiedad</div><h3>Una lectura para decidir con información.</h3><p>{{ recommendation.rationale }}</p></div><div class="strategy-grid">{% for strategy in recommendation.strategies %}<article class="strategy-card{% if strategy.recommended %} is-recommended{% endif %}"><div class="strategy-top"><span>{{ strategy.strategy_label }}</span>{% if strategy.recommended %}<b>RECOMENDADO</b>{% endif %}</div><strong>{{ strategy.price_uf }} UF</strong><small>{{ strategy.pct_label }}</small><p>{{ strategy.rationale }}</p></article>{% endfor %}</div><div class="authorization-panel"><div><div class="eyebrow">Recomendación PROCASA</div><h3>Revisar ajuste recomendado</h3><p>La autorización requiere confirmar la propiedad, el precio, la variación y la voluntad expresa del propietario.</p></div><button type="button" class="hero-cta" id="open-authorization">Autorizar ajuste recomendado</button></div></div>
+      <div class="authorization-modal" id="authorization-modal" hidden><div class="authorization-dialog" role="dialog" aria-modal="true" aria-labelledby="authorization-title"><button type="button" class="authorization-close" id="close-authorization" aria-label="Cerrar">×</button><div class="eyebrow">Confirmación de propietario</div><h3 id="authorization-title">Autorizar ajuste recomendado</h3><p>Revise los datos antes de confirmar la solicitud para su propiedad código {{ view.property_code }}.</p><div class="authorization-facts"><span>Precio actual<strong>{{ recommendation.current_price }} UF</strong></span><span>Nuevo precio<strong>{{ recommendation.recommended_price }} UF</strong></span><span>Variación<strong>{{ recommendation.recommended_pct }}</strong></span><span>Fecha<strong>{{ view.data_updated_at }}</strong></span></div><label class="authorization-check"><input id="authorization-ack" type="checkbox"><span>Confirmo que soy el propietario o estoy debidamente autorizado y que solicito expresamente a PROCASA gestionar la actualización del precio publicado a {{ recommendation.recommended_price }} UF.</span></label><div class="authorization-actions"><button type="button" class="hero-cta" id="confirm-authorization" disabled>Confirmar autorización</button><button type="button" class="authorization-secondary" id="cancel-authorization">Cancelar</button></div></div></div>
+      {% else %}
+      <div class="proposal-shell proposal-pending"><div class="proposal-intro"><div class="eyebrow">Revisión de estrategia</div><h3>Alternativas disponibles para evaluar.</h3><p>El portal aún no dispone de una recomendación calculada y defendible para esta propiedad. Los próximos pasos se conversan con su ejecutivo.</p></div><div class="strategy-grid"><article class="strategy-card"><div class="strategy-top"><span>Mantener precio actual</span></div><strong>{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</strong><small>0,0% sobre el registro actual</small><p>Conserva el valor publicado actual y permite seguir observando la respuesta registrada.</p></article><article class="strategy-card"><div class="strategy-top"><span>Ajuste gradual</span></div><strong>Revisión con ejecutivo</strong><small>Sin precio alternativo calculado</small><p>Se evaluaría con evidencia comparable y autorización expresa; no se anticipa un valor en este informe.</p></article><article class="strategy-card"><div class="strategy-top"><span>Ajuste competitivo</span></div><strong>Revisión con ejecutivo</strong><small>Sin precio alternativo calculado</small><p>Se evaluaría según la posición observada y la metodología que PROCASA apruebe para este caso.</p></article></div></div>
+      {% endif %}
     </section>
 
     <section class="closing" aria-labelledby="closing-title"><div><h2 id="closing-title">Estamos para acompañarle en la toma de decisiones</h2><p>Este informe reúne la actividad comercial registrada y referencias de mercado para facilitar la conversación sobre los próximos pasos de su propiedad.</p></div><button type="button" aria-disabled="true">Hablar con mi ejecutivo</button></section>

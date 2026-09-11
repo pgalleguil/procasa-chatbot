@@ -900,18 +900,18 @@ def test_convergent_report_is_continuous_and_renders_without_external_fetch(monk
 
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
-    assert "Informe de desempeño de su propiedad" in text
+    assert "Qué está pasando con su propiedad." in text
     assert "Resumen de desempeño" in text
     assert "Posición frente al mercado" in text
     assert "Gestión PROCASA" in text
     assert text.count('class="kpi"') == 4
-    assert 'href="#desempeno"' in text
+    assert 'href="#diagnostico"' in text
     assert 'href="#mercado"' in text
     assert "type=\"range\"" not in text
     assert "simul" not in text.casefold()
     assert "forecast" not in text.casefold()
-    assert "recomend" not in text.casefold()
-    assert "autoriz" not in text.casefold()
+    assert "RECOMENDADO" not in text
+    assert "Autorizar ajuste recomendado" not in text
     assert "fetch(" not in text
     assert "CRM" not in text
 
@@ -929,9 +929,11 @@ def test_convergent_bento_visual_contract_preserves_core_modules_and_marquee(mon
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
     assert 'class="report bento-report"' in text
     assert '<style id="bento-evolution">' in text
-    assert 'id="desempeno"' in text
+    assert 'id="diagnostico"' in text
     assert 'id="mercado"' in text
     assert 'id="gestion"' in text
+    assert 'id="propuesta"' in text
+    assert 'src="/static/logo.png" alt="Logo oficial PROCASA"' in text
     assert 'data-portal-marquee' in text
     assert 'class="portal-marquee-track"' in text
     assert 'type="range"' not in text
@@ -1134,6 +1136,37 @@ def test_convergent_narratives_are_deterministic_descriptive_and_bounded():
     assert commercial_insight.count(".") <= 2
     for phrase in ("el mercado está cayendo", "hay menos demanda", "podría generar más consultas"):
         assert phrase not in f"{local_narrative} {commercial_insight}".casefold()
+
+
+def test_convergent_v9_keeps_logo_assets_and_does_not_fabricate_recommendation(monkeypatch):
+    from pathlib import Path
+    from owner_portal.router import _convergent_payload
+
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    template_text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
+    assert "La lectura de su propiedad, hoy." in text
+    assert "El comprador también está tomando decisiones en un entorno más exigente." in text
+    assert "Tres decisiones posibles. Una recomendación." in text
+    assert 'src="/static/logo.png" alt="Logo oficial PROCASA"' in text
+    assert 'src="/static/logo.png" alt="PROCASA"' in text
+    assert "/static/portal_logos/yapo.png" in template_text
+    assert "/static/portal_logos/toctoc.png" in template_text
+    assert "/static/portal_logos/portal-inmobiliario.png" in template_text
+    assert "Revisión con ejecutivo" in text
+    assert "RECOMENDADO" not in text
+    assert "3.490 UF" not in text
+    assert "-6,2%" not in text
+    assert 'id="authorization-modal"' not in text
+
+    view = service.get_owner_portal_property_view(
+        _convergent_db(),
+        "SCENARIO",
+        datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    assert view is not None
+    payload = _convergent_payload(view.to_dict())
+    assert [signal["label"] for signal in payload["diagnosis_signals"]] == ["Exposición", "Respuesta", "Precio"]
+    assert "podría generar más consultas" not in payload["diagnosis_narrative"].casefold()
 
 
 def test_convergent_activity_feed_is_capped_and_discloses_older_events(monkeypatch):

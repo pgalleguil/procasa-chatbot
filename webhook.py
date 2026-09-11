@@ -937,9 +937,35 @@ async def lifespan(app: FastAPI):
     if Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED and Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED:
         try:
             from chatbot.crm_sla_reassignment_runtime import run_crm_sla_shadow_worker
+            logger.info(
+                "[SLA_SHADOW_START] status=SCHEDULED worker=%s shadow=%s",
+                Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED,
+                Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED,
+            )
             sla_reassignment_task = asyncio.create_task(
                 run_crm_sla_shadow_worker(status=background_tasks_status["crm_sla_reassignment_shadow"])
             )
+
+            def _shadow_task_done(task):
+                if task.cancelled():
+                    return
+                try:
+                    error = task.exception()
+                except Exception as exc:
+                    error = exc
+                if error is not None:
+                    background_tasks_status["crm_sla_reassignment_shadow"].update({
+                        "status": "error",
+                        "health": "WORKER_CRASHED",
+                        "last_error": type(error).__name__,
+                    })
+                    logger.error(
+                        "[SLA_SHADOW_ERROR] worker_task_crashed error_type=%s",
+                        type(error).__name__,
+                        exc_info=(type(error), error, error.__traceback__),
+                    )
+
+            sla_reassignment_task.add_done_callback(_shadow_task_done)
         except Exception:
             background_tasks_status["crm_sla_reassignment_shadow"].update({"status": "error", "health": "CONFIG_ERROR"})
             logger.exception("[SLA_SHADOW_ERROR] worker startup bridge failed")

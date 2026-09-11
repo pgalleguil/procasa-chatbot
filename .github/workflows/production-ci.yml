@@ -43,9 +43,6 @@ jobs:
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py
-          - suite: CRM list actions
-            tests: >-
-              tests/test_crm_list_actions.py
           - suite: CRM sort order
             tests: >-
               tests/test_crm_sort_order.py

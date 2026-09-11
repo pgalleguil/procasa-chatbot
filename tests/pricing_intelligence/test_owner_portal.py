@@ -1057,7 +1057,7 @@ def test_convergent_presence_marquee_supports_one_three_and_six_verified_channel
     assert f'aria-label="{count} canales activos"' in text
     assert text.count("class=\"portal-marquee-sequence\"") == 2
     logo_paths = {
-        "portal_inmobiliario": "/static/portal_logos/portal-inmobiliario.webp",
+        "portal_inmobiliario": "/static/portal_logos/portal-inmobiliario.png",
         "toctoc": "/static/portal_logos/toctoc.png",
         "yapo": "/static/portal_logos/yapo.png",
         "chilepropiedades": "/static/portal_logos/chilepropiedades.png",
@@ -1082,7 +1082,7 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "overflow-x:auto" in text
     assert "touch-action:pan-x" in text
     assert "prefers-reduced-motion:reduce" in text
-    assert "/static/portal_logos/portal-inmobiliario.webp" in text
+    assert "/static/portal_logos/portal-inmobiliario.png" in text
     assert "/static/portal_logos/toctoc.png" in text
     assert "/static/portal_logos/yapo.png" in text
     assert "/static/portal_logos/chilepropiedades.png" in text

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from chatbot.storage import get_db
@@ -28,14 +28,6 @@ def _render(request: Request, view: dict) -> HTMLResponse:
     return _templates.TemplateResponse(
         request,
         "owner_portal_preview.html",
-        {"request": request, "view": view},
-    )
-
-
-def _render_concept(request: Request, template_name: str, view: dict) -> HTMLResponse:
-    return _templates.TemplateResponse(
-        request,
-        template_name,
         {"request": request, "view": view},
     )
 
@@ -181,43 +173,37 @@ async def owner_portal_preview_for_property(
     return _render(request, view.to_dict())
 
 
-async def _owner_portal_concept(
-    request: Request,
-    property_code: str,
-    template_name: str,
-) -> HTMLResponse:
-    as_of = datetime.now(BUSINESS_TZ)
-    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of)
-    if view is None:
-        raise HTTPException(status_code=404, detail="Property is not available in PROCASA SUCRE scope")
-    return _render_concept(request, template_name, view.to_dict())
+async def _redirect_owner_portal_concept(property_code: str) -> RedirectResponse:
+    """Keep old concept links usable without exposing parallel visual versions."""
+
+    return RedirectResponse(
+        url=f"/owner-portal-convergent/{property_code}",
+        status_code=307,
+    )
 
 
-@router.get("/owner-portal-concepts/a/{property_code}", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/owner-portal-concepts/a/{property_code}", include_in_schema=False)
 async def owner_portal_concept_a(
     property_code: str,
-    request: Request,
     _user=Depends(require_internal_preview),
-) -> HTMLResponse:
-    return await _owner_portal_concept(request, property_code, "owner_portal_concept_a.html")
+) -> RedirectResponse:
+    return await _redirect_owner_portal_concept(property_code)
 
 
-@router.get("/owner-portal-concepts/b/{property_code}", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/owner-portal-concepts/b/{property_code}", include_in_schema=False)
 async def owner_portal_concept_b(
     property_code: str,
-    request: Request,
     _user=Depends(require_internal_preview),
-) -> HTMLResponse:
-    return await _owner_portal_concept(request, property_code, "owner_portal_concept_b.html")
+) -> RedirectResponse:
+    return await _redirect_owner_portal_concept(property_code)
 
 
-@router.get("/owner-portal-concepts/c/{property_code}", response_class=HTMLResponse, include_in_schema=False)
+@router.get("/owner-portal-concepts/c/{property_code}", include_in_schema=False)
 async def owner_portal_concept_c(
     property_code: str,
-    request: Request,
     _user=Depends(require_internal_preview),
-) -> HTMLResponse:
-    return await _owner_portal_concept(request, property_code, "owner_portal_concept_c.html")
+) -> RedirectResponse:
+    return await _redirect_owner_portal_concept(property_code)
 
 
 async def _owner_portal_convergent(

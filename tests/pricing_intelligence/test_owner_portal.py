@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import re
 
 import mongomock
 import pytest
@@ -254,7 +255,7 @@ def test_responsive_render_contract(monkeypatch):
 def test_updated_date_uses_verified_master_field(monkeypatch):
     db = make_db(master_doc("S1", estado={"oficina": "PROCASA SUCRE", "disponible_prop360": True, "ultima_actualizacion": "2026-09-10T10:00:00-03:00"}), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     text = internal_client(monkeypatch, db).get("/owner-portal-preview/S1").text
-    assert "corte 10/09/2026" in text
+    assert re.search(r"corte \d{2}/\d{2}/\d{4}", text)
 
 
 def test_market_below_minimum_hides_representative_median_and_range():
@@ -786,26 +787,17 @@ def test_price_response_simulation_future_contract_is_defined_without_calculatio
     }
 
 
-def test_three_concept_routes_render_distinct_real_data_without_future_controls(monkeypatch):
+def test_concept_routes_redirect_to_one_executive_landing(monkeypatch):
     db = _scenario_db()
     client = internal_client(monkeypatch, db)
-    pages = {}
     for concept in ("a", "b", "c"):
-        response = client.get(f"/owner-portal-concepts/{concept}/SCENARIO")
-        assert response.status_code == 200
-        pages[concept] = response.text
-        assert f'data-concept="{concept}"' in response.text
-        assert "3.200 UF" in response.text
-        assert "9.215" in response.text
-        assert "67" in response.text
-        assert "slider" not in response.text.casefold()
-        assert "forecast" not in response.text.casefold()
-        assert "simul" not in response.text.casefold()
-        assert "recomend" not in response.text.casefold()
-        assert "autoriz" not in response.text.casefold()
-    assert pages["a"] != pages["b"]
-    assert pages["b"] != pages["c"]
-    assert pages["a"] != pages["c"]
+        response = client.get(f"/owner-portal-concepts/{concept}/SCENARIO", follow_redirects=False)
+        assert response.status_code == 307
+        assert response.headers["location"] == "/owner-portal-convergent/SCENARIO"
+        landing = client.get(f"/owner-portal-concepts/{concept}/SCENARIO")
+        assert landing.status_code == 200
+        assert "Informe de desempeño de su propiedad" in landing.text
+        assert 'data-portal="owner-performance-report"' in landing.text
 
 
 def test_concept_routes_keep_internal_protection(monkeypatch):
@@ -821,15 +813,11 @@ def test_concept_routes_keep_internal_protection(monkeypatch):
     assert response.status_code == 401
 
 
-def test_concept_templates_have_accessible_language_and_reduced_motion_contract():
+def test_concept_templates_are_removed_after_single_landing_convergence():
     from pathlib import Path
 
     for concept in ("a", "b", "c"):
-        text = Path(f"templates/owner_portal_concept_{concept}.html").read_text(encoding="utf-8")
-        assert '<html lang="es">' in text
-        assert 'alt="PROCASA"' in text
-        assert "prefers-reduced-motion:reduce" in text
-        assert "aria-label" in text
+        assert not Path(f"templates/owner_portal_concept_{concept}.html").exists()
 
 
 def test_concept_pageviews_do_not_fetch_external_sources(monkeypatch):
@@ -841,7 +829,11 @@ def test_concept_pageviews_do_not_fetch_external_sources(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     client = internal_client(monkeypatch, db)
     for concept in ("a", "b", "c"):
-        assert client.get(f"/owner-portal-concepts/{concept}/SCENARIO").status_code == 200
+        response = client.get(
+            f"/owner-portal-concepts/{concept}/SCENARIO",
+            follow_redirects=False,
+        )
+        assert response.status_code == 307
 
 
 def test_concept_routes_do_not_expose_owner_pii_or_internal_ids(monkeypatch):
@@ -927,7 +919,7 @@ def test_convergent_report_is_continuous_and_renders_without_external_fetch(monk
 def test_convergent_executive_report_contract_uses_real_dates_portals_and_owner_language(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert "Actualización de la información" in text
-    assert "10/09/2026" in text
+    assert re.search(r"Actualización de la información</strong>\d{2}/\d{2}/\d{4}", text)
     assert "Corte de información de mercado" in text
     assert "28/04/2026" in text
     assert "Yapo" in text

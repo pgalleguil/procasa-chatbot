@@ -860,3 +860,114 @@ def test_concept_routes_do_not_expose_owner_pii_or_internal_ids(monkeypatch):
         assert "owner@example.com" not in text
         assert "+56911111111" not in text
         assert "Calle privada 123" not in text
+
+
+def _convergent_db(*, with_lead: bool = True):
+    db = _scenario_db()
+    db["propiedades_captacion"].insert_one({"listing_id": "SCENARIO", "image_urls": ["https://img/scenario.jpg"]})
+    if with_lead:
+        db["leads"].insert_one({
+            "_id": "convergent-lead",
+            "created_at": datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc).isoformat(),
+            "prospecto": {"codigo": "SCENARIO"},
+        })
+    return db
+
+
+def test_convergent_candidate_uses_verified_recent_activity_and_real_data(monkeypatch):
+    db = _convergent_db()
+    assert service.select_owner_intelligence_property_code(
+        db, datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
+    ) == "SCENARIO"
+    response = internal_client(monkeypatch, db).get("/owner-portal-convergent")
+    assert response.status_code == 200
+    assert 'data-portal="owner-intelligence"' in response.text
+    assert 'data-property-code="SCENARIO"' in response.text
+    assert "3.200 UF" in response.text
+    assert "9.215" in response.text
+
+
+def test_convergent_route_keeps_internal_protection(monkeypatch):
+    monkeypatch.delenv("OWNER_PORTAL_PREVIEW_DEV_MODE", raising=False)
+
+    async def deny(_request):
+        raise HTTPException(status_code=401, detail="CRM authentication required")
+
+    monkeypatch.setattr("owner_portal.security._existing_crm_user", deny)
+    app = FastAPI()
+    app.include_router(router)
+    response = TestClient(app).get("/owner-portal-convergent/SCENARIO")
+    assert response.status_code == 401
+
+
+def test_convergent_tabs_start_on_summary_and_are_rendered_without_external_fetch(monkeypatch):
+    db = _convergent_db()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("convergent page attempted an external fetch")
+
+    monkeypatch.setattr("urllib.request.urlopen", forbidden)
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'aria-selected="true"' in text
+    assert 'data-panel="resumen"' in text and 'data-panel="actividad"' in text
+    assert 'id="panel-resumen"' in text and 'id="panel-actividad"' in text
+    assert 'id="panel-actividad" role="tabpanel" aria-labelledby="tab-actividad" data-panel="actividad" hidden' in text
+    assert "type=\"range\"" not in text
+    assert "simul" not in text.casefold()
+    assert "forecast" not in text.casefold()
+    assert "recomend" not in text.casefold()
+    assert "autoriz" not in text.casefold()
+    assert "fetch(" not in text
+
+
+def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
+    zero = internal_client(monkeypatch, _convergent_db(with_lead=False)).get("/owner-portal-convergent/SCENARIO").text
+    nonzero = internal_client(monkeypatch, _convergent_db(with_lead=True)).get("/owner-portal-convergent/SCENARIO").text
+    assert "Sin eventos recientes visibles" in zero
+    assert "Consulta registrada" not in zero
+    assert "Consulta registrada" in nonzero
+    assert "Dónde estamos promocionando tu propiedad" in nonzero
+
+
+def test_convergent_history_and_last_update_are_conditional(monkeypatch):
+    db = _convergent_db()
+    without_history = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'id="tab-historial"' not in without_history
+    assert "Desde tu última actualización" not in without_history
+
+    db["pricing_intelligence_property_snapshots_v1"].insert_one({
+        "property_code": "SCENARIO",
+        "snapshot_date_local": "2026-09-09",
+        "previous_price_uf": 3000,
+        "previous_price_clp": 112000000,
+        "last_price_change_at": "2026-08-20T15:00:00+00:00",
+    })
+    with_history = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'id="tab-historial"' in with_history
+    assert "Desde tu última actualización" in with_history
+
+
+def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(monkeypatch):
+    db = _convergent_db()
+    db["universo_cartera_prop360"].update_one(
+        {"codigo": "SCENARIO"},
+        {"$set": {"owner_email": "owner@example.com", "owner_phone": "+56911111111", "direccion_exacta": "Calle privada 123"}},
+    )
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Tu precio publicado" in text
+    assert "referencias con precio y superficie válidos" in text
+    assert "owner@example.com" not in text
+    assert "+56911111111" not in text
+    assert "Calle privada 123" not in text
+
+
+def test_convergent_template_has_mobile_and_reduced_motion_contract():
+    from pathlib import Path
+
+    text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
+    assert '<html lang="es">' in text
+    assert 'name="viewport"' in text
+    assert 'alt="PROCASA"' in text
+    assert "@media (prefers-reduced-motion:reduce)" in text
+    assert "@media (max-width:680px)" in text
+    assert "window.fetch" not in text

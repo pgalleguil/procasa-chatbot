@@ -602,6 +602,153 @@ def select_preview_property_code(db: Any) -> str | None:
     return best[1] if best else None
 
 
+def select_owner_intelligence_property_code(
+    db: Any,
+    as_of: datetime | None = None,
+) -> str | None:
+    """Choose a real SUCRE case with verified recent demand for the convergent UI.
+
+    This selector is intentionally separate from ``select_preview_property_code``:
+    the existing preview remains frozen while the intelligence candidate requires
+    a recent, property-linked inquiry and a comparable cohort suitable for the
+    owner-facing narrative.
+    """
+
+    cutoff = _as_of_or_now(as_of)
+    base_documents = [
+        doc
+        for doc in _find_master_in_batches(
+            db,
+            {SUCRE_OFFICE_FIELD: SUCRE_OFFICE_VALUE},
+            MASTER_PUBLICATION_PROJECTION,
+        )
+        if is_active_property(doc)
+    ]
+    if not base_documents:
+        return None
+
+    listing_ids_by_code = {
+        str(doc.get("codigo")): _publication_listing_ids(doc)
+        for doc in base_documents
+        if doc.get("codigo") is not None
+    }
+    all_listing_ids = set().union(*listing_ids_by_code.values()) if listing_ids_by_code else set()
+    captures = _captacion_by_ids(db, all_listing_ids)
+    image_count_by_listing = {
+        normalize_identifier(item.get("listing_id")): len(_image_urls(item))
+        for item in captures
+        if normalize_identifier(item.get("listing_id"))
+    }
+
+    code_by_identifier: dict[str, set[str]] = {}
+    alias_by_source: dict[str, dict[str, set[str]]] = {
+        source: {} for source, _ in _MASTER_ALIAS_PORTALS
+    }
+    candidate_documents: dict[str, Mapping[str, Any]] = {}
+    for doc in base_documents:
+        code = normalize_identifier(doc.get("codigo"))
+        if not code:
+            continue
+        image_count = sum(
+            image_count_by_listing.get(listing_id, 0)
+            for listing_id in listing_ids_by_code.get(str(doc.get("codigo")), set())
+        )
+        price = _price(doc)
+        has_surface = (
+            _number(_path(doc, "caracteristicas.superficie_construida")) is not None
+            or _number(_path(doc, "caracteristicas.superficie_terreno")) is not None
+        )
+        if image_count <= 0 or (price["uf"] is None and price["clp"] is None) or not has_surface:
+            continue
+        candidate_documents[code] = doc
+        code_by_identifier.setdefault(code, set()).add(code)
+        aliases = _verified_property_alias_values(doc)
+        for source, values in aliases.items():
+            for value in values:
+                alias_by_source.setdefault(source, {}).setdefault(value, set()).add(code)
+
+    if not candidate_documents:
+        return None
+
+    clauses: list[dict[str, Any]] = []
+    if code_by_identifier:
+        clauses.append({"prospecto.codigo": {"$in": _mongo_identifier_variants(code_by_identifier)}})
+    for source, field in (
+        ("mercadolibre", "prospecto.codigo_mercadolibre"),
+        ("yapo", "prospecto.codigo_yapo"),
+        ("toctoc", "prospecto.codigo_propiedad"),
+        ("toctoc", "prospecto.propiedad_codigo"),
+    ):
+        values = alias_by_source.get(source) or {}
+        if values:
+            clauses.append({field: {"$in": _mongo_identifier_variants(values)}})
+    if not clauses:
+        return None
+
+    try:
+        lead_documents = list(db["leads"].find({"$or": clauses}, LEAD_PROJECTION))
+    except Exception:
+        return None
+
+    recent_counts: dict[str, int] = {}
+    for lead in lead_documents:
+        created_at = parse_aware_datetime(lead.get("created_at"))
+        if created_at is None or not is_in_previous_window(
+            created_at,
+            cutoff.astimezone(timezone.utc),
+            30,
+        ):
+            continue
+        prospect = lead.get("prospecto") if isinstance(lead.get("prospecto"), Mapping) else {}
+        matches: set[str] = set()
+        canonical = normalize_identifier(prospect.get("codigo"))
+        if canonical:
+            matches.update(code_by_identifier.get(canonical, set()))
+        for source, field in (
+            ("mercadolibre", "codigo_mercadolibre"),
+            ("yapo", "codigo_yapo"),
+            ("toctoc", "codigo_propiedad"),
+            ("toctoc", "propiedad_codigo"),
+        ):
+            value = normalize_identifier(prospect.get(field))
+            if value:
+                matches.update(alias_by_source.get(source, {}).get(value, set()))
+        for code in matches:
+            recent_counts[code] = recent_counts.get(code, 0) + 1
+
+    ranked = sorted(
+        (
+            doc
+            for code, doc in candidate_documents.items()
+            if recent_counts.get(code, 0) > 0
+        ),
+        key=lambda doc: (
+            recent_counts.get(normalize_identifier(doc.get("codigo")) or "", 0),
+            _eligible_score(
+                doc,
+                sum(
+                    image_count_by_listing.get(listing_id, 0)
+                    for listing_id in listing_ids_by_code.get(str(doc.get("codigo")), set())
+                ),
+            ),
+            str(doc.get("codigo") or ""),
+        ),
+        reverse=True,
+    )
+    for doc in ranked[:32]:
+        code = str(doc.get("codigo"))
+        view = get_owner_portal_property_view(db, code, cutoff)
+        if (
+            view is not None
+            and view.inquiries_previous_30d > 0
+            and view.data_quality.photo_available
+            and view.comparable_cohort is not None
+            and view.comparable_cohort.count >= 8
+        ):
+            return code
+    return None
+
+
 def _safe_property(
     doc: Mapping[str, Any],
     image_urls: list[str],

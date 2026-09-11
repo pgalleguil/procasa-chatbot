@@ -1056,9 +1056,19 @@ def test_convergent_presence_marquee_supports_one_three_and_six_verified_channel
     text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/PRESENCE-SIZES").text
     assert f'aria-label="{count} canales activos"' in text
     assert text.count("class=\"portal-marquee-sequence\"") == 2
+    logo_paths = {
+        "portal_inmobiliario": "/static/portal_logos/portal-inmobiliario.ico",
+        "yapo": "/static/portal_logos/yapo.ico",
+        "chilepropiedades": "/static/portal_logos/chilepropiedades.png",
+        "proppit": "/static/portal_logos/proppit.png",
+        "procasa": "/static/logo.png",
+    }
     for portal_id, portal_name in catalog[:count]:
         assert text.count(f'data-portal-id="{portal_id}"') == 2
-        assert portal_name in text
+        if portal_id in logo_paths:
+            assert f'src="{logo_paths[portal_id]}"' in text
+        else:
+            assert f'<span class="portal-wordmark">{portal_name}</span>' in text
 
 
 def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contract():
@@ -1071,6 +1081,10 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "overflow-x:auto" in text
     assert "touch-action:pan-x" in text
     assert "prefers-reduced-motion:reduce" in text
+    assert "/static/portal_logos/portal-inmobiliario.ico" in text
+    assert "/static/portal_logos/yapo.ico" in text
+    assert "/static/portal_logos/chilepropiedades.png" in text
+    assert "/static/portal_logos/proppit.png" in text
     assert "owner_email" not in text
     assert "owner_phone" not in text
     assert "direccion_exacta" not in text

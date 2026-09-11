@@ -1,0 +1,69 @@
+name: Production CI Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pycompile:
+    name: Python compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile critical application modules
+        run: |
+          python -m py_compile \
+            webhook.py config.py api_crm.py api_captacion.py \
+            captacion_management.py captacion_assignment_eligibility.py \
+            release_info.py
+      - name: Verify production ancestry
+        run: python scripts/verify_production_deploy_base.py --approved-main-ref origin/main --head HEAD
+
+  critical-tests:
+    name: Critical CRM, captación, dashboard and SLA tests
+    runs-on: ubuntu-latest
+    needs: pycompile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio
+      - name: Run critical suites
+        run: >-
+          python -m pytest -c pytest-procasa.ini
+          tests/test_crm_management_sla.py
+          tests/test_crm_phone_visibility.py
+          tests/test_crm_sla_alert_evaluator.py
+          tests/test_crm_sla_policy_freeze.py
+          tests/test_crm_sla_shadow_infrastructure.py
+          tests/test_crm_sla_reassignment_cutover.py
+          tests/test_crm_sla_reassignment_transaction.py
+          tests/test_crm_sla_reassignment_worker.py
+          tests/test_crm_list_actions.py
+          tests/test_crm_sort_order.py
+          tests/test_captacion_management.py
+          tests/test_captacion_redistribution.py
+          tests/test_captacion_goals.py
+          tests/test_phone_learning.py
+          tests/test_dashboard_swr_cache.py
+          tests/test_dashboard_cache_bandwidth.py
+          tests/test_release_info.py

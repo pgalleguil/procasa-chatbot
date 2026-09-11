@@ -134,6 +134,7 @@ from chatbot.captacion_weekly_report import (
 
 # ========================= CONFIGURACIÓN =========================
 from config import Config
+from release_info import get_release_info
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -858,6 +859,13 @@ lead_processing_queue = None  # Se inicializará en lifespan
 async def lifespan(app: FastAPI):
     # Startup logic
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+    release = get_release_info()
+    logger.info(
+        "[RELEASE] branch=%s commit=%s environment=%s",
+        release["branch"],
+        release["commit"],
+        release["environment"],
+    )
 
     # Follow-up v2 must be able to issue and verify its dedicated token before
     # any reminder worker starts. A missing production secret is fatal.
@@ -2792,6 +2800,7 @@ async def webhook(
 @app.get("/health")
 async def health_check():
     now = datetime.now(CHILE_TZ).isoformat()
+    release = get_release_info()
     try:
         worker_status = background_tasks_status.get("chatbot_response") or {}
         queue_health = worker_status.get("health_snapshot")
@@ -2830,7 +2839,10 @@ async def health_check():
         degraded_reasons.append("process_service_metrics_unavailable")
     return {
         "status": "degraded" if degraded_reasons else "healthy",
-        "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
+        "deploy_commit": release["commit"],
+        "release_commit": release["commit_short"],
+        "release_branch": release["branch"],
+        "environment": release["environment"],
         "server_time": now,
         "background_tasks": background_tasks_status,
         "chatbot": {

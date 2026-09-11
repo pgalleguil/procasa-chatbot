@@ -415,10 +415,97 @@
       .hero-photo img { transform:none; }
     }
   </style>
+  <style id="bento-evolution">
+    /* Premium bento evolution: visual composition only, no data or route changes. */
+    body { background:radial-gradient(circle at 12% 8%,rgba(224,215,192,.24),transparent 30%),var(--page); }
+    .report { width:min(1320px,calc(100% - 56px)); }
+    .site-header { min-height:92px; padding:0 8px; border-bottom:0; background:transparent; }
+    .brand { gap:14px; }
+    .brand-office { margin-left:4px; padding-left:14px; }
+    .report-nav { margin:0 8px; padding:10px 15px; border:1px solid rgba(32,56,61,.12); border-radius:999px; background:rgba(255,255,255,.72); box-shadow:0 8px 24px rgba(29,42,44,.045); }
+    .hero { min-height:470px; margin-top:22px; border:1px solid rgba(32,56,61,.13); border-radius:28px; overflow:hidden; box-shadow:0 24px 60px rgba(29,42,44,.1); }
+    .hero-copy { padding:54px 58px 56px; background:linear-gradient(145deg,#fffefa 0%,#fff 72%); }
+    .hero-copy::before { top:42px; bottom:42px; left:25px; width:2px; opacity:.8; }
+    .hero h1 { max-width:510px; font-size:clamp(40px,3.65vw,58px); }
+    .hero-photo { min-height:470px; }
+    .hero-photo::after { background:linear-gradient(90deg,rgba(255,255,255,.08),transparent 26%),linear-gradient(0deg,rgba(29,42,44,.12),transparent 35%); }
+    .kpi-strip { grid-template-columns:1.1fr 1fr 1fr 1.2fr; gap:12px; margin-top:18px; border:0; border-radius:0; background:transparent; box-shadow:none; }
+    .kpi { min-height:122px; padding:20px 22px 18px; border:1px solid rgba(32,56,61,.12); border-radius:18px; background:rgba(255,255,255,.9); box-shadow:0 12px 28px rgba(29,42,44,.055); }
+    .kpi:last-child { border-right:1px solid rgba(32,56,61,.12); }
+    .kpi:nth-child(4) { border-color:var(--navy); background:var(--navy); box-shadow:0 16px 32px rgba(32,56,61,.17); }
+    .kpi:nth-child(4) .kpi-top,.kpi:nth-child(4) .kpi-detail { color:rgba(255,255,255,.7); }
+    .kpi:nth-child(4) .kpi-icon { border-color:rgba(255,255,255,.48); color:#fff; background:rgba(255,255,255,.08); }
+    .kpi:nth-child(4) .kpi-value { color:#fff; }
+    .section { padding:54px 0 34px; border-bottom:0; }
+    .section-heading { margin-bottom:20px; padding-bottom:0; border-bottom:0; }
+    .section-heading h2 { font-size:clamp(31px,3.35vw,46px); }
+    #desempeno .performance-grid { gap:14px; }
+    #desempeno .chart-area { padding:26px 27px 21px; border:1px solid rgba(32,56,61,.12); border-radius:22px; background:rgba(255,255,255,.88); box-shadow:0 14px 32px rgba(29,42,44,.055); }
+    #desempeno .insight { min-height:100%; padding:29px 29px 27px; border:1px solid rgba(160,125,63,.22); border-top:3px solid var(--gold); border-radius:22px; background:linear-gradient(150deg,#f6f1e7,#eee7d9); box-shadow:0 14px 32px rgba(29,42,44,.065); }
+    #mercado .market-grid { gap:14px; padding:25px; border:1px solid rgba(32,56,61,.12); border-radius:24px; background:rgba(255,255,255,.9); box-shadow:0 18px 42px rgba(29,42,44,.065); }
+    #mercado .distribution-wrap { padding:19px 24px 9px 4px; }
+    #mercado .market-side { padding:25px 23px 21px 25px; border:1px solid rgba(160,125,63,.25); border-left:3px solid var(--gold); border-radius:18px; background:linear-gradient(150deg,#faf6ed,#f2eadb); box-shadow:none; }
+    #mercado .comparables { margin-top:15px; padding:22px 24px 8px; border:1px solid rgba(32,56,61,.12); border-radius:20px; background:rgba(255,255,255,.8); box-shadow:0 12px 28px rgba(29,42,44,.045); }
+    #mercado .comp-row.head { border-radius:12px 12px 0 0; background:#f3eee4; }
+    #mercado .comp-row:not(.head):hover { background:#faf6ed; }
+    #contexto .context-narrative { max-width:none; margin:0 0 15px; padding:20px 23px; border:1px solid rgba(32,56,61,.11); border-left:3px solid var(--gold); border-radius:18px; background:linear-gradient(100deg,#fffefa,#f7f3eb); box-shadow:0 10px 24px rgba(29,42,44,.04); }
+    #contexto .context-grid { border:0; border-radius:22px; overflow:hidden; background:rgba(255,255,255,.88); box-shadow:0 14px 30px rgba(29,42,44,.05); }
+    #contexto .context-item { padding:24px 25px 22px; border-right:1px solid rgba(32,56,61,.1); }
+    #contexto .context-item + .context-item { padding-left:25px; }
+    #gestion .management-grid { gap:14px; }
+    #gestion .presence-block { padding:27px; border-radius:24px; overflow:hidden; background:linear-gradient(145deg,#20383d,#2b4a4c); box-shadow:0 18px 42px rgba(32,56,61,.14); }
+    #gestion .presence-block h3 { color:#fff; }
+    #gestion .presence-block .eyebrow { color:#d0b477; }
+    #gestion .presence-block .presence-copy,#gestion .presence-block .chart-note { color:rgba(255,255,255,.68); }
+    #gestion .presence-block .presence-count { border-left-color:rgba(255,255,255,.2); }
+    #gestion .presence-block .presence-count strong { color:#fff; }
+    #gestion .presence-block .presence-count span { color:rgba(255,255,255,.62); }
+    #gestion .portal-marquee { border:1px solid rgba(255,255,255,.16); border-bottom-color:rgba(208,180,119,.62); border-radius:16px; background:rgba(255,254,250,.97); box-shadow:0 14px 28px rgba(9,24,26,.18); }
+    #gestion .portal-marquee::before { background:linear-gradient(90deg,#fffefa,rgba(255,254,250,0)); }
+    #gestion .portal-marquee::after { background:linear-gradient(270deg,#fffefa,rgba(255,254,250,0)); }
+    #gestion .portal-channel { min-height:76px; border-radius:12px; }
+    #gestion .management-block:not(.presence-block) { padding:27px; border:1px solid rgba(32,56,61,.12); border-radius:24px; background:rgba(255,255,255,.88); box-shadow:0 14px 32px rgba(29,42,44,.055); }
+    #gestion .management-block:not(.presence-block) .timeline { border:0; padding:4px 0 0; background:transparent; box-shadow:none; }
+    .closing { margin-top:38px; border:1px solid rgba(160,125,63,.24); border-radius:24px; background:linear-gradient(110deg,#f0e8d8,#f8f5ee 70%); box-shadow:0 17px 36px rgba(29,42,44,.065); }
+    .footer { margin-top:42px; padding:25px 4px 32px; border-top:1px solid rgba(32,56,61,.16); }
+    @media (max-width:880px) {
+      .report { width:min(100% - 36px,680px); }
+      .kpi-strip { grid-template-columns:repeat(2,1fr); }
+      .hero { border-radius:24px; }
+      #mercado .market-grid { padding:20px; }
+    }
+    @media (max-width:620px) {
+      .report { width:calc(100% - 28px); }
+      .site-header { min-height:76px; }
+      .report-nav { margin:0; padding:9px 12px; border-radius:14px; }
+      .hero { margin-top:16px; border-radius:20px; }
+      .hero-copy { padding:33px 25px 31px; }
+      .hero-copy::before { top:28px; bottom:28px; left:13px; }
+      .hero-photo { min-height:245px; }
+      .kpi-strip { gap:8px; margin-top:12px; }
+      .kpi { min-height:111px; padding:17px 14px 16px; border-radius:14px; }
+      .kpi:nth-child(4) { box-shadow:0 10px 22px rgba(32,56,61,.14); }
+      .section { padding:40px 0 28px; }
+      #desempeno .chart-area { padding:20px 16px 17px; border-radius:18px; }
+      #desempeno .insight { padding:22px 20px; border-radius:18px; }
+      #mercado .market-grid { padding:14px; border-radius:18px; }
+      #mercado .distribution-wrap { padding:13px 4px 5px; }
+      #mercado .market-side { padding:21px 18px; border-radius:15px; }
+      #mercado .comparables { padding:18px 16px 5px; border-radius:16px; }
+      #contexto .context-narrative { padding:17px 18px; border-radius:16px; }
+      #contexto .context-grid { border-radius:18px; }
+      #contexto .context-item { padding:21px 19px; }
+      #contexto .context-item + .context-item { padding-left:19px; }
+      #gestion .presence-block,#gestion .management-block:not(.presence-block) { padding:21px 18px; border-radius:18px; }
+      #gestion .portal-channel { min-height:70px; }
+      .closing { margin-top:31px; border-radius:18px; }
+      .footer { margin-top:30px; padding-left:0; padding-right:0; }
+    }
+  </style>
 </head>
 <body>
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
-<div class="report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
+<div class="report bento-report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
   <header class="site-header">
     <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-office">SUCRE</span></div>
     <div class="header-meta">Actualización de propiedad · {{ view.property_updated_at or '—' }}<br>Corte del informe · {{ view.data_updated_at }}</div>

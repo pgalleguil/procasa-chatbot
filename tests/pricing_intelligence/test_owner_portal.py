@@ -916,6 +916,27 @@ def test_convergent_report_is_continuous_and_renders_without_external_fetch(monk
     assert "CRM" not in text
 
 
+def test_convergent_bento_visual_contract_preserves_core_modules_and_marquee(monkeypatch):
+    db = _convergent_db()
+    db["universo_cartera_prop360"].update_one(
+        {"codigo": "SCENARIO"},
+        {"$set": {"publicaciones": {"yapo": {"publicaciones": {"venta": {
+            "code": "SCENARIO",
+            "estado": "active",
+            "url": "https://example.test/scenario",
+        }}}}}},
+    )
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'class="report bento-report"' in text
+    assert '<style id="bento-evolution">' in text
+    assert 'id="desempeno"' in text
+    assert 'id="mercado"' in text
+    assert 'id="gestion"' in text
+    assert 'data-portal-marquee' in text
+    assert 'class="portal-marquee-track"' in text
+    assert 'type="range"' not in text
+
+
 def test_convergent_executive_report_contract_uses_real_dates_portals_and_owner_language(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert "Actualización de la información" in text

@@ -986,7 +986,8 @@ def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(mo
 def test_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert '<img class="footer-logo" src="/static/logo.png" alt="PROCASA">' in text
-    assert "PROCASA SUCRE" in text
+    assert "SUCRE" in text
+    assert "PROCASA SUCRE" not in text
     assert "Propiedad SCENARIO" in text
     assert "Corte de mercado" in text
     assert "La publicación no reemplaza una tasación profesional." in text

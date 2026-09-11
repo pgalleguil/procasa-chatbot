@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Informe de desempeño de su propiedad · {{ view.property_code }} · PROCASA SUCRE</title>
+  <title>Informe de desempeño de su propiedad · {{ view.property_code }} · SUCRE</title>
   <style>
     :root {
       --ink:#1d2a2c; --navy:#22383d; --muted:#6f7d7d; --quiet:#9aa3a0;
@@ -420,7 +420,7 @@
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
 <div class="report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
   <header class="site-header">
-    <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-office">PROCASA SUCRE</span></div>
+    <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-office">SUCRE</span></div>
     <div class="header-meta"><strong>Informe del propietario</strong>Actualización de propiedad · {{ view.property_updated_at or '—' }}<br>Corte del informe · {{ view.data_updated_at }}</div>
   </header>
   <nav class="report-nav" aria-label="Navegación del informe"><a href="#desempeno">Resumen</a><a href="#mercado">Mercado</a><a href="#gestion">Gestión PROCASA</a><a href="#contexto">Contexto</a></nav>
@@ -468,7 +468,7 @@
 
     <section class="closing" aria-labelledby="closing-title"><div><h2 id="closing-title">Estamos para acompañarle en la toma de decisiones</h2><p>Este informe reúne la actividad comercial registrada y referencias de mercado para facilitar la conversación sobre los próximos pasos de su propiedad.</p></div><button type="button" aria-disabled="true">Hablar con mi ejecutivo</button></section>
   </main>
-  <footer class="footer"><img class="footer-logo" src="/static/logo.png" alt="PROCASA"><div><strong>PROCASA SUCRE</strong><br>Propiedad {{ view.property_code }} · actualización {{ view.property_updated_at or '—' }}<br>Corte de mercado {{ view.market_as_of or '—' }}</div><div class="footer-right">Lectura descriptiva basada en registros fechados.<br>La publicación no reemplaza una tasación profesional.</div></footer>
+  <footer class="footer"><img class="footer-logo" src="/static/logo.png" alt="PROCASA"><div><strong>SUCRE</strong><br>Propiedad {{ view.property_code }} · actualización {{ view.property_updated_at or '—' }}<br>Corte de mercado {{ view.market_as_of or '—' }}</div><div class="footer-right">Lectura descriptiva basada en registros fechados.<br>La publicación no reemplaza una tasación profesional.</div></footer>
 </div>
 <script type="application/json" id="portal-publication-links">[{% for publication in view.publications or [] %}{"portal_id":{{ publication.portal_id|tojson }},"url":{{ publication.url|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]</script>
 <script>

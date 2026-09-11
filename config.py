@@ -100,6 +100,49 @@ class Config:
     LEAD_COLD_DIGEST_ENABLED = os.getenv("LEAD_COLD_DIGEST_ENABLED", "false").lower() == "true"
     CRM_SLA_SHADOW_ENABLED = os.getenv("CRM_SLA_SHADOW_ENABLED", "false").lower() == "true"
     CRM_SLA_ALERTS_ENABLED = os.getenv("CRM_SLA_ALERTS_ENABLED", "false").lower() == "true"
+    # SLA reassignment is implemented but intentionally disconnected from all
+    # workers and disabled unless explicitly enabled in a controlled rollout.
+    CRM_SLA_REASSIGNMENT_ENABLED = os.getenv(
+        "CRM_SLA_REASSIGNMENT_ENABLED", "false"
+    ).strip().lower() == "true"
+    # Shared one-document human-management protection gate.  Keep separate so
+    # the gate can be tested before the reassignment executor is enabled.
+    CRM_SLA_TRANSACTION_GATE_ENABLED = os.getenv(
+        "CRM_SLA_TRANSACTION_GATE_ENABLED", "false"
+    ).strip().lower() == "true"
+    # Server-side authorization and contact redaction for SLA-reassigned CRM
+    # leads.  Keep disabled until the security-layer test suite is approved.
+    CRM_SLA_SECURITY_LAYER_ENABLED = os.getenv(
+        "CRM_SLA_SECURITY_LAYER_ENABLED", "false"
+    ).strip().lower() == "true"
+    CRM_SLA_TRANSACTION_MAX_ATTEMPTS = 3
+    # Future-only automatic reassignment boundary.  It is intentionally empty
+    # until Sol defines the production activation instant explicitly.
+    CRM_SLA_REASSIGNMENT_CUTOVER_AT = os.getenv(
+        "CRM_SLA_REASSIGNMENT_CUTOVER_AT", ""
+    ).strip() or None
+    # Shadow has its own immutable prospective boundary.  It must be set
+    # explicitly for a controlled deployment; it is never derived from the
+    # process start time.
+    CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT = os.getenv(
+        "CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT", ""
+    ).strip() or None
+    # Prospective SLA reassignment worker.  Both switches fail closed and are
+    # intentionally independent from the transaction engine.  The worker
+    # module is not imported by startup; these values only govern an explicit
+    # invocation or a future, supervised loop.
+    CRM_SLA_REASSIGNMENT_WORKER_ENABLED = os.getenv(
+        "CRM_SLA_REASSIGNMENT_WORKER_ENABLED", "false"
+    ).strip().lower() == "true"
+    CRM_SLA_REASSIGNMENT_SHADOW_ENABLED = os.getenv(
+        "CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", "false"
+    ).strip().lower() == "true"
+    CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS = int(os.getenv(
+        "CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS", "60"
+    ))
+    CRM_SLA_REASSIGNMENT_BATCH_SIZE = int(os.getenv(
+        "CRM_SLA_REASSIGNMENT_BATCH_SIZE", "25"
+    ))
     CRM_WEEKLY_REPORT_GENERATION_ENABLED = os.getenv("CRM_WEEKLY_REPORT_GENERATION_ENABLED", "false").lower() == "true"
     CRM_WEEKLY_REPORT_SEND_ENABLED = os.getenv("CRM_WEEKLY_REPORT_SEND_ENABLED", "false").lower() == "true"
     CRM_LEGACY_DAILY_REPORT_ENABLED = os.getenv("CRM_LEGACY_DAILY_REPORT_ENABLED", "false").lower() == "true"

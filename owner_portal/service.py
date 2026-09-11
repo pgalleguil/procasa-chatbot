@@ -794,6 +794,11 @@ def _parse_date(value: Any) -> datetime | None:
         return None
     if isinstance(value, str):
         normalized = value.strip()
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            try:
+                return datetime.strptime(normalized, "%Y-%m-%d").replace(tzinfo=BUSINESS_TZ)
+            except ValueError:
+                return None
         if re.fullmatch(r"\d{2}/\d{2}/\d{4}", normalized):
             try:
                 return datetime.strptime(normalized, "%d/%m/%Y").replace(tzinfo=BUSINESS_TZ)
@@ -926,7 +931,14 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             ),
             None,
         )
-        when = _parse_date(row.get("fecha_publicacion") or row.get("updated_at"))
+        publication_when = _parse_date(row.get("fecha_publicacion"))
+        updated_when = _parse_date(row.get("updated_at"))
+        when = publication_when or updated_when
+        date_basis = (
+            "fecha de publicación" if publication_when is not None
+            else "última actualización observada" if updated_when is not None
+            else None
+        )
         if price is None or price <= 0 or surface is None or surface <= 0:
             continue
         if when is not None and (when < cutoff or when >= as_of_utc):
@@ -945,6 +957,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
                 "portal": _text(row.get("source_portal") or row.get("origen")),
                 "listing_id": listing_id,
                 "when": when,
+                "date_basis": date_basis,
             }
         )
     market_sale = aggregate.get("mercado_venta") if isinstance(aggregate.get("mercado_venta"), Mapping) else {}
@@ -1045,6 +1058,8 @@ def _comparable_examples(
                 bathrooms=_number(row.get("bathrooms")),
                 uf_m2=round(price / surface, 2),
                 portal=_text(row.get("portal")) or "Portal no especificado",
+                observed_at=_format_date(row.get("when")),
+                date_basis=_text(row.get("date_basis")),
             )
         )
     return tuple(examples)
@@ -1712,6 +1727,7 @@ def get_owner_portal_property_view(
         last_price_change_at=last_price_change_at,
         as_of=_format_as_of(cutoff),
         data_updated_at=_format_date(cutoff) or "",
+        property_updated_at=prop.get("updated_at_label"),
         data_quality=data_quality,
         recommendation=None,
         national_indicators=national_indicators,

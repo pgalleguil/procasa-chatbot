@@ -941,7 +941,9 @@ def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
     assert "Consulta registrada" in nonzero
     assert "Presencia comercial" in nonzero
     assert "Su propiedad, visible en múltiples canales" in nonzero
-    assert "Durante los últimos 30 días se registraron 1 consultas" in nonzero
+    assert "En los últimos 30 días se registró 1 consulta vinculada a su propiedad." in nonzero
+    assert "Consultas vinculadas" in nonzero
+    assert "7 días:" in nonzero and "30 días:" in nonzero and "90 días:" in nonzero
 
 
 def test_convergent_report_omits_future_controls_and_keeps_market_dates(monkeypatch):
@@ -973,7 +975,8 @@ def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(mo
     )
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
     assert "Su precio publicado" in text
-    assert "Tres referencias anónimas" in text
+    assert "Publicaciones comparables observadas" in text
+    assert "no son transacciones" in text
     assert "Precio actual" in text and "Mediana de propiedades similares" in text
     assert "owner@example.com" not in text
     assert "+56911111111" not in text
@@ -984,7 +987,8 @@ def test_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert '<img class="footer-logo" src="/static/logo.png" alt="PROCASA">' in text
     assert "PROCASA SUCRE" in text
-    assert "Informe del propietario · Propiedad SCENARIO" in text
+    assert "Propiedad SCENARIO" in text
+    assert "Corte de mercado" in text
     assert "La publicación no reemplaza una tasación profesional." in text
 
 
@@ -1017,6 +1021,119 @@ def test_convergent_without_comparables_uses_real_kpi_fallback_and_compact_marke
     assert "Tres referencias anónimas" not in text
     assert "Comparables utilizados" not in text
     assert "No disponible" not in text
+
+
+def test_convergent_content_separates_comparable_dates_from_market_cut(monkeypatch):
+    db = _convergent_db()
+    db["propiedades_captacion"].update_many(
+        {"listing_id": {"$regex": "^safe-cmp-"}},
+        {"$set": {"fecha_publicacion": "2026-08-20"}},
+    )
+
+    view = service.get_owner_portal_property_view(
+        db,
+        "SCENARIO",
+        datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    assert view is not None and view.comparable_cohort is not None
+    assert view.market_as_of == "28/04/2026"
+    assert view.comparable_cohort.examples
+    assert view.comparable_cohort.examples[0].observed_at == "20/08/2026"
+    assert view.comparable_cohort.examples[0].date_basis == "fecha de publicación"
+
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Fecha útil" in text
+    assert "20/08/2026" in text
+    assert "28/04/2026" in text
+    assert "propiedades_captacion" in text
+    assert "mercado_comunal" in text
+
+
+def test_convergent_local_context_does_not_expose_untraceable_effective_price(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text.casefold()
+    assert "uf/m² publicado" in text
+    assert "uf/m² efectivo" not in text
+    assert "precio efectivo" not in text
+    assert "precio de cierre" not in text
+    assert "valor transado" not in text
+
+
+def test_convergent_national_context_requires_two_stored_indicators(monkeypatch):
+    db = _convergent_db()
+    service._NATIONAL_INDICATORS_CACHE.clear()
+    without_context = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Contexto Chile" not in without_context
+
+    db["market_intelligence_snapshots_v1"].insert_many([
+        {
+            "indicator_id": "mortgage_rate_uf",
+            "scope": "nacional",
+            "geography": "Chile",
+            "value": 4.04,
+            "unit": "% anual",
+            "reference_period": "2026-08",
+            "source_name": "Banco Central de Chile",
+            "source_reference": "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx",
+            "retrieved_at_utc": "2026-09-10T15:00:00+00:00",
+            "status": "valid",
+        },
+        {
+            "indicator_id": "housing_price_index",
+            "scope": "nacional",
+            "geography": "Chile",
+            "value": 1.2,
+            "unit": "% variación interanual",
+            "reference_period": "2026-T2",
+            "source_name": "Banco Central de Chile",
+            "source_reference": "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx",
+            "retrieved_at_utc": "2026-09-10T15:00:00+00:00",
+            "status": "valid",
+        },
+    ])
+    service._NATIONAL_INDICATORS_CACHE.clear()
+    with_context = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Contexto Chile" in with_context
+    assert "Referencias nacionales vigentes" in with_context
+
+
+def test_convergent_narratives_are_deterministic_descriptive_and_bounded():
+    from owner_portal.router import _convergent_payload
+
+    view = service.get_owner_portal_property_view(
+        _convergent_db(),
+        "SCENARIO",
+        datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    assert view is not None
+    payload = _convergent_payload(view.to_dict())
+    local_narrative = payload["local_market_narrative"]
+    commercial_insight = payload["commercial_insight"]
+    assert local_narrative.count(".") <= 2
+    assert commercial_insight.count(".") <= 2
+    for phrase in ("el mercado está cayendo", "hay menos demanda", "podría generar más consultas"):
+        assert phrase not in f"{local_narrative} {commercial_insight}".casefold()
+
+
+def test_convergent_activity_feed_is_capped_and_discloses_older_events(monkeypatch):
+    db = _convergent_db(with_lead=False)
+    for index in range(6):
+        db["leads"].insert_one({
+            "_id": f"convergent-history-{index}",
+            "created_at": datetime(2026, 9, 8 - index, 12, 0, tzinfo=timezone.utc).isoformat(),
+            "prospecto": {"codigo": "SCENARIO"},
+        })
+
+    view = service.get_owner_portal_property_view(
+        db,
+        "SCENARIO",
+        datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    assert view is not None
+    assert len(view.timeline) == 6
+    assert len(view.timeline[:5]) == 5
+
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Ver actividad anterior" in text
 
 
 def test_convergent_market_context_explicitly_says_observed_publications(monkeypatch):

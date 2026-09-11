@@ -32,6 +32,77 @@ def _render(request: Request, view: dict) -> HTMLResponse:
     )
 
 
+def _format_owner_number(value: object, decimals: int = 2) -> str:
+    try:
+        formatted = f"{float(value):,.{decimals}f}"
+    except (TypeError, ValueError):
+        return str(value)
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _local_market_narrative(local: dict) -> str:
+    """Build at most two descriptive sentences from the communal snapshot."""
+
+    geography = local.get("geography") or "la comuna"
+    property_type = str(local.get("property_type") or "propiedades")
+    sentences: list[str] = []
+    public_uf_m2 = local.get("public_uf_m2")
+    if public_uf_m2 is not None:
+        sentences.append(
+            f"El corte disponible para {property_type.lower()} en {geography} registra "
+            f"{_format_owner_number(public_uf_m2)} UF/m² publicados."
+        )
+    variation = local.get("price_variation_12m_pct")
+    if variation is not None:
+        sentences.append(
+            f"El indicador presenta una variación de {_format_owner_number(variation, 1)}% "
+            "respecto del período comparable informado."
+        )
+    elif local.get("active_listings") is not None:
+        sentences.append(
+            f"Se observaron {_format_owner_number(local['active_listings'], 0)} publicaciones activas "
+            "en el corte disponible."
+        )
+    return " ".join(sentences[:2])
+
+
+def _commercial_insight(view: dict) -> str:
+    """Combine only verified property activity and market-position facts."""
+
+    inquiries = int(view.get("inquiries_previous_30d") or 0)
+    if inquiries == 1:
+        first = "En los últimos 30 días se registró 1 consulta vinculada a su propiedad."
+    elif inquiries:
+        first = f"En los últimos 30 días se registraron {inquiries} consultas vinculadas a su propiedad."
+    else:
+        first = "En los últimos 30 días no se registraron consultas vinculadas a su propiedad."
+    publications = len(view.get("publications") or [])
+    position = view.get("positioning") or {}
+    comparable_count = int((view.get("comparable_cohort") or {}).get("count") or 0)
+    label = str(position.get("label") or "").casefold()
+    position_text = (
+        "sobre el rango central"
+        if "sobre" in label
+        else "bajo el rango central"
+        if "bajo" in label
+        else "dentro del rango central"
+        if "dentro" in label
+        else None
+    )
+    if publications and comparable_count and position_text:
+        second = (
+            f"La propiedad mantiene presencia en {publications} canales verificados y su precio se encuentra "
+            f"{position_text} de {comparable_count} publicaciones comparables observadas."
+        )
+    elif publications:
+        second = f"La propiedad mantiene presencia en {publications} canales verificados."
+    elif comparable_count and position_text:
+        second = f"Su precio se encuentra {position_text} de {comparable_count} publicaciones comparables observadas."
+    else:
+        second = "La lectura se complementa con el contexto local disponible para su propiedad."
+    return f"{first} {second}"
+
+
 def _convergent_payload(view: dict) -> dict:
     """Add small presentation-only labels without changing the shared DTO."""
 
@@ -66,6 +137,14 @@ def _convergent_payload(view: dict) -> dict:
     if local.get("active_listings") is not None:
         indicators.append({"label": "Publicaciones observadas", "value": local["active_listings"], "unit": "avisos"})
     payload["visible_market_indicators"] = indicators[:4]
+    payload["local_market_narrative"] = _local_market_narrative(local)
+    payload["national_context_available"] = len(view.get("national_indicators") or []) >= 2
+    payload["comparables_have_dates"] = any(
+        example.get("observed_at")
+        for example in (view.get("comparable_cohort") or {}).get("examples", [])
+        if isinstance(example, dict)
+    )
+    payload["has_activity_history"] = len(view.get("timeline") or []) > 5
     quality = view.get("data_quality") or {}
     previous = view.get("previous_price") or {}
     payload["has_last_update"] = bool(
@@ -160,27 +239,7 @@ def _convergent_payload(view: dict) -> dict:
     else:
         payload["position_translation"] = "No hay una lectura posicional suficiente para esta muestra."
 
-    recent_activity = [
-        point for point in (view.get("activity_series") or [])
-        if point.get("count", 0) > 0
-    ][-5:]
-    inquiries_30d = int(view.get("inquiries_previous_30d") or 0)
-    if inquiries_30d > 0:
-        if recent_activity:
-            peak = max(recent_activity, key=lambda point: (point.get("count", 0), point.get("period", "")))
-            payload["commercial_insight"] = (
-                f"Durante los últimos 30 días se registraron {inquiries_30d} consultas vinculadas a su propiedad. "
-                f"La mayor concentración reciente se observó en la semana del {peak.get('label') or peak.get('period')}."
-            )
-        else:
-            payload["commercial_insight"] = (
-                f"Durante los últimos 30 días se registraron {inquiries_30d} consultas vinculadas a su propiedad."
-            )
-    else:
-        payload["commercial_insight"] = (
-            "No se registraron consultas vinculadas durante los últimos 30 días. "
-            "El contexto de mercado completa la lectura disponible para su propiedad."
-        )
+    payload["commercial_insight"] = _commercial_insight(view)
     return payload
 
 

@@ -39,6 +39,7 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "last_price_change_at",
         "as_of",
         "data_updated_at",
+        "property_updated_at",
         "data_quality",
         "recommendation",
         "national_indicators",
@@ -285,6 +286,8 @@ class OwnerPortalComparableExampleV1:
     bathrooms: float | None
     uf_m2: float
     portal: str
+    observed_at: str | None = None
+    date_basis: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -295,6 +298,8 @@ class OwnerPortalComparableExampleV1:
             "bathrooms": self.bathrooms,
             "uf_m2": self.uf_m2,
             "portal": self.portal,
+            "observed_at": self.observed_at,
+            "date_basis": self.date_basis,
         }
 
 
@@ -428,6 +433,7 @@ class OwnerPortalPropertyViewV1:
     last_price_change_at: str | None
     as_of: str
     data_updated_at: str
+    property_updated_at: str | None
     data_quality: OwnerPortalDataQualityV1
     recommendation: None = None
     national_indicators: tuple[MarketIndicatorV1, ...] = ()
@@ -473,6 +479,7 @@ class OwnerPortalPropertyViewV1:
             "last_price_change_at": self.last_price_change_at,
             "as_of": self.as_of,
             "data_updated_at": self.data_updated_at,
+            "property_updated_at": self.property_updated_at,
             "data_quality": self.data_quality.to_dict(),
             "recommendation": None,
             "national_indicators": [item.to_dict() for item in self.national_indicators],
@@ -704,6 +711,7 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         if isinstance(examples, (list, tuple)):
             expected_example = {
                 "label", "price_uf", "surface_m2", "bedrooms", "bathrooms", "uf_m2", "portal",
+                "observed_at", "date_basis",
             }
             for example in examples:
                 if isinstance(example, Mapping):

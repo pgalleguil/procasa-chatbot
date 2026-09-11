@@ -1065,7 +1065,7 @@ def test_convergent_presence_marquee_supports_one_three_and_six_verified_channel
         "procasa": "/static/logo.png",
     }
     for portal_id, portal_name in catalog[:count]:
-        assert text.count(f'data-portal-id="{portal_id}"') == 2
+        assert text.count(f'class="portal-channel" data-portal-id="{portal_id}"') == 2
         if portal_id in logo_paths:
             assert f'src="{logo_paths[portal_id]}"' in text
         else:

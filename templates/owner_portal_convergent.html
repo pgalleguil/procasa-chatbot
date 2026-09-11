@@ -3,315 +3,250 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Portal del Propietario · {{ view.property_code }} · PROCASA SUCRE</title>
+  <title>Informe de desempeño de su propiedad · {{ view.property_code }} · PROCASA SUCRE</title>
   <style>
     :root {
-      --ink:#14252b; --ink-soft:#53676d; --muted:#7f9194; --page:#f4f7f6;
-      --surface:#fff; --surface-soft:#eaf2ef; --navy:#123a47; --teal:#1b877d;
-      --mint:#75cbb3; --amber:#d9894f; --line:rgba(20,37,43,.12);
-      --shadow:0 20px 60px rgba(18,58,71,.12);
+      --ink:#1d2a2c; --navy:#22383d; --muted:#6f7d7d; --quiet:#9aa3a0;
+      --page:#fbfbf8; --warm:#f5f2ea; --line:#dfe3df; --gold:#a48349;
+      --gold-dark:#806533; --sage:#9eafa7; --sage-dark:#718c82; --white:#fff;
+      --shadow:0 18px 40px rgba(29,42,44,.08);
     }
     * { box-sizing:border-box; }
-    html { background:var(--page); }
-    body { margin:0; color:var(--ink); background:var(--page); font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    html { scroll-behavior:smooth; background:var(--page); }
+    body { margin:0; color:var(--ink); background:var(--page); font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:inherit; }
     button { font:inherit; }
-    .shell { width:min(1320px,calc(100% - 48px)); margin:0 auto; padding-bottom:70px; }
-    .topbar { position:sticky; top:0; z-index:30; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; min-height:68px; gap:22px; background:rgba(244,247,246,.94); border-bottom:1px solid var(--line); backdrop-filter:blur(18px); }
-    .brand { display:flex; align-items:center; gap:15px; min-width:0; }
-    .brand img { width:124px; height:43px; object-fit:contain; object-position:left center; mix-blend-mode:multiply; }
-    .brand-divider { width:1px; height:24px; background:var(--line); }
-    .brand-title { color:var(--navy); font-size:11px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }
-    .portal-title { color:var(--navy); font-size:12px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; white-space:nowrap; }
-    .top-meta { justify-self:end; color:var(--muted); font-size:11px; line-height:1.35; text-align:right; }
-    .top-meta strong { display:block; color:var(--navy); font-size:12px; font-weight:800; }
-    .tabs { position:sticky; top:68px; z-index:25; display:flex; align-items:center; gap:5px; min-height:54px; margin-bottom:22px; padding:8px 0; overflow-x:auto; background:rgba(244,247,246,.94); border-bottom:1px solid var(--line); backdrop-filter:blur(18px); }
-    .tab { flex:0 0 auto; border:0; border-radius:999px; padding:9px 14px; color:var(--muted); background:transparent; font-size:12px; font-weight:800; cursor:pointer; }
-    .tab:hover, .tab:focus-visible { color:var(--navy); background:var(--surface-soft); outline:none; }
-    .tab[aria-selected="true"] { color:#fff; background:var(--navy); }
-    .tab-panel[hidden] { display:none; }
-    .hero { display:grid; grid-template-columns:63% 37%; min-height:460px; overflow:hidden; border-radius:26px; color:#fff; background:var(--navy); box-shadow:var(--shadow); }
-    .hero-media { position:relative; min-height:460px; background:linear-gradient(135deg,#1b5360,#c27d4c); }
-    .hero-media::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(18,58,71,.06),rgba(18,58,71,.65)); }
-    .hero-media img { display:block; width:100%; height:100%; object-fit:cover; object-position:center; }
-    .hero-media-placeholder { width:100%; height:100%; background:radial-gradient(circle at 70% 25%,rgba(117,203,179,.65),transparent 22%),linear-gradient(135deg,#173e4a,#c9824e); }
-    .hero-label { position:absolute; left:28px; bottom:26px; z-index:1; color:rgba(255,255,255,.82); font-size:11px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
-    .hero-copy { display:flex; flex-direction:column; justify-content:space-between; min-width:0; padding:35px 36px 31px; }
-    .eyebrow { color:var(--mint); font-size:10px; font-weight:850; letter-spacing:.16em; text-transform:uppercase; }
-    .hero h1 { max-width:370px; margin:14px 0 0; color:#fff; font:400 clamp(40px,4.7vw,72px)/.91 Georgia,serif; letter-spacing:-.07em; }
-    .hero-place { margin-top:16px; color:rgba(255,255,255,.7); font-size:14px; }
-    .hero-facts { display:grid; gap:14px; padding-top:28px; }
-    .hero-fact { display:flex; justify-content:space-between; gap:20px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); color:rgba(255,255,255,.68); font-size:11px; }
-    .hero-fact strong { color:#fff; font-size:16px; font-weight:800; text-align:right; }
-    .hero-price { margin-top:10px; color:#fff; font:400 34px/1 Georgia,serif; letter-spacing:-.06em; }
-    .hero-price small { color:var(--mint); font:800 10px/1 Inter,ui-sans-serif,sans-serif; letter-spacing:.12em; text-transform:uppercase; }
-    .overview { margin-top:16px; padding:20px 23px; border:1px solid var(--line); border-radius:18px; background:var(--surface); }
-    .overview-head { display:flex; align-items:baseline; justify-content:space-between; gap:18px; margin-bottom:16px; }
-    .overview-head h2 { margin:0; color:var(--navy); font-size:18px; letter-spacing:-.035em; }
-    .overview-head span { color:var(--muted); font-size:11px; }
-    .signal-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; }
-    .signal { min-width:0; padding:3px 18px; border-left:1px solid var(--line); }
-    .signal:first-child { padding-left:0; border-left:0; }
-    .signal-label { color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-    .signal-value { margin-top:5px; color:var(--navy); font:400 26px/1 Georgia,serif; letter-spacing:-.05em; }
-    .signal-detail { margin-top:3px; color:var(--ink-soft); font-size:11px; }
-    .last-update { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:17px; margin-top:16px; padding:18px 20px; border:1px solid rgba(27,135,125,.18); border-radius:16px; background:#eef8f4; }
-    .last-update-mark { width:36px; height:36px; border-radius:50%; background:var(--teal); box-shadow:0 0 0 7px rgba(27,135,125,.1); }
-    .last-update strong { display:block; color:var(--navy); font-size:13px; }
-    .last-update p { margin:3px 0 0; color:var(--ink-soft); font-size:12px; }
-    .last-update-value { color:var(--teal); font:400 22px/1 Georgia,serif; text-align:right; white-space:nowrap; }
-    .story { display:grid; grid-template-columns:1.1fr .9fr; gap:16px; margin-top:16px; }
-    .story-copy, .mini-market { min-width:0; padding:23px; border-radius:18px; background:var(--navy); color:#fff; }
-    .story-copy h2, .mini-market h2 { margin:0; font-size:18px; letter-spacing:-.04em; }
-    .story-copy p { max-width:620px; margin:13px 0 0; color:rgba(255,255,255,.75); font-size:14px; line-height:1.65; }
-    .mini-market { background:var(--surface); border:1px solid var(--line); color:var(--navy); }
-    .mini-market .eyebrow { color:var(--teal); }
-    .mini-market-value { margin-top:9px; color:var(--navy); font:400 38px/1 Georgia,serif; letter-spacing:-.07em; }
-    .mini-market-note { margin-top:8px; color:var(--ink-soft); font-size:12px; }
-    .mini-market-bar { position:relative; height:8px; margin-top:21px; border-radius:99px; background:linear-gradient(90deg,#82b9aa,#e4b07e); }
-    .mini-market-marker { position:absolute; top:50%; left:{{ view.positioning.marker_pct if view.positioning else 50 }}%; width:18px; height:18px; border:4px solid var(--surface); border-radius:50%; background:var(--navy); transform:translate(-50%,-50%); box-shadow:0 0 0 1px var(--navy); }
-    .section-note { margin:16px 0 0; color:var(--muted); font-size:11px; }
-    .panel { padding:27px; border:1px solid var(--line); border-radius:20px; background:var(--surface); }
-    .panel + .panel { margin-top:16px; }
-    .panel-head { display:flex; align-items:end; justify-content:space-between; gap:22px; margin-bottom:23px; }
-    .panel-head h2 { margin:6px 0 0; color:var(--navy); font-size:25px; letter-spacing:-.055em; }
-    .panel-sub { max-width:390px; color:var(--muted); font-size:12px; text-align:right; }
-    .activity-summary { display:flex; align-items:center; flex-wrap:wrap; gap:10px 22px; margin-bottom:22px; padding-bottom:17px; border-bottom:1px solid var(--line); }
-    .window-switch { display:flex; gap:4px; padding:3px; border-radius:999px; background:var(--surface-soft); }
-    .window-button { border:0; border-radius:999px; padding:7px 11px; color:var(--muted); background:transparent; font-size:11px; font-weight:800; cursor:pointer; }
-    .window-button[aria-pressed="true"] { color:#fff; background:var(--navy); }
-    .activity-counts { color:var(--ink-soft); font-size:12px; }
-    .activity-counts strong { color:var(--navy); font-size:14px; }
-    .activity-chart { display:flex; align-items:end; gap:8px; height:205px; padding:15px 4px 28px; border-bottom:1px solid var(--line); }
-    .activity-bar-wrap { display:flex; flex:1; flex-direction:column; justify-content:end; align-items:center; height:100%; min-width:0; }
-    .activity-bar { width:min(34px,72%); min-height:3px; height:var(--bar-height); border-radius:7px 7px 2px 2px; background:linear-gradient(180deg,var(--teal),#8acbb8); }
-    .activity-bar[data-count="0"] { background:#dfeae6; }
-    .activity-label { margin-top:8px; color:var(--muted); font-size:9px; white-space:nowrap; transform:rotate(-32deg); transform-origin:top center; }
-    .activity-empty { display:none; padding:10px 0 2px; color:var(--muted); font-size:13px; }
-    .feed { display:grid; gap:0; margin-top:25px; }
-    .feed-item { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:13px; align-items:start; padding:14px 0; border-top:1px solid var(--line); }
-    .feed-dot { width:10px; height:10px; margin-top:5px; border:3px solid var(--surface); border-radius:50%; background:var(--teal); box-shadow:0 0 0 1px var(--teal); }
-    .feed-title { color:var(--navy); font-weight:800; }
-    .feed-detail { margin-top:4px; color:var(--ink-soft); font-size:12px; }
-    .feed-date { color:var(--muted); font-size:11px; white-space:nowrap; }
-    .channel-row { display:flex; flex-wrap:wrap; gap:9px; margin-top:23px; }
-    .channel { padding:10px 12px; border:1px solid var(--line); border-radius:11px; background:#fbfcfb; }
-    .channel strong { display:block; color:var(--navy); font-size:12px; }
-    .channel span { display:block; margin-top:2px; color:var(--muted); font-size:10px; }
-    .market-layout { display:grid; grid-template-columns:minmax(0,1.13fr) minmax(290px,.87fr); gap:35px; align-items:start; }
-    .market-question { color:var(--muted); font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-    .market-big { margin-top:12px; color:var(--navy); font:400 clamp(58px,8vw,104px)/.84 Georgia,serif; letter-spacing:-.09em; }
-    .market-unit { margin-top:11px; color:var(--ink-soft); font-size:13px; font-weight:750; }
-    .market-copy { max-width:590px; margin:18px 0 0; color:var(--ink-soft); font-size:14px; line-height:1.65; }
-    .metric-list { display:grid; gap:12px; }
-    .metric { display:flex; align-items:baseline; justify-content:space-between; gap:15px; padding-bottom:12px; border-bottom:1px solid var(--line); }
-    .metric span { color:var(--muted); font-size:11px; }
-    .metric strong { color:var(--navy); font-size:21px; letter-spacing:-.04em; text-align:right; }
-    .indicator-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:28px; }
-    .indicator { padding:14px; border-radius:13px; background:var(--surface-soft); }
-    .indicator-label { color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
-    .indicator-value { margin-top:7px; color:var(--navy); font:400 21px/1 Georgia,serif; }
-    .indicator-unit { margin-top:4px; color:var(--ink-soft); font-size:10px; }
-    .distribution { margin-top:34px; padding-top:6px; }
-    .distribution-line { position:relative; height:13px; border-radius:99px; background:linear-gradient(90deg,#72aa9d 0%,#9bd0bf 45%,#e2aa73 100%); }
-    .distribution-central { position:absolute; left:20%; right:20%; top:-5px; height:23px; border-radius:99px; background:rgba(18,58,71,.22); }
-    .distribution-marker { position:absolute; z-index:1; top:-10px; left:{{ view.positioning.marker_pct if view.positioning else 50 }}%; width:23px; height:23px; border:4px solid var(--surface); border-radius:50%; background:var(--navy); transform:translateX(-50%); box-shadow:0 0 0 1px var(--navy); }
-    .distribution-labels { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; margin-top:15px; color:var(--muted); font-size:10px; }
+    .report { width:min(1240px,calc(100% - 64px)); margin:0 auto; }
+    .site-header { display:flex; align-items:center; justify-content:space-between; min-height:78px; border-bottom:1px solid var(--line); background:rgba(251,251,248,.96); }
+    .brand { display:flex; align-items:center; gap:11px; min-width:0; }
+    .brand-emblem { width:38px; height:38px; overflow:hidden; border-radius:50%; background:var(--white); }
+    .brand-emblem img { display:block; width:100%; height:100%; object-fit:cover; object-position:center 38%; mix-blend-mode:multiply; }
+    .brand-wordmark { color:var(--navy); font-size:17px; font-weight:700; letter-spacing:.28em; }
+    .brand-office { margin-left:12px; padding-left:12px; border-left:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+    .header-meta { display:flex; align-items:center; gap:30px; color:var(--muted); font-size:11px; text-align:right; }
+    .header-meta strong { display:block; color:var(--navy); font-size:13px; font-weight:800; }
+    .report-nav { position:sticky; top:0; z-index:20; display:flex; justify-content:flex-end; gap:23px; min-height:44px; padding:11px 0 9px; border-bottom:1px solid var(--line); background:rgba(251,251,248,.94); backdrop-filter:blur(14px); }
+    .report-nav a { color:var(--muted); font-size:11px; font-weight:800; text-decoration:none; }
+    .report-nav a:hover, .report-nav a:focus-visible, .report-nav a.is-active { color:var(--gold-dark); outline:none; }
+    .hero { display:grid; grid-template-columns:45% 55%; min-height:420px; margin-top:18px; background:var(--white); box-shadow:var(--shadow); }
+    .hero-copy { display:flex; flex-direction:column; justify-content:center; padding:28px 44px 30px; }
+    .eyebrow { color:var(--gold-dark); font-size:10px; font-weight:850; letter-spacing:.16em; text-transform:uppercase; }
+    .hero h1 { max-width:455px; margin:16px 0 12px; color:var(--navy); font:400 clamp(38px,3.7vw,56px)/.96 Georgia,serif; letter-spacing:-.065em; }
+    .hero-subtitle { max-width:430px; margin:0; color:var(--muted); font-size:14px; line-height:1.55; }
+    .hero-meta { display:flex; flex-wrap:wrap; gap:8px 13px; margin-top:26px; color:var(--navy); font-size:12px; font-weight:750; }
+    .hero-meta span + span::before { content:"·"; margin-right:13px; color:var(--gold); }
+    .hero-cta { display:inline-flex; align-items:center; gap:10px; width:max-content; margin-top:31px; padding:12px 19px; border:1px solid var(--gold); color:#fff; background:var(--gold); font-size:12px; font-weight:800; text-decoration:none; transition:background .2s ease,transform .2s ease; }
+    .hero-cta:hover, .hero-cta:focus-visible { background:var(--gold-dark); transform:translateY(-1px); outline:none; }
+    .hero-photo { position:relative; min-height:420px; overflow:hidden; background:#d9dfda; }
+    .hero-photo::after { content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(90deg,rgba(255,255,255,.26),transparent 24%); }
+    .hero-photo img { display:block; width:100%; height:100%; object-fit:cover; object-position:center; }
+    .hero-photo-placeholder { width:100%; height:100%; background:linear-gradient(140deg,#e6ece5,#c4d2ca); }
+    .kpi-strip { display:grid; grid-template-columns:repeat(4,1fr); margin-top:19px; border:1px solid var(--line); background:var(--white); }
+    .kpi { min-width:0; padding:16px 23px 15px; border-right:1px solid var(--line); }
+    .kpi:last-child { border-right:0; }
+    .kpi-top { display:flex; align-items:center; gap:9px; color:var(--muted); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+    .kpi-icon { display:inline-grid; place-items:center; width:23px; height:23px; border:1px solid var(--gold); border-radius:50%; color:var(--gold-dark); font-size:11px; font-weight:800; }
+    .kpi-value { margin-top:8px; color:var(--navy); font:400 25px/1.05 Georgia,serif; letter-spacing:-.04em; }
+    .kpi-detail { margin-top:5px; color:var(--muted); font-size:10px; }
+    .section { scroll-margin-top:63px; padding:32px 0 27px; border-bottom:1px solid var(--line); }
+    .section-heading { display:flex; align-items:end; justify-content:space-between; gap:25px; margin-bottom:20px; }
+    .section-heading h2 { margin:0; color:var(--navy); font:400 clamp(29px,3.7vw,44px)/1 Georgia,serif; letter-spacing:-.055em; }
+    .section-heading p { max-width:410px; margin:0; color:var(--muted); font-size:13px; line-height:1.55; text-align:right; }
+    .performance-grid { display:grid; grid-template-columns:65% 35%; gap:34px; align-items:start; }
+    .chart-area { min-width:0; padding-top:4px; }
+    .chart-label { color:var(--navy); font-size:12px; font-weight:800; }
+    .chart { display:grid; grid-template-columns:28px 1fr; gap:11px; height:190px; margin-top:12px; }
+    .chart-axis { display:flex; flex-direction:column; justify-content:space-between; padding:0 0 24px; color:var(--quiet); font-size:10px; text-align:right; }
+    .chart-main { position:relative; display:flex; align-items:end; gap:11px; padding:0 8px 25px; border-bottom:1px solid var(--line); background:repeating-linear-gradient(to bottom,transparent 0,transparent 48px,rgba(223,227,223,.65) 49px); }
+    .bar-group { display:flex; flex:1; flex-direction:column; align-items:center; justify-content:end; min-width:0; height:100%; }
+    .bar { width:min(31px,66%); min-height:3px; height:var(--bar-height); border-radius:4px 4px 0 0; background:var(--sage-dark); transition:height .35s ease,background .2s ease; }
+    .bar:hover { background:var(--gold); }
+    .bar-value { margin-bottom:5px; color:var(--navy); font-size:10px; font-weight:800; opacity:0; transition:opacity .2s ease; }
+    .bar-group:hover .bar-value { opacity:1; }
+    .bar-label { position:absolute; bottom:5px; color:var(--muted); font-size:9px; white-space:nowrap; transform:translateX(-50%); }
+    .chart-note { margin:11px 0 0; color:var(--muted); font-size:11px; }
+    .insight { padding:26px 27px 25px; background:var(--warm); border-top:3px solid var(--gold); }
+    .insight-icon { display:grid; place-items:center; width:29px; height:29px; margin-bottom:17px; border:1px solid var(--gold); border-radius:50%; color:var(--gold-dark); font-size:13px; }
+    .insight h3 { margin:0; color:var(--navy); font:400 25px/1.08 Georgia,serif; letter-spacing:-.04em; }
+    .insight p { margin:14px 0 0; color:var(--muted); font-size:13px; line-height:1.65; }
+    .market-grid { display:grid; grid-template-columns:65% 35%; gap:34px; align-items:start; }
+    .distribution-wrap { min-width:0; padding:16px 2px 0; }
+    .distribution-question { color:var(--navy); font-size:12px; font-weight:800; }
+    .distribution { position:relative; height:100px; margin-top:24px; padding-top:20px; }
+    .distribution-line { position:relative; height:11px; border-radius:99px; background:#e2e5e1; }
+    .distribution-central { position:absolute; left:20%; right:20%; top:-4px; height:19px; border-radius:99px; background:#b8c7c0; }
+    .distribution-marker { position:absolute; z-index:1; top:-14px; left:{{ view.positioning.marker_pct if view.positioning else 50 }}%; width:27px; height:27px; border:5px solid var(--white); border-radius:50%; background:var(--gold); box-shadow:0 0 0 1px var(--gold-dark); transform:translateX(-50%); }
+    .distribution-marker::after { content:"Su precio"; position:absolute; bottom:31px; left:50%; color:var(--gold-dark); font-size:10px; font-weight:850; white-space:nowrap; transform:translateX(-50%); }
+    .distribution-labels { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; margin-top:31px; color:var(--muted); font-size:10px; }
     .distribution-labels span:nth-child(3) { text-align:center; }
     .distribution-labels span:nth-child(4), .distribution-labels span:nth-child(5) { text-align:right; }
     .distribution-labels strong { display:block; color:var(--navy); font-size:10px; }
-    .source-note { margin-top:20px; color:var(--muted); font-size:11px; }
-    .position-callout { margin-top:26px; padding:15px 17px; border-left:3px solid var(--amber); border-radius:0 12px 12px 0; background:#fff8f1; color:var(--ink-soft); font-size:13px; }
-    .position-callout strong { color:var(--navy); }
-    .percentile-table { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:24px; }
-    .percentile { padding:15px 13px; border-top:2px solid var(--line); background:#fbfcfb; }
-    .percentile:nth-child(3) { border-color:var(--teal); background:#eff8f5; }
-    .percentile-label { color:var(--muted); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
-    .percentile-value { margin-top:8px; color:var(--navy); font:400 22px/1 Georgia,serif; }
-    .criteria { display:flex; flex-wrap:wrap; gap:8px; margin-top:23px; }
-    .criteria span { padding:8px 10px; border-radius:999px; color:var(--ink-soft); background:var(--surface-soft); font-size:11px; }
-    .examples { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:24px; }
-    .example { padding:17px; border:1px solid var(--line); border-radius:14px; background:#fbfcfb; }
-    .example-label { color:var(--teal); font-size:10px; font-weight:850; letter-spacing:.1em; text-transform:uppercase; }
-    .example-price { margin-top:7px; color:var(--navy); font:400 25px/1 Georgia,serif; }
-    .example-detail { margin-top:7px; color:var(--ink-soft); font-size:11px; }
-    .history-list { display:grid; gap:0; }
-    .history-row { display:flex; justify-content:space-between; gap:18px; padding:16px 0; border-top:1px solid var(--line); }
-    .history-row strong { color:var(--navy); }
-    .history-row span { color:var(--muted); font-size:12px; }
-    .footer { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:25px; color:var(--muted); font-size:10px; }
-    .footer img { width:105px; height:35px; object-fit:contain; object-position:left center; opacity:.75; mix-blend-mode:multiply; }
-    @media (max-width:900px) {
+    .translation { margin-top:20px; color:var(--navy); font-size:14px; }
+    .translation strong { font-weight:800; }
+    .market-side { padding:24px 0 0 29px; border-left:1px solid var(--line); }
+    .side-row { padding:0 0 12px; margin-bottom:12px; border-bottom:1px solid var(--line); }
+    .side-label { color:var(--muted); font-size:11px; }
+    .side-value { margin-top:5px; color:var(--navy); font:400 25px/1 Georgia,serif; letter-spacing:-.04em; }
+    .side-value.gold { color:var(--gold-dark); }
+    .market-date { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:13px; color:var(--muted); font-size:10px; }
+    .market-date strong { display:block; color:var(--navy); font-size:11px; }
+    .comparables { margin-top:24px; padding-top:17px; border-top:1px solid var(--line); }
+    .comparables-title { color:var(--navy); font-size:13px; font-weight:800; }
+    .comp-row { display:grid; grid-template-columns:1.25fr 1fr .7fr .7fr .9fr 1fr; gap:15px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
+    .comp-row.head { padding:11px 0 9px; color:var(--muted); font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+    .comp-cell strong { display:block; color:var(--navy); font-size:12px; }
+    .comp-cell span { display:block; color:var(--muted); font-size:10px; }
+    .context-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+    .context-item { min-width:0; padding:14px 24px 13px 0; border-right:1px solid var(--line); }
+    .context-item + .context-item { padding-left:24px; }
+    .context-item:last-child { border-right:0; }
+    .context-icon { display:grid; place-items:center; width:28px; height:28px; margin-bottom:14px; border:1px solid var(--gold); border-radius:50%; color:var(--gold-dark); font-size:12px; }
+    .context-item h3 { margin:0; color:var(--navy); font-size:14px; }
+    .context-item p { margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+    .management-grid { display:grid; grid-template-columns:1fr 1fr; gap:45px; }
+    .management-block h3 { margin:0 0 12px; color:var(--navy); font:400 25px/1.05 Georgia,serif; }
+    .channels { display:flex; flex-wrap:wrap; gap:8px; }
+    .channel { padding:8px 11px; border:1px solid var(--line); color:var(--navy); background:var(--white); font-size:11px; font-weight:800; }
+    .channel small { display:block; margin-top:2px; color:var(--muted); font-size:9px; font-weight:600; }
+    .timeline { position:relative; display:grid; gap:0; }
+    .timeline::before { content:""; position:absolute; top:8px; bottom:8px; left:4px; width:1px; background:var(--line); }
+    .timeline-item { position:relative; display:grid; grid-template-columns:18px 1fr auto; gap:11px; padding:0 0 9px; }
+    .timeline-dot { position:relative; z-index:1; width:9px; height:9px; margin-top:5px; border:2px solid var(--page); border-radius:50%; background:var(--gold); box-shadow:0 0 0 1px var(--gold); }
+    .timeline-title { color:var(--navy); font-size:12px; font-weight:800; }
+    .timeline-detail { margin-top:2px; color:var(--muted); font-size:10px; }
+    .timeline-date { color:var(--muted); font-size:10px; white-space:nowrap; }
+    .closing { display:grid; grid-template-columns:1fr auto; align-items:center; gap:35px; margin:28px 0 0; padding:21px 29px; background:var(--warm); }
+    .closing h2 { margin:0; color:var(--navy); font:400 30px/1.06 Georgia,serif; letter-spacing:-.045em; }
+    .closing p { max-width:630px; margin:10px 0 0; color:var(--muted); font-size:13px; }
+    .closing button { padding:12px 18px; border:1px solid var(--gold); color:var(--gold-dark); background:transparent; font-size:12px; font-weight:800; cursor:default; }
+    .footer { display:flex; justify-content:space-between; gap:20px; padding:17px 0 25px; color:var(--muted); font-size:10px; }
+    .footer-brand { color:var(--navy); font-size:13px; font-weight:800; letter-spacing:.2em; }
+    .footer-meta { text-align:right; }
+    details { margin-top:20px; padding-top:15px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    summary { color:var(--navy); cursor:pointer; font-weight:800; }
+    details p { max-width:760px; margin:10px 0 0; line-height:1.6; }
+    @media (max-width:880px) {
+      .report { width:min(100% - 36px,650px); }
       .hero { grid-template-columns:1fr; }
-      .hero-media { min-height:330px; }
-      .hero-copy { min-height:390px; }
-      .market-layout, .story { grid-template-columns:1fr; }
+      .hero-copy { order:2; padding:37px 29px 36px; }
+      .hero-photo { order:1; min-height:330px; }
+      .performance-grid, .market-grid, .management-grid { grid-template-columns:1fr; gap:28px; }
+      .market-side { padding:24px 0 0; border-top:1px solid var(--line); border-left:0; }
+      .context-grid { grid-template-columns:1fr; }
+      .context-item, .context-item + .context-item { padding:20px 0; border-right:0; border-bottom:1px solid var(--line); }
+      .context-item:last-child { border-bottom:0; }
+      .closing { grid-template-columns:1fr; gap:18px; }
     }
-    @media (max-width:680px) {
-      .shell { width:calc(100% - 28px); }
-      .topbar { grid-template-columns:1fr auto; min-height:61px; gap:10px; }
-      .brand img { width:100px; height:37px; }
-      .brand-divider, .brand-title { display:none; }
-      .portal-title { display:none; }
-      .top-meta { font-size:10px; }
-      .top-meta strong { font-size:10px; }
-      .tabs { top:61px; margin-bottom:14px; min-height:51px; }
-      .tab { padding:8px 12px; font-size:11px; }
-      .hero { min-height:0; border-radius:20px; }
-      .hero-media { min-height:244px; }
-      .hero-label { left:19px; bottom:18px; }
-      .hero-copy { min-height:0; padding:25px 22px 23px; }
+    @media (max-width:620px) {
+      .report { width:calc(100% - 28px); }
+      .site-header { min-height:68px; }
+      .brand-wordmark { font-size:14px; letter-spacing:.18em; }
+      .brand-office { display:block; margin-left:3px; padding-left:6px; font-size:8px; letter-spacing:.08em; }
+      .header-meta { display:block; font-size:9px; }
+      .header-meta strong { font-size:10px; }
+      .report-nav { justify-content:flex-start; gap:17px; overflow-x:auto; }
+      .report-nav a { flex:0 0 auto; font-size:10px; }
+      .hero { margin-top:16px; }
+      .hero-photo { min-height:242px; }
+      .hero-copy { padding:29px 22px 28px; }
       .hero h1 { font-size:48px; }
-      .hero-facts { padding-top:25px; }
-      .hero-price { font-size:31px; }
-      .overview { padding:18px; border-radius:16px; }
-      .overview-head { display:block; }
-      .overview-head span { display:block; margin-top:5px; }
-      .signal-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 0; }
-      .signal, .signal:first-child { padding:0 12px; border-left:1px solid var(--line); }
-      .signal:nth-child(odd) { padding-left:0; border-left:0; }
-      .signal-value { font-size:24px; }
-      .last-update { grid-template-columns:auto 1fr; padding:16px; }
-      .last-update-value { grid-column:2; text-align:left; }
-      .story-copy, .mini-market, .panel { padding:20px; border-radius:16px; }
-      .panel-head { display:block; margin-bottom:19px; }
-      .panel-head h2 { font-size:23px; }
-      .panel-sub { margin-top:7px; text-align:left; }
-      .activity-chart { gap:4px; height:180px; padding-bottom:26px; }
-      .activity-label { font-size:8px; }
-      .feed-item { grid-template-columns:14px minmax(0,1fr); }
-      .feed-date { grid-column:2; }
-      .indicator-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-      .distribution-labels { font-size:9px; }
-      .percentile-table { grid-template-columns:repeat(5,minmax(0,1fr)); gap:4px; }
-      .percentile { padding:12px 9px; }
-      .percentile-value { font-size:16px; }
-      .examples { grid-template-columns:1fr; }
-      .footer { display:block; }
-      .footer div { margin-top:11px; }
+      .hero-subtitle { font-size:13px; }
+      .hero-meta { display:block; line-height:1.9; }
+      .hero-meta span { display:inline; }
+      .hero-meta span + span::before { margin-right:7px; }
+      .kpi-strip { grid-template-columns:repeat(2,1fr); }
+      .kpi { padding:16px 14px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+      .kpi:nth-child(2n) { border-right:0; }
+      .kpi:nth-child(n+3) { border-bottom:0; }
+      .kpi-top { gap:6px; font-size:9px; letter-spacing:.04em; }
+      .kpi-icon { width:20px; height:20px; font-size:10px; }
+      .kpi-value { font-size:22px; }
+      .section { padding:39px 0 38px; }
+      .section-heading { display:block; margin-bottom:22px; }
+      .section-heading p { margin-top:8px; text-align:left; }
+      .chart { height:220px; gap:5px; }
+      .chart-main { gap:5px; padding-left:2px; padding-right:2px; }
+      .bar { width:min(25px,70%); }
+      .bar-label { font-size:8px; transform:translateX(-50%) rotate(-35deg); transform-origin:top center; }
+      .insight { padding:22px 20px; }
+      .insight h3 { font-size:23px; }
+      .distribution { margin-top:38px; }
+      .distribution-labels { gap:3px; font-size:9px; }
+      .distribution-labels strong { font-size:9px; }
+      .distribution-marker::after { font-size:9px; }
+      .market-side { padding-top:22px; }
+      .comp-row { grid-template-columns:repeat(2,1fr); gap:9px 14px; padding:15px 0; }
+      .comp-row.head { display:none; }
+      .comp-cell::before { display:block; content:attr(data-label); color:var(--muted); font-size:9px; font-weight:850; letter-spacing:.06em; text-transform:uppercase; }
+      .comp-cell strong { margin-top:3px; }
+      .comp-cell span { margin-top:1px; }
+      .management-grid { gap:34px; }
+      .closing { margin-top:38px; padding:25px 21px; }
+      .closing h2 { font-size:27px; }
+      .footer { display:block; padding-bottom:31px; }
+      .footer-meta { margin-top:11px; text-align:left; }
     }
-    @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none !important; } }
   </style>
 </head>
 <body>
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}
-<div class="shell" data-portal="owner-intelligence" data-property-code="{{ view.property_code }}">
-  <header class="topbar">
-    <div class="brand"><img src="/static/logo.png" alt="PROCASA"><span class="brand-divider" aria-hidden="true"></span><span class="brand-title">PROCASA SUCRE</span></div>
-    <div class="portal-title">Portal del Propietario</div>
-    <div class="top-meta"><strong>Actualizado {{ view.data_updated_at }}</strong>Propiedad {{ view.property_code }}</div>
+<div class="report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
+  <header class="site-header">
+    <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-wordmark">PROCASA</span><span class="brand-office">PROCASA SUCRE</span></div>
+    <div class="header-meta"><strong>Informe del propietario</strong>Actualizado al {{ view.data_updated_at }}</div>
   </header>
-
-  <nav class="tabs" aria-label="Secciones del portal" role="tablist">
-    <button class="tab" id="tab-resumen" role="tab" aria-selected="true" aria-controls="panel-resumen" data-tab="resumen">Resumen</button>
-    <button class="tab" id="tab-actividad" role="tab" aria-selected="false" aria-controls="panel-actividad" data-tab="actividad">Actividad</button>
-    <button class="tab" id="tab-mercado" role="tab" aria-selected="false" aria-controls="panel-mercado" data-tab="mercado">Mercado</button>
-    <button class="tab" id="tab-comparables" role="tab" aria-selected="false" aria-controls="panel-comparables" data-tab="comparables">Comparables</button>
-    {% if view.has_last_update %}<button class="tab" id="tab-historial" role="tab" aria-selected="false" aria-controls="panel-historial" data-tab="historial">Historial</button>{% endif %}
-  </nav>
+  <nav class="report-nav" aria-label="Navegación del informe"><a href="#desempeno">Resumen</a><a href="#mercado">Mercado</a><a href="#gestion">Gestión PROCASA</a><a href="#contexto">Contexto</a></nav>
 
   <main>
-    <section class="tab-panel" id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" data-panel="resumen">
-      <div class="hero">
-        <div class="hero-media">
-          {% if view.main_image_url %}<img src="{{ view.main_image_url }}" alt="Fotografía de {{ view.property_type }} en {{ view.commune }}">{% else %}<div class="hero-media-placeholder" aria-label="Imagen no disponible"></div>{% endif %}
-          <div class="hero-label">{{ view.operation }} · {{ view.property_type }}</div>
-        </div>
-        <div class="hero-copy">
-          <div><div class="eyebrow">Tu propiedad, en contexto</div><h1>{{ view.commune }}</h1><div class="hero-place">{{ view.region }} · lectura privada de PROCASA SUCRE</div></div>
-          <div class="hero-facts">
-            <div class="hero-fact"><span>Precio publicado</span><strong>{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}No disponible{% endif %}</strong></div>
-            <div class="hero-fact"><span>Características</span><strong>{{ '{:,.0f}'.format(view.built_area_m2 or view.land_area_m2 or 0) }} m² · {{ '{:,.0f}'.format(view.bedrooms or 0) }}D · {{ '{:,.0f}'.format(view.bathrooms or 0) }}B</strong></div>
-            <div><div class="hero-price"><small>Estado comercial</small><br>{% if view.publications|length %}Publicado actualmente{% else %}Sin publicación verificada{% endif %}</div></div>
-          </div>
-        </div>
-      </div>
-
-      <section class="overview" aria-labelledby="overview-title">
-        <div class="overview-head"><h2 id="overview-title">Así está tu propiedad hoy</h2><span>Señales verificadas al {{ view.data_updated_at }}</span></div>
-        <div class="signal-grid">
-          <div class="signal"><div class="signal-label">Consultas · 30 días</div><div class="signal-value">{{ view.inquiries_previous_30d }}</div><div class="signal-detail">vinculadas con seguridad</div></div>
-          <div class="signal"><div class="signal-label">Presencia</div><div class="signal-value">{{ view.publications|length }}</div><div class="signal-detail">canales activos</div></div>
-          <div class="signal"><div class="signal-label">Muestra similar</div><div class="signal-value">{% if comp %}{{ comp.count }}{% else %}—{% endif %}</div><div class="signal-detail">propiedades observadas</div></div>
-          <div class="signal"><div class="signal-label">UF/m² propio</div><div class="signal-value">{% if view.property_uf_m2 is not none %}{{ '{:,.1f}'.format(view.property_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}</div><div class="signal-detail">sobre superficie informada</div></div>
-        </div>
-      </section>
-
-      {% if view.has_last_update %}<section class="last-update" aria-label="Desde tu última actualización"><div class="last-update-mark" aria-hidden="true"></div><div><strong>Desde tu última actualización</strong><p>Último cambio registrado el {{ view.last_price_change_at }}. El bloque aparece porque existe un estado anterior comparable.</p></div><div class="last-update-value">{% if view.last_update_delta_pct is not none %}{{ '{:+,.1f}'.format(view.last_update_delta_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}%{% else %}Sin delta UF{% endif %}</div></section>{% endif %}
-
-      <div class="story">
-        <section class="story-copy"><div class="eyebrow">Lectura ejecutiva</div><h2>Lo que muestran los datos</h2><p>{% if view.inquiries_previous_30d > 0 %}Durante los últimos 30 días se registraron {{ view.inquiries_previous_30d }} consultas vinculadas a la propiedad.{% else %}Durante los últimos 30 días no se registraron consultas vinculadas con seguridad a la propiedad.{% endif %} {% if comp %}La comparación local utiliza {{ comp.count }} propiedades similares.{% endif %} {% if pos %}El precio publicado se ubica {{ pos.label|lower }}.{% endif %}</p></section>
-        <section class="mini-market"><div class="eyebrow">Mercado local · {{ view.market_as_of or 'corte no disponible' }}</div><h2>Una pregunta, una señal</h2><div class="mini-market-value">{% if local and local.public_uf_m2 is not none %}{{ '{:,.2f}'.format(local.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% elif pos and pos.median_uf_m2 is not none %}{{ '{:,.2f}'.format(pos.median_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}</div><div class="mini-market-note">UF/m² publicado observado en {{ view.commune }}</div>{% if pos %}<div class="mini-market-bar"><span class="mini-market-marker" aria-hidden="true"></span></div><div class="section-note">La posición se lee frente a P10–P90 de la muestra comparable.</div>{% endif %}</section>
-      </div>
+    <section class="hero" aria-labelledby="report-title">
+      <div class="hero-copy"><div class="eyebrow">Su propiedad, nuestro compromiso</div><h1 id="report-title">Informe de desempeño de su propiedad</h1><p class="hero-subtitle">Conozca cómo ha respondido el mercado a su publicación y revise el contexto comercial de su propiedad.</p><div class="hero-meta"><span>{{ view.property_type }}</span><span>{{ view.commune }}</span><span>Código {{ view.property_code }}</span></div><a class="hero-cta" href="#desempeno">Revisar desempeño <span aria-hidden="true">↓</span></a></div>
+      <div class="hero-photo">{% if view.main_image_url %}<img src="{{ view.main_image_url }}" alt="Fotografía de {{ view.property_type }} en {{ view.commune }}">{% else %}<div class="hero-photo-placeholder" aria-label="Fotografía no disponible"></div>{% endif %}</div>
     </section>
 
-    <section class="tab-panel" id="panel-actividad" role="tabpanel" aria-labelledby="tab-actividad" data-panel="actividad" hidden>
-      <div class="panel"><div class="panel-head"><div><div class="eyebrow">Actividad verificada</div><h2>Qué interés se registró</h2></div><div class="panel-sub">Consultas vinculadas a la propiedad y eventos de presencia comercial. No se muestran datos personales.</div></div>
-        <div class="activity-summary"><div class="window-switch" aria-label="Ventana de actividad"><button class="window-button" type="button" data-window="7" aria-pressed="false">7 días</button><button class="window-button" type="button" data-window="30" aria-pressed="true">30 días</button><button class="window-button" type="button" data-window="90" aria-pressed="false">90 días</button></div><div class="activity-counts"><strong>{{ view.inquiries_previous_7d }}</strong> en 7 días · <strong>{{ view.inquiries_previous_30d }}</strong> en 30 días · <strong>{{ view.inquiries_previous_90d }}</strong> en 90 días</div></div>
-        {% if view.activity_series %}<div class="activity-chart" aria-label="Consultas semanales, últimos doce períodos">{% for point in view.activity_series %}<div class="activity-bar-wrap" data-index="{{ loop.index }}"><span class="activity-bar" data-count="{{ point.count }}" style="--bar-height:{{ [point.height, 3]|max }}px" title="{{ point.label }} · {{ point.count }}"></span><span class="activity-label">{{ point.label }}</span></div>{% endfor %}</div><div class="activity-empty">No hay consultas en esta ventana.</div>{% else %}<div class="activity-empty" style="display:block">No hay consultas vinculadas en los últimos doce períodos.</div>{% endif %}
-        <div class="feed">{% if view.timeline %}{% for event in view.timeline[:5] %}<div class="feed-item"><span class="feed-dot" aria-hidden="true"></span><div><div class="feed-title">{{ event.label }}</div><div class="feed-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="feed-date">{{ event.period }}</div></div>{% endfor %}{% else %}<div class="feed-item"><span class="feed-dot" aria-hidden="true"></span><div><div class="feed-title">Sin eventos recientes visibles</div><div class="feed-detail">No hay un registro fechado suficiente para mostrar en esta vista.</div></div><div class="feed-date">—</div></div>{% endif %}</div>
-        <div class="eyebrow" style="margin-top:28px">Dónde estamos promocionando tu propiedad</div><div class="channel-row">{% if view.publications %}{% for publication in view.publications %}<div class="channel"><strong>{{ publication.portal_name }}</strong><span>{% if publication.published_at %}Publicado {{ publication.published_at }}{% elif publication.updated_at %}Actualizado {{ publication.updated_at }}{% else %}Presencia verificada{% endif %}</span></div>{% endfor %}{% else %}<div class="channel"><strong>Sin canales confirmados</strong><span>No hay una publicación activa verificable.</span></div>{% endif %}</div>
-      </div>
+    <section class="kpi-strip" aria-label="Indicadores principales">
+      <div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">⌁</span>Consultas recibidas</div><div class="kpi-value">{{ view.inquiries_previous_30d }}</div><div class="kpi-detail">Últimos 30 días</div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">◎</span>Portales activos</div><div class="kpi-value">{{ view.publications|length }}</div><div class="kpi-detail">Presencia verificada</div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">◇</span>Precio publicado</div><div class="kpi-value">{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</div><div class="kpi-detail">Registro actual</div></div>
+      <div class="kpi"><div class="kpi-top"><span class="kpi-icon" aria-hidden="true">▥</span>Posición competitiva</div><div class="kpi-value">{{ view.position_descriptor }}</div><div class="kpi-detail">Según propiedades similares</div></div>
     </section>
 
-    <section class="tab-panel" id="panel-mercado" role="tabpanel" aria-labelledby="tab-mercado" data-panel="mercado" hidden>
-      <div class="panel"><div class="panel-head"><div><div class="eyebrow">Mercado local · {{ view.market_as_of or 'corte no disponible' }}</div><h2>¿Qué valor por m² se está publicando aquí?</h2></div><div class="panel-sub">La referencia parte por comuna y tipo de propiedad. La fecha del mercado se mantiene separada de la fecha de la ficha.</div></div>
-        <div class="market-layout"><div>{% if local and local.public_uf_m2 is not none %}<div class="market-big">{{ '{:,.2f}'.format(local.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div><div class="market-unit">UF/m² publicado · {{ local.property_type }} · {{ local.geography }}</div>{% elif pos and pos.median_uf_m2 is not none %}<div class="market-big">{{ '{:,.2f}'.format(pos.median_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}</div><div class="market-unit">UF/m² mediano de la muestra comparable</div>{% else %}<div class="market-big">—</div><div class="market-unit">Sin referencia local suficiente</div>{% endif %}<p class="market-copy">{% if local and local.active_listings is not none %}El corte comunal observa {{ '{:,.0f}'.format(local.active_listings).replace(',', 'X').replace('.', ',').replace('X', '.') }} publicaciones activas.{% endif %} {% if local and local.price_variation_12m_pct is not none %}La variación publicada a 12 meses es {{ '{:+,.1f}'.format(local.price_variation_12m_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}%.{% endif %} La lectura es descriptiva y se limita a la muestra disponible.</p></div><div class="metric-list"><div class="metric"><span>Mediana comparable</span><strong>{% if pos %}{{ '{:,.0f}'.format(pos.median_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</strong></div><div class="metric"><span>Rango P10–P90</span><strong>{% if pos %}{{ '{:,.0f}'.format(pos.p10_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }}–{{ '{:,.0f}'.format(pos.p90_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</strong></div><div class="metric"><span>Muestra utilizada</span><strong>{% if comp %}{{ comp.count }}{% else %}—{% endif %}</strong></div></div></div>
-        {% if view.visible_market_indicators %}<div class="indicator-grid">{% for item in view.visible_market_indicators %}<div class="indicator"><div class="indicator-label">{{ item.label }}</div><div class="indicator-value">{% if item.unit == '%' %}{{ '{:+,.1f}'.format(item.value).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% elif item.unit == 'UF/m²' %}{{ '{:,.2f}'.format(item.value).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}{{ '{:,.0f}'.format(item.value).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% endif %}</div><div class="indicator-unit">{{ item.unit }}</div></div>{% endfor %}</div>{% endif %}
-        {% if pos %}<div class="distribution" aria-label="Distribución de precios comparables"><div class="distribution-line"><span class="distribution-central" aria-hidden="true"></span><span class="distribution-marker" aria-hidden="true"></span></div><div class="distribution-labels"><span><strong>P10</strong>{{ '{:,.0f}'.format(pos.p10_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P25</strong>{{ '{:,.0f}'.format(pos.p25_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>Mediana</strong>{{ '{:,.0f}'.format(pos.median_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P75</strong>{{ '{:,.0f}'.format(pos.p75_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P90</strong>{{ '{:,.0f}'.format(pos.p90_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span></div></div>{% endif %}
-        <div class="source-note">Fuente visible: {{ local.source_name if local else 'mercado_comunal' }} · {{ local.source_reference if local else 'snapshot interno' }}.</div>
-      </div>
+    <section class="section" id="desempeno" aria-labelledby="desempeno-title">
+      <div class="section-heading"><div><div class="eyebrow">Actividad comercial</div><h2 id="desempeno-title">Resumen de desempeño</h2></div><p>Consultas vinculadas a su propiedad, agrupadas por semana y respaldadas por registros fechados.</p></div>
+      <div class="performance-grid"><div class="chart-area"><div class="chart-label">Consultas recibidas por semana</div>{% if view.activity_series %}<div class="chart" aria-label="Consultas recibidas por semana, últimos doce períodos"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main">{% for point in view.activity_series %}<div class="bar-group"><span class="bar-value">{{ point.count }}</span><span class="bar" style="--bar-height:{{ [point.height, 3]|max }}px" title="{{ point.label }} · {{ point.count }}"></span><span class="bar-label">{{ point.label }}</span></div>{% endfor %}</div></div><p class="chart-note">Últimos doce períodos semanales · las barras muestran consultas vinculadas, no visitas.</p>{% else %}<div class="chart" aria-label="Sin consultas vinculadas"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main"><span style="align-self:end;width:100%;height:3px;background:var(--line)"></span></div></div><p class="chart-note">No se registraron consultas vinculadas durante los últimos treinta días.</p>{% endif %}</div><aside class="insight"><div class="insight-icon" aria-hidden="true">⌁</div><div class="eyebrow">Lectura comercial</div><h3>Actividad registrada</h3><p>{{ view.commercial_insight }}</p></aside></div>
     </section>
 
-    <section class="tab-panel" id="panel-comparables" role="tabpanel" aria-labelledby="tab-comparables" data-panel="comparables" hidden>
-      <div class="panel"><div class="panel-head"><div><div class="eyebrow">Comparables · {{ comp.count if comp else 0 }} casos</div><h2>¿Dónde queda tu precio frente a propiedades similares?</h2></div><div class="panel-sub">Muestra anonimizada. No contiene dirección, propietario, corredor ni contacto.</div></div>
-        {% if pos and comp %}<div class="position-callout"><strong>{% if view.owner_position_rank and view.owner_position_rank >= 8 %}Tu precio está por encima de aproximadamente {{ view.owner_position_rank }} de cada 10 propiedades similares.{% elif view.owner_position_rank and view.owner_position_rank <= 3 %}Tu precio está por debajo de aproximadamente {{ 10 - view.owner_position_rank }} de cada 10 propiedades similares.{% else %}Tu precio publicado se ubica alrededor de la zona media de la muestra comparable.{% endif %}</strong> Precio observado: {% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF. {% endif %}La lectura usa {{ comp.count }} referencias con precio y superficie válidos.</div><div class="percentile-table">{% for label,value in [('P10',pos.p10_uf),('P25',pos.p25_uf),('Mediana',pos.median_uf),('P75',pos.p75_uf),('P90',pos.p90_uf)] %}<div class="percentile"><div class="percentile-label">{{ label }}</div><div class="percentile-value">{{ '{:,.0f}'.format(value).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</div></div>{% endfor %}</div><div class="criteria"><span>{{ comp.label }}</span><span>{{ comp.surface_rule }}</span><span>{{ comp.bedroom_rule }}</span><span>{{ comp.date_rule }}</span></div>{% if comp.examples %}<div class="examples">{% for example in comp.examples %}<div class="example"><div class="example-label">{{ example.label }} · {{ example.portal }}</div><div class="example-price">{{ '{:,.0f}'.format(example.price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</div><div class="example-detail">{{ '{:,.0f}'.format(example.surface_m2) }} m² · {{ '{:,.2f}'.format(example.uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m²{% if example.bedrooms is not none %} · {{ '{:,.0f}'.format(example.bedrooms) }}D{% endif %}{% if example.bathrooms is not none %} · {{ '{:,.0f}'.format(example.bathrooms) }}B{% endif %}</div></div>{% endfor %}</div>{% endif %}{% else %}<p class="market-copy">No existe una muestra comparable suficiente para presentar percentiles.</p>{% endif %}
-      </div>
+    <section class="section" id="mercado" aria-labelledby="mercado-title">
+      <div class="section-heading"><div><div class="eyebrow">Comparación descriptiva</div><h2 id="mercado-title">Posición frente al mercado</h2></div><p>Comparamos su propiedad con publicaciones de características similares observadas en el mercado.</p></div>
+      <div class="market-grid"><div class="distribution-wrap"><div class="distribution-question">Precio actual frente al rango central observado</div>{% if pos %}<div class="distribution" aria-label="Distribución de precios comparables"><div class="distribution-line"><span class="distribution-central" aria-hidden="true"></span><span class="distribution-marker" aria-hidden="true"></span></div><div class="distribution-labels"><span><strong>P10</strong>{{ '{:,.0f}'.format(pos.p10_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P25</strong>{{ '{:,.0f}'.format(pos.p25_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>Mediana</strong>{{ '{:,.0f}'.format(pos.median_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P75</strong>{{ '{:,.0f}'.format(pos.p75_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span><span><strong>P90</strong>{{ '{:,.0f}'.format(pos.p90_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</span></div></div><p class="translation"><strong>{{ view.position_translation }}</strong></p>{% else %}<p class="translation">No existe una muestra comparable suficiente para representar un rango.</p>{% endif %}</div><aside class="market-side"><div class="side-row"><div class="side-label">Precio actual</div><div class="side-value">{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</div></div><div class="side-row"><div class="side-label">Mediana de propiedades similares</div><div class="side-value">{% if pos %}{{ '{:,.0f}'.format(pos.median_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}—{% endif %}</div></div><div class="side-row"><div class="side-label">Diferencia frente a la mediana</div><div class="side-value gold">{% if view.market_delta_pct is not none %}{{ '{:+,.1f}'.format(view.market_delta_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}%{% else %}—{% endif %}</div></div><div class="side-row"><div class="side-label">Comparables utilizados</div><div class="side-value">{% if comp %}{{ comp.count }}{% else %}—{% endif %}</div></div></aside></div>
+      <div class="comparables"><div class="comparables-title">Tres referencias anónimas de la muestra</div>{% if comp and comp.examples %}<div class="comp-row head"><span>Precio</span><span>Superficie</span><span>Dorm.</span><span>Baños</span><span>UF/m²</span><span>Portal</span></div>{% for example in comp.examples %}<div class="comp-row"><div class="comp-cell" data-label="Precio"><strong>{{ '{:,.0f}'.format(example.price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF</strong><span>{{ example.label }}</span></div><div class="comp-cell" data-label="Superficie"><strong>{{ '{:,.0f}'.format(example.surface_m2) }} m²</strong></div><div class="comp-cell" data-label="Dormitorios"><strong>{% if example.bedrooms is not none %}{{ '{:,.0f}'.format(example.bedrooms) }}{% else %}—{% endif %}</strong></div><div class="comp-cell" data-label="Baños"><strong>{% if example.bathrooms is not none %}{{ '{:,.0f}'.format(example.bathrooms) }}{% else %}—{% endif %}</strong></div><div class="comp-cell" data-label="UF/m²"><strong>{{ '{:,.2f}'.format(example.uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }}</strong></div><div class="comp-cell" data-label="Portal"><strong>{{ example.portal }}</strong></div></div>{% endfor %}{% else %}<p class="chart-note">No hay ejemplos suficientes para mostrar.</p>{% endif %}</div>
+      <div class="market-date"><span><strong>Actualización de la información</strong>{{ view.data_updated_at }}</span><span><strong>Corte de información de mercado</strong>{{ view.market_as_of or 'No disponible' }}</span></div>
     </section>
 
-    {% if view.has_last_update %}<section class="tab-panel" id="panel-historial" role="tabpanel" aria-labelledby="tab-historial" data-panel="historial" hidden><div class="panel"><div class="panel-head"><div><div class="eyebrow">Historial disponible</div><h2>Cómo ha cambiado el precio registrado</h2></div><div class="panel-sub">Solo se muestra cuando hay dos estados comparables con fecha.</div></div><div class="history-list"><div class="history-row"><strong>Precio anterior</strong><span>{% if view.previous_price.uf is not none %}{{ '{:,.0f}'.format(view.previous_price.uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}CLP disponible{% endif %}</span></div><div class="history-row"><strong>Precio actual</strong><span>{% if view.current_price_uf is not none %}{{ '{:,.0f}'.format(view.current_price_uf).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF{% else %}No disponible{% endif %}</span></div><div class="history-row"><strong>Fecha del cambio</strong><span>{{ view.last_price_change_at }}</span></div></div></div></section>{% endif %}
+    <section class="section" id="contexto" aria-labelledby="contexto-title">
+      <div class="section-heading"><div><div class="eyebrow">Lectura local</div><h2 id="contexto-title">Contexto del mercado</h2></div><p>Factores observables del corte disponible en {{ view.commune }}. Se muestran solo señales respaldadas por datos persistidos.</p></div>
+      <div class="context-grid"><div class="context-item"><div class="context-icon" aria-hidden="true">◫</div><h3>Precio por m²</h3><p>{% if local and local.public_uf_m2 is not none %}{{ '{:,.2f}'.format(local.public_uf_m2).replace(',', 'X').replace('.', ',').replace('X', '.') }} UF/m² publicados en la comuna.{% else %}No hay un indicador local suficiente para mostrar.{% endif %}</p></div><div class="context-item"><div class="context-icon" aria-hidden="true">↕</div><h3>Evolución observada</h3><p>{% if local and local.price_variation_12m_pct is not none %}El indicador publicado presenta una variación de {{ '{:+,.1f}'.format(local.price_variation_12m_pct).replace(',', 'X').replace('.', ',').replace('X', '.') }}% en 12 meses.{% else %}No hay una variación temporal persistida para este corte.{% endif %}</p></div><div class="context-item"><div class="context-icon" aria-hidden="true">□</div><h3>Oferta observable</h3><p>{% if local and local.active_listings is not none %}Se observaron {{ '{:,.0f}'.format(local.active_listings).replace(',', 'X').replace('.', ',').replace('X', '.') }} publicaciones activas en el corte.{% else %}No hay un conteo de publicaciones activo disponible.{% endif %}</p></div></div>
+      <details><summary>Fuentes y metodología</summary><p>El mercado local proviene de <strong>{{ local.source_name if local else 'mercado_comunal' }}</strong>, con corte {{ view.market_as_of or 'no disponible' }}. La cohorte compara comuna, tipo, operación, precio y superficie válidos; los ejemplos son anónimos y la posición se presenta como lectura descriptiva, no como una valoración.</p></details>
+    </section>
+
+    <section class="section" id="gestion" aria-labelledby="gestion-title">
+      <div class="section-heading"><div><div class="eyebrow">Actividad verificable</div><h2 id="gestion-title">Gestión PROCASA</h2></div><p>Presencia activa y eventos comerciales registrados para su propiedad, sin exponer registros internos.</p></div>
+      <div class="management-grid"><div class="management-block"><h3>Dónde está publicada su propiedad</h3><div class="channels">{% if view.publications %}{% for publication in view.publications %}<div class="channel">{{ publication.portal_name }}<small>{% if publication.published_at %}Publicado {{ publication.published_at }}{% elif publication.updated_at %}Actualizado {{ publication.updated_at }}{% else %}Presencia verificada{% endif %}</small></div>{% endfor %}{% else %}<div class="channel">Sin portales confirmados<small>No hay una publicación activa verificable.</small></div>{% endif %}</div><p class="chart-note">{{ view.publications|length }} canales con presencia verificada al momento del informe.</p></div><div class="management-block"><h3>Registros recientes</h3><div class="timeline">{% if view.timeline %}{% for event in view.timeline[:5] %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">{{ event.label }}</div><div class="timeline-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="timeline-date">{{ event.period }}</div></div>{% endfor %}{% else %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">Sin eventos recientes visibles</div><div class="timeline-detail">No hay un registro fechado suficiente para mostrar.</div></div><div class="timeline-date">—</div></div>{% endif %}</div></div></div>
+    </section>
+
+    <section class="closing" aria-labelledby="closing-title"><div><h2 id="closing-title">Estamos para acompañarle en la toma de decisiones</h2><p>Este informe reúne la actividad comercial registrada y referencias de mercado para facilitar la conversación sobre los próximos pasos de su propiedad.</p></div><button type="button" aria-disabled="true">Hablar con mi ejecutivo</button></section>
   </main>
-  <footer class="footer"><img src="/static/logo.png" alt="PROCASA"><div>Datos de {{ view.data_updated_at }} · Mercado con corte {{ view.market_as_of or 'no disponible' }}<br>Lectura descriptiva basada en registros internos y publicaciones verificadas.</div></footer>
+  <footer class="footer"><div><div class="footer-brand">PROCASA</div><div>PROCASA SUCRE · Informe del propietario</div></div><div class="footer-meta">Código {{ view.property_code }} · Información actualizada al {{ view.data_updated_at }}<br>Fuentes y metodología disponibles en el contexto del mercado.</div></footer>
 </div>
 <script>
 (() => {
-  const tabs = [...document.querySelectorAll('[data-tab]')];
-  const panels = [...document.querySelectorAll('[data-panel]')];
+  const links = [...document.querySelectorAll('.report-nav a')];
+  const sections = links.map((link) => document.querySelector(link.getAttribute('href'))).filter(Boolean);
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const select = (name) => {
-    tabs.forEach((tab) => {
-      const active = tab.dataset.tab === name;
-      tab.setAttribute('aria-selected', String(active));
-      tab.tabIndex = active ? 0 : -1;
-    });
-    panels.forEach((panel) => { panel.hidden = panel.dataset.panel !== name; });
-    if (!reduced) window.scrollTo({top: 0, behavior: 'smooth'});
-    else window.scrollTo(0, 0);
-  };
-  tabs.forEach((tab, index) => {
-    tab.addEventListener('click', () => select(tab.dataset.tab));
-    tab.addEventListener('keydown', (event) => {
-      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-      event.preventDefault();
-      const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-      next.focus(); select(next.dataset.tab);
-    });
-  });
-  const windowButtons = [...document.querySelectorAll('[data-window]')];
-  const bars = [...document.querySelectorAll('.activity-bar-wrap')];
-  const empty = document.querySelector('.activity-empty');
-  const setWindow = (days) => {
-    windowButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.window === days)));
-    const keep = days === '7' ? 1 : days === '30' ? 5 : 12;
-    let visible = 0;
-    bars.forEach((bar) => {
-      const show = Number(bar.dataset.index) > 12 - keep;
-      bar.hidden = !show;
-      if (show && Number(bar.querySelector('.activity-bar')?.dataset.count || 0) > 0) visible += 1;
-    });
-    if (empty && bars.length) empty.style.display = visible ? 'none' : 'block';
-  };
-  windowButtons.forEach((button) => button.addEventListener('click', () => setWindow(button.dataset.window)));
-  setWindow('30');
+  const activate = (id) => links.forEach((link) => link.classList.toggle('is-active', link.getAttribute('href') === `#${id}`));
+  const observer = new IntersectionObserver((entries) => entries.forEach((entry) => entry.isIntersecting && activate(entry.target.id)), {rootMargin:'-20% 0px -65% 0px', threshold:[0,.2,.6]});
+  sections.forEach((section) => observer.observe(section));
+  links.forEach((link) => link.addEventListener('click', (event) => { const target = document.querySelector(link.getAttribute('href')); if (!target) return; event.preventDefault(); activate(target.id); target.scrollIntoView({behavior: reduced ? 'auto' : 'smooth', block:'start'}); history.replaceState(null, '', link.getAttribute('href')); }));
 })();
 </script>
 </body>

@@ -82,6 +82,73 @@ def _convergent_payload(view: dict) -> dict:
     else:
         payload["last_update_delta_uf"] = None
         payload["last_update_delta_pct"] = None
+
+    label = str(position.get("label") or "")
+    if "Sobre" in label:
+        payload["position_descriptor"] = "Sobre el rango central"
+    elif "Bajo" in label:
+        payload["position_descriptor"] = "Bajo el rango central"
+    elif position:
+        payload["position_descriptor"] = "Dentro del rango central"
+    else:
+        payload["position_descriptor"] = "No disponible"
+
+    median_uf = position.get("median_uf") if position else None
+    payload["market_delta_pct"] = (
+        round(((price_uf - median_uf) / median_uf) * 100, 1)
+        if price_uf is not None and median_uf
+        else None
+    )
+
+    rank = payload.get("owner_position_rank")
+    if "Sobre" in label:
+        payload["position_translation"] = (
+            "Su precio publicado se encuentra por encima de aproximadamente 7 de cada 10 "
+            "propiedades similares observadas."
+        )
+    elif "Bajo" in label:
+        payload["position_translation"] = (
+            "Su precio publicado se encuentra por debajo de aproximadamente 3 de cada 10 "
+            "propiedades similares observadas."
+        )
+    elif rank is not None and rank >= 8:
+        payload["position_translation"] = (
+            f"Su precio publicado se encuentra por encima de aproximadamente {rank} de cada 10 "
+            "propiedades similares observadas."
+        )
+    elif rank is not None and rank <= 3:
+        payload["position_translation"] = (
+            f"Su precio publicado se encuentra por debajo de aproximadamente {10 - rank} de cada 10 "
+            "propiedades similares observadas."
+        )
+    elif rank is not None:
+        payload["position_translation"] = (
+            "Su precio publicado se encuentra alrededor de la zona media de la muestra comparable."
+        )
+    else:
+        payload["position_translation"] = "No hay una lectura posicional suficiente para esta muestra."
+
+    recent_activity = [
+        point for point in (view.get("activity_series") or [])
+        if point.get("count", 0) > 0
+    ][-5:]
+    inquiries_30d = int(view.get("inquiries_previous_30d") or 0)
+    if inquiries_30d > 0:
+        if recent_activity:
+            peak = max(recent_activity, key=lambda point: (point.get("count", 0), point.get("period", "")))
+            payload["commercial_insight"] = (
+                f"Durante los últimos 30 días se registraron {inquiries_30d} consultas vinculadas a su propiedad. "
+                f"La mayor concentración reciente se observó en la semana del {peak.get('label') or peak.get('period')}."
+            )
+        else:
+            payload["commercial_insight"] = (
+                f"Durante los últimos 30 días se registraron {inquiries_30d} consultas vinculadas a su propiedad."
+            )
+    else:
+        payload["commercial_insight"] = (
+            "No se registraron consultas vinculadas durante los últimos 30 días. "
+            "El contexto de mercado completa la lectura disponible para su propiedad."
+        )
     return payload
 
 

@@ -881,7 +881,7 @@ def test_convergent_candidate_uses_verified_recent_activity_and_real_data(monkey
     ) == "SCENARIO"
     response = internal_client(monkeypatch, db).get("/owner-portal-convergent")
     assert response.status_code == 200
-    assert 'data-portal="owner-intelligence"' in response.text
+    assert 'data-portal="owner-performance-report"' in response.text
     assert 'data-property-code="SCENARIO"' in response.text
     assert "3.200 UF" in response.text
     assert "9.215" in response.text
@@ -900,7 +900,7 @@ def test_convergent_route_keeps_internal_protection(monkeypatch):
     assert response.status_code == 401
 
 
-def test_convergent_tabs_start_on_summary_and_are_rendered_without_external_fetch(monkeypatch):
+def test_convergent_report_is_continuous_and_renders_without_external_fetch(monkeypatch):
     db = _convergent_db()
 
     def forbidden(*_args, **_kwargs):
@@ -908,15 +908,36 @@ def test_convergent_tabs_start_on_summary_and_are_rendered_without_external_fetc
 
     monkeypatch.setattr("urllib.request.urlopen", forbidden)
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
-    assert 'aria-selected="true"' in text
-    assert 'data-panel="resumen"' in text and 'data-panel="actividad"' in text
-    assert 'id="panel-resumen"' in text and 'id="panel-actividad"' in text
-    assert 'id="panel-actividad" role="tabpanel" aria-labelledby="tab-actividad" data-panel="actividad" hidden' in text
+    assert "Informe de desempeño de su propiedad" in text
+    assert "Resumen de desempeño" in text
+    assert "Posición frente al mercado" in text
+    assert "Gestión PROCASA" in text
+    assert text.count('class="kpi"') == 4
+    assert 'href="#desempeno"' in text
+    assert 'href="#mercado"' in text
     assert "type=\"range\"" not in text
     assert "simul" not in text.casefold()
     assert "forecast" not in text.casefold()
     assert "recomend" not in text.casefold()
     assert "autoriz" not in text.casefold()
+    assert "fetch(" not in text
+    assert "CRM" not in text
+
+
+def test_convergent_executive_report_contract_uses_real_dates_portals_and_owner_language(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    assert "Actualización de la información" in text
+    assert "10/09/2026" in text
+    assert "Corte de información de mercado" in text
+    assert "28/04/2026" in text
+    assert "Yapo" in text
+    assert "Su precio publicado" in text
+    assert "tu propiedad" not in text.casefold()
+    assert "podría generar más consultas" not in text.casefold()
+    assert "tiempo estimado de venta" not in text.casefold()
+    assert "recomendación comercial" not in text.casefold()
+    assert "simulador" not in text.casefold()
+    assert "forecast" not in text.casefold()
     assert "fetch(" not in text
 
 
@@ -926,14 +947,18 @@ def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
     assert "Sin eventos recientes visibles" in zero
     assert "Consulta registrada" not in zero
     assert "Consulta registrada" in nonzero
-    assert "Dónde estamos promocionando tu propiedad" in nonzero
+    assert "Dónde está publicada su propiedad" in nonzero
+    assert "Durante los últimos 30 días se registraron 1 consultas" in nonzero
 
 
-def test_convergent_history_and_last_update_are_conditional(monkeypatch):
+def test_convergent_report_omits_future_controls_and_keeps_market_dates(monkeypatch):
     db = _convergent_db()
-    without_history = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
-    assert 'id="tab-historial"' not in without_history
-    assert "Desde tu última actualización" not in without_history
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'id="tab-historial"' not in text
+    assert "Desde tu última actualización" not in text
+    assert "Corte de información de mercado" in text
+    assert "Recomendación comercial" not in text
+    assert "Tiempo estimado de venta" not in text
 
     db["pricing_intelligence_property_snapshots_v1"].insert_one({
         "property_code": "SCENARIO",
@@ -943,8 +968,8 @@ def test_convergent_history_and_last_update_are_conditional(monkeypatch):
         "last_price_change_at": "2026-08-20T15:00:00+00:00",
     })
     with_history = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
-    assert 'id="tab-historial"' in with_history
-    assert "Desde tu última actualización" in with_history
+    assert 'id="tab-historial"' not in with_history
+    assert "Recomendación comercial" not in with_history
 
 
 def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(monkeypatch):
@@ -954,8 +979,9 @@ def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(mo
         {"$set": {"owner_email": "owner@example.com", "owner_phone": "+56911111111", "direccion_exacta": "Calle privada 123"}},
     )
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
-    assert "Tu precio publicado" in text
-    assert "referencias con precio y superficie válidos" in text
+    assert "Su precio publicado" in text
+    assert "Tres referencias anónimas" in text
+    assert "Precio actual" in text and "Mediana de propiedades similares" in text
     assert "owner@example.com" not in text
     assert "+56911111111" not in text
     assert "Calle privada 123" not in text
@@ -967,7 +993,7 @@ def test_convergent_template_has_mobile_and_reduced_motion_contract():
     text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
     assert '<html lang="es">' in text
     assert 'name="viewport"' in text
-    assert 'alt="PROCASA"' in text
+    assert 'alt="Logo oficial PROCASA"' in text
     assert "@media (prefers-reduced-motion:reduce)" in text
-    assert "@media (max-width:680px)" in text
+    assert "@media (max-width:620px)" in text
     assert "window.fetch" not in text

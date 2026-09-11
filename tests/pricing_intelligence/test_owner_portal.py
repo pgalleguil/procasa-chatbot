@@ -1060,7 +1060,7 @@ def test_convergent_presence_marquee_supports_one_three_and_six_verified_channel
         "portal_inmobiliario": "/static/portal_logos/portal-inmobiliario.webp",
         "toctoc": "/static/portal_logos/toctoc.png",
         "yapo": "/static/portal_logos/yapo.png",
-        "chilepropiedades": "/static/portal_logos/chilepropiedades.svg",
+        "chilepropiedades": "/static/portal_logos/chilepropiedades.png",
         "proppit": "/static/portal_logos/proppit.png",
         "procasa": "/static/logo.png",
     }
@@ -1085,7 +1085,7 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "/static/portal_logos/portal-inmobiliario.webp" in text
     assert "/static/portal_logos/toctoc.png" in text
     assert "/static/portal_logos/yapo.png" in text
-    assert "/static/portal_logos/chilepropiedades.svg" in text
+    assert "/static/portal_logos/chilepropiedades.png" in text
     assert "/static/portal_logos/proppit.png" in text
     assert "border:0" in text
     assert "portal-channel small" not in text

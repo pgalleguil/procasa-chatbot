@@ -784,3 +784,79 @@ def test_price_response_simulation_future_contract_is_defined_without_calculatio
         "delta_expected", "lower_bound", "upper_bound", "model_version",
         "training_cutoff", "confidence_status",
     }
+
+
+def test_three_concept_routes_render_distinct_real_data_without_future_controls(monkeypatch):
+    db = _scenario_db()
+    client = internal_client(monkeypatch, db)
+    pages = {}
+    for concept in ("a", "b", "c"):
+        response = client.get(f"/owner-portal-concepts/{concept}/SCENARIO")
+        assert response.status_code == 200
+        pages[concept] = response.text
+        assert f'data-concept="{concept}"' in response.text
+        assert "3.200 UF" in response.text
+        assert "9.215" in response.text
+        assert "67" in response.text
+        assert "slider" not in response.text.casefold()
+        assert "forecast" not in response.text.casefold()
+        assert "simul" not in response.text.casefold()
+        assert "recomend" not in response.text.casefold()
+        assert "autoriz" not in response.text.casefold()
+    assert pages["a"] != pages["b"]
+    assert pages["b"] != pages["c"]
+    assert pages["a"] != pages["c"]
+
+
+def test_concept_routes_keep_internal_protection(monkeypatch):
+    monkeypatch.delenv("OWNER_PORTAL_PREVIEW_DEV_MODE", raising=False)
+
+    async def deny(_request):
+        raise HTTPException(status_code=401, detail="CRM authentication required")
+
+    monkeypatch.setattr("owner_portal.security._existing_crm_user", deny)
+    app = FastAPI()
+    app.include_router(router)
+    response = TestClient(app).get("/owner-portal-concepts/a/SCENARIO")
+    assert response.status_code == 401
+
+
+def test_concept_templates_have_accessible_language_and_reduced_motion_contract():
+    from pathlib import Path
+
+    for concept in ("a", "b", "c"):
+        text = Path(f"templates/owner_portal_concept_{concept}.html").read_text(encoding="utf-8")
+        assert '<html lang="es">' in text
+        assert 'alt="PROCASA"' in text
+        assert "prefers-reduced-motion:reduce" in text
+        assert "aria-label" in text
+
+
+def test_concept_pageviews_do_not_fetch_external_sources(monkeypatch):
+    db = _scenario_db()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("concept pageview attempted an external fetch")
+
+    monkeypatch.setattr("urllib.request.urlopen", forbidden)
+    client = internal_client(monkeypatch, db)
+    for concept in ("a", "b", "c"):
+        assert client.get(f"/owner-portal-concepts/{concept}/SCENARIO").status_code == 200
+
+
+def test_concept_routes_do_not_expose_owner_pii_or_internal_ids(monkeypatch):
+    db = make_db(
+        master_doc(
+            "PII-CONCEPT",
+            owner_email="owner@example.com",
+            owner_phone="+56911111111",
+            direccion_exacta="Calle privada 123",
+        ),
+        market=False,
+    )
+    client = internal_client(monkeypatch, db)
+    for concept in ("a", "b", "c"):
+        text = client.get(f"/owner-portal-concepts/{concept}/PII-CONCEPT").text
+        assert "owner@example.com" not in text
+        assert "+56911111111" not in text
+        assert "Calle privada 123" not in text

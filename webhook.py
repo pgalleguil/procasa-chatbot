@@ -893,8 +893,8 @@ async def lifespan(app: FastAPI):
         logger.info(f"MongoDB ping: {(_p1-_p0)*1000:.0f}ms preconnect OK")
         await get_async_db().command("ping")
         logger.info("MongoDB preconnect: OK")
-        from captacion_contact_identity import ensure_phone_learning_activation
-        activation_record = ensure_phone_learning_activation(get_db())
+        from captacion_contact_identity import ensure_phone_learning_activation_async
+        activation_record = await ensure_phone_learning_activation_async(get_async_db())
         if activation_record:
             logger.info(
                 "[CP_PHONE_LEARNING] production_activation_at=%s",

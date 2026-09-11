@@ -105,6 +105,36 @@ def ensure_phone_learning_activation(db, *, now: Any = None) -> dict[str, Any] |
         return None
 
 
+async def ensure_phone_learning_activation_async(db, *, now: Any = None) -> dict[str, Any] | None:
+    """Async production-start registration for an async Mongo client."""
+    if not phone_learning_enabled() or not getattr(Config, "IS_PRODUCTION", False):
+        return None
+    activation_at = _utc(now)
+    collection = db[METRICS_COLLECTION]
+    document = {
+        "_id": ACTIVATION_RECORD_ID,
+        "feature": "phone_learning",
+        "version": "v1",
+        "activated_at": activation_at,
+        "environment": "production",
+        "metric_scope": "post_activation",
+        "created_at": activation_at,
+    }
+    try:
+        await collection.update_one(
+            {"_id": ACTIVATION_RECORD_ID},
+            {"$setOnInsert": document},
+            upsert=True,
+        )
+        return await collection.find_one({"_id": ACTIVATION_RECORD_ID}) or document
+    except Exception as exc:
+        logger.error(
+            "[CP_PHONE_LEARNING] activation_record_unavailable error=%s",
+            type(exc).__name__,
+        )
+        return None
+
+
 def phone_learning_activation_at(db=None) -> datetime | None:
     """Read the immutable production activation timestamp from Mongo."""
     if db is None:

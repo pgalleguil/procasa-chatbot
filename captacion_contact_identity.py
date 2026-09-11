@@ -263,6 +263,8 @@ def ensure_contact_identity_indexes(db) -> bool:
 
 
 def get_contact_identity_evidence(db_or_collection, property_doc: dict[str, Any]) -> dict[str, Any] | None:
+    if not phone_learning_global_lookup_enabled():
+        return None
     phone = _phone_from_document(property_doc)
     if not phone:
         return None

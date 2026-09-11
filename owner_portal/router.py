@@ -35,6 +35,12 @@ def _render(request: Request, view: dict) -> HTMLResponse:
 def _convergent_payload(view: dict) -> dict:
     """Add small presentation-only labels without changing the shared DTO."""
 
+    def _format_metric_number(value: object) -> str:
+        try:
+            return f"{float(value):,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except (TypeError, ValueError):
+            return str(value)
+
     payload = dict(view)
     position = view.get("positioning") or {}
     current = view.get("current_price") or {}
@@ -78,12 +84,46 @@ def _convergent_payload(view: dict) -> dict:
     label = str(position.get("label") or "")
     if "Sobre" in label:
         payload["position_descriptor"] = "Sobre el rango central"
+        payload["position_kpi_label"] = "Posición competitiva"
+        payload["position_kpi_detail"] = "Según propiedades similares"
     elif "Bajo" in label:
         payload["position_descriptor"] = "Bajo el rango central"
+        payload["position_kpi_label"] = "Posición competitiva"
+        payload["position_kpi_detail"] = "Según propiedades similares"
     elif position:
         payload["position_descriptor"] = "Dentro del rango central"
+        payload["position_kpi_label"] = "Posición competitiva"
+        payload["position_kpi_detail"] = "Según propiedades similares"
     else:
-        payload["position_descriptor"] = "No disponible"
+        built_area = view.get("built_area_m2")
+        land_area = view.get("land_area_m2")
+        if built_area is not None or land_area is not None:
+            area = built_area if built_area is not None else land_area
+            payload["position_kpi_label"] = "Superficie"
+            payload["position_descriptor"] = f"{_format_metric_number(area)} m²"
+            payload["position_kpi_detail"] = (
+                "Superficie construida" if built_area is not None else "Superficie de terreno"
+            )
+        else:
+            bedrooms = view.get("bedrooms")
+            bathrooms = view.get("bathrooms")
+            characteristics = []
+            if bedrooms is not None:
+                characteristics.append(f"{_format_metric_number(bedrooms)}D")
+            if bathrooms is not None:
+                characteristics.append(f"{_format_metric_number(bathrooms)}B")
+            if characteristics:
+                payload["position_kpi_label"] = "Características"
+                payload["position_descriptor"] = " · ".join(characteristics)
+                payload["position_kpi_detail"] = "Dormitorios y baños"
+            elif view.get("property_type"):
+                payload["position_kpi_label"] = "Tipo de propiedad"
+                payload["position_descriptor"] = str(view["property_type"])
+                payload["position_kpi_detail"] = "Ficha verificada"
+            else:
+                payload["position_kpi_label"] = "Código de propiedad"
+                payload["position_descriptor"] = str(view.get("property_code") or "—")
+                payload["position_kpi_detail"] = "Ficha PROCASA SUCRE"
 
     median_uf = position.get("median_uf") if position else None
     payload["market_delta_pct"] = (

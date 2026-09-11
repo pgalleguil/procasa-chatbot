@@ -979,6 +979,50 @@ def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(mo
     assert "Calle privada 123" not in text
 
 
+def test_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    assert '<img class="footer-logo" src="/static/logo.png" alt="PROCASA">' in text
+    assert "PROCASA SUCRE" in text
+    assert "Informe del propietario · Propiedad SCENARIO" in text
+    assert "La publicación no reemplaza una tasación profesional." in text
+
+
+def test_convergent_real_photo_preserves_image_and_has_load_fallback(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    assert 'src="https://img/scenario.jpg"' in text
+    assert "object-fit:cover" in text
+    assert "image-failed" in text
+    assert "hero-photo-placeholder" in text
+
+
+def test_convergent_no_photo_uses_corporate_fallback_without_missing_photo_copy(monkeypatch):
+    db = _convergent_db()
+    db["propiedades_captacion"].delete_many({"listing_id": "SCENARIO"})
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'aria-label="Composición visual PROCASA"' in text
+    assert "hero-photo-placeholder::before" in text
+    assert "Fotografía no disponible" not in text
+
+
+def test_convergent_without_comparables_uses_real_kpi_fallback_and_compact_market_block(monkeypatch):
+    db = _convergent_db(with_lead=True)
+    db["mercado_comunal"].delete_many({})
+    db["propiedades_captacion"].delete_many({"listing_id": {"$regex": "^safe-cmp-"}})
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert "Superficie" in text
+    assert "65 m²" in text
+    assert "Posición competitiva" not in text
+    assert "Actualmente no contamos con una muestra suficiente" in text
+    assert "Tres referencias anónimas" not in text
+    assert "Comparables utilizados" not in text
+    assert "No disponible" not in text
+
+
+def test_convergent_market_context_explicitly_says_observed_publications(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    assert "avisos observados y no necesariamente propiedades únicas" in text
+
+
 def test_convergent_template_has_mobile_and_reduced_motion_contract():
     from pathlib import Path
 
@@ -986,6 +1030,9 @@ def test_convergent_template_has_mobile_and_reduced_motion_contract():
     assert '<html lang="es">' in text
     assert 'name="viewport"' in text
     assert 'alt="Logo oficial PROCASA"' in text
+    assert 'class="footer-logo"' in text
+    assert "market-empty" in text
+    assert "hero-photo-placeholder" in text
     assert "@media (prefers-reduced-motion:reduce)" in text
     assert "@media (max-width:620px)" in text
     assert "window.fetch" not in text

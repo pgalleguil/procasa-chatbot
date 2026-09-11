@@ -275,7 +275,7 @@ async def run_crm_sla_shadow_worker(
         "business_writes_allowed": False,
         "executor_calls": 0,
     }
-    _set_status(status, status="running", health="SHADOW_HEALTHY", mode="shadow", config=instance_config, metrics={})
+    _set_status(status, health="SHADOW_HEALTHY", mode="shadow", config=instance_config, metrics={})
     logger.info("[SLA_SHADOW_START] status=RUNNING holder=%s cutover_at=%s timezone=America/Santiago interval_seconds=%s batch_size=%s variant=A1_AGGREGATION_PER_CYCLE_MINIMAL master=false transaction_gate=false security=false", holder_id, cutover.isoformat(), settings.interval_seconds, Config.CRM_SLA_REASSIGNMENT_BATCH_SIZE)
 
     page_token: Mapping[str, Any] | None = None

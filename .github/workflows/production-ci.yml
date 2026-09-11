@@ -37,18 +37,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: CRM and SLA
+          - suite: CRM fundamentals
             tests: >-
               tests/test_crm_management_sla.py
               tests/test_crm_phone_visibility.py
+              tests/test_crm_list_actions.py
+              tests/test_crm_sort_order.py
+          - suite: SLA alert and policy
+            tests: >-
               tests/test_crm_sla_alert_evaluator.py
               tests/test_crm_sla_policy_freeze.py
+          - suite: SLA shadow and reassignment guards
+            tests: >-
               tests/test_crm_sla_shadow_infrastructure.py
               tests/test_crm_sla_reassignment_cutover.py
               tests/test_crm_sla_reassignment_transaction.py
               tests/test_crm_sla_reassignment_worker.py
-              tests/test_crm_list_actions.py
-              tests/test_crm_sort_order.py
           - suite: Captación and phone learning
             tests: >-
               tests/test_captacion_management.py

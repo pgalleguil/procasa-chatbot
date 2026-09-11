@@ -420,7 +420,7 @@
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
 <div class="report" data-portal="owner-performance-report" data-property-code="{{ view.property_code }}">
   <header class="site-header">
-    <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-wordmark">PROCASA</span><span class="brand-office">PROCASA SUCRE</span></div>
+    <div class="brand"><div class="brand-emblem"><img src="/static/logo.png" alt="Logo oficial PROCASA"></div><span class="brand-office">PROCASA SUCRE</span></div>
     <div class="header-meta"><strong>Informe del propietario</strong>Actualización de propiedad · {{ view.property_updated_at or '—' }}<br>Corte del informe · {{ view.data_updated_at }}</div>
   </header>
   <nav class="report-nav" aria-label="Navegación del informe"><a href="#desempeno">Resumen</a><a href="#mercado">Mercado</a><a href="#gestion">Gestión PROCASA</a><a href="#contexto">Contexto</a></nav>

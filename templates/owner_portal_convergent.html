@@ -19,8 +19,8 @@
     .report { width:min(1240px,calc(100% - 64px)); margin:0 auto; }
     .site-header { display:flex; align-items:center; justify-content:space-between; min-height:78px; border-bottom:1px solid var(--line); background:rgba(251,251,248,.96); }
     .brand { display:flex; align-items:center; gap:11px; min-width:0; }
-    .brand-emblem { width:38px; height:38px; overflow:hidden; border-radius:50%; background:var(--white); }
-    .brand-emblem img { display:block; width:100%; height:100%; object-fit:cover; object-position:center 38%; mix-blend-mode:multiply; }
+    .brand-emblem { width:46px; height:46px; flex:0 0 46px; overflow:visible; border-radius:0; background:transparent; }
+    .brand-emblem img { display:block; width:100%; height:100%; object-fit:contain; object-position:center; mix-blend-mode:multiply; }
     .brand-wordmark { color:var(--navy); font-size:17px; font-weight:700; letter-spacing:.28em; }
     .brand-office { margin-left:12px; padding-left:12px; border-left:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
     .header-meta { display:flex; align-items:center; gap:30px; color:var(--muted); font-size:11px; text-align:right; }
@@ -241,7 +241,7 @@
     }
     body { background:var(--page); color:var(--ink); }
     .site-header { min-height:82px; padding:0 2px; border-bottom-color:rgba(32,56,61,.16); }
-    .brand-emblem { width:40px; height:40px; box-shadow:0 0 0 1px rgba(160,125,63,.18); }
+    .brand-emblem { width:46px; height:46px; flex-basis:46px; box-shadow:none; }
     .brand-wordmark { color:var(--navy); font-size:18px; letter-spacing:.25em; }
     .header-meta { gap:34px; letter-spacing:.02em; }
     .report-nav { min-height:46px; gap:28px; border-bottom-color:rgba(32,56,61,.13); }

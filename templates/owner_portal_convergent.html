@@ -233,6 +233,159 @@
     }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none !important; } .portal-marquee-track { animation:none; } .portal-marquee-sequence + .portal-marquee-sequence { display:none; } .portal-marquee { overflow-x:auto; } }
   </style>
+  <style id="premium-polish">
+    :root {
+      --page:#f8f8f5; --warm:#f2eee5; --line:#d5dcd7; --muted:#687778;
+      --navy:#20383d; --gold:#a07d3f; --gold-dark:#765a2e; --sage:#9eafa7;
+      --sage-dark:#668278; --shadow:0 20px 48px rgba(29,42,44,.07);
+    }
+    body { background:var(--page); color:var(--ink); }
+    .site-header { min-height:82px; padding:0 2px; border-bottom-color:rgba(32,56,61,.16); }
+    .brand-emblem { width:40px; height:40px; box-shadow:0 0 0 1px rgba(160,125,63,.18); }
+    .brand-wordmark { color:var(--navy); font-size:18px; letter-spacing:.25em; }
+    .header-meta { gap:34px; letter-spacing:.02em; }
+    .report-nav { min-height:46px; gap:28px; border-bottom-color:rgba(32,56,61,.13); }
+    .report-nav a { position:relative; transition:color .2s ease; }
+    .report-nav a::after { content:""; position:absolute; right:0; bottom:-10px; left:0; height:2px; background:var(--gold); transform:scaleX(0); transform-origin:center; transition:transform .22s ease; }
+    .report-nav a:hover::after,.report-nav a:focus-visible::after,.report-nav a.is-active::after { transform:scaleX(1); }
+    .hero { min-height:432px; margin-top:22px; border:1px solid rgba(32,56,61,.12); box-shadow:var(--shadow); }
+    .hero-copy { position:relative; padding:34px 48px 36px; background:linear-gradient(135deg,#fffefa 0%,#fff 72%); }
+    .hero-copy::before { content:""; position:absolute; top:34px; bottom:34px; left:0; width:3px; background:var(--gold); opacity:.75; }
+    .eyebrow { letter-spacing:.19em; }
+    .hero h1 { max-width:475px; margin-top:18px; font-size:clamp(39px,3.45vw,54px); letter-spacing:-.07em; }
+    .hero-subtitle { max-width:445px; color:#5f6e6e; font-size:14px; }
+    .hero-meta { margin-top:27px; color:var(--navy); font-size:12px; letter-spacing:.015em; }
+    .hero-cta { margin-top:32px; padding:13px 21px; border-color:var(--gold-dark); background:var(--gold); box-shadow:0 8px 18px rgba(128,101,51,.16); transition:background .22s ease,box-shadow .22s ease,transform .22s ease; }
+    .hero-cta:hover,.hero-cta:focus-visible { background:var(--gold-dark); box-shadow:0 11px 23px rgba(128,101,51,.22); transform:translateY(-2px); }
+    .hero-photo { min-height:432px; background:#d7ded9; }
+    .hero-photo::after { background:linear-gradient(90deg,rgba(255,255,255,.16),transparent 28%),linear-gradient(0deg,rgba(29,42,44,.08),transparent 30%); }
+    .hero-photo img { filter:saturate(.94) contrast(1.03); transform:scale(1.012); transition:filter .28s ease,transform .35s ease; }
+    .hero:hover .hero-photo img { filter:saturate(1) contrast(1.05); transform:scale(1.025); }
+    .hero-photo-placeholder::after { background-size:118px auto; opacity:.07; }
+    .kpi-strip { margin-top:22px; border:1px solid rgba(32,56,61,.13); border-radius:2px; box-shadow:0 12px 28px rgba(29,42,44,.045); }
+    .kpi { min-height:116px; padding:20px 24px 18px; border-right-color:rgba(32,56,61,.11); transition:background .22s ease,transform .22s ease,box-shadow .22s ease; }
+    .kpi:hover { position:relative; z-index:1; background:#fffefa; box-shadow:0 10px 24px rgba(29,42,44,.08); transform:translateY(-2px); }
+    .kpi-top { gap:10px; color:#687777; font-size:10px; letter-spacing:.1em; }
+    .kpi-icon { width:25px; height:25px; border-color:rgba(160,125,63,.62); background:rgba(160,125,63,.08); }
+    .kpi-value { margin-top:10px; font-size:28px; font-weight:400; }
+    .kpi-detail { margin-top:7px; color:#748181; font-size:10px; }
+    .section { padding:38px 0 31px; border-bottom-color:rgba(32,56,61,.14); }
+    .section-heading { margin-bottom:23px; padding-bottom:15px; border-bottom:1px solid rgba(32,56,61,.1); }
+    .section-heading h2 { font-size:clamp(30px,3.35vw,42px); }
+    .section-heading p { color:#647273; font-size:13px; }
+    .performance-grid,.market-grid { grid-template-columns:minmax(0,65fr) minmax(0,35fr); }
+    .chart-area { padding-top:7px; }
+    .chart-label { font-size:12px; letter-spacing:.02em; }
+    .chart { height:202px; margin-top:15px; }
+    .chart-main { gap:13px; padding:0 11px 28px; background:repeating-linear-gradient(to bottom,transparent 0,transparent 50px,rgba(213,220,215,.58) 51px); }
+    .bar { position:relative; width:min(37px,72%); border-radius:3px 3px 1px 1px; background:var(--sage-dark); box-shadow:inset 0 1px 0 rgba(255,255,255,.24); }
+    .bar::after { content:attr(data-tooltip); position:absolute; z-index:3; bottom:calc(100% + 8px); left:50%; width:max-content; max-width:150px; padding:6px 8px; border:1px solid rgba(32,56,61,.14); border-radius:2px; color:var(--white); background:var(--navy); font-size:10px; line-height:1.2; opacity:0; pointer-events:none; transform:translate(-50%,4px); transition:opacity .18s ease,transform .18s ease; }
+    .bar:hover::after { opacity:1; transform:translate(-50%,0); }
+    .bar:hover { background:var(--gold); }
+    .chart-note { color:#728080; }
+    .empty-bar { align-self:end; width:100%; height:5px; border-radius:99px; background:linear-gradient(90deg,rgba(160,125,63,.48),rgba(213,220,215,.7)); }
+    .insight { position:relative; min-height:100%; padding:27px 28px 26px; border-top:0; border-left:3px solid var(--gold); border-radius:2px; background:var(--warm); box-shadow:0 13px 30px rgba(29,42,44,.055); }
+    .insight-icon { width:31px; height:31px; margin-bottom:15px; background:rgba(160,125,63,.08); }
+    .insight h3 { font-size:27px; }
+    .insight p { margin-top:15px; color:#5f6e6e; font-size:13px; line-height:1.68; }
+    .distribution-wrap { padding:18px 28px 8px 0; }
+    .distribution-question { letter-spacing:.02em; }
+    .distribution { margin-top:29px; }
+    .distribution-line { height:12px; background:#e5e8e4; box-shadow:inset 0 1px 2px rgba(29,42,44,.08); }
+    .distribution-central { top:-5px; height:22px; background:var(--sage-dark); box-shadow:0 4px 12px rgba(102,130,120,.2); }
+    .distribution-central::after { content:"Rango central"; position:absolute; top:28px; left:50%; color:var(--sage-dark); font-size:9px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; white-space:nowrap; transform:translateX(-50%); }
+    .distribution-marker { top:-18px; width:31px; height:31px; box-shadow:0 0 0 1px var(--gold-dark),0 5px 12px rgba(128,101,51,.22); }
+    .distribution-marker::after { bottom:36px; padding:5px 8px; border:1px solid rgba(160,125,63,.3); border-radius:2px; background:var(--white); box-shadow:0 4px 10px rgba(29,42,44,.08); font-size:9px; letter-spacing:.04em; text-transform:uppercase; }
+    .distribution-labels { margin-top:38px; color:#707e7e; }
+    .distribution-labels strong { margin-bottom:3px; font-size:10px; letter-spacing:.04em; }
+    .translation { margin-top:25px; padding-left:16px; border-left:2px solid var(--gold); color:var(--navy); line-height:1.6; }
+    .market-side { margin-top:0; padding:25px 22px 21px 25px; border:1px solid rgba(32,56,61,.13); border-left:3px solid var(--gold); border-radius:2px; background:#fffefa; box-shadow:0 13px 30px rgba(29,42,44,.05); }
+    .side-row { padding-bottom:14px; margin-bottom:14px; border-bottom-color:rgba(32,56,61,.1); }
+    .side-label { color:#6d7b7b; font-size:10px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; }
+    .side-value { margin-top:7px; font-size:27px; }
+    .side-value.gold { color:var(--gold-dark); }
+    .comparables { margin-top:28px; padding-top:18px; border-top-color:rgba(32,56,61,.13); }
+    .comparables-title { margin-bottom:8px; font-size:13px; letter-spacing:.02em; }
+    .comp-row { gap:18px; padding:12px 11px; border-bottom-color:rgba(32,56,61,.1); }
+    .comp-row.head { padding:10px 11px; border-bottom:0; background:var(--warm); color:#667575; border-radius:2px 2px 0 0; }
+    .comp-row:not(.head):hover { background:rgba(245,242,234,.55); }
+    .comp-cell strong { font-size:12px; }
+    .market-date { margin-top:16px; padding-top:14px; border-top:1px solid rgba(32,56,61,.1); }
+    .context-grid { background:#fffefa; border:1px solid rgba(32,56,61,.13); box-shadow:0 12px 26px rgba(29,42,44,.04); }
+    .context-item { padding:20px 25px 19px 0; border-right-color:rgba(32,56,61,.1); }
+    .context-item + .context-item { padding-left:25px; }
+    .context-icon { width:30px; height:30px; margin-bottom:13px; background:rgba(160,125,63,.07); }
+    .context-item h3 { font-size:14px; letter-spacing:.01em; }
+    .context-item p { color:#657474; line-height:1.62; }
+    .management-grid { gap:52px; }
+    .management-block h3 { font-size:27px; }
+    .presence-heading { margin-bottom:20px; }
+    .presence-copy { color:#657474; }
+    .presence-count { border-left-color:rgba(32,56,61,.16); }
+    .presence-count strong { font-size:32px; }
+    .portal-marquee { border-top-color:rgba(32,56,61,.14); border-bottom-color:rgba(160,125,63,.36); background:#fffefa; box-shadow:0 12px 26px rgba(29,42,44,.055); }
+    .portal-marquee::before,.portal-marquee::after { width:45px; }
+    .portal-marquee::before { background:linear-gradient(90deg,#fffefa,rgba(255,254,250,0)); }
+    .portal-marquee::after { background:linear-gradient(270deg,#fffefa,rgba(255,254,250,0)); }
+    .portal-marquee-sequence { gap:18px; padding:16px 9px; }
+    .portal-channel { flex-basis:180px; min-height:72px; padding:9px 16px 10px; transition:color .22s ease,border-color .22s ease,transform .22s ease,background .22s ease; }
+    .portal-channel:hover,.portal-channel:focus-visible { background:rgba(245,242,234,.48); }
+    .portal-logo { width:145px; height:42px; filter:grayscale(.88) contrast(1.08); opacity:.86; }
+    .portal-wordmark { color:#5f6d6d; opacity:.86; }
+    .portal-channel[data-portal-id="procasa"] { min-height:88px; }
+    .timeline { padding:11px 16px 5px; border:1px solid rgba(32,56,61,.12); border-radius:2px; background:#fffefa; box-shadow:0 10px 24px rgba(29,42,44,.04); }
+    .timeline::before { top:17px; bottom:17px; left:20px; background:rgba(160,125,63,.35); }
+    .timeline-item { gap:13px; padding:8px 0 13px; }
+    .timeline-dot { margin-top:4px; background:var(--gold); }
+    .timeline-title { font-size:12px; letter-spacing:.01em; }
+    .timeline-detail { color:#6d7b7b; font-size:10px; }
+    .timeline-date { color:var(--gold-dark); font-size:10px; font-weight:750; }
+    .closing { margin-top:34px; padding:27px 31px; border:1px solid rgba(160,125,63,.2); box-shadow:0 15px 30px rgba(29,42,44,.045); }
+    .closing h2 { font-size:32px; }
+    .closing button { padding:13px 20px; box-shadow:0 6px 14px rgba(128,101,51,.1); transition:background .22s ease,color .22s ease,transform .22s ease; }
+    .closing button:hover { color:var(--white); background:var(--gold-dark); transform:translateY(-1px); }
+    .footer { margin-top:38px; padding:23px 0 30px; border-top:1px solid rgba(32,56,61,.14); }
+    .footer-logo { width:106px; height:44px; }
+    .footer-right { color:#6e7c7c; }
+    .market-empty { border-top:1px solid rgba(32,56,61,.12); border-bottom:1px solid rgba(32,56,61,.12); box-shadow:0 10px 22px rgba(29,42,44,.035); }
+    details { border-top-color:rgba(32,56,61,.12); }
+    @keyframes premium-reveal { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .hero,.kpi-strip,.section,.closing,.footer { animation:premium-reveal .34s ease both; }
+    .kpi-strip { animation-delay:.04s; }
+    .section:nth-of-type(2) { animation-delay:.08s; }
+    .section:nth-of-type(3) { animation-delay:.12s; }
+    .section:nth-of-type(4) { animation-delay:.16s; }
+    .closing { animation-delay:.2s; }
+    @media (max-width:880px) {
+      .hero-copy { padding:34px 38px 36px; }
+      .performance-grid,.market-grid { grid-template-columns:1fr; gap:28px; }
+      .market-side { padding-left:22px; }
+    }
+    @media (max-width:620px) {
+      .site-header { padding:0; }
+      .hero-copy { padding:31px 24px 30px; }
+      .hero-copy::before { top:27px; bottom:27px; }
+      .hero h1 { font-size:46px; }
+      .kpi { min-height:108px; padding:17px 15px 16px; }
+      .section { padding:34px 0 30px; }
+      .section-heading { padding-bottom:13px; }
+      .chart-main { gap:7px; }
+      .bar::after { display:none; }
+      .insight { border-left:0; border-top:3px solid var(--gold); }
+      .distribution-wrap { padding-right:0; }
+      .market-side { padding:22px 18px; }
+      .portal-channel { flex-basis:164px; min-height:70px; }
+      .portal-logo { width:142px; height:40px; }
+      .portal-channel[data-portal-id="procasa"] { min-height:86px; }
+      .portal-channel[data-portal-id="procasa"] .portal-logo { width:112px; height:78px; transform:scale(1.45); }
+      .timeline { padding-left:12px; padding-right:12px; }
+      .closing { padding:24px 21px; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .hero,.kpi-strip,.section,.closing,.footer { animation:none; }
+      .hero-photo img { transform:none; }
+    }
+  </style>
 </head>
 <body>
 {% set local = view.local_context %}{% set comp = view.comparable_cohort %}{% set pos = view.positioning %}{% set portal_logo_paths = {'portal_inmobiliario': '/static/portal_logos/portal-inmobiliario.png', 'mercadolibre': '/static/portal_logos/mercado-libre.png', 'mercado_libre': '/static/portal_logos/mercado-libre.png', 'toctoc': '/static/portal_logos/toctoc.png', 'yapo': '/static/portal_logos/yapo.png', 'chilepropiedades': '/static/portal_logos/chilepropiedades.png', 'proppit': '/static/portal_logos/proppit.png', 'procasa': '/static/logo.png'} %}
@@ -258,7 +411,7 @@
 
     <section class="section" id="desempeno" aria-labelledby="desempeno-title">
       <div class="section-heading"><div><div class="eyebrow">Actividad comercial</div><h2 id="desempeno-title">Resumen de desempeño</h2></div><p>Consultas vinculadas a su propiedad, agrupadas por semana y respaldadas por registros fechados.</p></div>
-      <div class="performance-grid"><div class="chart-area"><div class="chart-label">Consultas recibidas por semana</div>{% if view.activity_series %}<div class="chart" aria-label="Consultas recibidas por semana, últimos doce períodos"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main">{% for point in view.activity_series %}<div class="bar-group"><span class="bar-value">{{ point.count }}</span><span class="bar" style="--bar-height:{{ [point.height, 3]|max }}px" title="{{ point.label }} · {{ point.count }}"></span><span class="bar-label">{{ point.label }}</span></div>{% endfor %}</div></div><p class="chart-note">Últimos doce períodos semanales · las barras muestran consultas vinculadas, no visitas.</p>{% else %}<div class="chart" aria-label="Sin consultas vinculadas"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main"><span style="align-self:end;width:100%;height:3px;background:var(--line)"></span></div></div><p class="chart-note">No se registraron consultas vinculadas durante los últimos treinta días.</p>{% endif %}</div><aside class="insight"><div class="insight-icon" aria-hidden="true">⌁</div><div class="eyebrow">Lectura comercial</div><h3>Actividad registrada</h3><p>{{ view.commercial_insight }}</p></aside></div>
+      <div class="performance-grid"><div class="chart-area"><div class="chart-label">Consultas recibidas por semana</div>{% if view.activity_series %}<div class="chart" aria-label="Consultas recibidas por semana, últimos doce períodos"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main">{% for point in view.activity_series %}<div class="bar-group"><span class="bar-value">{{ point.count }}</span><span class="bar" style="--bar-height:{{ [point.height, 3]|max }}px" data-tooltip="{{ point.label }} · {{ point.count }} consultas" title="{{ point.label }} · {{ point.count }}"></span><span class="bar-label">{{ point.label }}</span></div>{% endfor %}</div></div><p class="chart-note">Últimos doce períodos semanales · las barras muestran consultas vinculadas, no visitas.</p>{% else %}<div class="chart" aria-label="Sin consultas vinculadas"><div class="chart-axis"><span>3</span><span>2</span><span>1</span><span>0</span></div><div class="chart-main"><span class="empty-bar" aria-hidden="true"></span></div></div><p class="chart-note">No se registraron consultas vinculadas durante los últimos treinta días.</p>{% endif %}</div><aside class="insight"><div class="insight-icon" aria-hidden="true">⌁</div><div class="eyebrow">Lectura comercial</div><h3>Actividad registrada</h3><p>{{ view.commercial_insight }}</p></aside></div>
     </section>
 
     {% if pos and comp %}<section class="section" id="mercado" aria-labelledby="mercado-title">

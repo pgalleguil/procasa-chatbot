@@ -18,12 +18,17 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from chatbot.storage import get_db
+from captacion_distribution import (
+    CAPTACION_TERMINAL_STATES,
+    MongoDistributionLock,
+    assign_captacion_candidate_atomically,
+    resolve_manual_batch_size,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-TERMINAL_STATES = {"Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
-                   "Teléfono inválido", "Propiedad no disponible", "Publicación expirada", "No interesado"}
+TERMINAL_STATES = set(CAPTACION_TERMINAL_STATES)
 
 REPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports", "captacion_assignment")
 
@@ -67,10 +72,11 @@ def compute_load_score(agent):
     return (agent["open_workload"] + agent["assigned_in_run"]) / agent["captacion_weight"]
 
 
-def run_distribution(dry_run=True):
+def run_distribution(dry_run=True, *, batch_size=None, allow_large_batch=False):
     os.makedirs(REPORTS_DIR, exist_ok=True)
     db = get_db()
     coll = db[Config.CAPTACION_COLLECTION_NAME]
+    batch_size = resolve_manual_batch_size(batch_size, allow_large=allow_large_batch)
     
     # 1. Agentes elegibles
     agents = get_elegible_agents(db)
@@ -131,8 +137,10 @@ def run_distribution(dry_run=True):
     unmatched_communes = set()
     unmatched_count = 0
     
-    # Procesar DUEÑO_SEGURO primero, luego INCIERTO
-    for state_group in [dueno_seguro, incierto]:
+    # Procesar el orden global; la selección queda acotada abajo antes de
+    # cualquier escritura. Dentro de cada estado, Mongo capture datetime
+    # queda como desempate descendente en el plan central post-scrape.
+    for state_group in [dueno_seguro, [p for p in all_targets if p.get("classification", {}).get("state") == "DUEÑO_PROBABLE"], incierto]:
         for p in state_group:
             slug = normalize_commune_canonical(p.get("comuna_slug") or p.get("comuna"))
             if not slug:
@@ -163,6 +171,10 @@ def run_distribution(dry_run=True):
                 "agent_email": winner.get("email"),
             })
             winner["assigned_in_run"] += 1
+
+    # Este script histórico conserva su selección territorial para dry-run,
+    # pero nunca puede aplicar más que el batch seguro sin opt-in explícito.
+    assigned = assigned[:batch_size]
     
     # 6. Compilar reporte
     report = {
@@ -191,6 +203,7 @@ def run_distribution(dry_run=True):
         "unmatched_communes": sorted(list(unmatched_communes)),
         "unmatched_count": unmatched_count,
         "proposed_assignments": len(assigned),
+        "batch_requested": batch_size,
         "distribution_by_agent": {},
         "distribution_by_state": {"DUEÑO_SEGURO": {}, "INCIERTO": {}},
         "distribution_by_commune": {},
@@ -302,57 +315,47 @@ def run_distribution(dry_run=True):
     print(f"{'='*60}\n")
     
     if not dry_run and assigned:
-        apply_assignments(db, coll, assigned, report)
+        apply_assignments(db, coll, assigned, report, batch_size=batch_size)
     
     return report
 
 
-def apply_assignments(db, coll, assignments, report):
+def apply_assignments(db, coll, assignments, report, *, batch_size):
     """Aplica las asignaciones con escritura atómica."""
-    from bson import ObjectId
     now = datetime.now(timezone.utc)
     applied = 0
     errors = 0
-    
-    for a in assignments:
-        prop_oid = ObjectId(a["prop_id"]) if len(a["prop_id"]) == 24 else a["prop_id"]
-        result = coll.update_one(
-            {
-                "_id": prop_oid,
-                "origen": "toctoc",
-                "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
-                "gestion.semantic_review_hold": {"$ne": True},
-                "$or": [
-                    {"gestion.ejecutivo_id": {"$exists": False}},
-                    {"gestion.ejecutivo_id": None},
-                ]
-            },
-            {"$set": {
-                "gestion.ejecutivo_id": a["agent_id"],
-                "gestion.ejecutivo_nombre": a["agent_name"],
-                "gestion.ejecutivo_email": a["agent_email"],
-                "gestion.ejecutivo_asignado": a["agent_name"],
-                "gestion.fecha_asignacion": now,
-                "gestion.asignacion_version": "v1_weighted_commune",
-                "gestion.asignacion_comuna_slug": a["comuna_slug"],
-                "gestion.classification_at_assignment": a["state"],
-                "gestion.assignment_weight": 1.0,
-                "gestion.estado": "NUEVO",
-                "gestion.historial_asignaciones": [{
-                    "ejecutivo_id": a["agent_id"],
-                    "ejecutivo_nombre": a["agent_name"],
-                    "comuna_slug": a["comuna_slug"],
-                    "classification_state": a["state"],
-                    "assigned_at": now,
-                    "assignment_version": "v1_weighted_commune"
-                }]
-            }}
-        )
-        if result.modified_count > 0 or result.matched_count > 0:
-            applied += 1
-        else:
-            errors += 1
-    
+    run_id = f"manual-assign-{now.strftime('%Y%m%d%H%M%S%f')}"
+    lock = MongoDistributionLock(db, run_id=run_id, trigger_source="manual:assign_captacion_properties")
+    if not lock.acquire():
+        report["distribution_already_running"] = True
+        report["applied"] = 0
+        report["errors"] = 0
+        return
+
+    try:
+        run_load = defaultdict(int)
+        for a in assignments[:batch_size]:
+            status = assign_captacion_candidate_atomically(
+                db,
+                coll,
+                db["captacion_management_events"],
+                {"_id": a["prop_id"]},
+                {"id": a["agent_id"], "name": a["agent_name"], "email": a["agent_email"],
+                 "comunas_interes_norm": [a["comuna_slug"]]},
+                now=now,
+                run_load=run_load[a["agent_id"]],
+                max_per_agent=Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE,
+                reason="manual_weighted_commune",
+                assignment_version="v1_weighted_commune",
+            )
+            if status == "assigned":
+                run_load[a["agent_id"]] += 1
+                applied += 1
+            else:
+                errors += 1
+    finally:
+        lock.release()
     report["applied"] = applied
     report["errors"] = errors
     logger.info(f"Asignaciones aplicadas: {applied}, errores: {errors}")
@@ -367,10 +370,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Distribuir captaciones entre agentes")
     parser.add_argument("--dry-run", action="store_true", help="Solo simular sin escribir")
     parser.add_argument("--apply", action="store_true", help="Aplicar distribución")
+    parser.add_argument("--batch-size", type=int, default=None, help="Máximo a aplicar en esta corrida")
+    parser.add_argument("--allow-large-batch", action="store_true", help="Permite exceder el batch seguro")
     args = parser.parse_args()
     
     dry_run = args.dry_run or not args.apply
-    report = run_distribution(dry_run=dry_run)
+    report = run_distribution(
+        dry_run=dry_run,
+        batch_size=args.batch_size,
+        allow_large_batch=args.allow_large_batch,
+    )
     
     if dry_run:
         print(f"\nReportes guardados en: {REPORTS_DIR}/")

@@ -135,7 +135,7 @@ def _contact_identity_reasons(contact_identity: dict[str, Any] | None) -> list[s
     broker_count = int(contact_identity.get("confirmed_corredor_count") or 0)
     if status == "CONFLICT":
         return ["contact_identity_conflict"]
-    if broker_count and status != "OWNER_CONFIRMED":
+    if (status == "CORREDOR_CONFIRMED" or broker_count) and status != "OWNER_CONFIRMED":
         return ["contact_identity_broker_confirmed"]
     return []
 

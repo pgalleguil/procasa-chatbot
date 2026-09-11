@@ -4614,12 +4614,41 @@ async def api_distribute_captacion(request: Request):
         raise HTTPException(status_code=403, detail="No autorizado")
         
     loop = asyncio.get_running_loop()
-    reassigned = await loop.run_in_executor(
-        _WORKER_THREAD_POOL, lambda: redistribute_inactive_agent_captaciones(dry_run=False)
-    )
-    count = await loop.run_in_executor(_WORKER_THREAD_POOL, distribute_sourced_leads)
+
+    def _run_global_distribution_from_api():
+        from captacion_distribution import MongoDistributionLock
+        from chatbot.storage import get_db
+
+        run_id = f"manual-api-{uuid.uuid4()}"
+        lock = MongoDistributionLock(
+            get_db(), run_id=run_id, trigger_source="manual_api:/api/captacion/distribute"
+        )
+        if not lock.acquire():
+            return {
+                "reassigned_inactive": {"modified": 0, "distribution_already_running": True},
+                "assigned": 0,
+                "distribution_already_running": True,
+            }
+        try:
+            budget = int(Config.CAPTACION_DISTRIBUTION_BATCH_SIZE)
+            reassigned = redistribute_inactive_agent_captaciones(
+                dry_run=False,
+                batch_size=budget,
+                distribution_lock=lock,
+            )
+            used = min(budget, int(reassigned.get("modified", 0)))
+            count = distribute_sourced_leads(
+                trigger_source="manual_api:/api/captacion/distribute",
+                batch_size=max(1, budget - used) if used < budget else 1,
+                distribution_lock=lock,
+            ) if used < budget else 0
+            return {"reassigned_inactive": reassigned, "assigned": count}
+        finally:
+            lock.release()
+
+    result = await loop.run_in_executor(_WORKER_THREAD_POOL, _run_global_distribution_from_api)
     app.state.captacion_stats_cache = {}
-    return {"status": "ok", "assigned": count, "reassigned_inactive": reassigned}
+    return {"status": "ok", **result}
 
 SLA_RELEASE_WEEKDAY = 6  # domingo
 SLA_RELEASE_HOUR = 4  # 04:00 hora Chile

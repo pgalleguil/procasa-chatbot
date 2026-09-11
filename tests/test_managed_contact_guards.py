@@ -24,6 +24,7 @@ def _base(listing_id="1000", estado="NUEVO", fecha_ultima_gestion=None, asignaci
         "_id": ObjectId(),
         "listing_id": listing_id,
         "origen": "toctoc",
+        "created_at": datetime.now(timezone.utc),
         "comuna": "Maipu",
         "comuna_slug": "maipu",
         "title": "test",

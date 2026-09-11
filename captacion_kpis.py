@@ -25,14 +25,27 @@ CAPTURED_STATES = ("Captado", "CAPTADO")
 DISCARDED_STATES = (
     "Corredor",
     "Teléfono inválido",
+    "Telefono invalido",
     "Descartado",
     "Propiedad no disponible",
+    "Publicacion expirada",
     "Publicación expirada",
     "No interesado",
     "Duplicado",
+    "DUPLICADO",
     "DESCARTADO",
 )
 KPI_WORKED_STATES = KPI_MANAGEMENT_STATES + CAPTURED_STATES + DISCARDED_STATES
+
+# Single source of truth for operational capacity and distribution. Keep the
+# canonical KPI states above and include legacy spellings only as aliases so
+# historical documents cannot consume open capacity accidentally.
+CAPTACION_TERMINAL_STATES = tuple(dict.fromkeys(CAPTURED_STATES + DISCARDED_STATES))
+
+
+def is_terminal_captacion_state(value):
+    """Return whether a management state is terminal for captacion work."""
+    return value in CAPTACION_TERMINAL_STATES
 
 
 def build_kpi_queries(base_query):

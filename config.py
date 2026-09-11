@@ -66,6 +66,12 @@ class Config:
     CAPTACION_DISTRIBUTION_METRICS_COLLECTION = os.getenv(
         "CAPTACION_DISTRIBUTION_METRICS_COLLECTION", "captacion_distribution_runs"
     )
+    CAPTACION_DISTRIBUTION_LOCK_COLLECTION = os.getenv(
+        "CAPTACION_DISTRIBUTION_LOCK_COLLECTION", "captacion_distribution_locks"
+    )
+    CAPTACION_DISTRIBUTION_LOCK_TTL_SECONDS = max(
+        30, int(os.getenv("CAPTACION_DISTRIBUTION_LOCK_TTL_SECONDS", "900"))
+    )
     CAPTACION_DAILY_PRODUCTION_ENABLED = os.getenv("CAPTACION_DAILY_PRODUCTION_ENABLED", "false").lower() == "true"
     CAPTACION_DAILY_DELIVERY_COLLECTION = os.getenv(
         "CAPTACION_DAILY_DELIVERY_COLLECTION", "captacion_daily_deliveries"

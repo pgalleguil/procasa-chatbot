@@ -939,7 +939,8 @@ def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
     assert "Sin eventos recientes visibles" in zero
     assert "Consulta registrada" not in zero
     assert "Consulta registrada" in nonzero
-    assert "Dónde está publicada su propiedad" in nonzero
+    assert "Presencia comercial" in nonzero
+    assert "Su propiedad, visible en múltiples canales" in nonzero
     assert "Durante los últimos 30 días se registraron 1 consultas" in nonzero
 
 
@@ -1021,6 +1022,58 @@ def test_convergent_without_comparables_uses_real_kpi_fallback_and_compact_marke
 def test_convergent_market_context_explicitly_says_observed_publications(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert "avisos observados y no necesariamente propiedades únicas" in text
+
+
+def test_convergent_presence_marquee_renders_only_verified_channels_and_deduplicates_counter(monkeypatch):
+    doc = master_doc("PRESENCE")
+    doc["publicaciones"] = {
+        "yapo": {"publicaciones": {"venta": {"code": "YA-1", "estado": "active"}}},
+        "toctoc": {"publicaciones": {"venta": {"code": "TO-1", "estado": "draft"}}},
+    }
+    text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/PRESENCE").text
+    assert 'aria-label="1 canales activos"' in text
+    assert text.count('data-portal-id="yapo"') == 2
+    assert 'data-portal-id="toctoc"' not in text
+    assert "Publicación verificada" in text
+    assert "1 canales con presencia verificada" in text
+
+
+@pytest.mark.parametrize("count", (1, 3, 6))
+def test_convergent_presence_marquee_supports_one_three_and_six_verified_channels(monkeypatch, count):
+    catalog = (
+        ("portal_inmobiliario", "Portal Inmobiliario"),
+        ("toctoc", "TOCTOC"),
+        ("yapo", "Yapo"),
+        ("chilepropiedades", "ChilePropiedades"),
+        ("proppit", "Proppit"),
+        ("procasa", "Procasa"),
+    )
+    doc = master_doc("PRESENCE-SIZES")
+    doc["publicaciones"] = {
+        portal_id: {"publicaciones": {"venta": {"code": f"{portal_id}-1", "estado": "active"}}}
+        for portal_id, _portal_name in catalog[:count]
+    }
+    text = internal_client(monkeypatch, make_db(doc)).get("/owner-portal-convergent/PRESENCE-SIZES").text
+    assert f'aria-label="{count} canales activos"' in text
+    assert text.count("class=\"portal-marquee-sequence\"") == 2
+    for portal_id, portal_name in catalog[:count]:
+        assert text.count(f'data-portal-id="{portal_id}"') == 2
+        assert portal_name in text
+
+
+def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contract():
+    from pathlib import Path
+
+    text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
+    assert "@keyframes portal-marquee" in text
+    assert "animation-play-state:paused" in text
+    assert "portal-marquee-sequence + .portal-marquee-sequence" in text
+    assert "overflow-x:auto" in text
+    assert "touch-action:pan-x" in text
+    assert "prefers-reduced-motion:reduce" in text
+    assert "owner_email" not in text
+    assert "owner_phone" not in text
+    assert "direccion_exacta" not in text
 
 
 def test_convergent_template_has_mobile_and_reduced_motion_contract():

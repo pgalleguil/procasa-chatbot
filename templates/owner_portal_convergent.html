@@ -114,9 +114,30 @@
     .context-item p { margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
     .management-grid { display:grid; grid-template-columns:1fr 1fr; gap:45px; }
     .management-block h3 { margin:0 0 12px; color:var(--navy); font:400 25px/1.05 Georgia,serif; }
-    .channels { display:flex; flex-wrap:wrap; gap:8px; }
-    .channel { padding:8px 11px; border:1px solid var(--line); color:var(--navy); background:var(--white); font-size:11px; font-weight:800; }
-    .channel small { display:block; margin-top:2px; color:var(--muted); font-size:9px; font-weight:600; }
+    .presence-block { min-width:0; }
+    .presence-heading { display:flex; align-items:end; justify-content:space-between; gap:22px; margin-bottom:18px; }
+    .presence-heading h3 { margin:3px 0 0; }
+    .presence-copy { max-width:410px; margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+    .presence-count { flex:0 0 auto; min-width:88px; padding-left:16px; border-left:1px solid var(--line); text-align:right; }
+    .presence-count strong { display:block; color:var(--navy); font:400 29px/1 Georgia,serif; letter-spacing:-.05em; }
+    .presence-count span { display:block; margin-top:4px; color:var(--muted); font-size:9px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
+    .portal-marquee { position:relative; width:100%; overflow:hidden; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--white); }
+    .portal-marquee::before,.portal-marquee::after { content:""; position:absolute; z-index:2; top:0; bottom:0; width:32px; pointer-events:none; }
+    .portal-marquee::before { left:0; background:linear-gradient(90deg,var(--white),transparent); }
+    .portal-marquee::after { right:0; background:linear-gradient(270deg,var(--white),transparent); }
+    .portal-marquee-track { display:flex; width:max-content; animation:portal-marquee var(--portal-marquee-duration,34s) linear infinite; will-change:transform; }
+    .portal-marquee:hover .portal-marquee-track,.portal-marquee:focus-within .portal-marquee-track { animation-play-state:paused; }
+    .portal-marquee-sequence { display:flex; flex:0 0 max-content; gap:14px; min-width:100%; padding:14px; }
+    .portal-channel { display:flex; flex:0 0 160px; flex-direction:column; justify-content:center; min-height:62px; padding:11px 14px 10px; border:1px solid var(--line); color:var(--navy); background:var(--page); transition:color .25s ease,background .25s ease,border-color .25s ease,transform .25s ease,box-shadow .25s ease; }
+    .portal-channel:hover,.portal-channel:focus-visible { border-color:var(--gold); color:var(--navy); background:var(--white); box-shadow:0 8px 16px rgba(29,42,44,.08); transform:scale(1.03); outline:none; }
+    .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { color:var(--gold-dark); }
+    .portal-wordmark { display:block; overflow:hidden; color:var(--navy); font-size:14px; font-weight:850; letter-spacing:.02em; text-overflow:ellipsis; white-space:nowrap; filter:grayscale(1); opacity:.68; transition:color .25s ease,filter .25s ease,opacity .25s ease; }
+    .portal-channel:hover .portal-wordmark,.portal-channel:focus-visible .portal-wordmark { filter:none; opacity:1; }
+    .portal-channel small { display:block; margin-top:5px; color:var(--muted); font-size:9px; font-weight:650; }
+    .portal-logo { display:block; width:74px; height:26px; object-fit:contain; object-position:left center; filter:grayscale(1); mix-blend-mode:multiply; opacity:.7; transition:filter .25s ease,opacity .25s ease; }
+    .portal-channel:hover .portal-logo,.portal-channel:focus-visible .portal-logo { filter:none; opacity:1; }
+    .portal-empty { padding:15px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+    @keyframes portal-marquee { from { transform:translateX(0); } to { transform:translateX(-50%); } }
     .timeline { position:relative; display:grid; gap:0; }
     .timeline::before { content:""; position:absolute; top:8px; bottom:8px; left:4px; width:1px; background:var(--line); }
     .timeline-item { position:relative; display:grid; grid-template-columns:18px 1fr auto; gap:11px; padding:0 0 9px; }
@@ -194,13 +215,21 @@
       .comp-cell strong { margin-top:3px; }
       .comp-cell span { margin-top:1px; }
       .management-grid { gap:34px; }
+      .presence-heading { display:block; }
+      .presence-count { display:flex; align-items:baseline; gap:7px; margin-top:16px; padding:0; border-left:0; text-align:left; }
+      .presence-count strong { font-size:26px; }
+      .portal-marquee { overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; touch-action:pan-x; }
+      .portal-marquee-track { animation:none; }
+      .portal-marquee-sequence { min-width:auto; }
+      .portal-marquee-sequence + .portal-marquee-sequence { display:none; }
+      .portal-channel { flex-basis:156px; }
       .closing { margin-top:38px; padding:25px 21px; }
       .closing h2 { font-size:27px; }
       .footer { display:block; margin-top:28px; padding-bottom:31px; }
       .footer-logo { margin-bottom:9px; }
       .footer-right { margin-top:12px; text-align:left; }
     }
-    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none !important; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none !important; } .portal-marquee-track { animation:none; } .portal-marquee-sequence + .portal-marquee-sequence { display:none; } .portal-marquee { overflow-x:auto; } }
   </style>
 </head>
 <body>
@@ -249,7 +278,7 @@
 
     <section class="section" id="gestion" aria-labelledby="gestion-title">
       <div class="section-heading"><div><div class="eyebrow">Actividad verificable</div><h2 id="gestion-title">Gestión PROCASA</h2></div><p>Presencia activa y eventos comerciales registrados para su propiedad, sin exponer registros internos.</p></div>
-      <div class="management-grid"><div class="management-block"><h3>Dónde está publicada su propiedad</h3><div class="channels">{% if view.publications %}{% for publication in view.publications %}<div class="channel">{{ publication.portal_name }}<small>{% if publication.published_at %}Publicado {{ publication.published_at }}{% elif publication.updated_at %}Actualizado {{ publication.updated_at }}{% else %}Presencia verificada{% endif %}</small></div>{% endfor %}{% else %}<div class="channel">Sin portales confirmados<small>No hay una publicación activa verificable.</small></div>{% endif %}</div><p class="chart-note">{{ view.publications|length }} canales con presencia verificada al momento del informe.</p></div><div class="management-block"><h3>Registros recientes</h3><div class="timeline">{% if view.timeline %}{% for event in view.timeline[:5] %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">{{ event.label }}</div><div class="timeline-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="timeline-date">{{ event.period }}</div></div>{% endfor %}{% else %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">Sin eventos recientes visibles</div><div class="timeline-detail">No hay un registro fechado suficiente para mostrar.</div></div><div class="timeline-date">—</div></div>{% endif %}</div></div></div>
+      <div class="management-grid"><div class="management-block presence-block"><div class="presence-heading"><div><div class="eyebrow">Presencia comercial</div><h3>Su propiedad, visible en múltiples canales</h3><p class="presence-copy">Actualmente mantenemos publicación verificada en los siguientes portales inmobiliarios.</p></div><div class="presence-count" aria-label="{{ view.publications|length }} canales activos"><strong>{{ view.publications|length }}</strong><span>canales activos</span></div></div>{% if view.publications %}<div class="portal-marquee" data-portal-marquee style="--portal-marquee-duration:34s" aria-label="Canales con publicación verificada"><div class="portal-marquee-track">{% for sequence in range(2) %}<div class="portal-marquee-sequence"{% if sequence == 1 %} aria-hidden="true"{% endif %}>{% for publication in view.publications %}<div class="portal-channel" data-portal-id="{{ publication.portal_id }}"{% if sequence == 0 %} tabindex="0"{% endif %} title="Publicación verificada">{% if publication.portal_id == 'procasa' %}<img class="portal-logo" src="/static/logo.png" alt="Procasa">{% else %}<span class="portal-wordmark">{{ publication.portal_name }}</span>{% endif %}<small>Publicación verificada</small></div>{% endfor %}</div>{% endfor %}</div></div>{% else %}<div class="portal-empty">No hay portales confirmados. Mostraremos aquí los canales cuando exista una publicación activa verificable.</div>{% endif %}<p class="chart-note">{{ view.publications|length }} canales con presencia verificada al momento del informe.</p></div><div class="management-block"><h3>Registros recientes</h3><div class="timeline">{% if view.timeline %}{% for event in view.timeline[:5] %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">{{ event.label }}</div><div class="timeline-detail">{{ event.detail }} · {{ event.source }}</div></div><div class="timeline-date">{{ event.period }}</div></div>{% endfor %}{% else %}<div class="timeline-item"><span class="timeline-dot" aria-hidden="true"></span><div><div class="timeline-title">Sin eventos recientes visibles</div><div class="timeline-detail">No hay un registro fechado suficiente para mostrar.</div></div><div class="timeline-date">—</div></div>{% endif %}</div></div></div>
     </section>
 
     <section class="closing" aria-labelledby="closing-title"><div><h2 id="closing-title">Estamos para acompañarle en la toma de decisiones</h2><p>Este informe reúne la actividad comercial registrada y referencias de mercado para facilitar la conversación sobre los próximos pasos de su propiedad.</p></div><button type="button" aria-disabled="true">Hablar con mi ejecutivo</button></section>

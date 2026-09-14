@@ -298,6 +298,11 @@ def strip_volatile_for_audit(value, parent_key=""):
                 continue
             if k in {"historial_cambios", "versiones", "versiones_historial"}:
                 continue
+            # The semantic vector is derived data.  It must not make a
+            # property look commercially changed or create a new snapshot
+            # when it is regenerated.
+            if k in {"vector_descripcion", "embedding_pending"}:
+                continue
             cleaned[k] = strip_volatile_for_audit(v, k)
         return cleaned
     if isinstance(value, list):

@@ -75,11 +75,10 @@ def log_memory_diagnostics(stage: str) -> None:
     )
 
 # --- CONFIGURACIÓN ---
-# NOTA: FastEmbed + ONNX Runtime consume ~200-250MB en carga, causando OOM en Render (512MB).
-# Solución: Se elimina la carga del modelo local. El sistema de RAG funciona en modo
-# "structured-only" cuando no hay embeddings disponibles, usando los vectores pre-calculados
-# en MongoDB para el ranking de cosine similarity (sin necesidad de re-generar embeddings
-# en runtime). Para re-generar embeddings, usar run_embeddings.py de forma local/offline.
+# NOTA: FastEmbed + ONNX Runtime consume ~200-250MB en carga. El modelo se
+# mantiene lazy y sólo se solicita en ejecuciones explícitas de generación de
+# embeddings (por ejemplo, el sincronizador operativo manual). La búsqueda
+# sigue funcionando en modo structured-only si el modelo no está disponible.
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 _model_instance = None
@@ -88,9 +87,9 @@ _model_load_attempted = False  # Evita reintentos infinitos
 def get_model():
     """
     Singleton lazy-load del modelo de embeddings.
-    IMPORTANTE: Solo se usa para el script offline run_embeddings.py.
-    En producción (Render 512MB), el modelo NO se carga para evitar OOM.
-    Los vectores ya están pre-calculados en MongoDB.
+    El modelo sólo se carga cuando un flujo explícito solicita un vector. Los
+    lectores de búsqueda y los dry-runs no lo cargan. En un entorno con poca
+    memoria el guard continúa rechazando la carga para evitar un OOM.
     """
     global _model_instance, _model_load_attempted
     if _model_instance is not None:

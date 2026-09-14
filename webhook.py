@@ -204,6 +204,7 @@ background_tasks_status = {
     "ficha_sync": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None},
+    "phone_reconciliation": {"status": "starting", "last_heartbeat": None},
     "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
 }
 _OAUTH_HTTP_CLIENT = None
@@ -919,6 +920,8 @@ async def lifespan(app: FastAPI):
         from captacion_goals import ensure_captacion_goal_indexes
         from chatbot.storage import get_db
         ensure_captacion_goal_indexes(get_db())
+        from captacion_phone_reconciliation import ensure_phone_reconciliation_indexes
+        ensure_phone_reconciliation_indexes(get_db())
         logger.info("Captacion indexes: OK")
     except Exception as e:
         logger.warning(f"Captacion indexes warning: {e}")
@@ -963,6 +966,19 @@ async def lifespan(app: FastAPI):
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
+    phone_reconciliation_task = None
+    try:
+        from captacion_phone_reconciliation import phone_reconciliation_worker_loop
+        phone_reconciliation_task = asyncio.create_task(
+            phone_reconciliation_worker_loop(background_tasks_status["phone_reconciliation"])
+        )
+        logger.info(
+            "[CP_PHONE_RECONCILIATION] worker scheduled enabled=%s",
+            Config.PHONE_RECONCILIATION_ENABLED and Config.PHONE_LEARNING_ENABLED,
+        )
+    except Exception:
+        background_tasks_status["phone_reconciliation"].update({"status": "error", "health": "CONFIG_ERROR"})
+        logger.exception("[CP_PHONE_RECONCILIATION] worker startup failed")
     sla_alert_task = None
     sla_reassignment_task = None
 
@@ -1147,6 +1163,8 @@ async def lifespan(app: FastAPI):
         sla_reassignment_task.cancel()
     if non_hot_digest_task is not None:
         non_hot_digest_task.cancel()
+    if phone_reconciliation_task is not None:
+        phone_reconciliation_task.cancel()
     if prop360_task is not None:
         prop360_task.cancel()
     try:
@@ -1155,6 +1173,7 @@ async def lifespan(app: FastAPI):
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),
+            *([phone_reconciliation_task] if phone_reconciliation_task is not None else []),
             *([prop360_task] if prop360_task is not None else []),
             return_exceptions=True
         )
@@ -4251,6 +4270,7 @@ async def api_update_captacion(request: Request):
 
 @app.post("/api/captacion/contact")
 async def api_update_captacion_contact(request: Request):
+    _contact_started = time.perf_counter()
     try:
         await get_current_user(request)
         user_doc = await get_current_user_doc(request)
@@ -4292,6 +4312,11 @@ async def api_update_captacion_contact(request: Request):
     except Exception as e:
         logger.error(f"Error updating captacion contact: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        logger.info(
+            "[CAPTACION_CONTACT_PERF] total_ms=%.1f global_reconciliation_in_request=false",
+            (time.perf_counter() - _contact_started) * 1000,
+        )
 
 
 @app.post("/api/captacion/log_action")

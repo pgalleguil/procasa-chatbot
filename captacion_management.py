@@ -159,6 +159,29 @@ def _record_contact_identity_feedback(db, property_doc: dict, event: dict, comme
         logging.getLogger(__name__).exception("No se pudo persistir identidad de contacto")
 
 
+def _actor_assignment_context(property_doc: dict | None, actor_user: dict | None) -> dict:
+    """Keep the assigned executive separate from the user performing the action."""
+    property_doc = property_doc or {}
+    actor_user = actor_user or {}
+    gestion = property_doc.get("gestion") or {}
+    assigned_name = str(
+        gestion.get("ejecutivo_nombre")
+        or gestion.get("ejecutivo_asignado")
+        or ""
+    ).strip()
+    if assigned_name.casefold() in {"sin asignar", "sin asignado", "unassigned", "none", "null"}:
+        assigned_name = ""
+    return {
+        "assigned_executive_id": clean_id(
+            gestion.get("ejecutivo_id")
+            or gestion.get("assigned_to")
+            or gestion.get("assigned_to_id")
+        ),
+        "assigned_executive_name": assigned_name,
+        "actor_role": str(actor_user.get("rol") or actor_user.get("role") or "").strip(),
+    }
+
+
 def ensure_management_indexes(db) -> None:
     global _INDEXES_READY
     if _INDEXES_READY:
@@ -611,6 +634,23 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         )
         raise ValueError("El intento expiró; inicia una nueva gestión")
 
+    # Snapshot assignment context before writing the human event.  The actor
+    # may be a supervisor or personal account acting on behalf of an agent.
+    property_doc_snapshot = None
+    for candidate in (attempt.get("property_id"),):
+        if candidate in (None, ""):
+            continue
+        property_doc_snapshot = Config.get_captacion_collection(db).find_one({"_id": candidate})
+        if property_doc_snapshot:
+            break
+        try:
+            property_doc_snapshot = Config.get_captacion_collection(db).find_one({"_id": ObjectId(str(candidate))})
+        except Exception:
+            property_doc_snapshot = None
+        if property_doc_snapshot:
+            break
+    actor_assignment_context = _actor_assignment_context(property_doc_snapshot, actor_user)
+
     if result_value == CANCEL_RESULT:
         db[ATTEMPT_COLLECTION].update_one(
             {"attempt_id": attempt["attempt_id"], "status": "pending_confirmation"},
@@ -648,6 +688,7 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
         "legacy_inferred": False,
         "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
+        **actor_assignment_context,
     }
     try:
         credited, resolved_event_id = _write_credited_event_or_observation(db, event)
@@ -680,7 +721,7 @@ def confirm_management_attempt(db, *, attempt_id, actor_user: dict, result, note
             "ledger_event_id": resolved_event_id,
         }},
     )
-    property_doc_for_feedback = None
+    property_doc_for_feedback = property_doc_snapshot
     if credited:
         if commercial_result_value in COMMERCIAL_RESULT_STATUS:
             candidates = [attempt["property_id"]]
@@ -817,6 +858,7 @@ def record_manual_management_decision(
             "legacy_inferred": False,
             "non_credit_reason": "assignment_cycle_decision_already_recorded",
             "created_at": occurred_at.astimezone(timezone.utc),
+            **_actor_assignment_context(property_doc, actor_user),
         })
         return {
             "status": "not_credited",
@@ -853,6 +895,7 @@ def record_manual_management_decision(
         "legacy_inferred": False,
         "commercially_valid": True,
         "created_at": occurred_at.astimezone(timezone.utc),
+        **_actor_assignment_context(property_doc, actor_user),
     }
     credited, resolved_event_id = _write_credited_event_or_observation(db, event)
     if credited:
@@ -1218,5 +1261,3 @@ def audit_management_patterns(db, event: dict) -> list[dict]:
             upsert=True,
         )
     return [{"type": kind, "detail": detail} for kind, detail in findings]
-
-

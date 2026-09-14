@@ -294,6 +294,22 @@ class Config:
     # Un único kill switch controla lookup, identidad, auto-match y gate de
     # asignación. No existen flags operativos separados.
     PHONE_LEARNING_ENABLED = os.getenv("PHONE_LEARNING_ENABLED", "false").strip().lower() == "true"
+    # Prospective global broker-phone reconciliation.  It is independent from
+    # the lookup gate but follows the same feature boundary and remains
+    # kill-switchable without touching historical identities.
+    PHONE_RECONCILIATION_ENABLED = os.getenv("PHONE_RECONCILIATION_ENABLED", "true").strip().lower() == "true"
+    PHONE_RECONCILIATION_WORKER_INTERVAL_SECONDS = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_WORKER_INTERVAL_SECONDS", "3"))
+    )
+    PHONE_RECONCILIATION_LEASE_SECONDS = max(
+        10, int(os.getenv("PHONE_RECONCILIATION_LEASE_SECONDS", "120"))
+    )
+    PHONE_RECONCILIATION_MAX_ATTEMPTS = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_MAX_ATTEMPTS", "5"))
+    )
+    PHONE_RECONCILIATION_PAGE_SIZE = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_PAGE_SIZE", "100"))
+    )
 
     # === Modelos DeepSeek / compatibilidad heredada ===
     # DeepSeek V4 Flash es el modelo único de producción. No permitir que un

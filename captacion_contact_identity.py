@@ -236,6 +236,67 @@ def _identity_key(phone: str, seller_name: str) -> str:
     return f"phone:{phone}" if phone else ""
 
 
+def _identity_status(row: dict[str, Any] | None) -> str:
+    """Return the effective identity status without trusting stale labels."""
+    row = row or {}
+    explicit = str(row.get("status") or "").upper().strip()
+    if explicit:
+        return explicit
+    broker_count = int(row.get("confirmed_corredor_count") or 0)
+    owner_count = int(row.get("confirmed_owner_count") or 0)
+    if broker_count and owner_count:
+        return "CONFLICT"
+    if broker_count:
+        return "CORREDOR_CONFIRMED"
+    if owner_count:
+        return "OWNER_CONFIRMED"
+    return "UNRESOLVED"
+
+
+def _enqueue_phone_reconciliation_if_transitioned(
+    db,
+    *,
+    identity: dict[str, Any],
+    previous_status: str,
+    classification: str,
+    event_id: str,
+) -> bool:
+    """Create the durable job only for a new human broker transition.
+
+    The identity marker is written before this function is called.  If the
+    process dies between the identity write and this enqueue, the worker's
+    recovery scan reconstructs the missing job from that marker.  This keeps
+    the prospective boundary explicit and excludes HUMAN_BACKFILL rows.
+    """
+    if (
+        str(classification or "").upper() != "CORREDOR"
+        or str(previous_status or "").upper() == "CORREDOR_CONFIRMED"
+        or str(identity.get("status") or "").upper() != "CORREDOR_CONFIRMED"
+        or str(identity.get("classification") or "").upper() == "CONFLICT"
+    ):
+        return False
+    try:
+        from captacion_phone_reconciliation import enqueue_phone_reconciliation_job
+
+        return bool(
+            enqueue_phone_reconciliation_job(
+                db,
+                identity=identity,
+                human_feedback_event_id=event_id,
+            )
+        )
+    except Exception:
+        # Do not make a valid human management result fail because the
+        # asynchronous outbox is temporarily unavailable.  The persisted
+        # identity marker makes the next worker iteration recover it.
+        logger.exception(
+            "[CP_PHONE_RECONCILIATION] enqueue_failed identity_id=%s event_id=%s",
+            str(identity.get("_id") or identity.get("identity_key") or ""),
+            event_id,
+        )
+        return False
+
+
 def ensure_contact_identity_indexes(db) -> bool:
     global _INDEXES_READY
     if _INDEXES_READY:
@@ -563,6 +624,11 @@ def _record_human_feedback_locked(
         if event_id in existing_event_ids:
             return dict(existing)
 
+        previous_status = _identity_status(existing)
+        new_broker_transition = (
+            classification == "CORREDOR" and previous_status != "CORREDOR_CONFIRMED"
+        )
+
         now = _utc(event.get("occurred_at"))
         contact_features = calculate_contact_features(db, property_doc)
         phone_meta = _phone_metadata(property_doc, event)
@@ -633,7 +699,37 @@ def _record_human_feedback_locked(
                 )
                 if updated is None:
                     updated = collection.find_one({"identity_key": identity_key}) or {}
-                payload = _finalize_identity_payload(collection, updated, event, classification, evidence)
+                updated_broker_count = int(updated.get("confirmed_corredor_count") or 0)
+                updated_owner_count = int(updated.get("confirmed_owner_count") or 0)
+                updated_status = (
+                    "CONFLICT"
+                    if updated_broker_count and updated_owner_count
+                    else "CORREDOR_CONFIRMED"
+                    if updated_broker_count
+                    else "OWNER_CONFIRMED"
+                )
+                trigger_event_id = (
+                    event_id
+                    if new_broker_transition
+                    and updated_status == "CORREDOR_CONFIRMED"
+                    else ""
+                )
+                payload = _finalize_identity_payload(
+                    collection,
+                    updated,
+                    event,
+                    classification,
+                    evidence,
+                    reconciliation_trigger_event_id=trigger_event_id,
+                )
+                if trigger_event_id:
+                    payload["phone_reconciliation_job_enqueued"] = _enqueue_phone_reconciliation_if_transitioned(
+                        db,
+                        identity=payload,
+                        previous_status=previous_status,
+                        classification=classification,
+                        event_id=trigger_event_id,
+                    )
                 logger.info(
                     "[CP_BROKER_PROPAGATION] property_id=%s classification=%s phone=%s status=%s related_properties=%s",
                     evidence["property_id"], classification, _masked_phone(phone), payload.get("status"), payload.get("property_count", 0),
@@ -703,7 +799,25 @@ def _record_human_feedback_locked(
             "evidence_event_ids": _append_unique(list(existing_event_ids), event_id),
             "updated_at": datetime.now(timezone.utc),
         }
+        trigger_event_id = (
+            event_id
+            if new_broker_transition
+            and status == "CORREDOR_CONFIRMED"
+            and payload.get("classification") != "CONFLICT"
+            else ""
+        )
+        if trigger_event_id:
+            payload["phone_reconciliation_trigger_event_id"] = trigger_event_id
+            payload["phone_reconciliation_triggered_at"] = now
         collection.update_one({"identity_key": identity_key}, {"$set": payload}, upsert=True)
+        if trigger_event_id:
+            payload["phone_reconciliation_job_enqueued"] = _enqueue_phone_reconciliation_if_transitioned(
+                db,
+                identity=payload,
+                previous_status=previous_status,
+                classification=classification,
+                event_id=trigger_event_id,
+            )
         logger.info(
             "[CP_BROKER_PROPAGATION] property_id=%s classification=%s phone=%s status=%s related_properties=%s",
             evidence["property_id"], classification, _masked_phone(phone), status, payload["property_count"],
@@ -801,7 +915,15 @@ def record_automatic_broker_evidence(
         return dict(collection.find_one({"identity_key": identity_key}) or payload)
 
 
-def _finalize_identity_payload(collection, updated: dict[str, Any], event: dict[str, Any], classification: str, evidence: dict[str, Any]) -> dict[str, Any]:
+def _finalize_identity_payload(
+    collection,
+    updated: dict[str, Any],
+    event: dict[str, Any],
+    classification: str,
+    evidence: dict[str, Any],
+    *,
+    reconciliation_trigger_event_id: str = "",
+) -> dict[str, Any]:
     """Derive visible status after an atomic evidence append."""
     broker_count = int(updated.get("confirmed_corredor_count") or 0)
     owner_count = int(updated.get("confirmed_owner_count") or 0)
@@ -834,6 +956,9 @@ def _finalize_identity_payload(collection, updated: dict[str, Any], event: dict[
         "phone_version": evidence.get("phone_version") or updated.get("phone_version") or 1,
         "updated_at": datetime.now(timezone.utc),
     }
+    if reconciliation_trigger_event_id:
+        payload["phone_reconciliation_trigger_event_id"] = reconciliation_trigger_event_id
+        payload["phone_reconciliation_triggered_at"] = evidence.get("occurred_at") or datetime.now(timezone.utc)
     collection.update_one({"identity_key": updated.get("identity_key")}, {"$set": payload}, upsert=False)
     updated.update(payload)
     return dict(updated)

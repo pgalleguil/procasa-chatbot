@@ -2194,6 +2194,18 @@ def run(args, office_id: int | None = None) -> int:
         scrape_list = scrape_list[: args.limit]
 
     if not scrape_list:
+        if not args.dry_run:
+            try:
+                from chatbot.inventory_reconciliation import reconcile_waiting_inventory_events
+                reconciliation = reconcile_waiting_inventory_events(
+                    coll.database,
+                    properties=None,
+                )
+                log.info("[INVENTORY_RECONCILE] sync sin fichas nuevas: %s", reconciliation)
+            except Exception:
+                # A reconciliation failure must be observable but must not
+                # turn a successful inventory sync into a failed scrape.
+                log.exception("[INVENTORY_RECONCILE] fallo en recuperación de pendientes")
         log.info("No hay propiedades para scrapear. Bajas=%s", bajas)
         mongo_client.close()
         return 0
@@ -2261,6 +2273,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
     ok_count = nuevo_count = upd_count = err_count = 0
     errores = []
     tipos_detectados = {}
+    synced_docs = []
 
     for i, codigo in enumerate(scrape_list, start=1):
         log.info(f"[{i}/{len(scrape_list)}] Procesando código {codigo}…")
@@ -2275,6 +2288,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
                 ok_count += 1
                 continue
             nuevo, actualizado = upsert_ficha(coll, doc)
+            synced_docs.append(doc)
             if nuevo:
                 nuevo_count += 1
                 log.info(f"[{codigo}] → NUEVO insertado.")
@@ -2291,6 +2305,32 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
             if not args.dry_run:
                 upsert_error(coll, codigo, str(exc))
         client._wait()
+
+    if not args.dry_run and err_count == 0:
+        try:
+            from chatbot.inventory_reconciliation import reconcile_waiting_inventory_events
+            reconciliation = reconcile_waiting_inventory_events(
+                coll.database,
+                properties=synced_docs,
+            )
+            log.info("[INVENTORY_RECONCILE] lote exitoso: %s", reconciliation)
+            # Recover a small bounded backlog as well. This covers a previous
+            # partial sync without turning reconciliation into a server loop.
+            backlog_reconciliation = reconcile_waiting_inventory_events(
+                coll.database,
+                properties=None,
+                limit=50,
+            )
+            log.info("[INVENTORY_RECONCILE] recuperación acotada: %s", backlog_reconciliation)
+        except Exception:
+            # Inventory data remains valid even if commercial reconciliation
+            # needs to be recovered by the next successful sync.
+            log.exception("[INVENTORY_RECONCILE] fallo al reconciliar pendientes")
+    elif not args.dry_run and err_count:
+        log.warning(
+            "[INVENTORY_RECONCILE] omitida por lote con errores: %s",
+            ", ".join(errores[:20]),
+        )
 
     W = 56
     print("\n" + "═" * W)

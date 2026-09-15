@@ -1,9 +1,10 @@
-"""Prospective CRM SLA reassignment worker in shadow mode.
+"""CRM SLA reassignment evaluator and frozen candidate selector.
 
 This module is deliberately invocation-only.  Importing it does not create a
 Mongo client, schedule a task, call the transaction executor, send a message,
-or mutate a lead/cycle.  The worker stops after producing an analytical
-``SLAReassignmentShadowEvaluation`` and an in-memory ``SLAReassignmentDecision``.
+or mutate a lead/cycle.  Shadow mode produces an analytical
+``SLAReassignmentShadowEvaluation`` and an in-memory decision; live mode
+returns the same decision contract to the guarded runtime for execution.
 
 The selection logic is delegated to the frozen Phase 1G helpers.  Persistent
 distribution state is reconstructed from committed audit events; shadow
@@ -1126,6 +1127,7 @@ def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, bra
 async def run_sla_reassignment_worker_iteration(
     db: Any = None,
     *,
+    execution_mode: str = "shadow",
     now: Any = None,
     cutover_at: Any = None,
     shadow_cutover_at: Any = None,
@@ -1144,26 +1146,49 @@ async def run_sla_reassignment_worker_iteration(
     """Run exactly one prospective worker iteration.
 
     The function is fail-closed for configuration/DB/snapshot failures and
-    isolates malformed individual cycles.  It never imports or calls the
-    transaction executor.
+    isolates malformed individual cycles.  Evaluation and selection are shared
+    by shadow/live modes; only the live runtime may execute returned decisions.
     """
     started = time.perf_counter()
     result = SLAWorkerIterationResult(status="disabled")
+    execution_mode = str(execution_mode or "shadow").strip().lower()
+    if execution_mode not in {"shadow", "live"}:
+        result.status = "invalid_execution_mode"
+        result.errors += 1
+        result.error_codes.append("INVALID_EXECUTION_MODE")
+        result.duration_ms = (time.perf_counter() - started) * 1000.0
+        return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     if not bool(_cfg("CRM_SLA_REASSIGNMENT_WORKER_ENABLED", False)):
         result.status = "disabled"
         result.duration_ms = (time.perf_counter() - started) * 1000.0
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
-    if not bool(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", False)):
-        result.status = "shadow_required"
-        result.duration_ms = (time.perf_counter() - started) * 1000.0
-        return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
-    if bool(_cfg("CRM_SLA_REASSIGNMENT_ENABLED", False)):
-        result.status = "shadow_execution_guard_abort"
-        result.errors += 1
-        result.error_codes.append("MASTER_REASSIGNMENT_MUST_REMAIN_DISABLED")
-        result.duration_ms = (time.perf_counter() - started) * 1000.0
-        logger.critical("[SLA_SHADOW_ERROR] SHADOW_EXECUTOR_GUARD_ABORT master_reassignment=true")
-        return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": [], "executor_calls": 0, "business_writes": 0}
+    if execution_mode == "shadow":
+        if not bool(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", False)):
+            result.status = "shadow_required"
+            result.duration_ms = (time.perf_counter() - started) * 1000.0
+            return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
+        if bool(_cfg("CRM_SLA_REASSIGNMENT_ENABLED", False)):
+            result.status = "shadow_execution_guard_abort"
+            result.errors += 1
+            result.error_codes.append("MASTER_REASSIGNMENT_MUST_REMAIN_DISABLED")
+            result.duration_ms = (time.perf_counter() - started) * 1000.0
+            logger.critical("[SLA_SHADOW_ERROR] SHADOW_EXECUTOR_GUARD_ABORT master_reassignment=true")
+            return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": [], "executor_calls": 0, "business_writes": 0}
+    else:
+        if not (
+            bool(_cfg("CRM_SLA_REASSIGNMENT_ENABLED", False))
+            and bool(_cfg("CRM_SLA_TRANSACTION_GATE_ENABLED", False))
+            and bool(_cfg("CRM_SLA_SECURITY_LAYER_ENABLED", False))
+        ):
+            result.status = "live_gate_required"
+            result.duration_ms = (time.perf_counter() - started) * 1000.0
+            return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": [], "executor_calls": 0, "business_writes": 0}
+        if bool(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", False)):
+            result.status = "live_shadow_conflict"
+            result.errors += 1
+            result.error_codes.append("SHADOW_AND_LIVE_CANNOT_RUN_TOGETHER")
+            result.duration_ms = (time.perf_counter() - started) * 1000.0
+            return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": [], "executor_calls": 0, "business_writes": 0}
     as_of = _utc(now) or utc_now()
     using_shadow_cutover = cutover_at is None
     shadow_state_mode = shadow_cutover_at is not None or using_shadow_cutover
@@ -1250,7 +1275,7 @@ async def run_sla_reassignment_worker_iteration(
         existing_shadow = await load_existing_shadow_documents(
             db, [_text(row.get("assignment_cycle_id")) for row in cycles],
             read_instrumentation=read_instrumentation,
-        ) if db is not None else {}
+        ) if db is not None and execution_mode == "shadow" else {}
         for cycle in cycles:
             lead = (context.get("leads_by_id") or {}).get(_text(cycle.get("lead_id")))
             if lead:
@@ -1372,6 +1397,19 @@ async def run_sla_reassignment_worker_iteration(
             1 for evaluation in evaluations
             if evaluation.get("would_execute") and not (existing_shadow.get(_text(evaluation.get("source_cycle_id"))) or {}).get("shadow_assignment_counted_at")
         )
+        if execution_mode == "live":
+            result.status = "live_evaluation"
+            result.duration_ms = (time.perf_counter() - started) * 1000.0
+            return {
+                "status": result.status, "iteration": result.to_dict(), "evaluations": evaluations, "decisions": decisions,
+                "next_page_token": scan_result.get("next_page_token"), "batch_size": size,
+                "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
+                "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
+                "query_documents_examined": scan_result.get("documents_examined", 0),
+                "shadow_storage_status": "NOT_APPLICABLE", "shadow_storage_writes": 0,
+                "shadow_storage_ms": 0.0, "new_shadow_would_execute": 0,
+                "executor_calls": 0, "business_writes": 0,
+            }
         if db is not None:
             persist_started = time.perf_counter()
             decision_by_id = {_text(row.get("decision_id")): row for row in decisions}

@@ -921,8 +921,10 @@ async def lifespan(app: FastAPI):
         from chatbot.storage import get_db
         ensure_captacion_goal_indexes(get_db())
         from captacion_phone_reconciliation import ensure_phone_reconciliation_indexes
-        ensure_phone_reconciliation_indexes(get_db())
-        logger.info("Captacion indexes: OK")
+        if ensure_phone_reconciliation_indexes(get_db()):
+            logger.info("Captacion indexes: OK")
+        else:
+            logger.warning("[CP_PHONE_RECONCILIATION] index_setup_blocked startup=true")
     except Exception as e:
         logger.warning(f"Captacion indexes warning: {e}")
 

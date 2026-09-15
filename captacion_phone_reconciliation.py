@@ -84,6 +84,32 @@ PHONE_FIELDS = (
 logger = logging.getLogger(__name__)
 _INDEXES_READY = False
 _INDEX_LOCK = threading.Lock()
+_INDEX_SETUP_NEXT_RETRY_AT = 0.0
+_INDEX_SETUP_LAST_FAILURE_AT = 0.0
+
+# MongoDB includes the index name in the index specification, but the name is
+# not part of the index semantics.  These are the options that can change the
+# behavior of an index and therefore must match before an existing index is
+# reused.  ``name``, ``ns`` and ``v`` are intentionally excluded.
+_INDEX_FUNCTIONAL_OPTIONS = (
+    "unique",
+    "sparse",
+    "partialFilterExpression",
+    "collation",
+    "expireAfterSeconds",
+    "hidden",
+    "wildcardProjection",
+    "weights",
+    "default_language",
+    "language_override",
+    "textIndexVersion",
+    "2dsphereIndexVersion",
+    "bits",
+    "min",
+    "max",
+    "bucketSize",
+)
+_INDEX_OPTION_DEFAULTS = {"unique": False, "sparse": False}
 
 
 def reconciliation_enabled() -> bool:
@@ -269,39 +295,173 @@ def _initial_metrics() -> dict[str, Any]:
     }
 
 
+def _canonical_index_value(value: Any) -> Any:
+    """Make SON/dict/list index metadata comparable without exposing secrets."""
+    if hasattr(value, "items"):
+        return tuple(
+            (str(key), _canonical_index_value(item))
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_canonical_index_value(item) for item in value)
+    return value
+
+
+def _index_signature(spec: dict[str, Any]) -> tuple[Any, Any]:
+    key = spec.get("key") or {}
+    key_pattern = tuple((str(field), direction) for field, direction in key.items())
+    options = {}
+    for option in _INDEX_FUNCTIONAL_OPTIONS:
+        if option in spec:
+            value = spec[option]
+        elif option in _INDEX_OPTION_DEFAULTS:
+            value = _INDEX_OPTION_DEFAULTS[option]
+        else:
+            continue
+        options[option] = _canonical_index_value(value)
+    return key_pattern, tuple(sorted(options.items()))
+
+
+def _ensure_index_idempotent(collection, keys, *, name: str, **options) -> str:
+    """Reuse an equivalent index even when its product name differs.
+
+    Existing indexes are never renamed, dropped, or recreated.  A same-key
+    index with incompatible functional options is a deployment-blocking
+    configuration error and is surfaced to the caller.
+    """
+    required = {"key": dict(keys), "name": name, **options}
+    required_signature = _index_signature(required)
+    existing = list(collection.list_indexes())
+
+    same_name = next((spec for spec in existing if spec.get("name") == name), None)
+    if same_name is not None:
+        if _index_signature(same_name) == required_signature:
+            logger.info(
+                "[CP_PHONE_RECONCILIATION] index_reused existing=%s required=%s",
+                same_name.get("name"),
+                name,
+            )
+            return str(same_name.get("name") or name)
+        raise RuntimeError(
+            "incompatible existing index with required name "
+            f"{name!r}: existing={_index_signature(same_name)!r} "
+            f"required={required_signature!r}"
+        )
+
+    same_key = [
+        spec for spec in existing
+        if _index_signature(spec)[0] == required_signature[0]
+    ]
+    equivalent = next(
+        (spec for spec in same_key if _index_signature(spec) == required_signature),
+        None,
+    )
+    if equivalent is not None:
+        logger.info(
+            "[CP_PHONE_RECONCILIATION] index_reused existing=%s required=%s",
+            equivalent.get("name"),
+            name,
+        )
+        return str(equivalent.get("name") or name)
+    if same_key:
+        conflicting = same_key[0]
+        raise RuntimeError(
+            "incompatible existing index options for key "
+            f"{required_signature[0]!r}: existing={_index_signature(conflicting)!r} "
+            f"required={required_signature!r}"
+        )
+
+    try:
+        collection.create_index(keys, name=name, **options)
+    except Exception:
+        # A second process may have created the index after our list_indexes()
+        # snapshot.  Re-read before failing so concurrent startup is safe.
+        refreshed = list(collection.list_indexes())
+        equivalent = next(
+            (
+                spec for spec in refreshed
+                if _index_signature(spec) == required_signature
+            ),
+        )
+        if equivalent is not None:
+            logger.info(
+                "[CP_PHONE_RECONCILIATION] index_reused existing=%s required=%s",
+                equivalent.get("name"),
+                name,
+            )
+            return str(equivalent.get("name") or name)
+        raise
+    logger.info("[CP_PHONE_RECONCILIATION] index_created name=%s", name)
+    return name
+
+
 def ensure_phone_reconciliation_indexes(db) -> bool:
-    """Create only scoped indexes; all are safe to run repeatedly."""
-    global _INDEXES_READY
+    """Ensure scoped indexes once, reusing compatible product indexes."""
+    global _INDEXES_READY, _INDEX_SETUP_NEXT_RETRY_AT, _INDEX_SETUP_LAST_FAILURE_AT
     if _INDEXES_READY:
         return True
+    now = time.monotonic()
+    if now < _INDEX_SETUP_NEXT_RETRY_AT:
+        return False
     with _INDEX_LOCK:
         if _INDEXES_READY:
             return True
+        now = time.monotonic()
+        if now < _INDEX_SETUP_NEXT_RETRY_AT:
+            return False
         try:
             jobs = db[JOB_COLLECTION]
-            jobs.create_index(
+            _ensure_index_idempotent(
+                jobs,
                 [("identity_id", 1), ("human_feedback_event_id", 1)],
                 unique=True,
                 name="phone_reconciliation_identity_event",
             )
-            jobs.create_index(
+            _ensure_index_idempotent(
+                jobs,
                 [("status", 1), ("lease_expires_at", 1), ("created_at", 1)],
                 name="phone_reconciliation_claim",
             )
-            jobs.create_index("job_key", unique=True, name="phone_reconciliation_job_key")
-            db[EVENT_COLLECTION].create_index(
+            _ensure_index_idempotent(
+                jobs,
+                [("job_key", 1)],
+                unique=True,
+                name="phone_reconciliation_job_key",
+            )
+            _ensure_index_idempotent(
+                db[EVENT_COLLECTION],
                 [("reconciliation_dedup_key", 1)],
                 unique=True,
                 sparse=True,
                 name="phone_reconciliation_event_dedup",
             )
             properties = db[PROPERTY_COLLECTION]
-            properties.create_index("phone_normalized", name="captacion_phone_normalized")
-            properties.create_index("telefono_normalizado", name="captacion_telefono_normalizado")
+            _ensure_index_idempotent(
+                properties,
+                [("phone_normalized", 1)],
+                name="captacion_phone_normalized",
+            )
+            _ensure_index_idempotent(
+                properties,
+                [("telefono_normalizado", 1)],
+                name="captacion_telefono_normalizado",
+            )
             _INDEXES_READY = True
+            _INDEX_SETUP_NEXT_RETRY_AT = 0.0
+            _INDEX_SETUP_LAST_FAILURE_AT = 0.0
             return True
         except Exception:
-            logger.exception("[CP_PHONE_RECONCILIATION] index_setup_failed")
+            retry_seconds = max(
+                5,
+                int(getattr(Config, "PHONE_RECONCILIATION_INDEX_RETRY_SECONDS", 60)),
+            )
+            _INDEX_SETUP_NEXT_RETRY_AT = time.monotonic() + retry_seconds
+            if (
+                not _INDEX_SETUP_LAST_FAILURE_AT
+                or time.monotonic() - _INDEX_SETUP_LAST_FAILURE_AT >= retry_seconds
+            ):
+                _INDEX_SETUP_LAST_FAILURE_AT = time.monotonic()
+                logger.exception("[CP_PHONE_RECONCILIATION] index_setup_failed")
             return False
 
 
@@ -343,7 +503,8 @@ def enqueue_phone_reconciliation_job(
         "last_error": None,
         "metrics": _initial_metrics(),
     }
-    ensure_phone_reconciliation_indexes(db)
+    if not ensure_phone_reconciliation_indexes(db):
+        return None
     jobs = db[JOB_COLLECTION]
     jobs.update_one(
         {"identity_id": identity_id, "human_feedback_event_id": event_id},
@@ -744,7 +905,12 @@ def run_phone_reconciliation_iteration(db, *, worker_id: str | None = None) -> d
     if not reconciliation_enabled():
         return {"status": "disabled", "recovered": 0, "processed": False}
     worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
-    ensure_phone_reconciliation_indexes(db)
+    if not ensure_phone_reconciliation_indexes(db):
+        return {
+            "status": "index_setup_failed",
+            "recovered": 0,
+            "processed": False,
+        }
     recovered = recover_missing_phone_reconciliation_jobs(db)
     job = _claim_next_job(db, worker_id=worker_id)
     if not job:

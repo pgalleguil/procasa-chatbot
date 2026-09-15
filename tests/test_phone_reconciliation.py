@@ -33,6 +33,8 @@ def db(monkeypatch):
     monkeypatch.setattr(Config, "PHONE_RECONCILIATION_PAGE_SIZE", 10)
     identity_module._INDEXES_READY = False
     reconciliation_module._INDEXES_READY = False
+    reconciliation_module._INDEX_SETUP_NEXT_RETRY_AT = 0.0
+    reconciliation_module._INDEX_SETUP_LAST_FAILURE_AT = 0.0
     return database
 
 
@@ -236,3 +238,85 @@ def test_indexes_and_exact_portal_scope(db):
     run_phone_reconciliation_iteration(db, worker_id="worker-1")
     assert db["captacion_management_events"].count_documents({"event_type": EVENT_TYPE}) == 1
     assert db[Config.CAPTACION_COLLECTION_NAME].find_one({"_id": "outside-1"})["gestion"]["estado"] == "NUEVO"
+
+
+def test_equivalent_product_index_is_reused_by_key_and_options(db, caplog):
+    properties = db[Config.CAPTACION_COLLECTION_NAME]
+    properties.create_index(
+        [("telefono_normalizado", 1)],
+        name="idx_captacion_phone_normalized",
+    )
+
+    with caplog.at_level("INFO"):
+        assert ensure_phone_reconciliation_indexes(db) is True
+
+    indexes = {index["name"]: index for index in properties.list_indexes()}
+    assert "idx_captacion_phone_normalized" in indexes
+    assert "captacion_telefono_normalizado" not in indexes
+    assert "index_reused existing=idx_captacion_phone_normalized" in caplog.text
+
+
+def test_repeated_startup_is_idempotent_and_keeps_index_names(db):
+    assert ensure_phone_reconciliation_indexes(db) is True
+    first = {
+        collection_name: [index["name"] for index in db[collection_name].list_indexes()]
+        for collection_name in (
+            JOB_COLLECTION,
+            "captacion_management_events",
+            Config.CAPTACION_COLLECTION_NAME,
+        )
+    }
+    assert ensure_phone_reconciliation_indexes(db) is True
+    second = {
+        collection_name: [index["name"] for index in db[collection_name].list_indexes()]
+        for collection_name in first
+    }
+    assert second == first
+
+
+def test_existing_outbox_indexes_with_product_names_are_reused(db, caplog):
+    jobs = db[JOB_COLLECTION]
+    jobs.create_index(
+        [("identity_id", 1), ("human_feedback_event_id", 1)],
+        unique=True,
+        name="product_identity_event",
+    )
+    jobs.create_index(
+        [("status", 1), ("lease_expires_at", 1), ("created_at", 1)],
+        name="product_claim",
+    )
+    jobs.create_index([("job_key", 1)], unique=True, name="product_job_key")
+    events = db["captacion_management_events"]
+    events.create_index(
+        [("reconciliation_dedup_key", 1)],
+        unique=True,
+        sparse=True,
+        name="product_event_dedup",
+    )
+
+    with caplog.at_level("INFO"):
+        assert ensure_phone_reconciliation_indexes(db) is True
+
+    assert {index["name"] for index in jobs.list_indexes()} == {
+        "_id_",
+        "product_identity_event",
+        "product_claim",
+        "product_job_key",
+    }
+    assert "product_event_dedup" in {index["name"] for index in events.list_indexes()}
+    assert "index_created name=phone_reconciliation_identity_event" not in caplog.text
+
+
+def test_incompatible_index_fails_without_destroying_existing_index(db):
+    properties = db[Config.CAPTACION_COLLECTION_NAME]
+    properties.create_index(
+        [("phone_normalized", 1)],
+        unique=True,
+        name="captacion_phone_normalized",
+    )
+
+    assert ensure_phone_reconciliation_indexes(db) is False
+
+    indexes = {index["name"]: index for index in properties.list_indexes()}
+    assert indexes["captacion_phone_normalized"]["unique"] is True
+    assert "captacion_telefono_normalizado" not in indexes

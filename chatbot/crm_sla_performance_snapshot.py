@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Mapping
 
 from .crm_sla_snapshot_queries import ReadInstrumentation, find_many
+from .mongo_identity import mongo_id_variants
 
 
 HISTORICAL_TTL_CANDIDATES = (60, 120, 300, 600)
@@ -386,7 +387,11 @@ async def build_historical_performance_snapshot(
         {"assigned_at": {"$gte": window_start, "$lte": as_of}, "assignment_cycle_id": {"$exists": True, "$ne": None}, "lead_id": {"$exists": True, "$ne": None}},
         cycle_projection, instrumentation=instrumentation, query_name="historical.cycles",
     )
-    lead_ids = list({row.get("lead_id") for row in cycles if row.get("lead_id") is not None})
+    lead_ids = []
+    for row in cycles:
+        for lead_key in mongo_id_variants(row.get("lead_id")):
+            if lead_key not in lead_ids:
+                lead_ids.append(lead_key)
     cycle_ids = list({row.get("assignment_cycle_id") for row in cycles if row.get("assignment_cycle_id") is not None})
     lead_projection = {
         "pipeline_stage": 1, "stage": 1, "crm_estado": 1, "ejecutivo_asignado": 1,
@@ -534,7 +539,11 @@ async def build_live_capacity_snapshot(
         if lead_key and (current is None or assigned >= previous):
             latest_by_lead[lead_key] = cycle
     cycles = list(latest_by_lead.values())
-    lead_ids = list({row.get("lead_id") for row in cycles if row.get("lead_id") is not None})
+    lead_ids = []
+    for row in cycles:
+        for lead_key in mongo_id_variants(row.get("lead_id")):
+            if lead_key not in lead_ids:
+                lead_ids.append(lead_key)
     cycle_ids = list({row.get("assignment_cycle_id") for row in cycles if row.get("assignment_cycle_id") is not None})
     leads, results, events = await asyncio.gather(
         _find_many(

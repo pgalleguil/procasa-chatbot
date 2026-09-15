@@ -11,11 +11,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
+import logging
 from typing import Any, Mapping
 
 from pymongo import ReturnDocument
 
 from config import Config
+
+from .mongo_identity import mongo_id_type, mongo_id_variants
+
+
+logger = logging.getLogger(__name__)
 
 
 class HumanProtectionType(str, Enum):
@@ -149,6 +156,14 @@ def _find_one(collection: Any, filter_: Mapping[str, Any], *, session: Any = Non
     return collection.find_one(filter_, session=session)
 
 
+def _safe_key(value: Any) -> str:
+    """Hash an identifier before putting it in an operational log."""
+
+    return hashlib.sha256(
+        f"{mongo_id_type(value)}:{str(value)}".encode("utf-8", "replace")
+    ).hexdigest()[:12]
+
+
 def claim_cycle_for_human_management(
     db: Any,
     *,
@@ -162,6 +177,7 @@ def claim_cycle_for_human_management(
 ) -> CycleGateResult:
     """Atomically claim protection for the current cycle, if the gate is on."""
 
+    requested_lead_id = lead_id
     lead_id = str(lead_id or "")
     cycle_id = str(assignment_cycle_id or "")
     actor_id = str(actor_user_id or "")
@@ -176,43 +192,73 @@ def claim_cycle_for_human_management(
         )
     protected_at = _utc(occurred_at) or datetime.now(timezone.utc)
     cycles = db["crm_assignment_cycles"]
-    current = _find_one(
-        cycles,
-        {"lead_id": lead_id, "assignment_cycle_id": cycle_id},
-        session=session,
-    )
+
+    lead_candidates = mongo_id_variants(requested_lead_id)
+
+    def find_cycle(*, requested_cycle_id: str | None = None, active_only: bool = False):
+        for candidate in lead_candidates:
+            query: dict[str, Any] = {"lead_id": candidate}
+            if requested_cycle_id is not None:
+                query["assignment_cycle_id"] = requested_cycle_id
+            if active_only:
+                query.update({"cycle_status": "active", "unassigned_at": None})
+            found = _find_one(cycles, query, session=session)
+            if found:
+                return found
+        return None
+
+    def finish(status: str, *, reason: str | None = None, **kwargs: Any) -> CycleGateResult:
+        result = CycleGateResult(status, lead_id, cycle_id, reason=reason, **kwargs)
+        if status != CycleGateStatus.GATE_DISABLED.value:
+            logger.log(
+                logging.INFO if status in {
+                    CycleGateStatus.CLAIMED.value,
+                    CycleGateStatus.ALREADY_PROTECTED.value,
+                } else logging.WARNING,
+                "[CRM_CYCLE_GATE] status=%s reason=%s lead_key=%s lead_id_type=%s "
+                "cycle_key=%s actor_key=%s",
+                status,
+                reason or "none",
+                _safe_key(requested_lead_id),
+                mongo_id_type(requested_lead_id),
+                _safe_key(cycle_id),
+                _safe_key(actor_id),
+            )
+        return result
+
+    current = find_cycle(requested_cycle_id=cycle_id)
     if not current:
-        active = _find_one(
-            cycles,
-            {"lead_id": lead_id, "cycle_status": "active", "unassigned_at": None},
-            session=session,
-        )
+        active = find_cycle(active_only=True)
         if active and str(active.get("assignment_cycle_id")) != cycle_id:
-            return CycleGateResult(
+            return finish(
                 CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value,
-                lead_id,
-                cycle_id,
                 reason="current_cycle_changed",
             )
-        return CycleGateResult(CycleGateStatus.CYCLE_NOT_FOUND.value, lead_id, cycle_id)
+        same_cycle = _find_one(
+            cycles, {"assignment_cycle_id": cycle_id}, session=session
+        ) if cycle_id else None
+        if same_cycle:
+            same_lead = same_cycle.get("lead_id")
+            reason = "lead_id_type_mismatch" if str(same_lead) == lead_id else "cycle_lead_mismatch"
+        else:
+            reason = "cycle_not_found"
+        return finish(CycleGateStatus.CYCLE_NOT_FOUND.value, reason=reason)
     if current.get("cycle_status") != "active" or current.get("unassigned_at") is not None:
-        return CycleGateResult(
+        return finish(
             CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value,
-            lead_id,
-            cycle_id,
             reason="cycle_not_active",
         )
     if not actor_can_manage_any_cycle and str(current.get("assigned_to_user_id")) != actor_id:
-        return CycleGateResult(
+        return finish(
             CycleGateStatus.OWNER_MISMATCH.value,
-            lead_id,
-            cycle_id,
             reason="actor_not_current_owner",
         )
 
     claim_filter = {
         "_id": current.get("_id"),
-        "lead_id": lead_id,
+        # Use the exact value returned by the lookup.  This keeps the CAS
+        # type-safe for canonical ObjectId cycles and legacy text ones.
+        "lead_id": current.get("lead_id"),
         "assignment_cycle_id": cycle_id,
         "cycle_status": "active",
         "unassigned_at": None,
@@ -235,37 +281,35 @@ def claim_cycle_for_human_management(
         session=session,
     )
     if claimed:
-        return CycleGateResult(
+        return finish(
             CycleGateStatus.CLAIMED.value,
-            lead_id,
-            cycle_id,
-            protection_type,
-            protected_at,
-            actor_id,
+            protection_type=protection_type,
+            protection_at=protected_at,
+            actor_user_id=actor_id,
         )
     current_after = _find_one(cycles, {"_id": current.get("_id")}, session=session)
     if current_after and current_after.get("reassignment_protection_at") is not None:
-        return CycleGateResult(
+        return finish(
             CycleGateStatus.ALREADY_PROTECTED.value,
-            lead_id,
-            cycle_id,
-            str(current_after.get("reassignment_protection_type") or protection_type),
-            _utc(current_after.get("reassignment_protection_at")),
-            str(current_after.get("reassignment_protection_actor_user_id") or ""),
+            protection_type=str(current_after.get("reassignment_protection_type") or protection_type),
+            protection_at=_utc(current_after.get("reassignment_protection_at")),
+            actor_user_id=str(current_after.get("reassignment_protection_actor_user_id") or ""),
+            reason="already_protected",
         )
     if current_after and (
         current_after.get("cycle_status") != "active"
         or current_after.get("unassigned_at") is not None
     ):
-        return CycleGateResult(
+        return finish(
             CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value,
-            lead_id,
-            cycle_id,
             reason="cycle_changed_during_claim",
         )
-    return CycleGateResult(
+    if not current_after:
+        return finish(
+            CycleGateStatus.CYCLE_NOT_FOUND.value,
+            reason="cycle_deleted_during_claim",
+        )
+    return finish(
         CycleGateStatus.OWNER_MISMATCH.value,
-        lead_id,
-        cycle_id,
         reason="claim_cas_failed",
     )

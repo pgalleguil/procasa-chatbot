@@ -21,6 +21,7 @@ from pymongo.errors import DuplicateKeyError
 from config import Config
 from .crm_metrics import coerce_utc_datetime, utc_now
 from .crm_notifications import COLLECTION as NOTIFICATION_COLLECTION
+from .mongo_identity import mongo_id_variants
 from .templates import (
     sla_non_hot_precritical_150,
     sla_non_hot_critical_180,
@@ -237,10 +238,14 @@ def _group_scope_identity(recipient_user_id, sla_policy, threshold,
 def _validate_member(db, lead_id, cycle_id, recipient_user_id,
                      policy="NON_HOT", recipient_type="executive") -> dict:
     """Check if a lead-cycle is still eligible. Returns status dict."""
-    lead = db["leads"].find_one({"_id": lead_id}, {
-        "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
-        "ejecutivo_asignado": 1,
-    })
+    lead = None
+    for lead_key in mongo_id_variants(lead_id):
+        lead = db["leads"].find_one({"_id": lead_key}, {
+            "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
+            "ejecutivo_asignado": 1,
+        })
+        if lead:
+            break
     if not lead:
         return {"valid": False, "reason": "lead_not_found"}
 

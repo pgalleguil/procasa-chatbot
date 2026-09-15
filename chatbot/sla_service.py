@@ -11,6 +11,7 @@ from .crm_metrics import (
     INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
     event_evidence, utc_now,
 )
+from .mongo_identity import mongo_id_variants
 from .lead_router import get_active_executive_phone, should_send_now
 from .notification_service import NotificationService
 from .storage import get_async_db
@@ -36,8 +37,13 @@ async def monitor_sla_thresholds():
     if not cycle_by_lead:
         return
 
+    lead_ids = []
+    for cycle in cycles:
+        for lead_key in mongo_id_variants(cycle.get("lead_id")):
+            if lead_key not in lead_ids:
+                lead_ids.append(lead_key)
     leads = await db["leads"].find({
-        "_id": {"$in": [c["lead_id"] for c in cycles]},
+        "_id": {"$in": lead_ids},
         "lead_temperature_effective": "HOT",
         "$or": [
             {"pipeline_stage": {"$in": [PipelineStage.NEW, PipelineStage.CONTACTED]}},

@@ -190,10 +190,8 @@ def build_lead_notification_context(db, lead_id) -> dict:
 
     # --- executive ---
     from .crm_delivery import resolve_executive_user, get_executive_phone
-    cycle = db["crm_assignment_cycles"].find_one(
-        {"lead_id": lead_id, "unassigned_at": None},
-        sort=[("assigned_at", -1)],
-    )
+    from .crm_metrics import active_assignment_cycle
+    cycle = active_assignment_cycle(db, lead_id)
     assigned_to_user_id = str(cycle.get("assigned_to_user_id") or "") if cycle else ""
     assignment_cycle_id = cycle.get("assignment_cycle_id") if cycle else None
     exec_user = resolve_executive_user(db, assigned_to_user_id) if assigned_to_user_id else None

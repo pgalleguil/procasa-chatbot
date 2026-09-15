@@ -6,6 +6,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from .crm_metrics import coerce_utc_datetime, utc_now
+from .mongo_identity import mongo_id_variants
 
 RESULT_RULES = {
     "MESSAGE_SENT_WAITING_RESPONSE": {"attempt": True, "effective": False, "follow_up": True, "status": "managed_waiting_response"},
@@ -77,6 +78,21 @@ def _default_follow_up(occurred_at):
     return coerce_utc_datetime(get_next_business_slot(local + timedelta(days=1)))
 
 
+def _find_assignment_cycle(db, *, lead_id, assignment_cycle_id=None, active_only=False):
+    """Find a cycle with bounded ObjectId/text compatibility."""
+
+    for lead_key in mongo_id_variants(lead_id):
+        query = {"lead_id": lead_key}
+        if assignment_cycle_id is not None:
+            query["assignment_cycle_id"] = assignment_cycle_id
+        if active_only:
+            query.update({"cycle_status": "active", "unassigned_at": None})
+        cycle = db["crm_assignment_cycles"].find_one(query)
+        if cycle:
+            return cycle
+    return None
+
+
 def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                              result_type, source, idempotency_key, occurred_at=None,
                              next_follow_up_at=None, details_json=None,
@@ -133,17 +149,14 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if result_type == "VISIT_SCHEDULED" and visit_at and visit_at < minimum_scheduled_at:
         raise ScheduledTimeTooSoonError(ScheduledTimeTooSoonError.code)
     # Try active cycle first, then fallback to any cycle for idempotent retries.
-    cycle = db["crm_assignment_cycles"].find_one({
-        "lead_id": lead_id, "assignment_cycle_id": assignment_cycle_id,
-        "cycle_status": "active", "unassigned_at": None,
-    })
+    cycle = _find_assignment_cycle(
+        db, lead_id=lead_id, assignment_cycle_id=assignment_cycle_id, active_only=True
+    )
     if not cycle:
         existing = db["crm_management_results"].find_one({"_id": f"crm_management:{idempotency_key}"})
         if existing:
             return existing
-        active_cycle = db["crm_assignment_cycles"].find_one({
-            "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
-        })
+        active_cycle = _find_assignment_cycle(db, lead_id=lead_id, active_only=True)
         if active_cycle and str(active_cycle.get("assignment_cycle_id")) != str(assignment_cycle_id):
             # The source cycle was superseded by an SLA reassignment. Keep the
             # externally observable contract aligned with the shared cycle
@@ -250,7 +263,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                               "follow_up_status": "pending", "follow_up_cycle_id": follow_cycle_id})
     db["crm_assignment_cycles"].update_one(
-        {"assignment_cycle_id": assignment_cycle_id,
+        {"_id": cycle["_id"],
          "$or": [{"first_valid_management_at": {"$exists": False}},
                  {"first_valid_management_at": None}]},
         {"$set": first_cycle_updates},
@@ -312,7 +325,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         cycle_updates["closed_reason"] = "management_result_closed"
         cycle_updates["unassigned_at"] = occurred
     db["crm_assignment_cycles"].update_one(
-        {"assignment_cycle_id": assignment_cycle_id, "cycle_status": "active"}, {"$set": cycle_updates}
+        {"_id": cycle["_id"], "cycle_status": "active"}, {"$set": cycle_updates}
     )
     db["crm_notifications_v1"].update_many(
         {"assignment_cycle_id": assignment_cycle_id, "notification_type": {"$in": ["sla_yellow", "sla_red"]},

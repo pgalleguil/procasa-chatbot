@@ -50,6 +50,7 @@ from .crm_sla_reassignment_transaction import (
     build_transaction_plan,
     decision_new_cycle_id,
 )
+from .mongo_identity import mongo_id_variants
 
 
 logger = logging.getLogger(__name__)
@@ -328,12 +329,9 @@ def _find_one(collection: Any, filter_: Mapping[str, Any], *, session: Any) -> A
 
 
 def _mongo_id_variants(value: Any) -> tuple[Any, ...]:
-    """Try the decision's transport ID and its BSON ObjectId form."""
+    """Try the decision's transport ID and its BSON/legacy form."""
 
-    variants: list[Any] = [value]
-    if isinstance(value, str) and ObjectId.is_valid(value):
-        variants.append(ObjectId(value))
-    return tuple(variants)
+    return mongo_id_variants(value)
 
 
 def _open_lead(lead: Mapping[str, Any]) -> bool:
@@ -364,32 +362,37 @@ def _cycle_field_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any]) -
 def _human_evidence_in_collections(
     db: Any, *, lead_id: str, cycle_id: str, assigned_at: Any, session: Any
 ) -> tuple[str, Any] | None:
-    management = _find_one(
-        db["crm_management_results"],
-        {"lead_id": lead_id, "assignment_cycle_id": cycle_id},
-        session=session,
-    )
-    if management:
-        protection = protection_type_for_management_result(
-            management.get("result_type") or management.get("result")
+    # Decisions arrive from the worker as text, while canonical management
+    # results/events use the BSON ObjectId from leads._id.  Query both forms
+    # without weakening the cycle identity or transaction predicate.
+    for lead_key in mongo_id_variants(lead_id):
+        management = _find_one(
+            db["crm_management_results"],
+            {"lead_id": lead_key, "assignment_cycle_id": cycle_id},
+            session=session,
         )
-        if protection:
-            return protection, management.get("occurred_at")
+        if management:
+            protection = protection_type_for_management_result(
+                management.get("result_type") or management.get("result")
+            )
+            if protection:
+                return protection, management.get("occurred_at")
 
-    events = _find_one(
-        db["crm_events"],
-        {
-            "lead_id": lead_id,
-            "assignment_cycle_id": cycle_id,
-            "confirmed": True,
-            "actor_type": {"$in": list(HUMAN_ACTOR_TYPES)},
-        },
-        session=session,
-    )
-    if events:
-        protection = classify_human_protection(events)
-        if protection:
-            return protection, events.get("timestamp") or events.get("occurred_at")
+    for lead_key in mongo_id_variants(lead_id):
+        events = _find_one(
+            db["crm_events"],
+            {
+                "lead_id": lead_key,
+                "assignment_cycle_id": cycle_id,
+                "confirmed": True,
+                "actor_type": {"$in": list(HUMAN_ACTOR_TYPES)},
+            },
+            session=session,
+        )
+        if events:
+            protection = classify_human_protection(events)
+            if protection:
+                return protection, events.get("timestamp") or events.get("occurred_at")
 
     # Human WhatsApp messages are recorded in the separate append-only
     # conversation model.  They protect the cycle but do not become SLA stop

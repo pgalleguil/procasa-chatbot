@@ -16,6 +16,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+from .mongo_identity import mongo_id_variants
 from .utils import calculate_business_minutes
 from captacion_contact_identity import normalize_phone
 
@@ -279,7 +280,9 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
             raise ValueError("canonical lead document not found for assignment cycle")
 
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
-    active = db["crm_assignment_cycles"].find_one({"lead_id": lead_id, "unassigned_at": None})
+    # Resolve canonical ObjectId cycles first, with a bounded legacy string
+    # fallback, so a historical row cannot create a second active cycle.
+    active = active_assignment_cycle(db, lead["_id"])
     if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
             and active.get("cycle_status") == "active"
             and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
@@ -349,9 +352,13 @@ def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=Non
     temp = str(temperature or "").strip().upper()
     if not temp:
         return None
-    cycle = db["crm_assignment_cycles"].find_one({
-        "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
-    })
+    cycle = None
+    for lead_key in mongo_id_variants(lead_id):
+        cycle = db["crm_assignment_cycles"].find_one({
+            "lead_id": lead_key, "cycle_status": "active", "unassigned_at": None,
+        })
+        if cycle:
+            break
     if not cycle:
         return None
     if str(cycle.get("temperature_at_assignment") or "").upper() == temp:
@@ -399,9 +406,14 @@ def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, 
 
 
 def active_assignment_cycle(db, lead_id):
-    return db["crm_assignment_cycles"].find_one(
-        {"lead_id": lead_id, "unassigned_at": None}, sort=[("assigned_at", -1)]
-    )
+    for lead_key in mongo_id_variants(lead_id):
+        cycle = db["crm_assignment_cycles"].find_one(
+            {"lead_id": lead_key, "unassigned_at": None},
+            sort=[("assigned_at", -1)],
+        )
+        if cycle:
+            return cycle
+    return None
 
 
 def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,

@@ -350,18 +350,32 @@ def _page_filter(query: dict[str, Any], page_token: Mapping[str, Any] | None) ->
     if not page_token:
         return query
     assigned_at = _utc(page_token.get("assigned_at"))
-    lead_id = _text(page_token.get("lead_id"))
+    raw_lead_id = page_token.get("lead_id")
+    lead_id_values = _lead_lookup_variants(raw_lead_id)
+    if page_token.get("lead_id_type") == "ObjectId":
+        lead_id_values = [value for value in lead_id_values if isinstance(value, ObjectId)] or lead_id_values
+    elif page_token.get("lead_id_type") == "str":
+        lead_id_values = [value for value in lead_id_values if isinstance(value, str)] or [_text(raw_lead_id)]
+    elif not page_token.get("lead_id_type"):
+        # Tokens issued before type metadata existed may point to either
+        # representation.  Keep both comparisons inside the same page query.
+        lead_id_values = _lead_lookup_variants(_text(raw_lead_id))
     cycle_id = _text(page_token.get("assignment_cycle_id"))
     if not assigned_at:
         return query
+    tie_breakers = []
+    for lead_id in lead_id_values or [_text(raw_lead_id)]:
+        tie_breakers.extend([
+            {"assigned_at": assigned_at, "lead_id": {"$gt": lead_id}},
+            {"assigned_at": assigned_at, "lead_id": lead_id, "assignment_cycle_id": {"$gt": cycle_id}},
+        ])
     return {
         "$and": [
             query,
             {
                 "$or": [
                     {"assigned_at": {"$gt": assigned_at}},
-                    {"assigned_at": assigned_at, "lead_id": {"$gt": lead_id}},
-                    {"assigned_at": assigned_at, "lead_id": lead_id, "assignment_cycle_id": {"$gt": cycle_id}},
+                    *tie_breakers,
                 ]
             },
         ]
@@ -438,6 +452,7 @@ async def scan_sla_reassignment_candidates(
         next_token = {
             "assigned_at": _iso(last.get("assigned_at")),
             "lead_id": _text(last.get("lead_id")),
+            "lead_id_type": type(last.get("lead_id")).__name__,
             "assignment_cycle_id": _text(last.get("assignment_cycle_id")),
         }
     return {

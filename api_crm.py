@@ -1683,6 +1683,8 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
     prospecto = lead.get("prospecto", {})
 
     # Buscar próxima tarea pendiente (Auditoría Canónica)
+    from chatbot.crm_metrics import active_assignment_cycle
+    active_cycle = active_assignment_cycle(db, lead.get("_id"))
     next_task = db["crm_tasks"].find_one({
         "phone": phone_clean,
         "status": "pending"
@@ -1715,6 +1717,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         "datos_propiedad": datos_propiedad,
         "last_intent": lead.get("last_intent"),
         "last_intent_at": lead.get("last_intent_at"),
+        "assignment_cycle_id": str(active_cycle.get("assignment_cycle_id") or "") if active_cycle else "",
         "ejecutivo_asignado": ejec_asignado # Requerido para RBAC en detalle
     }
 
@@ -1738,17 +1741,16 @@ def update_lead_crm_data(phone, data):
     from chatbot.crm_management import (
         StaleAssignmentCycleError,
         record_legacy_management_result,
+        _find_assignment_cycle,
     )
     from chatbot.crm_metrics import active_assignment_cycle
 
     requested_cycle_id = str(data.get("assignment_cycle_id") or "").strip()
     cycle = (
-        db["crm_assignment_cycles"].find_one({
-            "lead_id": current_lead["_id"],
-            "assignment_cycle_id": requested_cycle_id,
-            "cycle_status": "active",
-            "unassigned_at": None,
-        })
+        _find_assignment_cycle(
+            db, lead_id=current_lead["_id"],
+            assignment_cycle_id=requested_cycle_id, active_only=True,
+        )
         if requested_cycle_id else active_assignment_cycle(db, current_lead["_id"])
     )
     if not cycle:

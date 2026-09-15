@@ -5889,7 +5889,6 @@ async def _render_crm_list(
         page=page,
         limit=limit,
         property_code=property_code,
-        user_id=str(user.get("_id") or ""),
     )
     exec_task = get_unique_executives() if can_administer else asyncio.sleep(0, result=[])
     leads_payload, executives = await asyncio.gather(leads_task, exec_task)

@@ -10,11 +10,11 @@ import copy
 import hashlib
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from threading import Lock
 from typing import Optional
 
-from pymongo.errors import NetworkTimeout
+from pymongo.errors import NetworkTimeout, ServerSelectionTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ from .leads_queries import (
     build_capture_simulation_contract,
     _ops_comparable_eligibility,
 )
+from .portal_costs import build_portal_cost_summary
 
 L1_CACHE: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 120
@@ -53,7 +54,8 @@ CACHE_HARD_TTL = 600
 STALE_IF_ERROR_MAX_AGE = CACHE_HARD_TTL
 PINNED_REFRESH_AGE = 240
 PINNED_MAX_STALE = 1800
-PINNED_DASHBOARD_CACHE = ("overview", "operations", "properties")
+PINNED_DASHBOARD_CACHE = ("overview", "operations")
+PINNED_STANDARD_PRESETS = ("today", "week", "month", "30d")
 MAX_CACHE_ENTRIES = 200
 # El overview ejecuta diez consultas independientes. Mantener seis workers
 # dejaba cuatro consultas esperando en cola y alargaba cada carga del panel.
@@ -61,6 +63,8 @@ _COMMERCIAL_QUERY_POOL = ThreadPoolExecutor(max_workers=10, thread_name_prefix="
 _CACHE_REFRESH_POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix="analytics_cache_refresh")
 _CACHE_REFRESH_LOCK = Lock()
 _CACHE_REFRESHING: set[str] = set()
+_SINGLEFLIGHT_LOCK = Lock()
+_SINGLEFLIGHT: dict[str, Future] = {}
 
 
 class InventoryTemporarilyUnavailable(RuntimeError):
@@ -114,14 +118,19 @@ def _sanitize_non_finite(value):
 
 
 def _cache_set(key: str, value: dict):
+    if key in L1_CACHE:
+        L1_CACHE[key] = (time.time(), value)
+        return
     if len(L1_CACHE) >= MAX_CACHE_ENTRIES:
-        oldest = min(L1_CACHE, key=lambda k: L1_CACHE[k][0])
+        pinned_keys = {pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs()}
+        candidates = [cache_key for cache_key in L1_CACHE if cache_key not in pinned_keys]
+        oldest = min(candidates or L1_CACHE, key=lambda k: L1_CACHE[k][0])
         del L1_CACHE[oldest]
     L1_CACHE[key] = (time.time(), value)
 
 
 def _cache_state(key: str):
-    """Return cached payload and its freshness state without evicting it."""
+    """Return a copy of the cached payload and its SWR freshness state."""
     entry = L1_CACHE.get(key)
     if not entry:
         return None, None, None
@@ -133,28 +142,6 @@ def _cache_state(key: str):
     return None, age, "hard"
 
 
-def _schedule_cache_refresh(key: str, loader) -> bool:
-    """Schedule one best-effort refresh per key, preserving stale on failure."""
-    with _CACHE_REFRESH_LOCK:
-        if key in _CACHE_REFRESHING:
-            return False
-        _CACHE_REFRESHING.add(key)
-
-    def refresh():
-        try:
-            value = loader()
-            if value is not None:
-                _cache_set(key, value)
-        except Exception:
-            logger.warning("[CACHE_SWR] background refresh failed key=%s", key, exc_info=True)
-        finally:
-            with _CACHE_REFRESH_LOCK:
-                _CACHE_REFRESHING.discard(key)
-
-    _CACHE_REFRESH_POOL.submit(refresh)
-    return True
-
-
 def _cache_entry_age(key: str) -> float | None:
     entry = L1_CACHE.get(key)
     if not entry:
@@ -162,8 +149,22 @@ def _cache_entry_age(key: str) -> float | None:
     return max(0.0, time.time() - entry[0])
 
 
+def _cache_hash(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def _cache_log(endpoint: str, key: str, state: str, *, age: float | None = None,
+               refresh: str | None = None, level: int = logging.INFO) -> None:
+    """Emit low-volume cache state without exposing dates or dashboard data."""
+    fields = [f"endpoint={endpoint}", f"state={state}", f"key_hash={_cache_hash(key)}"]
+    if age is not None:
+        fields.append(f"age_seconds={age:.1f}")
+    if refresh:
+        fields.append(f"refresh={refresh}")
+    logger.log(level, "[DASHBOARD_CACHE] %s", " ".join(fields))
+
+
 def _stale_payload(payload: dict, age: float | None, *, degraded: bool) -> dict:
-    """Attach explicit stale/SWR state without changing the analytical payload."""
     stale = copy.deepcopy(payload)
     metadata = dict(stale.get("meta") or {})
     metadata.update({
@@ -176,10 +177,74 @@ def _stale_payload(payload: dict, age: float | None, *, degraded: bool) -> dict:
     return stale
 
 
-def _dashboard_30d_period():
+def _schedule_cache_refresh(key: str, loader) -> bool:
+    """Schedule one best-effort refresh per key and preserve stale data on error."""
+    with _CACHE_REFRESH_LOCK:
+        if key in _CACHE_REFRESHING:
+            return False
+        _CACHE_REFRESHING.add(key)
+
+    def refresh():
+        try:
+            value = _singleflight_compute(key, loader)
+            if value is not None:
+                _cache_set(key, value)
+            _cache_log("unknown", key, "REFRESHED", level=logging.DEBUG)
+        except Exception:
+            logger.warning("[DASHBOARD_CACHE] background refresh failed key_hash=%s", _cache_hash(key), exc_info=True)
+        finally:
+            with _CACHE_REFRESH_LOCK:
+                _CACHE_REFRESHING.discard(key)
+
+    _CACHE_REFRESH_POOL.submit(refresh)
+    return True
+
+
+def _singleflight_compute(key: str, loader, *, endpoint: str = "unknown", timing: dict | None = None):
+    """Compute one key once and share its result with concurrent callers."""
+    with _SINGLEFLIGHT_LOCK:
+        future = _SINGLEFLIGHT.get(key)
+        if future is None:
+            future = Future()
+            _SINGLEFLIGHT[key] = future
+            owner = True
+        else:
+            owner = False
+
+    if not owner:
+        if timing is not None:
+            timing["singleflight"] = "waiter"
+        _cache_log(endpoint, key, "WAIT", level=logging.DEBUG)
+        return future.result()
+
+    if timing is not None:
+        timing["singleflight"] = "owner"
+    try:
+        value = loader()
+        future.set_result(value)
+        return value
+    except BaseException as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with _SINGLEFLIGHT_LOCK:
+            if _SINGLEFLIGHT.get(key) is future:
+                del _SINGLEFLIGHT[key]
+
+
+def _dashboard_standard_periods():
+    """Return the four canonical dashboard preset ranges."""
     from .commercial_periods import local_today, preset_range
-    start, end = preset_range("30d", local_today())
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+    today = local_today()
+    return tuple(
+        (preset, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        for preset in PINNED_STANDARD_PRESETS
+        for start, end in [preset_range(preset, today)]
+    )
+
+
+def _dashboard_30d_period():
+    return next((start, end) for preset, start, end in _dashboard_standard_periods() if preset == "30d")
 
 
 def _overview_request_key(period_start: str, period_end: str, compare: str, period_preset: str) -> str:
@@ -198,69 +263,69 @@ def _overview_request_key(period_start: str, period_end: str, compare: str, peri
 
 
 def _pinned_dashboard_jobs():
-    """Return the exact 30d keys and uncached loaders used by requests."""
-    warm_ps, warm_pe = _dashboard_30d_period()
-    overview_key = _overview_request_key(warm_ps, warm_pe, "auto", "30d")
-    operations_key = _cache_key(
-        "leads-operational", ps=warm_ps, pe=warm_pe, compare="auto", preset="30d",
-        filters=repr([]),
-    )
-    properties_key = _cache_key("leads-properties-inventory", ps=warm_ps, pe=warm_pe)
-    return (
-        ("overview", overview_key, lambda: _compute_leads_dashboard_overview(
-            period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d",
-            timing=None, _cache_bypass=True,
-        )),
-        ("operations", operations_key, lambda: _compute_leads_operational_dashboard(
-            period_start=warm_ps, period_end=warm_pe, compare="auto", period_preset="30d",
-            role=None, user_name=None, filters={}, timing=None, _cache_bypass=True,
-        )),
-        ("properties", properties_key, lambda: _compute_properties_inventory_dashboard(
-            period_start=warm_ps, period_end=warm_pe, filters={}, timing=None,
-        )),
-    )
+    """Return real standard Overview/Operations keys and uncached loaders."""
+    jobs = []
+    for preset, period_start, period_end in _dashboard_standard_periods():
+        overview_key = _overview_request_key(period_start, period_end, "auto", preset)
+        operations_key = _cache_key(
+            "leads-operational", ps=period_start, pe=period_end, compare="auto", preset=preset,
+            filters=repr([]),
+        )
+        jobs.extend((
+            ("overview", overview_key, lambda ps=period_start, pe=period_end, pp=preset:
+             _compute_leads_dashboard_overview(
+                 period_start=ps, period_end=pe, compare="auto", period_preset=pp,
+                 timing=None, _cache_bypass=True,
+             )),
+            ("operations", operations_key, lambda ps=period_start, pe=period_end, pp=preset:
+             _compute_leads_operational_dashboard(
+                 period_start=ps, period_end=pe, compare="auto", period_preset=pp,
+                 role=None, user_name=None, filters={}, timing=None, _cache_bypass=True,
+             )),
+        ))
+    return tuple(jobs)
 
 
 def warm_pinned_dashboard_cache() -> list[str]:
-    """Warm pinned 30d entries sequentially; intended for the dedicated pool."""
+    """Warm standard keys on explicit/manual request only."""
     warmed = []
     for endpoint, key, loader in _pinned_dashboard_jobs():
         age = _cache_entry_age(key)
         if age is not None and age < PINNED_REFRESH_AGE:
-            logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=skip_fresh age_seconds=%.1f duration_ms=0 cache_key_hash=%s", endpoint, age, hashlib.sha256(key.encode()).hexdigest()[:12])
             continue
-        started = time.perf_counter()
-        value = loader()
+        value = _singleflight_compute(key, loader, endpoint=endpoint)
         _cache_set(key, value)
-        duration_ms = (time.perf_counter() - started) * 1000
-        logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=prewarm age_seconds=%s duration_ms=%.1f cache_key_hash=%s", endpoint, "none" if age is None else f"{age:.1f}", duration_ms, hashlib.sha256(key.encode()).hexdigest()[:12])
+        _cache_log(endpoint, key, "MISS", age=age)
         warmed.append(endpoint)
     return warmed
 
 
 def keep_pinned_dashboard_cache() -> list[str]:
-    """Schedule due pinned refreshes, preserving the last successful payload."""
-    scheduled = []
+    """Schedule at most one Overview and one Operations refresh when due."""
+    due = []
     for endpoint, key, loader in _pinned_dashboard_jobs():
         age = _cache_entry_age(key)
-        if age is not None and age < PINNED_REFRESH_AGE:
-            continue
+        if age is None or age >= PINNED_REFRESH_AGE:
+            due.append((float("inf") if age is None else age, endpoint, key, loader, age))
+
+    selected = []
+    for endpoint in ("overview", "operations"):
+        candidates = [item for item in due if item[1] == endpoint]
+        if candidates:
+            selected.append(max(candidates, key=lambda item: item[0]))
+    selected_keys = {item[2] for item in selected}
+    remaining = sorted(
+        (item for item in due if item[2] not in selected_keys),
+        key=lambda item: (-item[0], item[1], item[2]),
+    )
+    selected.extend(remaining[:max(0, 2 - len(selected))])
+
+    scheduled = []
+    for _, endpoint, key, loader, age in selected[:2]:
         if _schedule_cache_refresh(key, loader):
-            action = "prewarm" if age is None else "refresh"
-            logger.info("[DASHBOARD_CACHE_KEEPER] endpoint=%s preset=30d action=%s age_seconds=%s duration_ms=0 cache_key_hash=%s", endpoint, action, "none" if age is None else f"{age:.1f}", hashlib.sha256(key.encode()).hexdigest()[:12])
+            _cache_log(endpoint, key, "STALE", age=age, refresh="scheduled")
             scheduled.append(endpoint)
     return scheduled
-
-
-def _properties_inventory_cache_lookup(key: str):
-    """Return a copy and age without evicting an expired inventory payload."""
-    entry = L1_CACHE.get(key)
-    if not entry:
-        return None, None, None
-    age = max(0.0, time.time() - entry[0])
-    if age < CACHE_TTL:
-        return copy.deepcopy(entry[1]), age, entry
-    return None, age, entry
 
 
 def _compute_properties_inventory_dashboard(
@@ -271,10 +336,7 @@ def _compute_properties_inventory_dashboard(
 ) -> dict:
     """Uncached read-only payload for the lazy Propiedades & Inventario tab."""
     filters = {key: value for key, value in (filters or {}).items() if value not in (None, "")}
-    payload = query_demand_capture_dashboard(period_start, period_end, filters, timing=timing)
-    if timing is not None:
-        timing["mongo_calls"] = 3
-    return _sanitize_non_finite(payload)
+    return _sanitize_non_finite(query_demand_capture_dashboard(period_start, period_end, filters))
 
 
 def get_properties_inventory_dashboard(
@@ -283,13 +345,13 @@ def get_properties_inventory_dashboard(
     filters: dict | None = None,
     timing: dict | None = None,
 ) -> dict:
-    """SWR cache payload for the lazy Propiedades & Inventario tab."""
+    """SWR-cached read-only payload for the lazy Propiedades & Inventario tab."""
     started = time.perf_counter()
     filters = {key: value for key, value in (filters or {}).items() if value not in (None, "")}
     key = _cache_key("leads-properties-inventory", ps=period_start, pe=period_end, **filters)
     cached, age, state = _cache_state(key)
-    pinned = any(key == pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs())
     if state == "fresh":
+        _cache_log("properties", key, "HIT", age=age, level=logging.DEBUG)
         if timing is not None:
             timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 0})
         return cached
@@ -298,44 +360,28 @@ def get_properties_inventory_dashboard(
         return _compute_properties_inventory_dashboard(period_start, period_end, filters, timing=None)
 
     if state == "soft":
-        _schedule_cache_refresh(key, load)
-        stale_payload = cached
-        metadata = dict(stale_payload.get("meta") or {})
-        metadata.update({"data_status": "stale", "degraded": False,
-                         "stale_age_seconds": round(age or 0, 1), "refresh": "scheduled"})
-        stale_payload["meta"] = metadata
+        scheduled = _schedule_cache_refresh(key, load)
+        _cache_log("properties", key, "STALE", age=age, refresh="scheduled" if scheduled else "already_pending")
+        stale_payload = _stale_payload(cached, age, degraded=False)
         if timing is not None:
             timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
                            "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1),
                            "mongo_calls": 0})
         return stale_payload
 
-    if state == "hard" and pinned and age is not None and age <= PINNED_MAX_STALE:
-        stale_entry = L1_CACHE.get(key)
-        stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
-        if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
-            stale_payload = _stale_payload(stale_payload, age, degraded=True)
-            if timing is not None:
-                timing.update({"cache": "STALE", "degraded": True,
-                               "stale_age_seconds": round(age, 1), "refresh": "scheduled",
-                               "total_ms": round((time.perf_counter() - started) * 1000, 1),
-                               "mongo_calls": 0})
-            return stale_payload
-
     if timing is not None:
         timing["cache"] = "MISS"
+    _cache_log("properties", key, "MISS", age=age)
     try:
-        payload = load()
-    except NetworkTimeout as exc:
-        timeout_stage = (timing or {}).get("demand_capture.timeout_stage", "unknown")
-        logger.warning("[DEMAND_CAPTURE] mongo_timeout timeout_stage=%s cache=MISS response=503", timeout_stage)
+        payload = _singleflight_compute(key, load, endpoint="properties", timing=timing)
+    except (NetworkTimeout, ServerSelectionTimeoutError) as exc:
+        logger.warning("[DASHBOARD_CACHE] properties miss unavailable key_hash=%s", _cache_hash(key))
         if timing is not None:
             timing.update({"degraded": True, "total_ms": round((time.perf_counter() - started) * 1000, 1)})
         raise InventoryTemporarilyUnavailable from exc
     _cache_set(key, payload)
     if timing is not None:
-        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        timing.update({"total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 2})
     return payload
 
 
@@ -503,14 +549,14 @@ def _compute_leads_operational_dashboard(
     timing: dict | None = None,
     _cache_bypass: bool = False,
 ) -> dict:
-    """Dashboard operativo: bandeja priorizada, SLA y carga de trabajo."""
+    """Uncached dashboard operativo computation."""
     filters = dict(filters or {})
     if role not in ("admin", "supervisor") and user_name:
         filters["executive"] = user_name
     key = _cache_key("leads-operational", ps=period_start, pe=period_end, compare=compare, preset=period_preset, filters=repr(sorted(filters.items())))
     started = time.perf_counter()
     cached = _cache_get(key) if not _cache_bypass else None
-    if cached:
+    if cached is not None:
         if timing is not None:
             timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 0})
         return cached
@@ -653,16 +699,18 @@ def get_leads_operational_dashboard(
     filters: dict = None,
     timing: dict | None = None,
 ) -> dict:
-    """SWR cache wrapper for the operational dashboard."""
+    """Dashboard operativo con caché fresh/stale-while-revalidate."""
     filters = dict(filters or {})
     if role not in ("admin", "supervisor") and user_name:
         filters["executive"] = user_name
-    key = _cache_key("leads-operational", ps=period_start, pe=period_end, compare=compare,
-                     preset=period_preset, filters=repr(sorted(filters.items())))
+    key = _cache_key(
+        "leads-operational", ps=period_start, pe=period_end, compare=compare,
+        preset=period_preset, filters=repr(sorted(filters.items())),
+    )
     started = time.perf_counter()
     cached, age, state = _cache_state(key)
-    pinned = any(key == pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs())
     if state == "fresh":
+        _cache_log("operations", key, "HIT", age=age, level=logging.DEBUG)
         if timing is not None:
             timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 0})
         return cached
@@ -675,28 +723,98 @@ def get_leads_operational_dashboard(
         )
 
     if state == "soft":
-        _schedule_cache_refresh(key, load)
+        scheduled = _schedule_cache_refresh(key, load)
+        _cache_log("operations", key, "STALE", age=age, refresh="scheduled" if scheduled else "already_pending")
+        stale_payload = _stale_payload(cached, age, degraded=False)
         if timing is not None:
             timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
                            "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1),
                            "mongo_calls": 0})
+        return stale_payload
+
+    if timing is not None:
+        timing["cache"] = "MISS"
+    _cache_log("operations", key, "MISS", age=age)
+    result = _singleflight_compute(key, load, endpoint="operations", timing=timing)
+    _cache_set(key, result)
+    if timing is not None:
+        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return result
+
+
+def get_leads_dashboard_overview(
+    period_start: str = None,
+    period_end: str = None,
+    compare: str = None,
+    period_preset: str = None,
+    timing: dict | None = None,
+) -> dict:
+    """Public Overview endpoint using bounded SWR and single-flight caching."""
+    from .commercial_periods import canonical_preset, local_today, preset_range, comparison_period
+
+    today = local_today()
+    try:
+        ps_dt = datetime.strptime(period_start, "%Y-%m-%d").date() if period_start else today - timedelta(days=29)
+        pe_dt = datetime.strptime(period_end, "%Y-%m-%d").date() if period_end else today
+        pe_dt = min(pe_dt, today)
+        ps_dt = min(ps_dt, pe_dt)
+    except (ValueError, TypeError):
+        pe_dt, ps_dt = today, today - timedelta(days=29)
+    if period_preset in PINNED_STANDARD_PRESETS:
+        ps_dt, pe_dt = preset_range(period_preset, today)
+    ps, pe = ps_dt.strftime("%Y-%m-%d"), pe_dt.strftime("%Y-%m-%d")
+    mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
+    requested_preset = period_preset if period_preset in (*PINNED_STANDARD_PRESETS, "custom") else "custom"
+    preset = canonical_preset(ps_dt, pe_dt, requested_preset)
+    comp_start, comp_end, _ = comparison_period(ps_dt, pe_dt, mode, preset)
+    key = _cache_key(
+        "leads-dashboard-overview", ps=ps, pe=pe, cmp=mode, preset=preset,
+        ps_prev=comp_start.strftime("%Y-%m-%d") if comp_start else None,
+        pe_prev=comp_end.strftime("%Y-%m-%d") if comp_end else None,
+    )
+    started = time.perf_counter()
+    cached, age, state = _cache_state(key)
+    pinned = any(key == pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs())
+
+    if state == "fresh":
+        _cache_log("overview", key, "HIT", age=age, level=logging.DEBUG)
+        if timing is not None:
+            timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1), "mongo_calls": 0})
         return cached
 
+    def load():
+        return _compute_leads_dashboard_overview(
+            period_start=ps, period_end=pe, compare=mode, period_preset=preset,
+            timing=None, _cache_bypass=True,
+        )
+
+    if state == "soft":
+        scheduled = _schedule_cache_refresh(key, load)
+        _cache_log("overview", key, "STALE", age=age, refresh="scheduled" if scheduled else "already_pending")
+        stale_payload = _stale_payload(cached, age, degraded=False)
+        if timing is not None:
+            timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
+                           "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                           "mongo_calls": 0})
+        return stale_payload
+
     if state == "hard" and pinned and age is not None and age <= PINNED_MAX_STALE:
-        stale_entry = L1_CACHE.get(key)
-        stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
-        if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
-            stale_payload = _stale_payload(stale_payload, age, degraded=True)
+        entry = L1_CACHE.get(key)
+        if entry:
+            stale_payload = _stale_payload(entry[1], age, degraded=True)
+            scheduled = _schedule_cache_refresh(key, load)
+            _cache_log("overview", key, "STALE", age=age, refresh="scheduled" if scheduled else "already_pending")
             if timing is not None:
                 timing.update({"cache": "STALE", "degraded": True,
                                "stale_age_seconds": round(age, 1), "refresh": "scheduled",
-                               "total_ms": round((time.perf_counter() - started) * 1000, 1)})
+                               "total_ms": round((time.perf_counter() - started) * 1000, 1),
+                               "mongo_calls": 0})
             return stale_payload
 
     if timing is not None:
         timing["cache"] = "MISS"
-    result = load()
+    _cache_log("overview", key, "MISS", age=age)
+    result = _singleflight_compute(key, load, endpoint="overview", timing=timing)
     _cache_set(key, result)
     if timing is not None:
         timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
@@ -885,7 +1003,7 @@ def _build_executive_story(executive_summary, sla, period_info, contribution, fi
     }
 
 
-def build_executive_insights(demand, conversion, sla, sources, pipeline):
+def build_executive_insights(demand, conversion, sla, sources, pipeline, funnel=None):
     """Motor determinístico de Insights Ejecutivos (máx. 3).
 
     Solo usa métricas canónicas ya validadas del payload filtrado:
@@ -896,6 +1014,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     - Cobertura SUCRE: ``pipeline`` (propiedades_con_demanda, cartera_activa,
       pct_cartera_con_demanda).
     - Tendencia: ``demand.variation_pct``.
+    - Embudo: pérdidas absolutas/proporcionales y respuestas resumidas por etapa.
 
     Cada insight conecta datos (no repite KPIs) y entrega título breve,
     interpretación y una acción concreta. No se afirma causalidad.
@@ -906,6 +1025,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     vencidos = (sla or {}).get("open_breached", 0) or 0
     variacion = (demand or {}).get("variation_pct")
     items = ((sources or {}).get("items") or []) if sources else []
+    funnel = funnel or {}
 
     def _es(n):
         """Formato decimal es-CL (coma) para un porcentaje/pp con 1 decimal."""
@@ -918,7 +1038,83 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
     opportunities = []
     positives = []
 
-    # A. SLA / capacidad de gestión (sin afirmar causalidad con conversión).
+    # A. Fricción del embudo: no confundir la mayor pérdida en cantidad con
+    # la etapa de mayor caída porcentual. Ambas lecturas son útiles para tomar
+    # acción y se muestran juntas en el insight automatizado.
+    funnel_stages = {
+        stage.get("key"): stage
+        for stage in (funnel.get("stages") or [])
+        if stage.get("key")
+    }
+    funnel_counts = {
+        key: (funnel_stages.get(key) or {}).get("count", 0) or 0
+        for key in ("received", "gestionados", "contacto_efectivo", "visita_agendada", "cierre_negocio")
+    }
+    loss_specs = [
+        ("Recibidos → Gestionados", "received", "gestionados", "recibidos", "gestionados"),
+        ("Gestionados → Contacto efectivo", "gestionados", "contacto_efectivo", "gestionados", "contacto_efectivo"),
+        ("Contacto efectivo → Visita agendada", "contacto_efectivo", "visita_agendada", "contactos efectivos", "visita_agendada"),
+        ("Visitas agendadas → Negocio cerrado", "visita_agendada", "cierre_negocio", "visitas agendadas", "cierre_negocio"),
+    ]
+    funnel_losses = []
+    for label, from_key, to_key, denominator_label, response_key in loss_specs:
+        denominator = funnel_counts[from_key]
+        loss = max(0, funnel_counts[from_key] - funnel_counts[to_key])
+        funnel_losses.append({
+            "label": label,
+            "loss": loss,
+            "denominator": denominator,
+            "denominator_label": denominator_label,
+            "response_key": response_key,
+            "from_key": from_key,
+        })
+    if funnel_counts["received"] > 0:
+        absolute_loss = max(funnel_losses, key=lambda item: item["loss"])
+        proportional_candidates = [item for item in funnel_losses if item["denominator"] > 0]
+        proportional_loss = max(
+            proportional_candidates,
+            key=lambda item: item["loss"] / item["denominator"],
+        ) if proportional_candidates else absolute_loss
+
+        def _loss_sentence(item):
+            pct = item["loss"] / item["denominator"] * 100 if item["denominator"] else 0
+            return (f"{item['label']}: {item['loss']} leads ({_es(pct)}% de "
+                    f"{item['denominator_label']})")
+
+        response_summary = funnel.get("response_summary") or {}
+        response_rows = (response_summary.get(proportional_loss["response_key"]) or [])[:3]
+        response_stage_label = proportional_loss["response_key"]
+        if not response_rows:
+            # Un cierre ganado puede estar respaldado por stage_history sin una
+            # respuesta CRM con resultado CLOSED_WON. En ese caso mostramos las
+            # respuestas de la etapa inmediatamente anterior, sin inventar un
+            # resultado de cierre.
+            response_rows = (response_summary.get(proportional_loss["from_key"]) or [])[:3]
+            response_stage_label = proportional_loss["from_key"]
+        response_text = ""
+        if response_rows:
+            response_stage_label = {
+                "received": "Recibidos",
+                "gestionados": "Gestionados",
+                "contacto_efectivo": "Contacto efectivo",
+                "visita_agendada": "Visitas agendadas",
+                "cierre_negocio": "Negocio cerrado",
+            }.get(response_stage_label, response_stage_label)
+            response_text = " Respuestas más frecuentes registradas en " + response_stage_label + ": " + "; ".join(
+                f"{row.get('label', 'Otro resultado')} ({row.get('count', 0)})"
+                for row in response_rows
+            ) + "."
+        priorities.append({
+            "tipo": "prioridad",
+            "titulo": "Fricción crítica del embudo",
+            "texto": (f"La mayor pérdida absoluta es {_loss_sentence(absolute_loss)}. "
+                      f"La mayor caída proporcional es {_loss_sentence(proportional_loss)}."
+                      f"{response_text}"),
+            "accion": (f"Priorizar la etapa {proportional_loss['label']} y revisar los leads que no avanzaron; "
+                       "usar la pérdida absoluta para dimensionar el impacto operativo."),
+        })
+
+    # B. SLA / capacidad de gestión (sin afirmar causalidad con conversión).
     if in_sla is not None and in_sla < 50 and vencidos > 0:
         priorities.append({
             "tipo": "prioridad",
@@ -929,7 +1125,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
             "accion": "Priorizar vencidos, especialmente Hot, y verificar capacidad de primera gestión.",
         })
 
-    # B. Origen con alto volumen y bajo resultado.
+    # C. Origen con alto volumen y bajo resultado.
     if global_conv is not None and global_conv > 0:
         low = [it for it in items
                if it.get("cantidad", 0) >= 20 and (it.get("pct", 0) or 0) >= 15
@@ -946,7 +1142,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Revisar calidad, segmentación y gestión de los leads provenientes de ese origen.",
             })
 
-    # D. Volumen vs conversión temporal (en puntos porcentuales, CARD 2).
+    # E. Volumen vs conversión temporal (en puntos porcentuales, CARD 2).
     if variacion is not None and variacion > 0 and global_conv is not None and prev_conv is not None:
         pp = round(global_conv - prev_conv, 1)
         if pp < 0:
@@ -966,7 +1162,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Consolidar el proceso actual y mantener el ritmo.",
             })
 
-    # C. Oportunidad por origen (lenguaje prudente si muestra pequeña).
+    # F. Oportunidad por origen (lenguaje prudente si muestra pequeña).
     if global_conv is not None and global_conv > 0:
         favorable = [it for it in items
                      if it.get("cantidad", 0) >= 20 and it.get("conversion_pct") is not None
@@ -992,7 +1188,7 @@ def build_executive_insights(demand, conversion, sla, sources, pipeline):
                 "accion": "Observar si el comportamiento se mantiene al acumular una muestra mayor.",
             })
 
-    # E. Cobertura de cartera (solo si señal material, no prioritaria).
+    # G. Cobertura de cartera (solo si señal material, no prioritaria).
     cov = (pipeline or {}).get("pct_cartera_con_demanda")
     if cov is not None and cov < 15:
         con_demanda = (pipeline or {}).get("propiedades_con_demanda", 0)
@@ -1545,7 +1741,7 @@ def _compute_leads_dashboard_overview(
     timing: dict | None = None,
     _cache_bypass: bool = False,
 ) -> dict:
-    """Resumen para la CARD 1 (Demanda & Meta) del Leads Dashboard.
+    """Uncached computation for the CARD 1 (Demanda & Meta) of the dashboard.
 
     Read-only. Calcula leads recibidos en el periodo seleccionado, el periodo
     equivalente anterior, la tendencia diaria (sparkline) y la meta de negocio.
@@ -1603,7 +1799,7 @@ def _compute_leads_dashboard_overview(
         cmp=mode, preset=preset, ps_prev=prev_start, pe_prev=prev_end,
     )
     cached = _cache_get(key) if not _cache_bypass else None
-    if cached:
+    if cached is not None:
         if timing is not None:
             timing["cache"] = "HIT"
             timing["total_ms"] = round((time.perf_counter() - request_started) * 1000, 1)
@@ -1859,12 +2055,19 @@ def _compute_leads_dashboard_overview(
                 "pct": s.get("pct", 0.0),
                 "prev": s.get("prev", 0),
                 "diff": s.get("cantidad", 0) - s.get("prev", 0),
+                "prev_visitas": s.get("prev_visitas", 0),
+                "prev_pct": s.get("prev_pct"),
+                "prev_conversion_pct": s.get("prev_conversion_pct"),
+                "funnel": s.get("funnel", []),
             }
             for s in src_items
         ],
         "total": src_total,
         "total_visitas": src_total_visitas,
     }
+    sources_data["costs"] = build_portal_cost_summary(
+        sources_data["items"], period_start, period_end
+    )
 
     insights = build_executive_insights(
         demand={"variation_pct": trends.get("variation_pct")},
@@ -1872,6 +2075,7 @@ def _compute_leads_dashboard_overview(
         sla=sla_data,
         sources=sources_data,
         pipeline=pipeline,
+        funnel=funnel,
     )
 
     serialization_started = time.perf_counter()
@@ -1974,71 +2178,4 @@ def _compute_leads_dashboard_overview(
             timing["total_ms"], timing.get("concurrent_block_ms", 0),
             timing.get("components", {}), timing.get("component_details", {}),
         )
-    return result
-
-
-def get_leads_dashboard_overview(
-    period_start: str = None,
-    period_end: str = None,
-    compare: str = None,
-    period_preset: str = None,
-    timing: dict | None = None,
-) -> dict:
-    """SWR cache wrapper for the executive overview."""
-    from .commercial_periods import canonical_preset, local_today, preset_range, comparison_period
-    today = local_today()
-    try:
-        ps_dt = datetime.strptime(period_start, "%Y-%m-%d").date() if period_start else today - timedelta(days=29)
-        pe_dt = datetime.strptime(period_end, "%Y-%m-%d").date() if period_end else today
-        pe_dt = min(pe_dt, today)
-        ps_dt = min(ps_dt, pe_dt)
-    except (ValueError, TypeError):
-        pe_dt, ps_dt = today, today - timedelta(days=29)
-    if period_preset in ("today", "week", "month", "30d"):
-        ps_dt, pe_dt = preset_range(period_preset, today)
-    ps, pe = ps_dt.strftime("%Y-%m-%d"), pe_dt.strftime("%Y-%m-%d")
-    mode = compare if compare in ("auto", "prev", "yoy", "none") else "auto"
-    preset = canonical_preset(ps_dt, pe_dt, period_preset if period_preset in ("today", "week", "month", "30d", "custom") else "custom")
-    comp_start, comp_end, _ = comparison_period(ps_dt, pe_dt, mode, preset)
-    key = _cache_key("leads-dashboard-overview", ps=ps, pe=pe, cmp=mode, preset=preset,
-                     ps_prev=comp_start.strftime("%Y-%m-%d") if comp_start else None,
-                     pe_prev=comp_end.strftime("%Y-%m-%d") if comp_end else None)
-    started = time.perf_counter()
-    cached, age, state = _cache_state(key)
-    pinned = any(key == pinned_key for _, pinned_key, _ in _pinned_dashboard_jobs())
-    if state == "fresh":
-        if timing is not None:
-            timing.update({"cache": "HIT", "total_ms": round((time.perf_counter() - started) * 1000, 1)})
-        return cached
-
-    def load():
-        return _compute_leads_dashboard_overview(
-            period_start=ps, period_end=pe, compare=mode, period_preset=preset,
-            timing=None, _cache_bypass=True,
-        )
-
-    if state == "soft":
-        _schedule_cache_refresh(key, load)
-        if timing is not None:
-            timing.update({"cache": "STALE", "stale_age_seconds": round(age or 0, 1),
-                           "refresh": "scheduled", "total_ms": round((time.perf_counter() - started) * 1000, 1)})
-        return cached
-
-    if state == "hard" and pinned and age is not None and age <= PINNED_MAX_STALE:
-        stale_entry = L1_CACHE.get(key)
-        stale_payload = copy.deepcopy(stale_entry[1]) if stale_entry else None
-        if stale_payload is not None:
-            _schedule_cache_refresh(key, load)
-            stale_payload = _stale_payload(stale_payload, age, degraded=True)
-            if timing is not None:
-                timing.update({"cache": "STALE", "degraded": True,
-                               "stale_age_seconds": round(age, 1), "refresh": "scheduled",
-                               "total_ms": round((time.perf_counter() - started) * 1000, 1)})
-            return stale_payload
-    if timing is not None:
-        timing["cache"] = "MISS"
-    result = load()
-    _cache_set(key, result)
-    if timing is not None:
-        timing["total_ms"] = round((time.perf_counter() - started) * 1000, 1)
     return result

@@ -6,6 +6,7 @@ import pytz
 import re
 import uuid
 import logging
+from pymongo.errors import DuplicateKeyError
 
 logger = logging.getLogger(__name__)
 
@@ -1812,30 +1813,84 @@ def reconcile_invalid_management(phone, actor="Administración"):
     }, lead_id=lead["_id"], actor_type="administrator")
     return {"status": "repaired", "pipeline_stage": PipelineStage.NEW}
 
-def manage_crm_notes(phone, note_data, action="add"):
+def manage_crm_notes(
+    phone,
+    note_data,
+    action="add",
+    *,
+    lead_id=None,
+    actor_user_id=None,
+    assignment_cycle_id=None,
+):
+    """Create or delete a CRM note using the resolved lead identity.
+
+    The API resolves the lead before entering this synchronous worker and
+    passes its ``_id`` plus audit metadata.  Keep the phone fallback for
+    legacy callers, but never prefer it when an exact lead id is available.
+    """
     db = get_db()
-    phone_clean = phone.replace(" ", "").replace("+", "").strip()
-    
+    phone_clean = str(phone or "").replace(" ", "").replace("+", "").strip()
+    lead_query = (
+        {"_id": lead_id}
+        if lead_id is not None
+        else {"phone": {"$regex": re.escape(phone_clean)}}
+    )
+
+    def _audit(note_action, note_id, timestamp):
+        try:
+            db["crm_events"].insert_one({
+                "_id": f"crm_note:{note_action}:{lead_id}:{note_id}",
+                "type": f"CRM_NOTE_{note_action.upper()}",
+                "lead_id": lead_id,
+                "assignment_cycle_id": assignment_cycle_id,
+                "actor_user_id": actor_user_id,
+                "actor": actor_user_id,
+                "actor_type": "human",
+                "timestamp": timestamp,
+                "confirmed": False,
+                "meta": {"note_id": note_id, "phone": phone_clean},
+            })
+        except DuplicateKeyError:
+            # Idempotent retries must not fail after the note was persisted.
+            pass
+        except Exception:
+            # Auditing must not turn a successful note write into a 500.
+            logger.warning("CRM note audit failed", exc_info=True)
+
     if action == "add":
         note_id = str(uuid.uuid4())[:8]
+        timestamp = note_data.get("timestamp_iso") or datetime.now(CHILE_TZ).isoformat()
         note = {
-            "id": note_id, 
-            "content": note_data.get("content"), 
-            "color": note_data.get("color"), 
-            "created_at_str": datetime.now().strftime("%d/%m/%Y"),
-            "timestamp_iso": datetime.now().isoformat()
+            "id": note_id,
+            "content": note_data.get("content"),
+            "color": note_data.get("color"),
+            "created_at_str": note_data.get("created_at_str") or datetime.now(CHILE_TZ).strftime("%d/%m/%Y %H:%M"),
+            "timestamp_iso": timestamp,
+            "lead_id": lead_id,
+            "actor_user_id": actor_user_id,
+            "assignment_cycle_id": assignment_cycle_id,
         }
-        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$push": {"sticky_notes": note}})
-        if result.modified_count:
-            from chatbot.crm_updates import bump_crm_leads_version
-            bump_crm_leads_version(db, reason="note_added", phone=phone_clean)
+        result = db["leads"].update_one(lead_query, {"$push": {"sticky_notes": note}})
+        if not result.modified_count:
+            return False
+        from chatbot.crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason="note_added", phone=phone_clean)
+        _audit("added", note_id, timestamp)
         return note
-    elif action == "delete":
-        result = db["leads"].update_one({"phone": {"$regex": phone_clean}}, {"$pull": {"sticky_notes": {"id": note_data.get("id")}}})
-        if result.modified_count:
-            from chatbot.crm_updates import bump_crm_leads_version
-            bump_crm_leads_version(db, reason="note_deleted", phone=phone_clean)
+
+    if action == "delete":
+        note_id = note_data.get("id")
+        result = db["leads"].update_one(
+            lead_query,
+            {"$pull": {"sticky_notes": {"id": note_id}}},
+        )
+        if not result.modified_count:
+            return False
+        from chatbot.crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason="note_deleted", phone=phone_clean)
+        _audit("deleted", note_id, datetime.now(CHILE_TZ).isoformat())
         return True
+
     return False
 
 

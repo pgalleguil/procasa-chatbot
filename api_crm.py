@@ -1835,6 +1835,11 @@ def manage_crm_notes(
         if lead_id is not None
         else {"phone": {"$regex": re.escape(phone_clean)}}
     )
+    lead_id_text = str(lead_id) if lead_id is not None else None
+    actor_user_id_text = str(actor_user_id) if actor_user_id is not None else None
+    assignment_cycle_id_text = (
+        str(assignment_cycle_id) if assignment_cycle_id is not None else None
+    )
 
     def _audit(note_action, note_id, timestamp):
         try:
@@ -1842,9 +1847,9 @@ def manage_crm_notes(
                 "_id": f"crm_note:{note_action}:{lead_id}:{note_id}",
                 "type": f"CRM_NOTE_{note_action.upper()}",
                 "lead_id": lead_id,
-                "assignment_cycle_id": assignment_cycle_id,
-                "actor_user_id": actor_user_id,
-                "actor": actor_user_id,
+                "assignment_cycle_id": assignment_cycle_id_text,
+                "actor_user_id": actor_user_id_text,
+                "actor": actor_user_id_text,
                 "actor_type": "human",
                 "timestamp": timestamp,
                 "confirmed": False,
@@ -1866,9 +1871,11 @@ def manage_crm_notes(
             "color": note_data.get("color"),
             "created_at_str": note_data.get("created_at_str") or datetime.now(CHILE_TZ).strftime("%d/%m/%Y %H:%M"),
             "timestamp_iso": timestamp,
-            "lead_id": lead_id,
-            "actor_user_id": actor_user_id,
-            "assignment_cycle_id": assignment_cycle_id,
+            # Keep the returned note JSON-safe; Mongo ObjectIds cannot be
+            # encoded by FastAPI's response serializer.
+            "lead_id": lead_id_text,
+            "actor_user_id": actor_user_id_text,
+            "assignment_cycle_id": assignment_cycle_id_text,
         }
         result = db["leads"].update_one(lead_query, {"$push": {"sticky_notes": note}})
         if not result.modified_count:

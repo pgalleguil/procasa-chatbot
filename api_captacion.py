@@ -46,6 +46,8 @@ from captacion_distribution import (
     STALE_FOR_AUTO_DISTRIBUTION,
     has_broker_identity,
     is_global_portal,
+    is_captacion_distribution_executive,
+    active_workable_backlogs,
     open_workloads,
     portal_key,
     distribution_unassigned_clause,
@@ -2878,6 +2880,7 @@ def _build_bounded_distribution_plan(
     batch_size: int,
     max_per_agent: int,
     max_open: int,
+    active_workable_backlog: dict[str, int] | None = None,
 ) -> tuple[list[tuple[dict, str]], dict[str, int]]:
     """Select a bounded, priority-ordered plan without mutating Mongo."""
     agents_by_id = {agent["id"]: agent for agent in agents}
@@ -2886,6 +2889,11 @@ def _build_bounded_distribution_plan(
         for commune in agent.get("comunas_interes_norm") or []:
             commune_to_agents.setdefault(commune, []).append(agent["id"])
     run_load = {agent_id: 0 for agent_id in agents_by_id}
+    priority_workload = (
+        active_workable_backlog
+        if active_workable_backlog is not None
+        else open_workload
+    )
     stats = {"no_coverage": 0, "capacity": 0, "selected": 0}
     plan: list[tuple[dict, str]] = []
 
@@ -2908,7 +2916,7 @@ def _build_bounded_distribution_plan(
         best_id = min(
             available_ids,
             key=lambda agent_id: (
-                open_workload.get(agent_id, 0) + run_load.get(agent_id, 0),
+                priority_workload.get(agent_id, 0) + run_load.get(agent_id, 0),
                 agents_by_id[agent_id]["name"].casefold(),
             ),
         )
@@ -2991,6 +2999,8 @@ def distribute_sourced_leads(
         "assigned_by_executive": {},
         "active_agents": 0,
         "open_workload_before": {},
+        "active_workable_backlog_before": {},
+        "priority_workload_policy": "ACTIVE_WORKABLE_BACKLOG",
         "max_open_per_executive": int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE),
         "max_per_executive_per_run": int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE),
         "terminal_states": list(CAPTACION_TERMINAL_STATES),
@@ -3035,9 +3045,9 @@ def distribute_sourced_leads(
         events_coll = db["captacion_management_events"]
         agents_raw = list(db["usuarios"].find({
             "is_active": True,
-            "rol": "agente",
             "comunas_interes_norm": {"$exists": True, "$ne": []},
         }))
+        agents_raw = [raw for raw in agents_raw if is_captacion_distribution_executive(raw)]
         agents = []
         for raw in agents_raw:
             agents.append({
@@ -3051,8 +3061,14 @@ def distribute_sourced_leads(
 
         agent_by_id = {agent["id"]: agent for agent in agents}
         open_workload = _distribution_open_workloads(db, list(agent_by_id))
+        active_workable_backlog = active_workable_backlogs(
+            db,
+            list(agent_by_id),
+            events_coll=events_coll,
+        )
         metrics["active_agents"] = len(agents)
         metrics["open_workload_before"] = dict(open_workload)
+        metrics["active_workable_backlog_before"] = dict(active_workable_backlog)
         max_open = int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE)
         max_per_agent = int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE)
         batch_size = max(1, requested_batch)
@@ -3106,6 +3122,7 @@ def distribute_sourced_leads(
             batch_size=batch_size,
             max_per_agent=max_per_agent,
             max_open=max_open,
+            active_workable_backlog=active_workable_backlog,
         )
         metrics["batch_selected"] = len(plan)
         metrics["skipped_no_coverage"] = plan_stats["no_coverage"]
@@ -3126,6 +3143,12 @@ def distribute_sourced_leads(
                     "executive_id": best_id,
                     "open_workload_before": before,
                     "open_workload_after": before + 1,
+                    "active_workable_backlog_before": int(
+                        active_workable_backlog.get(best_id, 0) + run_load.get(best_id, 0)
+                    ),
+                    "active_workable_backlog_after": int(
+                        active_workable_backlog.get(best_id, 0) + run_load.get(best_id, 0) + 1
+                    ),
                     "priority": assignment_classification_priority(prop),
                     "age_bucket": distribution_age_decision(prop, now=started_at)["bucket"],
                     "age_days": distribution_age_decision(prop, now=started_at)["age_days"],
@@ -3215,10 +3238,10 @@ def redistribute_inactive_agent_captaciones(
     batch_size = resolve_manual_batch_size(batch_size, allow_large=allow_large_batch)
     db = get_db()
     coll = get_captacion_collection(db)
-    active_agents = list(db["usuarios"].find({
-        "is_active": True, "rol": "agente",
+    active_agents = [raw for raw in db["usuarios"].find({
+        "is_active": True,
         "comunas_interes_norm": {"$exists": True, "$ne": []},
-    }))
+    }) if is_captacion_distribution_executive(raw)]
     inactive_names = [a.get("nombre") for a in db["usuarios"].find(
         {"is_active": False, "rol": "agente"}, {"nombre": 1}
     ) if a.get("nombre")]

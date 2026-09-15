@@ -41,6 +41,21 @@ GLOBAL_PORTAL_ALIASES = frozenset({
 })
 GLOBAL_DISTRIBUTION_LOCK_ID = "global"
 DEFAULT_LOCK_TTL_SECONDS = 15 * 60
+CAPTACION_PRIVILEGED_ROLES = frozenset({"admin", "supervisor", "jefatura"})
+# A privileged user is never an automatic captacion recipient merely because
+# they can supervise the CRM. These fields are explicit opt-in switches for
+# the exceptional case where a privileged user also works as an executive.
+CAPTACION_EXECUTIVE_OVERRIDE_FIELDS = (
+    "captacion_enabled",
+    "is_captacion_agent",
+    "ejecutivo_captacion",
+    "can_receive_captacion",
+)
+HUMAN_MANAGEMENT_EVENT_TYPES = frozenset({
+    "management_confirmed",
+    "manual_decision_confirmed",
+    "capture_confirmed",
+})
 DISTRIBUTION_CAPTURE_DATE_FIELDS = (
     "first_seen",
     "first_seen_at",
@@ -159,6 +174,22 @@ def portal_key(document: dict[str, Any]) -> str:
     return str(document.get("origen") or document.get("source_portal") or "").strip().lower()
 
 
+def _truthy_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "si", "sí"}
+
+
+def is_captacion_distribution_executive(user: dict[str, Any]) -> bool:
+    """Return whether a user may receive automatic captacion assignments."""
+    role = str(user.get("rol") or user.get("role") or "").strip().lower()
+    if role == "agente":
+        return True
+    if role not in CAPTACION_PRIVILEGED_ROLES:
+        return False
+    return any(_truthy_flag(user.get(field)) for field in CAPTACION_EXECUTIVE_OVERRIDE_FIELDS)
+
+
 def is_global_portal(document: dict[str, Any]) -> bool:
     return portal_key(document) in GLOBAL_PORTAL_ALIASES
 
@@ -217,8 +248,11 @@ def _agent_is_active(db: Any, agent: dict[str, Any]) -> bool:
     try:
         agent_id = agent.get("id") or agent.get("_id")
         object_id = ObjectId(str(agent_id)) if ObjectId.is_valid(str(agent_id)) else agent_id
-        row = db["usuarios"].find_one({"_id": object_id, "is_active": True, "rol": "agente"}, {"_id": 1})
-        return row is not None
+        row = db["usuarios"].find_one(
+            {"_id": object_id, "is_active": True},
+            {"_id": 1, "rol": 1, **{field: 1 for field in CAPTACION_EXECUTIVE_OVERRIDE_FIELDS}},
+        )
+        return bool(row and is_captacion_distribution_executive(row))
     except (AttributeError, KeyError, TypeError, AssertionError):
         # Unit fakes may intentionally omit the users collection. Production
         # Mongo always has it, so this fallback is test-only compatibility.
@@ -251,6 +285,96 @@ def open_workloads(db: Any, agent_ids: list[str]) -> dict[str, int]:
         {"$group": {"_id": "$gestion.ejecutivo_id", "count": {"$sum": 1}}},
     ])
     return {str(row.get("_id")): int(row.get("count") or 0) for row in rows}
+
+
+def _management_event_keys(events_coll: Any) -> set[tuple[str, str]]:
+    """Load credited human-management references once for a workload snapshot."""
+    keys: set[tuple[str, str]] = set()
+    rows = events_coll.find(
+        {"event_type": {"$in": list(HUMAN_MANAGEMENT_EVENT_TYPES)}, "credited": True},
+        {"property_id": 1, "listing_id": 1, "url": 1},
+    )
+    for event in rows:
+        for event_field, document_field in (
+            ("property_id", "_id"),
+            ("listing_id", "listing_id"),
+            ("url", "url"),
+        ):
+            value = event.get(event_field)
+            if value not in (None, ""):
+                keys.add((document_field, str(value)))
+    return keys
+
+
+def has_valid_human_management_event(
+    property_doc: dict[str, Any],
+    events_coll: Any,
+    *,
+    event_keys: set[tuple[str, str]] | None = None,
+) -> bool:
+    """Check credited human work using the management ledger as authority."""
+    keys = event_keys if event_keys is not None else _management_event_keys(events_coll)
+    for field in ("_id", "listing_id", "url"):
+        value = property_doc.get(field)
+        if value not in (None, "") and (field, str(value)) in keys:
+            return True
+    return False
+
+
+def has_unverified_management_signal(property_doc: dict[str, Any]) -> bool:
+    """Protect legacy work markers lacking a ledger event from recycling."""
+    gestion = property_doc.get("gestion") or {}
+    state = str(gestion.get("estado") or "").strip()
+    return bool(
+        state not in {"", "NUEVO", "DETECTADO"}
+        or gestion.get("fecha_ultima_gestion") is not None
+        or gestion.get("notas")
+        or gestion.get("actividades")
+    )
+
+
+def active_workable_backlogs(
+    db: Any,
+    agent_ids: list[str],
+    *,
+    events_coll: Any | None = None,
+) -> dict[str, int]:
+    """Count still-workable assignments for each active executive.
+
+    ``open_workloads`` remains the hard safety-cap metric. This metric is the
+    prioritization signal and excludes terminal/broker/quality records plus
+    credited human work. Legacy work markers without a ledger event are
+    conservatively excluded as unverified rather than recycled.
+    """
+    if not agent_ids:
+        return {}
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+
+    collection = db[Config.CAPTACION_COLLECTION_NAME]
+    events = events_coll if events_coll is not None else db["captacion_management_events"]
+    event_keys = _management_event_keys(events)
+    workloads = {str(agent_id): 0 for agent_id in agent_ids}
+    for property_doc in collection.find({
+        "gestion.ejecutivo_id": {"$in": [str(agent_id) for agent_id in agent_ids]},
+    }):
+        gestion = property_doc.get("gestion") or {}
+        agent_id = str(gestion.get("ejecutivo_id") or "")
+        if agent_id not in workloads or is_terminal_state(gestion.get("estado")):
+            continue
+        if has_valid_human_management_event(property_doc, events, event_keys=event_keys):
+            continue
+        if has_unverified_management_signal(property_doc):
+            continue
+        identity = (
+            get_contact_identity_evidence(db, property_doc)
+            if phone_learning_global_lookup_enabled()
+            else None
+        )
+        decision = calculate_assignment_eligibility(property_doc, contact_identity=identity)
+        if not decision.get("assignment_ready") or has_broker_identity(property_doc):
+            continue
+        workloads[agent_id] += 1
+    return workloads
 
 
 class MongoDistributionLock:

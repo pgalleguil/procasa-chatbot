@@ -187,6 +187,28 @@ def test_duplicate_webhook_creates_one_job_and_one_batch():
     assert len(db.collection.find({"kind": queue.KIND_BATCH})) == 1
 
 
+def test_webhook_acknowledges_job_already_attached_by_worker_race():
+    class RaceCollection(Collection):
+        def update_one(self, query, update):
+            if query.get("kind") == queue.KIND_JOB and query.get("state") == queue.ST_RECEIVED:
+                job = self.docs[query["_id"]]
+                batch = next(doc for doc in self.docs.values() if doc.get("kind") == queue.KIND_BATCH)
+                job["state"] = queue.ST_BATCHING
+                job["batch_id"] = batch["_id"]
+                job["updated_at"] = update["$set"]["updated_at"]
+                batch.setdefault("job_ids", []).append(job["_id"])
+                batch["conversation_sequence"] = batch.get("conversation_sequence", 0) + 1
+                return Result(1, 0)
+            return super().update_one(query, update)
+
+    db = DB()
+    db.collection = RaceCollection()
+    job_id = add(db, "wamid-worker-race", "hola")
+    job = db.collection.docs[job_id]
+    assert job["state"] == queue.ST_BATCHING
+    assert job["batch_id"]
+
+
 def test_new_inbound_never_reuses_terminal_batch_with_stale_conversation_lock():
     db = DB()
     stale_id = "batch:terminal-stale"

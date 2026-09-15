@@ -936,43 +936,12 @@
             border-color: #10b981;
         }
 
-        /* Post-send toast */
         .tiny-count {
             font-size: 0.7rem;
             opacity: 0.7;
             background: rgba(255, 255, 255, 0.1);
             padding: 1px 5px;
             border-radius: 8px;
-        }
-
-        #postSendToast {
-            position: fixed;
-            bottom: 28px;
-            right: 28px;
-            background: rgba(16, 185, 129, 0.95);
-            color: #fff;
-            padding: 12px 20px;
-            border-radius: 12px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            z-index: 9999;
-            display: none;
-            gap: 10px;
-            align-items: center;
-            animation: slideInRight 0.3s ease;
-        }
-
-        @keyframes slideInRight {
-            from {
-                transform: translateX(80px);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
         }
 
         .tpl-info {
@@ -1108,7 +1077,7 @@
                 {'id': 'negotiate', 'label': 'Negociación', 'match': ['Contacto exitoso', 'Reunión agendada',
                 'INTERESADO EN TASACIÓN', 'TASACIÓN ENVIADA']},
                 {'id': 'close', 'label': 'Cierre', 'match': ['Captado', 'Descartado', 'Propiedad no disponible', 'No
-                interesado', 'Corredor', 'Publicación expirada']}
+                interesado', 'Corredor', 'Publicación expirada', 'Duplicado']}
                 ] %}
                 {% for s in stages %}
                 {% set is_active = prop.estado_captacion in s.match %}
@@ -1120,7 +1089,7 @@
                         {{ s.label }}
                     </div>
                     {% if is_active %}
-                    <div class="mt-2 badge bg-primary" style="
+                    <div class="mt-2 badge bg-primary" data-captacion-status style="
                 font-size: 0.7rem;
                 padding: 4px 10px;
                 border-radius: 8px;
@@ -1189,6 +1158,8 @@
                             <span>{{ prop.precio_display }}</span>
                         </div>
                         <span
+                            id="captacion-visible-status"
+                            data-captacion-status
                             class="badge {{ 'badge-nuevo' if prop.gestion.estado == 'NUEVO' else 'badge-gestion' }} badge-custom">
                             {{ prop.gestion.estado }}
                         </span>
@@ -1291,13 +1262,16 @@
                                         onclick="startCallManagement(event)">
                                         <i class="fa-solid fa-phone"></i>
                                     </button>
-                                    <button type="button" id="btn-whatsapp" class="btn btn-wa-custom" title="WhatsApp"
-                                        data-bs-toggle="modal" data-bs-target="#commModal"
-                                        onclick="openCommPanel('owner', 'wa')">
-                                        <i class="fa-brands fa-whatsapp"></i>
-                                    </button>
-                                </div>
-                            </div>
+                                     <button type="button" id="btn-whatsapp" class="btn btn-wa-custom" title="WhatsApp"
+                                         data-bs-toggle="modal" data-bs-target="#commModal"
+                                         onclick="openCommPanel('owner', 'wa')">
+                                         <i class="fa-brands fa-whatsapp"></i>
+                                     </button>
+                                 </div>
+                                <div id="known-broker-auto-match-alert"
+                                    class="alert alert-warning mt-3 mb-0 {% if not prop.gestion.known_broker_auto_match %}d-none{% endif %}"
+                                    role="status" aria-live="polite">{% if prop.gestion.known_broker_auto_match %}Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.{% endif %}</div>
+                             </div>
 
                             <div class="col-md-6">
                                 <label class="info-label">Email</label>
@@ -1323,6 +1297,7 @@
                             <div class="col-12 mt-4">
                                 <button
                                     class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2 py-3 rounded-2xl"
+                                    id="save-contact-btn"
                                     onclick="saveContactInfo(event)" style="font-weight: 700; letter-spacing: 0.5px;">
                                     <i class="fa-solid fa-floppy-disk"></i> GUARDAR DATOS DE CONTACTO
                                 </button>
@@ -1361,14 +1336,15 @@
                             </div>
 
                             <div class="col-12">
-                                <label class="info-label">Bitácora</label>
+                                <label class="info-label">Notas de gestión (opcional)</label>
                                 <textarea class="form-control" id="notes" rows="3"
-                                    placeholder="Escribe el resultado de tu gestión aquí..."></textarea>
+                                    placeholder="Agrega una nota sobre esta gestión..."></textarea>
                             </div>
 
                             <div class="col-12 mt-2">
                                 <button
                                     class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2"
+                                    id="update-status-btn"
                                     onclick="updateStatus()" style="background: var(--accent)">
                                     <i class="fa-solid fa-check-circle"></i> ACTUALIZAR ESTADO
                                 </button>
@@ -1627,57 +1603,62 @@
                 </div>
             </div>
 
-            <!-- POST-SEND TOAST -->
-            <div id="postSendToast" style="display:none;"></div>
-
-            <!-- FEEDBACK LOOP MODAL -->
-            <div class="modal fade" id="feedbackModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title"><i
-                                    class="fa-solid fa-clock-rotate-left me-2 text-warning"></i>Bitácora de
-                                Gestión</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
-                                aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body text-center">
-                            <p class="mb-4 text-secondary">Confirma el resultado. Abrir otra aplicación no cuenta como gestión.</p>
-                            <div class="d-grid gap-2" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
-                                <button type="button" class="btn btn-outline-secondary" onclick="confirmManagementResult('no_answer')"><i class="fa-solid fa-phone-slash me-2"></i>No respondió</button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="confirmManagementResult('busy')"><i class="fa-solid fa-clock me-2"></i>Ocupado</button>
-                                <button type="button" class="btn btn-outline-danger" onclick="confirmManagementResult('invalid_number')"><i class="fa-solid fa-triangle-exclamation me-2"></i>Número inválido</button>
-                                <button type="button" class="btn btn-outline-success" onclick="confirmManagementResult('contacted')"><i class="fa-solid fa-circle-check me-2"></i>Contactado</button>
-                                <button type="button" class="btn btn-outline-primary" onclick="confirmManagementResult('callback_requested')"><i class="fa-solid fa-calendar me-2"></i>Solicita llamada posterior</button>
-                                <button type="button" class="btn btn-outline-success" onclick="confirmManagementResult('message_sent')"><i class="fa-solid fa-paper-plane me-2"></i>Mensaje enviado</button>
-                            </div>
-                            <div class="text-start mt-4">
-                                <label for="commercialResult" class="form-label text-secondary">Resultado comercial (opcional)</label>
-                                <select class="form-select" id="commercialResult">
-                                    <option value="">Sin resultado comercial</option>
-                                    <option value="not_interested">No interesado</option>
-                                    <option value="captured">Captada</option>
-                                    <option value="broker_identified">Corredor identificado</option>
-                                    <option value="in_progress">Continúa en gestión</option>
-                                    <option value="unavailable">Propiedad no disponible</option>
-                                </select>
-                            </div>
-                            <textarea class="form-control mt-4" id="feedbackNotes" rows="2"
-                                placeholder="Opcional: Detalles adicionales de la gestión..."></textarea>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="confirmManagementResult('cancel')"
-                                style="background: rgba(255,255,255,0.1); border: none;">Cancelar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- defer: el parser HTML no se bloquea mientras bajan estos scripts -->
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
             <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
             <script>
                 const followupContextToken = new URLSearchParams(window.location.search).get('followup_token') || '';
+                const PHONE_LEARNING_BROKER_MESSAGE = 'Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.';
+                const PHONE_LEARNING_CAN_REVIEW = {{ 'true' if user_role in ['supervisor', 'admin', 'jefatura'] else 'false' }};
+                let phoneLearningBrokerLocked = {{ 'true' if prop.gestion.known_broker_auto_match else 'false' }};
+
+                function phoneLearningLockApplies() {
+                    return phoneLearningBrokerLocked && !PHONE_LEARNING_CAN_REVIEW;
+                }
+
+                function applyPhoneLearningBrokerState() {
+                    const alert = document.getElementById('known-broker-auto-match-alert');
+                    if (phoneLearningBrokerLocked && alert) {
+                        alert.textContent = PHONE_LEARNING_BROKER_MESSAGE;
+                        alert.classList.remove('d-none');
+                    }
+
+                    if (phoneLearningBrokerLocked) {
+                        document.querySelectorAll('[data-captacion-status]').forEach((element) => {
+                            element.textContent = 'Corredor';
+                        });
+                        const statusSelect = document.getElementById('statusSelect');
+                        if (statusSelect) statusSelect.value = 'Corredor';
+                    }
+
+                    const locked = phoneLearningLockApplies();
+                    const controlIds = [
+                        'wa-telefono',
+                        'contact-nombre',
+                        'contact-email',
+                        'contact-notas',
+                        'proximo-contacto',
+                        'statusSelect',
+                        'notes',
+                        'save-contact-btn',
+                        'update-status-btn',
+                        'btn-call',
+                        'btn-whatsapp',
+                        'btn-email',
+                    ];
+                    controlIds.forEach((id) => {
+                        const element = document.getElementById(id);
+                        if (!element) return;
+                        element.disabled = locked;
+                        element.setAttribute('aria-disabled', locked ? 'true' : 'false');
+                        if (locked) {
+                            element.title = 'Este dato fue marcado como Corredor por Phone Learning.';
+                        }
+                    });
+                    syncCommButtons();
+                    if (typeof updateSendLink === 'function') updateSendLink();
+                }
+
                 // Scripts originales de inicialización
                 document.addEventListener("DOMContentLoaded", () => {
                     flatpickr(".flatpickr-date", {
@@ -1689,6 +1670,8 @@
                                 ? "light"
                                 : "dark",
                     });
+
+                    applyPhoneLearningBrokerState();
 
                     // Initial validation
                     syncCommButtons();
@@ -1715,28 +1698,29 @@
                     const btnCall = document.getElementById('btn-call');
                     const btnWA = document.getElementById('btn-whatsapp');
                     const btnEmail = document.getElementById('btn-email');
+                    const brokerLocked = phoneLearningLockApplies();
 
                     // Logic: Enabled only if NOT empty AND NOT changed (saved)
                     if (btnCall) {
-                        const canUsePhone = phone && !phoneChanged;
+                        const canUsePhone = phone && !phoneChanged && !brokerLocked;
                         btnCall.disabled = !canUsePhone;
                         btnCall.style.opacity = canUsePhone ? "1" : "0.5";
                         btnCall.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnCall.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar");
+                        btnCall.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar"));
                     }
                     if (btnWA) {
-                        const canUsePhone = phone && !phoneChanged;
+                        const canUsePhone = phone && !phoneChanged && !brokerLocked;
                         btnWA.disabled = !canUsePhone;
                         btnWA.style.opacity = canUsePhone ? "1" : "0.5";
                         btnWA.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnWA.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp");
+                        btnWA.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp"));
                     }
                     if (btnEmail) {
-                        const canUseEmail = email && !emailChanged;
+                        const canUseEmail = email && !emailChanged && !brokerLocked;
                         btnEmail.disabled = !canUseEmail;
                         btnEmail.style.opacity = canUseEmail ? "1" : "0.5";
                         btnEmail.style.cursor = canUseEmail ? "pointer" : "not-allowed";
-                        btnEmail.title = !email ? "Ingrese un email" : (emailChanged ? "Guarde los cambios para activar" : "Enviar Email");
+                        btnEmail.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!email ? "Ingrese un email" : (emailChanged ? "Guarde los cambios para activar" : "Enviar Email"));
                     }
                 }
 
@@ -1780,87 +1764,41 @@
                     }
                 }
 
-                let pendingManagementAttempt = null;
-                let externalAppWasHidden = false;
-                let confirmationDisplayed = false;
+                const CAPTACION_METRICS_REFRESH_KEY = 'captacionMetricsUpdatedAt';
 
-                async function createManagementAttempt(action, channel, message, template_used) {
-                    const payload = {
-                        id: "{{ prop.id|default(prop._id) }}",
-                        action: action,
-                        channel: channel,
-                        message: message,
-                        phone: document.getElementById('wa-telefono') ? document.getElementById('wa-telefono').value : '',
-                        result: 'pending_confirmation',
-                        template_used: template_used || "",
-                        followup_token: followupContextToken || null
-                    };
-                    const response = await fetch('/api/captacion/log_action', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await response.json();
-                    if (!response.ok || data.status !== 'ok' || !data.attempt_id) {
-                        throw new Error(data.detail || data.message || 'No fue posible iniciar la gestión');
-                    }
-                    pendingManagementAttempt = {
-                        attempt_id: data.attempt_id,
-                        channel: channel,
-                        initiated_at: Date.now()
-                    };
-                    sessionStorage.setItem('captacionPendingManagement', JSON.stringify(pendingManagementAttempt));
-                    externalAppWasHidden = false;
-                    confirmationDisplayed = false;
-                    return pendingManagementAttempt;
-                }
-
-                function showManagementConfirmation() {
-                    if (!pendingManagementAttempt || confirmationDisplayed) return;
-                    confirmationDisplayed = true;
-                    const modalElement = document.getElementById('feedbackModal');
-                    bootstrap.Modal.getOrCreateInstance(modalElement).show();
-                }
-
-                function scheduleManagementConfirmation() {
-                    setTimeout(() => {
-                        if (pendingManagementAttempt && !document.hidden) showManagementConfirmation();
-                    }, 1400);
-                }
-
-                async function startCallManagement(event) {
-                    event.preventDefault();
-                    const phone = document.getElementById('wa-telefono').value;
+                function notifyCaptacionMetricsUpdated() {
                     try {
-                        await createManagementAttempt('call', 'tel', 'Llamada iniciada a ' + phone, '');
-                        scheduleManagementConfirmation();
-                        window.location.href = 'tel:' + phone;
-                    } catch (error) {
-                        alert(error.message);
+                        localStorage.setItem(CAPTACION_METRICS_REFRESH_KEY, String(Date.now()));
+                    } catch (_) {
+                        // El listado también se actualiza al volver mediante pageshow.
                     }
+                }
+
+                function startCallManagement(event) {
+                    event.preventDefault();
+                    if (phoneLearningLockApplies()) return false;
+                    const phone = document.getElementById('wa-telefono').value;
+                    window.location.href = 'tel:' + phone;
                     return false;
                 }
 
-                async function startMessageManagement(event) {
+                function startMessageManagement(event) {
                     event.preventDefault();
+                    if (phoneLearningLockApplies()) return false;
                     const link = event.currentTarget;
                     const destination = link.href;
-                    const message = document.getElementById('commMessage').value;
-                    const template = typeof currentSelectedTemplateLabel !== 'undefined' ? currentSelectedTemplateLabel : 'Mensaje Libre';
-                    try {
-                        await createManagementAttempt('message', currentCommChannel, message, template);
-                        bootstrap.Modal.getInstance(document.getElementById('commModal'))?.hide();
-                        scheduleManagementConfirmation();
-                        if (currentCommChannel === 'email') window.location.href = destination;
-                        else window.open(destination, '_blank', 'noopener');
-                    } catch (error) {
-                        alert(error.message);
-                    }
+                    bootstrap.Modal.getInstance(document.getElementById('commModal'))?.hide();
+                    if (currentCommChannel === 'email') window.location.href = destination;
+                    else window.open(destination, '_blank', 'noopener');
                     return false;
                 }
 
                 async function saveContactInfo(event) {
                     event.preventDefault();
+                    if (phoneLearningLockApplies()) {
+                        applyPhoneLearningBrokerState();
+                        return false;
+                    }
                     const btn = event.currentTarget;
                     const originalHtml = btn.innerHTML;
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> GUARDANDO...';
@@ -1882,6 +1820,19 @@
                         });
                         const data = await res.json();
                         if (data.status === 'ok') {
+                            const knownBrokerAlert = document.getElementById('known-broker-auto-match-alert');
+                            const brokerDetected = (
+                                data.resulting_state === 'Corredor'
+                                || (data.identity_status === 'CORREDOR_CONFIRMED' && data.known_broker_auto_match)
+                            );
+                            if (brokerDetected) {
+                                phoneLearningBrokerLocked = true;
+                                if (knownBrokerAlert) {
+                                    knownBrokerAlert.textContent = data.message || PHONE_LEARNING_BROKER_MESSAGE;
+                                    knownBrokerAlert.classList.remove('d-none');
+                                }
+                                applyPhoneLearningBrokerState();
+                            }
                             // Update last saved state
                             lastSavedPhone = payload.telefono;
                             lastSavedEmail = payload.email;
@@ -1892,7 +1843,7 @@
                             setTimeout(() => {
                                 btn.innerHTML = originalHtml;
                                 btn.classList.remove('bg-success', 'border-success');
-                                btn.disabled = false;
+                                btn.disabled = phoneLearningLockApplies();
                             }, 2000);
                         } else {
                             throw new Error(data.message || "Error en servidor");
@@ -1905,7 +1856,11 @@
                 }
 
                 async function updateStatus() {
-                    const btn = document.querySelector('button[onclick="updateStatus()"]');
+                    const btn = document.getElementById('update-status-btn');
+                    if (phoneLearningLockApplies()) {
+                        applyPhoneLearningBrokerState();
+                        return false;
+                    }
                     const originalHtml = btn.innerHTML;
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ACTUALIZANDO...';
                     btn.disabled = true;
@@ -1917,15 +1872,57 @@
                         next_followup: document.getElementById('proximo-contacto').value,
                         followup_token: followupContextToken || null
                     };
+                    payload.operation_id = (
+                        window.crypto && typeof window.crypto.randomUUID === 'function'
+                            ? window.crypto.randomUUID()
+                            : `captacion-${Date.now()}-${Math.random().toString(16).slice(2)}`
+                    );
+
+                    const controller = new AbortController();
+                    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+
+                    async function verifyPersistedUpdate() {
+                        const verificationUrl = `/api/captacion/${encodeURIComponent(payload.id)}/update-verification?operation_id=${encodeURIComponent(payload.operation_id)}`;
+                        for (let attempt = 0; attempt < 4; attempt += 1) {
+                            try {
+                                const verificationResponse = await fetch(verificationUrl, {
+                                    method: 'GET',
+                                    cache: 'no-store',
+                                    credentials: 'same-origin'
+                                });
+                                if (verificationResponse.ok) {
+                                    const verification = await verificationResponse.json();
+                                    if (verification.persisted) return verification;
+                                }
+                            } catch (_) {
+                                // La verificación también puede coincidir con el corte.
+                            }
+                            if (attempt < 3) {
+                                await new Promise(resolve => window.setTimeout(resolve, 500));
+                            }
+                        }
+                        return null;
+                    }
 
                     try {
                         const res = await fetch('/api/captacion/update', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
+                            body: JSON.stringify(payload),
+                            signal: controller.signal
                         });
-                        const data = await res.json();
+                        const raw = await res.text();
+                        let data = {};
+                        try {
+                            data = raw ? JSON.parse(raw) : {};
+                        } catch (_) {
+                            data = {};
+                        }
+                        if (!res.ok) {
+                            throw new Error(data.detail || data.message || `HTTP ${res.status}`);
+                        }
                         if (data.status === 'ok') {
+                            notifyCaptacionMetricsUpdated();
                             btn.innerHTML = '<i class="fa-solid fa-check"></i> ACTUALIZADO';
                             btn.classList.add('bg-success', 'border-success');
                             setTimeout(() => {
@@ -1935,9 +1932,83 @@
                             throw new Error(data.message || "Error en servidor");
                         }
                     } catch (e) {
-                        alert("Error al actualizar: " + e.message);
+                        console.error('[CAPTACION_UPDATE] Error de red o servidor', e, {
+                            propertyId: payload.id,
+                            status: payload.status,
+                            operationId: payload.operation_id
+                        });
+
+                        let message = e?.message || 'Error desconocido';
+                        const persisted = await verifyPersistedUpdate();
+                        if (persisted) {
+                            notifyCaptacionMetricsUpdated();
+                            btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                            btn.classList.add('bg-success', 'border-success');
+                            window.setTimeout(() => window.location.reload(), 1000);
+                            return;
+                        }
+
+                        const recoverableFailure = (
+                            e?.name === 'AbortError'
+                            || e instanceof TypeError
+                            || message === 'Failed to fetch'
+                            || /^HTTP 5\d\d$/.test(message)
+                            || message === 'HTTP 409'
+                        );
+                        if (recoverableFailure) {
+                            let recoveryTimeoutId = null;
+                            try {
+                                const recoveryController = new AbortController();
+                                recoveryTimeoutId = window.setTimeout(() => recoveryController.abort(), 30000);
+                                const recoveryResponse = await fetch('/api/captacion/update', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload),
+                                    signal: recoveryController.signal
+                                });
+                                const recoveryRaw = await recoveryResponse.text();
+                                let recoveryData = {};
+                                try {
+                                    recoveryData = recoveryRaw ? JSON.parse(recoveryRaw) : {};
+                                } catch (_) {
+                                    recoveryData = {};
+                                }
+                                if (recoveryResponse.ok && recoveryData.status === 'ok') {
+                                    notifyCaptacionMetricsUpdated();
+                                    btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                                    btn.classList.add('bg-success', 'border-success');
+                                    window.setTimeout(() => window.location.reload(), 1000);
+                                    return;
+                                }
+                            } catch (_) {
+                                // Se conserva el error original para informar al ejecutivo.
+                            } finally {
+                                if (recoveryTimeoutId !== null) {
+                                    window.clearTimeout(recoveryTimeoutId);
+                                }
+                            }
+
+                            const recovered = await verifyPersistedUpdate();
+                            if (recovered) {
+                                notifyCaptacionMetricsUpdated();
+                                btn.innerHTML = '<i class="fa-solid fa-check"></i> GUARDADO';
+                                btn.classList.add('bg-success', 'border-success');
+                                window.setTimeout(() => window.location.reload(), 1000);
+                                return;
+                            }
+                        }
+
+                        if (e?.name === 'AbortError') {
+                            message = 'El servidor tardó más de 30 segundos y no pudimos confirmar el guardado. Revisa el estado antes de volver a intentarlo.';
+                        } else if (e instanceof TypeError || message === 'Failed to fetch') {
+                            message = 'Se perdió la conexión y no pudimos confirmar el guardado. Recarga la página y revisa el estado antes de volver a intentarlo.';
+                        }
+
+                        alert("Error al actualizar: " + message);
                         btn.innerHTML = originalHtml;
                         btn.disabled = false;
+                    } finally {
+                        window.clearTimeout(timeoutId);
                     }
                 }
 
@@ -2320,6 +2391,7 @@
                 let currentCommChannel = 'wa';
 
                 async function openCommPanel(target, defaultChannel = 'wa') {
+                    if (phoneLearningLockApplies()) return false;
                     try {
                         currentCommTarget = target;
                         currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
@@ -2568,7 +2640,7 @@
                     const isWA = currentCommChannel === 'wa';
                     btn.innerHTML = isWA ? '<i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp' : '<i class="fa-solid fa-envelope"></i> Abrir Correo';
 
-                    if (msg.trim().length > 0) {
+                    if (msg.trim().length > 0 && !phoneLearningLockApplies()) {
                         btn.style.opacity = "1";
                         btn.style.cursor = "pointer";
                         btn.style.pointerEvents = "auto";
@@ -2615,66 +2687,6 @@
                     syncCommButtons();
                 });
 
-                async function confirmManagementResult(result) {
-                    if (!pendingManagementAttempt) return;
-                    const notes = document.getElementById('feedbackNotes').value;
-                    const buttons = document.querySelectorAll('#feedbackModal button');
-                    buttons.forEach(button => button.disabled = true);
-                    try {
-                        const response = await fetch('/api/captacion/confirm_action', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                attempt_id: pendingManagementAttempt.attempt_id,
-                                result,
-                                commercial_result: (result === 'contacted' || result === 'callback_requested')
-                                    ? (document.getElementById('commercialResult')?.value || null)
-                                    : null,
-                                notes,
-                                followup_token: followupContextToken || null
-                            })
-                        });
-                        const data = await response.json();
-                        if (!response.ok || data.status !== 'ok') throw new Error(data.detail || 'No fue posible confirmar');
-                        sessionStorage.removeItem('captacionPendingManagement');
-                        pendingManagementAttempt = null;
-                        bootstrap.Modal.getInstance(document.getElementById('feedbackModal'))?.hide();
-                        document.getElementById('feedbackNotes').value = '';
-                        const commercialResult = document.getElementById('commercialResult');
-                        if (commercialResult) commercialResult.value = '';
-                        const toast = document.getElementById('postSendToast');
-                        if (toast && result !== 'cancel') {
-                            toast.style.display = 'flex';
-                            toast.innerHTML = data.credited
-                                ? '<i class="fa-solid fa-circle-check"></i> Propiedad gestionada y acreditada'
-                                : '<i class="fa-solid fa-circle-info"></i> Gestión confirmada; la propiedad ya contaba hoy';
-                            setTimeout(() => { toast.style.display = 'none'; }, 4000);
-                        }
-                    } catch (error) {
-                        alert(error.message);
-                    } finally {
-                        buttons.forEach(button => button.disabled = false);
-                    }
-                }
-
-                document.addEventListener('visibilitychange', () => {
-                    if (document.hidden && pendingManagementAttempt) externalAppWasHidden = true;
-                    if (!document.hidden && externalAppWasHidden) showManagementConfirmation();
-                });
-                window.addEventListener('focus', () => {
-                    if (pendingManagementAttempt && Date.now() - pendingManagementAttempt.initiated_at > 700) showManagementConfirmation();
-                });
-                document.addEventListener('DOMContentLoaded', () => {
-                    try {
-                        const stored = JSON.parse(sessionStorage.getItem('captacionPendingManagement') || 'null');
-                        if (stored?.attempt_id) {
-                            pendingManagementAttempt = stored;
-                            scheduleManagementConfirmation();
-                        }
-                    } catch (_) {
-                        sessionStorage.removeItem('captacionPendingManagement');
-                    }
-                });
             </script>
 
             <!-- LEAD VERIFICATION MODAL -->

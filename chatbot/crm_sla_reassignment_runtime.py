@@ -1,10 +1,9 @@
-"""Controlled production runtime for the CRM SLA reassignment shadow worker.
+"""Controlled production runtime for the CRM SLA reassignment worker.
 
-This module is the only startup bridge for the prospective worker.  It keeps
-the business collections read-only through an explicit Mongo adapter, gates
-execution on the global lease, and records operational health in memory for
-the existing application health endpoint.  It never imports the transaction
-executor and never sends notifications.
+This module is the only startup bridge for shadow/live modes.  Shadow mode
+keeps business collections read-only through an explicit Mongo adapter.  Live
+mode requires every activation gate and runs the approved PyMongo executor and
+post-commit notification adapter off the async event loop.
 """
 from __future__ import annotations
 
@@ -350,3 +349,187 @@ async def run_crm_sla_shadow_worker(
         if not halted:
             _set_status(status, status="stopped", health="SHADOW_STALE")
         logger.info("[SLA_SHADOW_START] status=STOPPED holder=%s halted=%s", holder_id, halted)
+
+
+async def run_crm_sla_live_worker(
+    *,
+    stop_event: asyncio.Event | None = None,
+    status: Mapping[str, Any] | None = None,
+) -> None:
+    """Run the supervised live evaluator/executor path when all gates are ON.
+
+    The default deployment never enters this function: the worker, master and
+    transaction-gate flags are all independently required, and shadow/live
+    modes are mutually exclusive.  Evaluation uses the async read path; the
+    PyMongo transaction and post-commit notification adapter run in worker
+    threads.
+    """
+    stop_event = stop_event or asyncio.Event()
+    status = status if status is not None else {}
+    if not (
+        Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+        and Config.CRM_SLA_REASSIGNMENT_ENABLED
+        and Config.CRM_SLA_TRANSACTION_GATE_ENABLED
+        and Config.CRM_SLA_SECURITY_LAYER_ENABLED
+    ):
+        _set_status(status, status="disabled", health="CONFIG_OFF", mode="live")
+        return
+    if Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED:
+        _set_status(status, status="disabled", health="CONFIG_ERROR", mode="live")
+        logger.error("[SLA_LIVE_START] status=CONFIG_ERROR reason=SHADOW_AND_LIVE_CONFLICT")
+        return
+    try:
+        cutover = parse_explicit_santiago_timestamp(Config.CRM_SLA_REASSIGNMENT_CUTOVER_AT)
+    except Exception:
+        _set_status(status, status="disabled", health="CONFIG_ERROR", mode="live")
+        logger.error("[SLA_LIVE_START] status=CONFIG_ERROR reason=PRODUCTION_CUTOVER_INVALID")
+        return
+
+    holder_id = _instance_id()
+    settings = LeaseSettings(interval_seconds=int(Config.CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS))
+    if not settings.validate().get("valid"):
+        _set_status(status, status="disabled", health="CONFIG_ERROR", mode="live")
+        logger.error("[SLA_LIVE_START] status=CONFIG_ERROR reason=LEASE_TIMING_INVALID")
+        return
+    try:
+        raw_db = get_async_db()
+        sync_db = get_db()
+        await asyncio.wait_for(asyncio.to_thread(lambda: sync_db.command("ping")), timeout=15.0)
+    except Exception as exc:
+        _set_status(status, status="disabled", health="LIVE_STALE", mode="live", last_error=type(exc).__name__)
+        logger.error("[SLA_LIVE_START] status=DB_UNAVAILABLE error_type=%s", type(exc).__name__)
+        return
+
+    from .crm_sla_reassignment_integration import execute_sla_reassignment_with_notification
+
+    guarded_db = ShadowWriteGuardDB(raw_db)
+    runtime_metrics = {
+        "iterations": 0,
+        "executor_calls": 0,
+        "committed_reassignments": 0,
+        "already_applied": 0,
+        "notification_errors": 0,
+        "errors": 0,
+    }
+    _set_status(
+        status,
+        status="running",
+        health="LIVE_HEALTHY",
+        mode="live",
+        config={
+            "holder_id": holder_id,
+            "cutover_at": cutover.isoformat(),
+            "timezone": "America/Santiago",
+            "policy_version": SHADOW_POLICY_VERSION,
+            "interval_seconds": settings.interval_seconds,
+            "batch_size": int(Config.CRM_SLA_REASSIGNMENT_BATCH_SIZE),
+            "business_writes_allowed": True,
+            "shadow_enabled": False,
+            "security_layer_enabled": True,
+        },
+        metrics=runtime_metrics,
+    )
+    logger.warning(
+        "[SLA_LIVE_START] status=RUNNING holder=%s cutover_at=%s interval_seconds=%s batch_size=%s",
+        holder_id,
+        cutover.isoformat(),
+        settings.interval_seconds,
+        Config.CRM_SLA_REASSIGNMENT_BATCH_SIZE,
+    )
+
+    page_token: Mapping[str, Any] | None = None
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task: asyncio.Task[Any] | None = None
+    halted = False
+    try:
+        while not stop_event.is_set() and not halted:
+            batch_id = f"{holder_id}:{runtime_metrics['iterations'] + 1}"
+            try:
+                result = await run_sla_reassignment_iteration_with_leader_lease(
+                    guarded_db,
+                    holder_id=holder_id,
+                    lease_write_enabled=True,
+                    lease_settings=settings,
+                    execution_mode="live",
+                    cutover_at=cutover,
+                    shadow_cutover_at=None,
+                    batch_size=int(Config.CRM_SLA_REASSIGNMENT_BATCH_SIZE),
+                    page_token=page_token,
+                    worker_instance_id=holder_id,
+                    batch_id=batch_id,
+                )
+                lease = result.get("lease") or {}
+                if lease.get("status") == "ACQUIRED" and heartbeat_task is None:
+                    heartbeat_task = asyncio.create_task(
+                        _lease_heartbeat(
+                            guarded_db,
+                            holder_id=holder_id,
+                            settings=settings,
+                            stop_event=heartbeat_stop,
+                            status=status,
+                        )
+                    )
+                if result.get("status") == "lease_not_held":
+                    _set_status(status, health="LIVE_LEASE_NOT_HELD", last_lease=lease)
+                else:
+                    page_token = result.get("next_page_token")
+                    runtime_metrics["iterations"] += 1
+                    for decision in result.get("decisions") or []:
+                        runtime_metrics["executor_calls"] += 1
+                        execution = await execute_sla_reassignment_with_notification(
+                            sync_db,
+                            decision,
+                            evaluated_at=_utc(decision.get("evaluated_at")) or datetime.now(timezone.utc),
+                        )
+                        outcome = execution.result.status
+                        if execution.result.committed:
+                            runtime_metrics["committed_reassignments"] += 1
+                        if outcome == "ALREADY_APPLIED":
+                            runtime_metrics["already_applied"] += 1
+                        if execution.notification_error:
+                            runtime_metrics["notification_errors"] += 1
+                            logger.error(
+                                "[SLA_LIVE_NOTIFICATION] decision_id=%s error_type=%s",
+                                execution.result.decision_id,
+                                execution.notification_error,
+                            )
+                        logger.info(
+                            "[SLA_LIVE_DECISION] decision_id=%s outcome=%s committed=%s notification=%s",
+                            execution.result.decision_id,
+                            outcome,
+                            execution.result.committed,
+                            bool(execution.notification),
+                        )
+                    iteration = result.get("iteration") or {}
+                    runtime_metrics["errors"] += int(iteration.get("errors") or 0)
+                    _set_status(
+                        status,
+                        status="running",
+                        health="LIVE_HEALTHY",
+                        last_heartbeat=datetime.now(timezone.utc).isoformat(),
+                        last_result=iteration,
+                        last_lease=lease,
+                        metrics=dict(runtime_metrics),
+                    )
+            except Exception as exc:
+                runtime_metrics["errors"] += 1
+                _set_status(
+                    status,
+                    status="error",
+                    health="LIVE_STALE",
+                    last_error=type(exc).__name__,
+                    last_heartbeat=datetime.now(timezone.utc).isoformat(),
+                    metrics=dict(runtime_metrics),
+                )
+                logger.exception("[SLA_LIVE_ERROR] error_type=%s", type(exc).__name__)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=settings.interval_seconds)
+            except asyncio.TimeoutError:
+                continue
+    finally:
+        heartbeat_stop.set()
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
+        _set_status(status, status="stopped", health="LIVE_STALE", metrics=dict(runtime_metrics))
+        logger.warning("[SLA_LIVE_START] status=STOPPED holder=%s", holder_id)

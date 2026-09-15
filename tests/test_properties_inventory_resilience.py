@@ -71,9 +71,19 @@ class FakeDatabase:
 def clear_inventory_cache():
     leads_service.L1_CACHE.clear()
     leads_queries._DEMAND_CAPTURE_BASE_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE_AT = 0.0
+    leads_queries._OPS_SIGNED_ORDERS_INFLIGHT = None
+    leads_queries._OPS_ASSIGNMENT_EPISODE_CACHE.clear()
+    leads_queries._OPS_ASSIGNMENT_EPISODE_INFLIGHT.clear()
     yield
     leads_service.L1_CACHE.clear()
     leads_queries._DEMAND_CAPTURE_BASE_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE = None
+    leads_queries._OPS_SIGNED_ORDERS_CACHE_AT = 0.0
+    leads_queries._OPS_SIGNED_ORDERS_INFLIGHT = None
+    leads_queries._OPS_ASSIGNMENT_EPISODE_CACHE.clear()
+    leads_queries._OPS_ASSIGNMENT_EPISODE_INFLIGHT.clear()
 
 
 def test_normal_query_creates_valid_cache(monkeypatch):
@@ -407,6 +417,8 @@ def test_operations_parallel_reads_preserve_contract(monkeypatch):
     db = object()
     current_docs = [{"_id": "current"}]
     period_docs = [{"_id": "period", "lifecycle": {"assigned_at": "2026-08-05T12:00:00Z"}}]
+    historical_calls = []
+    signed_order_calls = []
 
     monkeypatch.setattr(leads_queries, "get_db", lambda: db)
     monkeypatch.setattr(
@@ -422,11 +434,11 @@ def test_operations_parallel_reads_preserve_contract(monkeypatch):
     monkeypatch.setattr(
         leads_queries,
         "_ops_historical_base",
-        lambda _db, _filters, _projection, _profile=None: period_docs,
+        lambda _db, _filters, _projection, _profile=None: historical_calls.append(1) or period_docs,
     )
     monkeypatch.setattr(leads_queries, "_ops_active_executive_names", lambda _db, _profile=None: {"Ejecutivo"})
     monkeypatch.setattr(leads_queries, "_ops_assignment_episode_map", lambda *args, **kwargs: {})
-    monkeypatch.setattr(leads_queries, "_ops_fetch_signed_orders", lambda *args, **kwargs: [])
+    monkeypatch.setattr(leads_queries, "_ops_fetch_signed_orders", lambda *args, **kwargs: signed_order_calls.append(1) or [])
     monkeypatch.setattr(leads_queries, "_ops_fetch_scheduled_events", lambda *args, **kwargs: [])
     monkeypatch.setattr(leads_queries, "_ops_collect_activity_signals", lambda *args, **kwargs: {})
     monkeypatch.setattr(leads_queries, "_scheduled_visit_lead_ids", lambda *args, **kwargs: set())
@@ -445,6 +457,23 @@ def test_operations_parallel_reads_preserve_contract(monkeypatch):
     )
 
     assert parallel == sequential
+
+    before_historical, before_signed = len(historical_calls), len(signed_order_calls)
+    shared_resources = {}
+    leads_queries.query_leads_operational_dashboard(
+        period_start="2026-08-01", period_end="2026-08-20", timing={},
+        shared_resources=shared_resources,
+    )
+    comparable = leads_queries.query_leads_operational_dashboard(
+        period_start="2026-07-01", period_end="2026-07-20", timing={},
+        period_only=True, team_executives_override={"Ejecutivo"},
+        shared_resources=shared_resources,
+    )
+    assert comparable["period_ids"] == []
+    assert len(historical_calls) - before_historical == 1
+    assert len(signed_order_calls) == 1
+    assert shared_resources["historical_base"] is period_docs
+    assert shared_resources["signed_orders"] == []
 
 
 def test_operations_worker_exception_propagates(monkeypatch):

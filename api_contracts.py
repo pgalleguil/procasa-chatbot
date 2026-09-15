@@ -411,6 +411,28 @@ async def create_contract(request: Request, background_tasks: BackgroundTasks):
             old_security["original_pdf_path"] = str(perm_original_path)
             contract_doc["security"] = old_security
             contract_doc["status"] = existing.get("status", "created")
+            # Preserve the original executive identity for the one-off revision
+            # requested for this existing convenio.
+            if contract_code == "PROC-2026-3400":
+                contract_doc["created_by"] = existing.get("created_by", created_by)
+                contract_doc["executive"] = existing.get("executive", executive)
+                contract_doc["executive_display"] = existing.get("executive_display", exec_nombre)
+                contract_doc["executive_data"] = existing.get("executive_data", contract_doc["executive_data"])
+
+        # This one-off replacement must remain attributed to Hernán Castro,
+        # even when prepared by an authorized supervisor/admin session.
+        target_rut = str(data.get("cliente_rut", "")).replace(".", "").upper()
+        if target_rut == "12835828-5" and not existing:
+            target_exec = await adb["usuarios"].find_one({"username": "hcastro@procasa.cl"})
+            contract_doc["created_by"] = "hcastro@procasa.cl"
+            contract_doc["executive"] = "hcastro@procasa.cl"
+            contract_doc["executive_display"] = (target_exec or {}).get("nombre") or "Hernán Castro"
+            if target_exec:
+                contract_doc["executive_data"] = {
+                    "nombre": target_exec.get("nombre", "Hernán Castro"),
+                    "email": target_exec.get("email", ""),
+                    "telefono": target_exec.get("phone") or target_exec.get("telefono", "")
+                }
 
         try:
             from chatbot.storage import get_db
@@ -993,7 +1015,7 @@ async def view_contract_public(token: str, request: Request):
         expiry_chile = expiry.astimezone(chile_tz)
         token_expiry_iso = expiry_chile.isoformat()
         
-    return templates.TemplateResponse("contract_view.html", {
+    return templates.TemplateResponse(request, "contract_view.html", {
         "request": request,
         "contract": contract,
         "token": token,
@@ -1749,7 +1771,7 @@ async def verify_contract(contract_code: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Contrato no encontrado</h1>", status_code=404)
         
-    return templates.TemplateResponse("contract_verify.html", {
+    return templates.TemplateResponse(request, "contract_verify.html", {
         "request": request,
         "contract": contract
     })
@@ -1875,7 +1897,7 @@ async def contract_dashboard(request: Request):
         exec_username = (c.get("executive") or c.get("created_by") or "").strip()
         c["executive_display"] = user_name_map.get(exec_username, exec_username or "---")
 
-    return templates.TemplateResponse("contract_dashboard.html", {
+    return templates.TemplateResponse(request, "contract_dashboard.html", {
         "request": request,
         "contracts": contracts,
         "user_role": user_role,

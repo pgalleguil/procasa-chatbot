@@ -8,6 +8,7 @@ transaction callback receive the same PyMongo session.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 import logging
@@ -973,3 +974,32 @@ def execute_sla_reassignment_transaction(
             "policy_version": final_result.policy_version,
         })
     return final_result
+
+
+async def execute_sla_reassignment_transaction_async(
+    db: Any,
+    decision: Any,
+    *,
+    evaluated_at: datetime | None = None,
+    max_attempts: int = MAX_TRANSACTION_ATTEMPTS,
+    test_hooks: Any = None,
+    metrics: MutableMapping[str, int] | None = None,
+    metrics_hook: Callable[[Mapping[str, Any]], None] | None = None,
+) -> SLAReassignmentResult:
+    """Run the synchronous PyMongo transaction without blocking an async loop.
+
+    The executor deliberately remains synchronous because it uses one PyMongo
+    session for every read and write in the transaction.  Production async
+    callers must use this adapter so a slow Mongo operation cannot stall the
+    worker heartbeat or request loop.
+    """
+    return await asyncio.to_thread(
+        execute_sla_reassignment_transaction,
+        db,
+        decision,
+        evaluated_at=evaluated_at,
+        max_attempts=max_attempts,
+        test_hooks=test_hooks,
+        metrics=metrics,
+        metrics_hook=metrics_hook,
+    )

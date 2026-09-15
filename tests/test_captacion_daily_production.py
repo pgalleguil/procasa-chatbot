@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import mongomock
 import pytest
+from pymongo.errors import NetworkTimeout
 
 import chatbot.captacion_daily_report as daily
 from config import Config
@@ -218,7 +219,7 @@ def test_provider_exception_is_recorded_as_failed(monkeypatch):
     assert delivery["error"] == "provider unavailable"
 
 
-def test_empty_daily_report_is_not_sent_or_retried(monkeypatch):
+def test_empty_daily_report_is_not_sent_or_retried(monkeypatch, caplog):
     monkeypatch.setattr(Config, "CAPTACION_DAILY_PRODUCTION_ENABLED", True)
     monkeypatch.setattr(Config, "CAPTACION_TEST_MODE", False)
     monkeypatch.setattr(Config, "CAPTACION_PRODUCTION_GROUP", "group@g.us")
@@ -235,13 +236,17 @@ def test_empty_daily_report_is_not_sent_or_retried(monkeypatch):
 
     monkeypatch.setattr(daily, "send_whatsapp_message_detailed", fake_send)
     db = _db()
-    first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
+    with caplog.at_level("WARNING"):
+        first = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
     second = asyncio.run(daily.send_production_daily_report(db, date(2026, 8, 20)))
     delivery = db[daily.DAILY_DELIVERY_COLLECTION].find_one({"report_date": "2026-08-20"})
     assert first["status"] == daily.DAILY_NO_DATA_STATUS
     assert second["status"] == "already_claimed"
     assert delivery["status"] == daily.DAILY_NO_DATA_STATUS
     assert calls == []
+    assert "status=skipped_no_data" in caplog.text
+    assert "report_date=2026-08-20" in caplog.text
+    assert "reason=no_applicable_executives" in caplog.text
 
 
 def test_failed_provider_is_recorded_for_diagnosis(monkeypatch):
@@ -429,3 +434,32 @@ def test_daily_flow_delegates_all_sync_mongo_operations(monkeypatch):
     assert db.collection.main_thread_calls
     assert all(not on_main for _, on_main in db.collection.main_thread_calls)
     assert calculation_threads == [False]
+
+
+def test_daily_calculation_retries_timeout_with_longer_read_client(monkeypatch):
+    calls = []
+
+    def fake_calculate(db, period):
+        calls.append(db)
+        if len(calls) == 1:
+            raise NetworkTimeout("short socket timeout")
+        return _fake_report()
+
+    class RetryClient:
+        def __init__(self, *args, **kwargs):
+            self.kwargs = kwargs
+            self.db = object()
+
+        def __getitem__(self, name):
+            assert name == Config.DB_NAME
+            return self.db
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(daily, "calculate_daily_report", fake_calculate)
+    monkeypatch.setattr(daily, "MongoClient", RetryClient)
+    result = daily._calculate_daily_report_with_retry(object(), date(2026, 8, 20))
+
+    assert result["team_size"] == 1
+    assert len(calls) == 2

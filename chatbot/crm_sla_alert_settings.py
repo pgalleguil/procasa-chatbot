@@ -57,7 +57,10 @@ CATCH_UP_CUTOVER_AT = os.getenv("CRM_SLA_ALERTS_CATCH_UP_CUTOVER_AT", "").strip(
 # Operational safety constants are also code-owned, not environment-owned.
 LEASE_SECONDS = 120
 MAX_ATTEMPTS = 3
-PROVIDER_TIMEOUT_SECONDS = 15
+# The worker timeout covers the global WhatsApp throttle (12s + up to 8s
+# jitter) plus the provider HTTP timeout (15s).  A 15s worker timeout could
+# cancel the sender while it was still waiting for its allowed send slot.
+PROVIDER_TIMEOUT_SECONDS = 45
 
 
 def validate_live_send_config() -> dict:

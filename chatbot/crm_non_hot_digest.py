@@ -839,9 +839,21 @@ def send_digest(db, *, notification, worker_id, sender=None):
         for cid in cycle_ids:
             if is_cycle_delivered(db, assignment_cycle_id=cid):
                 logger.warning("[DIGEST_DUP] cycle=%s already delivered — skipping", str(cid)[:12])
+                # A previous cycle may have been reserved before this barrier
+                # detected a delivered cycle. Release only those reservations
+                # owned by this attempt; otherwise they would remain stuck in
+                # ``reserved`` forever.
+                for reserved_cycle_id in reserved_cycles:
+                    release_cycle_delivery(
+                        db,
+                        assignment_cycle_id=reserved_cycle_id,
+                        digest_id=str(notification["_id"]),
+                        delivery_token=delivery_token,
+                        reason="cycle_already_delivered",
+                    )
                 finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
-                                 state="failed_retryable", error="cycle_already_delivered")
-                return {"status": "failed_retryable", "reason": "cycle_already_delivered"}
+                                 state="skipped", error="cycle_already_delivered")
+                return {"status": "skipped", "reason": "cycle_already_delivered"}
             rc = reserve_cycle_delivery(db, assignment_cycle_id=cid,
                                         digest_id=str(notification["_id"]),
                                         delivery_token=delivery_token)

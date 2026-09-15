@@ -1,5 +1,4 @@
-"""Tests: assignment_eligibility strictly rejects non-boolean assignment_ready,
-INCIERTO, CORREDOR, and manual_review_required docs."""
+"""Tests for the global assignment gate and its blocking invariants."""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -55,11 +54,11 @@ def test_incierto_with_true_eligible():
     assert eligible is True
 
 
-def test_incierto_wrong_probability_not_eligible():
+def test_incierto_probability_does_not_block_global_policy():
     doc = _doc("INCIERTO", True, cls_extra={"owner_probability": 0.3})
     eligible, reasons = assignment_eligibility(doc)
-    assert eligible is False
-    assert "owner_probability_inconsistent_with_state" in reasons
+    assert eligible is True
+    assert "owner_probability_inconsistent_with_state" not in reasons
 
 
 def test_legacy_source_rules_accepted():

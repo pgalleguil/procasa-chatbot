@@ -87,16 +87,44 @@ async def run_evaluation_and_persist_once(
             continue
         authorized.append(c)
 
-    # Sort by deadline ascending
-    authorized.sort(key=lambda c: c.get("deadline_dt") or datetime.max.replace(tzinfo=timezone.utc))
+    # Catch-up guard: never re-send the accumulated backlog after a pipeline
+    # outage.  Only cycles whose SLA started at/after the recovery marker
+    # (or the env override) produce alerts.  Apply this before the batch
+    # limits: otherwise the oldest backlog consumes MAX_PER_RUN and is then
+    # discarded, starving current leads indefinitely.
+    catch_up = await resolve_catch_up_cutover(
+        db, env_cutover=CATCH_UP_CUTOVER_AT, now=now)
+    if catch_up is not None:
+        before = len(authorized)
+        authorized_for_persistence = [
+            c for c in authorized
+            if (c.get("sla_started_at") is not None
+                and coerce_utc_datetime(c.get("sla_started_at")) >= catch_up)
+        ]
+        excluded_by_catch_up = before - len(authorized_for_persistence)
+        if excluded_by_catch_up:
+            logger.warning(
+                "[SLA_PIPELINE] catch_up guard excluyó %s candidatos backlog "
+                "(cutover=%s). Solo ciclos con sla_started_at >= marcador.",
+                excluded_by_catch_up, catch_up.isoformat(),
+            )
+    else:
+        authorized_for_persistence = authorized
+        excluded_by_catch_up = 0
+        logger.warning("[SLA_PIPELINE] catch_up marker no disponible: sin corte anti-backlog.")
 
-    # Apply limits
+    # Sort by deadline ascending and apply limits only after removing the
+    # backlog. This guarantees that fresh eligible leads are not hidden behind
+    # stale candidates that the catch-up guard will reject.
+    authorized_for_persistence.sort(
+        key=lambda c: c.get("deadline_dt") or datetime.max.replace(tzinfo=timezone.utc)
+    )
     max_total = MAX_PER_RUN
     max_per_recipient = MAX_PER_RECIPIENT_PER_RUN
     recipient_counts: Counter = Counter()
     to_persist = []
 
-    for c in authorized:
+    for c in authorized_for_persistence:
         if len(to_persist) >= max_total:
             break
         uid = c.get("recipient_user_id", "")
@@ -105,30 +133,7 @@ async def run_evaluation_and_persist_once(
         recipient_counts[uid] += 1
         to_persist.append(c)
 
-    excluded_by_limit = len(authorized) - len(to_persist)
-
-    # Catch-up guard: never re-send the accumulated backlog after a pipeline
-    # outage.  Only cycles whose SLA started at/after the recovery marker
-    # (or the env override) produce alerts.
-    catch_up = await resolve_catch_up_cutover(
-        db, env_cutover=CATCH_UP_CUTOVER_AT, now=now)
-    if catch_up is not None:
-        before = len(to_persist)
-        to_persist = [
-            c for c in to_persist
-            if (c.get("sla_started_at") is not None
-                and coerce_utc_datetime(c.get("sla_started_at")) >= catch_up)
-        ]
-        excluded_by_catch_up = before - len(to_persist)
-        if excluded_by_catch_up:
-            logger.warning(
-                "[SLA_PIPELINE] catch_up guard excluyó %s candidatos backlog "
-                "(cutover=%s). Solo ciclos con sla_started_at >= marcador.",
-                excluded_by_catch_up, catch_up.isoformat(),
-            )
-    else:
-        excluded_by_catch_up = 0
-        logger.warning("[SLA_PIPELINE] catch_up marker no disponible: sin corte anti-backlog.")
+    excluded_by_limit = len(authorized_for_persistence) - len(to_persist)
 
     # Persist
     persisted = 0

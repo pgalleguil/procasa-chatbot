@@ -14,15 +14,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from chatbot.storage import get_db
 from bson import ObjectId
+from captacion_distribution import (
+    CAPTACION_TERMINAL_STATES,
+    MongoDistributionLock,
+    assign_captacion_candidate_atomically,
+    resolve_manual_batch_size,
+)
 
 REPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports", "captacion_redistribution")
 
 # Estados que NO requieren mas trabajo (cerrados/terminales)
-ESTADOS_TERMINALES = {
-    "Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
-    "Telefono invalido", "Telefono invalido", "Propiedad no disponible",
-    "Publicacion expirada", "No interesado",
-}
+ESTADOS_TERMINALES = set(CAPTACION_TERMINAL_STATES)
 
 # Estados que SI requieren trabajo (abiertos)
 ESTADOS_ABIERTOS = {
@@ -55,8 +57,16 @@ def is_abierta(g):
     return True
 
 
-def is_eligible(p):
+def is_eligible(p, db=None):
     """True si la propiedad es apta para captacion (clasificacion + assignment_ready)."""
+    if db is not None:
+        from captacion_assignment_eligibility import calculate_assignment_eligibility
+        from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
+        if phone_learning_global_lookup_enabled():
+            identity = get_contact_identity_evidence(db, p)
+            # The central gate is authoritative for every portal. Historical
+            # assignment_ready flags must not veto a newly global INCIERTO.
+            return bool(calculate_assignment_eligibility(p, contact_identity=identity)["assignment_ready"])
     c = p.get("classification") or {}
     state = c.get("state", "")
     if state not in VISIBLE_CLASSIFICATION_STATES:
@@ -81,9 +91,10 @@ def has_gestion_previa(g):
     return False
 
 
-def run(dry_run=True):
+def run(dry_run=True, *, batch_size=None, allow_large_batch=False):
     db = get_db()
     coll = db[Config.CAPTACION_COLLECTION_NAME]
+    batch_size = resolve_manual_batch_size(batch_size, allow_large=allow_large_batch)
 
     raquel = db["usuarios"].find_one({"email": "rcheneaux@procasa.cl"})
     raquel_id = str(raquel["_id"]) if raquel else None
@@ -120,7 +131,7 @@ def run(dry_run=True):
     abiertas_elegibles = []
     abiertas_no_elegibles = []
     for p in abiertas:
-        if is_eligible(p):
+        if is_eligible(p, db=db):
             abiertas_elegibles.append(p)
         else:
             abiertas_no_elegibles.append(p)
@@ -198,6 +209,8 @@ def run(dry_run=True):
         g = p.get("gestion") or {}
         assigned.append({
             "prop_id": str(p["_id"]),
+            "previous_id": g.get("ejecutivo_id"),
+            "previous_name": g.get("ejecutivo_asignado") or raquel_nombre,
             "comuna_slug": slug,
             "state": p.get("classification", {}).get("state"),
             "estado_actual": g.get("estado") or "NUEVO",
@@ -207,6 +220,10 @@ def run(dry_run=True):
             "agent_email": winner.get("email"),
         })
         winner["assigned_in_run"] += 1
+
+    # A historical reassignment plan may be large, but apply is always a
+    # bounded, centrally guarded batch.
+    assigned = assigned[:batch_size]
 
     print(f"\n  Elegibles con agente compatible: {len(assigned)}")
     print(f"  Sin cobertura:                   {len(unmatched)}")
@@ -281,20 +298,14 @@ def run(dry_run=True):
 
     now = datetime.now(timezone.utc)
 
-    # 1. Retirar a Raquel de TODAS sus propiedades
-    all_ids = [p["_id"] for p in all_props]
-    unset_result = coll.update_many(
-        {"_id": {"$in": all_ids}},
-        {"$unset": {
-            "gestion.ejecutivo_id": "",
-            "gestion.ejecutivo_asignado": "",
-            "gestion.ejecutivo_nombre": "",
-            "gestion.ejecutivo_email": "",
-            "gestion.assignment_cycle_id": "",
-            "gestion.first_valid_action_at": "",
-        }}
+    lock = MongoDistributionLock(
+        db,
+        run_id=f"manual-raquel-{ts}",
+        trigger_source="manual:redistribute_raquel",
     )
-    print(f"\n[APPLY] Retirada Raquel de {unset_result.modified_count} propiedades")
+    if not lock.acquire():
+        print("[APPLY] distribution_already_running; no se escribieron reasignaciones")
+        return
 
     # 2. Terminales: solo historial, sin reasignar
     for p in terminales:
@@ -322,52 +333,36 @@ def run(dry_run=True):
         )
     print(f"[APPLY] No elegibles: {len(abiertas_no_elegibles)} con historial")
 
-    # 4. Reasignar elegibles a agentes activos
+    # 4. Reasignar elegibles a agentes activos through the shared final gate.
     applied = 0
+    skipped = 0
+    run_load = defaultdict(int)
     for a in assigned:
-        prop_oid = ObjectId(a["prop_id"]) if len(a["prop_id"]) == 24 else a["prop_id"]
-
-        set_fields = {
-            "gestion.ejecutivo_id": a["agent_id"],
-            "gestion.ejecutivo_asignado": a["agent_name"],
-            "gestion.ejecutivo_nombre": a["agent_name"],
-            "gestion.ejecutivo_email": a["agent_email"],
-            "gestion.fecha_asignacion": now,
-            "gestion.asignacion_version": "v3_raquel_redistribution",
-            "gestion.asignacion_comuna_slug": a["comuna_slug"],
-            "gestion.classification_at_assignment": a["state"],
-            "gestion.assignment_cycle_id": None,
-            "gestion.first_valid_action_at": None,
-            "gestion.previous_inactive_assignment": raquel_nombre,
-            "gestion.reassignment_reason": "inactive_agent_redistribution",
-            "gestion.reassigned_at": now,
-        }
-
-        if a["tiene_gestion_previa"]:
-            # Conservar el estado actual, NO resetear a NUEVO
-            set_fields["gestion.estado"] = a["estado_actual"]
-        else:
-            set_fields["gestion.estado"] = "NUEVO"
-
-        hist_entry = {
-            "ejecutivo_id": a["agent_id"],
-            "ejecutivo_nombre": a["agent_name"],
-            "comuna_slug": a["comuna_slug"],
-            "classification_state": a["state"],
-            "assigned_at": now,
-            "assignment_version": "v3_raquel_redistribution",
-            "previous_agent": raquel_nombre,
-            "reason": "inactive_agent_redistribution",
-        }
-        if a["tiene_gestion_previa"]:
-            hist_entry["estado_conservado"] = a["estado_actual"]
-            hist_entry["nota"] = "Reasignada con gestion previa. Estado, notas y actividades conservados."
-
-        result = coll.update_one(
-            {"_id": prop_oid},
-            {"$set": set_fields, "$push": {"gestion.historial_asignaciones": hist_entry}}
+        expected = {"gestion.ejecutivo_asignado": a["previous_name"]}
+        if a.get("previous_id"):
+            expected = {"gestion.ejecutivo_id": a["previous_id"]}
+        status = assign_captacion_candidate_atomically(
+            db,
+            coll,
+            db["captacion_management_events"],
+            {"_id": a["prop_id"]},
+            {"id": a["agent_id"], "name": a["agent_name"], "email": a["agent_email"],
+             "comunas_interes_norm": [a["comuna_slug"]]},
+            now=now,
+            mode="reassign",
+            expected_current_filter=expected,
+            allow_management_evidence=True,
+            reason="inactive_agent_redistribution",
+            assignment_version="v3_raquel_redistribution",
+            set_estado=a["estado_actual"] if a["tiene_gestion_previa"] else "NUEVO",
+            run_load=run_load[a["agent_id"]],
+            max_per_agent=Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE,
         )
-        applied += result.modified_count
+        if status == "assigned":
+            applied += 1
+            run_load[a["agent_id"]] += 1
+        else:
+            skipped += 1
 
     print(f"[APPLY] Reasignadas a agentes activos: {applied}")
 
@@ -388,11 +383,19 @@ def run(dry_run=True):
     print(f"  Terminales:    {len(terminales)}")
     print(f"  No elegibles:  {len(abiertas_no_elegibles)}")
     print(f"  Reasignadas:   {applied}")
+    print(f"  Omitidas por revalidación: {skipped}")
     print(f"  Sin cobertura: {len(unmatched)}")
+    lock.release()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--allow-large-batch", action="store_true")
     args = parser.parse_args()
-    run(dry_run=not args.apply)
+    run(
+        dry_run=not args.apply,
+        batch_size=args.batch_size,
+        allow_large_batch=args.allow_large_batch,
+    )

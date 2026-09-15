@@ -35,6 +35,12 @@ class StaleAssignmentCycleError(ValueError):
     code = "stale_assignment_cycle"
 
 
+class LeadReassignedSlaLockedError(ValueError):
+    """The old owner attempted management after an SLA reassignment commit."""
+
+    code = "LEAD_REASSIGNED_SLA_LOCKED"
+
+
 class ScheduledTimeTooSoonError(ValueError):
     """A reminder or visit was scheduled too close to the current time."""
 
@@ -139,11 +145,50 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
         })
         if active_cycle and str(active_cycle.get("assignment_cycle_id")) != str(assignment_cycle_id):
-            raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+            # The source cycle was superseded by an SLA reassignment. Keep the
+            # externally observable contract aligned with the shared cycle
+            # gate so old-owner writes fail closed with the explicit lock code.
+            raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
         raise ValueError("active assignment cycle not found")
     if (not actor_can_manage_any_cycle and
             str(cycle.get("assigned_to_user_id")) != str(actor_user_id)):
         raise PermissionError("management actor does not own the active cycle")
+    # The shared gate is intentionally opt-in. When enabled, claim human
+    # management before persisting the result so a reassignment transaction
+    # cannot win the same cycle concurrently.
+    from config import Config
+    if getattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", False):
+        from .crm_assignment_cycle_gate import (
+            CycleGateStatus,
+            claim_cycle_for_human_management,
+            protection_type_for_management_result,
+        )
+        protection_type = protection_type_for_management_result(result_type)
+        if not protection_type:
+            raise ValueError("human management evidence is not protectable")
+        gate_result = claim_cycle_for_human_management(
+            db,
+            lead_id=lead_id,
+            assignment_cycle_id=assignment_cycle_id,
+            actor_user_id=actor_user_id,
+            protection_type=protection_type,
+            occurred_at=occurred,
+            actor_can_manage_any_cycle=actor_can_manage_any_cycle,
+        )
+        if gate_result.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value:
+            raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
+        if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
+            raise PermissionError("management cycle gate owner mismatch")
+        if gate_result.status not in {
+            CycleGateStatus.CLAIMED.value,
+            CycleGateStatus.ALREADY_PROTECTED.value,
+        }:
+            raise ValueError(f"management cycle gate rejected: {gate_result.status}")
+    # The actor may be a supervisor recording the result on behalf of the
+    # assigned executive.  Audit fields keep the actor, while follow-up work
+    # belongs to the executive who owns this assignment cycle.
+    follow_up_owner_user_id = str(cycle.get("assigned_to_user_id") or actor_user_id)
+    follow_up_owner_name = cycle.get("assigned_to_display_name")
 
     record = {
         "_id": f"crm_management:{idempotency_key}", "idempotency_key": idempotency_key,
@@ -181,7 +226,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     else:
         lead_updates.update({"pipeline_stage": "CONTACTED", "stage": "gestion"})
     if rule["follow_up"]:
-        lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
+        lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
     if result_type == "VISIT_SCHEDULED":
         lead_updates.update({"visit_date": visit_at, "lifecycle.visit_scheduled_at": visit_at})
@@ -202,7 +247,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                      "follow_up_required": rule["follow_up"], "last_management_result": result_type,
                      "sla_alert_claims.yellow.status": "suppressed", "sla_alert_claims.red.status": "suppressed"}
     if rule["follow_up"]:
-        cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": actor_user_id,
+        cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                               "follow_up_status": "pending", "follow_up_cycle_id": follow_cycle_id})
     db["crm_assignment_cycles"].update_one(
         {"assignment_cycle_id": assignment_cycle_id,
@@ -218,6 +263,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "phone": lead_doc.get("phone"),
             "lead_id": lead_id,
             "assignment_cycle_id": assignment_cycle_id,
+            "recipient_user_id": follow_up_owner_user_id,
+            "target_user_id": follow_up_owner_user_id,
+            "recipient_name": follow_up_owner_name,
             "idempotency_key": idempotency_key,
             "lead_type": "crm",
             "message_domain": "crm_management_follow_up",
@@ -241,6 +289,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "phone": lead_doc.get("phone"),
             "lead_id": lead_id,
             "assignment_cycle_id": assignment_cycle_id,
+            "recipient_user_id": follow_up_owner_user_id,
+            "target_user_id": follow_up_owner_user_id,
+            "recipient_name": follow_up_owner_name,
             "idempotency_key": idempotency_key,
             "lead_type": "crm",
             "message_domain": "crm_scheduled_visit",
@@ -270,7 +321,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     )
     event_type = {"MESSAGE_SENT_WAITING_RESPONSE": "SEND_WA_LEAD", "EMAIL_SENT": "SEND_EMAIL_LEAD",
                   "CALL_NO_ANSWER": "CALL_COMPLETED_LEAD"}.get(result_type, "CONTACT_RESULT")
+    lead_for_event = db["leads"].find_one({"_id": lead_id}) or {}
     event = {"_id": f"crm_event:{idempotency_key}", "lead_id": lead_id,
+             "phone": lead_for_event.get("phone"),
              "assignment_cycle_id": assignment_cycle_id, "actor": actor_user_id,
              "actor_type": "human", "type": event_type, "result": result_type,
              "confirmed": True, "timestamp": occurred, "source": source,

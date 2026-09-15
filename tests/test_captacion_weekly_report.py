@@ -66,9 +66,17 @@ def _narrative():
 def test_snapshot_is_built_from_exact_panel_backend(monkeypatch):
     calls = []
     panel = _panel()
-    monkeypatch.setattr(weekly, "get_captacion_goal_dashboard", lambda db, now=None: calls.append(now) or panel)
+    monkeypatch.setattr(
+        weekly,
+        "get_captacion_goal_dashboard",
+        lambda db, now=None, **kwargs: calls.append((now, kwargs)) or panel,
+    )
     snapshot = weekly.build_weekly_snapshot(object(), "2026-07-13", "2026-07-17", is_test=True)
     assert len(calls) == 1
+    assert calls[0][1] == {
+        "period_start": "2026-07-13",
+        "period_end": "2026-07-17",
+    }
     assert snapshot["team"]["properties_managed_unique"] == panel["week_count"] == 8
     assert snapshot["crm_parity"]["validated"] is True
     assert sum(group["total"] for group in snapshot["outcome_groups"].values()) == 8

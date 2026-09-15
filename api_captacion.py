@@ -5,6 +5,8 @@ from chatbot.constants import CHILE_TZ
 import logging
 import uuid
 import re
+import unicodedata
+import threading
 import time as _perf_time
 from captacion_kpis import (
     VISIBLE_CLASSIFICATION_STATES,
@@ -12,8 +14,10 @@ from captacion_kpis import (
     MANAGEMENT_STATES,
     CAPTURED_STATES,
     DISCARDED_STATES,
+    CAPTACION_TERMINAL_STATES,
 )
 from bson import ObjectId
+from pymongo.errors import DuplicateKeyError
 from chatbot.storage import get_db, log_event
 from chatbot.constants import CHILE_TZ, EventType
 from owner_confidence import (
@@ -31,6 +35,30 @@ from captacion_management import (
     start_management_attempt,
 )
 from captacion_materialized import build_captacion_materialized_fields
+from captacion_assignment_eligibility import assignment_classification_priority
+from captacion_distribution import (
+    GLOBAL_PORTAL_ALIASES,
+    MongoDistributionLock,
+    assign_captacion_candidate_atomically,
+    distribution_age_decision,
+    distribution_capture_datetime,
+    distribution_age_sort_key,
+    STALE_FOR_AUTO_DISTRIBUTION,
+    has_broker_identity,
+    is_global_portal,
+    is_captacion_distribution_executive,
+    active_workable_backlogs,
+    open_workloads,
+    portal_key,
+    distribution_unassigned_clause,
+    is_terminal_state,
+)
+from captacion_contact_identity import (
+    get_contact_identity_evidence,
+    normalize_phone,
+    phone_learning_enabled,
+    phone_learning_global_lookup_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +198,111 @@ def format_captacion_portal_label(origin):
         "mercadolibre": "MercadoLibre",
     }
     return known_labels.get(value.casefold(), value.replace("_", " ").replace("-", " ").title())
+
+
+def normalize_captacion_property_type(value):
+    """Agrupa singular/plural y abreviaturas comunes del tipo de propiedad."""
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", raw_value)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = re.sub(r"[_-]+", " ", normalized.casefold())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    aliases = {
+        "casas": "casa",
+        "departamentos": "departamento",
+        "depto": "departamento",
+        "deptos": "departamento",
+        "dpto": "departamento",
+        "dptos": "departamento",
+        "oficinas": "oficina",
+        "locales": "local",
+        "parcelas": "parcela",
+        "terrenos": "terreno",
+        "sitios": "sitio",
+        "bodegas": "bodega",
+        "estacionamientos": "estacionamiento",
+        "galpones": "galpon",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    if len(normalized) > 4 and normalized.endswith("s"):
+        normalized = normalized[:-1]
+    return normalized
+
+
+def _captacion_property_type_pattern(value):
+    """Incluye variantes históricas al filtrar por el tipo normalizado."""
+    canonical = normalize_captacion_property_type(value)
+    variants = {
+        "casa": ("casa", "casas"),
+        "departamento": ("departamento", "departamentos", "depto", "deptos", "dpto", "dptos"),
+    }.get(canonical, (canonical, f"{canonical}s" if canonical else ""))
+    variants = [re.escape(variant) for variant in variants if variant]
+    return re.compile(r"^\s*(?:" + "|".join(variants) + r")\s*$", re.I)
+
+
+def _parse_captacion_price_bound(value):
+    """Normaliza un límite ingresado desde el filtro de monto."""
+    if value is None or str(value).strip() == "":
+        return None
+    raw = str(value).strip().replace("$", "").replace("UF", "").replace("uf", "")
+    raw = re.sub(r"[^0-9,.-]", "", raw)
+    if not raw:
+        return None
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif raw.count(".") > 1:
+        raw = raw.replace(".", "")
+    elif raw.count(".") == 1:
+        left, right = raw.split(".")
+        if len(right) == 3 and len(left) <= 3:
+            raw = left + right
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _captacion_price_range_condition(currency, price_min=None, price_max=None):
+    currency = str(currency or "").strip().upper()
+    if currency not in {"UF", "CLP"}:
+        return None
+
+    lower = _parse_captacion_price_bound(price_min)
+    upper = _parse_captacion_price_bound(price_max)
+    if lower is None and upper is None:
+        return None
+    if lower is not None and upper is not None and lower > upper:
+        return {"_id": {"$in": []}}
+
+    bounds = {}
+    if lower is not None:
+        bounds["$gte"] = lower
+    if upper is not None:
+        bounds["$lte"] = upper
+
+    suffix = currency.lower()
+    normalized_field = f"precio_{suffix}_normalizado"
+    source_fields = (
+        f"precio_{suffix}",
+        f"price_{suffix}",
+        f"details.precio_{suffix}",
+        f"details.price_{suffix}",
+    )
+    return {
+        "$or": [
+            {normalized_field: bounds},
+            {
+                "$and": [
+                    {normalized_field: {"$exists": False}},
+                    {"$or": [{field: bounds} for field in source_fields]},
+                ]
+            },
+        ]
+    }
 
 
 def get_captacion_capture_datetime(doc):
@@ -507,7 +640,7 @@ def resolve_operacion(details: dict) -> str:
     return "VENTA"
 
 
-def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, classification_filter=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
+def get_captacion_list(user_role="agente", user_name="", user_id="", user_email="", page=1, limit=10, comuna_filter=None, status_filter=None, executive_filter=None, operacion_filter=None, telefono_filter=None, portal_filter=None, property_type_filter=None, classification_filter=None, price_currency=None, price_min=None, price_max=None, sort_by=None, sort_dir="desc", order_filter=None, gestion_date=None, gestion_week_start=None, perf_context=None, return_portals=False):
     _l_start = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
@@ -604,6 +737,56 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             {"operacion": op_pattern},
             {"tipo_operacion": op_pattern},
         ]})
+
+    # Catálogo normalizado para que "casa" y "casas" aparezcan como una sola opción.
+    type_catalog_query = dict(query)
+    if "$and" in type_catalog_query:
+        type_catalog_query["$and"] = list(type_catalog_query["$and"])
+    type_cache_key = repr(type_catalog_query)
+    type_cache = getattr(get_captacion_list, "_property_type_cache", {})
+    type_cache_record = type_cache.get(type_cache_key)
+    type_cache_ttl = 300
+    if type_cache_record and (get_chile_now() - type_cache_record[0]).total_seconds() < type_cache_ttl:
+        available_property_types = type_cache_record[1]
+    else:
+        type_rows = list(coll.aggregate([
+            {"$match": type_catalog_query},
+            {"$project": {"tipo_catalogo": {"$ifNull": [
+                "$tipo_propiedad",
+                {"$ifNull": ["$property_type", {"$ifNull": ["$details.tipo_propiedad", "$details.tipo"]}]},
+            ]}}},
+            {"$match": {"tipo_catalogo": {"$nin": [None, ""]}}},
+            {"$group": {"_id": "$tipo_catalogo"}},
+        ]))
+        type_values = {}
+        for row in type_rows:
+            canonical_value = normalize_captacion_property_type(row.get("_id"))
+            if canonical_value:
+                type_values.setdefault(canonical_value, canonical_value)
+        available_property_types = [
+            {"value": value, "label": value.title()}
+            for value in sorted(type_values.values(), key=lambda item: item.casefold())
+        ]
+        type_cache[type_cache_key] = (get_chile_now(), available_property_types)
+        if len(type_cache) > 128:
+            oldest_key = min(type_cache, key=lambda key: type_cache[key][0])
+            type_cache.pop(oldest_key, None)
+        get_captacion_list._property_type_cache = type_cache
+
+    if property_type_filter:
+        property_type_pattern = _captacion_property_type_pattern(property_type_filter)
+        add_condition({"$or": [
+            {"tipo_propiedad": property_type_pattern},
+            {"property_type": property_type_pattern},
+            {"details.tipo_propiedad": property_type_pattern},
+            {"details.tipo": property_type_pattern},
+        ]})
+
+    price_condition = _captacion_price_range_condition(
+        price_currency, price_min=price_min, price_max=price_max
+    )
+    if price_condition:
+        add_condition(price_condition)
     
     if telefono_filter:
         phone_digits = "".join(char for char in str(telefono_filter) if char.isdigit())
@@ -787,6 +970,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             continue
         direction = 1 if index < len(sort_dirs) and sort_dirs[index] == "asc" else -1
         sort_specs.append((key, direction))
+        # Mantener un único criterio evita resultados ambiguos al cambiar
+        # de columna desde el listado.
+        break
     # Proyección mínima de la vista de listado. La anterior era de exclusión
     # y seguía trayendo clasificación completa, imágenes, metadata del scrape
     # y otros payloads que la tabla no renderiza. Se conservan los alias que
@@ -975,6 +1161,9 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "comuna": norm["comuna"],
             "comuna_slug": norm["comuna_slug"],
             "operacion": op_display,
+            "tipo_propiedad": (
+                normalize_captacion_property_type(norm.get("tipo_propiedad")) or "S/I"
+            ).title(),
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
             "precio_display": norm["precio_display"],
@@ -1023,7 +1212,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     )
     
     if return_portals:
-        return items_paginated, total_count, available_ops, available_portals
+        return items_paginated, total_count, available_ops, available_portals, available_property_types
     return items_paginated, total_count, available_ops
 
 
@@ -1078,24 +1267,30 @@ def warm_captacion_shared_catalogs():
         "elapsed_ms": round(elapsed_ms, 1),
     }
 
-def get_captacion_detail(obj_id):
-    from bson import ObjectId
+def get_captacion_raw(obj_id):
+    """Read the source document without running detail scoring or market queries."""
     from bson.errors import InvalidId
 
+    db = get_db()
+    coll = get_captacion_collection(db)
+    try:
+        query_id = ObjectId(obj_id)
+    except (InvalidId, TypeError):
+        query_id = str(obj_id)
+
+    doc = coll.find_one({"_id": query_id})
+    if not doc and query_id != str(obj_id):
+        doc = coll.find_one({"_id": str(obj_id)})
+    return doc
+
+
+def get_captacion_detail(obj_id):
     _detail_cache_key = f"detail_full_{obj_id}"
     _cached = _l1_get(_detail_cache_key)
     if _cached is not None:
         return _cached
 
-    db = get_db()
-    coll = get_captacion_collection(db)
-    
-    try:
-        query_id = ObjectId(obj_id)
-    except InvalidId:
-        query_id = obj_id
-        
-    doc = coll.find_one({"_id": query_id})
+    doc = get_captacion_raw(obj_id)
     if not doc:
         return None
     
@@ -1153,7 +1348,7 @@ def get_captacion_detail(obj_id):
     pipeline_stages = [
         "Por contactar", "En gestión", "Contacto exitoso", "Sin respuesta", "Teléfono inválido",
         "Corredor", "Propiedad no disponible", "Publicación expirada", "No interesado",
-        "Reunión agendada", "Captado", "Descartado"
+        "Reunión agendada", "Captado", "Descartado", "Duplicado"
     ]
     
     estado_actual = gestion.get("estado_captacion") or gestion.get("estado") or "Por contactar"
@@ -1284,8 +1479,66 @@ def get_captacion_detail(obj_id):
     _l1_set(_detail_cache_key, _result, expire_seconds=45)
     return _result
 
-def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema", next_followup=None, user_doc=None, followup_token=None):
+
+def get_captacion_update_state(obj_id, operation_id=None):
+    """Read the persisted update marker without using the detail cache."""
     db = get_db()
+    coll = get_captacion_collection(db)
+    try:
+        query_id = ObjectId(obj_id)
+    except Exception:
+        query_id = str(obj_id)
+
+    doc = coll.find_one({"_id": query_id}, {"_id": 1, "gestion": 1})
+    if not doc:
+        doc = coll.find_one({"_id": str(obj_id)}, {"_id": 1, "gestion": 1})
+    if not doc:
+        return None
+
+    gestion = dict(doc.get("gestion") or {})
+    stored_operation_id = str(gestion.get("last_update_operation_id") or "").strip() or None
+    requested_operation_id = str(operation_id or "").strip() or None
+    core_persisted = bool(
+        requested_operation_id
+        and stored_operation_id
+        and requested_operation_id == stored_operation_id
+    )
+    return {
+        "id": str(doc.get("_id") or obj_id),
+        "gestion": gestion,
+        "status": gestion.get("estado_captacion") or gestion.get("estado") or "NUEVO",
+        "operation_id": stored_operation_id,
+        "core_persisted": core_persisted,
+        "persisted": core_persisted and bool(gestion.get("last_update_completed_at")),
+    }
+
+def run_captacion_secondary_effects(obj_id, old_status, status, user_name, notes):
+    """Run non-blocking score and audit updates after the durable write."""
+    db = get_db()
+    try:
+        from chatbot.metrics import update_captacion_metrics
+        update_captacion_metrics(db, obj_id)
+    except Exception:
+        logger.exception("Error updating captacion metrics for %s", obj_id)
+
+    try:
+        log_event(str(obj_id), EventType.STAGE_CHANGE.value, user_name, {
+            "old_stage": old_status,
+            "new_stage": status,
+            "notes": notes,
+            "source": "captacion",
+        })
+    except Exception:
+        logger.exception("Error logging captacion status change event for %s", obj_id)
+
+
+def update_captacion_status(
+    obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema",
+    next_followup=None, user_doc=None, followup_token=None, operation_id=None,
+    current_doc=None, defer_secondary_effects=False,
+):
+    db = get_db()
+    operation_id = str(operation_id or "").strip() or None
     
     now = get_chile_now() # Store as Date object, not string
     
@@ -1294,17 +1547,30 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
     except Exception:
         query_id = str(obj_id)
         
-    current_doc = get_captacion_collection(db).find_one({"_id": query_id})
-    if not current_doc:
-        current_doc = get_captacion_collection(db).find_one({"_id": str(obj_id)})
+    if current_doc is None:
+        current_doc = get_captacion_collection(db).find_one({"_id": query_id})
         if not current_doc:
-            return False
+            current_doc = get_captacion_collection(db).find_one({"_id": str(obj_id)})
+            if not current_doc:
+                return False
 
         
-    old_status = current_doc.get("gestion", {}).get("estado_captacion") or current_doc.get("gestion", {}).get("estado") or "NUEVO"
+    current_gestion = current_doc.get("gestion", {}) or {}
+    old_status = current_gestion.get("estado_captacion") or current_gestion.get("estado") or "NUEVO"
+    operation_already_applied = bool(
+        operation_id
+        and str(current_gestion.get("last_update_operation_id") or "").strip() == operation_id
+    )
+    if operation_already_applied and current_gestion.get("last_update_completed_at"):
+        return True
+    decision_previous_status = (
+        current_gestion.get("last_update_previous_status")
+        if operation_already_applied
+        else old_status
+    ) or old_status
     manual_decision = evaluate_manual_decision(
         status=status,
-        previous_status=old_status,
+        previous_status=decision_previous_status,
         notes=notes,
         outcome=outcome,
         is_automatic=not bool(user_doc),
@@ -1319,18 +1585,32 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         "captacion_management_date": now,
     }
     
-    if next_followup:
+    followup_error = None
+    if next_followup and not operation_already_applied:
         update_fields["gestion.next_followup"] = next_followup
-        # Crear tarea en crm_tasks
+        # Persist the task now; issue the signed URL only when the worker
+        # reaches execute_at and is ready to send WhatsApp.
         try:
-            # Handle formats: "2023-12-31 15:00" or ISO
+            from chatbot.followup_tracking import (
+                TRACKING_VERSION as FOLLOWUP_TRACKING_VERSION,
+                ensure_followup_indexes,
+                record_followup_event,
+            )
+
+            creator_id = str((user_doc or {}).get("_id") or "").strip()
+            if not creator_id:
+                logger.error(
+                    "[FOLLOWUP] token_issue_failed obj_id=%s reason=creator_missing",
+                    obj_id,
+                )
+                raise ValueError("followup_creator_missing")
+
+            # Handle formats: "2023-12-31 15:00" or ISO.
             date_str = next_followup.replace("T", " ").replace("Z", "")
             try:
                 execute_at = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
             except ValueError:
                 execute_at = datetime.fromisoformat(date_str)
-            
-            # Localize to Chile
             if execute_at.tzinfo is None:
                 execute_at = CHILE_TZ.localize(execute_at)
 
@@ -1339,53 +1619,91 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             if any("?" in str(value or "") for value in (audit_note, old_status)):
                 logger.error("Rejected captacion reminder with degraded Unicode input")
                 return False
-            # Deduplicación por captación: el teléfono es un dummy, así que
-            # usamos obj_id para evitar crear 2 o 3 recordatorios para la misma gestión.
-            db["crm_tasks"].update_many(
-                {"lead_type": "captacion", "obj_id": obj_id_str, "status": "pending"},
-                {"$set": {"status": "completed", "resolved_at": now, "resolution": "superseded"}}
+            idempotency_key = (
+                f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}"
+                f":{creator_id}"
             )
-                
-            task = {
-                "task_id": str(uuid.uuid4()),
-                "message_domain": "captacion_reminder",
-                "message_type": "scheduled_reminder",
-                "recipient_role": "executive",
-                "target_user_id": str((user_doc or {}).get("_id") or ""),
-                "recipient_user_id": str((user_doc or {}).get("_id") or ""),
-                "recipient_name": (user_doc or {}).get("nombre") or user_name,
-                "state_at_creation": old_status,
-                "audit_note": audit_note,
-                "idempotency_key": f"captacion_reminder:{obj_id_str}:{execute_at.astimezone(timezone.utc).isoformat()}:{str((user_doc or {}).get('_id') or user_name)}",
-                "lead_type": "captacion",
-                "followup_tracking_version": "followup_tracking_v1",
-                "attribution_status": "attributed",
-                "phone": "+56900000000",
-                "obj_id": obj_id_str,
-                "target_name": user_name,
-                "type": "REMINDER_CAPTACION",
-                "status": "pending",
-                "scheduled_at": execute_at,
-                "execute_at": execute_at,
-                "attempts": 0,
-                "created_at": now,
-                "note": (
-                    str(notes).strip() if notes and str(notes).strip()
-                    else f"Contactar captación: {current_doc.get('title') or current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})"
-                ),
-                "agent": user_name
-            }
-            db["crm_tasks"].insert_one(task)
-            try:
-                from chatbot.followup_tracking import record_followup_event
-                record_followup_event(
-                    db, task=task, event_type="reminder_scheduled",
-                    occurred_at=now, source="captacion_crm",
+            ensure_followup_indexes(db)
+            existing_task = db["crm_tasks"].find_one({
+                "idempotency_key": idempotency_key,
+                "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+            })
+            if not existing_task:
+                # Historical v1 tasks with the same key must not block a new
+                # v2 task. Only pending tasks are superseded.
+                db["crm_tasks"].update_many(
+                    {"lead_type": "captacion", "obj_id": obj_id_str, "status": "pending"},
+                    {"$set": {"status": "completed", "resolved_at": now, "resolution": "superseded"}}
                 )
-            except ValueError:
-                pass
+                inserted_new = True
+                task = {
+                    "task_id": str(uuid.uuid4()),
+                    "message_domain": "captacion_reminder",
+                    "message_type": "scheduled_reminder",
+                    "recipient_role": "executive",
+                    "created_by_user_id": creator_id,
+                    "target_user_id": creator_id,
+                    "recipient_user_id": creator_id,
+                    "recipient_name": (user_doc or {}).get("nombre") or user_name,
+                    "state_at_creation": old_status,
+                    "audit_note": audit_note,
+                    "idempotency_key": idempotency_key,
+                    "lead_type": "captacion",
+                    "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+                    "followup_token_version": 2,
+                    "attribution_status": "attributed",
+                    "phone": "+56900000000",
+                    "obj_id": obj_id_str,
+                    "target_name": user_name,
+                    "type": "REMINDER_CAPTACION",
+                    "status": "pending",
+                    "scheduled_at": execute_at,
+                    "execute_at": execute_at,
+                    "attempts": 0,
+                    "created_at": now,
+                    "note": (
+                        str(notes).strip() if notes and str(notes).strip()
+                        else f"Contactar captación: {current_doc.get('title') or current_doc.get('details', {}).get('titulo', 'Sin título')} (Score: {current_doc.get('score_captacion', 0)})"
+                    ),
+                    "agent": user_name,
+                }
+                try:
+                    db["crm_tasks"].insert_one(task)
+                except DuplicateKeyError:
+                    # A concurrent retry may win the v2 partial unique index.
+                    inserted_new = False
+                    task = db["crm_tasks"].find_one({
+                        "idempotency_key": idempotency_key,
+                        "followup_tracking_version": FOLLOWUP_TRACKING_VERSION,
+                    })
+                    if not task:
+                        raise
+                if inserted_new:
+                    try:
+                        record_followup_event(
+                            db,
+                            task=task,
+                            event_type="reminder_scheduled",
+                            occurred_at=now,
+                            source="captacion_crm",
+                            actor_user_id=creator_id,
+                        )
+                    except ValueError:
+                        pass
         except Exception as e:
             logger.error(f"Error scheduling captacion task: {e}")
+            followup_error = e
+
+    if followup_error is not None:
+        raise RuntimeError("No se pudo guardar el seguimiento programado") from followup_error
+
+    if operation_id and not operation_already_applied:
+        update_fields.update({
+            "gestion.last_update_operation_id": operation_id,
+            "gestion.last_update_operation_at": now,
+            "gestion.last_update_previous_status": old_status,
+            "gestion.last_update_completed_at": None,
+        })
     
     # 2. Incrementar contador de intentos si es una acción de contacto
     inc_fields = {}
@@ -1406,7 +1724,7 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         }
     
     # Si cambió el estado, registrar el cambio
-    if old_status != status:
+    if old_status != status and not operation_already_applied:
         push_fields["gestion.status_history"] = {
             "timestamp": now,
             "user": user_name,
@@ -1415,14 +1733,26 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
         }
     
     update_params = {"$set": update_fields}
-    if inc_fields: update_params["$inc"] = inc_fields
-    if push_fields: update_params["$push"] = push_fields
-    
-    get_captacion_collection(db).update_one(
-        {"_id": current_doc["_id"]},
-        update_params
-    )
-    if old_status != status:
+    if inc_fields and not operation_already_applied: update_params["$inc"] = inc_fields
+    if push_fields and not operation_already_applied: update_params["$push"] = push_fields
+
+    if not operation_already_applied:
+        write_result = get_captacion_collection(db).update_one(
+            {"_id": current_doc["_id"], **({"gestion.last_update_operation_id": {"$ne": operation_id}} if operation_id else {})},
+            update_params,
+        )
+        matched_count = getattr(write_result, "matched_count", None)
+        if operation_id and matched_count == 0:
+            latest = get_captacion_collection(db).find_one(
+                {"_id": current_doc["_id"]}, {"gestion.last_update_operation_id": 1}
+            ) or {}
+            latest_operation_id = str(
+                (latest.get("gestion") or {}).get("last_update_operation_id") or ""
+            ).strip()
+            if latest_operation_id != operation_id:
+                raise RuntimeError("La actualización no pudo confirmarse en MongoDB")
+            operation_already_applied = True
+    if old_status != status and not operation_already_applied:
         # La revisión vive en Mongo y permite invalidar snapshots de otros
         # workers, además de la limpieza local que ya realiza este módulo.
         bump_captacion_kpi_revision(db)
@@ -1432,10 +1762,11 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
             property_doc=current_doc,
             actor_user=user_doc,
             status=status,
-            previous_status=old_status,
+            previous_status=decision_previous_status,
             notes=notes,
             outcome=outcome,
             now=now,
+            operation_id=operation_id,
         )
         if followup_token and manual_result.get("event_id"):
             try:
@@ -1461,26 +1792,18 @@ def update_captacion_status(obj_id, status, notes=None, channel=None, outcome=No
     except Exception:
         logger.debug("No se pudo invalidar la caché de ledger de captación", exc_info=True)
     
-    # Precomputación SaaS: Actualizar métricas de captación
-    try:
-        from chatbot.metrics import update_captacion_metrics
-        update_captacion_metrics(db, obj_id)
-    except: pass
+    if not defer_secondary_effects:
+        run_captacion_secondary_effects(obj_id, old_status, status, user_name, notes)
 
-    # LOG EVENT CENTRAL: Cambio de Estado
-    try:
-        log_event(str(obj_id), EventType.STAGE_CHANGE.value, user_name, {
-            "old_stage": old_status,
-            "new_stage": status,
-            "notes": notes,
-            "source": "captacion"
-        })
-    except Exception as e:
-        logger.error(f"Error logging status change event: {e}")
+    if operation_id:
+        get_captacion_collection(db).update_one(
+            {"_id": current_doc["_id"], "gestion.last_update_operation_id": operation_id},
+            {"$set": {"gestion.last_update_completed_at": now}},
+        )
 
     return True
 
-def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema"):
+def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=None, user_name="Sistema", user_id=None, return_details=False):
     db = get_db()
     
     try:
@@ -1494,11 +1817,13 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         if not current_doc:
             return False
         
-    details = current_doc.get("details", {})
+    details = current_doc.get("details", {}) or {}
     
     update_fields = {}
     audit_changes = []
     now = get_chile_now()
+    contact_identity = None
+    known_broker_match = None
     
     nombre_limpio = str(nombre or "").strip()
     nombre_actual = str(details.get("publicador") or "").strip()
@@ -1513,22 +1838,44 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
         })
         
     if telefono:
-        clean_phone = "".join(filter(str.isdigit, str(telefono)))
-        if clean_phone != details.get("whatsapp_phone"):
+        clean_phone = normalize_phone(telefono)
+        if not clean_phone:
+            logger.warning("[CAPTACION_CONTACT] invalid_phone_rejected property_id=%s", obj_id)
+            return False
+        previous_phone = normalize_phone(
+            current_doc.get("telefono_normalizado")
+            or details.get("whatsapp_phone")
+            or details.get("telefono")
+        )
+        if clean_phone != previous_phone:
+            phone_actor = str(user_id or user_name or "Sistema")
+            old_version = current_doc.get("phone_version") or 0
+            try:
+                next_version = int(old_version) + 1
+            except (TypeError, ValueError):
+                next_version = 1
             update_fields["details.whatsapp_phone"] = clean_phone
             updated_doc = dict(current_doc)
             updated_details = dict(details)
             updated_details["whatsapp_phone"] = clean_phone
             updated_doc["details"] = updated_details
-            update_fields["telefono_normalizado"] = build_captacion_materialized_fields(
-                updated_doc
-            )["telefono_normalizado"]
+            update_fields["telefono_normalizado"] = clean_phone
+            update_fields["phone_normalized"] = clean_phone
+            update_fields["phone_source"] = "EXECUTIVE"
+            update_fields["phone_added_at"] = now
+            update_fields["phone_added_by"] = phone_actor
+            update_fields["phone_original_value"] = str(telefono)
+            update_fields["phone_version"] = next_version
             audit_changes.append({
                 "timestamp": now,
                 "user": user_name,
                 "field": "telefono",
                 "old_value": details.get("whatsapp_phone"),
-                "new_value": clean_phone
+                "new_value": clean_phone,
+                "phone_normalized": clean_phone,
+                "phone_source": "EXECUTIVE",
+                "phone_added_by": phone_actor,
+                "phone_version": next_version,
             })
             
     if email and email != details.get("email"):
@@ -1564,10 +1911,47 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             try:
                 log_event(str(obj_id), EventType.REGISTER_PHONE.value, user_name, {
                     "phone_registered": telefono,
+                    "phone_normalized": normalize_phone(telefono),
+                    "phone_source": "EXECUTIVE",
                     "source": "captacion"
                 })
             except Exception as e:
                 logger.error(f"Error logging register phone event: {e}")
+
+    if telefono and phone_learning_enabled():
+        lookup_doc = dict(current_doc)
+        lookup_details = dict(details)
+        lookup_doc["details"] = lookup_details
+        normalized_phone = normalize_phone(telefono)
+        lookup_details["whatsapp_phone"] = normalized_phone
+        for key in ("telefono_normalizado", "phone_normalized", "whatsapp_phone", "contact_phone", "telefono"):
+            lookup_doc[key] = normalized_phone
+        contact_identity = get_contact_identity_evidence(db, lookup_doc)
+        if contact_identity and str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED":
+            from captacion_management import record_known_broker_auto_match
+            known_broker_match = record_known_broker_auto_match(
+                db,
+                property_doc=lookup_doc,
+                identity=contact_identity,
+                actor_user_id=user_id,
+                actor_name=user_name,
+                now=now,
+            )
+
+    if return_details:
+        return {
+            "ok": True,
+            "known_broker_auto_match": bool(known_broker_match and known_broker_match.get("matched")),
+            "message": (known_broker_match or {}).get("message"),
+            "identity_status": (contact_identity or {}).get("status"),
+            "identity_id": str((contact_identity or {}).get("_id") or (contact_identity or {}).get("identity_key") or ""),
+            "known_broker_event_id": (known_broker_match or {}).get("event_id"),
+            "resulting_state": (
+                "Corredor"
+                if known_broker_match and known_broker_match.get("matched")
+                else None
+            ),
+        }
 
     return True
 
@@ -1989,6 +2373,12 @@ def ensure_leads_indexes():
             ("idx_captacion_phone_normalized", [
                 ("telefono_normalizado", 1),
             ]),
+            ("idx_captacion_price_uf_range", [
+                ("precio_uf_normalizado", 1), ("_id", -1),
+            ]),
+            ("idx_captacion_price_clp_range", [
+                ("precio_clp_normalizado", 1), ("_id", -1),
+            ]),
         )
         for index_name, index_spec in materialized_indexes:
             try:
@@ -2347,7 +2737,23 @@ def get_matching_leads_count(prop_data):
 SLA_CAPTACION_DIAS = 5  # Días de inactividad antes de liberar una captación asignada
 
 def release_stale_captaciones(sla_dias=SLA_CAPTACION_DIAS):
+    """Release stale assignments under the same cross-process run lock."""
     db = get_db()
+    lock = MongoDistributionLock(
+        db,
+        run_id=f"sla-release-{uuid.uuid4()}",
+        trigger_source="sla_release",
+    )
+    if not lock.acquire():
+        logger.info("[SLA] distribution_already_running; no se liberaron captaciones.")
+        return 0
+    try:
+        return _release_stale_captaciones_locked(db, sla_dias)
+    finally:
+        lock.release()
+
+
+def _release_stale_captaciones_locked(db, sla_dias=SLA_CAPTACION_DIAS):
     coll = get_captacion_collection(db)
     now_utc = datetime.now(timezone.utc)
     umbral = now_utc - timedelta(days=sla_dias)
@@ -2426,142 +2832,416 @@ BROKER_GUARD_TERMS = (
 )
 
 BROKER_GUARD_FIELDS = (
-    "company_name", "broker_brand", "publicador_visible", "contact_name",
-    "contact_logo_alt", "listing_advertiser", "seller_jsonld_name",
-    "seller_name", "seller_text",
+    "company_name", "broker_brand", "publicador_visible",
+    "contact_logo_alt", "contact_badges_text",
 )
+
+DISTRIBUTION_STATES = ("DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO")
+# Compatibility alias retained for callers/tests; the canonical source is
+# captacion_kpis.CAPTACION_TERMINAL_STATES.
+DISTRIBUTION_TERMINAL_STATES = set(CAPTACION_TERMINAL_STATES)
+_DISTRIBUTION_RUN_LOCK = threading.Lock()
 
 
 def _has_broker_identity(doc: dict) -> bool:
-    """Defensa en profundidad: aunque la clasificación fallara, nunca asignar
-    al equipo una captación cuyo publicador tiene identidad de corredor."""
-    from captacion_assignment_eligibility import assignment_eligibility
-    ok, reasons = assignment_eligibility(doc)
-    if not ok and "commercial_identity_or_profile" in reasons:
-        return True
-    raw = " ".join(str(doc.get(f) or "") for f in BROKER_GUARD_FIELDS)
-    norm = re.sub(r"[^a-z0-9 ]+", " ", raw.lower())
-    norm = re.sub(r"\s+", " ", norm).strip()
-    return any(term in norm for term in BROKER_GUARD_TERMS)
+    """Compatibility wrapper around the shared broker identity guard."""
+    return has_broker_identity(doc)
 
 
-def distribute_sourced_leads():
-    """Distribuye propiedades nuevas sin asignar. Versión simplificada para background loop."""
-    from bson import ObjectId
-    db = get_db()
-    coll = get_captacion_collection(db)
+def _distribution_unassigned_clause() -> dict:
+    """Require the canonical assignment id to be empty for idempotency.
 
-    agents = list(db["usuarios"].find({
-        "is_active": True,
-        "rol": "agente",
-        "comunas_interes_norm": {"$exists": True, "$ne": []}
-    }))
-    if not agents:
-        logger.info("[DISTRIBUCION] 0 agentes elegibles.")
-        return 0
+    Legacy documents may retain an old display name while their canonical
+    executive id is null; that name must not make them disappear from the
+    normal pool. The atomic id guard is the source of truth for concurrency.
+    """
+    return distribution_unassigned_clause()
 
-    comuna_to_agents = {}
-    for a in agents:
-        aid = str(a["_id"])
-        for cn in a.get("comunas_interes_norm", []):
-            comuna_to_agents.setdefault(cn, []).append(aid)
 
-    eligible_query = {
-        "origen": "toctoc",
-        "classification.assignment_ready": True,
-        "classification.exclude_from_assignment": {"$ne": True},
-        "gestion.semantic_review_hold": {"$ne": True},
-        "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
-        "$or": [
-            {"gestion.ejecutivo_id": {"$exists": False}},
-            {"gestion.ejecutivo_id": None},
+def _distribution_sort_key(document: dict) -> tuple:
+    age_rank, negative_captured_epoch = distribution_age_sort_key(document)
+    return (
+        assignment_classification_priority(document),
+        age_rank,
+        negative_captured_epoch,
+        str(document.get("_id") or document.get("listing_id") or document.get("url") or ""),
+    )
+
+
+def _distribution_open_workloads(db, agent_ids: list[str]) -> dict[str, int]:
+    return open_workloads(db, agent_ids)
+
+
+def _build_bounded_distribution_plan(
+    properties: list[dict],
+    agents: list[dict],
+    open_workload: dict[str, int],
+    *,
+    batch_size: int,
+    max_per_agent: int,
+    max_open: int,
+    active_workable_backlog: dict[str, int] | None = None,
+) -> tuple[list[tuple[dict, str]], dict[str, int]]:
+    """Select a bounded, priority-ordered plan without mutating Mongo."""
+    agents_by_id = {agent["id"]: agent for agent in agents}
+    commune_to_agents: dict[str, list[str]] = {}
+    for agent in agents:
+        for commune in agent.get("comunas_interes_norm") or []:
+            commune_to_agents.setdefault(commune, []).append(agent["id"])
+    run_load = {agent_id: 0 for agent_id in agents_by_id}
+    priority_workload = (
+        active_workable_backlog
+        if active_workable_backlog is not None
+        else open_workload
+    )
+    stats = {"no_coverage": 0, "capacity": 0, "selected": 0}
+    plan: list[tuple[dict, str]] = []
+
+    for prop in sorted(properties, key=_distribution_sort_key):
+        if len(plan) >= max(0, int(batch_size)):
+            break
+        slug = prop.get("comuna_slug") or normalize_commune_canonical(prop.get("comuna") or "")
+        candidate_ids = commune_to_agents.get(slug, [])
+        if not candidate_ids:
+            stats["no_coverage"] += 1
+            continue
+        available_ids = [
+            agent_id for agent_id in candidate_ids
+            if open_workload.get(agent_id, 0) + run_load.get(agent_id, 0) < max_open
+            and run_load.get(agent_id, 0) < max_per_agent
         ]
-    }
-    props = list(coll.find(eligible_query))
-    from captacion_assignment_eligibility import assignment_eligibility
-    props = [p for p in props if assignment_eligibility(p)[0]]
-    # Nunca redistribuir un contacto que ya tuvo gestión humana (notas,
-    # actividades, fecha_ultima_gestion, eventos). Evita molestar a un
-    # ejecutivo que ya lo trabajó y evitar que pase a otro ejecutivo.
-    try:
-        from redistribute_captacion import has_management_evidence
-        events_coll = db["captacion_management_events"]
-        protected = 0
-        kept = []
-        for p in props:
-            has_ev, _ = has_management_evidence(p, events_coll)
-            if has_ev:
-                protected += 1
-            else:
-                kept.append(p)
-        props = kept
-        if protected > 0:
-            logger.info(f"[DISTRIBUCION] {protected} contactos protegidos por gestión previa (no redistribuidos).")
-    except Exception as e:
-        logger.warning(f"[DISTRIBUCION] No se pudo aplicar guard de gestión previa: {e}")
-    # Defensa en profundidad: aunque la clasificación haya fallado y marque
-    # INCIERTO/assignment_ready, nunca asignar al equipo un publicador con
-    # identidad comercial de corredor (RE/MAX, inmobiliarias, etc.).
-    broker_guard = 0
-    kept = []
-    for p in props:
-        if _has_broker_identity(p):
-            broker_guard += 1
-        else:
-            kept.append(p)
-    props = kept
-    if broker_guard > 0:
-        logger.warning(f"[DISTRIBUCION] {broker_guard} propiedades con identidad de corredor bloqueadas (guard comercial).")
-    logger.info(f"[DISTRIBUCION] {len(props)} propiedades sin asignar.")
-
-    assigned = 0
-    now = datetime.now(timezone.utc)
-    wl = {a["_id"]: 0 for a in agents}
-
-    for p in props:
-        slug = p.get("comuna_slug") or normalize_commune_canonical(p.get("comuna") or "")
-        if not slug:
+        if not available_ids:
+            stats["capacity"] += 1
             continue
-        candidates = comuna_to_agents.get(slug, [])
-        if not candidates:
-            continue
-        # Ponderado: menor workload
-        best = min(candidates, key=lambda aid: wl.get(aid, 0))
-        wl[best] = wl.get(best, 0) + 1
-
-        from bson import ObjectId
-        oid = p["_id"] if isinstance(p["_id"], ObjectId) else ObjectId(p["_id"])
-        cycle = new_assignment_cycle(property_id=p["_id"], user_id=best, assigned_at=now, reason="weighted_commune_background")
-        coll.update_one(
-            {"_id": oid,
-             "classification.assignment_ready": True,
-             "classification.exclude_from_assignment": {"$ne": True},
-             "gestion.semantic_review_hold": {"$ne": True},
-             "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
-            {"$set": {
-                "gestion.ejecutivo_id": best,
-                "gestion.ejecutivo_asignado": db["usuarios"].find_one({"_id": ObjectId(best) if len(best) == 24 else best}).get("nombre", ""),
-                "gestion.fecha_asignacion": now,
-                "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
-                "gestion.first_valid_action_at": None,
-                "gestion.asignacion_version": "v1_weighted_commune_background",
-                "gestion.estado": "NUEVO",
-            }}
+        best_id = min(
+            available_ids,
+            key=lambda agent_id: (
+                priority_workload.get(agent_id, 0) + run_load.get(agent_id, 0),
+                agents_by_id[agent_id]["name"].casefold(),
+            ),
         )
-        assigned += 1
+        plan.append((prop, best_id))
+        run_load[best_id] += 1
+        stats["selected"] += 1
+    return plan, stats
 
-    logger.info(f"[DISTRIBUCION] Asignadas: {assigned}")
-    return assigned
+
+def _record_distribution_metrics(db, metrics: dict) -> None:
+    try:
+        db[Config.CAPTACION_DISTRIBUTION_METRICS_COLLECTION].insert_one(metrics)
+    except Exception:
+        logger.exception("[DISTRIBUCION] No se pudo registrar métrica de corrida")
 
 
-def redistribute_inactive_agent_captaciones(dry_run=True):
-    """Reasigna solo captaciones NUEVO de agentes inactivos según comuna."""
+def _atomic_assign_distribution_candidate(
+    db,
+    coll,
+    events_coll,
+    document,
+    agent,
+    now,
+    *,
+    mode="new",
+    expected_current_filter=None,
+    allow_management_evidence=False,
+    run_load=0,
+    max_per_agent=None,
+    reason="weighted_commune_background",
+    assignment_version="v2_bounded_weighted_commune",
+    set_estado="NUEVO",
+):
+    """Compatibility wrapper for the one shared final assignment gate."""
+    status = assign_captacion_candidate_atomically(
+        db,
+        coll,
+        events_coll,
+        document,
+        agent,
+        now=now,
+        mode=mode,
+        expected_current_filter=expected_current_filter,
+        allow_management_evidence=allow_management_evidence,
+        run_load=run_load,
+        max_per_agent=max_per_agent,
+        reason=reason,
+        assignment_version=assignment_version,
+        set_estado=set_estado,
+        source_portals=GLOBAL_PORTAL_ALIASES,
+    )
+    return "already_assigned" if status == "race_condition" and mode == "new" else status
+
+
+def distribute_sourced_leads(
+    trigger_source="post_scrape_or_manual_distribution",
+    *,
+    batch_size=None,
+    distribution_lock=None,
+    dry_run=False,
+):
+    """Distribute one bounded, balanced batch from the global portal pool."""
+    started_at = datetime.now(timezone.utc)
+    run_id = str(uuid.uuid4())
+    requested_batch = int(batch_size or Config.CAPTACION_DISTRIBUTION_BATCH_SIZE)
+    metrics = {
+        "_id": run_id,
+        "run_id": run_id,
+        "started_at": started_at,
+        "source": str(trigger_source),
+        "dry_run": bool(dry_run),
+        "portal_scope": sorted(GLOBAL_PORTAL_ALIASES),
+        "batch_requested": requested_batch,
+        "batch_selected": 0,
+        "evaluated": 0,
+        "eligible_found": 0,
+        "assigned": 0,
+        "assigned_by_classification": {state: 0 for state in DISTRIBUTION_STATES},
+        "assigned_by_portal": {portal: 0 for portal in ("chilepropiedades", "yapo", "toctoc")},
+        "assigned_by_executive": {},
+        "active_agents": 0,
+        "open_workload_before": {},
+        "active_workable_backlog_before": {},
+        "priority_workload_policy": "ACTIVE_WORKABLE_BACKLOG",
+        "max_open_per_executive": int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE),
+        "max_per_executive_per_run": int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE),
+        "terminal_states": list(CAPTACION_TERMINAL_STATES),
+        "open_status_policy": "missing_or_unknown_counted_as_open",
+        "lock_acquired": False,
+        "skipped_by_phone": 0,
+        "skipped_by_quality": 0,
+        "skipped_by_capacity": 0,
+        "skipped_terminal": 0,
+        "skipped_race_condition": 0,
+        "skipped_already_assigned": 0,
+        "skipped_managed": 0,
+        "skipped_no_coverage": 0,
+        "skipped_stale_for_auto_distribution": 0,
+        "skipped_capture_date_unavailable": 0,
+        "errors": 0,
+    }
+    db = get_db()
+    local_lock_acquired = False
+    distributed_lock = distribution_lock
+    owns_distributed_lock = False
+    if not dry_run and not _DISTRIBUTION_RUN_LOCK.acquire(blocking=False):
+        metrics["distribution_already_running"] = 1
+        metrics["finished_at"] = datetime.now(timezone.utc)
+        _record_distribution_metrics(db, metrics)
+        return 0
+    if not dry_run:
+        local_lock_acquired = True
+        owns_distributed_lock = distribution_lock is None
+        distributed_lock = distribution_lock or MongoDistributionLock(
+            db, run_id=run_id, trigger_source=str(trigger_source)
+        )
+        if not distributed_lock.acquired and not distributed_lock.acquire():
+            metrics["distribution_already_running"] = 1
+            metrics["finished_at"] = datetime.now(timezone.utc)
+            _record_distribution_metrics(db, metrics)
+            _DISTRIBUTION_RUN_LOCK.release()
+            return 0
+        metrics["lock_acquired"] = True
+    try:
+        coll = get_captacion_collection(db)
+        events_coll = db["captacion_management_events"]
+        agents_raw = list(db["usuarios"].find({
+            "is_active": True,
+            "comunas_interes_norm": {"$exists": True, "$ne": []},
+        }))
+        agents_raw = [raw for raw in agents_raw if is_captacion_distribution_executive(raw)]
+        agents = []
+        for raw in agents_raw:
+            agents.append({
+                "id": str(raw["_id"]),
+                "name": raw.get("nombre") or str(raw["_id"]),
+                "comunas_interes_norm": list(raw.get("comunas_interes_norm") or []),
+            })
+        if not agents:
+            logger.info("[DISTRIBUCION] 0 agentes elegibles.")
+            return 0
+
+        agent_by_id = {agent["id"]: agent for agent in agents}
+        open_workload = _distribution_open_workloads(db, list(agent_by_id))
+        active_workable_backlog = active_workable_backlogs(
+            db,
+            list(agent_by_id),
+            events_coll=events_coll,
+        )
+        metrics["active_agents"] = len(agents)
+        metrics["open_workload_before"] = dict(open_workload)
+        metrics["active_workable_backlog_before"] = dict(active_workable_backlog)
+        max_open = int(Config.CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE)
+        max_per_agent = int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE)
+        batch_size = max(1, requested_batch)
+
+        eligible_query = {
+            "$or": [
+                {"origen": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+                {"source_portal": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+            ],
+            "gestion.semantic_review_hold": {"$ne": True},
+            "classification.state": {"$in": list(DISTRIBUTION_STATES)},
+            **_distribution_unassigned_clause(),
+        }
+        raw_props = list(coll.find(eligible_query))
+        metrics["evaluated"] = len(raw_props)
+        props = []
+        for prop in raw_props:
+            if is_terminal_state((prop.get("gestion") or {}).get("estado")):
+                metrics["skipped_terminal"] += 1
+                continue
+            identity = get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None
+            from captacion_assignment_eligibility import calculate_assignment_eligibility
+            decision = calculate_assignment_eligibility(prop, contact_identity=identity)
+            if not decision["assignment_ready"]:
+                if "contact_identity_broker_confirmed" in decision["assignment_block_reasons"]:
+                    metrics["skipped_by_phone"] += 1
+                else:
+                    metrics["skipped_by_quality"] += 1
+                continue
+            from captacion_distribution import has_management_evidence
+            has_ev, _ = has_management_evidence(prop, events_coll)
+            if has_ev:
+                metrics["skipped_managed"] += 1
+                continue
+            if _has_broker_identity(prop):
+                metrics["skipped_by_quality"] += 1
+                continue
+            age = distribution_age_decision(prop, now=started_at)
+            if not age["eligible"]:
+                if age["reason"] == STALE_FOR_AUTO_DISTRIBUTION:
+                    metrics["skipped_stale_for_auto_distribution"] += 1
+                else:
+                    metrics["skipped_capture_date_unavailable"] += 1
+                continue
+            props.append(prop)
+        metrics["eligible_found"] = len(props)
+        plan, plan_stats = _build_bounded_distribution_plan(
+            props,
+            agents,
+            open_workload,
+            batch_size=batch_size,
+            max_per_agent=max_per_agent,
+            max_open=max_open,
+            active_workable_backlog=active_workable_backlog,
+        )
+        metrics["batch_selected"] = len(plan)
+        metrics["skipped_no_coverage"] = plan_stats["no_coverage"]
+        metrics["skipped_by_capacity"] = plan_stats["capacity"]
+        now = datetime.now(timezone.utc)
+        run_load = {}
+
+        if dry_run:
+            preview = []
+            for prop, best_id in plan:
+                before = int(open_workload.get(best_id, 0) + run_load.get(best_id, 0))
+                preview.append({
+                    "property_id": str(prop.get("_id") or prop.get("listing_id") or ""),
+                    "listing_id": str(prop.get("listing_id") or ""),
+                    "portal": portal_key(prop),
+                    "classification": (prop.get("classification") or {}).get("state"),
+                    "executive": agent_by_id[best_id]["name"],
+                    "executive_id": best_id,
+                    "open_workload_before": before,
+                    "open_workload_after": before + 1,
+                    "active_workable_backlog_before": int(
+                        active_workable_backlog.get(best_id, 0) + run_load.get(best_id, 0)
+                    ),
+                    "active_workable_backlog_after": int(
+                        active_workable_backlog.get(best_id, 0) + run_load.get(best_id, 0) + 1
+                    ),
+                    "priority": assignment_classification_priority(prop),
+                    "age_bucket": distribution_age_decision(prop, now=started_at)["bucket"],
+                    "age_days": distribution_age_decision(prop, now=started_at)["age_days"],
+                    "captured_at": str(distribution_capture_datetime(prop) or ""),
+                })
+                run_load[best_id] = run_load.get(best_id, 0) + 1
+            metrics["selected_preview"] = preview
+            metrics["simulated_assigned"] = len(plan)
+            metrics["remaining_in_snapshot"] = max(0, metrics["eligible_found"] - len(plan))
+            return metrics
+
+        for prop, best_id in plan:
+            try:
+                status = _atomic_assign_distribution_candidate(
+                    db,
+                    coll,
+                    events_coll,
+                    prop,
+                    agent_by_id[best_id],
+                    now,
+                    run_load=run_load.get(best_id, 0),
+                    max_per_agent=max_per_agent,
+                )
+            except Exception:
+                metrics["errors"] += 1
+                logger.exception("[DISTRIBUCION] Error asignando property_id=%s", prop.get("_id"))
+                continue
+            if status == "assigned":
+                state = str((prop.get("classification") or {}).get("state") or "INCIERTO")
+                metrics["assigned"] += 1
+                metrics["assigned_by_classification"][state] = metrics["assigned_by_classification"].get(state, 0) + 1
+                assigned_portal = portal_key(prop)
+                if assigned_portal not in metrics["assigned_by_portal"]:
+                    assigned_portal = "unknown"
+                    metrics["assigned_by_portal"].setdefault(assigned_portal, 0)
+                metrics["assigned_by_portal"][assigned_portal] += 1
+                agent_name = agent_by_id[best_id]["name"]
+                metrics["assigned_by_executive"][agent_name] = metrics["assigned_by_executive"].get(agent_name, 0) + 1
+                run_load[best_id] = run_load.get(best_id, 0) + 1
+            elif status == "phone":
+                metrics["skipped_by_phone"] += 1
+            elif status in {"quality", "stale"}:
+                metrics["skipped_by_quality"] += 1
+            elif status == "stale_for_auto_distribution":
+                metrics["skipped_stale_for_auto_distribution"] += 1
+            elif status == "capture_date_unavailable":
+                metrics["skipped_capture_date_unavailable"] += 1
+            elif status == "managed":
+                metrics["skipped_managed"] += 1
+            elif status == "no_coverage":
+                metrics["skipped_no_coverage"] += 1
+            elif status in {"already_assigned", "race_condition", "stale"}:
+                metrics["skipped_already_assigned"] += 1
+                metrics["skipped_race_condition"] += 1
+            elif status == "terminal":
+                metrics["skipped_terminal"] += 1
+
+        metrics["remaining_in_snapshot"] = max(0, metrics["eligible_found"] - metrics["assigned"])
+        logger.info(
+            "[DISTRIBUCION] run=%s evaluadas=%s elegibles=%s batch=%s asignadas=%s phone=%s calidad=%s capacidad=%s",
+            run_id, metrics["evaluated"], metrics["eligible_found"], metrics["batch_selected"],
+            metrics["assigned"], metrics["skipped_by_phone"], metrics["skipped_by_quality"],
+            metrics["skipped_by_capacity"],
+        )
+        return metrics["assigned"]
+    finally:
+        metrics["finished_at"] = datetime.now(timezone.utc)
+        metrics["duration_ms"] = round((metrics["finished_at"] - started_at).total_seconds() * 1000, 1)
+        if not dry_run:
+            _record_distribution_metrics(db, metrics)
+        if owns_distributed_lock and distributed_lock is not None:
+            distributed_lock.release()
+        if local_lock_acquired:
+            _DISTRIBUTION_RUN_LOCK.release()
+
+
+def redistribute_inactive_agent_captaciones(
+    dry_run=True,
+    *,
+    batch_size=None,
+    allow_large_batch=False,
+    distribution_lock=None,
+):
+    """Reasigna un batch seguro de captaciones de agentes inactivos."""
+    from captacion_distribution import resolve_manual_batch_size
+
+    batch_size = resolve_manual_batch_size(batch_size, allow_large=allow_large_batch)
     db = get_db()
     coll = get_captacion_collection(db)
-    active_agents = list(db["usuarios"].find({
-        "is_active": True, "rol": "agente",
+    active_agents = [raw for raw in db["usuarios"].find({
+        "is_active": True,
         "comunas_interes_norm": {"$exists": True, "$ne": []},
-    }))
+    }) if is_captacion_distribution_executive(raw)]
     inactive_names = [a.get("nombre") for a in db["usuarios"].find(
         {"is_active": False, "rol": "agente"}, {"nombre": 1}
     ) if a.get("nombre")]
@@ -2576,13 +3256,23 @@ def redistribute_inactive_agent_captaciones(dry_run=True):
 
     eligible_states = list(VISIBLE_CLASSIFICATION_STATES)
     properties = list(coll.find({
-        "origen": {"$in": ["toctoc", "yapo"]},
+        "$or": [
+            {"origen": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+            {"source_portal": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+        ],
         "classification.state": {"$in": eligible_states},
-        "classification.exclude_from_assignment": {"$ne": True},
         "gestion.semantic_review_hold": {"$ne": True},
         "gestion.estado": "NUEVO",
         "gestion.ejecutivo_asignado": {"$in": inactive_names},
     }).sort("_id", 1))
+    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    properties = [
+        prop for prop in properties
+        if calculate_assignment_eligibility(
+            prop,
+            contact_identity=(get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None),
+        )["assignment_ready"]
+    ]
 
     workloads = {aid: 0 for aid in agents_by_id}
     active_names = [a.get("nombre") for a in active_agents]
@@ -2612,31 +3302,62 @@ def redistribute_inactive_agent_captaciones(dry_run=True):
     by_executive = {}
     modified = 0
     now = datetime.now(timezone.utc)
-    for prop, agent in plan:
-        name = agent.get("nombre", "")
-        if dry_run:
-            by_executive[name] = by_executive.get(name, 0) + 1
-            continue
-        previous_name = prop.get("gestion", {}).get("ejecutivo_asignado")
-        cycle = new_assignment_cycle(property_id=prop["_id"], user_id=agent["_id"], assigned_at=now, reason="inactive_executive")
-        result = coll.update_one(
-            {"_id": prop["_id"], "gestion.estado": "NUEVO", "gestion.ejecutivo_asignado": previous_name},
-            {"$set": {
-                "gestion.ejecutivo_id": str(agent["_id"]),
-                "gestion.ejecutivo_email": agent.get("email", ""),
-                "gestion.ejecutivo_asignado": name,
-                "gestion.fecha_asignacion": now,
-                "gestion.assignment_cycle_id": cycle["assignment_cycle_id"],
-                "gestion.first_valid_action_at": None,
-                "gestion.asignacion_version": "v2_active_commune_workload",
-                "gestion.previous_inactive_assignment": previous_name,
-                "gestion.reassignment_reason": "inactive_executive",
-                "gestion.reassigned_at": now,
-            }},
+    plan = plan[:batch_size]
+    lock = distribution_lock
+    owns_lock = False
+    if not dry_run and lock is None:
+        lock = MongoDistributionLock(
+            db,
+            run_id=str(uuid.uuid4()),
+            trigger_source="inactive_agent_reassignment",
         )
-        modified += result.modified_count
-        if result.modified_count:
-            by_executive[name] = by_executive.get(name, 0) + 1
+        if not lock.acquire():
+            return {
+                "matched": len(properties), "planned": 0, "modified": 0,
+                "uncovered": uncovered, "by_executive": {},
+                "distribution_already_running": True,
+            }
+        owns_lock = True
+
+    try:
+        run_load = {}
+        for prop, agent in plan:
+            name = agent.get("nombre", "")
+            if dry_run:
+                by_executive[name] = by_executive.get(name, 0) + 1
+                continue
+            previous_name = prop.get("gestion", {}).get("ejecutivo_asignado")
+            status = _atomic_assign_distribution_candidate(
+                db,
+                coll,
+                db["captacion_management_events"],
+                prop,
+                {
+                    "id": str(agent["_id"]),
+                    "name": name,
+                    "email": agent.get("email", ""),
+                    "comunas_interes_norm": list(agent.get("comunas_interes_norm") or []),
+                },
+                now=now,
+                mode="reassign",
+                expected_current_filter={
+                    "gestion.estado": "NUEVO",
+                    "gestion.ejecutivo_asignado": previous_name,
+                },
+                run_load=run_load.get(str(agent["_id"]), 0),
+                max_per_agent=Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE,
+                reason="inactive_executive",
+                assignment_version="v2_active_commune_workload",
+                set_estado=None,
+            )
+            if status == "assigned":
+                modified += 1
+                agent_id = str(agent["_id"])
+                run_load[agent_id] = run_load.get(agent_id, 0) + 1
+                by_executive[name] = by_executive.get(name, 0) + 1
+    finally:
+        if owns_lock and lock is not None:
+            lock.release()
 
     return {
         "matched": len(properties), "planned": len(plan), "modified": modified,

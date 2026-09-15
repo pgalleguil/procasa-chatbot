@@ -4,12 +4,21 @@ import re
 from datetime import datetime, timezone
 from pymongo import ReturnDocument
 from .crm_metrics import create_assignment_cycle
-from .property_lookup import find_property_by_any_identifier, get_prop_location, lookup_property_link
+from .property_lookup import (
+    canonical_portal,
+    extract_property_external_id,
+    find_property_by_any_identifier,
+    get_prop_location,
+    lookup_property_link,
+    normalize_property_url,
+)
 from .lead_router import find_responsible_executive
 
 COLLECTION = "commercial_processing_events"
 WAITING_PROPERTY = "waiting_property"
 WAITING_INVENTORY = "waiting_inventory_sync"
+RECONCILING = "reconciling"
+INACTIVE_PROPERTY = "inventory_inactive"
 FAILED_RECIPIENT = "failed_recipient"
 COMPLETED = "completed"
 
@@ -24,12 +33,75 @@ def _candidate(text, lead):
     match = re.search(r"\b\d{4,12}\b", str(text or ""))
     return match.group(0) if match else None
 
+
+def property_reference_identity(raw):
+    """Return stable identity fields for a pending property reference."""
+    value = str(raw or "").strip()
+    if not value:
+        return {}
+    embedded_url = re.search(r"https?://[^\s<>\]\)\"]+", value, flags=re.IGNORECASE)
+    if embedded_url:
+        value = embedded_url.group(0).rstrip(".,;:)")
+    if value.lower().startswith(("http://", "https://")):
+        portal = canonical_portal(value) or None
+        return {
+            "source_property_code": value,
+            "source_portal": portal,
+            "source_external_id": extract_property_external_id(value, portal),
+            "source_url_normalized": normalize_property_url(value),
+        }
+    return {
+        "source_property_code": value,
+        "source_inventory_code": value,
+    }
+
+
+def _property_is_active(prop):
+    """Do not route a lead to a property explicitly marked inactive."""
+    if not isinstance(prop, dict):
+        return False
+    root_value = prop.get("disponible_prop360")
+    if root_value is not None:
+        return bool(root_value)
+    state = prop.get("estado") or {}
+    state_value = state.get("disponible_prop360")
+    if state_value is not None:
+        return bool(state_value)
+    status = str(state.get("estado_prop360") or prop.get("estado_prop360") or "").strip().lower()
+    if status:
+        return status not in {"baja", "pasiva", "no disponible", "inactiva", "inactive"}
+    return True
+
+
+def _pending_other_count(db, lead_id, event_id):
+    query = {
+        "lead_id": lead_id,
+        "_id": {"$ne": event_id},
+        "commercial_processing_state": {"$in": [WAITING_INVENTORY, RECONCILING]},
+    }
+    coll = db[COLLECTION]
+    count_documents = getattr(coll, "count_documents", None)
+    if callable(count_documents):
+        return int(count_documents(query))
+    find = getattr(coll, "find", None)
+    if callable(find):
+        return len(list(find(query)))
+    return 0
+
 def ensure_indexes(db):
     db[COLLECTION].create_index("source_inbound_provider_id", unique=True,
         partialFilterExpression={"source_inbound_provider_id": {"$exists": True}},
         name="uq_commercial_source_inbound")
     db[COLLECTION].create_index([("commercial_processing_state", 1), ("next_attempt_at", 1)],
         name="commercial_processing_ready")
+    db[COLLECTION].create_index(
+        [("commercial_processing_state", 1), ("source_portal", 1), ("source_external_id", 1)],
+        name="commercial_waiting_inventory_identity",
+    )
+    db[COLLECTION].create_index(
+        [("commercial_processing_state", 1), ("source_url_normalized", 1)],
+        name="commercial_waiting_inventory_url",
+    )
 
 def _state(db, event_id, state, reason, now):
     db[COLLECTION].update_one({"_id": event_id}, {"$set": {
@@ -54,10 +126,21 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             "idempotency_key": f"commercial:inbound:{inbound_provider_id}",
             "history": [{"at": now, "state": "received", "reason": "inbound"}]}},
         upsert=True, return_document=ReturnDocument.AFTER)
+    db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+        "source_message": str(text or ""),
+        "updated_at": now,
+    }})
     if not lead:
         _state(db, event["_id"], WAITING_PROPERTY, "lead_not_available", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
-    raw = _candidate(text, lead)
+    stored_reference = event.get("source_property_code")
+    if stored_reference and event.get("commercial_processing_state") in {WAITING_INVENTORY, RECONCILING}:
+        # A Prop360 ingestion may have enriched prospecto.codigo after the
+        # WhatsApp event failed. Keep the original external reference while
+        # resuming that event, rather than replacing the MLC URL with 7733.
+        raw = str(stored_reference).strip()
+    else:
+        raw = _candidate(text, lead)
     if not raw:
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
             "commercial_processing_state": WAITING_PROPERTY, "assignment_type": "NO_PROPERTY",
@@ -70,16 +153,29 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     else:
         prop = find_property_by_any_identifier(db, raw)
     if not prop:
+        identity = property_reference_identity(raw)
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
             "commercial_processing_state": WAITING_INVENTORY, "assignment_type": "MISSING_PROPERTY",
-            "source_property_code": raw, "last_lookup_at": now,
+            **identity, "last_lookup_at": now,
             "commercial_notification_eligible": False}, "$inc": {"lookup_attempts": 1}})
         db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
-            "source_property_code": raw, "last_lookup_at": now, "notification_eligible": False},
+            **identity, "source_message": str(text or ""),
+            "last_lookup_at": now, "notification_eligible": False},
             "$inc": {"lookup_attempts": 1}})
         _state(db, event["_id"], WAITING_INVENTORY, "property_not_in_inventory", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
+    if not _property_is_active(prop):
+        db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+            "commercial_processing_state": INACTIVE_PROPERTY,
+            "assignment_type": "INACTIVE_PROPERTY",
+            "commercial_notification_eligible": False}})
+        db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+            "notification_eligible": False, "assignment_type": "INACTIVE_PROPERTY",
+            "source_message": str(text or "")}})
+        _state(db, event["_id"], INACTIVE_PROPERTY, "property_inactive", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
     code = str(prop.get("codigo") or raw)
+    identity = property_reference_identity(raw)
     operation = prop_meta.get("operation")
     location = get_prop_location(prop)
 
@@ -141,6 +237,7 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             {"$set": {"source_inbound_provider_id": str(inbound_provider_id),
                       "source_event_id": str(inbound_provider_id), "source_event_verified": True}})
         cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle["assignment_cycle_id"]}) or cycle
+    pending_other = _pending_other_count(db, lead["_id"], event["_id"])
     db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
         "prospecto.codigo": code,
@@ -162,7 +259,10 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         "lifecycle.sla_started_at": cycle.get("sla_started_at") or cycle.get("assigned_at"),
         "lifecycle.assigned_to_user_id": cycle.get("assigned_to_user_id"),
         "lifecycle.assigned_to_display_name": cycle.get("assigned_to_display_name"),
-        "commercial_processing_state": COMPLETED, "commercial_notification_eligible": True}})
+        "commercial_processing_state": COMPLETED,
+        "commercial_notification_eligible": True,
+        "prospecto.link_pendiente": bool(pending_other),
+    }})
     fresh = db["leads"].find_one({"_id": lead["_id"]}) or lead
     if str(fresh.get("lead_temperature_effective") or "").upper() == "HOT":
         from .crm_hot_delivery import assign_and_enqueue_hot
@@ -175,8 +275,10 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         from .crm_non_hot_digest import accumulate_non_hot_lead
         notification = accumulate_non_hot_lead(db, lead=fresh, cycle=cycle)
     db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+        **identity,
         "lead_id": fresh["_id"], "resolved_property_code": code,
         "assignment_cycle_id": cycle["assignment_cycle_id"], "assignment_type": assignment_type,
         "notification_id": (notification or {}).get("_id"), "notification_eligible": True,
-        "property_resolved_at": now}})
+        "property_resolved_at": now, "source_message": str(text or "")}})
     _state(db, event["_id"], COMPLETED, "property_resolved_and_routed", now)
+    return db[COLLECTION].find_one({"_id": event["_id"]})

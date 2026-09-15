@@ -183,9 +183,9 @@ def test_capture_is_a_managed_property():
 
 
 @pytest.mark.parametrize("status,notes,previous,expected_eligible,expected_reason", [
-    # Las conclusiones comerciales requieren evidencia explícita.
-    ("Corredor", "", "Por contactar", False, "evidence_required"),
-    ("Descartado", "", "Por contactar", False, "evidence_required"),
+    # La nota es opcional; la transición real es la que acredita la gestión.
+    ("Corredor", "", "Por contactar", True, None),
+    ("Descartado", "", "Por contactar", True, None),
     # Short notes (1-4 chars) credit when state changes
     ("Corredor", "OK", "Por contactar", True, None),
     ("Descartado", "N/A", "Por contactar", True, None),

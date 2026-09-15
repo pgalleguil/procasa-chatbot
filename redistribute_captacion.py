@@ -25,14 +25,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config
 from chatbot.storage import get_db
 from bson import ObjectId
+from captacion_assignment_eligibility import (
+    assignment_classification_priority,
+    calculate_assignment_eligibility,
+    is_chilepropiedades_document,
+)
+from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
+from captacion_distribution import (
+    CAPTACION_TERMINAL_STATES,
+    MongoDistributionLock,
+    assign_captacion_candidate_atomically,
+    resolve_manual_batch_size,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 REPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports", "captacion_redistribution")
 
-TERMINAL_STATES = {"Captado", "CAPTADO", "Descartado", "DESCARTADO", "Corredor",
-                   "Telefono invalido", "Propiedad no disponible", "Publicacion expirada", "No interesado"}
+TERMINAL_STATES = set(CAPTACION_TERMINAL_STATES)
 
 SIN_GESTION_ESTADOS = {None, "", "NUEVO", "DETECTADO"}
 VISIBLE_CLASSIFICATION_STATES = {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"}
@@ -83,7 +94,16 @@ def has_management_evidence(prop, events_coll):
     return False, None
 
 
-def is_eligible(prop):
+def is_eligible(prop, db=None):
+    if is_chilepropiedades_document(prop):
+        contact_identity = get_contact_identity_evidence(db, prop) if db is not None else None
+        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
+    if db is not None and phone_learning_global_lookup_enabled():
+        # The central gate is authoritative for every portal. Do not fall
+        # back to the persisted assignment_ready flag: older Yapo/Toctoc
+        # uncertain records intentionally predate the global policy.
+        contact_identity = get_contact_identity_evidence(db, prop)
+        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
     c = prop.get("classification") or {}
     if c.get("state") not in VISIBLE_CLASSIFICATION_STATES: return False
     if not c.get("assignment_ready"): return False
@@ -99,18 +119,19 @@ def stock_pendiente(agent_id, coll, events_coll):
     for p in coll.find({"gestion.ejecutivo_id": agent_id}):
         g = p.get("gestion") or {}
         if g.get("estado") in TERMINAL_STATES: continue
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if not has_ev:
             count += 1
     return count
 
 
-def run(dry_run=True):
+def run(dry_run=True, *, batch_size=None, allow_large_batch=False):
     os.makedirs(REPORTS_DIR, exist_ok=True)
     db = get_db()
     coll = db[Config.CAPTACION_COLLECTION_NAME]
     events_coll = db["captacion_management_events"]
+    batch_size = resolve_manual_batch_size(batch_size, allow_large=allow_large_batch)
 
     # ── Agentes activos ────────────────────────────────────────────────
     agents_raw = list(db["usuarios"].find({
@@ -140,7 +161,7 @@ def run(dry_run=True):
         if aid not in agents: continue
         estado = (p.get("gestion") or {}).get("estado")
         if estado in TERMINAL_STATES: continue
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if has_ev:
             agent_managed[aid].append(p)
@@ -170,7 +191,7 @@ def run(dry_run=True):
     ))
     pool = []
     for p in all_unassigned:
-        if not is_eligible(p): continue
+        if not is_eligible(p, db=db): continue
         has_ev, _ = has_management_evidence(p, events_coll)
         if has_ev: continue
         pool.append(p)
@@ -182,6 +203,11 @@ def run(dry_run=True):
     for p in pool:
         slug = norm(p.get("comuna_slug") or p.get("comuna"))
         if slug: pool_by_comuna[slug].append(p)
+
+    # Feed stronger owner evidence first while preserving the existing
+    # workload-balancing allocator. This is an order, not a new score.
+    for slug in pool_by_comuna:
+        pool_by_comuna[slug].sort(key=assignment_classification_priority)
 
     # ── Distribucion con balance por stock_pendiente ───────────────────
     stock_sim = dict(agent_stock)
@@ -291,6 +317,18 @@ def run(dry_run=True):
     # ═══════════════════════════════════════════════════════════════════
     # APLICAR
     # ═══════════════════════════════════════════════════════════════════
+    lock = MongoDistributionLock(
+        db,
+        run_id=f"manual-redistribute-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
+        trigger_source="manual:redistribute_captacion",
+    )
+    if not lock.acquire():
+        print("[APPLY] distribution_already_running; no se escribieron asignaciones")
+        return
+
+    # A dry-run may expose the full plan, but apply is always bounded.
+    pool = pool[:batch_size]
+    reasign_plan = reasign_plan[:max(0, batch_size - len(pool))]
     now = datetime.now(timezone.utc)
 
     # Snapshot de todo lo que se va a modificar
@@ -312,47 +350,28 @@ def run(dry_run=True):
     # 1a. Asignar primero las reasignaciones (directo a destino)
     reasign_applied = 0
     reasign_skipped = 0
+    run_load = defaultdict(int)
     for prop, from_aid, to_aid, slug in reasign_plan:
         to_agent = agents[to_aid]
         assigned_counter[to_aid] += 1
-        # Guarda atomica: verificar que sigue sin gestion y sin agente
-        fresh = coll.find_one({"_id": prop["_id"]})
-        if fresh:
-            has_ev, _ = has_management_evidence(fresh, events_coll)
-            if has_ev:
-                reasign_skipped += 1
-                logger.warning(f"Reasign {prop['_id']}: gestion detectada, omitida")
-                continue
-        result = coll.update_one(
-            {"_id": prop["_id"],
-             "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
-            {"$set": {
-                "gestion.ejecutivo_id": to_agent["id"],
-                "gestion.ejecutivo_asignado": to_agent["name"],
-                "gestion.ejecutivo_nombre": to_agent["name"],
-                "gestion.ejecutivo_email": to_agent["email"],
-                "gestion.fecha_asignacion": now,
-                "gestion.estado": "NUEVO",
-                "gestion.asignacion_version": "v5_stock_rebalancing",
-                "gestion.asignacion_comuna_slug": slug,
-                "gestion.classification_at_assignment": prop.get("classification", {}).get("state"),
-                "gestion.assignment_cycle_id": None,
-                "gestion.first_valid_action_at": None,
-                "gestion.reassignment_reason": "stock_rebalancing",
-                "gestion.reassigned_at": now,
-            },
-             "$push": {"gestion.historial_asignaciones": {
-                "ejecutivo_id": to_agent["id"],
-                "ejecutivo_nombre": to_agent["name"],
-                "comuna_slug": slug,
-                "assigned_at": now,
-                "assignment_version": "v5_stock_rebalancing",
-                "reason": "stock_rebalancing",
-                "nota": "Reasignada por balance de stock pendiente. Sin evidencia de gestion.",
-            }}}
+        status = assign_captacion_candidate_atomically(
+            db,
+            coll,
+            events_coll,
+            prop,
+            {"id": to_agent["id"], "name": to_agent["name"], "email": to_agent["email"],
+             "comunas_interes_norm": [slug]},
+            now=now,
+            mode="reassign",
+            expected_current_filter={"gestion.ejecutivo_id": from_aid},
+            reason="stock_rebalancing",
+            assignment_version="v5_stock_rebalancing",
+            run_load=run_load[to_agent["id"]],
+            max_per_agent=Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE,
         )
-        if result.modified_count > 0:
+        if status == "assigned":
             reasign_applied += 1
+            run_load[to_agent["id"]] += 1
         else:
             reasign_skipped += 1
 
@@ -369,48 +388,25 @@ def run(dry_run=True):
         if not candidates:
             pool_skipped += 1
             continue
-        # Guarda atomica: verificar sin gestion
-        fresh = coll.find_one({"_id": p["_id"]})
-        if fresh:
-            has_ev, _ = has_management_evidence(fresh, events_coll)
-            if has_ev:
-                pool_skipped += 1
-                continue
-            # Verificar que sigue sin ejecutivo
-            if (fresh.get("gestion") or {}).get("ejecutivo_id"):
-                pool_skipped += 1
-                continue
         best = min(candidates, key=lambda aid: assigned_counter.get(aid, 0))
         assigned_counter[best] += 1
         winner = agents[best]
-        result = coll.update_one(
-            {"_id": p["_id"],
-             "$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]},
-            {"$set": {
-                "gestion.ejecutivo_id": winner["id"],
-                "gestion.ejecutivo_asignado": winner["name"],
-                "gestion.ejecutivo_nombre": winner["name"],
-                "gestion.ejecutivo_email": winner["email"],
-                "gestion.fecha_asignacion": now,
-                "gestion.estado": "NUEVO",
-                "gestion.asignacion_version": "v5_stock_redistribution",
-                "gestion.asignacion_comuna_slug": slug,
-                "gestion.classification_at_assignment": p.get("classification", {}).get("state"),
-                "gestion.assignment_cycle_id": None,
-                "gestion.first_valid_action_at": None,
-            },
-             "$push": {"gestion.historial_asignaciones": {
-                "ejecutivo_id": winner["id"],
-                "ejecutivo_nombre": winner["name"],
-                "comuna_slug": slug,
-                "classification_state": p.get("classification", {}).get("state"),
-                "assigned_at": now,
-                "assignment_version": "v5_stock_redistribution",
-                "reason": "stock_redistribution",
-            }}}
+        status = assign_captacion_candidate_atomically(
+            db,
+            coll,
+            events_coll,
+            p,
+            winner,
+            now=now,
+            mode="new",
+            reason="stock_redistribution",
+            assignment_version="v5_stock_redistribution",
+            run_load=run_load[winner["id"]],
+            max_per_agent=Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE,
         )
-        if result.modified_count > 0:
+        if status == "assigned":
             pool_applied += 1
+            run_load[winner["id"]] += 1
         else:
             pool_skipped += 1
 
@@ -426,7 +422,7 @@ def run(dry_run=True):
     # 4. Elegibles sin agente
     remaining = 0
     for p in coll.find({"$or": [{"gestion.ejecutivo_id": {"$exists": False}}, {"gestion.ejecutivo_id": None}]}):
-        if is_eligible(p):
+        if is_eligible(p, db=db):
             has_ev, _ = has_management_evidence(p, events_coll)
             if not has_ev:
                 remaining += 1
@@ -444,6 +440,7 @@ def run(dry_run=True):
                     logger.error(f"Gestionada modificada: {mp['_id']}")
     print(f"  Gestionadas intactas: {managed_intact}")
 
+    lock.release()
     print(f"\n[APPLY] Completado.")
     print(f"  Pool asignadas:    {pool_applied}")
     print(f"  Reasignadas:       {reasign_applied}")
@@ -455,6 +452,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--allow-large-batch", action="store_true")
     args = parser.parse_args()
     dry_run = args.dry_run or not args.apply
-    run(dry_run=dry_run)
+    run(
+        dry_run=dry_run,
+        batch_size=args.batch_size,
+        allow_large_batch=args.allow_large_batch,
+    )

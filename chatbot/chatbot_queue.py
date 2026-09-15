@@ -389,6 +389,17 @@ def create_inbound_job(
         {"$set": {"state": ST_BATCHING, "batch_id": batch_id, "updated_at": now}},
     )
     if attached.modified_count != 1:
+        # The worker may observe the just-inserted job between insert_one()
+        # and this attach. In that race it has already assigned the job to
+        # an active batch; acknowledge the durable state instead of returning
+        # a false 503 to the webhook producer.
+        already_claimed = coll.find_one(
+            {"_id": job_id, "kind": KIND_JOB,
+             "state": {"$in": list(ACTIVE_BATCH_STATES + TERMINAL_STATES)},
+             "batch_id": {"$exists": True}},
+        )
+        if already_claimed:
+            return job_id
         raise RuntimeError("inbound_job_attach_failed")
     # A message may arrive while LLM generation is active.  It still attaches
     # to the same active batch and advances its sequence; the worker will mark

@@ -1,9 +1,9 @@
-"""Dispara la distribucion de captaciones nuevas al terminar un scrape.
+"""Dispara la distribución global de captaciones al terminar un scrape.
 
-Se ejecuta como subprocess desde los scripts de scraping (run_toctoc.py,
-run_territorial_expansion.py, run_toctoc_incremental.py) una vez que el lote
-ha persistido nuevos documentos en MongoDB. Remplaza el antiguo loop horario
-del servidor: no tiene sentido asignar cada hora si no hubo scraping nuevo.
+Se ejecuta como subprocess desde los scrapers locales una vez que el lote ha
+persistido nuevos documentos en MongoDB. El distribuidor consulta el pool
+global CP/Yapo/Toctoc y usa un lock compartido en MongoDB; un segundo trigger
+sale limpiamente si ya existe una corrida activa.
 
 Uso (desde un scraper, al final del lote):
     subprocess.run([sys.executable, "scripts/run_distribution_after_scrape.py"])
@@ -24,6 +24,9 @@ def main():
         print(f"[DISTRIBUCION] No se pudo importar distribute_sourced_leads: {e}", file=sys.stderr)
         return 1
     try:
+        # Keep this launcher compatible with older local scraper shims that
+        # monkeypatch the public function without keyword arguments. The
+        # distributor itself records the default post-scrape/manual source.
         assigned = distribute_sourced_leads()
         print(f"[DISTRIBUCION] Post-scrape: {assigned} captaciones asignadas.")
         return 0

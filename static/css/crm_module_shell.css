@@ -6,7 +6,7 @@
     --shell-border: rgba(148, 163, 184, .18);
     --shell-text: #f4f7fb;
     --shell-muted: #a7b4c7;
-    --shell-sidebar: rgba(8, 20, 38, .82);
+    --shell-sidebar: rgba(8, 20, 38, .66);
     --shell-sidebar-fallback: #0c192b;
     --shell-sidebar-text: #b9c6d8;
     --shell-accent: #6366f1;
@@ -20,7 +20,7 @@
     --shell-border: rgba(71, 85, 105, .20);
     --shell-text: #172033;
     --shell-muted: #56657a;
-    --shell-sidebar: rgba(244, 247, 252, .86);
+    --shell-sidebar: rgba(244, 247, 252, .60);
     --shell-sidebar-fallback: #f1f5f9;
     --shell-sidebar-text: #334155;
     --shell-shadow: 0 14px 32px rgba(51, 65, 85, .10);
@@ -51,8 +51,8 @@ body {
 @supports ((backdrop-filter: blur(14px)) or (-webkit-backdrop-filter: blur(14px))) {
     .sidebar {
         background: var(--shell-sidebar) !important;
-        backdrop-filter: blur(14px) saturate(120%);
-        -webkit-backdrop-filter: blur(14px) saturate(120%);
+        backdrop-filter: blur(18px) saturate(135%);
+        -webkit-backdrop-filter: blur(18px) saturate(135%);
     }
 }
 
@@ -105,6 +105,51 @@ body {
 .module-filter-field label { display: block; margin-bottom: 5px; color: var(--shell-muted); font-size: .72rem; font-weight: 700; letter-spacing: .04em; }
 .hamburger-mobile { min-width: 42px; min-height: 42px; align-items: center; justify-content: center; }
 
+/* Respuestas rápidas: compartido por el listado y el detalle del lead. */
+#quickManagementModal .modal-dialog { max-width: 620px; }
+.quick-result-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.quick-result-btn {
+    width: 100%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    min-height: 62px;
+    border: 1px solid var(--shell-border);
+    border-radius: 9px;
+    background: var(--shell-surface);
+    color: var(--shell-text);
+    padding: 10px 38px 10px 14px;
+    font-weight: 650;
+    transition: border-color .16s ease, background-color .16s ease;
+}
+.quick-result-btn i { width: 18px; flex: 0 0 18px; color: var(--shell-muted); text-align: center; }
+.quick-result-btn span { line-height: 1.2; }
+.quick-result-btn:hover,
+.quick-result-btn.is-selected { border-color: #818cf8; background: rgba(99,102,241,.16); }
+.quick-result-btn.is-selected i { color: #818cf8; }
+.quick-result-btn.is-selected::after { content: '✓'; position: absolute; right: 13px; top: 50%; transform: translateY(-50%); color: #818cf8; font-size: 1rem; }
+#quickManagementModal .form-select,
+#quickManagementModal .form-control { background-color: var(--shell-surface) !important; border-color: var(--shell-border); color: var(--shell-text); }
+#quickManagementModal .form-select:focus,
+#quickManagementModal .form-control:focus { border-color: #818cf8; box-shadow: 0 0 0 2px rgba(99,102,241,.18); }
+.quick-detail-link { display: block; margin-top: 12px; color: #818cf8; font-size: .78rem; text-decoration: none; }
+.quick-detail-link:hover { text-decoration: underline; }
+.quick-extra { display: none; }
+.quick-extra.is-visible { display: block; }
+.quick-date-picker { position: relative; display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 8px 11px; border: 1px solid var(--shell-border); border-radius: 6px; background: var(--shell-surface); color: var(--shell-muted); cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, color .16s ease; }
+.quick-date-picker:hover, .quick-date-picker:focus-within { border-color: #818cf8; box-shadow: 0 0 0 2px rgba(99,102,241,.18); color: var(--shell-text); }
+.quick-date-picker-icon { color: #818cf8; font-size: .9rem; }
+.quick-date-picker-text { font-size: .78rem; }
+.quick-date-picker-text.has-value { color: var(--shell-text); font-weight: 600; }
+.quick-date-input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; opacity: 0; cursor: pointer; color-scheme: dark; }
+[data-theme="light"] .quick-date-input { color-scheme: light; }
+.quick-error { display: none; }
+.quick-error.is-visible { display: block; }
+.quick-date-picker.is-invalid { border-color: #ef4444 !important; box-shadow: 0 0 0 .15rem rgba(239,68,68,.18); }
+.quick-date-input.is-invalid { accent-color: #ef4444; }
+
 @media (max-width: 991.98px) {
     .sidebar { position: fixed; transform: translateX(-105%); width: min(280px, 86vw) !important; z-index: 1200; }
     .sidebar.mobile-open { transform: translateX(0); }
@@ -136,4 +181,5 @@ body {
     .prop-table td::before { content: attr(data-label); color: var(--shell-muted); font-size: .68rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
     .prop-table td .btn, .prop-table td button, .prop-table td a.btn { min-width: 40px; min-height: 40px; }
     .modal-dialog { margin: 10px; }
+    .quick-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

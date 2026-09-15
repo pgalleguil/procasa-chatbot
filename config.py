@@ -8,10 +8,12 @@ load_dotenv(dotenv_path=env_path)
 
 class Config:
     # === Entorno de ejecución ===
-    # Render expone RENDER/RENDER_SERVICE_ID; APP_ENV permite declarar el
-    # entorno explícitamente en otros despliegues y en pruebas.
     APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).strip().lower()
-    IS_PRODUCTION = APP_ENV in {"production", "prod", "live"} or os.getenv("RENDER", "").strip().lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
+    IS_PRODUCTION = (
+        APP_ENV in {"production", "prod", "live"}
+        or os.getenv("RENDER", "").strip().lower() == "true"
+        or bool(os.getenv("RENDER_SERVICE_ID"))
+    )
 
     # === Claves externas ===
     XAI_API_KEY = os.getenv("XAI_API_KEY")
@@ -50,6 +52,26 @@ class Config:
         "CAPTACION_PRODUCTION_GROUP", CAPTACION_WEEKLY_GROUP_ID or DAILY_REPORT_GROUP_ID or ""
     ).strip()
     CAPTACION_TEST_MODE = os.getenv("CAPTACION_TEST_MODE", "true").lower() == "true"
+    # Distribution safety controls. Current operation has 7 active agents with
+    # an approximate 10-contact daily target; the safe default admits two new
+    # captaciones per agent per run (14 total) and stops an agent above the
+    # current observed open-workload ceiling plus a small headroom.
+    CAPTACION_DISTRIBUTION_BATCH_SIZE = max(1, int(os.getenv("CAPTACION_DISTRIBUTION_BATCH_SIZE", "14")))
+    CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE = max(
+        1, int(os.getenv("CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE", "2"))
+    )
+    CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE = max(
+        1, int(os.getenv("CAPTACION_MAX_OPEN_ASSIGNMENTS_PER_EXECUTIVE", "350"))
+    )
+    CAPTACION_DISTRIBUTION_METRICS_COLLECTION = os.getenv(
+        "CAPTACION_DISTRIBUTION_METRICS_COLLECTION", "captacion_distribution_runs"
+    )
+    CAPTACION_DISTRIBUTION_LOCK_COLLECTION = os.getenv(
+        "CAPTACION_DISTRIBUTION_LOCK_COLLECTION", "captacion_distribution_locks"
+    )
+    CAPTACION_DISTRIBUTION_LOCK_TTL_SECONDS = max(
+        30, int(os.getenv("CAPTACION_DISTRIBUTION_LOCK_TTL_SECONDS", "900"))
+    )
     CAPTACION_DAILY_PRODUCTION_ENABLED = os.getenv("CAPTACION_DAILY_PRODUCTION_ENABLED", "false").lower() == "true"
     CAPTACION_DAILY_DELIVERY_COLLECTION = os.getenv(
         "CAPTACION_DAILY_DELIVERY_COLLECTION", "captacion_daily_deliveries"
@@ -154,19 +176,6 @@ class Config:
     CRM_LEGACY_DAILY_REPORT_ENABLED = os.getenv("CRM_LEGACY_DAILY_REPORT_ENABLED", "false").lower() == "true"
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
-
-    # === Aprendizaje prospectivo global por teléfono ===
-    # Un único kill switch controla lookup, identidad, auto-match y gate de
-    # asignación. No mantener flags secundarios evita estados incoherentes.
-    PHONE_LEARNING_ENABLED = os.getenv("PHONE_LEARNING_ENABLED", "false").strip().lower() == "true"
-    # Marcador histórico, no es un flag operativo.
-    PHONE_LEARNING_CP_ONLY = False
-    PHONE_LEARNING_ACTIVATED_AT = os.getenv(
-        "PHONE_LEARNING_ACTIVATED_AT", "2026-09-11T00:20:47.201Z"
-    ).strip()
-    PHONE_LEARNING_PRODUCTION_ACTIVATED_AT = os.getenv(
-        "PHONE_LEARNING_PRODUCTION_ACTIVATED_AT", ""
-    ).strip()
 
     # Public visual-review switch for the aggregated, read-only leads dashboard.
     # Fail closed: enabling it must be an explicit Render environment setting.
@@ -291,6 +300,27 @@ class Config:
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 2))
     TEST_PHONE = os.getenv("TEST_PHONE")
 
+    # === Aprendizaje prospectivo global por teléfono ===
+    # Un único kill switch controla lookup, identidad, auto-match y gate de
+    # asignación. No existen flags operativos separados.
+    PHONE_LEARNING_ENABLED = os.getenv("PHONE_LEARNING_ENABLED", "false").strip().lower() == "true"
+    # Prospective global broker-phone reconciliation.  It is independent from
+    # the lookup gate but follows the same feature boundary and remains
+    # kill-switchable without touching historical identities.
+    PHONE_RECONCILIATION_ENABLED = os.getenv("PHONE_RECONCILIATION_ENABLED", "true").strip().lower() == "true"
+    PHONE_RECONCILIATION_WORKER_INTERVAL_SECONDS = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_WORKER_INTERVAL_SECONDS", "3"))
+    )
+    PHONE_RECONCILIATION_LEASE_SECONDS = max(
+        10, int(os.getenv("PHONE_RECONCILIATION_LEASE_SECONDS", "120"))
+    )
+    PHONE_RECONCILIATION_MAX_ATTEMPTS = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_MAX_ATTEMPTS", "5"))
+    )
+    PHONE_RECONCILIATION_PAGE_SIZE = max(
+        1, int(os.getenv("PHONE_RECONCILIATION_PAGE_SIZE", "100"))
+    )
+
     # === Modelos DeepSeek / compatibilidad heredada ===
     # DeepSeek V4 Flash es el modelo único de producción. No permitir que un
     # DEEPSEEK_MODEL heredado del entorno vuelva a activar V4 Pro y dispare el
@@ -305,7 +335,7 @@ class Config:
     # Provider calls must be bounded even if an old deployment environment
     # still contains the former 30/60 second values.  The external provider
     # timeout is the primary safety barrier; the queue has a separate lease.
-    DEEPSEEK_TIMEOUT_FAST = max(1, min(int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "22"), 25))
+    DEEPSEEK_TIMEOUT_FAST = max(1, min(int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "25"), 25))
     
     DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER") or "4096")
     DEEPSEEK_TIMEOUT_REASONER = max(

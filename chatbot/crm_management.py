@@ -145,7 +145,10 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
             "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
         })
         if active_cycle and str(active_cycle.get("assignment_cycle_id")) != str(assignment_cycle_id):
-            raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+            # The source cycle was superseded by an SLA reassignment. Keep the
+            # externally observable contract aligned with the shared cycle
+            # gate so old-owner writes fail closed with the explicit lock code.
+            raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
         raise ValueError("active assignment cycle not found")
     if (not actor_can_manage_any_cycle and
             str(cycle.get("assigned_to_user_id")) != str(actor_user_id)):

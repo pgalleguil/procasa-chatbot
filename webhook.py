@@ -984,9 +984,8 @@ async def lifespan(app: FastAPI):
     sla_alert_task = None
     sla_reassignment_task = None
 
-    # Controlled prospective SLA worker. The runtime performs all guards:
-    # explicit shadow cutover, read-only snapshotting, global lease and write
-    # blocking. It is scheduled only when both shadow switches are on.
+    # Controlled SLA worker. Shadow and live modes are mutually exclusive and
+    # the runtime performs the final flag/cutover guards before any task starts.
     if Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED and Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED:
         try:
             from chatbot.crm_sla_reassignment_runtime import run_crm_sla_shadow_worker
@@ -996,10 +995,27 @@ async def lifespan(app: FastAPI):
         except Exception:
             background_tasks_status["crm_sla_reassignment_shadow"].update({"status": "error", "health": "CONFIG_ERROR"})
             logger.exception("[SLA_SHADOW_ERROR] worker startup bridge failed")
+    elif (
+        Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+        and Config.CRM_SLA_REASSIGNMENT_ENABLED
+        and Config.CRM_SLA_TRANSACTION_GATE_ENABLED
+        and Config.CRM_SLA_SECURITY_LAYER_ENABLED
+    ):
+        try:
+            from chatbot.crm_sla_reassignment_runtime import run_crm_sla_live_worker
+            sla_reassignment_task = asyncio.create_task(
+                run_crm_sla_live_worker(status=background_tasks_status["crm_sla_reassignment_shadow"])
+            )
+        except Exception:
+            background_tasks_status["crm_sla_reassignment_shadow"].update({"status": "error", "health": "CONFIG_ERROR", "mode": "live"})
+            logger.exception("[SLA_LIVE_ERROR] worker startup bridge failed")
     else:
         logger.info(
-            "[SLA_SHADOW_START] status=DISABLED worker=%s shadow=%s",
+            "[SLA_WORKER_START] status=DISABLED worker=%s master=%s gate=%s security=%s shadow=%s",
             Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED,
+            Config.CRM_SLA_REASSIGNMENT_ENABLED,
+            Config.CRM_SLA_TRANSACTION_GATE_ENABLED,
+            Config.CRM_SLA_SECURITY_LAYER_ENABLED,
             Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED,
         )
 
@@ -2249,6 +2265,7 @@ async def api_crm_management_result(request: Request):
     def _record():
         from chatbot.crm_management import (
             record_management_result,
+            LeadReassignedSlaLockedError,
             ScheduledTimeTooSoonError,
             StaleAssignmentCycleError,
         )
@@ -2265,7 +2282,7 @@ async def api_crm_management_result(request: Request):
         )
         if not cycle:
             if requested_cycle_id and active_assignment_cycle(db, lead["_id"]):
-                raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+                raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
             raise ValueError("El lead no tiene un ciclo de asignación activo")
         return record_management_result(
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
@@ -2281,7 +2298,13 @@ async def api_crm_management_result(request: Request):
         return {"status": "ok", "result_type": result.get("result_type"),
                 "follow_up_required": result.get("follow_up_required")}
     except Exception as exc:
-        from chatbot.crm_management import ScheduledTimeTooSoonError, StaleAssignmentCycleError
+        from chatbot.crm_management import (
+            LeadReassignedSlaLockedError,
+            ScheduledTimeTooSoonError,
+            StaleAssignmentCycleError,
+        )
+        if isinstance(exc, LeadReassignedSlaLockedError):
+            raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
         if isinstance(exc, StaleAssignmentCycleError):
             raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
         if isinstance(exc, ScheduledTimeTooSoonError):
@@ -2366,7 +2389,9 @@ async def api_crm_update_lead(request: Request):
         )
         raise
     except Exception as e:
-        from chatbot.crm_management import StaleAssignmentCycleError
+        from chatbot.crm_management import LeadReassignedSlaLockedError, StaleAssignmentCycleError
+        if isinstance(e, LeadReassignedSlaLockedError):
+            raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
         if isinstance(e, StaleAssignmentCycleError):
             raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
         if isinstance(e, PermissionError):
@@ -4976,6 +5001,24 @@ async def process_pending_leads_loop():
                     result = await loop.run_in_executor(_WORKER_THREAD_POOL, fn)
                     if result and result.get("status") not in ("idle", "disabled"):
                         logger.info("[HOT] Resultado: %s", result)
+                if (
+                    Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+                    and Config.CRM_SLA_REASSIGNMENT_ENABLED
+                    and Config.CRM_SLA_TRANSACTION_GATE_ENABLED
+                    and Config.CRM_SLA_SECURITY_LAYER_ENABLED
+                ):
+                    from chatbot.crm_sla_reassignment_notifications import process_one_sla_reassignment_sync
+                    from chatbot.storage import get_db as _get_sync_db
+                    loop = asyncio.get_running_loop()
+                    sla_result = await loop.run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: process_one_sla_reassignment_sync(
+                            _get_sync_db(),
+                            worker_id=f"sla-notification:{os.getpid()}",
+                        ),
+                    )
+                    if sla_result and sla_result.get("status") not in ("idle", "disabled"):
+                        logger.info("[SLA_REASSIGNMENT_NOTIFICATION] Resultado: %s", sla_result)
                 pending = await run_db("pending_notifications.find", get_pending_notifications)
                 if pending:
                     logger.info(f"[BACKGROUND] Analizando {len(pending)} envíos pendientes...")

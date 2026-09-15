@@ -42,6 +42,44 @@ def _existing_hot_notification(db, *, lead_id, cycle_id, recipient_user_id):
     })
 
 
+def ensure_canonical_lead_assignment(db, *, lead_id, cycle, recipient_name=None,
+                                     assigned_at=None):
+    """Reconcile the lead mirrors independently of notification deduplication.
+
+    A notification can already exist while the denormalized lead owner fields
+    are stale.  Returning ``deduplicated`` must not leave the CRM unable to
+    find the lead under the cycle owner.
+    """
+    if not lead_id or not cycle or not cycle.get("assignment_cycle_id"):
+        raise ValueError("canonical assignment identity is incomplete")
+    display_name = recipient_name or cycle.get("assigned_to_display_name") or str(
+        cycle.get("assigned_to_user_id")
+    )
+    cycle_id = cycle["assignment_cycle_id"]
+    current = db["leads"].find_one(
+        {"_id": lead_id},
+        {"ejecutivo_asignado": 1, "prospecto.ejecutivo": 1, "lifecycle": 1},
+    ) or {}
+    lifecycle = current.get("lifecycle") or {}
+    updates = {}
+    if current.get("ejecutivo_asignado") != display_name:
+        updates["ejecutivo_asignado"] = display_name
+    if (current.get("prospecto") or {}).get("ejecutivo") != display_name:
+        updates["prospecto.ejecutivo"] = display_name
+    if str(lifecycle.get("current_assignment_cycle_id") or "") != str(cycle_id):
+        updates["lifecycle.current_assignment_cycle_id"] = cycle_id
+        updates["lifecycle.assignment_cycle_id"] = cycle_id
+        if assigned_at is not None:
+            updates["lifecycle.assigned_at"] = assigned_at
+    if str(lifecycle.get("assigned_to_user_id") or "") != str(cycle.get("assigned_to_user_id") or ""):
+        updates["lifecycle.assigned_to_user_id"] = cycle.get("assigned_to_user_id")
+    if lifecycle.get("assigned_to_display_name") != display_name:
+        updates["lifecycle.assigned_to_display_name"] = display_name
+    if updates:
+        db["leads"].update_one({"_id": lead_id}, {"$set": updates})
+    return updates
+
+
 def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payload,
                            assigned_by="system", reason="inbound_message", assigned_at=None,
                            send_after=None, recipient_name=None, hot_context=None,
@@ -55,6 +93,7 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         db, lead=lead, assigned_to_user_id=recipient_user_id,
         assigned_by=assigned_by, reason=reason, assigned_at=assigned,
         assigned_to_display_name=recipient_name or str(recipient_user_id),
+        property_code=payload.get("property_code") or payload.get("codigo"),
     )
     # A lead can become HOT after its normal assignment.  Reuse that same
     # assignment cycle and update its temperature; never create a second
@@ -83,6 +122,12 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         cycle = db["crm_assignment_cycles"].find_one({
             "assignment_cycle_id": cycle["assignment_cycle_id"]
         }) or cycle
+    # Reconcile owner mirrors before checking notification deduplication.  The
+    # same helper is also used on the new-cycle path below.
+    ensure_canonical_lead_assignment(
+        db, lead_id=lead["_id"], cycle=cycle, recipient_name=recipient_name,
+        assigned_at=assigned if str((previous_cycle or {}).get("assignment_cycle_id") or "") != str(cycle["assignment_cycle_id"]) else None,
+    )
     # Check for existing non-terminal notification before updating the lead.
     # If a notification already exists for this identity, return it instead
     # of creating a duplicate.  A new assignment cycle (different cycle_id)
@@ -98,29 +143,6 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
             lead["_id"], cycle["assignment_cycle_id"], recipient_user_id, reason,
         )
         return {"cycle": cycle, "notification": existing, "dedup_suppressed": True}
-
-    # Only update lifecycle.assigned_at when this is a genuinely new assignment
-    # (the cycle was just created).  Do NOT overwrite it on re-alerting.
-    if cycle.get("schema_version") == "crm_assignment_cycle_v1" and cycle.get("cycle_status") == "active":
-        current_lead = db["leads"].find_one(
-            {"_id": lead["_id"]},
-            {"lifecycle.current_assignment_cycle_id": 1},
-        )
-        current_cycle_id = (current_lead.get("lifecycle") or {}).get("current_assignment_cycle_id") if current_lead else None
-        if str(current_cycle_id or "") != str(cycle["assignment_cycle_id"]):
-            db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
-                "ejecutivo_asignado": recipient_name or str(recipient_user_id),
-                "prospecto.ejecutivo": recipient_name or str(recipient_user_id),
-                "lifecycle.assigned_at": assigned,
-                "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
-            }})
-    else:
-        db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
-            "ejecutivo_asignado": recipient_name or str(recipient_user_id),
-            "prospecto.ejecutivo": recipient_name or str(recipient_user_id),
-            "lifecycle.assigned_at": assigned,
-            "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
-        }})
 
     # Remove from any open non-HOT digest before enqueuing HOT notification
     try:

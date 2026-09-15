@@ -2,6 +2,7 @@
 import json
 import hashlib
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -15,6 +16,19 @@ client = OpenAI(
     base_url=Config.DEEPSEEK_BASE_URL,
     max_retries=0,
 )
+
+
+def _log_deepseek_config() -> None:
+    """Emit only safe, effective DeepSeek runtime configuration."""
+    logger.info(
+        "[DEEPSEEK_CONFIG] model=%s response_format=%s thinking=disabled max_retries=0 timeout=%s",
+        Config.DEEPSEEK_MODEL_REASONER,
+        Config.DEEPSEEK_RESPONSE_FORMAT,
+        Config.DEEPSEEK_TIMEOUT_REASONER,
+    )
+
+
+_log_deepseek_config()
 
 LOCAL_FALLBACK_TEXT = (
     "Gracias por escribirnos. Recibimos tu consulta, pero en este momento "
@@ -135,6 +149,8 @@ def normalize_fallback_reason(reason: str | None) -> str:
         return "deepseek_empty_response"
     if value in {"circuit_open", "deepseek_circuit_open"}:
         return "circuit_open"
+    if value in {"parse_error", "deepseek_parse_error", "structured_parse_error"}:
+        return "deepseek_parse_error"
     if value.startswith("http_") or value in {"connection_error", "provider_error"}:
         return "provider_error"
     return "other"
@@ -377,6 +393,78 @@ def _local_fallback(telemetry_context=None, reason="provider_failure"):
     }
 
 
+class StructuredResponseParseError(ValueError):
+    """Controlled failure for a successful provider response we cannot use."""
+
+    def __init__(self, message: str, *, recoverable: bool = False):
+        super().__init__(message)
+        self.recoverable = bool(recoverable)
+
+
+def _parse_structured_response(raw_content: str) -> dict:
+    """Parse the model's JSON while tolerating harmless presentation wrappers.
+
+    DeepSeek may return a JSON object surrounded by whitespace or a markdown
+    JSON fence even when the prompt requests plain JSON.  We normalize those
+    wrappers, then require a single valid object with the expected field types.
+    No free-form repair is attempted: malformed content remains a controlled
+    parse error and uses the safe local fallback.
+    """
+    if not isinstance(raw_content, str) or not raw_content.strip():
+        raise StructuredResponseParseError("empty_structured_content")
+
+    text = raw_content.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and re.match(r"^```(?:json)?\s*$", lines[0], re.IGNORECASE):
+            lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+    # Permit a short natural-language prefix, but parse only the first JSON
+    # object and reject non-whitespace trailing content.
+    object_start = text.find("{")
+    if object_start < 0:
+        raise StructuredResponseParseError("json_object_not_found")
+    candidate = text[object_start:]
+    try:
+        decoded, end = json.JSONDecoder().raw_decode(candidate)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise StructuredResponseParseError(
+            f"json_decode_failed:{type(exc).__name__}",
+            recoverable=False,
+        ) from exc
+    if candidate[end:].strip():
+        raise StructuredResponseParseError("unexpected_content_after_json", recoverable=False)
+    if not isinstance(decoded, dict):
+        raise StructuredResponseParseError("structured_response_not_object", recoverable=False)
+    if not isinstance(decoded.get("intencion"), str):
+        raise StructuredResponseParseError("intencion_missing_or_invalid", recoverable=False)
+    if not isinstance(decoded.get("respuesta_bot"), str) or not decoded["respuesta_bot"].strip():
+        raise StructuredResponseParseError("respuesta_bot_missing_or_invalid", recoverable=False)
+    if not isinstance(decoded.get("datos_extraidos", {}), dict):
+        raise StructuredResponseParseError("datos_extraidos_invalid", recoverable=False)
+    return decoded
+
+
+def _log_deepseek_parse_error(raw_content, error: Exception, telemetry_context=None):
+    context = telemetry_context or {}
+    trace_id = context.get("trace_id") or context.get("request_correlation_id") or "unknown"
+    message = re.sub(r"\s+", " ", str(error))[:240]
+    logger.warning(
+        "[DEEPSEEK_PARSE_ERROR] trace_id=%s raw_content_len=%s raw_content_type=%s "
+        "exception_type=%s exception_message=%s recoverable=%s",
+        trace_id,
+        len(raw_content) if isinstance(raw_content, str) else 0,
+        type(raw_content).__name__,
+        type(error).__name__,
+        message or "empty",
+        "yes" if getattr(error, "recoverable", False) else "no",
+    )
+    _runtime_metric(context, "deepseek_parse_errors")
+
+
 def get_deepseek_circuit_snapshot():
     return _deepseek_circuit.snapshot()
 
@@ -544,6 +632,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         logger.info("[DEEPSEEK PROPERTY_PAYLOAD] no_property_block_in_prompt")
 
     started_at = time.monotonic()
+    _log_deepseek_config()
     logger.info(
         "[DEEPSEEK API PAYLOAD] model=%s max_tokens=%s temperature=%s timeout=%s stream=False response_format=%s thinking=disabled",
         Config.DEEPSEEK_MODEL_REASONER, Config.DEEPSEEK_MAX_TOKENS_REASONER,
@@ -572,7 +661,6 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         return _local_fallback(telemetry_context, result.failure_type or "provider_failure")
 
     raw_content = result.content
-    contenido_json_str = raw_content.strip()
     if prospecto_actual and bloque_propiedad and raw_content:
         contenido_lower = raw_content.lower()
         mentions = {
@@ -582,19 +670,10 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             "precio": str(prospecto_actual.get("precio_uf", "")).lower() in contenido_lower if prospecto_actual.get("precio_uf") else False,
         }
         logger.info("[DEEPSEEK PROPERTY_MENTION] %s", mentions)
-    if contenido_json_str.startswith("```json"):
-        contenido_json_str = contenido_json_str[7:-3].strip()
-    elif contenido_json_str.startswith("```"):
-        contenido_json_str = contenido_json_str[3:-3].strip()
-    if not contenido_json_str.startswith("{"):
-        ini = contenido_json_str.find("{")
-        fin = contenido_json_str.rfind("}")
-        if ini != -1 and fin != -1 and fin > ini:
-            contenido_json_str = contenido_json_str[ini : fin + 1].strip()
-
     try:
-        datos = json.loads(contenido_json_str)
-    except (TypeError, ValueError, json.JSONDecodeError):
+        datos = _parse_structured_response(raw_content)
+    except StructuredResponseParseError as exc:
+        _log_deepseek_parse_error(raw_content, exc, telemetry_context)
         _record_llm_telemetry(
             model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
             usage=result.usage, context=telemetry_context, status="error",

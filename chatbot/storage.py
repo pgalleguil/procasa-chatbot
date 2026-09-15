@@ -1416,6 +1416,7 @@ def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
 # ── Pending response (visit confirmation) ──
 
 PENDING_RESPONSE_TTL_MINUTES = 60  # Default; override via env var at startup
+PROPERTY_IDENTIFIER_RESPONSE_TYPE = "PROPERTY_IDENTIFIER"
 
 
 def set_pending_response(phone: str, response_type: str, property_code: str, conversation_id: str):
@@ -1432,6 +1433,40 @@ def set_pending_response(phone: str, response_type: str, property_code: str, con
             "pending_response.status": "waiting",
         }},
     )
+
+
+def set_pending_property_identifier(
+    phone: str,
+    conversation_id: str,
+    *,
+    provider_message_id: str | None = None,
+    prompt_source: str = "bot",
+    visit_urgency: str | None = None,
+    prompt_text: str | None = None,
+):
+    """Persist the existing pending-response mechanism for unresolved visits."""
+    db = get_db()
+    now = datetime.now(CHILE_TZ).isoformat()
+    pending = {
+        "type": PROPERTY_IDENTIFIER_RESPONSE_TYPE,
+        "created_at": now,
+        "property_code": "",
+        "conversation_id": conversation_id,
+        "status": "waiting",
+        "prompt_source": prompt_source,
+        "reason": "visit_property_unresolved",
+    }
+    if provider_message_id:
+        pending["provider_message_id"] = str(provider_message_id)
+    if visit_urgency:
+        pending["visit_urgency"] = visit_urgency
+    if prompt_text:
+        pending["prompt_text"] = str(prompt_text)
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"pending_response": pending}},
+    )
+    return pending
 
 
 def get_pending_response(phone: str, response_type: str = "VISIT_CONFIRMATION") -> Optional[dict]:

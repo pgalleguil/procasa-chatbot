@@ -67,6 +67,13 @@ from .conversation_policy import (
     is_substantial_duplicate,
     duplicate_response_fallback,
     build_local_fallback_response,
+    contains_property_identifier,
+    has_near_term_visit_urgency,
+    property_identifier_action,
+    build_property_identifier_request,
+    build_property_identifier_clarification,
+    build_pending_visit_preference_acknowledgement,
+    is_acknowledgement_only,
 )
 
 logger = logging.getLogger(__name__)
@@ -359,6 +366,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if lead_doc_full.get("conversation_status") == "BLOCKED_EXTERNAL_BROKER":
         logger.info("[CORREDOR] Conversación bloqueada; inbound persistido sin respuesta automática.")
         return ""
+    if is_acknowledgement_only(original_message):
+        logger.info("[ACK_ONLY_NO_REPLY] phone=%s inbound has no new intent", phone)
+        await _run_sync(record_observability_event, "ACK_ONLY_NO_REPLY", {
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "conversation_id": lead_doc_full.get("conversation_id"),
+        })
+        return ""
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {
             "conversation_status": "STOPPED_BY_CLIENT",
@@ -456,6 +470,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             })
         return result
     visit_data_state = await _run_sync(get_visit_data_state, phone)
+    from .storage import (
+        get_pending_response,
+        resolve_pending_response,
+        set_pending_property_identifier,
+    )
+    pending_property_identifier = await _run_sync(
+        get_pending_response, phone, "PROPERTY_IDENTIFIER"
+    )
     recent_visit_context = any(
         item.get("role") == "assistant"
         and re.search(
@@ -467,7 +489,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     )
     visit_preference = extract_visit_preference(
         original_message,
-        visit_context=recent_visit_context or is_explicit_visit_intent(original_message),
+        visit_context=(
+            recent_visit_context
+            or bool(pending_property_identifier)
+            or is_explicit_visit_intent(original_message)
+        ),
     )
     stored_visit_preference = prospecto_actual.get("visit_preference") or {}
     if not visit_preference and isinstance(stored_visit_preference, dict):
@@ -736,9 +762,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         f"temp_prop_comuna={(temp_prop.get('comuna') if temp_prop else None)}"
     )
 
-    # 0. Resolución temprana de propiedad aunque NO haya URL.
-    #    Esto usa el código ya guardado en prospecto o lo que exista en el historial.
-    if not propiedad:
+    # 0. Resolución temprana de propiedad solo cuando NO hay URL explícita.
+    #    Un enlace actual es una identidad de mayor prioridad que el código
+    #    histórico; jamás debe ser sustituido por contexto previo.
+    if not propiedad and not hay_url:
         db_props = await _run_sync(get_db)
         candidatos_propiedad = []
 
@@ -950,6 +977,128 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             ext_updates["codigo_mercadolibre"] = codigo_externo
         logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} sobrescritura externa={ext_updates}")
         await _run_sync(actualizar_prospecto, phone, ext_updates, trace_id)
+
+    # Deterministic property-identity gate for visit requests.  A pending
+    # PROPERTY_IDENTIFIER cycle may only be resolved by an identifier present
+    # in the current inbound turn; an old lead code is not enough.
+    property_identifier_in_message = contains_property_identifier(original_message)
+    property_resolved_for_visit = bool(
+        propiedad and codigo_detectado
+        and (not pending_property_identifier or property_identifier_in_message)
+    )
+    # A date/daypart reply is an operational visit turn when the conversation
+    # is already waiting for the property identifier.  This preserves timing
+    # without asking DeepSeek to infer the handoff.
+    visit_requested = bool(
+        is_explicit_visit_intent(original_message)
+        or (pending_property_identifier and visit_preference)
+    )
+    identifier_action = property_identifier_action(
+        visit_requested=visit_requested,
+        property_resolved=property_resolved_for_visit,
+        awaiting_identifier=bool(pending_property_identifier),
+        identifier_in_message=property_identifier_in_message,
+    )
+
+    deterministic_handoff_executed = False
+    if identifier_action == "resolved" and pending_property_identifier:
+        await _run_sync(resolve_pending_response, phone, "resolved")
+        pending_property_identifier = None
+        await _run_sync(record_observability_event, "property_identifier_resolved", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "phone": phone,
+            "property_id": codigo_detectado,
+            "source": "current_inbound",
+        })
+    elif identifier_action == "ask":
+        urgency = "HIGH" if has_near_term_visit_urgency(original_message) else "NORMAL"
+        identifier_prompt = build_property_identifier_request()
+        await _run_sync(set_pending_property_identifier, phone, conversation_id,
+                        prompt_source="bot", visit_urgency=urgency,
+                        prompt_text=identifier_prompt)
+        await _run_sync(record_observability_event, "property_identifier_requested", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "phone": phone,
+            "status": "waiting",
+            "reason": "visit_property_unresolved",
+            "visit_urgency": urgency,
+        })
+        if visit_requested:
+            criteria = dict(prospecto_actual)
+            criteria.update({
+                "property_unresolved": True,
+                "visit_urgency": urgency,
+            })
+            lead_score = await _run_sync(CrmService.calculate_score, lead_doc_full)
+            await _await_durable_handoff(
+                alert_type="InteresVisita", lead_score=lead_score, criteria=criteria,
+                last_response=identifier_prompt, last_user_msg=original_message,
+                full_history=historial, window_minutes=60,
+                lead_type_label="Interés de Visita — propiedad por identificar",
+            )
+        return await _persist_generated_outbound(
+            identifier_prompt,
+            {"tipo": "property_identifier_request", "intencion": "agendar_visita",
+             "lead_intent": LeadIntent.ASK_VISIT, "visit_urgency": urgency},
+            intent="agendar_visita",
+        )
+    elif identifier_action == "acknowledge":
+        urgency = "HIGH" if has_near_term_visit_urgency(original_message) else "NORMAL"
+        acknowledgement = build_pending_visit_preference_acknowledgement()
+        if visit_requested:
+            criteria = dict(prospecto_actual)
+            criteria.update({"property_unresolved": True, "visit_urgency": urgency})
+            lead_score = await _run_sync(CrmService.calculate_score, lead_doc_full)
+            await _await_durable_handoff(
+                alert_type="InteresVisita", lead_score=lead_score, criteria=criteria,
+                last_response=acknowledgement, last_user_msg=original_message,
+                full_history=historial, window_minutes=60,
+                lead_type_label="Interés de Visita — propiedad por identificar",
+            )
+        return await _persist_generated_outbound(
+            acknowledgement,
+            {"tipo": "property_identifier_pending_ack", "intencion": "agendar_visita",
+             "lead_intent": LeadIntent.ASK_VISIT, "visit_urgency": urgency},
+            intent="agendar_visita",
+        )
+    elif identifier_action == "clarify":
+        clarification = build_property_identifier_clarification()
+        return await _persist_generated_outbound(
+            clarification,
+            {"tipo": "property_identifier_clarification", "intencion": "agendar_visita",
+             "lead_intent": LeadIntent.ASK_VISIT},
+            intent="agendar_visita",
+        )
+
+    # Visit handoff must not depend on the LLM classification or JSON parser.
+    # The inbound itself is the authoritative operational signal once the
+    # explicit property identity has been resolved.
+    visit_handoff_context = bool(visit_requested or visit_preference)
+    if visit_handoff_context and property_resolved_for_visit:
+        resolved_criteria = dict(prospecto_actual)
+        resolved_criteria.update({
+            "codigo": codigo_detectado,
+            "codigo_propiedad": codigo_detectado,
+            "link_pendiente": False,
+            "visit_urgency": "HIGH" if has_near_term_visit_urgency(original_message) else "NORMAL",
+            "property_resolved": True,
+        })
+        lead_score = await _run_sync(CrmService.calculate_score, lead_doc_full)
+        await _run_sync(record_observability_event, "visit_handoff_deterministic", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "property_id": codigo_detectado,
+            "visit_urgency": resolved_criteria["visit_urgency"],
+            "source": "deterministic_inbound_signal",
+        })
+        await _await_durable_handoff(
+            alert_type="InteresVisita", lead_score=lead_score, criteria=resolved_criteria,
+            last_response="", last_user_msg=original_message, full_history=historial,
+            window_minutes=60, lead_type_label="Interés de Visita",
+        )
+        deterministic_handoff_executed = True
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:
@@ -1358,6 +1507,58 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         fallback_used = True
         fallback_reason = "core_error"
 
+    # Late guard for model-only ASK_VISIT classifications that did not match
+    # the deterministic pre-generation detector.  It preserves the same
+    # property-identity gate and prevents the model from asking for the link
+    # again when a PROPERTY_IDENTIFIER cycle is already waiting.
+    llm_visit_requested = str(intencion or "").strip().casefold() in {
+        "agendar_visita", "ask_visit"
+    }
+    late_identifier_action = property_identifier_action(
+        visit_requested=llm_visit_requested,
+        property_resolved=property_resolved_for_visit,
+        awaiting_identifier=bool(pending_property_identifier),
+        identifier_in_message=property_identifier_in_message,
+    )
+    if late_identifier_action == "ask":
+        urgency = "HIGH" if has_near_term_visit_urgency(original_message) else "NORMAL"
+        identifier_prompt = build_property_identifier_request()
+        await _run_sync(set_pending_property_identifier, phone, conversation_id,
+                        prompt_source="bot", visit_urgency=urgency,
+                        prompt_text=identifier_prompt)
+        await _run_sync(record_observability_event, "property_identifier_requested", {
+            "conversation_id": conversation_id,
+            "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            "phone": phone,
+            "status": "waiting",
+            "reason": "visit_property_unresolved",
+            "visit_urgency": urgency,
+            "source": "llm_guard",
+        })
+        criteria = dict(prospecto_actual)
+        criteria.update({"property_unresolved": True, "visit_urgency": urgency})
+        lead_score = await _run_sync(CrmService.calculate_score, lead_doc_full)
+        await _await_durable_handoff(
+            alert_type="InteresVisita", lead_score=lead_score, criteria=criteria,
+            last_response=identifier_prompt, last_user_msg=original_message,
+            full_history=historial, window_minutes=60,
+            lead_type_label="Interés de Visita — propiedad por identificar",
+        )
+        return await _persist_generated_outbound(
+            identifier_prompt,
+            {"tipo": "property_identifier_request", "intencion": "agendar_visita",
+             "lead_intent": LeadIntent.ASK_VISIT, "visit_urgency": urgency},
+            intent="agendar_visita",
+        )
+    if late_identifier_action == "clarify":
+        clarification = build_property_identifier_clarification()
+        return await _persist_generated_outbound(
+            clarification,
+            {"tipo": "property_identifier_clarification", "intencion": "agendar_visita",
+             "lead_intent": LeadIntent.ASK_VISIT},
+            intent="agendar_visita",
+        )
+
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
@@ -1549,11 +1750,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "phone": phone,
             "alert_type": "InteresVisita"
         })
-        await _await_durable_handoff(
-            alert_type="InteresVisita", lead_score=lead_score, criteria=prospecto_actual,
-            last_response=respuesta, last_user_msg=original_message, full_history=historial,
-            window_minutes=60, lead_type_label="Interés de Visita",
-        )
+        if not deterministic_handoff_executed:
+            await _await_durable_handoff(
+                alert_type="InteresVisita", lead_score=lead_score, criteria=prospecto_actual,
+                last_response=respuesta, last_user_msg=original_message, full_history=historial,
+                window_minutes=60, lead_type_label="Interés de Visita",
+            )
         metadata_tipo = {"tipo": "gestion_visita", "intencion": intencion}
 
     elif intencion == "contacto_directo":

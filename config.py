@@ -343,7 +343,11 @@ class Config:
         min(int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or str(DEEPSEEK_TIMEOUT_FAST)), 25),
     )
     
-    DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
+    # Structured chatbot turns must always be returned as JSON by the provider.
+    # A blank, whitespace-only, or unsupported environment value must never
+    # silently disable the response format in production.
+    _DEEPSEEK_RESPONSE_FORMAT_ENV = str(os.getenv("DEEPSEEK_RESPONSE_FORMAT") or "").strip().lower()
+    DEEPSEEK_RESPONSE_FORMAT = "json_object"
 
     # === DeepSeek Adjudicator (scraper classification) ===
     # El adjudicador también debe usar siempre Flash, independientemente de

@@ -6,7 +6,21 @@ import mongomock
 
 from chatbot import chatbot_queue as queue
 from chatbot.classifier import clasificar_corredor_externo
-from chatbot.conversation_policy import nudge_eligibility, outbound_phone_request
+from chatbot.conversation_policy import (
+    build_property_identifier_clarification,
+    build_pending_visit_preference_acknowledgement,
+    build_property_identifier_request,
+    contains_property_identifier,
+    extract_visit_preference,
+    has_near_term_visit_urgency,
+    is_explicit_visit_intent,
+    nudge_eligibility,
+    outbound_phone_request,
+    outbound_unconfirmed_visit_claim,
+    property_identifier_action,
+    is_acknowledgement_only,
+)
+from chatbot.property_lookup import lookup_property_link, validate_property_link_semantics
 
 
 NOW = datetime(2026, 8, 1, 12, 0)
@@ -148,3 +162,144 @@ def test_regeneration_limit_closes_turn_without_sending_or_retry_loop(monkeypatc
     assert result["last_error"] == "stale_regeneration_limit"
     assert "active_conversation_key" not in result
     assert result["delivery_attempts"][-1]["status"] == "stale_regeneration_limit"
+
+
+def test_visit_without_property_asks_identifier_first():
+    assert is_explicit_visit_intent("Quiero visitar la propiedad mañana")
+    assert property_identifier_action(
+        visit_requested=True,
+        property_resolved=False,
+        awaiting_identifier=False,
+        identifier_in_message=False,
+    ) == "ask"
+    assert build_property_identifier_request().startswith(
+        "Para poder coordinarte la visita lo antes posible"
+    )
+
+
+def test_manually_sent_identifier_request_is_not_duplicated():
+    action = property_identifier_action(
+        visit_requested=False,
+        property_resolved=False,
+        awaiting_identifier=True,
+        identifier_in_message=False,
+    )
+    assert action == "clarify"
+    assert build_property_identifier_clarification() != build_property_identifier_request()
+
+
+def test_pending_visit_timing_is_acknowledged_without_repeating_identifier_request():
+    assert property_identifier_action(
+        visit_requested=True,
+        property_resolved=False,
+        awaiting_identifier=True,
+        identifier_in_message=False,
+    ) == "acknowledge"
+    response = build_pending_visit_preference_acknowledgement()
+    assert "dejo registrada" in response.lower()
+    assert response != build_property_identifier_request()
+
+
+def test_ack_only_is_deterministic_and_does_not_block_new_information():
+    for text in ("👍", "👌", "ok", "muchas gracias, quedo atento", "perfecto gracias"):
+        assert is_acknowledgement_only(text)
+    for text in (
+        "gracias, ¿cuánto sale el gasto común?",
+        "ok, puedo visitar mañana",
+        "perfecto, mi correo es cliente@example.com",
+    ):
+        assert not is_acknowledgement_only(text)
+
+
+def test_next_link_message_resolves_property():
+    assert contains_property_identifier("https://www.procasa.cl/propiedad/ABC-123")
+    assert property_identifier_action(
+        visit_requested=False,
+        property_resolved=True,
+        awaiting_identifier=True,
+        identifier_in_message=True,
+    ) == "resolved"
+
+
+def test_visit_tomorrow_marks_high_urgency():
+    assert has_near_term_visit_urgency("¿Se puede visitar mañana en la tarde?")
+    assert has_near_term_visit_urgency("¿Puedo ir el jueves?")
+
+
+def test_visit_with_resolved_property_does_not_ask_link():
+    assert property_identifier_action(
+        visit_requested=True,
+        property_resolved=True,
+        awaiting_identifier=False,
+        identifier_in_message=False,
+    ) == "resolved"
+
+
+def test_existing_visit_date_is_preserved():
+    preference = extract_visit_preference(
+        "Quiero visitar mañana a las 18:30",
+        visit_context=True,
+    )
+    assert preference == "manana a las 18:30"
+
+
+def test_visit_date_range_is_preserved():
+    preference = extract_visit_preference(
+        "Puedo el jueves en la mañana o desde el 23 en adelante a cualquier horario",
+        visit_context=True,
+    )
+    assert preference == "jueves en la manana desde el 23 en adelante"
+
+
+def test_no_false_availability_confirmation():
+    assert outbound_unconfirmed_visit_claim(
+        "La visita está confirmada para mañana."
+    )
+    assert not outbound_unconfirmed_visit_claim(
+        "El ejecutivo confirmará si existe disponibilidad."
+    )
+
+
+def test_YAPO_EXPLICIT_LINK_EXTERNAL_ID_WINS_OVER_CONTEXT():
+    database = mongomock.MongoClient().properties
+    database.universo_cartera_prop360.insert_one({
+        "codigo": "7733",
+        "tipo_operacion": {"tipo": "Local Comercial", "arriendo": True},
+        "ubicacion": {"comuna": "Ñuñoa"},
+        "publicaciones": {"yapo": {"publicaciones": {
+            "A": {"code": "32979177", "url": "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177"}
+        }}},
+    })
+    prop, meta = lookup_property_link(
+        database,
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "universo_cartera_prop360",
+    )
+    assert prop["codigo"] == "7733"
+    assert meta["match_method"] == "nested_publication_external_id"
+
+
+def test_NUNOA_RENT_LINK_CANNOT_RESOLVE_TO_VINA_SALE():
+    valid, reason = validate_property_link_semantics(
+        {
+            "codigo": "6186",
+            "tipo_operacion": {"tipo": "Departamento", "venta": True},
+            "ubicacion": {"comuna": "Viña del Mar"},
+        },
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+    )
+    assert valid is False
+    assert reason in {"operation_mismatch", "commune_mismatch", "property_type_mismatch"}
+
+
+def test_EXPLICIT_LINK_LOOKUP_FAILS_SAFE():
+    database = mongomock.MongoClient().properties
+    database.universo_cartera_prop360.insert_one({"codigo": "6186", "ubicacion": {"comuna": "Viña del Mar"}})
+    prop, meta = lookup_property_link(
+        database,
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/99999999",
+        "universo_cartera_prop360",
+    )
+    assert prop is None
+    assert meta["external_id"] == "99999999"
+    assert meta["match_method"] is None

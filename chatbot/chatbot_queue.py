@@ -775,6 +775,33 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             error="invalid_or_empty_snapshot", worker_id=worker_id,
             delivery_token=token,
         )
+    # Pure acknowledgements are a terminal no-reply outcome.  Evaluate this
+    # before invoking the injected LLM so the production worker cannot create
+    # a fallback or outbound message for "👍" / "muchas gracias, quedo atento".
+    from .conversation_policy import is_acknowledgement_only
+    if is_acknowledgement_only(text):
+        try:
+            from .conversation_observability import record_conversation_event
+            await asyncio.to_thread(
+                record_conversation_event, db,
+                event_type="ack_only_no_reply",
+                conversation_id=claimed.get("conversation_id"),
+                lead_id=claimed.get("lead_id"),
+                actor_type="bot", actor_id="chatbot",
+                metadata={"batch_id": batch_id, "outbound_count": 0},
+            )
+        except Exception:
+            logger.exception("[CHATBOT_OBSERVABILITY] ack-only event failed")
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token, status="ack_only_no_reply",
+            error="acknowledgement_without_new_intent",
+        )
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
+            error="suppressed_ack_only", worker_id=worker_id,
+            delivery_token=token,
+        )
     max_regenerations = max(int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")), 0)
     regenerations = 0
     generation_id = None

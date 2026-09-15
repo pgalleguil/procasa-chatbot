@@ -87,6 +87,24 @@ _VISIT_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PROPERTY_IDENTIFIER_RE = re.compile(
+    r"(?:https?://|www\.)|"
+    r"\b(?:c[oó]digo|c[oó]d|id|ref(?:erencia)?|folio)\s*[:#-]?\s*[a-z0-9][a-z0-9_-]{2,}\b|"
+    r"\b(?:calle|avenida|av\.?|pasaje|camino|ruta)\s+[a-záéíóúñü0-9]|"
+    r"\b[a-záéíóúñü]{3,}\s+con\s+[a-záéíóúñü]{3,}\b",
+    re.IGNORECASE,
+)
+_VISIT_DATE_RANGE_RE = re.compile(
+    r"\b(?:desde\s+(?:el\s+)?|a\s+partir\s+del\s+|a\s+contar\s+del\s+)\d{1,2}\s+en\s+adelante\b",
+    re.IGNORECASE,
+)
+_NEAR_TERM_VISIT_RE = re.compile(
+    r"\b(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|esta\s+(?:ma[nñ]ana|tarde|noche)|"
+    r"este\s+fin\s+de\s+semana|fin\s+de\s+semana|lunes|martes|mi[eé]rcoles|jueves|"
+    r"viernes|s[aá]bado|domingo)\b",
+    re.IGNORECASE,
+)
+
 _FALLBACK_AVAILABILITY_RE = re.compile(
     r"\b(?:disponible|disponibilidad|sigue\s+disponible|a[uú]n\s+est[aá])\b",
     re.IGNORECASE,
@@ -108,11 +126,53 @@ _VISIT_QUESTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Short acknowledgements are not a conversational turn that needs an LLM.
+# Keep this allow-list deliberately conservative: any question, date, URL,
+# contact detail, property signal or operational verb is treated as new
+# information and must continue through the normal pipeline.
+_ACK_ONLY_PHRASES = frozenset({
+    "ok", "okay", "oki", "gracias", "muchas gracias", "quedo atento",
+    "gracias quedo atento", "muchas gracias quedo atento",
+    "perfecto", "perfecto gracias", "bueno gracias", "listo", "dale",
+    "de acuerdo", "entendido", "👍", "👌", "✅", "🙏",
+})
+_ACK_ONLY_NEW_INFORMATION_RE = re.compile(
+    r"(?:\?|¿|https?://|www\.|\b(?:visita|visitar|ver|ir|disponib|\d{1,2}\s*:\s*\d{2}|"
+    r"hoy|ma[nñ]ana|jueves|viernes|lunes|martes|mi[eé]rcoles|s[aá]bado|domingo|"
+    r"correo|email|mail|gasto|habitacional|valor|precio|c[oó]digo|direcci[oó]n|"
+    r"propiedad|local|oficina|departamento|casa|tengo|puedo|quiero|necesito)\b|"
+    r"\b\d{2,}\b|@)",
+    re.IGNORECASE,
+)
+
 
 def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def is_acknowledgement_only(message: str) -> bool:
+    """Return True only for a pure acknowledgement with no new intent.
+
+    This gate runs before DeepSeek. It deliberately does not infer sentiment
+    or intent: it only recognizes a small set of closing/waiting phrases and
+    rejects anything that could carry a question, visit timing, property
+    identity or contact/qualification data.
+    """
+    raw = str(message or "").strip()
+    normalized = _normalize_text(raw)
+    if not normalized or _ACK_ONLY_NEW_INFORMATION_RE.search(raw):
+        return False
+    # Remove common acknowledgement emoji and punctuation while retaining
+    # words, then compare the complete turn rather than a substring.
+    cleaned = re.sub(r"[👍👌✅🙏🙂😊😉🙌👏❤️❤]+", " ", normalized)
+    cleaned = re.sub(r"[^\wáéíóúñü]+", " ", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned in _ACK_ONLY_PHRASES:
+        return True
+    # Emoji-only messages become empty after normalization.
+    return not cleaned and bool(re.search(r"[👍👌✅🙏🙂😊😉🙌👏❤️❤]", raw))
 
 
 def extract_visit_preference(message: str, *, visit_context: bool = False) -> str | None:
@@ -127,19 +187,23 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     if not normalized:
         return None
     day = _VISIT_DAY_RE.search(normalized)
+    date_range = _VISIT_DATE_RANGE_RE.search(normalized)
     time = _VISIT_TIME_RE.search(normalized)
     daypart = _VISIT_DAYPART_RE.search(normalized)
-    if not (day or time or daypart):
+    if not (day or date_range or time or daypart):
         return None
     if not visit_context and not is_explicit_visit_intent(normalized):
         return None
 
     parts = []
-    for match in (day, time, daypart):
-        if match:
-            value = match.group(0).strip()
-            if value not in parts:
-                parts.append(value)
+    matches = sorted(
+        (match for match in (day, date_range, time, daypart) if match),
+        key=lambda match: match.start(),
+    )
+    for match in matches:
+        value = match.group(0).strip()
+        if value not in parts:
+            parts.append(value)
     return " ".join(parts) or None
 
 
@@ -196,6 +260,60 @@ def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
     return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+
+
+def contains_property_identifier(message: str) -> bool:
+    """Return whether the current turn contains a usable property identifier signal."""
+    return bool(_PROPERTY_IDENTIFIER_RE.search(str(message or "")))
+
+
+def has_near_term_visit_urgency(message: str) -> bool:
+    """Detect a near-term date/daypart that makes a visit request operationally urgent."""
+    return bool(_NEAR_TERM_VISIT_RE.search(_normalize_text(message)))
+
+
+def property_identifier_action(
+    *,
+    visit_requested: bool,
+    property_resolved: bool,
+    awaiting_identifier: bool,
+    identifier_in_message: bool,
+) -> str:
+    """Choose the deterministic property-identity gate action for a visit turn."""
+    if property_resolved and (not awaiting_identifier or identifier_in_message):
+        return "resolved"
+    if awaiting_identifier and visit_requested and not identifier_in_message:
+        # The identifier question was already sent.  A subsequent timing
+        # reply should be acknowledged and preserved, not asked again.
+        return "acknowledge"
+    if awaiting_identifier:
+        return "clarify"
+    if visit_requested and not property_resolved:
+        return "ask"
+    return "none"
+
+
+def build_property_identifier_request() -> str:
+    return (
+        "Para poder coordinarte la visita lo antes posible, ¿me puedes enviar el enlace "
+        "de la publicación de la propiedad que quieres visitar? Así identifico exactamente "
+        "cuál es y revisamos disponibilidad para el día que necesitas."
+    )
+
+
+def build_property_identifier_clarification() -> str:
+    return (
+        "Para continuar con la visita necesito identificar la propiedad. ¿Me compartes "
+        "el enlace, la dirección o el código de la publicación?"
+    )
+
+
+def build_pending_visit_preference_acknowledgement() -> str:
+    """Acknowledge timing without repeating an already-sent link request."""
+    return (
+        "Perfecto, dejo registrada tu disponibilidad. Solo me falta el enlace de la "
+        "publicación para identificar exactamente la propiedad y continuar con la coordinación."
+    )
 
 
 def classify_local_fallback_intent(message: str, *, operational_intent: str | None = None) -> str:

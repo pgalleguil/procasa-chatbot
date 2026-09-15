@@ -1,6 +1,8 @@
 """Integration-level regression coverage for the Phase 1.1 safety contract."""
 
 import asyncio
+import inspect
+import logging
 from datetime import datetime, timedelta, timezone
 
 import mongomock
@@ -21,7 +23,16 @@ from chatbot.conversation_policy import (
     outbound_phone_request,
     safe_visit_claim_free_response,
     build_local_fallback_response,
+    is_acknowledgement_only,
+    contains_property_identifier,
+    has_near_term_visit_urgency,
+    extract_visit_preference,
+    is_explicit_visit_intent,
+    property_identifier_action,
 )
+from chatbot.crm_hot_delivery import assign_and_enqueue_hot
+from chatbot.property_lookup import lookup_property_link
+from chatbot.crm_metrics import active_assignment_cycle
 from chatbot.rag import extraer_filtros_estructurados
 
 
@@ -90,6 +101,262 @@ def test_delivery_state_machine_persists_final_text_and_sent_only_after_acceptan
     assert message["provider_message_id"] == "wamid-phase11"
     assert result["state"] == queue.ST_RESPONDED
     assert [event for event, _ in events].count("RESPONSE_SENT") == 1
+
+
+def test_ACK_ONLY_NO_REPLY_before_llm_and_without_outbound(monkeypatch):
+    db = _db()
+    queue.create_inbound_job(
+        db, inbound_provider_message_id="ack-only-inbound", phone="+56911112222",
+        conversation_id="ack-only-conv", text="muchas gracias, quedo atento", received_at=NOW,
+    )
+    llm_calls = []
+    sent = []
+
+    async def llm(*_args, **_kwargs):
+        llm_calls.append(True)
+        return "no debe ejecutarse"
+
+    async def sender(*_args, **_kwargs):
+        sent.append(True)
+        return {"success": True, "provider_message_id": "should-not-exist"}
+
+    result = asyncio.run(queue.process_one_batch(
+        db, worker_id="ack-only-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=20),
+    ))
+    assert result["state"] == queue.ST_RESPONDED
+    assert result["last_error"] == "suppressed_ack_only"
+    assert llm_calls == []
+    assert sent == []
+    assert result["delivery_attempts"][-1]["status"] == "ack_only_no_reply"
+
+
+def test_A1_VISIT_WITHOUT_PROPERTY_PRESERVES_BOTH_PREFERENCES_and_does_not_call_llm():
+    message = "Puede ser el jueves en la mañana, o desde el 23 en adelante a cualquier horario"
+    preference = extract_visit_preference(message, visit_context=True)
+    assert is_explicit_visit_intent(message) is False
+    assert has_near_term_visit_urgency(message)
+    assert preference == "jueves en la manana desde el 23 en adelante"
+    assert property_identifier_action(
+        visit_requested=True, property_resolved=False,
+        awaiting_identifier=True, identifier_in_message=False,
+    ) == "acknowledge"
+    assert "dejo registrada" in core.build_pending_visit_preference_acknowledgement().lower()
+
+
+def test_A2_YAPO_32979177_resolves_7733_and_never_6186():
+    db = mongomock.MongoClient().property_simulation
+    db["universo_cartera_prop360"].insert_many([
+        {
+            "codigo": "7733", "tipo_operacion": {"tipo": "Local Comercial", "arriendo": True},
+            "ubicacion": {"comuna": "Ñuñoa"},
+            "publicaciones": {"yapo": {"publicaciones": {"A": {"code": "32979177"}}}},
+        },
+        {
+            "codigo": "6186", "tipo_operacion": {"tipo": "Departamento", "venta": True},
+            "ubicacion": {"comuna": "Viña del Mar"},
+            "publicaciones": {"yapo": {"publicaciones": {"A": {"code": "32147733"}}}},
+        },
+    ])
+    url = "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177"
+    prop, meta = lookup_property_link(db, url, "universo_cartera_prop360")
+    assert prop["codigo"] == "7733"
+    assert meta["external_id"] == "32979177"
+    assert meta["match_method"] == "nested_publication_external_id"
+    assert prop["codigo"] != "6186"
+
+
+def _hot_simulation_fixture(*, desynchronized=False):
+    db = mongomock.MongoClient().crm_hot_simulation
+    lead_id = db["leads"].insert_one({
+        "phone": "+56984276017", "lead_temperature_effective": "HOT",
+        "stage": "NEW", "pipeline_stage": "NEW", "prospecto": {},
+        **({
+            "ejecutivo_asignado": "Otro ejecutivo",
+            "prospecto": {"ejecutivo": "Otro ejecutivo"},
+            "lifecycle": {"current_assignment_cycle_id": "stale-cycle"},
+        } if desynchronized else {}),
+    }).inserted_id
+    db["usuarios"].insert_one({
+        "_id": "mariela-user", "nombre": "Mariela Arriagada", "is_active": True,
+    })
+    db["chatbot_inbound_jobs"].insert_one({
+        "_id": "inbound-a-1", "kind": "inbound_job", "phone": "+56984276017",
+        "inbound_provider_message_id": "inbound-a-1",
+    })
+    return db, db["leads"].find_one({"_id": lead_id})
+
+
+def _enqueue_hot_for_simulation(db, lead):
+    return assign_and_enqueue_hot(
+        db, lead=lead, recipient_user_id="mariela-user",
+        recipient_phone="+56991788250", recipient_name="Mariela Arriagada",
+        payload={"property_code": "7733", "intent": "ASK_VISIT", "visit_urgency": "HIGH"},
+        assigned_at=NOW.replace(tzinfo=timezone.utc),
+        send_after=NOW.replace(tzinfo=timezone.utc), source_event_id="inbound-a-1",
+    )
+
+
+def test_B1_HOT_ASSIGNMENT_RECONCILES_lead_cycle_notification_and_crm_visibility():
+    db, lead = _hot_simulation_fixture()
+    result = _enqueue_hot_for_simulation(db, lead)
+    cycle = active_assignment_cycle(db, lead["_id"])
+    notification = result["notification"]
+    assert db["leads"].find_one({
+        "_id": lead["_id"], "ejecutivo_asignado": "Mariela Arriagada",
+        "prospecto.ejecutivo": "Mariela Arriagada",
+        "lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"],
+    })
+    assert cycle["assigned_to_user_id"] == "mariela-user"
+    assert cycle["assigned_to_display_name"] == "Mariela Arriagada"
+    assert notification["recipient_user_id"] == "mariela-user"
+    # This is the same owner predicate used by api_crm.get_crm_leads_list for
+    # an executive-scoped CRM listing, with its safety filters included.
+    crm_lead = db["leads"].find_one({"$and": [
+        {"lead_temperature_effective": {"$in": ["HOT", "COLD"]}},
+        {"stage": {"$ne": "ARCHIVED"}}, {"pipeline_stage": {"$ne": "ARCHIVED"}},
+        {"archived_at": {"$exists": False}}, {"_test_lead": {"$ne": True}},
+        {"is_test": {"$ne": True}}, {"synthetic": {"$ne": True}},
+        {"is_synthetic": {"$ne": True}}, {"suppressed": {"$ne": True}},
+        {"$or": [
+            {"prospecto.ejecutivo": {"$regex": "Mariela Arriagada", "$options": "i"}},
+            {"ejecutivo_asignado": {"$regex": "Mariela Arriagada", "$options": "i"}},
+        ]},
+    ]})
+    assert crm_lead["_id"] == lead["_id"]
+
+
+def test_B2_DEDUP_ASSIGNMENT_RECONCILIATION_repairs_lead_without_duplicate_notification():
+    db, lead = _hot_simulation_fixture()
+    first = _enqueue_hot_for_simulation(db, lead)
+    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+        "ejecutivo_asignado": "", "prospecto.ejecutivo": "",
+        "lifecycle.current_assignment_cycle_id": "stale-cycle",
+    }})
+    second = _enqueue_hot_for_simulation(db, db["leads"].find_one({"_id": lead["_id"]}))
+    repaired = db["leads"].find_one({"_id": lead["_id"]})
+    assert first["notification"]["_id"] == second["notification"]["_id"]
+    assert second["dedup_suppressed"] is True
+    assert db["crm_notifications_v1"].count_documents({}) == 1
+    assert repaired["ejecutivo_asignado"] == "Mariela Arriagada"
+    assert repaired["prospecto"]["ejecutivo"] == "Mariela Arriagada"
+    assert repaired["lifecycle"]["current_assignment_cycle_id"] == first["cycle"]["assignment_cycle_id"]
+
+
+def test_C_ACK_ONLY_examples_are_no_reply_but_new_information_is_processed():
+    assert is_acknowledgement_only("👍")
+    assert is_acknowledgement_only("muchas gracias, quedo atento")
+    assert not is_acknowledgement_only("gracias, ¿cuánto sale el gasto común?")
+    assert not is_acknowledgement_only("ok, puedo visitar mañana")
+    assert not is_acknowledgement_only("perfecto, mi correo es cliente@example.com")
+
+
+def test_E_HANDOFF_WITHOUT_LLM_is_same_for_timeout_and_parse_error(monkeypatch):
+    for failure in ("timeout", "parse_error"):
+        db = _db()
+        _seed_core_lead(db)
+        handoffs = []
+        _patch_core_orchestration(monkeypatch, db)
+        async def durable_handoff(**kwargs):
+            handoffs.append(kwargs)
+            return {"status": "enqueued", "durable": "canonical"}
+        monkeypatch.setattr(core, "send_alert_once", durable_handoff)
+        monkeypatch.setattr(core, "generar_respuesta_estructurada", lambda *_args, _failure=failure: (
+            {"intencion": "consulta_general", "respuesta_bot": "respuesta", "datos_extraidos": {}}
+            if _failure == "timeout" else (_ for _ in ()).throw(ValueError("parse_error"))
+        ))
+        asyncio.run(core.process_user_message(
+            "+56911112222", "Quiero verla mañana",
+            telemetry_context={"batch_id": f"handoff-{failure}", "generation_id": f"handoff-{failure}-g1"},
+        ))
+        assert len(handoffs) == 1
+        assert handoffs[0]["criteria"]["visit_urgency"] == "HIGH"
+
+
+def test_F_FULL_CONVERSATION_simulation_resolves_7733_assigns_mariela_and_preserves_visit(monkeypatch):
+    db = _db()
+    lead_id = db["leads"].insert_one({
+        "phone": "+56984276017", "conversation_id": "conv-case-a",
+        "lead_temperature_effective": "HOT", "stage": "NEW", "pipeline_stage": "NEW",
+        "prospecto": {}, "messages": [],
+    }).inserted_id
+    db["universo_cartera_prop360"].insert_many([
+        {"codigo": "7733", "tipo_operacion": {"tipo": "Local Comercial", "arriendo": True},
+         "ubicacion": {"comuna": "Ñuñoa"}, "publicaciones": {"yapo": {"publicaciones": {"A": {"code": "32979177"}}}}},
+        {"codigo": "6186", "tipo_operacion": {"tipo": "Departamento", "venta": True},
+         "ubicacion": {"comuna": "Viña del Mar"}, "publicaciones": {"yapo": {"publicaciones": {"A": {"code": "32147733"}}}}},
+    ])
+    db["usuarios"].insert_one({"_id": "mariela-user", "nombre": "Mariela Arriagada", "is_active": True})
+    db["chatbot_inbound_jobs"].insert_one({"_id": "full-inbound", "kind": "inbound_job",
+                                             "phone": "+56984276017",
+                                             "inbound_provider_message_id": "full-inbound"})
+    _patch_core_orchestration(monkeypatch, db)
+    pending = {"type": "PROPERTY_IDENTIFIER", "status": "none"}
+    def pending_get(_phone, response_type):
+        return dict(pending) if response_type == "PROPERTY_IDENTIFIER" and pending.get("status") == "waiting" else None
+    def pending_set(_phone, _conversation_id, **kwargs):
+        pending.update({"type": "PROPERTY_IDENTIFIER", "status": "waiting", **kwargs})
+        return dict(pending)
+    def pending_resolve(_phone, status):
+        pending["status"] = status
+    monkeypatch.setattr(storage, "get_pending_response", pending_get)
+    monkeypatch.setattr(storage, "set_pending_property_identifier", pending_set)
+    monkeypatch.setattr(storage, "resolve_pending_response", pending_resolve)
+
+    property_7733 = {
+        "codigo": "7733", "tipo_operacion": {"tipo": "Local Comercial", "arriendo": True},
+        "ubicacion": {"comuna": "Ñuñoa"},
+        "publicaciones": {"yapo": {"publicaciones": {"A": {"code": "32979177"}}}},
+        "_link_match": {"operation": "arriendo"},
+    }
+    monkeypatch.setattr(core, "analizar_mensaje_para_link", lambda text, *_args, **_kwargs: (
+        (True, dict(property_7733), "Yapo", "32979177") if "yapo.cl" in text else (False, None, None, None)
+    ))
+    llm_calls = []
+    def fake_llm(_messages, *_args):
+        llm_calls.append(True)
+        return {"intencion": "agendar_visita",
+                "respuesta_bot": "Registré tu preferencia; el ejecutivo confirmará si existe disponibilidad.",
+                "datos_extraidos": {}}
+    monkeypatch.setattr(core, "generar_respuesta_estructurada", fake_llm)
+
+    async def fake_handoff(**kwargs):
+        criteria = kwargs.get("criteria") or {}
+        if str(criteria.get("codigo") or "") == "7733":
+            result = assign_and_enqueue_hot(
+                db, lead=db["leads"].find_one({"_id": lead_id}),
+                recipient_user_id="mariela-user", recipient_phone="+56991788250",
+                recipient_name="Mariela Arriagada", payload={"property_code": "7733"},
+                assigned_at=NOW.replace(tzinfo=timezone.utc),
+                send_after=NOW.replace(tzinfo=timezone.utc), source_event_id="full-inbound",
+            )
+            return {"status": "deduplicated" if result.get("dedup_suppressed") else "enqueued"}
+        return {"status": "enqueued"}
+    monkeypatch.setattr(core, "send_alert_once", fake_handoff)
+
+    first = asyncio.run(core.process_user_message("+56984276017", "Estoy interesado en esta propiedad"))
+    second = asyncio.run(core.process_user_message("+56984276017", "¿Está disponible? ¿Se puede visitar?"))
+    third = asyncio.run(core.process_user_message(
+        "+56984276017", "Puede ser el jueves en la mañana, o desde el 23 en adelante a cualquier horario"
+    ))
+    fourth = asyncio.run(core.process_user_message(
+        "+56984276017", "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177"
+    ))
+
+    final_lead = db["leads"].find_one({"_id": lead_id})
+    assert first
+    assert "identificar" in second.lower() or "enlace" in second.lower()
+    assert "dejo registrada" in third.lower()
+    assert "7733" in fourth or "preferencia" in fourth.lower() or "ejecutivo" in fourth.lower()
+    assert final_lead["prospecto"]["codigo"] == "7733"
+    assert final_lead["prospecto"]["comuna"] == "Ñuñoa"
+    assert final_lead["ejecutivo_asignado"] == "Mariela Arriagada"
+    assert final_lead["prospecto"]["ejecutivo"] == "Mariela Arriagada"
+    assert final_lead["prospecto"]["visit_preference"]["text"] == "jueves en la manana desde el 23 en adelante"
+    assert pending["status"] == "resolved"
+    assert db["crm_notifications_v1"].count_documents({"recipient_user_id": "mariela-user"}) == 1
+    assert db["leads"].count_documents({"prospecto.codigo": "6186"}) == 0
+    assert llm_calls == [True, True]
 
 
 def test_takeover_suppresses_generated_response_and_excludes_it_from_history(monkeypatch):
@@ -454,6 +721,52 @@ def test_critical_handoff_is_awaited_before_core_returns(monkeypatch):
     assert pending == []
 
 
+def test_VISIT_HANDOFF_INDEPENDENT_OF_LLM(monkeypatch):
+    db = _db()
+    _seed_core_lead(db)
+    handoffs = []
+
+    async def durable_handoff(**kwargs):
+        handoffs.append(kwargs)
+        return {"status": "enqueued", "durable": "canonical"}
+
+    _patch_core_orchestration(monkeypatch, db)
+    monkeypatch.setattr(core, "send_alert_once", durable_handoff)
+    monkeypatch.setattr(core, "generar_respuesta_estructurada", lambda *_args: (_ for _ in ()).throw(ValueError("parse_error")))
+
+    asyncio.run(core.process_user_message(
+        "+56911112222", "Quiero verla mañana",
+        telemetry_context={"batch_id": "visit-llm-fail", "generation_id": "visit-llm-fail-g1"},
+    ))
+    assert len(handoffs) == 1
+    assert handoffs[0]["criteria"]["visit_urgency"] == "HIGH"
+
+
+def test_VISIT_DATE_PRESERVED_AFTER_PROPERTY_LINK(monkeypatch):
+    db = _db()
+    _seed_core_lead(db)
+    _patch_core_orchestration(monkeypatch, db)
+    monkeypatch.setattr(core, "analizar_mensaje_para_link", lambda *args, **kwargs: (
+        True,
+        {"codigo": "P-2", "comuna": "Providencia", "operacion": "Venta", "tipo": "Departamento", "precio_uf": 5000},
+        "Yapo",
+        "EXT-2",
+    ))
+    monkeypatch.setattr(core, "generar_respuesta_estructurada", lambda *_args: {
+        "intencion": "agendar_visita", "respuesta_bot": "Registré tu interés.", "datos_extraidos": {},
+    })
+    asyncio.run(core.process_user_message(
+        "+56911112222",
+        "Quiero visitarla el jueves en la mañana o desde el 23 en adelante a cualquier horario",
+        telemetry_context={"batch_id": "visit-link", "generation_id": "visit-link-g1"},
+    ))
+    preference = storage.get_visit_data_state("+56911112222")
+    assert preference["status"] == "offered"
+    saved = storage.obtener_prospecto("+56911112222").get("visit_preference", {})
+    assert "jueves" in saved.get("text", "")
+    assert "23 en adelante" in saved.get("text", "")
+
+
 def test_early_link_response_enters_delivery_state_machine(monkeypatch):
     db = _db()
     _seed_core_lead(db)
@@ -696,3 +1009,98 @@ def test_delivery_unknown_is_reported_as_historical_reconciliation():
     assert health["service_status"] == "healthy"
     assert health["degraded_reasons"] == []
     assert health["historical_reconciliation_pending"]["total"] == 1
+
+
+VALID_STRUCTURED_RESPONSE = '{"intencion":"consulta_general","respuesta_bot":"Respuesta válida.","datos_extraidos":{}}'
+
+
+def test_VALID_STRUCTURED_RESPONSE():
+    parsed = grok_client._parse_structured_response(VALID_STRUCTURED_RESPONSE)
+    assert parsed["intencion"] == "consulta_general"
+    assert parsed["respuesta_bot"] == "Respuesta válida."
+
+
+def test_JSON_CODE_FENCE_RESPONSE():
+    parsed = grok_client._parse_structured_response(f"```json\n{VALID_STRUCTURED_RESPONSE}\n```")
+    assert parsed["respuesta_bot"] == "Respuesta válida."
+
+
+def test_JSON_WITH_WHITESPACE():
+    parsed = grok_client._parse_structured_response(f"  \n {VALID_STRUCTURED_RESPONSE} \n ")
+    assert parsed["datos_extraidos"] == {}
+
+
+def test_RECOVERABLE_JSON_PREFIX_PARSE():
+    parsed = grok_client._parse_structured_response(
+        f"Aquí tienes la respuesta solicitada:\n{VALID_STRUCTURED_RESPONSE}"
+    )
+    assert parsed["intencion"] == "consulta_general"
+
+
+def test_MALFORMED_JSON_CONTROLLED_FALLBACK(caplog):
+    with pytest.raises(grok_client.StructuredResponseParseError):
+        grok_client._parse_structured_response(
+            '{"intencion":"consulta_general","respuesta_bot":"incompleta"'
+        )
+    with caplog.at_level(logging.WARNING, logger="chatbot.grok_client"):
+        grok_client._log_deepseek_parse_error(
+            '{"intencion":"consulta_general",',
+            grok_client.StructuredResponseParseError("json_decode_failed:JSONDecodeError"),
+            {"trace_id": "test-trace"},
+        )
+    assert "[DEEPSEEK_PARSE_ERROR]" in caplog.text
+    assert "test-trace" in caplog.text
+    assert "raw_content_len=" in caplog.text
+    assert "recoverable=no" in caplog.text
+    assert grok_client.normalize_fallback_reason("parse_error") == "deepseek_parse_error"
+
+
+def test_HTTP_200_VALID_CONTENT_DOES_NOT_FALLBACK(monkeypatch):
+    result = grok_client.DeepSeekResult(
+        ok=True, content=VALID_STRUCTURED_RESPONSE, http_status=200, finish_reason="stop"
+    )
+    monkeypatch.setattr(grok_client, "_call_deepseek_safe", lambda *args, **kwargs: result)
+    monkeypatch.setattr(grok_client, "_record_llm_telemetry", lambda **kwargs: None)
+    monkeypatch.setattr(grok_client, "_local_fallback", lambda *args, **kwargs: {"fallback_used": True})
+    parsed = asyncio.run(asyncio.to_thread(
+        grok_client.generar_respuesta_estructurada,
+        [{"role": "user", "content": "hola"}],
+        {},
+        {"trace_id": "test-http-200"},
+    ))
+    assert parsed["fallback_used"] is False
+    assert parsed["response_source"] == "deepseek"
+
+
+def test_DEEPSEEK_PAYLOAD_FOR_STRUCTURED_TURN_sets_json_object_and_thinking_disabled(monkeypatch):
+    captured = {}
+    real_safe_call = grok_client._call_deepseek_safe
+    result = grok_client.DeepSeekResult(
+        ok=True, content=VALID_STRUCTURED_RESPONSE, http_status=200, finish_reason="stop"
+    )
+
+    def fake_call(*_args, **kwargs):
+        captured.update(kwargs)
+        return result
+
+    monkeypatch.setattr(grok_client, "_call_deepseek_safe", fake_call)
+    monkeypatch.setattr(grok_client, "_record_llm_telemetry", lambda **kwargs: None)
+    parsed = grok_client.generar_respuesta_estructurada(
+        [{"role": "user", "content": "hola"}], {}, {"trace_id": "payload-test"}
+    )
+    assert parsed["fallback_used"] is False
+    assert captured["extra_kwargs"] == {"response_format": {"type": "json_object"}}
+    # ``thinking`` is attached by the real safe-call boundary; verify the
+    # source contract here without contacting the provider.
+    assert '"type": "disabled"' in inspect.getsource(real_safe_call)
+
+
+def test_DEEPSEEK_SUCCESS_PARSE_RATE():
+    samples = [
+        VALID_STRUCTURED_RESPONSE,
+        f"```json\n{VALID_STRUCTURED_RESPONSE}\n```",
+        f"  {VALID_STRUCTURED_RESPONSE}  ",
+    ]
+    parsed = [grok_client._parse_structured_response(sample) for sample in samples]
+    assert len(parsed) == 3
+    assert all(item["respuesta_bot"] for item in parsed)

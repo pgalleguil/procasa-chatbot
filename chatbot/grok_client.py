@@ -1,7 +1,10 @@
 # chatbot/grok_client.py
 import json
+import hashlib
 import logging
+import threading
 import time
+from dataclasses import dataclass
 from openai import OpenAI
 from config import Config
 
@@ -10,7 +13,124 @@ logger = logging.getLogger(__name__)
 client = OpenAI(
     api_key=Config.DEEPSEEK_API_KEY,
     base_url=Config.DEEPSEEK_BASE_URL,
+    max_retries=0,
 )
+
+LOCAL_FALLBACK_TEXT = (
+    "Gracias por escribirnos. Recibimos tu consulta, pero en este momento "
+    "nuestro asistente está presentando una demora. Tu mensaje quedó "
+    "registrado para poder continuar con la atención."
+)
+
+
+@dataclass(frozen=True)
+class DeepSeekResult:
+    ok: bool
+    content: str = ""
+    failure_type: str | None = None
+    finish_reason: str | None = None
+    http_status: int | None = None
+    reasoning_len: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    latency_ms: int = 0
+    usage: object | None = None
+
+
+class _DeepSeekCircuitBreaker:
+    """Small process-local breaker; Mongo is not part of provider protection."""
+
+    def __init__(self, failure_threshold=3, cooldown_seconds=60):
+        self.failure_threshold = max(int(failure_threshold), 1)
+        self.cooldown_seconds = max(int(cooldown_seconds), 1)
+        self._lock = threading.Lock()
+        self.state = "CLOSED"
+        self.consecutive_failures = 0
+        self.opened_at = None
+        self._probe_in_flight = False
+
+    def allow(self):
+        now = time.monotonic()
+        with self._lock:
+            if self.state == "OPEN":
+                if now - (self.opened_at or now) < self.cooldown_seconds:
+                    return False
+                if self._probe_in_flight:
+                    return False
+                self.state = "HALF_OPEN"
+                self._probe_in_flight = True
+                self._log()
+            elif self.state == "HALF_OPEN":
+                if self._probe_in_flight:
+                    return False
+                self._probe_in_flight = True
+            return True
+
+    def success(self):
+        with self._lock:
+            self.state = "CLOSED"
+            self.consecutive_failures = 0
+            self.opened_at = None
+            self._probe_in_flight = False
+            self._log()
+
+    def failure(self, failure_type):
+        # Parsing and unexpected application errors are not provider outages.
+        provider_failures = {
+            "timeout", "empty_response", "length_exhausted",
+            "connection_error", "http_5xx", "http_429",
+        }
+        with self._lock:
+            if failure_type not in provider_failures:
+                self._probe_in_flight = False
+                return
+            self.consecutive_failures += 1
+            if self.state == "HALF_OPEN" or self.consecutive_failures >= self.failure_threshold:
+                self.state = "OPEN"
+                self.opened_at = time.monotonic()
+            self._probe_in_flight = False
+            self._log()
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "state": self.state,
+                "consecutive_failures": self.consecutive_failures,
+                "opened_at": self.opened_at,
+            }
+
+    def reset_for_tests(self):
+        with self._lock:
+            self.state = "CLOSED"
+            self.consecutive_failures = 0
+            self.opened_at = None
+            self._probe_in_flight = False
+
+    def _log(self):
+        logger.info(
+            "[DEEPSEEK_CIRCUIT] state=%s consecutive_failures=%s opened_at=%s",
+            self.state, self.consecutive_failures, self.opened_at,
+        )
+
+
+_deepseek_circuit = _DeepSeekCircuitBreaker(
+    failure_threshold=int(getattr(Config, "DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD", 3)),
+    cooldown_seconds=int(getattr(Config, "DEEPSEEK_CIRCUIT_COOLDOWN_SECONDS", 60)),
+)
+
+
+def _runtime_metric(context, name, amount=1):
+    metrics = (context or {}).get("_runtime_metrics")
+    if isinstance(metrics, dict):
+        metrics[name] = int(metrics.get(name, 0) or 0) + amount
+
+
+def _phone_hash(context):
+    value = str((context or {}).get("phone") or "").strip()
+    return (context or {}).get("phone_hash") or (
+        hashlib.sha256(value.encode("utf-8")).hexdigest()[:12] if value else "unknown"
+    )
 
 
 def _usage_value(usage, name, default=0):
@@ -34,6 +154,26 @@ def _record_llm_telemetry(*, model, started_at, usage=None, context=None,
                           status="success", error=None, fallback_used=False,
                           timeout=False, retries=None):
     """Persist provider usage metadata only; never persist prompts or PII."""
+    if context and context.get("shadow_mode"):
+        sink = context.get("usage_sink")
+        if isinstance(sink, dict):
+            prompt_tokens = int(_usage_value(usage, "prompt_tokens", 0) or 0)
+            completion_tokens = int(_usage_value(usage, "completion_tokens", 0) or 0)
+            total_tokens = int(_usage_value(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+            sink.setdefault("calls", []).append({
+                "model": model,
+                "status": status,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "latency_ms": int((time.monotonic() - started_at) * 1000),
+                "error": error,
+                "fallback_used": bool(fallback_used),
+                "timeout": bool(timeout),
+            })
+        # Shadow usage is persisted with its snapshot, not in production
+        # event_log, so it cannot be confused with a customer-facing call.
+        return
     try:
         from .storage import record_observability_event
         prompt_tokens = int(_usage_value(usage, "prompt_tokens", 0) or 0)
@@ -71,35 +211,187 @@ def _is_timeout_error(error: Exception) -> bool:
     return isinstance(error, TimeoutError) or "timeout" in type(error).__name__.casefold() or "timeout" in str(error).casefold()
 
 
+def _deepseek_failure_type(error: Exception) -> str:
+    status_code = getattr(error, "status_code", None)
+    if status_code == 429:
+        return "http_429"
+    if isinstance(status_code, int) and status_code >= 500:
+        return "http_5xx"
+    if isinstance(status_code, int) and status_code >= 400:
+        return "http_4xx"
+    if _is_timeout_error(error):
+        return "timeout"
+    name = type(error).__name__.casefold()
+    if "connection" in name or "connect" in str(error).casefold():
+        return "connection_error"
+    if "responsevalidation" in name or "json" in name or "parse" in name:
+        return "parse_error"
+    return "unexpected_error"
+
+
+def _log_deepseek_response(result: DeepSeekResult, context=None):
+    trace_id = (context or {}).get("trace_id") or (context or {}).get("request_correlation_id") or "unknown"
+    logger.info(
+        "[DEEPSEEK_RESPONSE] trace_id=%s model=%s http_status=%s finish_reason=%s "
+        "content_len=%s reasoning_len=%s prompt_tokens=%s completion_tokens=%s "
+        "total_tokens=%s latency_ms=%s result=%s",
+        trace_id,
+        (context or {}).get("model") or "unknown",
+        result.http_status,
+        result.finish_reason,
+        len(result.content or ""),
+        result.reasoning_len,
+        result.prompt_tokens,
+        result.completion_tokens,
+        result.total_tokens,
+        result.latency_ms,
+        "success" if result.ok else (result.failure_type or "error"),
+    )
+    if not result.ok and result.failure_type != "circuit_open":
+        _runtime_metric(context, "deepseek_failures")
+    if not result.ok and result.failure_type in {"empty_response", "length_exhausted"}:
+        _runtime_metric(context, "deepseek_empty_responses")
+
+
+def _call_deepseek_safe(messages: list, *, model: str, max_tokens: int, timeout: int,
+                        telemetry_context: dict | None = None, extra_kwargs: dict | None = None) -> DeepSeekResult:
+    """Call DeepSeek once, with no SDK retries and a typed terminal result."""
+    context = dict(telemetry_context or {})
+    context["model"] = model
+    started_at = time.monotonic()
+    if not _deepseek_circuit.allow():
+        result = DeepSeekResult(ok=False, failure_type="circuit_open", latency_ms=0)
+        _log_deepseek_response(result, context)
+        _runtime_metric(context, "deepseek_circuit_open")
+        return result
+
+    _runtime_metric(context, "deepseek_inflight")
+    try:
+        kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": Config.DEEPSEEK_TEMPERATURE,
+            "max_tokens": max_tokens,
+            "timeout": timeout,
+            "stream": False,
+            "extra_body": {"thinking": {"type": "disabled"}},
+        }
+        if extra_kwargs:
+            kwargs.update(extra_kwargs)
+        response = client.chat.completions.create(**kwargs)
+        choices = getattr(response, "choices", None) or []
+        choice = choices[0] if choices else None
+        message = getattr(choice, "message", None) if choice else None
+        content = getattr(message, "content", None) if message else None
+        content = str(content or "").strip()
+        reasoning_content = getattr(message, "reasoning_content", None) if message else None
+        finish_reason = getattr(choice, "finish_reason", None) if choice else None
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(_usage_value(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(_usage_value(usage, "completion_tokens", 0) or 0)
+        total_tokens = int(_usage_value(usage, "total_tokens", prompt_tokens + completion_tokens) or 0)
+        result = DeepSeekResult(
+            ok=bool(content),
+            content=content,
+            failure_type=None if content else ("length_exhausted" if finish_reason == "length" else "empty_response"),
+            finish_reason=finish_reason,
+            http_status=200,
+            reasoning_len=len(str(reasoning_content or "")),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            usage=usage,
+        )
+        if result.ok:
+            _deepseek_circuit.success()
+        else:
+            logger.warning(
+                "[DEEPSEEK_EMPTY_RESPONSE] trace_id=%s finish_reason=%s reasoning_len=%s completion_tokens=%s",
+                context.get("trace_id") or context.get("request_correlation_id") or "unknown",
+                result.finish_reason,
+                result.reasoning_len,
+                result.completion_tokens,
+            )
+            _deepseek_circuit.failure(result.failure_type)
+        _log_deepseek_response(result, context)
+        return result
+    except Exception as error:
+        failure_type = _deepseek_failure_type(error)
+        result = DeepSeekResult(
+            ok=False,
+            failure_type=failure_type,
+            http_status=getattr(error, "status_code", None),
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+        )
+        _deepseek_circuit.failure(failure_type)
+        _log_deepseek_response(result, context)
+        logger.warning("[DEEPSEEK_CALL_FAILURE] trace_id=%s failure_type=%s error=%s",
+                       context.get("trace_id") or context.get("request_correlation_id") or "unknown",
+                       failure_type, type(error).__name__)
+        return result
+    finally:
+        _runtime_metric(context, "deepseek_inflight", -1)
+
+
+def _local_fallback(telemetry_context=None, reason="provider_failure"):
+    context = telemetry_context or {}
+    _runtime_metric(context, "fallback_sent")
+    logger.warning(
+        "[CHATBOT_LOCAL_FALLBACK] trace_id=%s reason=%s phone_hash=%s",
+        context.get("trace_id") or context.get("request_correlation_id") or "unknown",
+        reason,
+        _phone_hash(context),
+    )
+    return {
+        "intencion": "consulta_general",
+        "datos_extraidos": {},
+        "respuesta_bot": LOCAL_FALLBACK_TEXT,
+        "fallback_used": True,
+        "fallback_reason": reason,
+        "response_source": "local_fallback",
+    }
+
+
+def get_deepseek_circuit_snapshot():
+    return _deepseek_circuit.snapshot()
+
+
+def _reset_deepseek_circuit_for_tests():
+    _deepseek_circuit.reset_for_tests()
+
+
 def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context: dict | None = None,
                       fallback_used: bool = False) -> str:
     started_at = time.monotonic()
-    try:
-        print(f"[DEEPSEEK] Enviando {len(messages)} mensajes al modelo...")
-        response = client.chat.completions.create(
-            model=Config.DEEPSEEK_MODEL_FAST,
-            messages=messages,
-            temperature=Config.DEEPSEEK_TEMPERATURE,
-            max_tokens=Config.DEEPSEEK_MAX_TOKENS_FAST,
-            timeout=Config.DEEPSEEK_TIMEOUT_FAST,
-        )
-        contenido = response.choices[0].message.content.strip()
+    result = _call_deepseek_safe(
+        messages,
+        model=Config.DEEPSEEK_MODEL_FAST,
+        max_tokens=Config.DEEPSEEK_MAX_TOKENS_FAST,
+        timeout=Config.DEEPSEEK_TIMEOUT_FAST,
+        telemetry_context=telemetry_context,
+    )
+    if result.ok:
         _record_llm_telemetry(
             model=Config.DEEPSEEK_MODEL_FAST, started_at=started_at,
-            usage=getattr(response, "usage", None), context=telemetry_context,
+            usage=result.usage, context=telemetry_context,
             fallback_used=fallback_used,
         )
-        print("[DEEPSEEK] Respuesta recibida correctamente")
-        return contenido
-    except Exception as e:
-        _record_llm_telemetry(
-            model=Config.DEEPSEEK_MODEL_FAST, started_at=started_at,
-            context=telemetry_context, status="error", error=type(e).__name__,
-            fallback_used=fallback_used,
-            timeout=_is_timeout_error(e),
-        )
-        print(f"[ERROR DEEPSEEK] Fallo en la API: {e}")
-        return "Lo siento, tengo un problema técnico en este momento. En un segundo vuelvo a estar disponible."
+        return result.content
+    _record_llm_telemetry(
+        model=Config.DEEPSEEK_MODEL_FAST, started_at=started_at,
+        context=telemetry_context, status="error", error=result.failure_type,
+        fallback_used=True, timeout=result.failure_type == "timeout",
+    )
+    _runtime_metric(telemetry_context, "fallback_sent")
+    logger.warning(
+        "[CHATBOT_LOCAL_FALLBACK] trace_id=%s reason=%s phone_hash=%s",
+        (telemetry_context or {}).get("trace_id")
+        or (telemetry_context or {}).get("request_correlation_id") or "unknown",
+        result.failure_type or "provider_failure",
+        _phone_hash(telemetry_context),
+    )
+    return LOCAL_FALLBACK_TEXT
 
 
 def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
@@ -227,106 +519,72 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         logger.info("[DEEPSEEK PROPERTY_PAYLOAD] no_property_block_in_prompt")
 
     started_at = time.monotonic()
-    try:
-        print(f"[DEEPSEEK] Generando respuesta estructurada ({len(structured_messages)} msgs)...")
-        logger.info(
-            "[DEEPSEEK API PAYLOAD] model=%s max_tokens=%s temperature=%s timeout=%s stream=False response_format=%s",
-            Config.DEEPSEEK_MODEL_REASONER, Config.DEEPSEEK_MAX_TOKENS_REASONER, Config.DEEPSEEK_TEMPERATURE, Config.DEEPSEEK_TIMEOUT_REASONER, Config.DEEPSEEK_RESPONSE_FORMAT
-        )
-        
-        kwargs = {}
-        if Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
-            kwargs["response_format"] = {"type": "json_object"}
+    logger.info(
+        "[DEEPSEEK API PAYLOAD] model=%s max_tokens=%s temperature=%s timeout=%s stream=False response_format=%s thinking=disabled",
+        Config.DEEPSEEK_MODEL_REASONER, Config.DEEPSEEK_MAX_TOKENS_REASONER,
+        Config.DEEPSEEK_TEMPERATURE, Config.DEEPSEEK_TIMEOUT_REASONER,
+        Config.DEEPSEEK_RESPONSE_FORMAT,
+    )
+    kwargs = {}
+    if Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
+        kwargs["response_format"] = {"type": "json_object"}
 
-        response = client.chat.completions.create(
-            model=Config.DEEPSEEK_MODEL_REASONER,
-            messages=structured_messages,
-            temperature=Config.DEEPSEEK_TEMPERATURE,
-            max_tokens=Config.DEEPSEEK_MAX_TOKENS_REASONER,
-            timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
-            **kwargs
-        )
-
-        msg = response.choices[0].message if getattr(response, "choices", None) else None
-
-        raw_content = response.choices[0].message.content if getattr(response, "choices", None) else None
-        
-        finish_reason = getattr(response.choices[0], "finish_reason", "unknown") if getattr(response, "choices", None) else "unknown"
-        usage = getattr(response, "usage", None)
-        completion_details = getattr(usage, "completion_tokens_details", None) if usage else None
-        reasoning_tokens_used = getattr(completion_details, "reasoning_tokens", 0) if completion_details else 0
-        content_final = raw_content
-        
-        logger.info(
-            "[DEEPSEEK_USAGE] finish=%s prompt=%s completion=%s reasoning=%s content_len=%s",
-            finish_reason,
-            getattr(usage, "prompt_tokens", 0) if usage else 0,
-            getattr(usage, "completion_tokens", 0) if usage else 0,
-            reasoning_tokens_used,
-            len(content_final or "")
-        )
-
-        logger.info(
-            "[DEEPSEEK_CONTENT_SIZE] finish=%s raw_len=%s",
-            finish_reason,
-            len(raw_content or "")
-        )
-
-        contenido_json_str = (raw_content or "").strip()
-
-        if prospecto_actual and bloque_propiedad and raw_content:
-            contenido_lower = raw_content.lower()
-            mentions = {
-                "codigo": str(prospecto_actual.get("codigo", "")).lower() in contenido_lower,
-                "comuna": str(prospecto_actual.get("comuna", "")).lower() in contenido_lower if prospecto_actual.get("comuna") else False,
-                "tipo": str(prospecto_actual.get("tipo", "")).lower() in contenido_lower if prospecto_actual.get("tipo") else False,
-                "precio": str(prospecto_actual.get("precio_uf", "")).lower() in contenido_lower if prospecto_actual.get("precio_uf") else False,
-            }
-            logger.info("[DEEPSEEK PROPERTY_MENTION] %s", mentions)
-        if contenido_json_str.startswith("```json"):
-            contenido_json_str = contenido_json_str[7:-3].strip()
-        elif contenido_json_str.startswith("```"):
-            contenido_json_str = contenido_json_str[3:-3].strip()
-        if not contenido_json_str.startswith("{"):
-            ini = contenido_json_str.find("{")
-            fin = contenido_json_str.rfind("}")
-            if ini != -1 and fin != -1 and fin > ini:
-                contenido_json_str = contenido_json_str[ini : fin + 1].strip()
-
-        if not contenido_json_str:
-            raise ValueError("Respuesta vacia del modelo")
-        datos = json.loads(contenido_json_str)
-
+    result = _call_deepseek_safe(
+        structured_messages,
+        model=Config.DEEPSEEK_MODEL_REASONER,
+        max_tokens=Config.DEEPSEEK_MAX_TOKENS_REASONER,
+        timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
+        telemetry_context=telemetry_context,
+        extra_kwargs=kwargs,
+    )
+    if not result.ok:
         _record_llm_telemetry(
             model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
-            usage=usage, context=telemetry_context,
+            usage=result.usage, context=telemetry_context, status="error",
+            error=result.failure_type, fallback_used=True,
+            timeout=result.failure_type == "timeout",
         )
+        return _local_fallback(telemetry_context, result.failure_type or "provider_failure")
 
-        return {
-            "intencion": datos.get("intencion", "consulta_general").lower().strip(),
-            "datos_extraidos": datos.get("datos_extraidos", {}),
-            "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
+    raw_content = result.content
+    contenido_json_str = raw_content.strip()
+    if prospecto_actual and bloque_propiedad and raw_content:
+        contenido_lower = raw_content.lower()
+        mentions = {
+            "codigo": str(prospecto_actual.get("codigo", "")).lower() in contenido_lower,
+            "comuna": str(prospecto_actual.get("comuna", "")).lower() in contenido_lower if prospecto_actual.get("comuna") else False,
+            "tipo": str(prospecto_actual.get("tipo", "")).lower() in contenido_lower if prospecto_actual.get("tipo") else False,
+            "precio": str(prospecto_actual.get("precio_uf", "")).lower() in contenido_lower if prospecto_actual.get("precio_uf") else False,
         }
-    except Exception as e:
+        logger.info("[DEEPSEEK PROPERTY_MENTION] %s", mentions)
+    if contenido_json_str.startswith("```json"):
+        contenido_json_str = contenido_json_str[7:-3].strip()
+    elif contenido_json_str.startswith("```"):
+        contenido_json_str = contenido_json_str[3:-3].strip()
+    if not contenido_json_str.startswith("{"):
+        ini = contenido_json_str.find("{")
+        fin = contenido_json_str.rfind("}")
+        if ini != -1 and fin != -1 and fin > ini:
+            contenido_json_str = contenido_json_str[ini : fin + 1].strip()
+
+    try:
+        datos = json.loads(contenido_json_str)
+    except (TypeError, ValueError, json.JSONDecodeError):
         _record_llm_telemetry(
             model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
-            context=telemetry_context, status="error", error=type(e).__name__,
-            timeout=_is_timeout_error(e),
+            usage=result.usage, context=telemetry_context, status="error",
+            error="parse_error", fallback_used=True,
         )
-        print(f"[ERROR DEEPSEEK] {e}")
-        try:
-            texto = generar_respuesta(
-                messages, tipo="prospecto", telemetry_context=telemetry_context,
-                fallback_used=True,
-            )
-            return {
-                "intencion": "consulta_general",
-                "datos_extraidos": {},
-                "respuesta_bot": texto or "Disculpa, tuve un problema momentáneo. ¿Me repites tu consulta?",
-            }
-        except Exception:
-            return {
-                "intencion": "consulta_general",
-                "datos_extraidos": {},
-                "respuesta_bot": "Disculpa, tengo un problema técnico momentáneo. ¿Me puedes repetir tu consulta?",
-            }
+        return _local_fallback(telemetry_context, "parse_error")
+
+    _record_llm_telemetry(
+        model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
+        usage=result.usage, context=telemetry_context,
+    )
+    return {
+        "intencion": str(datos.get("intencion", "consulta_general")).lower().strip(),
+        "datos_extraidos": datos.get("datos_extraidos", {}),
+        "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
+        "fallback_used": False,
+        "response_source": "deepseek",
+    }

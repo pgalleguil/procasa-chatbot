@@ -188,6 +188,16 @@ class Config:
     CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))
     CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "60"))
     CHATBOT_BATCH_MAX_REGENERATIONS = int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2"))
+    # Bounded concurrency keeps one slow provider call from monopolizing the
+    # chatbot worker while the durable batch/lease state preserves ordering per
+    # conversation.  The queue clamps this value to a safe positive integer.
+    CHATBOT_QUEUE_CONCURRENCY = max(int(os.getenv("CHATBOT_QUEUE_CONCURRENCY", "3")), 1)
+    DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD = max(
+        int(os.getenv("DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD") or "3"), 1
+    )
+    DEEPSEEK_CIRCUIT_COOLDOWN_SECONDS = max(
+        int(os.getenv("DEEPSEEK_CIRCUIT_COOLDOWN_SECONDS") or "60"), 1
+    )
 
     # === Phase 2 Management Enforcement Cutover ===
     # Cycles assigned before this timestamp are exempt from the new SLA policy.
@@ -322,10 +332,16 @@ class Config:
     DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE") or os.getenv("GROK_TEMPERATURE") or "0.1")
     
     DEEPSEEK_MAX_TOKENS_FAST = int(os.getenv("DEEPSEEK_MAX_TOKENS_FAST") or "1500")
-    DEEPSEEK_TIMEOUT_FAST = int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "30")
+    # Provider calls must be bounded even if an old deployment environment
+    # still contains the former 30/60 second values.  The external provider
+    # timeout is the primary safety barrier; the queue has a separate lease.
+    DEEPSEEK_TIMEOUT_FAST = max(1, min(int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "25"), 25))
     
     DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER") or "4096")
-    DEEPSEEK_TIMEOUT_REASONER = int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or "60")
+    DEEPSEEK_TIMEOUT_REASONER = max(
+        1,
+        min(int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or str(DEEPSEEK_TIMEOUT_FAST)), 25),
+    )
     
     DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 

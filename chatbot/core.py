@@ -1291,6 +1291,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "rental_docs_readiness": {"ready", "partially_ready", "not_ready", "unknown"},
     }
 
+    fallback_used = False
+    fallback_reason = None
     try:
         llm_context = {
             "trace_id": trace_id,
@@ -1345,6 +1347,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
         respuesta = "Disculpa, tengo un problema técnico momentáneo."
+        fallback_used = True
+        fallback_reason = "core_error"
 
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
@@ -1633,6 +1637,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
+    metadata_tipo["response_source"] = "local_fallback" if fallback_used else "deepseek"
+    if fallback_used:
+        metadata_tipo["response_reason"] = fallback_reason or "llm_error"
     logger.info(
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")

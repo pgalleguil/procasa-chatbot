@@ -7,6 +7,12 @@ env_path = os.path.join(os.path.dirname(__file__), ".env")
 load_dotenv(dotenv_path=env_path)
 
 class Config:
+    # === Entorno de ejecución ===
+    # Render expone RENDER/RENDER_SERVICE_ID; APP_ENV permite declarar el
+    # entorno explícitamente en otros despliegues y en pruebas.
+    APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).strip().lower()
+    IS_PRODUCTION = APP_ENV in {"production", "prod", "live"} or os.getenv("RENDER", "").strip().lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID"))
+
     # === Claves externas ===
     XAI_API_KEY = os.getenv("XAI_API_KEY")
     DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", XAI_API_KEY)
@@ -149,6 +155,19 @@ class Config:
     CRM_INACTIVE_NUDGE_ENABLED = os.getenv("CRM_INACTIVE_NUDGE_ENABLED", "false").lower() == "true"
     CRM_BASE_URL = os.getenv("CRM_BASE_URL", "https://procasa-chatbot-yr8d.onrender.com")
 
+    # === Aprendizaje prospectivo global por teléfono ===
+    # Un único kill switch controla lookup, identidad, auto-match y gate de
+    # asignación. No mantener flags secundarios evita estados incoherentes.
+    PHONE_LEARNING_ENABLED = os.getenv("PHONE_LEARNING_ENABLED", "false").strip().lower() == "true"
+    # Marcador histórico, no es un flag operativo.
+    PHONE_LEARNING_CP_ONLY = False
+    PHONE_LEARNING_ACTIVATED_AT = os.getenv(
+        "PHONE_LEARNING_ACTIVATED_AT", "2026-09-11T00:20:47.201Z"
+    ).strip()
+    PHONE_LEARNING_PRODUCTION_ACTIVATED_AT = os.getenv(
+        "PHONE_LEARNING_PRODUCTION_ACTIVATED_AT", ""
+    ).strip()
+
     # Public visual-review switch for the aggregated, read-only leads dashboard.
     # Fail closed: enabling it must be an explicit Render environment setting.
     PUBLIC_LEADS_DASHBOARD_ENABLED = os.getenv(
@@ -160,6 +179,16 @@ class Config:
     CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))
     CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "60"))
     CHATBOT_BATCH_MAX_REGENERATIONS = int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2"))
+    # Bounded concurrency keeps one slow provider call from monopolizing the
+    # chatbot worker while the durable batch/lease state preserves ordering per
+    # conversation.  The queue clamps this value to a safe positive integer.
+    CHATBOT_QUEUE_CONCURRENCY = max(int(os.getenv("CHATBOT_QUEUE_CONCURRENCY", "3")), 1)
+    DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD = max(
+        int(os.getenv("DEEPSEEK_CIRCUIT_FAILURE_THRESHOLD") or "3"), 1
+    )
+    DEEPSEEK_CIRCUIT_COOLDOWN_SECONDS = max(
+        int(os.getenv("DEEPSEEK_CIRCUIT_COOLDOWN_SECONDS") or "60"), 1
+    )
 
     # === Phase 2 Management Enforcement Cutover ===
     # Cycles assigned before this timestamp are exempt from the new SLA policy.
@@ -263,23 +292,33 @@ class Config:
     TEST_PHONE = os.getenv("TEST_PHONE")
 
     # === Modelos DeepSeek / compatibilidad heredada ===
-    DEEPSEEK_MODEL_FAST = os.getenv("DEEPSEEK_MODEL_FAST") or os.getenv("DEEPSEEK_MODEL") or "deepseek-v4-flash"
-    DEEPSEEK_MODEL_REASONER = os.getenv("DEEPSEEK_MODEL_REASONER") or DEEPSEEK_MODEL_FAST
+    # DeepSeek V4 Flash es el modelo único de producción. No permitir que un
+    # DEEPSEEK_MODEL heredado del entorno vuelva a activar V4 Pro y dispare el
+    # coste de la API; load_dotenv no reemplaza variables ya exportadas.
+    DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash"
+    DEEPSEEK_MODEL_FAST = DEEPSEEK_FLASH_MODEL
+    DEEPSEEK_MODEL_REASONER = DEEPSEEK_FLASH_MODEL
     DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL") or os.getenv("GROK_BASE_URL") or "https://api.deepseek.com"
     DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE") or os.getenv("GROK_TEMPERATURE") or "0.1")
     
     DEEPSEEK_MAX_TOKENS_FAST = int(os.getenv("DEEPSEEK_MAX_TOKENS_FAST") or "1500")
-    DEEPSEEK_TIMEOUT_FAST = int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "30")
+    # Provider calls must be bounded even if an old deployment environment
+    # still contains the former 30/60 second values.  The external provider
+    # timeout is the primary safety barrier; the queue has a separate lease.
+    DEEPSEEK_TIMEOUT_FAST = max(1, min(int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "22"), 25))
     
     DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER") or "4096")
-    DEEPSEEK_TIMEOUT_REASONER = int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or "60")
+    DEEPSEEK_TIMEOUT_REASONER = max(
+        1,
+        min(int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or str(DEEPSEEK_TIMEOUT_FAST)), 25),
+    )
     
     DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
     # === DeepSeek Adjudicator (scraper classification) ===
-    # NOTA: No hereda de DEEPSEEK_MODEL ni DEEPSEEK_MODEL_FAST.
-    # El adjudicador debe ser siempre deepseek-v4-flash, independientemente del modelo del chatbot.
-    DEEPSEEK_ADJUDICATOR_MODEL = os.getenv("DEEPSEEK_ADJUDICATOR_MODEL", "deepseek-v4-flash")
+    # El adjudicador también debe usar siempre Flash, independientemente de
+    # cualquier variable heredada del chatbot o del despliegue.
+    DEEPSEEK_ADJUDICATOR_MODEL = DEEPSEEK_FLASH_MODEL
     DEEPSEEK_ADJUDICATOR_ENABLED = os.getenv("DEEPSEEK_ADJUDICATOR_ENABLED", "false").lower() == "true"
     DEEPSEEK_ADJUDICATOR_TIMEOUT = int(os.getenv("DEEPSEEK_ADJUDICATOR_TIMEOUT") or "12")
     DEEPSEEK_ADJUDICATOR_MAX_CALLS = int(os.getenv("DEEPSEEK_ADJUDICATOR_MAX_CALLS") or "50")
@@ -296,14 +335,50 @@ class Config:
     def get_captacion_collection(db):
         return db[Config.CAPTACION_COLLECTION_NAME]
 
+    # === Seguimientos de captación: configuración criptográfica dedicada ===
+    # No existe fallback intencionalmente. Los tokens nuevos deben detenerse
+    # si la clave dedicada no fue inyectada por el entorno.
+    FOLLOWUP_TOKEN_SECRET = os.getenv("FOLLOWUP_TOKEN_SECRET")
+    FOLLOWUP_V1_COMPAT_ENABLED = os.getenv("FOLLOWUP_V1_COMPAT_ENABLED", "true").strip().lower() == "true"
+    FOLLOWUP_TOKEN_MIN_SECRET_LENGTH = 32
+
+    @classmethod
+    def require_followup_token_secret(cls, *, version: int = 2) -> str:
+        """Return the secret for one explicit token version, never a fallback."""
+        if version == 2:
+            value = str(cls.FOLLOWUP_TOKEN_SECRET or "").strip()
+            if not value or len(value) < cls.FOLLOWUP_TOKEN_MIN_SECRET_LENGTH:
+                raise RuntimeError("FOLLOWUP_TOKEN_SECRET is missing or too short")
+            return value
+        if version == 1 and cls.FOLLOWUP_V1_COMPAT_ENABLED:
+            # v1 is legacy-only and is selected by its payload version. It is
+            # never used to issue new tokens.
+            value = str(cls.SECRET_KEY or "").strip()
+            if value:
+                return value
+        raise RuntimeError("followup_token_legacy_compatibility_unavailable")
+
+    @classmethod
+    def validate_followup_token_configuration(cls) -> dict:
+        """Validate startup prerequisites without exposing any secret value."""
+        try:
+            cls.require_followup_token_secret(version=2)
+        except RuntimeError as exc:
+            if cls.IS_PRODUCTION:
+                raise RuntimeError(
+                    "FOLLOWUP_TOKEN_SECRET must be configured before production startup"
+                ) from exc
+            return {"valid": False, "reason": "followup_token_secret_missing", "production": False}
+        return {"valid": True, "version": 2, "production": bool(cls.IS_PRODUCTION)}
+
     @staticmethod
     def validate_adjudicator_model() -> None:
         """Valida que el modelo del adjudicador sea deepseek-v4-flash.
         Debe llamarse solo al inicializar el scraper/clasificador, NO al importar config."""
         model = Config.DEEPSEEK_ADJUDICATOR_MODEL
-        if "pro" in model.lower():
+        if model != Config.DEEPSEEK_FLASH_MODEL:
             raise RuntimeError(
-                f"DeepSeek Pro model '{model}' is not allowed for Yapo adjudicator. "
+                f"DeepSeek model '{model}' is not allowed for Yapo adjudicator. "
                 "Set DEEPSEEK_ADJUDICATOR_MODEL=deepseek-v4-flash in .env"
             )
 

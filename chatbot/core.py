@@ -3,6 +3,7 @@ import re
 import uuid
 import json
 import asyncio
+import time
 from datetime import datetime
 
 from config import Config
@@ -26,6 +27,26 @@ from .storage import (
 )
 from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
+from .conversation_observability import record_conversation_event
+from .phase3_shadow import (
+    redact_shadow_text,
+    schedule_shadow_turn,
+)
+from .phase3_conversation import (
+    POLICY_VERSION as CONVERSATION_POLICY_VERSION,
+    PROMPT_VERSION as CONVERSATION_PROMPT_VERSION,
+    build_conversation_state,
+    build_executive_summary,
+    build_policy_instruction,
+    qualification_question,
+    normalize_financing_status,
+    normalize_rental_docs_readiness,
+    safe_information_gap,
+    select_next_best_action,
+    validate_response,
+    repair_response,
+    update_fallback_streak,
+)
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_codigo_toctoc_compuesto, extraer_contexto_urls, URL_RE
@@ -65,6 +86,10 @@ from .conversation_policy import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Phase 3 remains shadow-only until an explicit rollout decision changes this
+# flag. The production response path must not consume Phase 3 output.
+PHASE3_LIVE_ENABLED = False
 
 # ==========================================
 
@@ -311,14 +336,41 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         return await asyncio.to_thread(fn, *args, **kwargs)
 
     trace_id = str(uuid.uuid4())[:8]
+    turn_started_at = time.perf_counter()
     original_message = message
     msg_lower = original_message.lower()
     logger.info(f"[LINK_TRACE] trace={trace_id} phone={phone} inicio_proceso_mensaje")
     
+    # Resolve the stable conversation before persisting the turn.  The value
+    # is additive observability; it does not alter the commercial flow.
+    conversation_id = await _run_sync(
+        ensure_conversation_id, phone,
+        (telemetry_context or {}).get("lead_id"),
+        (telemetry_context or {}).get("conversation_id"),
+    )
+
     # 1. Guardar mensaje (con el rol correcto)
-    # Si viene de 'me' (del dueño del bot), lo guardamos como assistant/human
+    # Si viene de 'me' (del dueño del bot), lo guardamos as human_agent.
     role = "assistant" if is_from_me else "user"
-    await _run_sync(guardar_mensaje, phone, role, original_message)
+    inbound_metadata = {
+        "conversation_id": conversation_id,
+        "lead_id": (telemetry_context or {}).get("lead_id"),
+        "actor_type": "human_agent" if is_from_me else "customer",
+        "actor_id": (telemetry_context or {}).get("actor_id") if is_from_me else "provider",
+        "provider_message_id": (telemetry_context or {}).get("provider_message_id"),
+        "source_message_ids": (telemetry_context or {}).get("source_message_ids"),
+        "property_contexts": (telemetry_context or {}).get("property_contexts"),
+    }
+    property_contexts = inbound_metadata.get("property_contexts") or []
+    if len(property_contexts) == 1:
+        inbound_metadata.update({
+            "property_code": property_contexts[0].get("property_code"),
+            "operation": property_contexts[0].get("operation"),
+            "property_context_source": "lead_snapshot",
+            "property_context_confidence": 0.8,
+        })
+    await _run_sync(guardar_mensaje, phone, role, original_message, inbound_metadata,
+                    (telemetry_context or {}).get("lead_id"))
 
     # === LÓGICA DE PAUSA (INTERCEPCIÓN) ===
     from .storage import obtener_bot_pausado, toggle_bot_pausado
@@ -354,6 +406,17 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if lead_doc_full.get("conversation_status") == "BLOCKED_EXTERNAL_BROKER":
         logger.info("[CORREDOR] Conversación bloqueada; inbound persistido sin respuesta automática.")
         return ""
+    if lead_doc_full.get("conversation_owner") == "human" or lead_doc_full.get("human_active") is True:
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="bot_response_suppressed_human_takeover",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            actor_type="system", actor_id="conversation_policy",
+            metadata={"reason": "human_ownership_active"},
+        )
+        logger.info("[PHASE3] ownership=human; bot response suppressed")
+        return ""
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {
             "conversation_status": "STOPPED_BY_CLIENT",
@@ -364,13 +427,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         }})
         return ""
     prospecto_actual = lead_doc_full.get("prospecto", {})
-    conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
-    if not conversation_id:
-        conversation_id = await _run_sync(ensure_conversation_id, phone)
+    conversation_id = lead_doc_full.get("conversation_id") or conversation_id
+
+    production_message_id = None
 
     async def _persist_generated_outbound(response: str, metadata: dict, *, intent: str | None = None,
                                           lead_doc: dict | None = None) -> str:
         """Persist every queue-bound response in the durable delivery state machine."""
+        nonlocal production_message_id
         generation_id = (telemetry_context or {}).get("generation_id") or str(uuid.uuid4())
         batch_id = (telemetry_context or {}).get("batch_id")
         effective_metadata = {
@@ -391,7 +455,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             })
         except Exception as ex_log:
             logger.error(f"Error logging bot event: {ex_log}")
-        await _run_sync(guardar_mensaje, phone, "assistant", response, effective_metadata)
+        effective_metadata.update({
+            "conversation_id": conversation_id,
+            "lead_id": lead_id,
+            "actor_type": "bot",
+            "actor_id": "chatbot",
+            "property_code": (lead.get("prospecto") or {}).get("codigo"),
+            "operation": (lead.get("prospecto") or {}).get("operacion"),
+        })
+        saved_message = await _run_sync(guardar_mensaje, phone, "assistant", response, effective_metadata, lead_id)
+        production_message_id = (saved_message or {}).get("message_id")
         await _run_sync(record_observability_event, "RESPONSE_GENERATED", {
             "conversation_id": conversation_id,
             "lead_id": lead_id,
@@ -486,6 +559,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "property_id": prospecto_actual.get("codigo"),
             "preference": visit_preference,
         })
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="visit_preference_captured",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            property_code=prospecto_actual.get("codigo"),
+            operation=prospecto_actual.get("operacion"), actor_type="customer",
+            actor_id="customer", metadata={"preference": visit_preference},
+        )
     pending_visit_data_reply = classify_visit_data_reply(
         original_message,
         offer_pending=visit_data_state.get("status") in {"offered", "accepted"},
@@ -693,6 +775,32 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
             "fields": sorted(spontaneous_signals),
         })
+        for field, raw_value in spontaneous_signals.items():
+            if field not in {"financing_status", "rental_docs_readiness"}:
+                continue
+            normalized_value = (
+                normalize_financing_status(raw_value)
+                if field == "financing_status"
+                else normalize_rental_docs_readiness(raw_value)
+            )
+            await _run_sync(
+                record_conversation_event, db,
+                event_type="readiness_updated",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                property_code=prospecto_actual.get("codigo"),
+                operation=prospecto_actual.get("operacion"), actor_type="customer",
+                actor_id="customer", metadata={"field": field, "value": normalized_value},
+            )
+            await _run_sync(
+                record_conversation_event, db,
+                event_type="qualification_answered",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                property_code=prospecto_actual.get("codigo"),
+                operation=prospecto_actual.get("operacion"), actor_type="customer",
+                actor_id="customer", metadata={"field": field, "value": normalized_value},
+            )
 
     if pending_visit_data_reply in {"accepted", "declined"}:
         await _run_sync(record_observability_event, {
@@ -711,6 +819,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     codigo_externo = None  # Solo para trazabilidad, no para routing si no hay match
     codigo_detectado = None
     link_operation = None
+    property_resolution_started_at = time.perf_counter()
 
     logger.info(
         f"[PROPERTY_TRACE] origen=PRE_LINK_RESOLUTION trace={trace_id} phone={phone} "
@@ -971,9 +1080,209 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
         logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
 
+    property_resolution_ms = round(
+        (time.perf_counter() - property_resolution_started_at) * 1000, 1
+    )
+
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK
     # =======================================================
+    # Phase 3 policy is resolved before generation.  The LLM receives this
+    # decision as context; it does not choose commercial strategy by itself.
+    prospecto_actual = await _run_sync(obtener_prospecto, phone) or prospecto_actual
+    phase3_property_code = str(codigo_detectado or prospecto_actual.get("codigo") or "") or None
+    phase3_operation = get_prop_operation(propiedad).get("operacion") if propiedad else prospecto_actual.get("operacion")
+    phase3_property_context = {
+        "property_id": phase3_property_code,
+        "property_code": phase3_property_code,
+        "operation": phase3_operation,
+        "property_context_source": "property_lookup" if propiedad else "lead_snapshot",
+        "property_context_confidence": 0.95 if propiedad else 0.65,
+    }
+    previous_phase3_code = str((lead_doc_full.get("prospecto") or {}).get("codigo") or "") or None
+    property_context_changed = bool(
+        phase3_property_code and previous_phase3_code and
+        phase3_property_code != previous_phase3_code
+    )
+    phase3_lead_snapshot = dict(lead_doc_full)
+    phase3_lead_snapshot["prospecto"] = dict(prospecto_actual)
+    phase3_events = list(await _run_sync(lambda: db["conversation_events"].find(
+        {"conversation_id": conversation_id}
+    ).sort("timestamp", 1)))
+    phase3_state_started_at = time.perf_counter()
+    phase3_state = build_conversation_state(
+        phase3_lead_snapshot, historial, events=phase3_events,
+        property_context=phase3_property_context,
+    )
+    phase3_state_ms = round((time.perf_counter() - phase3_state_started_at) * 1000, 1)
+    phase3_facts = {}
+    phase3_fact_sources = {}
+    phase3_facts_captured_at = datetime.now(CHILE_TZ).isoformat()
+    phase3_property_capture_started_at = time.perf_counter()
+    if propiedad:
+        for key in (
+            "codigo", "comuna", "tipo", "operacion", "precio_uf", "precio_clp",
+            "gastos_comunes", "dormitorios", "banos", "superficie_util",
+            "estacionamientos", "direccion", "disponibilidad",
+        ):
+            if propiedad.get(key) not in (None, ""):
+                phase3_facts[key] = propiedad.get(key)
+                phase3_fact_sources[key] = {
+                    "source": "PROPERTY_RECORD",
+                    "evidence_id": str(propiedad.get("codigo") or phase3_property_code or "property_lookup"),
+                    "captured_at": phase3_facts_captured_at,
+                }
+    for key in ("codigo", "comuna", "tipo", "operacion", "precio_uf", "precio_clp", "gastos_comunes", "dormitorios", "banos", "superficie_util", "estacionamientos"):
+        if key not in phase3_facts and prospecto_actual.get(key) not in (None, ""):
+            phase3_facts[key] = prospecto_actual.get(key)
+            phase3_fact_sources.setdefault(key, {
+                "source": "PROPERTY_RECORD",
+                "evidence_id": str(phase3_property_code or "lead_snapshot"),
+                "captured_at": phase3_facts_captured_at,
+            })
+    phase3_property_context_capture_ms = round(
+        (time.perf_counter() - phase3_property_capture_started_at) * 1000, 1
+    )
+    phase3_property_lookup_ms = property_resolution_ms
+    asked_for_availability = bool(re.search(r"disponible|disponibilidad", msg_lower))
+    availability_known = bool(phase3_facts.get("disponibilidad") or phase3_facts.get("availability_confirmed"))
+    information_gap = asked_for_availability and not availability_known
+    phase3_action = select_next_best_action(
+        phase3_state, original_message, facts=phase3_facts,
+        property_resolved=bool(propiedad or phase3_property_code),
+        information_gap=information_gap,
+    )
+    phase3_state["next_best_action"] = phase3_action["next_best_action"]
+    phase3_state["policy_version"] = CONVERSATION_POLICY_VERSION
+    phase3_state["prompt_version"] = CONVERSATION_PROMPT_VERSION
+    fallback_used = False
+    fallback_reason = None
+    generation_latency_ms = None
+    prior_fallback_state = lead_doc_full.get("conversation_state") or {}
+    source_message_ids = [
+        str(item) for item in ((telemetry_context or {}).get("source_message_ids") or []) if item
+    ]
+    fallback_context_key = "|".join(source_message_ids) or str(
+        (telemetry_context or {}).get("batch_id") or original_message[:160]
+    )
+    phase3_message_id = source_message_ids[-1] if source_message_ids else phase3_state.get("last_customer_message_id")
+    prior_fallback_count = update_fallback_streak(
+        prior_fallback_state, context_key=fallback_context_key, failed=True
+    )["fallback_consecutive_count"] - 1
+
+    async def _record_phase3_live_event(*args, **kwargs):
+        if not PHASE3_LIVE_ENABLED:
+            return None
+        return await _run_sync(record_conversation_event, *args, **kwargs)
+
+    try:
+        if PHASE3_LIVE_ENABLED:
+            await _run_sync(
+                db["leads"].update_one, {"_id": lead_doc_full.get("_id")},
+                {"$set": {"conversation_state": phase3_state}},
+            )
+        await _record_phase3_live_event(
+            db,
+            event_type="next_best_action_selected",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            logical_action_id="next_best_action_selected",
+            policy_version=CONVERSATION_POLICY_VERSION,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="conversation_policy", metadata={
+                "next_best_action": phase3_action["next_best_action"],
+                "reason": phase3_action["reason"],
+                "confidence": phase3_action["confidence"],
+                "result": "selected",
+                "policy_version": CONVERSATION_POLICY_VERSION,
+            },
+        )
+        if phase3_action.get("next_best_action") == "HANDOFF_HUMAN":
+            await _record_phase3_live_event(
+                db,
+                event_type="handoff_requested",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                message_id=phase3_message_id,
+                logical_action_id="handoff_requested",
+                policy_version=CONVERSATION_POLICY_VERSION,
+                property_code=phase3_property_code,
+                operation=phase3_state.get("operation"), actor_type="system",
+                actor_id="conversation_policy", metadata={
+                    "reason": phase3_action.get("reason"),
+                    "confidence": phase3_action.get("confidence"),
+                },
+            )
+        await _record_phase3_live_event(
+            db,
+            event_type="intent_updated",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            logical_action_id="intent_updated",
+            policy_version=CONVERSATION_POLICY_VERSION,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="conversation_policy", metadata={
+                "intent": phase3_state.get("current_intent"),
+                "confidence": phase3_state.get("intent_confidence"),
+                "evidence": phase3_state.get("intent_evidence"),
+            },
+        )
+        await _record_phase3_live_event(
+            db,
+            event_type="conversation_policy_version",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            logical_action_id="conversation_policy_version",
+            policy_version=CONVERSATION_POLICY_VERSION,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="conversation_policy", metadata={
+                "policy_version": CONVERSATION_POLICY_VERSION,
+                "prompt_version": CONVERSATION_PROMPT_VERSION,
+            },
+        )
+        if property_context_changed:
+            await _record_phase3_live_event(
+                db,
+                event_type="property_context_updated",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                message_id=phase3_message_id,
+                logical_action_id="property_context_updated",
+                policy_version=CONVERSATION_POLICY_VERSION,
+                property_code=phase3_property_code,
+                operation=phase3_state.get("operation"), actor_type="system",
+                actor_id="property_context_resolver", metadata={
+                    "previous_property_code": previous_phase3_code,
+                    "current_property_code": phase3_property_code,
+                    "source": phase3_property_context.get("property_context_source"),
+                    "confidence": phase3_property_context.get("property_context_confidence"),
+                },
+            )
+        if information_gap:
+            await _record_phase3_live_event(
+                db,
+                event_type="information_gap_detected",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                message_id=phase3_message_id,
+                logical_action_id="information_gap_detected",
+                policy_version=CONVERSATION_POLICY_VERSION,
+                property_code=phase3_property_code,
+                operation=phase3_state.get("operation"), actor_type="system",
+                actor_id="grounding_policy", metadata=safe_information_gap(
+                    "availability", source_checked=["PROPERTY_RECORD", "CRM", "AUTHORIZED_RAG"],
+                    handoff_required=True,
+                ),
+            )
+    except Exception:
+        logger.exception("[PHASE3] state or action persistence failed")
+
     messages_para_grok = []
     
     # 1. AGREGAMOS EL PROMPT DE SISTEMA ESTRICTO
@@ -984,6 +1293,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         messages_para_grok.append(m)
 
     system_parts = []
+    if PHASE3_LIVE_ENABLED:
+        system_parts.append(build_policy_instruction(phase3_state, phase3_action, phase3_facts))
 
     # --- CONTEXTO EXTRA PARA URLs ---
     urls_contexto = extraer_contexto_urls(original_message)
@@ -1291,6 +1602,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "rental_docs_readiness": {"ready", "partially_ready", "not_ready", "unknown"},
     }
 
+    generation_started_at = time.perf_counter()
     try:
         llm_context = {
             "trace_id": trace_id,
@@ -1309,6 +1621,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion = resultado_grok["intencion"]
         respuesta = resultado_grok["respuesta_bot"]
         datos_extraidos = resultado_grok.get("datos_extraidos", {})
+        fallback_used = bool(resultado_grok.get("fallback_used"))
+        fallback_reason = resultado_grok.get("fallback_reason")
         operacion_contextual = str(
             prospecto_actual.get("operacion") or ""
         ).casefold()
@@ -1341,10 +1655,191 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 )
                 await _run_sync(actualizar_prospecto, phone, datos_seguros)
                 await _mark_visit_data_captured(datos_seguros.keys())
+                try:
+                    await _run_sync(
+                        record_conversation_event, db,
+                        event_type="qualification_updated",
+                        conversation_id=conversation_id,
+                        lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                        property_code=prospecto_actual.get("codigo"),
+                        operation=prospecto_actual.get("operacion"), actor_type="bot",
+                        actor_id="chatbot", metadata={"fields": sorted(datos_seguros.keys())},
+                    )
+                except Exception:
+                    logger.exception("[CHATBOT_OBSERVABILITY] qualification event failed")
+                for field in ("financing_status", "rental_docs_readiness"):
+                    if field not in datos_seguros or field in spontaneous_signals:
+                        continue
+                    normalized_value = (
+                        normalize_financing_status(datos_seguros[field])
+                        if field == "financing_status"
+                        else normalize_rental_docs_readiness(datos_seguros[field])
+                    )
+                    await _run_sync(
+                        record_conversation_event, db,
+                        event_type="readiness_updated",
+                        conversation_id=conversation_id,
+                        lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                        property_code=prospecto_actual.get("codigo"),
+                        operation=prospecto_actual.get("operacion"), actor_type="customer",
+                        actor_id="customer", metadata={"field": field, "value": normalized_value},
+                    )
+                    await _run_sync(
+                        record_conversation_event, db,
+                        event_type="qualification_answered",
+                        conversation_id=conversation_id,
+                        lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                        property_code=prospecto_actual.get("codigo"),
+                        operation=prospecto_actual.get("operacion"), actor_type="customer",
+                        actor_id="customer", metadata={"field": field, "value": normalized_value},
+                    )
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
-        respuesta = "Disculpa, tengo un problema técnico momentáneo."
+        respuesta = "No pude completar la respuesta con seguridad en este momento. Puedo dejar la consulta para que un ejecutivo la revise."
+        fallback_used = True
+        fallback_reason = "parser_error"
+    generation_latency_ms = round((time.perf_counter() - generation_started_at) * 1000, 1)
+
+    if PHASE3_LIVE_ENABLED and fallback_used:
+        fallback_count = prior_fallback_count + 1
+        phase3_state["fallback_count"] = fallback_count
+        phase3_state["fallback_consecutive_count"] = fallback_count
+        phase3_state["fallback_context_key"] = fallback_context_key
+        await _run_sync(
+            db["leads"].update_one, {"_id": lead_doc_full.get("_id")},
+            {"$set": {
+                "conversation_state.fallback_count": fallback_count,
+                "conversation_state.fallback_consecutive_count": fallback_count,
+                "conversation_state.fallback_context_key": fallback_context_key,
+            }},
+        )
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="fallback_triggered",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="llm_pipeline", metadata={
+                "fallback_reason": fallback_reason or "llm_error",
+                "fallback_count": fallback_count,
+                "retry_policy": "structured_then_fast_then_handoff",
+            },
+            logical_action_id="fallback_triggered_generation",
+            policy_version=CONVERSATION_POLICY_VERSION,
+        )
+        if fallback_count >= 2:
+            intencion = "escalado_urgente"
+            phase3_action = {
+                "next_best_action": "HANDOFF_HUMAN",
+                "reason": "persistent_generation_failure",
+                "confidence": 0.99,
+                "policy_version": CONVERSATION_POLICY_VERSION,
+            }
+            respuesta = "Estoy teniendo un problema para procesar la conversación con seguridad. La dejaré para revisión de un ejecutivo."
+
+    # Deterministic pre-send validation is the final authority over claims and
+    # ownership. The model's text is never sent unchanged when it violates the
+    # Phase 3 contract.
+    phase3_validation = {"valid": True, "claims": [], "reasons": []}
+    if PHASE3_LIVE_ENABLED:
+        phase3_validation = validate_response(
+            respuesta,
+            state=phase3_state,
+            facts=phase3_facts,
+            fact_sources=phase3_fact_sources,
+            property_code=phase3_property_code,
+            availability_confirmed=availability_known,
+            crm_handoff_confirmed=False,
+            previous_responses=[
+                str(item.get("content") or "") for item in historial
+                if item.get("role") == "assistant"
+            ][-5:],
+        )
+    if not phase3_validation.get("valid"):
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="response_validation_failed",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="response_validator", metadata={
+                "reasons": phase3_validation.get("reasons", []),
+                "policy_version": CONVERSATION_POLICY_VERSION,
+            },
+            logical_action_id="response_validation_failed",
+            policy_version=CONVERSATION_POLICY_VERSION,
+        )
+        for claim in phase3_validation.get("claims") or []:
+            await _run_sync(
+                record_conversation_event, db,
+                event_type="unsupported_claim_blocked",
+                conversation_id=conversation_id,
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                message_id=phase3_message_id,
+                property_code=phase3_property_code,
+                operation=phase3_state.get("operation"), actor_type="system",
+                actor_id="grounding_validator", metadata=claim,
+                logical_action_id="unsupported_claim_blocked",
+                policy_version=CONVERSATION_POLICY_VERSION,
+            )
+        repaired = repair_response(
+            respuesta, phase3_validation, state=phase3_state,
+            availability_confirmed=availability_known,
+            crm_handoff_confirmed=False,
+        )
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="fallback_triggered",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            message_id=phase3_message_id,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="system",
+            actor_id="response_validator", metadata={
+                "fallback_reason": "validation_failure",
+                "reasons": phase3_validation.get("reasons", []),
+            },
+            logical_action_id="fallback_triggered_validation",
+            policy_version=CONVERSATION_POLICY_VERSION,
+        )
+        respuesta = repaired
+    elif PHASE3_LIVE_ENABLED and not fallback_used:
+        # A successful generation starts a new fallback streak.  Historical
+        # fallback_count is retained for compatibility, but policy decisions
+        # use the consecutive counter above.
+        phase3_state["fallback_count"] = 0
+        phase3_state["fallback_consecutive_count"] = 0
+        phase3_state["fallback_context_key"] = None
+        await _run_sync(
+            db["leads"].update_one, {"_id": lead_doc_full.get("_id")},
+            {"$set": {
+                "conversation_state.fallback_count": 0,
+                "conversation_state.fallback_consecutive_count": 0,
+                "conversation_state.fallback_context_key": None,
+            }},
+        )
+
+    if PHASE3_LIVE_ENABLED and phase3_action.get("next_best_action") == "ASK_QUALIFICATION":
+        qualification = qualification_question(phase3_state.get("operation"), phase3_state)
+        if qualification and "?" not in str(respuesta or ""):
+            respuesta = f"{str(respuesta or '').rstrip()}\n\n{qualification}".strip()
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="qualification_question_asked",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+            property_code=phase3_property_code,
+            operation=phase3_state.get("operation"), actor_type="bot",
+            actor_id="chatbot", metadata={
+                "field": "financing_status" if phase3_state.get("operation") == "Venta" else "rental_docs_readiness",
+                "next_best_action": phase3_action.get("next_best_action"),
+            },
+        )
 
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
@@ -1385,6 +1880,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                         set_pending_response, phone, "VISIT_CONFIRMATION",
                         property_code, conversation_id,
                     )
+                    try:
+                        await _run_sync(
+                            record_conversation_event, db,
+                            event_type="visit_cta_shown",
+                            conversation_id=conversation_id,
+                            lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+                            property_code=property_code,
+                            operation=prospecto_actual.get("operacion"),
+                            actor_type="bot", actor_id="chatbot",
+                            derived=True, confidence=0.85,
+                            method="pending_visit_confirmation_regex",
+                        )
+                    except Exception:
+                        logger.exception("[CHATBOT_OBSERVABILITY] CTA shown event failed")
                     logger.info("[VISIT_CONFIRM] Estado de confirmacion guardado para propiedad %s", property_code)
                 except Exception as e:
                     logger.warning("[VISIT_CONFIRM] Error guardando estado: %s", e)
@@ -1413,6 +1922,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
         if is_negative:
             await _run_sync(resolve_pending_response, phone, "rejected")
+            try:
+                await _run_sync(
+                    record_conversation_event, db,
+                    event_type="visit_cta_declined", conversation_id=conversation_id,
+                    lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+                    property_code=pending.get("property_id") or property_code,
+                    operation=prospecto_actual.get("operacion"), actor_type="customer",
+                    actor_id="customer", derived=True, confidence=0.95,
+                    method="deterministic_pending_confirmation", metadata={"evidence": "explicit_negative"},
+                )
+            except Exception:
+                logger.exception("[CHATBOT_OBSERVABILITY] CTA declined event failed")
             logger.info("[VISIT_CONFIRM] Pending response %s rejected by user: %s", pending.get("type"), msg_l)
 
         else:
@@ -1432,6 +1953,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if is_affirmative and not is_topic_change:
                 intencion = "agendar_visita"
                 await _run_sync(resolve_pending_response, phone, "confirmed")
+                try:
+                    await _run_sync(
+                        record_conversation_event, db,
+                        event_type="visit_cta_accepted", conversation_id=conversation_id,
+                        lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+                        property_code=pending.get("property_id") or property_code,
+                        operation=prospecto_actual.get("operacion"), actor_type="customer",
+                        actor_id="customer", derived=True, confidence=0.95,
+                        method="deterministic_pending_confirmation", metadata={"evidence": "affirmative"},
+                    )
+                except Exception:
+                    logger.exception("[CHATBOT_OBSERVABILITY] CTA accepted event failed")
                 logger.info("[VISIT_CONFIRM] Pending response %s confirmed by user: %s", pending.get("type"), msg_l)
             elif is_topic_change:
                 logger.info("[VISIT_CONFIRM] Pending response %s topic changed by user: %s", pending.get("type"), msg_l)
@@ -1505,6 +2038,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "lead_intent": str(selected_intent),
         "score": lead_score
     })
+    try:
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="intent_detected", conversation_id=conversation_id,
+            lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+            property_code=prospecto_actual.get("codigo"),
+            operation=prospecto_actual.get("operacion"), actor_type="bot",
+            actor_id="chatbot", method="deterministic_policy_plus_model",
+            metadata={"intent": intencion, "lead_intent": str(selected_intent)},
+        )
+    except Exception:
+        logger.exception("[CHATBOT_OBSERVABILITY] intent event failed")
 
     if visit_intent_clear:
         await _run_sync(record_observability_event, "visit_intent_detected", {
@@ -1514,6 +2059,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "operation": prospecto_actual.get("operacion"),
             "intent_strength": "explicit",
         })
+        try:
+            await _run_sync(
+                record_conversation_event, db,
+                event_type="visit_intent_detected", conversation_id=conversation_id,
+                lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+                property_code=prospecto_actual.get("codigo"),
+                operation=prospecto_actual.get("operacion"), actor_type="bot",
+                actor_id="chatbot", method="deterministic_visit_guard",
+                metadata={"intent_strength": "explicit"},
+            )
+        except Exception:
+            logger.exception("[CHATBOT_OBSERVABILITY] visit intent event failed")
 
     # CORRECCIÓN DE TIEMPOS: 60 minutos para evitar spam de correo
     if intencion == "escalado_urgente":
@@ -1630,19 +2187,116 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         })
         respuesta = duplicate_response_fallback(respuesta)
 
+    # Structured executive context is a deterministic projection of known
+    # fields and evidence IDs; it is not a free-form LLM summary. It remains
+    # disabled for shadow-only operation so Phase 3 cannot mutate CRM state.
+    if PHASE3_LIVE_ENABLED:
+      try:
+        phase3_state["next_best_action"] = phase3_action.get("next_best_action")
+        phase3_state["financing_status"] = normalize_financing_status(
+            prospecto_actual.get("financing_status")
+        )
+        phase3_state["rental_docs_readiness"] = normalize_rental_docs_readiness(
+            prospecto_actual.get("rental_docs_readiness")
+        )
+        summary_lead = dict(lead_doc)
+        summary_lead["prospecto"] = dict(prospecto_actual)
+        summary = build_executive_summary(summary_lead, historial, phase3_state)
+        await _run_sync(
+            db["leads"].update_one, {"_id": lead_doc.get("_id")},
+            {"$set": {"conversation_summary": summary}},
+        )
+        await _run_sync(
+            record_conversation_event, db,
+            event_type="executive_summary_updated",
+            conversation_id=conversation_id,
+            lead_id=str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
+            property_code=summary.get("property_code"),
+            operation=summary.get("operation"), actor_type="system",
+            actor_id="executive_summary_projection",
+            metadata={"evidence_count": len(summary.get("evidence_ids") or []),
+                      "next_best_action": summary.get("next_best_action")},
+        )
+      except Exception:
+        logger.exception("[PHASE3] executive summary projection failed")
+
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
     # =======================================================
+    metadata_tipo["response_source"] = "local_fallback" if fallback_used else "deepseek"
+    if fallback_used:
+        metadata_tipo["response_reason"] = fallback_reason or "llm_error"
     logger.info(
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")
     )
-    return await _persist_generated_outbound(
+    production_response = await _persist_generated_outbound(
         respuesta,
         {**metadata_tipo, "lead_intent": selected_intent},
         intent=intencion,
         lead_doc=lead_doc,
     )
+    # Phase 3 is strictly shadow-only. The production response has already
+    # been persisted; the shadow worker now runs independently and cannot
+    # alter this response, CRM, visits or ownership.
+    try:
+        shadow_event_ids = []
+        if phase3_message_id:
+            shadow_event_ids = [
+                str(item.get("event_id"))
+                for item in await _run_sync(lambda: list(db["conversation_events"].find(
+                    {"conversation_id": conversation_id, "message_id": phase3_message_id},
+                    {"event_id": 1},
+                ).sort("timestamp", 1)))
+                if item.get("event_id")
+            ]
+        shadow_prospecto = {
+            key: value for key, value in prospecto_actual.items()
+            if key not in {"phone", "telefono", "celular", "whatsapp", "email", "rut", "nombre"}
+        }
+        if phase3_message_id:
+            await _run_sync(
+                schedule_shadow_turn,
+                db,
+                message_id=phase3_message_id,
+                conversation_id=conversation_id,
+                timestamp=datetime.now(CHILE_TZ).isoformat(),
+                policy_version=CONVERSATION_POLICY_VERSION,
+                prompt_version=CONVERSATION_PROMPT_VERSION,
+                model=getattr(Config, "DEEPSEEK_MODEL_REASONER", None),
+                lead_id=str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                property_id=phase3_property_code,
+                property_code=phase3_property_code,
+                operation=phase3_state.get("operation"),
+                property_facts=phase3_facts,
+                property_fact_sources=phase3_fact_sources,
+                conversation_state=phase3_state,
+                next_best_action=phase3_action,
+                prospecto=shadow_prospecto,
+                history=historial[-6:],
+                customer_message=original_message,
+                previous_responses=previous_bot_responses[-5:],
+                event_ids=shadow_event_ids,
+                availability_confirmed=availability_known,
+                latencies={
+                    "state_ms": phase3_state_ms,
+                    "property_lookup_ms": phase3_property_lookup_ms,
+                    "property_context_capture_ms": phase3_property_context_capture_ms,
+                },
+                production_link={
+                    "status": "linked",
+                    "response_message_id": production_message_id,
+                    "response": redact_shadow_text(production_response),
+                    "response_timestamp": datetime.now(CHILE_TZ).isoformat(),
+                },
+            )
+        else:
+            logger.warning(
+                "[PHASE3_SHADOW] inbound turn skipped: stable message_id unavailable"
+            )
+    except Exception:
+        logger.exception("[PHASE3_SHADOW] scheduling failed; production response remains authoritative")
+    return production_response
 
 
 def process_user_message_sync(phone: str, message: str, telemetry_context: dict | None = None) -> str:

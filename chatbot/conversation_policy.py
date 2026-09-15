@@ -19,6 +19,7 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
     r"\b(?:puedo|podr[ií]a)\s+ir\s+(?:ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
+    r"\b(?:puedo|podr[ií]a)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
     r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",

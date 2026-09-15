@@ -248,6 +248,8 @@ def test_C_ACK_ONLY_examples_are_no_reply_but_new_information_is_processed():
     assert is_acknowledgement_only("muchas gracias, quedo atento")
     assert not is_acknowledgement_only("gracias, ¿cuánto sale el gasto común?")
     assert not is_acknowledgement_only("ok, puedo visitar mañana")
+    assert is_explicit_visit_intent("Gracias, puedo visitar mañana en la mañana.")
+    assert has_near_term_visit_urgency("Gracias, puedo visitar mañana en la mañana.")
     assert not is_acknowledgement_only("perfecto, mi correo es cliente@example.com")
 
 

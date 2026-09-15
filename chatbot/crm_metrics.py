@@ -262,8 +262,24 @@ def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
                             reason, assigned_at=None, assigned_to_display_name=None,
                             property_code=None) -> dict[str, Any]:
+    if not isinstance(lead, Mapping) or lead.get("_id") is None:
+        raise ValueError("canonical lead document is required for assignment cycle")
+    lead_id = lead["_id"]
+    # A cycle may only be created from the exact identity already persisted in
+    # the canonical leads collection.  This catches callers that accidentally
+    # pass a transport id, conversation id, phone, or a stale synthetic row.
+    # Lightweight unit adapters may omit ``leads``; production always has it.
+    try:
+        leads_collection = db["leads"]
+    except (KeyError, TypeError):
+        leads_collection = None
+    if leads_collection is not None:
+        persisted_lead = leads_collection.find_one({"_id": lead_id}, {"_id": 1})
+        if not persisted_lead or persisted_lead.get("_id") != lead_id:
+            raise ValueError("canonical lead document not found for assignment cycle")
+
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
-    active = db["crm_assignment_cycles"].find_one({"lead_id": lead["_id"], "unassigned_at": None})
+    active = db["crm_assignment_cycles"].find_one({"lead_id": lead_id, "unassigned_at": None})
     if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
             and active.get("cycle_status") == "active"
             and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
@@ -295,7 +311,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     else:
         cycle_origin = reason
     cycle = {
-        "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead["_id"],
+        "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead_id,
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
         "cycle_started_at": assigned_at,
         "sla_started_at": commercial_sla_start_at(assigned_at),

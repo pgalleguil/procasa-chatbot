@@ -1535,7 +1535,7 @@ def run_captacion_secondary_effects(obj_id, old_status, status, user_name, notes
 def update_captacion_status(
     obj_id, status, notes=None, channel=None, outcome=None, user_name="Sistema",
     next_followup=None, user_doc=None, followup_token=None, operation_id=None,
-    current_doc=None, defer_secondary_effects=False,
+    current_doc=None, defer_secondary_effects=False, perf_context=None,
 ):
     db = get_db()
     operation_id = str(operation_id or "").strip() or None

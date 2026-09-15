@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any, Iterable, Mapping
 
+from bson import ObjectId
+
 from .crm_metrics import INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime, event_evidence, normalize_result, utc_now
 from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, OUTREACH_RESULTS, add_business_minutes
 from .crm_sla_global_rescue import RescueParameters
@@ -119,6 +121,79 @@ def _identity(value: Any) -> str:
     text = unicodedata.normalize("NFKD", _text(value))
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _lead_lookup_variants(value: Any) -> list[Any]:
+    """Return only exact, legitimate BSON representations of a lead ID.
+
+    Production cycles historically contain both native ``ObjectId`` values
+    and their 24-hex string representation.  MongoDB does not consider those
+    values equal in an ``$in`` query.  We query both exact representations,
+    but never derive a lookup from a name, phone, email, or other fuzzy key.
+    Unsupported container values are deliberately left unresolved.
+    """
+    if value is None:
+        return []
+    if not isinstance(value, (str, ObjectId, int, float, bool)):
+        return []
+
+    variants: list[Any] = [value]
+    if isinstance(value, ObjectId):
+        variants.append(str(value))
+    elif isinstance(value, str) and ObjectId.is_valid(value):
+        variants.append(ObjectId(value))
+
+    unique: list[Any] = []
+    seen: set[tuple[type[Any], str]] = set()
+    for candidate in variants:
+        marker = (type(candidate), repr(candidate))
+        if marker not in seen:
+            seen.add(marker)
+            unique.append(candidate)
+    return unique
+
+
+def _resolve_lead_from_context(context: Mapping[str, Any], lead_id: Any) -> tuple[Mapping[str, Any] | None, str]:
+    """Resolve one lead from the batched context, failing closed on ambiguity."""
+    variants = _lead_lookup_variants(lead_id)
+    if not variants:
+        return None, "invalid_lead_id"
+    key = _text(lead_id)
+    candidates_by_id = context.get("lead_candidates_by_id") or {}
+    candidates = list(candidates_by_id.get(key, ()))
+    if len(candidates) > 1:
+        return None, "ambiguous_identity"
+    if len(candidates) == 1:
+        stored_id = candidates[0].get("_id")
+        if type(stored_id) is type(lead_id) and stored_id == lead_id:
+            return candidates[0], "resolved_exact"
+        return candidates[0], "resolved_id_type_mismatch"
+
+    # Contexts injected by analytical/replay callers predate the canonical
+    # candidate index.  Keep that compatibility path exact and fail closed for
+    # unsupported IDs above.
+    row = (context.get("leads_by_id") or {}).get(key)
+    return (row, "resolved_legacy_context") if row else (None, "not_found")
+
+
+def _cycle_only_pre_cutover_expiration(
+    cycle: Mapping[str, Any], *, now: datetime, cutover: datetime
+) -> CanonicalExpiration | None:
+    """Prove a cycle is pre-cutover without requiring its lead document.
+
+    The cycle must carry an explicit temperature and a usable SLA start.  A
+    default temperature would make the deadline ambiguous, so that case is
+    intentionally not eligible for this early skip.
+    """
+    temperature = _text(cycle.get("temperature_at_assignment")).upper()
+    if temperature not in {"HOT", "NORMAL"}:
+        return None
+    if not (_utc(cycle.get("sla_started_at")) or _utc(cycle.get("assigned_at"))):
+        return None
+    expiration = canonical_expiration_recheck(cycle, None, now=now)
+    if expiration.breach_at and expiration.breach_at < cutover:
+        return expiration
+    return None
 
 
 def _json_version(rows: Iterable[Mapping[str, Any]]) -> str:
@@ -504,7 +579,7 @@ def _owner_cycle_issue(cycle: Mapping[str, Any], lead: Mapping[str, Any] | None,
     lifecycle = (lead or {}).get("lifecycle") or {}
     pointer = _text(lifecycle.get("current_assignment_cycle_id"))
     if pointer and pointer != cycle_id:
-        return "CYCLE_MISMATCH"
+        return "STALE_NON_CURRENT_CYCLE"
     explicit_owner = _text((lead or {}).get("owner_user_id") or (lead or {}).get("assigned_to_user_id"))
     if explicit_owner and explicit_owner != owner_id:
         return "OWNER_MISMATCH"
@@ -553,7 +628,15 @@ async def _batch_context(
     *,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> dict[str, Any]:
-    lead_values = [cycle.get("lead_id") for cycle in cycles if cycle.get("lead_id") is not None]
+    cycle_lead_values = [cycle.get("lead_id") for cycle in cycles if cycle.get("lead_id") is not None]
+    lead_values: list[Any] = []
+    seen_lookup_values: set[tuple[type[Any], str]] = set()
+    for raw_lead_id in cycle_lead_values:
+        for lookup_value in _lead_lookup_variants(raw_lead_id):
+            marker = (type(lookup_value), repr(lookup_value))
+            if marker not in seen_lookup_values:
+                seen_lookup_values.add(marker)
+                lead_values.append(lookup_value)
     cycle_ids = [_text(cycle.get("assignment_cycle_id")) for cycle in cycles if cycle.get("assignment_cycle_id")]
     leads = await _find_many(
         db["leads"], {"_id": {"$in": lead_values}},
@@ -583,9 +666,24 @@ async def _batch_context(
         instrumentation=read_instrumentation,
         query_name="worker.context.events",
     ) if lead_values else []
+    lead_candidates_by_id: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in leads:
+        key = _text(row.get("_id"))
+        if key:
+            lead_candidates_by_id[key].append(dict(row))
+    leads_by_id = {
+        key: rows[0]
+        for key, rows in lead_candidates_by_id.items()
+        if len(rows) == 1
+    }
     return {
-        "leads_by_id": {_text(row.get("_id")): row for row in leads},
-        "active_cycles_by_lead": defaultdict(list, {_text(key): [] for key in lead_values}),
+        "leads_by_id": leads_by_id,
+        "lead_candidates_by_id": lead_candidates_by_id,
+        "lead_lookup_status_by_id": {
+            key: "resolved" if len(rows) == 1 else "ambiguous_identity"
+            for key, rows in lead_candidates_by_id.items()
+        },
+        "active_cycles_by_lead": defaultdict(list, {_text(key): [] for key in cycle_lead_values}),
         "results_by_cycle": defaultdict(list),
         "events_by_lead": defaultdict(list),
     } | _index_context(active_cycles, results, events)
@@ -1215,11 +1313,20 @@ async def run_sla_reassignment_worker_iteration(
             )
         cycles = [dict(row) for row in scan_result.get("cycles", [])]
         result.scanned = len(cycles)
+        cycle_only_pre_cutover: dict[str, CanonicalExpiration] = {}
+        for cycle in cycles:
+            expiration = _cycle_only_pre_cutover_expiration(cycle, now=as_of, cutover=cutover)
+            if expiration is not None:
+                cycle_only_pre_cutover[_text(cycle.get("assignment_cycle_id"))] = expiration
         if context is None:
             if db is None:
                 from .storage import get_async_db
                 db = get_async_db()
-            context = await _batch_context(db, cycles, read_instrumentation=read_instrumentation)
+            context = await _batch_context(
+                db,
+                [cycle for cycle in cycles if _text(cycle.get("assignment_cycle_id")) not in cycle_only_pre_cutover],
+                read_instrumentation=read_instrumentation,
+            )
         if performance_snapshot is None:
             try:
                     performance_snapshot = await _default_performance_snapshot(
@@ -1277,7 +1384,7 @@ async def run_sla_reassignment_worker_iteration(
             read_instrumentation=read_instrumentation,
         ) if db is not None and execution_mode == "shadow" else {}
         for cycle in cycles:
-            lead = (context.get("leads_by_id") or {}).get(_text(cycle.get("lead_id")))
+            lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
             if lead:
                 try:
                     exp = canonical_expiration_recheck(cycle, lead, now=as_of)
@@ -1294,9 +1401,22 @@ async def run_sla_reassignment_worker_iteration(
                     result.error_codes.append("LEAD_EVALUATION_ERROR")
                     logger.warning("%s cycle_id=%s lead_id=%s outcome=error error_type=%s", WORKER_LOG_PREFIX, _text(cycle.get("assignment_cycle_id")), _text(cycle.get("lead_id")), type(exc).__name__)
             else:
-                lead_rows.append(({}, cycle, canonical_expiration_recheck(cycle, None, now=as_of), ManagementProtection(False), "DATA_INSUFFICIENT"))
-                result.errors += 1
-                result.error_codes.append("LEAD_NOT_FOUND")
+                cycle_id = _text(cycle.get("assignment_cycle_id"))
+                pre_cutover_expiration = cycle_only_pre_cutover.get(cycle_id)
+                if pre_cutover_expiration is not None:
+                    # A cycle that proves itself pre-cutover must not become a
+                    # recurring operational error merely because its lead is
+                    # absent or stored under a different BSON representation.
+                    lead_rows.append(({}, cycle, pre_cutover_expiration, ManagementProtection(False), "PRE_CUTOVER_NO_LEAD"))
+                else:
+                    lead_rows.append(({}, cycle, canonical_expiration_recheck(cycle, None, now=as_of), ManagementProtection(False), "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND"))
+                    result.errors += 1
+                    result.error_codes.append("LEAD_NOT_FOUND")
+                    logger.warning(
+                        "%s cycle_id=%s lead_id=%s lookup_status=%s outcome=data_or_cycle_issue",
+                        WORKER_LOG_PREFIX, _text(cycle.get("assignment_cycle_id")),
+                        _text(cycle.get("lead_id")), lead_lookup_status,
+                    )
         ordered = sorted(lead_rows, key=lambda item: _worker_order_key(item[0] or {"lead_id": item[1].get("lead_id"), "assignment_cycle_id": item[1].get("assignment_cycle_id"), "assigned_at": item[1].get("assigned_at"), "temperature": item[1].get("temperature_at_assignment"), "current_overdue_business_minutes": 0}))
         jpc_targets: dict[str, float] = {}
         jpc_template = [dict(row) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) in {"maria paz galleguillos", "hernan castro"}]
@@ -1312,6 +1432,15 @@ async def run_sla_reassignment_worker_iteration(
                 lead_id = _text(cycle.get("lead_id"))
                 cycle_id = _text(cycle.get("assignment_cycle_id"))
                 decision_id = generate_decision_id(lead_id, cycle_id, POLICY_VERSION)
+                if owner_status == "PRE_CUTOVER_NO_LEAD":
+                    result.canonically_expired += 1
+                    result.pre_cutover_skipped += 1
+                    evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, "PRE_SHADOW_CUTOVER_ALREADY_EXPIRED" if using_shadow_cutover else "PRE_CUTOVER_ALREADY_EXPIRED", assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version, performance_snapshot_id=perf_version, capacity_snapshot_at=_text(snapshot.get("capacity_snapshot_at")), r2_state_snapshot={"state_version": _text(rm_state.get("distribution_state_version")), "recent_history": list(rm_state.get("recent_history") or [])}, j3_target_share_snapshot={"state_version": _text(jpc_state.get("distribution_state_version")), "observed_share": dict(jpc_state.get("observed_share") or {})}).to_dict())
+                    continue
+                if owner_status == "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND":
+                    result.review_skipped += 1
+                    evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, owner_status, assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
+                    continue
                 # A canonical stop before the calculated breach means the
                 # cycle is not actually expired under the current evaluator.
                 # A stop after the breach remains an SLA miss and is handled

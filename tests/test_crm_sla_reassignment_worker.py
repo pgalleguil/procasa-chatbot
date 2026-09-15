@@ -9,7 +9,9 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import mongomock
 import pytest
+from bson import ObjectId
 
 from config import Config
 from chatbot.crm_sla_hybrid_rescue import REGION_JPC_MARIA_HERNAN, REGION_REVIEW_REQUIRED, RM_GLOBAL_RESCUE, REGIONAL_POLICY_NOT_DEFINED
@@ -18,6 +20,9 @@ from chatbot.crm_sla_reassignment_worker import (
     POLICY_VERSION,
     R2_HISTORY_WINDOW,
     SLAReassignmentShadowEvaluation,
+    _batch_context,
+    _lead_lookup_variants,
+    _resolve_lead_from_context,
     canonical_expiration_recheck,
     crm_sla_reassignment_worker_loop,
     load_jpc_distribution_state,
@@ -363,6 +368,92 @@ def test_exception_isolation_continues_after_missing_lead():
     result = run(**kwargs)
     assert result["iteration"]["errors"] >= 1
     assert result["iteration"]["scanned"] == 2
+
+
+def _context_without_leads(rows):
+    return {
+        "leads_by_id": {},
+        "lead_candidates_by_id": {},
+        "active_cycles_by_lead": {row["lead_id"]: [row] for row in rows},
+        "events_by_lead": {},
+        "results_by_cycle": {},
+    }
+
+
+def test_pre_cutover_missing_lead_is_skipped_without_lead_not_found_error():
+    row = cycle(1, assigned_at=datetime(2026, 9, 1, 12, 0, tzinfo=UTC))
+    kwargs = base_kwargs([row], [], cutover_at=CUTOVER)
+    kwargs["context"] = _context_without_leads([row])
+    result = run(**kwargs)
+    assert result["iteration"]["pre_cutover_skipped"] == 1
+    assert result["iteration"]["errors"] == 0
+    assert "LEAD_NOT_FOUND" not in result["iteration"]["error_codes"]
+    assert result["evaluations"][0]["exclusion_reason"] == "PRE_CUTOVER_ALREADY_EXPIRED"
+
+
+def test_post_cutover_missing_lead_is_data_issue_and_never_candidate():
+    row = cycle(1, assigned_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC))
+    kwargs = base_kwargs([row], [], cutover_at=datetime(2026, 9, 10, 14, 0, tzinfo=UTC))
+    kwargs["context"] = _context_without_leads([row])
+    result = run(**kwargs)
+    assert result["iteration"]["errors"] == 1
+    assert result["iteration"]["review_skipped"] == 1
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["decisions"] == []
+    assert result["executor_calls"] == 0
+    assert result["evaluations"][0]["exclusion_reason"] == "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND"
+
+
+def test_batch_context_resolves_string_objectid_mismatch_without_fuzzy_lookup():
+    db = mongomock.MongoClient().db
+    oid = ObjectId("0123456789abcdef01234567")
+    db["leads"].insert_one({"_id": oid, "pipeline_stage": "NEW"})
+    row = {"lead_id": str(oid), "assignment_cycle_id": "cycle-oid", "cycle_status": "active", "unassigned_at": None}
+    context_result = asyncio.run(_batch_context(db, [row]))
+    resolved, status = _resolve_lead_from_context(context_result, row["lead_id"])
+    assert resolved is not None
+    assert resolved["_id"] == oid
+    assert status == "resolved_id_type_mismatch"
+    assert len(_lead_lookup_variants(row["lead_id"])) == 2
+
+
+def test_malformed_lead_id_fails_closed_before_any_canonical_lookup():
+    resolved, status = _resolve_lead_from_context({"leads_by_id": {}}, {"$where": "unsafe"})
+    assert resolved is None
+    assert status == "invalid_lead_id"
+    assert _lead_lookup_variants({"not": "an id"}) == []
+
+
+def test_ambiguous_objectid_and_string_identity_fails_closed():
+    oid = ObjectId("0123456789abcdef01234567")
+    context_result = {
+        "leads_by_id": {},
+        "lead_candidates_by_id": {
+            str(oid): [{"_id": oid}, {"_id": str(oid)}],
+        },
+    }
+    resolved, status = _resolve_lead_from_context(context_result, str(oid))
+    assert resolved is None
+    assert status == "ambiguous_identity"
+
+
+def test_stale_non_current_cycle_is_excluded_before_selection():
+    row = cycle(1)
+    stale_lead = lead(1)
+    stale_lead["lifecycle"]["current_assignment_cycle_id"] = "cycle-other"
+    result = run(**base_kwargs([row], [stale_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["review_skipped"] == 1
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["decisions"] == []
+    assert result["evaluations"][0]["exclusion_reason"] == "STALE_NON_CURRENT_CYCLE"
+
+
+def test_current_active_cycle_keeps_normal_policy_flow():
+    row = cycle(1)
+    result = run(**base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 1
+    assert result["evaluations"][0]["would_execute"] is True
+    assert result["executor_calls"] == 0
 
 
 def test_multi_worker_strategy_is_at_least_once_and_idempotent_at_executor_boundary():

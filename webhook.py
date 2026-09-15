@@ -1022,8 +1022,8 @@ async def lifespan(app: FastAPI):
     sla_reassignment_task = None
 
     # Controlled prospective SLA worker.  The runtime performs all guards:
-    # explicit shadow cutover, ping + snapshots, global lease and business
-    # write blocking.  It is scheduled only when both shadow switches are on.
+    # explicit cutover, ping + snapshots, global lease and transaction gates.
+    # Shadow and live modes are mutually exclusive at startup.
     if Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED and Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED:
         try:
             from chatbot.crm_sla_reassignment_runtime import run_crm_sla_shadow_worker
@@ -1059,8 +1059,61 @@ async def lifespan(app: FastAPI):
         except Exception:
             background_tasks_status["crm_sla_reassignment_shadow"].update({"status": "error", "health": "CONFIG_ERROR"})
             logger.exception("[SLA_SHADOW_ERROR] worker startup bridge failed")
+    elif (
+        Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+        and Config.CRM_SLA_REASSIGNMENT_ENABLED
+        and Config.CRM_SLA_TRANSACTION_GATE_ENABLED
+        and Config.CRM_SLA_SECURITY_LAYER_ENABLED
+    ):
+        try:
+            from chatbot.crm_sla_reassignment_runtime import run_crm_sla_live_worker
+            logger.info(
+                "[SLA_LIVE_START] status=SCHEDULED worker=%s master=%s gate=%s security=%s shadow=%s",
+                Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED,
+                Config.CRM_SLA_REASSIGNMENT_ENABLED,
+                Config.CRM_SLA_TRANSACTION_GATE_ENABLED,
+                Config.CRM_SLA_SECURITY_LAYER_ENABLED,
+                Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED,
+            )
+            sla_reassignment_task = asyncio.create_task(
+                run_crm_sla_live_worker(status=background_tasks_status["crm_sla_reassignment_shadow"])
+            )
+
+            def _live_task_done(task):
+                if task.cancelled():
+                    return
+                try:
+                    error = task.exception()
+                except Exception as exc:
+                    error = exc
+                if error is not None:
+                    background_tasks_status["crm_sla_reassignment_shadow"].update({
+                        "status": "error",
+                        "health": "WORKER_CRASHED",
+                        "mode": "live",
+                        "last_error": type(error).__name__,
+                    })
+                    logger.error(
+                        "[SLA_LIVE_ERROR] worker_task_crashed error_type=%s",
+                        type(error).__name__,
+                        exc_info=(type(error), error, error.__traceback__),
+                    )
+
+            sla_reassignment_task.add_done_callback(_live_task_done)
+        except Exception:
+            background_tasks_status["crm_sla_reassignment_shadow"].update({
+                "status": "error", "health": "CONFIG_ERROR", "mode": "live",
+            })
+            logger.exception("[SLA_LIVE_ERROR] worker startup bridge failed")
     else:
-        logger.info("[SLA_SHADOW_START] status=DISABLED worker=%s shadow=%s", Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED, Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED)
+        logger.info(
+            "[SLA_REASSIGNMENT_START] status=DISABLED worker=%s master=%s gate=%s security=%s shadow=%s",
+            Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED,
+            Config.CRM_SLA_REASSIGNMENT_ENABLED,
+            Config.CRM_SLA_TRANSACTION_GATE_ENABLED,
+            Config.CRM_SLA_SECURITY_LAYER_ENABLED,
+            Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED,
+        )
 
     # CRM SLA Alert orchestrator — exclusive domain, behind feature flag.
     # The wrapper below publishes liveness + last-cycle stats to

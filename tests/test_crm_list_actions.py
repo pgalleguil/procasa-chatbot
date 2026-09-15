@@ -1,3 +1,5 @@
+import ast
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -170,6 +172,63 @@ def test_archived_leads_are_excluded_from_the_active_list_universe():
     assert '{"stage": {"$ne": "ARCHIVED"}}' in source
     assert '{"pipeline_stage": {"$ne": "ARCHIVED"}}' in source
     assert '{"archived_at": {"$exists": False}}' in source
+
+
+def test_crm_route_and_lead_list_signature_stay_compatible():
+    """Regression for the production /crm TypeError on an unsupported kwarg."""
+    api_source = Path("api_crm.py").read_text(encoding="utf-8")
+    webhook_source = Path("webhook.py").read_text(encoding="utf-8")
+    api_tree = ast.parse(api_source)
+    webhook_tree = ast.parse(webhook_source)
+
+    api_function = next(
+        node for node in api_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "get_crm_leads_list"
+    )
+    api_parameters = {
+        arg.arg for arg in (*api_function.args.posonlyargs, *api_function.args.args,
+                            *api_function.args.kwonlyargs)
+    }
+    assert "user_id" not in api_parameters
+
+    render_function = next(
+        node for node in webhook_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "_render_crm_list"
+    )
+    list_calls = [
+        node for node in ast.walk(render_function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "get_crm_leads_list"
+    ]
+    assert len(list_calls) == 1
+    call_keywords = {keyword.arg for keyword in list_calls[0].keywords if keyword.arg}
+    assert call_keywords <= api_parameters
+    assert {"user_role", "user_name", "ejecutivo_filter", "temperatura_filter"} <= call_keywords
+
+    # Keep this assertion tied to the runtime function, not only duplicated
+    # source text, so a signature drift is caught before /crm is deployed.
+    from api_crm import get_crm_leads_list
+    assert call_keywords <= set(inspect.signature(get_crm_leads_list).parameters)
+
+
+def test_crm_list_scope_and_filters_remain_after_contract_fix():
+    source = Path("api_crm.py").read_text(encoding="utf-8")
+    assert "if not can_administer_leads(user_role) and user_name:" in source
+    assert 'elif ejecutivo_filter and ejecutivo_filter != "Todos":' in source
+    assert 'if busqueda and busqueda.strip():' in source
+    assert 'if property_code and property_code.strip():' in source
+    assert '{"is_test": {"$ne": True}}' in source
+
+
+def test_crm_sla_security_and_old_owner_lock_remain_enforced():
+    source = Path("webhook.py").read_text(encoding="utf-8")
+    assert "CRM_SLA_SECURITY_LAYER_ENABLED" in source
+    assert "resolve_crm_lead_access_context" in source
+    assert "LeadReassignedSlaLockedError" in Path("chatbot/crm_management.py").read_text(encoding="utf-8")
+    assert "LEAD_REASSIGNED_SLA_LOCKED" in Path("chatbot/crm_management.py").read_text(encoding="utf-8")
 
 
 class _FakeCollection:

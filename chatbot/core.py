@@ -48,7 +48,11 @@ from .phase3_conversation import (
     update_fallback_streak,
 )
 
-from .grok_client import generar_respuesta, generar_respuesta_estructurada
+from .grok_client import (
+    generar_respuesta,
+    generar_respuesta_estructurada,
+    normalize_fallback_reason,
+)
 from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_codigo_toctoc_compuesto, extraer_contexto_urls, URL_RE
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .utils import parse_bool
@@ -83,6 +87,7 @@ from .conversation_policy import (
     safe_visit_claim_free_response,
     is_substantial_duplicate,
     duplicate_response_fallback,
+    build_local_fallback_response,
 )
 
 logger = logging.getLogger(__name__)
@@ -1157,6 +1162,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     phase3_state["prompt_version"] = CONVERSATION_PROMPT_VERSION
     fallback_used = False
     fallback_reason = None
+    fallback_intent = None
     generation_latency_ms = None
     prior_fallback_state = lead_doc_full.get("conversation_state") or {}
     source_message_ids = [
@@ -1696,7 +1702,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
-        respuesta = "No pude completar la respuesta con seguridad en este momento. Puedo dejar la consulta para que un ejecutivo la revise."
+        respuesta = ""
         fallback_used = True
         fallback_reason = "parser_error"
     generation_latency_ms = round((time.perf_counter() - generation_started_at) * 1000, 1)
@@ -2012,6 +2018,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     elif visit_intent_clear:
         intencion = "agendar_visita"
 
+    if fallback_used:
+        respuesta, fallback_intent = build_local_fallback_response(
+            original_message,
+            operational_intent=intencion,
+            property_facts=prospecto_actual,
+        )
+        fallback_reason = normalize_fallback_reason(fallback_reason)
+        runtime_metrics = (telemetry_context or {}).get("runtime_metrics")
+        if isinstance(runtime_metrics, dict):
+            by_intent = runtime_metrics.setdefault("fallback_by_intent", {})
+            by_intent[fallback_intent] = int(by_intent.get(fallback_intent, 0) or 0) + 1
+
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
         "agendar_visita": LeadIntent.ASK_VISIT,
@@ -2225,7 +2243,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     metadata_tipo["response_source"] = "local_fallback" if fallback_used else "deepseek"
     if fallback_used:
-        metadata_tipo["response_reason"] = fallback_reason or "llm_error"
+        metadata_tipo["response_reason"] = normalize_fallback_reason(fallback_reason)
+        metadata_tipo["fallback_intent"] = fallback_intent or "GENERAL"
     logger.info(
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")

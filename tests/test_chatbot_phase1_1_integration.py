@@ -1,7 +1,7 @@
 """Integration-level regression coverage for the Phase 1.1 safety contract."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import mongomock
 import pytest
@@ -10,6 +10,7 @@ from chatbot import chatbot_queue as queue
 from chatbot import storage
 from chatbot import grok_client
 from chatbot import core
+from chatbot.whatsapp_client import normalize_provider_status
 from chatbot.conversation_policy import (
     alternative_offer_accepted,
     alternative_offer_declined,
@@ -19,6 +20,7 @@ from chatbot.conversation_policy import (
     outbound_unconfirmed_visit_claim,
     outbound_phone_request,
     safe_visit_claim_free_response,
+    build_local_fallback_response,
 )
 from chatbot.rag import extraer_filtros_estructurados
 
@@ -506,3 +508,191 @@ def test_generated_outbound_does_not_promote_last_message_until_accepted(monkeyp
     accepted = db["leads"].find_one({"phone": "+56911112222"})
     assert accepted["last_message_role"] == "assistant"
     assert accepted["last_message_preview"] == "Respuesta enviada"
+
+
+def test_provider_status_updates_are_idempotent_and_keep_responded_state(monkeypatch):
+    db = mongomock.MongoClient().phase11_delivery
+    db["leads"].insert_one({
+        "phone": "+56911112222",
+        "messages": [{
+            "role": "assistant", "content": "respuesta",
+            "batch_id": "delivery-b1", "provider_message_id": "provider-1",
+            "delivery_status": "accepted", "provider_status": "accepted",
+        }],
+    })
+    db["chatbot_inbound_jobs"].insert_one({
+        "_id": "delivery-b1", "kind": "response_batch",
+        "state": queue.ST_RESPONDED,
+        "outbound_provider_message_id": "provider-1",
+        "provider_status": "accepted", "delivery_status": "accepted",
+    })
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    payload = lambda status: {
+        "event": "messages.update",
+        "data": {"key": {"id": "provider-1"}, "update": {"status": status}},
+    }
+
+    assert storage.record_chatbot_delivery_status_webhook(payload(3))
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][0]
+    assert message["delivery_status"] == "delivered"
+    assert message["provider_status_code"] == 3
+    delivered_at = message["delivered_at"]
+    assert db["chatbot_inbound_jobs"].find_one({"_id": "delivery-b1"})["state"] == queue.ST_RESPONDED
+
+    # A late provider error must not regress a message already delivered.
+    assert storage.record_chatbot_delivery_status_webhook({
+        "event": "messages.update",
+        "data": {"key": {"id": "provider-1"}, "update": {"status": 0}},
+    })
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][0]
+    assert message["delivery_status"] == "delivered"
+
+    assert storage.record_chatbot_delivery_status_webhook(payload(4))
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][0]
+    assert message["delivery_status"] == "read"
+
+    # Delayed lower states and unknown statuses cannot regress read evidence.
+    assert storage.record_chatbot_delivery_status_webhook(payload(2))
+    assert storage.record_chatbot_delivery_status_webhook(payload(99))
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][0]
+    assert message["delivery_status"] == "read"
+    assert message["read_at"]
+    assert message["delivered_at"] == delivered_at
+
+    # A delayed delivered callback cannot regress a message already marked read.
+    assert storage.record_chatbot_delivery_status_webhook(payload(3))
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][0]
+    assert message["delivery_status"] == "read"
+
+    db["leads"].insert_one({
+        "phone": "+56911113333",
+        "messages": [{
+            "role": "assistant", "provider_message_id": "provider-2",
+            "delivery_status": "accepted", "provider_status": "accepted",
+        }],
+    })
+    db["chatbot_inbound_jobs"].insert_one({
+        "_id": "delivery-b2", "kind": "response_batch",
+        "state": queue.ST_RESPONDED,
+        "outbound_provider_message_id": "provider-2",
+        "provider_status": "accepted", "delivery_status": "accepted",
+    })
+    failed_payload = {
+        "event": "messages.update",
+        "data": {"key": {"id": "provider-2"}, "update": {"status": 0}},
+    }
+    assert storage.record_chatbot_delivery_status_webhook(failed_payload)
+    failed = db["leads"].find_one({"phone": "+56911113333"})["messages"][0]
+    assert failed["delivery_status"] == "failed"
+    assert failed["provider_status_code"] == 0
+    assert failed["failed_at"]
+    assert storage.record_chatbot_delivery_status_webhook({
+        "event": "messages.update",
+        "data": {"key": {"id": "unknown-provider"}, "update": {"status": 3}},
+    }) is True
+    assert db["chatbot_delivery_status_events"].find_one(
+        {"provider_message_id": "unknown-provider"},
+    )
+
+
+def test_delivery_callback_before_outbound_persistence_is_reconciled(monkeypatch):
+    db = mongomock.MongoClient().phase11_delivery_race
+    db["leads"].insert_one({
+        "phone": "+56911114444",
+        "messages": [{
+            "role": "assistant", "content": "respuesta",
+            "batch_id": "race-b1", "generation_id": "race-g1",
+            "delivery_status": "generated",
+        }],
+    })
+    db["chatbot_inbound_jobs"].insert_one({
+        "_id": "race-b1", "kind": "response_batch", "state": queue.ST_PROCESSING,
+    })
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+
+    # The callback arrives before the outbound provider id is written anywhere.
+    assert storage.record_chatbot_delivery_status_webhook({
+        "event": "messages.update",
+        "data": {"key": {"id": "race-provider-1"}, "update": {"status": 3}},
+    })
+    assert db["chatbot_delivery_status_events"].count_documents({}) == 1
+    assert "provider_message_id" not in db["leads"].find_one({"phone": "+56911114444"})["messages"][0]
+
+    # Persisting the provider id reconciles the parked callback into both the
+    # lead message and its response batch, with no requeue or state rewrite.
+    assert storage.update_generated_response_delivery(
+        "+56911114444", db=db, batch_id="race-b1", generation_id="race-g1",
+        status="accepted", content="respuesta", provider_message_id="race-provider-1",
+        provider_status="accepted",
+    )
+    message = db["leads"].find_one({"phone": "+56911114444"})["messages"][0]
+    batch = db["chatbot_inbound_jobs"].find_one({"_id": "race-b1"})
+    assert message["provider_status"] == "delivered"
+    assert message["provider_status_code"] == 3
+    assert batch["provider_status"] == "delivered"
+    assert batch["delivery_status"] == "delivered"
+    assert batch["state"] == queue.ST_PROCESSING
+    assert db["chatbot_delivery_status_events"].count_documents({}) == 0
+
+
+def test_provider_status_mapping_matches_wasender_contract():
+    assert {code: normalize_provider_status(code) for code in range(5)} == {
+        0: "failed", 1: "pending", 2: "sent", 3: "delivered", 4: "read",
+    }
+
+
+def test_local_fallbacks_are_intent_specific_and_do_not_claim_facts():
+    visit, visit_intent = build_local_fallback_response("Quiero visitar la propiedad")
+    availability, availability_intent = build_local_fallback_response("¿Sigue disponible?")
+    price, price_intent = build_local_fallback_response("¿Cuál es el precio?")
+    general, general_intent = build_local_fallback_response("Hola")
+
+    assert visit_intent == "ASK_VISIT"
+    assert "coordinar una visita" in visit
+    assert availability_intent == "ASK_AVAILABILITY"
+    assert "continúa disponible" in availability
+    assert price_intent == "ASK_PRICE"
+    assert "valor actualizado" in price
+    assert general_intent == "GENERAL"
+    for response in (visit, availability, price, general):
+        assert "está disponible" not in response.lower()
+        assert "confirmada" not in response.lower()
+
+
+def test_core_persists_fallback_provenance_and_intent(monkeypatch):
+    db = _db()
+    _seed_core_lead(db)
+    _patch_core_orchestration(monkeypatch, db)
+    monkeypatch.setattr(core, "generar_respuesta_estructurada", lambda *_args: {
+        "intencion": "consulta_general",
+        "respuesta_bot": "respuesta que no debe enviarse",
+        "datos_extraidos": {},
+        "fallback_used": True,
+        "fallback_reason": "timeout",
+        "response_source": "local_fallback",
+    })
+
+    response = asyncio.run(core.process_user_message(
+        "+56911112222", "¿Sigue disponible?",
+        telemetry_context={"batch_id": "fallback-b1", "generation_id": "fallback-g1"},
+    ))
+    assert "continúa disponible" in response
+    message = db["leads"].find_one({"phone": "+56911112222"})["messages"][-1]
+    assert message["response_source"] == "local_fallback"
+    assert message["response_reason"] == "deepseek_timeout"
+    assert message["fallback_intent"] == "ASK_AVAILABILITY"
+
+
+def test_delivery_unknown_is_reported_as_historical_reconciliation():
+    db = mongomock.MongoClient().phase11_health
+    now = datetime.now(timezone.utc)
+    db[queue.JOB_COLLECTION].insert_one({
+        "_id": "historical-unknown", "kind": queue.KIND_BATCH,
+        "state": queue.ST_DELIVERY_UNKNOWN, "job_ids": [], "updated_at": now,
+    })
+    health = queue.get_queue_health(
+        db, heartbeat={"last_heartbeat": now.isoformat()}, now=now,
+    )
+    assert health["service_status"] == "healthy"
+    assert health["degraded_reasons"] == []
+    assert health["historical_reconciliation_pending"]["total"] == 1

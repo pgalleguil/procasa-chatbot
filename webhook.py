@@ -1,6 +1,8 @@
 # --- START OF FILE webhook.py ---
 
 # webhook.py → BOT PRO 2025 CON LOGIN REAL + DASHBOARD + CAMPAÑAS 100% ORIGINALES
+import time as _startup_clock
+_WEBHOOK_IMPORT_STARTED = _startup_clock.perf_counter()
 import asyncio
 import logging
 import os
@@ -12,7 +14,6 @@ import re
 import secrets
 import traceback
 import threading
-import subprocess
 import concurrent.futures
 import inspect
 from concurrent.futures import ThreadPoolExecutor
@@ -23,10 +24,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import uvicorn
 import json
-from copy import deepcopy
 import pytz # Importante para la hora local
-from chatbot.storage import observability_mark, observability_snapshot_and_reset, observability_event_loop_blocked_recent, run_in_threadpool
-from chatbot.phone_utils import normalize_phone_strict
+from chatbot.storage import (
+    observability_mark,
+    observability_snapshot_and_reset,
+    observability_event_loop_blocked_recent,
+    record_chatbot_delivery_status_webhook,
+    run_in_threadpool,
+)
 
 # ========================= THREAD POOL CONTROLADO =========================
 # Pool separado para request web (evita que tareas batch bloqueen respuestas HTTP).
@@ -54,7 +59,7 @@ _WARMER_THREAD_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="proc
 
 # === NUEVAS IMPORTACIONES PARA GOOGLE ===
 import httpx 
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode, urlsplit, quote
 
 import requests
 from fastapi import FastAPI, Cookie, Request, HTTPException, Depends, status, Form, Header, Query, BackgroundTasks
@@ -79,20 +84,22 @@ from analytics.leads_service import (
     get_leads_dashboard_overview, get_leads_operational_dashboard,
     get_operational_executive_performance, get_operational_portfolios,
     get_properties_inventory_dashboard, get_capture_simulation,
-    InventoryTemporarilyUnavailable, warm_pinned_dashboard_cache,
-    keep_pinned_dashboard_cache,
 )
 
 from api_captacion import (
-    get_captacion_list, get_captacion_detail, update_captacion_status, update_contact_info,
+    get_captacion_list, get_captacion_detail, get_captacion_update_state,
+    update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
+    normalize_captacion_property_type,
+    _parse_captacion_price_bound,
     get_personal_templates, save_personal_template, delete_personal_template,
     warm_captacion_shared_catalogs,
 )
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
 from captacion_goals import (
     CAPTACION_PRIVILEGED_ROLES,
+    CAPTACION_GOAL_SNAPSHOT_COLLECTION,
     can_manage_captacion,
     get_captacion_goal_dashboard,
     load_captacion_goal_snapshot,
@@ -104,12 +111,16 @@ from captacion_workforce import (
     upsert_membership,
 )
 from chatbot.followup_tracking import (
+    FollowupConfigurationError,
     FollowupTokenError,
     build_followup_open_url,
+    expected_actor_id,
     find_tracked_task,
     record_captacion_detail_open,
     record_followup_event,
     record_followup_open,
+    task_entity_id,
+    validate_followup_token_runtime,
     verify_followup_token,
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
@@ -146,13 +157,12 @@ logger = logging.getLogger("procasa-full")
 # snapshots anteriores. La versión forma parte de la key y del payload para
 # que un proceso caliente nunca reutilice silenciosamente un esquema viejo.
 # Incremento de versión para que cualquier proceso recargado invalide snapshots KPI antiguos.
-CAPTACION_KPI_CACHE_VERSION = "v12"
+CAPTACION_KPI_CACHE_VERSION = "v13"
 CAPTACION_KPI_CACHE_SCHEMA = 4
 CAPTACION_GOAL_EXCLUDED_EXECUTIVES = ("Pablo Galleguillos",)
 
 # --- BLOCKING DETECTOR (temporal forensics) ---
 _ORIG_TIME_SLEEP = time.sleep
-_ORIG_SUBPROCESS_RUN = subprocess.run
 _ORIG_FUTURE_RESULT = concurrent.futures.Future.result
 
 def _in_event_loop_thread() -> bool:
@@ -166,38 +176,6 @@ def _forensic_sleep(seconds):
     if _in_event_loop_thread():
         logger.warning(f"[BLOCKING_DETECTOR] time.sleep({seconds}) llamado dentro de async/event loop")
     return _ORIG_TIME_SLEEP(seconds)
-
-def _forensic_subprocess_run(*args, **kwargs):
-    if _in_event_loop_thread():
-        try:
-            stack = inspect.stack()
-            project_frames = [
-                fr for fr in stack
-                if fr.filename and ("\\ChatBot_v4_Grok\\" in fr.filename or "/ChatBot_v4_Grok/" in fr.filename)
-            ]
-            short = " > ".join(
-                f"{os.path.basename(fr.filename)}:{fr.function}:{fr.lineno}" for fr in project_frames[:5]
-            ) if project_frames else "stack_no_disponible"
-            logger.warning(f"[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop stack={short}")
-        except Exception:
-            logger.warning("[BLOCKING_DETECTOR] subprocess.run llamado dentro de async/event loop")
-        logger.info("[ASYNC_FIX] subprocess forced to threadpool")
-        result_box = {}
-        error_box = {}
-
-        def _runner():
-            try:
-                result_box["value"] = asyncio.run(asyncio.to_thread(_ORIG_SUBPROCESS_RUN, *args, **kwargs))
-            except Exception as exc:
-                error_box["error"] = exc
-
-        t = threading.Thread(target=_runner, daemon=True)
-        t.start()
-        t.join()
-        if "error" in error_box:
-            raise error_box["error"]
-        return result_box.get("value")
-    return _ORIG_SUBPROCESS_RUN(*args, **kwargs)
 
 def _forensic_future_result(self, *args, **kwargs):
     if _in_event_loop_thread():
@@ -217,7 +195,6 @@ def _forensic_future_result(self, *args, **kwargs):
     return _ORIG_FUTURE_RESULT(self, *args, **kwargs)
 
 time.sleep = _forensic_sleep
-subprocess.run = _forensic_subprocess_run
 concurrent.futures.Future.result = _forensic_future_result
 
 # CONFIGURACIÓN ZONA HORARIA CHILE
@@ -298,6 +275,51 @@ def _captacion_goal_cache_key(selected_executive=None, period_start=None, today=
         return f"{key}_{period_start}"
     current_day = today or datetime.now(pytz.timezone("America/Santiago")).date().isoformat()
     return f"{key}_{current_day}"
+
+
+def _captacion_goal_snapshot_is_current(snapshot):
+    """Evita servir un snapshot del día anterior a una gestión confirmada."""
+    invalidated_at = getattr(app.state, "captacion_goal_snapshot_invalidated_at", 0)
+    if not invalidated_at:
+        return True
+
+    snapshot_timestamp = snapshot.get("timestamp") if snapshot else None
+    if isinstance(snapshot_timestamp, datetime):
+        if snapshot_timestamp.tzinfo is None:
+            snapshot_timestamp = snapshot_timestamp.replace(tzinfo=timezone.utc)
+        snapshot_epoch = snapshot_timestamp.timestamp()
+    elif isinstance(snapshot_timestamp, str):
+        try:
+            parsed_timestamp = datetime.fromisoformat(snapshot_timestamp.replace("Z", "+00:00"))
+            if parsed_timestamp.tzinfo is None:
+                parsed_timestamp = parsed_timestamp.replace(tzinfo=timezone.utc)
+            snapshot_epoch = parsed_timestamp.timestamp()
+        except ValueError:
+            return False
+    else:
+        return False
+    return snapshot_epoch >= invalidated_at
+
+
+def _invalidate_captacion_goal_cache():
+    """Invalida la caché local y marca obsoleto el snapshot actual."""
+    app.state.captacion_goal_cache = {}
+    app.state.captacion_goal_snapshot_invalidated_at = time.time()
+
+
+def _delete_current_captacion_goal_snapshots():
+    """Elimina snapshots del día actual para no restaurar datos anteriores tras reinicio."""
+    try:
+        from chatbot.storage import get_db
+
+        current_day = datetime.now(pytz.timezone("America/Santiago")).date().isoformat()
+        result = get_db()[CAPTACION_GOAL_SNAPSHOT_COLLECTION].delete_many({
+            "_id": {"$regex": rf":{re.escape(current_day)}$"}
+        })
+        return result.deleted_count
+    except Exception:
+        logger.exception("[CAPTACION_GOAL_SNAPSHOT] invalidación persistente fallida")
+        return 0
 
 
 async def _refresh_captacion_goal_snapshot(
@@ -474,9 +496,12 @@ def _build_captacion_worked_portal_breakdown(rows, contactability_by_portal=None
             "effective_contacts": int(contactability.get("effective_contacts") or 0),
         })
     portal_rows.sort(key=lambda row: (-row["worked"], row["label"].casefold()))
-    if len(portal_rows) > 2:
-        top_rows = portal_rows[:2]
-        other_rows = portal_rows[2:]
+    # La tarjeta tiene espacio para tres portales. Con dos se estaba
+    # mostrando Chilepropiedades como "Otros" aunque fuera un origen
+    # identificado y relevante en la cartera actual.
+    if len(portal_rows) > 3:
+        top_rows = portal_rows[:3]
+        other_rows = portal_rows[3:]
         top_rows.append({
             "value": "otros",
             "label": "Otros",
@@ -720,6 +745,19 @@ async def _load_captacion_kpi_snapshot(adb, base_query):
                 }},
                 {"$group": {"_id": "$contact_bucket", "count": {"$sum": 1}}},
             ],
+            "worked_portal": [
+                {"$match": {"gestion.estado": {"$in": worked_states}}},
+                {"$group": {
+                    "_id": {"$ifNull": ["$origen", "sin_origen"]},
+                    "worked": {"$sum": 1},
+                    "corredor": {"$sum": 0},
+                    "captadas": {"$sum": {"$cond": [{"$in": ["$gestion.estado", list(CAPTURED_STATES)]}, 1, 0]}},
+                }},
+            ],
+            "worked_properties": [
+                {"$match": {"gestion.estado": {"$in": worked_states}}},
+                {"$project": {"_id": 1, "origen": 1}},
+            ],
         }}
     ]
     kpi_result, comunas_list = await asyncio.gather(
@@ -776,9 +814,18 @@ async def _load_captacion_kpi_snapshot(adb, base_query):
         "captados_count": _count("captured"),
         "descartados_count": _count("discarded"),
         "available_count": _count("available"),
+        "ready_to_contact_count": _count("ready_to_contact"),
+        "pending_count": _count("available") + _count("ready_to_contact"),
+        "worked_count": sum(_count(key) for key in ("management", "captured", "discarded")),
         "comunas_clean": comunas_clean,
         "source_counts": source_counts,
         "contact_type_counts": contact_type_counts,
+        "worked_portal_counts": worked_portal_counts,
+        "contact_attempts": canonical_contactability["overall"]["contact_attempts"],
+        "effective_contacts": canonical_contactability["overall"]["effective_contacts"],
+        "contactability_pct": canonical_contactability["overall"]["contactability_pct"],
+        "contactability_result_buckets": canonical_contactability["result_buckets"],
+        "contactability_insight": canonical_contactability["result_insight"],
     }
 
 
@@ -789,7 +836,9 @@ async def _prewarm_captacion_default_kpi():
         from chatbot.storage import get_async_db
         adb = get_async_db()
         base_query = {
-            "origen": {"$in": ["toctoc", "yapo"]},
+            # Las tarjetas deben incorporar cualquier portal nuevo con origen
+            # válido, sin tener que modificar esta consulta cada vez.
+            "origen": {"$exists": True, "$nin": [None, ""]},
             "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
         }
         snapshot = await _load_captacion_kpi_snapshot(adb, base_query)
@@ -840,13 +889,28 @@ async def _ensure_captacion_indexes_background():
         logger.exception("[STARTUP_PERF] indexes background check failed")
         return False
 
-
 # --- NUEVA ARQUITECTURA DE COLA (PRODUCER/CONSUMER) ---
 lead_processing_queue = None  # Se inicializará en lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
+    startup_started = time.perf_counter()
+    db_connect_ms = 0.0
+    indexes_ms = 0.0
+    mandatory_init_ms = 0.0
+    captacion_warmup_complete_task = None
+    captacion_indexes_task = None
     logger.info("Bot PRO Iniciando (Lifespan Startup)...")
+
+    # Follow-up links use a dedicated key. In production a missing key is a
+    # startup error, so no worker can send a message containing a link that
+    # the validator cannot later verify.
+    followup_config = validate_followup_token_runtime()
+    logger.info(
+        "[FOLLOWUP_CONFIG] token_version=2 configured=%s production=%s",
+        followup_config.get("valid"),
+        followup_config.get("production"),
+    )
     
     # Install phone redaction on all loggers
     from chatbot.storage import install_log_redaction
@@ -859,34 +923,60 @@ async def lifespan(app: FastAPI):
     
     global lead_processing_queue, _OAUTH_HTTP_CLIENT
     lead_processing_queue = asyncio.Queue(maxsize=4)
-    captacion_prewarm_task = asyncio.create_task(_prewarm_captacion_shared_data())
-    captacion_goal_prewarm_task = asyncio.create_task(_prewarm_captacion_default_goal())
-    captacion_kpi_prewarm_task = asyncio.create_task(_prewarm_captacion_default_kpi())
-    app.state.captacion_goal_prewarm_task = captacion_goal_prewarm_task
+    captacion_prewarm_task = None
+    captacion_goal_prewarm_task = None
+    captacion_kpi_prewarm_task = None
 
     # Preconectar DB para reducir latencia del primer login/request.
+    db_started = time.perf_counter()
     try:
         from chatbot.storage import get_db, get_async_db
         import time as _ping_time
         _p0 = _ping_time.perf_counter()
-        get_db().command("ping")
+        await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: get_db().command("ping"),
+        )
         _p1 = _ping_time.perf_counter()
         logger.info(f"MongoDB ping: {(_p1-_p0)*1000:.0f}ms preconnect OK")
         await get_async_db().command("ping")
         logger.info("MongoDB preconnect: OK")
     except Exception as e:
         logger.warning(f"MongoDB preconnect warning: {e}")
+    finally:
+        db_connect_ms = (time.perf_counter() - db_started) * 1000
 
-    # Pre-crear índices de captación para evitar que se ejecuten dentro de requests
-    try:
-        from api_captacion import ensure_leads_indexes
-        ensure_leads_indexes()
-        from captacion_goals import ensure_captacion_goal_indexes
-        from chatbot.storage import get_db
-        ensure_captacion_goal_indexes(get_db())
-        logger.info("Captacion indexes: OK")
-    except Exception as e:
-        logger.warning(f"Captacion indexes warning: {e}")
+    mandatory_init_ms = (time.perf_counter() - startup_started) * 1000
+
+    # Los catálogos, KPI y metas se preparan fuera del camino crítico. Si hay
+    # un snapshot de metas, el primer request puede usarlo mientras el refresh
+    # se completa; si no existe, el request se une al mismo cálculo (single
+    # flight) y nunca se ejecutan dos reconstrucciones iguales.
+    captacion_prewarm_task = asyncio.create_task(_prewarm_captacion_shared_data())
+    captacion_goal_prewarm_task = asyncio.create_task(_prewarm_captacion_default_goal())
+    captacion_kpi_prewarm_task = asyncio.create_task(_prewarm_captacion_default_kpi())
+    app.state.captacion_goal_prewarm_task = captacion_goal_prewarm_task
+
+    # La comprobación/creación idempotente sigue ocurriendo una vez por
+    # proceso, pero no impide que la aplicación empiece a servir. Se lanza
+    # después de iniciar la lectura rápida de snapshots para no competir con
+    # el primer fallback de metas.
+    captacion_indexes_task = asyncio.create_task(_ensure_captacion_indexes_background())
+
+    async def _report_captacion_warmup_complete():
+        await asyncio.gather(
+            captacion_prewarm_task,
+            captacion_goal_prewarm_task,
+            captacion_kpi_prewarm_task,
+            return_exceptions=True,
+        )
+        elapsed = (time.perf_counter() - startup_started) * 1000
+        logger.info(
+            "[STARTUP_PERF] background_warm_complete_ms=%.0f catalogs_warm_ms=see_CAPTACION_WARMER kpi_warm_ms=see_CAPTACION_WARMER goals_warm_ms=see_CAPTACION_WARMER",
+            elapsed,
+        )
+
+    captacion_warmup_complete_task = asyncio.create_task(_report_captacion_warmup_complete())
 
     # Cliente HTTP compartido para OAuth (evita crear conexión por callback).
     _OAUTH_HTTP_CLIENT = httpx.AsyncClient(timeout=10.0)
@@ -1025,18 +1115,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("[PROP360_POLL] Loop import failed — disabled", exc_info=True)
     
-    # PROCASA SUCRE ficha sync — feature-flagged, self-contained
+    # PROCASA SUCRE ficha sync — ejecución automática temporalmente desactivada.
+    # La lógica y el runner manual permanecen disponibles en ficha_sync_loop.py.
     ficha_task = None
-    try:
-        from chatbot.ficha_sync_loop import ficha_sync_loop as _fsl
-        ficha_task = asyncio.create_task(_fsl())
-        import os as _os
-        logger.info(
-            "[FICHA_SYNC] Loop scheduled. enabled=%s",
-            _os.getenv("FICHA_SYNC_ENABLED", "false"),
-        )
-    except Exception:
-        logger.warning("[FICHA_SYNC] Loop import failed — disabled", exc_info=True)
+    logger.info("[FICHA_SYNC] Automatic loop disabled — manual runner remains available")
 
     # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
     uf_sync_task = None
@@ -1056,22 +1138,25 @@ async def lifespan(app: FastAPI):
     c1_task = asyncio.create_task(lead_consumer_worker(1))
     c2_task = asyncio.create_task(lead_consumer_worker(2))
     
-    # Crear admin y asegurar índices fuera del event loop: ambas funciones
-    # usan PyMongo síncrono durante el startup.
-    await run_in_threadpool(crear_admin_si_no_existe)
-    await run_in_threadpool(asegurar_indices_db)
-    
-    # Invalidar cachés antiguos de captación (versiones pre-migración)
-    try:
-        from chatbot.storage import get_db
-        _db_clean = get_db()
-        result = _db_clean["system_cache"].delete_many({
-            "_id": {"$regex": "^(captacion_resp_|captacion_count_|all_raw_comunas_)"}
-        })
-        if result.deleted_count > 0:
-            logger.info(f"Cachés de captación antiguos invalidados: {result.deleted_count}")
-    except Exception as e:
-        logger.warning(f"No se pudieron invalidar cachés antiguos: {e}")
+    # Crear admin, asegurar índices e invalidar cachés antiguos fuera del
+    # event loop. Todas estas funciones usan PyMongo síncrono.
+    def _startup_sync_db_init():
+        crear_admin_si_no_existe()
+        asegurar_indices_db()
+        try:
+            from chatbot.storage import get_db
+            result = get_db()["system_cache"].delete_many({
+                "_id": {"$regex": "^(captacion_resp_|captacion_count_|all_raw_comunas_)"}
+            })
+            if result.deleted_count > 0:
+                logger.info(f"Cachés de captación antiguos invalidados: {result.deleted_count}")
+        except Exception as e:
+            logger.warning(f"No se pudieron invalidar cachés antiguos: {e}")
+
+    await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL,
+        _startup_sync_db_init,
+    )
     
     # Tarea de fondo: otorgar permisos y copiar expedientes existentes a carpeta raiz de Drive
     def _fix_existing_drive_permissions():
@@ -1118,6 +1203,16 @@ async def lifespan(app: FastAPI):
         log_memory_diagnostics("startup_complete")
     except Exception as _e:
         logger.warning(f"[MEM_DIAG] fallback startup_complete: {_e}")
+
+    ready_ms = (time.perf_counter() - startup_started) * 1000
+    logger.info(
+        "[STARTUP_PERF] import_total_ms=%.0f db_connect_ms=%.0f indexes_ms=%.0f mandatory_init_ms=%.0f ready_ms=%.0f",
+        _WEBHOOK_IMPORT_TOTAL_MS,
+        db_connect_ms,
+        indexes_ms,
+        mandatory_init_ms,
+        ready_ms,
+    )
     
     yield
     
@@ -1173,9 +1268,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Error apagando tareas: {e}")
     finally:
-        for _captacion_task in (captacion_prewarm_task, captacion_goal_prewarm_task, captacion_kpi_prewarm_task):
-            if _captacion_task is not None:
-                _captacion_task.cancel()
         if _OAUTH_HTTP_CLIENT is not None:
             try:
                 await _OAUTH_HTTP_CLIENT.aclose()
@@ -1189,6 +1281,7 @@ async def lifespan(app: FastAPI):
         logger.info("ThreadPoolExecutors cerrados.")
 
 app = FastAPI(title="Procasa WhatsApp Bot - PRO PAGADO 2025", lifespan=lifespan)
+_WEBHOOK_IMPORT_TOTAL_MS = (_startup_clock.perf_counter() - _WEBHOOK_IMPORT_STARTED) * 1000
 
 # ========================= MIDDLEWARE DE OBSERVABILIDAD =========================
 import time
@@ -1324,12 +1417,8 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-if not hasattr(Config, "SECRET_KEY") or not Config.SECRET_KEY:
-    # Si no hay clave en Config, usamos una por defecto PERO estable para evitar que cada worker tenga una distinta
-    Config.SECRET_KEY = "procasa_secret_default_key_2025"
-    logger.warning("ATENCIÓN: Usando SECRET_KEY por defecto. Se recomienda configurar una en variables de entorno para máxima seguridad.")
-else:
-    logger.info("SECRET_KEY cargada correctamente desde Config.")
+# SECRET_KEY is reserved for CRM sessions/JWT. Follow-up tokens use the
+# dedicated Config.FOLLOWUP_TOKEN_SECRET and never reach this fallback path.
 
 def get_password_hash(password: str):
     return pwd_context.hash(password)
@@ -1417,15 +1506,6 @@ async def slide_session_middleware(request: Request, call_next):
     return response
 
 async def get_current_user(request: Request):
-    # Desarrollo local: el dashboard local usa la misma plantilla y endpoints
-    # productivos, pero no depende de una cookie de sesión del navegador.
-    # Solo se habilita desde el servidor local y nunca afecta Render/producción.
-    client_host = request.client.host if request.client else None
-    referer = request.headers.get("referer", "")
-    local_dashboard = client_host in {"127.0.0.1", "::1", "localhost"} and \
-        ("/leads-dashboard-local" in referer or request.url.path == "/leads-dashboard-local")
-    if local_dashboard:
-        return "__local_dashboard__"
     token = request.cookies.get("access_token")
     if not token:
         auth_header = request.headers.get("Authorization")
@@ -1444,8 +1524,6 @@ async def get_current_user(request: Request):
         raise HTTPException(status_code=401, detail="Token invalido o expirado")
 
 async def get_current_user_doc(request: Request):
-    if await get_current_user(request) == "__local_dashboard__":
-        return {"username": "__local_dashboard__", "nombre": "Visualización local", "rol": "admin"}
     cached = getattr(request.state, "current_user_doc", None)
     if cached is not None:
         return cached
@@ -1474,6 +1552,26 @@ def _safe_login_next(value: str | None) -> str | None:
         return None
     return parsed.path + (f"?{parsed.query}" if parsed.query else "")
 
+
+def _default_post_login_url(user_role: str | None) -> str:
+    """Return the first module shown after login for each role."""
+    role = str(user_role or "").strip().lower()
+    return "/leads-dashboard" if role in {"admin", "supervisor", "administrador"} else "/crm"
+
+
+def _is_local_auth_request(request: Request) -> bool:
+    """Identify the local development host without affecting Render redirects."""
+    return (request.url.hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
+
+
+def _post_login_target(request: Request, user_role: str | None, explicit_next: str | None = None) -> str:
+    """Choose a role default, avoiding stale local redirect cookies after a restart."""
+    default_url = _default_post_login_url(user_role)
+    requested_url = _safe_login_next(explicit_next)
+    if _is_local_auth_request(request):
+        return requested_url or default_url
+    return requested_url or _safe_login_next(request.cookies.get("login_next")) or default_url
+
 @app.get("/login/google")
 async def login_google(request: Request, next: str = Query(None)):
     params = {
@@ -1487,7 +1585,9 @@ async def login_google(request: Request, next: str = Query(None)):
     }
     url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
     response = RedirectResponse(url)
-    next_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(next)
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     if next_url:
         response.set_cookie("login_next", next_url, httponly=True, secure=True, samesite="lax", max_age=600)
     return response
@@ -1512,7 +1612,7 @@ async def auth_google_callback(request: Request, code: str):
             token_data = token_resp.json()
             if "error" in token_data:
                 logger.error(f"Error Token Google: {token_data}")
-                return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
+                return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": "Error al conectar con Google (Token)"})
 
             access_token = token_data.get("access_token")
             user_info_url = "https://www.googleapis.com/oauth2/v1/userinfo"
@@ -1529,12 +1629,11 @@ async def auth_google_callback(request: Request, code: str):
         user = await usuarios.find_one({"$or": [{"email": email}, {"username": email}]}, {"username": 1, "rol": 1, "email": 1})
         if not user:
             logger.warning(f"Intento de acceso denegado: {email}")
-            return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
+            return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Acceso Denegado: El correo {email} no tiene permisos."})
 
         user_sub = user["username"]
         user_rol = user.get("rol", "agente")
-        default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-        target_url = _safe_login_next(request.cookies.get("login_next")) or default_url
+        target_url = _post_login_target(request, user_rol)
         access_token_jwt = create_access_token({"sub": user_sub})
         response = RedirectResponse(target_url, status_code=303)
         response.set_cookie(key="access_token", value=access_token_jwt, httponly=True, secure=True, samesite="lax", max_age=7200)
@@ -1544,15 +1643,19 @@ async def auth_google_callback(request: Request, code: str):
         return response
     except Exception as e:
         logger.error(f"Error Google Auth Critical: {e}")
-        return templates.TemplateResponse("login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
+        return templates.TemplateResponse(request, "login.html", {"request": request, "images": get_images(), "error": f"Error interno: {str(e)}"})
 
 # ========================= 4. RUTAS DE LOGIN TRADICIONAL =========================
 
 @app.head("/")
 @app.get("/")
+@app.get("/login")
 async def login_get(request: Request):
-    next_url = _safe_login_next(request.query_params.get("next")) or _safe_login_next(request.cookies.get("login_next"))
+    next_url = _safe_login_next(request.query_params.get("next"))
+    if not next_url and not _is_local_auth_request(request):
+        next_url = _safe_login_next(request.cookies.get("login_next"))
     response = templates.TemplateResponse(
+        request,
         "login.html",
         {
             "request": request,
@@ -1575,8 +1678,7 @@ async def login_post(request: Request, username: str = Form(...), password: str 
         
         if user and verify_password(password, user.get("hashed_password", "")):
             user_rol = user.get("rol", "agente")
-            default_url = "/leads-dashboard" if user_rol == "supervisor" else "/crm"
-            target_url = _safe_login_next(next) or _safe_login_next(request.cookies.get("login_next")) or default_url
+            target_url = _post_login_target(request, user_rol, next)
 
             token = create_access_token({"sub": username})
             
@@ -1592,12 +1694,12 @@ async def login_post(request: Request, username: str = Form(...), password: str 
             response.delete_cookie("login_next")
             return response
         
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Usuario o contraseña incorrectos"
         })
     except Exception as e:
         logger.error(f"Error en login tradicional: {e}")
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "images": get_images(), "error": "Error del servidor"
         })
 
@@ -1609,17 +1711,17 @@ async def logout():
 
 @app.get("/forgot-password")
 async def forgot_password(request: Request):
-    return templates.TemplateResponse("forgot_password.html", {"request": request})
+    return templates.TemplateResponse(request, "forgot_password.html", {"request": request})
 
 @app.get("/reset-password/{token}")
 async def reset_password(request: Request, token: str):
-    return templates.TemplateResponse("reset_password.html", {"request": request, "token": token})
+    return templates.TemplateResponse(request, "reset_password.html", {"request": request, "token": token})
 
 # ========================= 5. DASHBOARD & REPORTES =========================
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def ver_campanas(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html", {"request": request})
 
 @app.get("/api/leads_reporte")
 async def api_leads_reporte(request: Request):
@@ -1644,7 +1746,7 @@ async def ver_leads(request: Request):
     if not user or user.get("rol") not in ["admin", "supervisor"]:
         return RedirectResponse(url="/crm?error=acceso_denegado")
     
-    return templates.TemplateResponse("leads_dashboard.html", {
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", "")
@@ -1652,17 +1754,13 @@ async def ver_leads(request: Request):
 
 
 @app.get("/leads-dashboard-review", response_class=HTMLResponse)
-@app.get("/leads-dashboard-local", response_class=HTMLResponse)
 async def ver_leads_review(request: Request):
-    """Local visual review shell using the same full dashboard template."""
-    _require_public_leads_dashboard()
+    """Public, read-only visual review; never resolves a user or touches Mongo."""
     response = templates.TemplateResponse(request, "leads_dashboard.html", {
         "request": request,
-        "user_role": "admin",
+        "user_role": "review",
         "user_name": "Visual Review",
-        "full_visual_review": True,
-        "fixture_demo": True,
-        "local_dashboard": request.url.path == "/leads-dashboard-local",
+        "territorial_review": True,
     })
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
@@ -1672,7 +1770,6 @@ async def ver_leads_review(request: Request):
 @app.get("/api/review/leads-dashboard")
 async def leads_dashboard_review_data():
     """Sanitized fixture only. No request parameters and no database access."""
-    _require_public_leads_dashboard()
     response = JSONResponse(territorial_review_payload())
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     response.headers["Cache-Control"] = "no-store"
@@ -1716,276 +1813,14 @@ def _overview_server_timing(timing: dict) -> str:
     return ", ".join(parts)
 
 
-def _demand_capture_server_timing(timing: dict) -> str:
-    parts = []
-    if timing.get("cache"):
-        parts.append(f'cache;desc="{timing["cache"]}"')
-    for stage in ("base_leads", "base_properties", "base_network", "base_wall",
-                  "leads_aggregate", "lead_codes", "property_find", "contract_build"):
-        duration = timing.get(f"demand_capture.{stage}_ms")
-        if duration is not None:
-            parts.append(f"demand_capture.{stage};dur={duration}")
-    for metric in ("base_docs", "base_lead_bson_bytes", "base_property_bson_bytes"):
-        value = timing.get(f"demand_capture.{metric}")
-        if value is not None:
-            parts.append(f"demand_capture.{metric};desc=\"{value}\"")
-    total = timing.get("demand_capture.total_ms")
-    if total is not None:
-        parts.append(f"demand_capture.total;dur={total}")
-    if timing.get("demand_capture.timeout_stage"):
-        parts.append(f'demand_capture.timeout_stage;desc="{timing["demand_capture.timeout_stage"]}"')
-    return ", ".join(parts)
-
-
 @app.get("/demo/leads-intelligence", response_class=HTMLResponse)
 async def public_leads_intelligence_demo(request: Request):
     """Temporary, read-only public shell for the Executive Summary only."""
-    _require_public_leads_dashboard()
-    response = templates.TemplateResponse(request, "leads_dashboard.html", {
-        "user_role": "demo",
+    return templates.TemplateResponse(request, "leads_dashboard.html", {
+        "user_role": "public_demo",
         "user_name": "",
-        "fixture_demo": True,
+        "public_demo": True,
     })
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def _require_public_leads_dashboard():
-    if not Config.PUBLIC_LEADS_DASHBOARD_ENABLED:
-        raise HTTPException(status_code=404, detail="No encontrado")
-
-
-_DEMO_DASHBOARD_JSON = Path(__file__).with_name("demo_data") / "leads_dashboard_demo.json"
-
-
-def _load_demo_dashboard_data() -> dict:
-    with _DEMO_DASHBOARD_JSON.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
-
-
-def _demo_json_response(key: str) -> JSONResponse:
-    response = JSONResponse(_load_demo_dashboard_data().get(key, {}))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-def _demo_window(period_start=None, period_end=None):
-    base_start = datetime.strptime("2026-07-26", "%Y-%m-%d").date()
-    base_end = datetime.strptime("2026-08-24", "%Y-%m-%d").date()
-    try:
-        start = datetime.strptime(period_start, "%Y-%m-%d").date() if period_start else base_start
-        end = datetime.strptime(period_end, "%Y-%m-%d").date() if period_end else base_end
-    except (TypeError, ValueError):
-        start, end = base_start, base_end
-    if end < start:
-        start, end = end, start
-    days = max(1, (end - start).days + 1)
-    previous_end = start - timedelta(days=1)
-    previous_start = previous_end - timedelta(days=days - 1)
-    return start, end, previous_start, previous_end, days
-
-
-def _demo_factor(*values):
-    seed = "|".join(str(value or "") for value in values)
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-    return 0.92 + (int(digest[:4], 16) % 17) / 100
-
-
-def _demo_scale(value, factor, minimum=0):
-    if value is None:
-        return value
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return max(minimum, round(value * factor, 1))
-    return value
-
-
-def _demo_transform_overview(period_start=None, period_end=None, compare=None):
-    start, end, previous_start, previous_end, days = _demo_window(period_start, period_end)
-    data = deepcopy(_load_demo_dashboard_data()["overview"])
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(period_start, period_end, compare)))
-    data["period"]["current"] = {"start": start.isoformat(), "end": end.isoformat()}
-    data["period"]["previous"] = {"start": previous_start.isoformat(), "end": previous_end.isoformat()}
-    data["period"]["compare_resolved"] = "none" if compare == "none" else "auto"
-    demand = data["demand"]
-    demand["total"] = _demo_scale(demand["total"], factor, 1)
-    demand["previous"] = _demo_scale(demand["previous"], factor * 0.96, 1)
-    demand["variation_pct"] = round((demand["total"] - demand["previous"]) / demand["previous"] * 100, 1)
-    for series_name in ("daily", "previous_daily", "daily_history"):
-        series = demand.get(series_name, {})
-        series["values"] = [_demo_scale(value, factor, 0) for value in series.get("values", [])]
-    for key in ("leads", "citas"):
-        data["conversion"][key] = _demo_scale(data["conversion"][key], factor, 0)
-    data["conversion"]["conversion_pct"] = round(data["conversion"]["citas"] / max(1, data["conversion"]["leads"]) * 100, 1)
-    data["conversion"]["ratio_leads_per_cita"] = round(data["conversion"]["leads"] / max(1, data["conversion"]["citas"]), 1)
-    for key in ("monto_venta_uf", "monto_arriendo_uf", "comision_potencial_uf", "comision_venta_uf", "comision_arriendo_uf", "propiedades_cartera", "propiedades_vinculadas"):
-        data["pipeline"][key] = _demo_scale(data["pipeline"][key], factor, 0)
-    for key in ("managed", "open", "open_breached", "not_evaluable"):
-        data["sla"][key] = _demo_scale(data["sla"][key], factor, 0)
-    for source in data["sources"].get("items", []):
-        source["cantidad"] = _demo_scale(source.get("cantidad"), factor, 0)
-        source["visitas"] = _demo_scale(source.get("visitas"), factor, 0)
-    source_total = max(1, sum(item.get("cantidad", 0) for item in data["sources"].get("items", [])))
-    for source in data["sources"].get("items", []):
-        source["pct"] = round(source.get("cantidad", 0) / source_total * 100, 1)
-        source["conversion_pct"] = round(source.get("visitas", 0) / max(1, source.get("cantidad", 0)) * 100, 1)
-    for stage in data["funnel"].get("stages", []):
-        if stage.get("key") != "received":
-            stage["count"] = _demo_scale(stage["count"], factor, 0)
-    data["funnel"]["stages"][0]["count"] = demand["total"]
-    return data
-
-
-def _demo_filter_match(item, operation=None, property_type=None, commune=None, responsible=None):
-    checks = (
-        (operation, item.get("operation")),
-        (property_type, item.get("type")),
-        (commune, item.get("commune")),
-        (responsible, item.get("responsible")),
-    )
-    return all(not wanted or str(value or "").casefold() == str(wanted).casefold() for wanted, value in checks)
-
-
-def _demo_transform_inventory(period_start=None, period_end=None, operation=None, property_type=None, commune=None, responsible=None):
-    start, end, _, _, days = _demo_window(period_start, period_end)
-    data = _demo_inventory_payload()
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(operation, property_type, commune, responsible)))
-    data["meta"]["period_start"] = start.isoformat()
-    data["meta"]["period_end"] = end.isoformat()
-    data["active_filters"] = {"operation": operation or "Todas", "property_type": property_type or "Todos", "commune": commune or "Todas", "responsible": responsible or "Todos"}
-    data["demand"]["leads"] = _demo_scale(data["demand"].get("leads"), factor, 0)
-    data["inventory"]["active"] = _demo_scale(data["inventory"].get("active"), factor, 1)
-    data["demand"]["properties_with_demand"] = min(data["inventory"]["active"], _demo_scale(data["demand"].get("properties_with_demand"), factor, 0))
-    data["demand"]["coverage_pct"] = round(data["demand"]["properties_with_demand"] / max(1, data["inventory"]["active"]) * 100, 1)
-    data["inventory"]["with_demand"] = data["demand"]["properties_with_demand"]
-    data["inventory"]["without_demand"] = max(0, data["inventory"]["active"] - data["inventory"]["with_demand"])
-    data["inventory"]["coverage_pct"] = data["demand"]["coverage_pct"]
-    for collection in ("properties", "intervention"):
-        data[collection] = [item for item in data.get(collection, []) if _demo_filter_match(item, operation, property_type, commune, responsible)]
-    for dimension, rows in data.get("demand_intelligence", {}).get("dimensions", {}).items():
-        filtered = rows
-        wanted = operation if dimension == "operation" else property_type if dimension == "type" else None
-        if wanted:
-            filtered = [row for row in rows if str(wanted).casefold() in str(row.get("segment", "")).casefold()]
-        for row in filtered:
-            row["leads"] = _demo_scale(row.get("leads"), factor, 0)
-            row["stock_sucre"] = _demo_scale(row.get("stock_sucre"), factor, 0)
-        data["demand_intelligence"]["dimensions"][dimension] = filtered
-    data["opportunities"] = [item for item in data.get("opportunities", []) if _demo_filter_match(item, operation, property_type, commune, None)]
-    return data
-
-
-def _demo_transform_operations(period_start=None, period_end=None, executive=None, portfolio=None):
-    start, end, _, _, days = _demo_window(period_start, period_end)
-    data = deepcopy(_load_demo_dashboard_data()["operations"])
-    factor = max(0.35, min(1.8, days / 30 * _demo_factor(executive, portfolio)))
-    data["meta"]["period_start"] = start.isoformat()
-    data["meta"]["period_end"] = end.isoformat()
-    data["meta"]["portfolio"] = portfolio or data["meta"].get("portfolio", "Demo")
-    for key in ("active_assigned", "pending_first_management", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "activity_without_result"):
-        data["current"][key] = _demo_scale(data["current"].get(key), factor, 0)
-    for key in ("assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
-        data["period"][key] = _demo_scale(data["period"].get(key), factor, 0)
-    if executive:
-        data["executives"] = [item for item in data["executives"] if item.get("executive") == executive]
-    for item in data["executives"]:
-        for section in ("current", "period"):
-            for key in ("active_load", "pending", "active_assigned", "open_overdue", "hot_overdue", "normal_overdue", "hot_near_due", "unassigned", "assigned", "managed", "result_leads", "activity_attempts", "activity_without_result", "contact_effective", "visits_scheduled"):
-                if key in item.get(section, {}):
-                    item[section][key] = _demo_scale(item[section][key], factor, 0)
-    return data
-
-
-@app.get("/api/demo/leads-dashboard/overview")
-async def demo_leads_dashboard_overview(
-    period_start: str = Query(None), period_end: str = Query(None),
-    compare: str = Query(None), period_preset: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_overview(period_start, period_end, compare))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations")
-async def demo_leads_dashboard_operations(
-    period_start: str = Query(None), period_end: str = Query(None),
-    executive: str = Query(None), portfolio: str = Query(None),
-    compare: str = Query(None), period_preset: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_operations(period_start, period_end, executive, portfolio))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations/portfolios")
-async def demo_leads_dashboard_operations_portfolios():
-    _require_public_leads_dashboard()
-    response = JSONResponse({"portfolios": [{"captador": "Demo", "active": 94}]})
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/operations/executives")
-async def demo_leads_dashboard_operations_executives():
-    _require_public_leads_dashboard()
-    return _demo_json_response("operations")
-
-
-def _demo_inventory_payload() -> dict:
-    data = _load_demo_dashboard_data()
-    keys = (
-        "inventory", "demand", "meta", "data_quality", "attribution",
-        "demand_intelligence", "opportunities", "benchmark", "simulator_options",
-        "review_simulator", "composition", "demand_coverage", "responsibles",
-        "intervention", "properties", "filter_options", "forecast",
-    )
-    return {key: data[key] for key in keys if key in data}
-
-
-@app.get("/api/demo/leads-dashboard/properties-inventory")
-async def demo_leads_dashboard_properties_inventory(
-    period_start: str = Query(None), period_end: str = Query(None),
-    operation: str = Query(None), property_type: str = Query(None),
-    commune: str = Query(None), responsible: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    response = JSONResponse(_demo_transform_inventory(
-        period_start, period_end, operation, property_type, commune, responsible
-    ))
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/api/demo/leads-dashboard/capture-simulator")
-async def demo_leads_dashboard_capture_simulator(
-    operation: str = Query(None), property_type: str = Query(None),
-    commune: str = Query(None), price: str = Query(None),
-    bedrooms: str = Query(None), bathrooms: str = Query(None),
-    surface: str = Query(None),
-):
-    _require_public_leads_dashboard()
-    payload = deepcopy(_load_demo_dashboard_data().get("review_simulator", {"available": False}))
-    seed = _demo_factor(operation, property_type, commune, price, bedrooms, bathrooms, surface)
-    evidence = payload.setdefault("evidence", {})
-    evidence["w0"] = _demo_scale(evidence.get("w0"), seed, 0)
-    evidence["w1"] = _demo_scale(evidence.get("w1"), seed, 0)
-    evidence["w2"] = _demo_scale(evidence.get("w2"), seed, 0)
-    evidence["intensity"] = round(float(evidence.get("intensity", 0)) * seed, 2)
-    evidence["text"] = "Escenario ficticio para " + " / ".join(value for value in (operation, property_type, commune) if value)
-    payload["matching"]["quality"] = "exacta" if seed >= 1.0 else "cercana"
-    response = JSONResponse(payload)
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
 
 
 @app.get("/api/demo/leads-intelligence/overview")
@@ -1997,8 +1832,6 @@ async def public_leads_intelligence_overview(
     period_preset: str = Query(None),
 ):
     """Aggregated read-only Overview API for external performance audits."""
-    _require_public_leads_dashboard()
-    return _demo_json_response("overview")
     from analytics.commercial_periods import VALID_COMPARISONS, VALID_PRESETS, validate_explicit_range
 
     for key in ("period_start", "period_end", "compare", "period_preset"):
@@ -2041,11 +1874,6 @@ async def public_leads_intelligence_overview(
 @app.get("/api/demo/leads-intelligence/mongo-latency")
 async def public_leads_intelligence_mongo_latency():
     """Temporary aggregate-only Mongo latency probe for infrastructure audit."""
-    _require_public_leads_dashboard()
-    response = JSONResponse({"available": False, "message": "Demo basada exclusivamente en JSON ficticio."})
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    response.headers["Cache-Control"] = "no-store"
-    return response
     def percentile(values, pct):
         ordered = sorted(values)
         if not ordered:
@@ -2151,20 +1979,16 @@ async def api_leads_dashboard_properties_inventory(
     }.items() if value}
     timing = {}
     loop = asyncio.get_running_loop()
-    try:
-        payload = await loop.run_in_executor(
-            _WEB_THREAD_POOL,
-            lambda: get_properties_inventory_dashboard(
-                period_start=period_start, period_end=period_end,
-                filters=filters, timing=timing,
-            ),
-        )
-    except InventoryTemporarilyUnavailable:
-        raise HTTPException(status_code=503, detail="Inventario temporalmente no disponible")
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_properties_inventory_dashboard(
+            period_start=period_start, period_end=period_end,
+            filters=filters, timing=timing,
+        ),
+    )
     response = JSONResponse(payload)
     response.headers["Cache-Control"] = "private, max-age=120"
     response.headers["X-Analytics-Mongo-Calls"] = str(timing.get("mongo_calls", 0))
-    response.headers["Server-Timing"] = _demand_capture_server_timing(timing)
     return response
 
 
@@ -2266,6 +2090,7 @@ async def api_leads_dashboard_operations_executives(
         ),
     )
 
+
 @app.get("/api/leads-dashboard/captacion-management")
 async def api_leads_dashboard_captacion_management(
     request: Request,
@@ -2275,6 +2100,8 @@ async def api_leads_dashboard_captacion_management(
 ):
     """Resumen de actividad del equipo usando el período seleccionado del dashboard."""
     user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
     if not user or user.get("rol") not in CAPTACION_PRIVILEGED_ROLES:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     from chatbot.storage import get_db
@@ -2380,7 +2207,7 @@ async def analytics_leads_page(request: Request):
     user = await get_current_user_doc(request)
     if not user:
         return RedirectResponse(url="/?error=sesion_invalida")
-    return templates.TemplateResponse("analytics/leads_dashboard.html", {
+    return templates.TemplateResponse(request, "analytics/leads_dashboard.html", {
         "request": request,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", ""),
@@ -2602,6 +2429,30 @@ async def api_analytics_leads_detail(request: Request, lead_id: str):
         raise HTTPException(status_code=400, detail="ID inv\u00e1lido")
 
     loop = asyncio.get_running_loop()
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        from bson import ObjectId as BsonObjectId
+        from bson.errors import InvalidId
+        from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+        try:
+            analytics_oid = BsonObjectId(lead_id)
+        except InvalidId:
+            raise HTTPException(status_code=400, detail="ID inválido")
+        from chatbot.storage import get_db as _sync_db
+        analytics_lead = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: _sync_db()["leads"].find_one({"_id": analytics_oid}),
+        )
+        if not analytics_lead:
+            raise HTTPException(status_code=404, detail="Lead no encontrado")
+        analytics_context = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=analytics_lead),
+        )
+        if not analytics_context.access_allowed:
+            raise HTTPException(
+                status_code=analytics_context.http_status,
+                detail=safe_access_error(analytics_context),
+            )
     data = await loop.run_in_executor(
         _WEB_THREAD_POOL,
         lambda: analytics_get_detail(lead_id),
@@ -2642,7 +2493,7 @@ async def ver_detalle_chat(request: Request, phone: str):
     if not chat_data:
         chat_data = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_specific_lead_chat(phone))
         
-    return templates.TemplateResponse("chat_detail.html", {
+    return templates.TemplateResponse(request, "chat_detail.html", {
         "request": request, 
         "chat": chat_data,
         "phone": phone
@@ -2660,7 +2511,7 @@ async def view_manual_lead_entry(request: Request):
     email = user.get("email") or user.get("username")
     if email: email = email.strip()
 
-    return templates.TemplateResponse("manual_lead_entry.html", {
+    return templates.TemplateResponse(request, "manual_lead_entry.html", {
         "request": request,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
@@ -2743,7 +2594,21 @@ async def _get_authorized_crm_lead(
     lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(phone))
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
-    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead, user):
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+        from chatbot.storage import get_db as _sync_db
+
+        access_context = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+        )
+        request.state.crm_access_context = access_context
+        if not access_context.access_allowed:
+            raise HTTPException(
+                status_code=access_context.http_status,
+                detail=safe_access_error(access_context),
+            )
+    if not Config.CRM_SLA_SECURITY_LAYER_ENABLED and not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead, user):
         raise HTTPException(status_code=403, detail="El lead no está asignado a este ejecutivo")
     return user, lead
 
@@ -2761,6 +2626,8 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
                 redact_phone(phone))
     
     user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
     from chatbot.storage import get_db as _sync_db
     from chatbot.lead_router import build_secure_crm_url
 
@@ -2783,7 +2650,28 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     lead, lead_data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
-    if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead_data or {}, user):
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        from chatbot.crm_lead_access import (
+            LOCKED_LEAD_MESSAGE,
+            resolve_crm_lead_access_context,
+            safe_access_error,
+        )
+        access_context = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+        )
+        request.state.crm_access_context = access_context
+        if not access_context.access_allowed:
+            if access_context.is_locked:
+                return HTMLResponse(
+                    "<main><h1>Lead no disponible</h1><p>"
+                    + LOCKED_LEAD_MESSAGE
+                    + "</p></main>",
+                    status_code=access_context.http_status,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
+            raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+    if not Config.CRM_SLA_SECURITY_LAYER_ENABLED and not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(lead_data or {}, user):
         raise HTTPException(status_code=403, detail="No autorizado")
 
     secure_url = build_secure_crm_url(lead)
@@ -2794,12 +2682,14 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
 
 
 @app.get("/crm/lead-id/{lead_id}", response_class=HTMLResponse)
-async def view_crm_detail_by_id(request: Request, lead_id: str):
+async def view_crm_detail_by_id(request: Request, lead_id: str, followup_token: str | None = Query(None)):
     """Secure lead detail by ObjectId. No phone in URL. No query-string data trusted."""
     from bson import ObjectId as BsonObjectId
     from bson.errors import InvalidId
 
     user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
     try:
         oid = BsonObjectId(lead_id)
     except InvalidId:
@@ -2807,24 +2697,80 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
 
     from chatbot.storage import get_db as _sync_db
 
-    def _resolve():
-        db = _sync_db()
-        lead = db["leads"].find_one({"_id": oid})
-        if lead:
-            phone = lead.get("phone") or ""
-            detail = get_lead_detail_data(phone, lead_doc=lead)
-            return lead, detail
-        return None, None
+    def _resolve_lead():
+        return _sync_db()["leads"].find_one({"_id": oid})
 
     loop = asyncio.get_running_loop()
-    lead, data = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve)
-    if not lead or not data:
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve_lead)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    access_context = None
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        from chatbot.crm_lead_access import (
+            LOCKED_LEAD_MESSAGE,
+            resolve_crm_lead_access_context,
+            safe_access_error,
+            sanitize_lead_for_access,
+        )
+        access_context = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+        )
+        request.state.crm_access_context = access_context
+        if not access_context.access_allowed:
+            if access_context.is_locked:
+                return HTMLResponse(
+                    "<main><h1>Lead no disponible</h1><p>"
+                    + LOCKED_LEAD_MESSAGE
+                    + "</p></main>",
+                    status_code=access_context.http_status,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
+            raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+    data = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_lead_detail_data(lead.get("phone") or "", lead_doc=lead),
+    )
+    if not data:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     full_phone_access = can_administer_leads(user.get("rol")) or lead_is_assigned_to_user(data, user)
-    if not full_phone_access:
+    if not full_phone_access and not Config.CRM_SLA_SECURITY_LAYER_ENABLED:
         # Keep the current ownership gate for lead access, but never leak a raw
         # phone if this route is reused by a read-only authenticated view.
         raise HTTPException(status_code=403, detail="El lead no esta asignado a este ejecutivo")
+    if followup_token:
+        try:
+            def _record_crm_followup_open():
+                from chatbot.storage import get_db as _sync_db
+                return record_followup_open(
+                    _sync_db(), token=followup_token, entity_id=lead_id,
+                    actor_user_id=str(user.get("_id") or ""),
+                )
+
+            await loop.run_in_executor(_WEB_THREAD_POOL, _record_crm_followup_open)
+        except FollowupConfigurationError:
+            logger.error(
+                "[FOLLOWUP] token_validation_failed lead_id=%s reason=configuration_invalid",
+                lead_id,
+            )
+            raise HTTPException(status_code=503, detail="followup_configuration_invalid")
+        except FollowupTokenError as exc:
+            code = str(exc)
+            logger.warning(
+                "[FOLLOWUP] token_validation_failed lead_id=%s reason=%s",
+                lead_id, code,
+            )
+            status_code = 403 if code in {"followup_actor_forbidden", "followup_access_denied"} else 410
+            raise HTTPException(status_code=status_code, detail=code)
+    if access_context is not None:
+        data = sanitize_lead_for_access(data, access_context)
+        data["crm_access_context"] = access_context.to_dict()
+        data["lead_id"] = str(lead.get("_id") or "")
+        # The browser receives the server-resolved current cycle.  It is only
+        # a stale-request hint; every write endpoint validates it again.
+        if access_context.current_assignment_cycle_id:
+            data["assignment_cycle_id"] = str(access_context.current_assignment_cycle_id)
+        data["phone_visibility"] = access_context.contact_visibility.value
     raw_phone = str(data.get("phone") or "").strip()
     phone_synthetic = bool(lead.get("phone_is_synthetic")) or raw_phone.startswith("no-phone-")
     if phone_synthetic:
@@ -2841,16 +2787,19 @@ async def view_crm_detail_by_id(request: Request, lead_id: str):
         data["whatsapp_display"] = display
         data["phone_is_synthetic"] = False
     data.pop("phone_raw", None)
-    data["phone_visibility"] = "full"
+    if access_context is None:
+        data["phone_visibility"] = "full"
 
     email = user.get("email") or user.get("username")
 
-    return templates.TemplateResponse("crm_lead_detail.html", {
+    return templates.TemplateResponse(request, "crm_lead_detail.html", {
         "request": request, 
         "lead": data,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
-        "user_name": user.get("nombre", "")
+        "user_name": user.get("nombre", ""),
+        "crm_sla_security_layer_enabled": bool(Config.CRM_SLA_SECURITY_LAYER_ENABLED),
+        "lead_id": str(lead.get("_id") or ""),
     })
 
 
@@ -2864,6 +2813,56 @@ def _mask_phone(phone: str) -> str:
     if m:
         return f"{m.group(1)} **** {m.group(3)}"
     return p[:6] + "****" + p[-4:] if len(p) > 8 else p
+
+
+async def _resolve_security_contact(request: Request, oid):
+    """Resolve contact data only after the canonical access gate passes."""
+    from chatbot.storage import get_db as _sync_db
+    from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+
+    user = await get_current_user_doc(request)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    target = str((payload or {}).get("target") or "lead").strip().lower()
+    if target not in {"lead", "owner"}:
+        target = "lead"
+    loop = asyncio.get_running_loop()
+    lead = await loop.run_in_executor(
+        _WEB_THREAD_POOL, lambda: _sync_db()["leads"].find_one({"_id": oid})
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    access_context = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+    )
+    request.state.crm_access_context = access_context
+    if not access_context.access_allowed:
+        raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+    detail = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_lead_detail_data(lead.get("phone") or "", lead_doc=lead),
+    )
+    if not detail:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    property_data = detail.get("datos_propiedad") if isinstance(detail.get("datos_propiedad"), dict) else {}
+    raw_phone = lead.get("phone")
+    if target == "owner":
+        raw_phone = (
+            property_data.get("movil_propietario")
+            or property_data.get("telefono_propietario")
+            or property_data.get("owner_phone")
+            or (lead.get("prospecto") or {}).get("owner_phone")
+        )
+    clean = "".join(c for c in str(raw_phone or "").strip() if c.isdigit() or c == "+")
+    if len(clean.replace("+", "")) < 6:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "CONTACT_DATA_UNAVAILABLE", "lead_id": str(lead.get("_id"))},
+        )
+    return user, lead, access_context, target, clean, payload
 
 
 # ---- Contact actions (secure, no phone in URL or frontend) ----
@@ -2882,6 +2881,24 @@ async def contact_whatsapp(request: Request, lead_id: str):
     from chatbot.storage import get_db as _sync_db
     
     loop = asyncio.get_running_loop()
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        user, lead, _access_context, target, clean, contact_payload = await _resolve_security_contact(request, oid)
+
+        def _secure_log():
+            from chatbot.storage import get_db, log_event
+            log_event(
+                str(lead.get("phone") or ""),
+                "CLICK_WHATSAPP_OWNER" if target == "owner" else "CLICK_WHATSAPP_LEAD",
+                actor=str(user.get("nombre", "")), lead_id=lead["_id"],
+            )
+        await loop.run_in_executor(_WEB_THREAD_POOL, _secure_log)
+        message = str((contact_payload or {}).get("message") or "")[:10000]
+        suffix = f"?text={quote(message, safe='')}" if message else ""
+        return JSONResponse({
+            "action": "whatsapp",
+            "url": f"https://wa.me/{clean.replace('+', '')}{suffix}",
+            "disclaimer": "Contactar no constituye gestion. Registra el resultado en el CRM.",
+        }, headers={"Cache-Control": "no-store"})
     lead, detail = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _resolve_lead_by_id(_sync_db(), oid))
     if not lead or not detail:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
@@ -2918,6 +2935,22 @@ async def contact_call(request: Request, lead_id: str):
     from chatbot.storage import get_db as _sync_db
     
     loop = asyncio.get_running_loop()
+    if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        user, lead, _access_context, target, clean, _contact_payload = await _resolve_security_contact(request, oid)
+
+        def _secure_log():
+            from chatbot.storage import get_db, log_event
+            log_event(
+                str(lead.get("phone") or ""),
+                "CLICK_PHONE_OWNER" if target == "owner" else "CLICK_PHONE_LEAD",
+                actor=str(user.get("nombre", "")), lead_id=lead["_id"],
+            )
+        await loop.run_in_executor(_WEB_THREAD_POOL, _secure_log)
+        return JSONResponse({
+            "action": "call",
+            "url": f"tel:{clean}",
+            "disclaimer": "Llamar no constituye gestion. Registra el resultado en el CRM.",
+        }, headers={"Cache-Control": "no-store"})
     lead, detail = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _resolve_lead_by_id(_sync_db(), oid))
     if not lead or not detail:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
@@ -2940,6 +2973,64 @@ async def contact_call(request: Request, lead_id: str):
     })
 
 
+@app.post("/crm/lead-id/{lead_id}/contact/email")
+async def contact_email(request: Request, lead_id: str):
+    """Build an email action only after the canonical security check."""
+    if not Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+        raise HTTPException(status_code=404, detail="Endpoint no disponible")
+    from bson import ObjectId as BsonObjectId
+    from bson.errors import InvalidId
+    from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+    from chatbot.storage import get_db as _sync_db
+
+    try:
+        oid = BsonObjectId(lead_id)
+    except InvalidId:
+        raise HTTPException(status_code=400, detail="ID invalido")
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    target = str((payload or {}).get("target") or "lead").strip().lower()
+    if target not in {"lead", "owner"}:
+        target = "lead"
+    user = await get_current_user_doc(request)
+    loop = asyncio.get_running_loop()
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _sync_db()["leads"].find_one({"_id": oid}))
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead no encontrado")
+    access_context = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+    )
+    request.state.crm_access_context = access_context
+    if not access_context.access_allowed:
+        raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+    detail = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_lead_detail_data(lead.get("phone") or "", lead_doc=lead),
+    )
+    property_data = (detail or {}).get("datos_propiedad") if isinstance((detail or {}).get("datos_propiedad"), dict) else {}
+    target_email = (lead.get("prospecto") or {}).get("email")
+    if target == "owner":
+        target_email = (
+            property_data.get("email_propietario")
+            or property_data.get("owner_email")
+            or property_data.get("email")
+        )
+    target_email = str(target_email or "").strip()
+    if not target_email or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", target_email):
+        raise HTTPException(status_code=409, detail={"error": "CONTACT_DATA_UNAVAILABLE", "lead_id": str(lead.get("_id"))})
+    subject = str((payload or {}).get("subject") or "Información Propiedad")[:200]
+    message = str((payload or {}).get("message") or "")[:10000]
+    sender = str(user.get("email") or user.get("username") or "")
+    query = urlencode({"view": "cm", "fs": "1", "to": target_email, "su": subject, "body": message, "authuser": sender})
+    return JSONResponse(
+        {"action": "email", "url": f"https://mail.google.com/mail/u/{quote(sender, safe='')}/?{query}"},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def _resolve_lead_by_id(db, oid):
     lead = db["leads"].find_one({"_id": oid})
     if lead:
@@ -2950,12 +3041,38 @@ def _resolve_lead_by_id(db, oid):
 
 @app.post("/api/crm/log_action")
 async def api_crm_log_action(request: Request):
+    data = None
     try:
         data = await request.json()
         phone = data.get("phone")
         payload = data.get("data", {})
         event_type = payload.get("type")
-        user, authorized_lead = await _get_authorized_crm_lead(request, phone)
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED and data.get("lead_id"):
+            from bson import ObjectId as BsonObjectId
+            from bson.errors import InvalidId
+            from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+            from chatbot.storage import get_db as _sync_db
+            try:
+                action_lead_oid = BsonObjectId(str(data.get("lead_id")))
+            except InvalidId:
+                raise HTTPException(status_code=400, detail="lead_context_required")
+            user = await get_current_user_doc(request)
+            loop = asyncio.get_running_loop()
+            authorized_lead = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: _sync_db()["leads"].find_one({"_id": action_lead_oid}),
+            )
+            if not authorized_lead:
+                raise HTTPException(status_code=404, detail="Lead no encontrado")
+            access_context = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=authorized_lead),
+            )
+            request.state.crm_access_context = access_context
+            if not access_context.access_allowed:
+                raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+        else:
+            user, authorized_lead = await _get_authorized_crm_lead(request, phone)
         actor_user_id = str(user.get("_id") or "")
         actor_name = user.get("nombre") or user.get("username") or actor_user_id
 
@@ -2963,9 +3080,14 @@ async def api_crm_log_action(request: Request):
         if "meta" not in payload:
             payload["meta"] = {}
         payload["meta"]["server_time_cl"] = now_cl.strftime("%Y-%m-%d %H:%M:%S")
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED and str(event_type or "").upper() in {"PAGE_VIEW", "PAGE_EXIT"}:
+            payload["meta"] = {
+                key: value for key, value in payload["meta"].items()
+                if key in {"server_time_cl", "client_local_time", "duration_seconds", "timestamp"}
+            }
 
         def _sync_log_action():
-            from chatbot.storage import get_db
+            from chatbot.storage import get_db, log_event
             db = get_db()
             lead = db["leads"].find_one({"_id": authorized_lead["_id"]})
 
@@ -2973,17 +3095,33 @@ async def api_crm_log_action(request: Request):
             # first_valid_management_at, stop SLA, or count as gestion valida.
             # Only a complete management result from /api/crm/update or
             # /api/crm/management-result can acreditar gestion.
-            log_crm_event(phone=phone, event_type=event_type, agent=actor_name,
-                          meta_data=payload.get("meta"))
+            event_phone = "" if Config.CRM_SLA_SECURITY_LAYER_ENABLED and str(event_type or "").upper() in {"PAGE_VIEW", "PAGE_EXIT"} else str(lead.get("phone") or phone or "")
+            if Config.CRM_SLA_SECURITY_LAYER_ENABLED and not event_phone:
+                log_event(
+                    event_phone, event_type, actor=actor_name,
+                    meta=payload.get("meta"), lead_id=authorized_lead["_id"],
+                )
+            else:
+                log_crm_event(phone=event_phone, event_type=event_type, agent=actor_name,
+                              meta_data=payload.get("meta"))
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_WEB_THREAD_POOL, _sync_log_action)
         return {"status": "ok"}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Error logging CRM action: phone=%s type=%s -> %s",
-                     data.get("phone") if data else None,
-                     (data.get("data") or {}).get("type") if data else None,
-                     e, exc_info=True)
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            logger.error(
+                "Error logging CRM action: type=%s -> %s",
+                (data.get("data") or {}).get("type") if data else None,
+                type(e).__name__, exc_info=True,
+            )
+        else:
+            logger.error("Error logging CRM action: phone=%s type=%s -> %s",
+                         data.get("phone") if data else None,
+                         (data.get("data") or {}).get("type") if data else None,
+                         e, exc_info=True)
         return {"status": "error"}
 
 
@@ -2999,32 +3137,90 @@ async def api_crm_management_result(request: Request):
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
 
     def _record():
-        from chatbot.crm_management import record_management_result
+        from chatbot.crm_management import (
+            record_management_result,
+            ScheduledTimeTooSoonError,
+            StaleAssignmentCycleError,
+            _find_assignment_cycle,
+        )
         from chatbot.crm_metrics import active_assignment_cycle
         from chatbot.storage import get_db
         db = get_db()
-        cycle = active_assignment_cycle(db, lead["_id"])
+        requested_cycle_id = str(data.get("assignment_cycle_id") or "").strip()
+        cycle = (
+            _find_assignment_cycle(
+                db, lead_id=lead["_id"],
+                assignment_cycle_id=requested_cycle_id, active_only=True,
+            )
+            if requested_cycle_id else active_assignment_cycle(db, lead["_id"])
+        )
         if not cycle:
+            if requested_cycle_id and active_assignment_cycle(db, lead["_id"]):
+                raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
             raise ValueError("El lead no tiene un ciclo de asignación activo")
         return record_management_result(
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
             actor_user_id=actor_user_id, result_type=data.get("result_type"),
             occurred_at=None, source="crm_quick_action",
-            idempotency_key=str(data.get("idempotency_key") or ""),
+            idempotency_key=str(data.get("management_request_id") or data.get("idempotency_key") or ""),
             next_follow_up_at=data.get("next_follow_up_at"),
+            details_json=data.get("details_json") if isinstance(data.get("details_json"), dict) else {},
+            followup_token=data.get("followup_token"),
+            actor_can_manage_any_cycle=can_administer_leads(user.get("rol")),
         )
     try:
         result = await asyncio.get_running_loop().run_in_executor(_WEB_THREAD_POOL, _record)
         return {"status": "ok", "result_type": result.get("result_type"),
                 "follow_up_required": result.get("follow_up_required")}
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as e:
-        logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
-                     phone, lead.get("_id"), data.get("result_type"), e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        from chatbot.crm_management import (
+            LeadReassignedSlaLockedError,
+            ScheduledTimeTooSoonError,
+            StaleAssignmentCycleError,
+        )
+        if isinstance(exc, LeadReassignedSlaLockedError):
+            raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
+        if isinstance(exc, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(exc, ScheduledTimeTooSoonError):
+            raise HTTPException(status_code=400, detail=ScheduledTimeTooSoonError.code)
+        if isinstance(exc, ValueError) and str(exc) == "active assignment cycle not found":
+            raise HTTPException(status_code=409, detail="closed_lead")
+        if isinstance(exc, PermissionError):
+            raise HTTPException(status_code=403, detail=str(exc))
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc))
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            logger.error(
+                "CRM management-result error: lead_id=%s result_type=%s -> %s",
+                lead.get("_id"), data.get("result_type"), type(exc).__name__, exc_info=True,
+            )
+        else:
+            logger.error("CRM management-result error: phone=%s lead=%s result_type=%s -> %s",
+                         phone, lead.get("_id"), data.get("result_type"), exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/crm/detail-state")
+async def api_crm_detail_state(request: Request, phone: str):
+    """Return the minimal current state needed after a stale detail submit."""
+    phone = str(phone or "").strip()
+    if not phone:
+        raise HTTPException(status_code=400, detail="Falta teléfono")
+    _user, lead = await _get_authorized_crm_lead(request, phone)
+    detail = await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, lead_doc=lead)
+    )
+    return {
+        "assignment_cycle_id": detail.get("assignment_cycle_id") or "",
+        "crm_estado": detail.get("crm_estado") or "",
+        "next_action_date": detail.get("next_action_date") or "",
+        "last_action_label": detail.get("last_action_label") or "",
+        "last_action_relative": detail.get("last_action_relative") or "",
+        "ejecutivo_asignado": detail.get("ejecutivo_asignado") or "",
+        "sla_status": detail.get("sla_status") or "",
+        "sla_label": detail.get("sla_label") or "",
+    }
+
 @app.post("/api/crm/update")
 async def api_crm_update_lead(request: Request):
     data = None
@@ -3044,6 +3240,8 @@ async def api_crm_update_lead(request: Request):
         # Aseguramos que se guarde la hora de actualización en CL
         data["updated_at_cl"] = datetime.now(CHILE_TZ).isoformat()
         data["_actor_name"] = user.get("nombre") or user.get("username") or ""
+        data["_actor_user_id"] = str(user.get("_id") or "")
+        data["_actor_can_manage_any_cycle"] = can_administer_leads(user.get("rol"))
 
         # CRITICO: update_lead_crm_data usa PyMongo sync + log_event/update_metrics sync.
         # Debe ejecutarse fuera del event loop para evitar bloqueos y MONGO_SYNC_ON_EVENT_LOOP.
@@ -3057,27 +3255,58 @@ async def api_crm_update_lead(request: Request):
         elif result is True: # Fallback just in case
             return {"status": "ok"}
         else:
-            logger.warning(
-                "CRM update rejected: phone=%s actor=%s result=%s interaction=%s next_date=%s",
-                phone, data.get("_actor_name"), data.get("resultado_gestion"),
-                data.get("interaction_type"), data.get("next_action_date"),
-            )
+            if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+                logger.warning(
+                    "CRM update rejected: actor=%s result=%s interaction=%s",
+                    data.get("_actor_name"), data.get("resultado_gestion"),
+                    data.get("interaction_type"),
+                )
+            else:
+                logger.warning(
+                    "CRM update rejected: phone=%s actor=%s result=%s interaction=%s next_date=%s",
+                    phone, data.get("_actor_name"), data.get("resultado_gestion"),
+                    data.get("interaction_type"), data.get("next_action_date"),
+                )
             raise HTTPException(status_code=500, detail="No se pudo actualizar")
     except HTTPException as exc:
-        logger.error(
-            "CRM update failed: status=%s detail=%s phone=%s actor=%s result=%s",
-            exc.status_code, exc.detail,
-            (data or {}).get("phone"), (data or {}).get("_actor_name"),
-            (data or {}).get("resultado_gestion"),
-        )
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            logger.error(
+                "CRM update failed: status=%s detail_type=%s actor=%s result=%s",
+                exc.status_code, type(exc.detail).__name__,
+                (data or {}).get("_actor_name"), (data or {}).get("resultado_gestion"),
+            )
+        else:
+            logger.error(
+                "CRM update failed: status=%s detail=%s phone=%s actor=%s result=%s",
+                exc.status_code, exc.detail,
+                (data or {}).get("phone"), (data or {}).get("_actor_name"),
+                (data or {}).get("resultado_gestion"),
+            )
         raise
     except Exception as e:
-        logger.error(
-            "CRM Update Error: phone=%s actor=%s result=%s -> %s",
-            (data or {}).get("phone"), (data or {}).get("_actor_name"),
-            (data or {}).get("resultado_gestion"), e,
-            exc_info=True,
-        )
+        from chatbot.crm_management import LeadReassignedSlaLockedError, StaleAssignmentCycleError
+        if isinstance(e, LeadReassignedSlaLockedError):
+            raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
+        if isinstance(e, StaleAssignmentCycleError):
+            raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
+        if isinstance(e, PermissionError):
+            raise HTTPException(status_code=403, detail=str(e))
+        if isinstance(e, ValueError):
+            raise HTTPException(status_code=400, detail=str(e))
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            logger.error(
+                "CRM Update Error: actor=%s result=%s -> %s",
+                (data or {}).get("_actor_name"),
+                (data or {}).get("resultado_gestion"), type(e).__name__,
+                exc_info=True,
+            )
+        else:
+            logger.error(
+                "CRM Update Error: phone=%s actor=%s result=%s -> %s",
+                (data or {}).get("phone"), (data or {}).get("_actor_name"),
+                (data or {}).get("resultado_gestion"), e,
+                exc_info=True,
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -3160,11 +3389,23 @@ async def api_crm_admin_archive(request: Request):
 
 @app.post("/api/crm/notes")
 async def api_crm_notes(request: Request):
+    data = None
     try:
         data = await request.json()
         action = data.get("action", "add")
         phone = data.get("phone")
         note_data = data.get("note", {})
+        if not isinstance(note_data, dict):
+            raise HTTPException(status_code=400, detail="Datos de nota inválidos")
+        if action not in {"add", "delete"}:
+            raise HTTPException(status_code=400, detail="Acción de nota inválida")
+        user, lead = await _get_authorized_crm_lead(request, phone)
+        from chatbot.crm_metrics import active_assignment_cycle
+        from chatbot.storage import get_db
+        cycle = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: active_assignment_cycle(get_db(), lead["_id"]),
+        )
 
         # SOLUCIÓN HORA NOTAS: Forzar la hora de Chile en la creación
         if action == "add":
@@ -3175,20 +3416,52 @@ async def api_crm_notes(request: Request):
             note_data["timestamp_iso"] = now_cl.isoformat()
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: manage_crm_notes(phone, note_data, action))
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: manage_crm_notes(
+                phone, note_data, action,
+                lead_id=lead["_id"],
+                actor_user_id=str(user.get("_id") or ""),
+                assignment_cycle_id=(cycle or {}).get("assignment_cycle_id"),
+            ),
+        )
         if result:
             return {"status": "ok", "note": result}
         logger.warning("CRM notes rejected: action=%s phone=%s", action, phone)
-        return {"status": "error"}
+        raise HTTPException(status_code=404, detail="Nota o lead no encontrado")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("CRM notes error: phone=%s action=%s -> %s", data.get("phone") if data else None, (data or {}).get("action"), e, exc_info=True)
-        return {"status": "error", "detail": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- BÚSQUEDA SEMÁNTICA ---
 @app.post("/api/crm/recommendations")
 async def api_crm_recommendations(request: Request):
     try:
         data = await request.json()
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            from bson import ObjectId as BsonObjectId
+            from bson.errors import InvalidId
+            from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+            from chatbot.storage import get_db as _sync_db
+            user = await get_current_user_doc(request)
+            lead_id = str(data.get("lead_id") or "").strip()
+            try:
+                oid = BsonObjectId(lead_id)
+            except InvalidId:
+                raise HTTPException(status_code=400, detail="lead_context_required")
+            loop = asyncio.get_running_loop()
+            lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: _sync_db()["leads"].find_one({"_id": oid}))
+            if not lead:
+                raise HTTPException(status_code=404, detail="Lead no encontrado")
+            access_context = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead),
+            )
+            request.state.crm_access_context = access_context
+            if not access_context.access_allowed:
+                raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
         query = data.get("query", "")
         exclude = data.get("exclude", [])
         limit = data.get("limit", 3)
@@ -3220,11 +3493,46 @@ async def api_crm_send_recommendation(request: Request):
         properties = data.get("properties", [])
         user_email = data.get("user_email", "")
         
-        if not phone or not properties:
+        if (not phone and not data.get("lead_id")) or not properties:
             raise HTTPException(status_code=400, detail="Faltan datos")
+
+        user = None
+        if Config.CRM_SLA_SECURITY_LAYER_ENABLED and data.get("lead_id"):
+            from bson import ObjectId as BsonObjectId
+            from bson.errors import InvalidId
+            from chatbot.crm_lead_access import resolve_crm_lead_access_context, safe_access_error
+            from chatbot.storage import get_db as _sync_db
+            try:
+                recommendation_oid = BsonObjectId(str(data.get("lead_id")))
+            except InvalidId:
+                raise HTTPException(status_code=400, detail="lead_context_required")
+            user = await get_current_user_doc(request)
+            lead_for_access = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: _sync_db()["leads"].find_one({"_id": recommendation_oid}),
+            )
+            if not lead_for_access:
+                raise HTTPException(status_code=404, detail="Lead no encontrado")
+            access_context = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: resolve_crm_lead_access_context(_sync_db(), user=user, lead=lead_for_access),
+            )
+            request.state.crm_access_context = access_context
+            if not access_context.access_allowed:
+                raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+            phone = str(lead_for_access.get("phone") or "")
+        elif Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+            user, _lead = await _get_authorized_crm_lead(request, phone)
         
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: log_recommendation_sent(phone, properties, user_email))
+        result = await loop.run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: log_recommendation_sent(
+                phone, properties, user_email,
+                actor_user_id=str(user.get("_id") or "") if user else None,
+                actor_role=user.get("rol") if user else None,
+            ),
+        )
         return result
     except HTTPException:
         raise
@@ -3236,9 +3544,6 @@ async def api_crm_send_recommendation(request: Request):
 
 
 def _normalize_webhook_phone(value):
-    normalized = normalize_phone_strict(str(value or ""))
-    if normalized:
-        return normalized
     digits = "".join(filter(str.isdigit, str(value or "")))
     if not digits:
         return None
@@ -3287,9 +3592,14 @@ async def webhook(
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    if data.get("event") == "messages.update":
+    if data.get("event") in {"messages.update", "message.update", "messages.status", "message.status"}:
+        def _record_delivery_updates():
+            weekly_updated = record_delivery_status_webhook(data)
+            chatbot_updated = record_chatbot_delivery_status_webhook(data)
+            return bool(weekly_updated or chatbot_updated)
+
         updated = await asyncio.get_running_loop().run_in_executor(
-            _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
+            _WEB_THREAD_POOL, _record_delivery_updates
         )
         return JSONResponse({"status": "delivery_updated" if updated else "delivery_not_tracked"}, status_code=200)
 
@@ -3431,6 +3741,46 @@ async def webhook(
         )
     except:
         pass
+
+    provider_message_id = (
+        key.get("id")
+        or msg_obj.get("id")
+        or msg_obj.get("messageId")
+        or data.get("message_id")
+        or data.get("id")
+    )
+
+    # Manual executive messages are persisted with an explicit actor type so
+    # role=assistant is never interpreted as proof that the bot authored them.
+    if from_me and not bot_outbound and text:
+        try:
+            from chatbot.storage import guardar_mensaje
+            from chatbot.conversation_observability import record_conversation_event
+            human_message = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: guardar_mensaje(
+                    phone, "assistant", text,
+                    {
+                        "actor_type": "human_agent",
+                        "actor_id": str((user_found or {}).get("_id") or "human_agent"),
+                        "provider_message_id": str(provider_message_id) if provider_message_id else None,
+                    },
+                ),
+            )
+            await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: record_conversation_event(
+                    _sync_db(), event_type="human_message_sent",
+                    conversation_id=human_message.get("conversation_id"),
+                    lead_id=human_message.get("lead_id"),
+                    message_id=human_message.get("message_id"),
+                    actor_type="human_agent",
+                    actor_id=str((user_found or {}).get("_id") or "human_agent"),
+                    metadata={"provider_message_id_present": bool(provider_message_id)},
+                ),
+            )
+        except Exception:
+            logger.exception("[CHATBOT_OBSERVABILITY] human message persistence failed")
     
     # Persist to the durable queue. The durable worker is the only component
     # authorized to batch, invoke the LLM and send a chatbot response.
@@ -3479,7 +3829,11 @@ async def webhook(
         from chatbot.chatbot_queue import cancel_pending_batches_for_human
         takeover_at = await loop.run_in_executor(
             _WEB_THREAD_POOL,
-            lambda: mark_human_takeover(phone, source="whatsapp_human_message"),
+            lambda: mark_human_takeover(
+                phone, source="whatsapp_human_message",
+                reason="human_agent_message",
+                agent_id=str((user_found or {}).get("_id") or "human_agent"),
+            ),
         )
         cancelled = await loop.run_in_executor(
             _WEB_THREAD_POOL,
@@ -3539,6 +3893,10 @@ async def health_check():
         degraded_reasons.append("process_service_metrics_unavailable")
     return {
         "status": "degraded" if degraded_reasons else "healthy",
+        "service_status": "DEGRADED" if degraded_reasons else "HEALTHY",
+        "historical_reconciliation_pending": queue_health.get(
+            "historical_reconciliation_pending", {}
+        ),
         "deploy_commit": os.getenv("RENDER_GIT_COMMIT", "unknown"),
         "server_time": now,
         "background_tasks": background_tasks_status,
@@ -3588,6 +3946,11 @@ async def view_captaciones(
     operacion: str = Query(None),
     telefono: str = Query(None),
     portal: str = Query(None),
+    tipo: str = Query(None),
+    tipo_propiedad: str = Query(None, alias="tipo_propiedad"),
+    moneda: str = Query(None),
+    monto_desde: str = Query(None),
+    monto_hasta: str = Query(None),
     classification: str = Query(None),
     orden: str = Query(None),
     meta_semana: str = Query(None),
@@ -3652,6 +4015,17 @@ async def view_captaciones(
     user_id = str(user["_id"])
     user_email = user.get("email", "")
     current_ejecutivo = ejecutivo if ejecutivo and ejecutivo != "Todos" else ""
+    selected_property_type = normalize_captacion_property_type(tipo or tipo_propiedad)
+    selected_price_currency = str(moneda or "").strip().upper()
+    if selected_price_currency not in {"UF", "CLP"}:
+        selected_price_currency = "CLP" if "arr" in str(operacion or "").lower() else "UF"
+    parsed_price_min = _parse_captacion_price_bound(monto_desde)
+    parsed_price_max = _parse_captacion_price_bound(monto_hasta)
+    invalid_price_range = (
+        parsed_price_min is not None
+        and parsed_price_max is not None
+        and parsed_price_min > parsed_price_max
+    )
     _captacion_diag["actor_resolution_ms"] = round((time.perf_counter() - _perf["auth"]) * 1000, 1)
     
     limit = 10
@@ -3726,7 +4100,11 @@ async def view_captaciones(
                 operacion_filter=operacion,
                 telefono_filter=telefono,
                 portal_filter=portal,
+                property_type_filter=selected_property_type,
                 classification_filter=classification,
+                price_currency=selected_price_currency,
+                price_min=monto_desde,
+                price_max=monto_hasta,
                 sort_by=sort_by,
                 sort_dir=sort_dir,
                 order_filter=current_order,
@@ -3833,6 +4211,7 @@ async def view_captaciones(
     current_estado = estado
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
+    current_tipo = selected_property_type
     current_portal = portal or ""
     current_classification = classification or ""
 
@@ -3850,6 +4229,9 @@ async def view_captaciones(
             if index < len(raw_sort_dirs) and raw_sort_dirs[index] in ("asc", "desc")
             else "desc"
         )
+        # La vista mantiene un solo criterio activo para que el orden sea
+        # predecible al cambiar de columna.
+        break
     current_sorts = {
         key: {"direction": sort_dirs[index], "priority": index + 1}
         for index, key in enumerate(sort_keys)
@@ -3861,7 +4243,11 @@ async def view_captaciones(
             "telefono": current_telefono,
             "comuna": current_comunas,
             "operacion": current_operacion,
+            "tipo": current_tipo,
             "portal": current_portal,
+            "moneda": selected_price_currency if (monto_desde or monto_hasta) else "",
+            "monto_desde": monto_desde or "",
+            "monto_hasta": monto_hasta or "",
             "orden": current_order,
             "estado": current_estado,
             "ejecutivo": current_ejecutivo,
@@ -3878,7 +4264,9 @@ async def view_captaciones(
     
     # KPIs de todos los portales soportados.
     base_query = {
-        "origen": {"$in": ["toctoc", "yapo"]},
+        # Universo dinámico: todo portal con origen válido entra en las
+        # tarjetas superiores y en su desglose por portal.
+        "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
     }
     if user_role not in CAPTACION_PRIVILEGED_ROLES:
@@ -3948,16 +4336,31 @@ async def view_captaciones(
         except Exception:
             logger.exception("[CAPTACION_GOAL_SNAPSHOT] lectura fallida")
             snapshot = None
-        if snapshot:
-            _goal_snapshot_mode = "HIT"
-            _put_captacion_goal_cache(goal_cache_key, snapshot["data"])
-            _start_captacion_goal_refresh(
+        # El período actual debe salir siempre del ledger fresco. Para períodos
+        # históricos el snapshot solo sirve como respaldo: si se muestra antes
+        # del refresh, una gestión agregada después de su creación puede dejar
+        # la vista de equipo desfasada de la vista individual (por ejemplo,
+        # 22 frente a 45). Esperar el refresh mantiene ambas vistas en paridad;
+        # el snapshot se conserva únicamente si el cálculo fresco falla.
+        snapshot_can_be_used = snapshot and bool(goal_period_start or goal_period_end)
+        if snapshot_can_be_used:
+            _goal_snapshot_mode = "STALE"
+            refresh_task = _start_captacion_goal_refresh(
                 goal_cache_key,
                 selected_executive=goal_executive or None,
                 period_start=goal_period_start,
                 period_end=goal_period_end,
+                excluded_executives=goal_excluded_executives,
             )
-            return snapshot["data"], "STALE"
+            try:
+                fresh_data = await refresh_task
+                _goal_snapshot_mode = "REFRESHED"
+                return fresh_data, "REFRESHED"
+            except Exception:
+                logger.exception(
+                    "[CAPTACION_GOAL_SNAPSHOT] refresh histórico falló; usando respaldo"
+                )
+                return snapshot["data"], "STALE"
 
         _goal_snapshot_mode = "MISS"
         _goal_refresh_started = time.perf_counter()
@@ -4196,7 +4599,7 @@ async def view_captaciones(
         }
     else:
         items_total = await list_task
-    items, total_count, available_ops, available_portals = items_total
+    items, total_count, available_ops, available_portals, available_property_types = items_total
     _perf["list_done"] = time.perf_counter()
     _captacion_diag["catalogs_ms"] = round(
         _executives_catalog_elapsed.get("ms", (time.perf_counter() - _executives_catalog_started) * 1000), 1
@@ -4297,6 +4700,10 @@ async def view_captaciones(
     current_estado = estado
     current_operacion = (operacion or "").lower()
     current_telefono = telefono or ""
+    current_tipo = selected_property_type
+    current_moneda = selected_price_currency
+    current_monto_desde = str(monto_desde or "").strip()
+    current_monto_hasta = str(monto_hasta or "").strip()
     available_portal_values = {item["value"] for item in available_portals}
     current_portal = portal if portal in available_portal_values else ""
     current_classification = classification or ""
@@ -4357,8 +4764,14 @@ async def view_captaciones(
         "current_ejecutivo": current_ejecutivo,
         "current_operacion": current_operacion,
         "current_telefono": current_telefono,
+        "current_tipo": current_tipo,
+        "current_moneda": current_moneda,
+        "current_monto_desde": current_monto_desde,
+        "current_monto_hasta": current_monto_hasta,
+        "invalid_price_range": invalid_price_range,
         "current_portal": current_portal,
         "available_portals": available_portals,
+        "available_property_types": available_property_types,
         "current_order": current_order,
         "current_classification": current_classification,
         "current_sort_by": ",".join(sort_keys),
@@ -4490,32 +4903,147 @@ async def view_captaciones(
 
 @app.get("/followup/open/{signed_token}")
 async def open_followup_link(request: Request, signed_token: str):
-    """Attribute a WhatsApp follow-up click, then preserve the old detail UX."""
+    """Consume a personal follow-up link only after full CRM authorization."""
+    payload = {}
     try:
         payload = verify_followup_token(signed_token)
-        db = get_db()
-        task = find_tracked_task(db, payload["task_id"])
-        if not task:
-            raise FollowupTokenError("followup_task_not_found")
-        if task.get("lead_type") == "captacion":
-            entity_id = task.get("obj_id")
-            target = f"/captacion/{entity_id}"
-        else:
-            entity_id = task.get("lead_id")
-            target = f"/crm/lead-id/{entity_id}"
-        if not entity_id:
-            raise FollowupTokenError("followup_entity_missing")
-        record_followup_event(
-            db,
-            task=task,
-            event_type="reminder_clicked",
-            source="whatsapp_followup",
+
+        def _load_followup_task():
+            from chatbot.storage import get_db
+
+            task = find_tracked_task(
+                get_db(), payload["task_id"], token_version=payload.get("v")
+            )
+            if not task:
+                logger.warning(
+                    "[FOLLOWUP] task_not_found task_id=%s token_version=%s",
+                    payload.get("task_id"), payload.get("v"),
+                )
+                raise FollowupTokenError("followup_task_not_found")
+            if (
+                task.get("status") in {"failed_terminal", "cancelled"}
+                or task.get("resolution") in {"superseded", "superseded_duplicate"}
+            ):
+                logger.info(
+                    "[FOLLOWUP] task_not_found task_id=%s token_version=%s reason=unavailable",
+                    payload.get("task_id"), payload.get("v"),
+                )
+                raise FollowupTokenError("followup_task_unavailable")
+            if not task_entity_id(task):
+                raise FollowupTokenError("followup_entity_missing")
+            return task
+
+        task = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _load_followup_task
+        )
+        try:
+            user = await get_current_user_doc(request)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                user = None
+            else:
+                raise
+        if not user:
+            # The original follow-up route is retained as the post-login
+            # destination. No click or property data is touched before login.
+            next_url = f"/followup/open/{quote(signed_token, safe='')}"
+            response = RedirectResponse(
+                url="/?" + urlencode({"error": "sesion_expirada", "next": next_url})
+            )
+            response.set_cookie(
+                "login_next", next_url, httponly=True, secure=True,
+                samesite="lax", max_age=600,
+            )
+            logger.info(
+                "[FOLLOWUP] access_denied task_id=%s token_version=%s reason=anonymous",
+                payload.get("task_id"), payload.get("v"),
+            )
+            return response
+
+        def _resolve_and_authorize_followup():
+            from chatbot.storage import get_db
+
+            db = get_db()
+            entity_id = task_entity_id(task)
+            expected_recipient = expected_actor_id(task, payload.get("v"))
+            current_user_id = str(user.get("_id") or "").strip()
+            if not expected_recipient or not current_user_id or current_user_id != expected_recipient:
+                logger.warning(
+                    "[FOLLOWUP] recipient_mismatch task_id=%s obj_id=%s token_version=%s",
+                    task.get("task_id"), entity_id, payload.get("v"),
+                )
+                raise FollowupTokenError("followup_actor_forbidden")
+
+            if task.get("lead_type") == "captacion":
+                captacion = get_captacion_detail(entity_id)
+                if not captacion:
+                    raise FollowupTokenError("followup_entity_missing")
+                if not can_manage_captacion(user, captacion):
+                    logger.warning(
+                        "[FOLLOWUP] access_denied task_id=%s obj_id=%s token_version=%s reason=crm_permission",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_access_denied")
+                target = f"/captacion/{entity_id}"
+            else:
+                from bson import ObjectId as BsonObjectId
+                try:
+                    lead = db["leads"].find_one({"_id": BsonObjectId(entity_id)})
+                except Exception:
+                    raise FollowupTokenError("followup_entity_missing")
+                if not lead:
+                    raise FollowupTokenError("followup_entity_missing")
+                if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
+                    from chatbot.crm_lead_access import resolve_crm_lead_access_context
+                    access_context = resolve_crm_lead_access_context(db, user=user, lead=lead)
+                    if not access_context.access_allowed:
+                        raise FollowupTokenError(access_context.lock_reason or "followup_access_denied")
+                detail = get_lead_detail_data(lead.get("phone") or "", lead_doc=lead)
+                if not detail or not (
+                    can_administer_leads(user.get("rol"))
+                    or lead_is_assigned_to_user(detail, user)
+                ):
+                    logger.warning(
+                        "[FOLLOWUP] access_denied task_id=%s obj_id=%s token_version=%s reason=crm_permission",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_access_denied")
+                target = f"/crm/lead-id/{entity_id}"
+
+            # This is deliberately after identity and current CRM permission.
+            record_followup_event(
+                db,
+                task=task,
+                event_type="reminder_clicked",
+                source="whatsapp_followup",
+                actor_user_id=current_user_id,
+            )
+            return target
+
+        target = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _resolve_and_authorize_followup
         )
         separator = "&" if "?" in target else "?"
         target = f"{target}{separator}followup_token={quote(signed_token, safe='')}"
-        return RedirectResponse(url=target, status_code=302)
+        response = RedirectResponse(url=target, status_code=302)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except FollowupConfigurationError:
+        logger.error("[FOLLOWUP] token_validation_failed reason=configuration_invalid")
+        raise HTTPException(status_code=503, detail="followup_configuration_invalid")
     except FollowupTokenError as exc:
-        raise HTTPException(status_code=410, detail=str(exc))
+        code = str(exc)
+        if code == "followup_task_not_found":
+            logger.warning(
+                "[FOLLOWUP] task_not_found task_id=%s token_version=%s",
+                payload.get("task_id"), payload.get("v"),
+            )
+        if code == "LEAD_REASSIGNED_SLA_LOCKED":
+            raise HTTPException(status_code=409, detail=code)
+        if code in {"followup_actor_forbidden", "followup_access_denied", "CRM_ASSIGNMENT_CONTEXT_INVALID"}:
+            raise HTTPException(status_code=403, detail=code)
+        raise HTTPException(status_code=410, detail=code)
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(
@@ -4558,16 +5086,30 @@ async def view_captacion_detail_route(
 
     if followup_token:
         try:
-            from chatbot.storage import get_db as _sync_db
-            record_followup_open(
-                _sync_db(), token=followup_token, entity_id=obj_id,
-                actor_user_id=str(user.get("_id") or ""),
+            def _record_captacion_followup_open():
+                from chatbot.storage import get_db as _sync_db
+                return record_followup_open(
+                    _sync_db(), token=followup_token, entity_id=obj_id,
+                    actor_user_id=str(user.get("_id") or ""),
+                )
+
+            await loop.run_in_executor(_WEB_THREAD_POOL, _record_captacion_followup_open)
+        except FollowupConfigurationError:
+            logger.error(
+                "[FOLLOWUP] token_validation_failed obj_id=%s reason=configuration_invalid",
+                obj_id,
             )
-        except FollowupTokenError:
-            logger.info("[FOLLOWUP] captacion open was not attributable: obj_id=%s", obj_id)
-            _record_unattributed_open("direct")
+            raise HTTPException(status_code=503, detail="followup_configuration_invalid")
+        except FollowupTokenError as exc:
+            code = str(exc)
+            logger.warning(
+                "[FOLLOWUP] token_validation_failed obj_id=%s reason=%s",
+                obj_id, code,
+            )
+            status_code = 403 if code in {"followup_actor_forbidden", "followup_access_denied"} else 410
+            raise HTTPException(status_code=status_code, detail=code)
     else:
-        _record_unattributed_open()
+        await loop.run_in_executor(_WEB_THREAD_POOL, _record_unattributed_open)
 
     # Ya no calculamos el matching aquí (se hace vía AJAX)
     
@@ -4629,59 +5171,169 @@ async def api_get_matching_leads(request: Request, obj_id: str):
     finally:
         if obj_id in PENDING_MATCHING_REQUESTS:
             del PENDING_MATCHING_REQUESTS[obj_id]
+@app.get("/api/captacion/{obj_id}/update-verification")
+async def api_verify_captacion_update(
+    request: Request,
+    obj_id: str,
+    operation_id: str = Query(""),
+):
+    """Confirm a Captación write when the original POST response was lost."""
+    user_doc = await get_current_user_doc(request)
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Sesión inválida")
+    operation_id = str(operation_id or "").strip()
+    if not operation_id:
+        raise HTTPException(status_code=400, detail="Falta operation_id")
+
+    loop = asyncio.get_running_loop()
+    state = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_captacion_update_state(obj_id, operation_id),
+    )
+    if not state:
+        raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+    if not can_manage_captacion(user_doc, state):
+        raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
+
+    return {
+        "status": "confirmed" if state.get("persisted") else "not_confirmed",
+        "persisted": bool(state.get("persisted")),
+        "operation_id": operation_id,
+        "current_status": state.get("status"),
+    }
+
+
 @app.post("/api/captacion/update")
 async def api_update_captacion(request: Request):
+    _update_started = time.perf_counter()
+    _update_perf = {
+        "request_id": getattr(request.state, "trace_id", None) or str(uuid.uuid4())[:8],
+        "operation_id": None,
+        "auth_ms": 0.0,
+        "validation_ms": 0.0,
+        "property_lookup_ms": 0.0,
+        "management_update_ms": 0.0,
+        "history_write_ms": 0.0,
+        "followup_ms": 0.0,
+        "cache_invalidation_ms": 0.0,
+        "secondary_effects_ms": 0.0,
+        "mongo_ms": 0.0,
+        "total_ms": 0.0,
+        "mongo_spans": [],
+    }
+    _lookup_mongo_spans = []
+    _update_mongo_spans = []
     try:
+        _auth_started = time.perf_counter()
         username_str = await get_current_user(request)
         user_doc = await get_current_user_doc(request)
+        _update_perf["auth_ms"] = round((time.perf_counter() - _auth_started) * 1000, 1)
+        _validation_started = time.perf_counter()
         data = await request.json()
         obj_id = data.get("id")
         status = data.get("status")
         notes = data.get("notes")
         next_followup = data.get("next_followup")
+        operation_id = str(data.get("operation_id") or "").strip() or str(uuid.uuid4())
+        _update_perf["operation_id"] = operation_id
         channel = data.get("channel")
         outcome = data.get("outcome")
         user_name = user_doc.get("nombre", username_str) if user_doc else username_str
         
         if not obj_id or not status:
             raise HTTPException(status_code=400, detail="Faltan datos")
+        _update_perf["validation_ms"] = round((time.perf_counter() - _validation_started) * 1000, 1)
 
-        captacion_doc = await asyncio.get_running_loop().run_in_executor(
-            _WEB_THREAD_POOL, lambda: get_captacion_detail(obj_id)
+        def _load_captacion_detail_for_update():
+            from chatbot.storage import set_dashboard_perf_context, reset_dashboard_perf_context
+
+            token = set_dashboard_perf_context(_lookup_mongo_spans)
+            try:
+                return get_captacion_detail(obj_id)
+            finally:
+                reset_dashboard_perf_context(token)
+
+        _property_lookup_started = time.perf_counter()
+        loop = asyncio.get_running_loop()
+        captacion_doc = await loop.run_in_executor(
+            _WEB_THREAD_POOL, _load_captacion_detail_for_update
+        )
+        _update_perf["property_lookup_ms"] = round(
+            (time.perf_counter() - _property_lookup_started) * 1000, 1
         )
         if not captacion_doc:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         if not user_doc or not can_manage_captacion(user_doc, captacion_doc):
             raise HTTPException(status_code=403, detail="No autorizado para gestionar esta captación")
-            
-        loop = asyncio.get_running_loop()
+
+        _management_perf = {}
+
+        def _update_captacion_status_for_request():
+            from chatbot.storage import set_dashboard_perf_context, reset_dashboard_perf_context
+
+            token = set_dashboard_perf_context(_update_mongo_spans)
+            try:
+                return update_captacion_status(
+                    obj_id,
+                    status,
+                    notes,
+                    channel=channel,
+                    outcome=outcome,
+                    user_name=user_name,
+                    next_followup=next_followup,
+                    user_doc=user_doc,
+                    followup_token=data.get("followup_token"),
+                    operation_id=operation_id,
+                    perf_context=_management_perf,
+                )
+            finally:
+                reset_dashboard_perf_context(token)
+
+        _management_started = time.perf_counter()
         result = await loop.run_in_executor(
             _WEB_THREAD_POOL,
-            lambda: update_captacion_status(
-                obj_id,
-                status,
-                notes,
-                channel=channel,
-                outcome=outcome,
-                user_name=user_name,
-                next_followup=next_followup,
-                user_doc=user_doc,
-            )
+            _update_captacion_status_for_request,
         )
+        _update_perf["management_update_ms"] = round(
+            (time.perf_counter() - _management_started) * 1000, 1
+        )
+        for key in ("property_lookup_internal_ms", "history_write_ms", "followup_ms", "cache_invalidation_ms", "secondary_effects_ms"):
+            if key in _management_perf:
+                _update_perf[key] = _management_perf[key]
         if result:
-            _up3 = time.perf_counter()
+            _cache_started = time.perf_counter()
             app.state.captacion_stats_cache = {}
-            goal_cache = getattr(app.state, 'captacion_goal_cache', None)
-            if goal_cache is not None:
-                goal_cache.clear()
-            return {"status": "ok"}
-        return {"status": "error", "message": "Operación retornó falso"}
+            _invalidate_captacion_goal_cache()
+            await loop.run_in_executor(_WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots)
+            _update_perf["cache_invalidation_ms"] = round(
+                (_update_perf.get("cache_invalidation_ms", 0.0))
+                + (time.perf_counter() - _cache_started) * 1000,
+                1,
+            )
+            return {
+                "status": "ok",
+                "persisted": True,
+                "operation_id": operation_id,
+            }
+        raise HTTPException(status_code=409, detail="La actualización no pudo confirmarse")
     except HTTPException:
         # Re-lanzar 401/403/400 para que el cliente y el handler global los manejen correctamente
         raise
     except Exception as e:
         logger.error(f"Error updating captacion: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _update_perf["mongo_spans"] = _lookup_mongo_spans + _update_mongo_spans
+        _update_perf["mongo_ms"] = round(
+            sum(float(span.get("duration_ms") or 0.0) for span in _update_perf["mongo_spans"]),
+            1,
+        )
+        _update_perf["total_ms"] = round((time.perf_counter() - _update_started) * 1000, 1)
+        _update_perf.pop("mongo_spans", None)
+        logger.info(
+            "[CAPTACION_UPDATE_PERF] %s",
+            json.dumps(_update_perf, ensure_ascii=False, sort_keys=True),
+        )
 
 
 @app.post("/api/captacion/contact")
@@ -4716,9 +5368,16 @@ async def api_update_captacion_contact(request: Request):
                 telefono=data.get("telefono"),
                 email=data.get("email"),
                 notas=data.get("notas"),
-                user_name=user_name
+                user_name=user_name,
+                user_id=(
+                    (user_doc.get("_id") or user_doc.get("id") or user_doc.get("username"))
+                    if user_doc else None
+                ),
+                return_details=True,
             )
         )
+        if result and isinstance(result, dict):
+            return {"status": "ok", **result}
         return {"status": "ok"} if result else {"status": "error", "message": "Operación retornó falso"}
     except HTTPException:
         raise
@@ -4800,6 +5459,10 @@ async def api_captacion_confirm_action(request: Request):
         )
         app.state.captacion_stats_cache = {}
         _invalidate_captacion_list_cache()
+        _invalidate_captacion_goal_cache()
+        await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _delete_current_captacion_goal_snapshots
+        )
         return {"status": "ok", **result}
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
@@ -5074,13 +5737,19 @@ async def captacion_sla_release_loop():
             if due:
                 loop = asyncio.get_running_loop()
                 run_date = now_local.strftime("%Y-%m-%d")
-                from chatbot.storage import get_db
-                db = get_db()
+                def _read_sla_weekly_run():
+                    from chatbot.storage import get_db
 
-                try:
-                    already_run = db["background_runs"].find_one({"_id": f"{last_run_key}_{run_date}"})
-                except Exception:
-                    already_run = None
+                    try:
+                        return get_db()["background_runs"].find_one(
+                            {"_id": f"{last_run_key}_{run_date}"}
+                        )
+                    except Exception:
+                        return None
+
+                already_run = await loop.run_in_executor(
+                    _WORKER_THREAD_POOL, _read_sla_weekly_run
+                )
                 if already_run:
                     logger.info(f"[SLA_WEEKLY] Release de {run_date} ya ejecutado. Saltando.")
                 else:
@@ -5093,12 +5762,21 @@ async def captacion_sla_release_loop():
                         f"liberadas por SLA: {released}"
                     )
                     try:
-                        db["background_runs"].update_one(
-                            {"_id": f"{last_run_key}_{run_date}"},
-                            {"$set": {"run_at": datetime.now(timezone.utc).isoformat(),
-                                      "inactive_reassigned": inactive_result.get("modified", 0),
-                                      "released": released}},
-                            upsert=True,
+                        def _write_sla_weekly_run():
+                            from chatbot.storage import get_db
+
+                            return get_db()["background_runs"].update_one(
+                                {"_id": f"{last_run_key}_{run_date}"},
+                                {"$set": {
+                                    "run_at": datetime.now(timezone.utc).isoformat(),
+                                    "inactive_reassigned": inactive_result.get("modified", 0),
+                                    "released": released,
+                                }},
+                                upsert=True,
+                            )
+
+                        await loop.run_in_executor(
+                            _WORKER_THREAD_POOL, _write_sla_weekly_run
                         )
                     except Exception:
                         pass
@@ -5158,6 +5836,7 @@ async def _render_crm_list(
         page=page,
         limit=limit,
         property_code=property_code,
+        user_id=str(user.get("_id") or ""),
     )
     exec_task = get_unique_executives() if can_administer else asyncio.sleep(0, result=[])
     leads_payload, executives = await asyncio.gather(leads_task, exec_task)
@@ -5169,6 +5848,7 @@ async def _render_crm_list(
         "temperatura": temperatura if temperatura != "Todos" else None,
         "estado": estado,
         "busqueda": busqueda,
+        "property_code": property_code,
         "orden": orden,
         "ejecutivo": ejecutivo,
     }
@@ -5184,13 +5864,14 @@ async def _render_crm_list(
     else:
         card_query_params["temperatura"] = temperatura
 
-    response = templates.TemplateResponse("crm_leads_list.html", {
+    response = templates.TemplateResponse(request, "crm_leads_list.html", {
         "request": request, 
         "leads": leads, 
         "kpis": kpis,
         "user_role": user_role,
         "user_name": user_name,
         "can_administer_leads": can_administer,
+        "crm_sla_security_layer_enabled": bool(Config.CRM_SLA_SECURITY_LAYER_ENABLED),
         "executives": executives,
         "current_ejecutivo": (ejecutivo or "Todos") if can_administer else user_name,
         "current_temperatura": temperatura,
@@ -5285,18 +5966,24 @@ async def marcar_gestionado(request: Request):
     gestionado = data.get("gestionado", False)
     if not email:
         return {"error": "Falta email"}
-    from chatbot.storage import get_db as _gdb
-    _db = _gdb()
-    col = _db[Config.COLLECTION_CONTACTOS]
-    result = col.update_one(
-        {"email_propietario": email.lower()},
-        {"$set": {"gestionado": gestionado}}
-    )
-    if result.matched_count == 0:
-        col.update_one(
-            {"email_propietario": {"$regex": f"^{re.escape(email.lower())}$", "$options": "i"}},
+
+    def _mark_contact_managed():
+        from chatbot.storage import get_db as _gdb
+
+        col = _gdb()[Config.COLLECTION_CONTACTOS]
+        result = col.update_one(
+            {"email_propietario": email.lower()},
             {"$set": {"gestionado": gestionado}}
         )
+        if result.matched_count == 0:
+            col.update_one(
+                {"email_propietario": {"$regex": f"^{re.escape(email.lower())}$", "$options": "i"}},
+                {"$set": {"gestionado": gestionado}}
+            )
+
+    await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL, _mark_contact_managed
+    )
     return {"status": "ok", "gestionado": gestionado}
 
 @app.get("/retiro/confirmar")
@@ -5519,6 +6206,7 @@ async def check_scheduled_tasks_loop():
     from chatbot.storage import get_db
     from chatbot.lead_router import get_executive_phone
     from chatbot.notification_service import NotificationService
+    task_worker_id = f"crm_task_monitor_{os.getpid()}"
     
     logger.info("[TASK_MONITOR] Iniciando monitor de tareas agendadas...")
     
@@ -5532,7 +6220,13 @@ async def check_scheduled_tasks_loop():
             
             tasks = await run_db(
                 "crm_tasks.find_due",
-                lambda: list(db["crm_tasks"].find({"status": "pending", "execute_at": {"$lte": now},
+                lambda: list(db["crm_tasks"].find({"$or": [
+                    {"status": "pending", "execute_at": {"$lte": now}, "$or": [
+                        {"next_attempt_at": {"$exists": False}},
+                        {"next_attempt_at": {"$lte": now}},
+                    ]},
+                    {"status": "processing", "lease_until": {"$lte": now}},
+                ],
                     "lead_type": {"$ne": "captacion"}}))
             )
             
@@ -5540,6 +6234,28 @@ async def check_scheduled_tasks_loop():
                 logger.info(f"[TASK_MONITOR] Procesando {len(tasks)} tareas vencidas...")
                 for task in tasks:
                     try:
+                        claimed_task = await run_db(
+                            "crm_tasks.claim_due",
+                            lambda: db["crm_tasks"].find_one_and_update(
+                                {"_id": task["_id"], "$or": [
+                                    {"status": "pending", "$or": [
+                                        {"next_attempt_at": {"$exists": False}},
+                                        {"next_attempt_at": {"$lte": now}},
+                                    ]},
+                                    {"status": "processing", "lease_until": {"$lte": now}},
+                                ]},
+                                {"$set": {
+                                    "status": "processing",
+                                    "claimed_at": now,
+                                    "lease_until": now + timedelta(minutes=10),
+                                    "worker_id": task_worker_id,
+                                }},
+                                return_document=ReturnDocument.AFTER,
+                            )
+                        )
+                        if not claimed_task:
+                            continue
+                        task = claimed_task
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
                         
@@ -5566,7 +6282,8 @@ async def check_scheduled_tasks_loop():
                         else:
                             lead = await run_db(
                                 "leads.find_one",
-                                lambda: db["leads"].find_one({"phone": phone})
+                                lambda: db["leads"].find_one({"_id": task.get("lead_id")})
+                                or db["leads"].find_one({"phone": phone})
                             )
                             if not lead:
                                 await run_db(
@@ -5577,15 +6294,75 @@ async def check_scheduled_tasks_loop():
                                     )
                                 )
                                 continue
-                            ejecutivo = lead.get("ejecutivo_asignado")
+                            assigned_cycle = None
+                            if task.get("assignment_cycle_id"):
+                                assigned_cycle = await run_db(
+                                    "crm_assignment_cycles.find_for_task",
+                                    lambda: db["crm_assignment_cycles"].find_one({
+                                        "assignment_cycle_id": task.get("assignment_cycle_id"),
+                                        "lead_id": lead.get("_id"),
+                                    }),
+                                )
+                            recipient_user_id = (
+                                task.get("recipient_user_id")
+                                or task.get("target_user_id")
+                                or (assigned_cycle or {}).get("assigned_to_user_id")
+                            )
+                            ejecutivo = (
+                                task.get("recipient_name")
+                                or (assigned_cycle or {}).get("assigned_to_display_name")
+                                or lead.get("ejecutivo_asignado")
+                            )
                             lead_name = lead.get("prospecto", {}).get("nombre", "Cliente")
-                            crm_link = f"https://www.procasa.cl/crm/lead/{phone}"
+                            from chatbot.lead_router import build_secure_crm_url
+                            crm_link = build_followup_open_url(task) or build_secure_crm_url(lead)
                             
                         if not ejecutivo or ejecutivo in ["No asignado", "Sin Asignar"]:
+                            await run_db(
+                                "crm_tasks.release_no_executive",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_not_available",
+                                    }}
+                                )
+                            )
                             continue
                             
-                        exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
+                        exec_phone = None
+                        if not is_captacion and recipient_user_id:
+                            from bson import ObjectId
+                            recipient_queries = [{"_id": recipient_user_id}]
+                            try:
+                                recipient_queries.append({"_id": ObjectId(str(recipient_user_id))})
+                            except Exception:
+                                pass
+                            recipient = await run_db(
+                                "usuarios.find_recipient_for_task",
+                                lambda: db["usuarios"].find_one({
+                                    "$or": recipient_queries,
+                                    "is_active": {"$ne": False},
+                                }),
+                            )
+                            if recipient:
+                                ejecutivo = recipient.get("nombre") or ejecutivo
+                                exec_phone = recipient.get("telefono") or recipient.get("tel") or recipient.get("movil")
+                        if not exec_phone:
+                            exec_phone = await run_in_threadpool(get_executive_phone, ejecutivo)
                         if not exec_phone or exec_phone == "+56900000000":
+                            await run_db(
+                                "crm_tasks.release_no_executive_phone",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "executive_phone_not_available",
+                                    }}
+                                )
+                            )
                             continue
 
                         if is_captacion:
@@ -5604,18 +6381,28 @@ async def check_scheduled_tasks_loop():
                                 )
                             )
                             
+                        scheduled_at = task.get("execute_at")
+                        if isinstance(scheduled_at, datetime):
+                            if scheduled_at.tzinfo is None:
+                                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+                            scheduled_display = scheduled_at.astimezone(CHILE_TZ).strftime("%d/%m/%Y a las %H:%M")
+                        else:
+                            scheduled_display = "la fecha y hora programadas"
+                        link_label = "Abrir captación en CRM" if is_captacion else "Abrir lead en CRM"
                         msg_text = (
-                            f"⏰ *Recordatorio CRM: {ejecutivo}*\n\n"
-                            f"Tienes una acción programada para *{'la captación' if is_captacion else 'el lead'}* de *{lead_name}*.\n\n"
-                            f"📝 *Nota:* {note}\n"
-                            f"🔗 Gestionar: {crm_link}"
+                            f"*Recordatorio de seguimiento CRM*\n\n"
+                            f"Hola {ejecutivo}, tienes un seguimiento programado para *{lead_name}*.\n\n"
+                            f"*Fecha y hora:* {scheduled_display}\n"
+                            f"*Nota:* {note}\n\n"
+                            f"*{link_label}:*\n{crm_link}"
                         )
                         
                         sent = await NotificationService.send_notification(
                             phone=exec_phone,
                             message=msg_text,
                             alert_type="TASK_REMINDER",
-                            meta={"task_id": str(task["_id"]), "to": ejecutivo},
+                            meta={"task_id": str(task["_id"]), "to": ejecutivo,
+                                  "lead_id": str(lead.get("_id") or "")},
                             dedup_window_minutes=60 
                         )
                         
@@ -5624,9 +6411,23 @@ async def check_scheduled_tasks_loop():
                                 "crm_tasks.update_notified",
                                 lambda: db["crm_tasks"].update_one(
                                     {"_id": task["_id"]},
-                                    {"$set": {"status": "notified", "notified_at": now.isoformat(), "notification_sent_to": ejecutivo}}
+                                    {"$set": {"status": "notified", "notified_at": now.isoformat(), "sent_at": now, "notification_sent_to": ejecutivo}}
                                 )
                             )
+                            if task.get("followup_tracking_version"):
+                                try:
+                                    await run_db(
+                                        "followup_events.reminder_sent",
+                                        record_followup_event,
+                                        db,
+                                        task=task,
+                                        event_type="reminder_sent",
+                                        occurred_at=now,
+                                        source="whatsapp_provider",
+                                        extra={"sent_at": now, "provider_message_id": None},
+                                    )
+                                except ValueError:
+                                    pass
                             if is_captacion:
                                 # Clear the visible reminder only when no newer
                                 # pending reminder exists for this captación.
@@ -5652,9 +6453,32 @@ async def check_scheduled_tasks_loop():
                                     )
                             # Sleep breve para tareas
                             await asyncio.sleep(6)
+                        else:
+                            await run_db(
+                                "crm_tasks.release_send_failure",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing"},
+                                    {"$set": {
+                                        "status": "pending",
+                                        "next_attempt_at": now + timedelta(minutes=1),
+                                        "last_error": "whatsapp_send_failed",
+                                    }}
+                                )
+                            )
                             
                     except Exception as e:
                         logger.error(f"[TASK_MONITOR] Error procesando tarea {task.get('_id')}: {e}")
+                        await run_db(
+                            "crm_tasks.release_exception",
+                            lambda: db["crm_tasks"].update_one(
+                                {"_id": task.get("_id"), "status": "processing"},
+                                {"$set": {
+                                    "status": "pending",
+                                    "next_attempt_at": now + timedelta(minutes=1),
+                                    "last_error": type(e).__name__,
+                                }}
+                            )
+                        )
             
         except Exception as e:
             logger.error(f"[TASK_MONITOR] Error en loop de tareas: {e}")
@@ -6081,10 +6905,17 @@ async def inactive_lead_nudge_loop():
                     if sent:
                         from chatbot.storage import guardar_mensaje
                         now_cl_str = datetime.now(CHILE_TZ).isoformat()
-                        guardar_mensaje(phone, "assistant", nudge_text, {
-                            "tipo": "nudge_reactivacion",
-                            "intencion": "reactivacion_automatica"
-                        })
+                        await run_db(
+                            "nudge.save_message",
+                            guardar_mensaje,
+                            phone,
+                            "assistant",
+                            nudge_text,
+                            {
+                                "tipo": "nudge_reactivacion",
+                                "intencion": "reactivacion_automatica",
+                            },
+                        )
                         _lead_id = lead["_id"]
                         _update = {"$set": {"nudge_sent_at": now_cl_str, "nudge_last_date": today_str, "nudge_count": nudge_count}}
                         await run_db("nudge_update", lambda: db["leads"].update_one({"_id": _lead_id}, _update))
@@ -6177,29 +7008,11 @@ async def reassign_unassigned_leads_loop():
             await asyncio.sleep(60)
 
 async def cache_prewarmer_loop():
-    """Prewarm and keep only the exact pinned 30d dashboard keys alive."""
-    logger.info("[DASHBOARD_CACHE_KEEPER] start preset=30d interval_seconds=60 refresh_age_seconds=240")
-    loop = asyncio.get_running_loop()
-    try:
-        # Runs in the dedicated single-worker pool and therefore never blocks
-        # /health or the event loop.
-        await asyncio.wait_for(
-            loop.run_in_executor(_WARMER_THREAD_POOL, warm_pinned_dashboard_cache),
-            timeout=120.0,
-        )
-    except asyncio.CancelledError:
-        return
-    except Exception:
-        logger.warning("[DASHBOARD_CACHE_KEEPER] startup prewarm failed", exc_info=True)
-
-    while True:
-        try:
-            await asyncio.sleep(60)
-            await loop.run_in_executor(_WARMER_THREAD_POOL, keep_pinned_dashboard_cache)
-        except asyncio.CancelledError:
-            break
-        except Exception:
-            logger.warning("[DASHBOARD_CACHE_KEEPER] keeper cycle failed", exc_info=True)
+    """Keep dashboard refresh demand-driven; do not calculate while idle."""
+    logger.info("[DASHBOARD_CACHE] background warmer disabled; refresh is demand-driven")
+    # SWR refreshes are scheduled by real requests. Keeping this task pending
+    # preserves the lifespan task shape without creating periodic Mongo reads.
+    await asyncio.Event().wait()
 
 async def event_loop_monitor_loop():
     """

@@ -115,6 +115,15 @@ def normalize_provider_status(value) -> str:
     return aliases.get(text, text or "unknown")
 
 
+def provider_status_code(value) -> int | None:
+    """Return the provider's numeric status code when one was supplied."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 async def get_whatsapp_message_status(provider_message_id: str) -> dict:
     if not provider_message_id:
         return {"delivery_status": "unknown", "provider_message_id": None}
@@ -124,9 +133,12 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
         response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
         data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
-        status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
+        raw_status = (data or {}).get("status") if isinstance(data, dict) else None
+        status = normalize_provider_status(raw_status)
         return {
             "delivery_status": status,
+            "provider_status": status,
+            "provider_status_code": provider_status_code(raw_status),
             "provider_message_id": str(provider_message_id),
             "http_status": response.status_code,
         }
@@ -136,7 +148,10 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
             provider_message_id,
             type(exc).__name__,
         )
-        return {"delivery_status": "unknown", "provider_message_id": str(provider_message_id)}
+        return {
+            "delivery_status": "unknown", "provider_status": "unknown",
+            "provider_status_code": None, "provider_message_id": str(provider_message_id),
+        }
 
 
 async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_seconds=30) -> dict:
@@ -203,7 +218,8 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     if success:
         message_id = _provider_message_id(body)
         data = body.get("data") if isinstance(body.get("data"), dict) else {}
-        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
+        raw_provider_status = data.get("status") or body.get("status")
+        provider_status = normalize_provider_status(raw_provider_status)
         logger.info(
             "[WHATSAPP_SEND] recipient=%s status=accepted provider_message_id=%s",
             masked,
@@ -212,6 +228,8 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
         return {
             "success": True,
             "delivery_status": provider_status if provider_status != "unknown" else "accepted",
+            "provider_status": provider_status if provider_status != "unknown" else "accepted",
+            "provider_status_code": provider_status_code(raw_provider_status),
             "provider_message_id": message_id,
             "http_status": response.status_code,
         }
@@ -283,11 +301,14 @@ def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
     if success:
         message_id = _provider_message_id(body)
         data = body.get("data") if isinstance(body.get("data"), dict) else {}
-        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
+        raw_provider_status = data.get("status") or body.get("status")
+        provider_status = normalize_provider_status(raw_provider_status)
         logger.info("[WHATSAPP_SEND_SYNC] recipient=%s status=accepted provider_message_id=%s",
                     masked, message_id or "unavailable")
         return {"success": True,
                 "delivery_status": provider_status if provider_status != "unknown" else "accepted",
+                "provider_status": provider_status if provider_status != "unknown" else "accepted",
+                "provider_status_code": provider_status_code(raw_provider_status),
                 "provider_message_id": message_id,
                 "http_status": response.status_code}
     retry_after = None

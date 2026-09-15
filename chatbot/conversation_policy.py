@@ -86,6 +86,15 @@ _VISIT_TIME_RE = re.compile(
     r"\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas))\b",
     re.IGNORECASE,
 )
+
+_FALLBACK_AVAILABILITY_RE = re.compile(
+    r"\b(?:disponible|disponibilidad|sigue\s+disponible|a[uú]n\s+est[aá])\b",
+    re.IGNORECASE,
+)
+_FALLBACK_PRICE_RE = re.compile(
+    r"\b(?:precio|valor|cu[aá]nto\s+(?:vale|cuesta)|cu[aá]nto\s+es|uf)\b",
+    re.IGNORECASE,
+)
 _VISIT_DAYPART_RE = re.compile(
     r"\b(?:en|por)\s+la\s+(?:ma[nñ]ana|tarde|noche)\b|\b(?:ma[nñ]ana|tarde|noche)\b",
     re.IGNORECASE,
@@ -187,6 +196,63 @@ def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
     return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+
+
+def classify_local_fallback_intent(message: str, *, operational_intent: str | None = None) -> str:
+    """Classify a local fallback without invoking an LLM.
+
+    The classifier is deliberately conservative: it only selects an
+    operational category when the customer's own text provides a strong
+    signal.  In particular, availability alone is not treated as a visit
+    request, so the fallback never claims a booking or a confirmed slot.
+    """
+    normalized = _normalize_text(message)
+    if is_explicit_visit_intent(normalized) or str(operational_intent or "").casefold() == "agendar_visita":
+        return "ASK_VISIT"
+    if _FALLBACK_PRICE_RE.search(normalized):
+        return "ASK_PRICE"
+    if _FALLBACK_AVAILABILITY_RE.search(normalized):
+        return "ASK_AVAILABILITY"
+    return "GENERAL"
+
+
+def build_local_fallback_response(
+    message: str,
+    *,
+    operational_intent: str | None = None,
+    property_facts: dict | None = None,
+) -> tuple[str, str]:
+    """Build a safe deterministic fallback and return ``(text, intent)``.
+
+    ``property_facts`` is accepted as a future extension point, but this
+    version intentionally does not render price or availability values.  That
+    guarantees that a fallback cannot invent facts while the structured
+    property lookup is incomplete.
+    """
+    del property_facts
+    intent = classify_local_fallback_intent(
+        message, operational_intent=operational_intent,
+    )
+    responses = {
+        "ASK_VISIT": (
+            "Gracias por escribirnos. Podemos ayudarte a coordinar una visita. "
+            "Vamos a confirmar la disponibilidad de la propiedad para continuar "
+            "con la coordinación."
+        ),
+        "ASK_AVAILABILITY": (
+            "Gracias por tu consulta. Vamos a confirmar si la propiedad continúa "
+            "disponible y te ayudaremos con la información."
+        ),
+        "ASK_PRICE": (
+            "Gracias por tu consulta. Vamos a confirmar el valor actualizado de "
+            "la propiedad para entregarte la información correcta."
+        ),
+        "GENERAL": (
+            "Gracias por escribirnos. Recibimos tu consulta y la estamos revisando "
+            "para poder ayudarte con la información de la propiedad."
+        ),
+    }
+    return responses[intent], intent
 
 
 def should_offer_visit_data(
@@ -436,6 +502,8 @@ def nudge_eligibility(lead: dict) -> dict:
         return {"eligible": False, "reason": "blocked_external_broker", "evidence": status, "state": status}
     if status in {"STOPPED_BY_CLIENT", "CLOSED", "HUMAN_HANDOFF"}:
         return {"eligible": False, "reason": "conversation_status", "evidence": status, "state": status}
+    if lead.get("conversation_owner") == "human" or lead.get("human_active") is True:
+        return {"eligible": False, "reason": "human_ownership_active", "evidence": True, "state": "human_handoff"}
     if stage in {"ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON", "VISIT_DONE", "VISIT_SCHEDULED"}:
         return {"eligible": False, "reason": "terminal_stage", "evidence": stage, "state": stage}
     # Intent, an executive assignment and an alert are not proof that a person

@@ -126,6 +126,29 @@ def _runtime_metric(context, name, amount=1):
         metrics[name] = int(metrics.get(name, 0) or 0) + amount
 
 
+def normalize_fallback_reason(reason: str | None) -> str:
+    """Map provider/parser failures to the stable observability vocabulary."""
+    value = str(reason or "other").strip().casefold()
+    if value in {"timeout", "deepseek_timeout", "queue_llm_timeout"}:
+        return "deepseek_timeout"
+    if value in {"empty_response", "deepseek_empty_response", "length_exhausted"}:
+        return "deepseek_empty_response"
+    if value in {"circuit_open", "deepseek_circuit_open"}:
+        return "circuit_open"
+    if value.startswith("http_") or value in {"connection_error", "provider_error"}:
+        return "provider_error"
+    return "other"
+
+
+def _runtime_fallback_reason_metric(context, reason: str | None) -> None:
+    metrics = (context or {}).get("_runtime_metrics")
+    if not isinstance(metrics, dict):
+        return
+    canonical = normalize_fallback_reason(reason)
+    by_reason = metrics.setdefault("fallback_by_reason", {})
+    by_reason[canonical] = int(by_reason.get(canonical, 0) or 0) + 1
+
+
 def _phone_hash(context):
     value = str((context or {}).get("phone") or "").strip()
     return (context or {}).get("phone_hash") or (
@@ -337,6 +360,7 @@ def _call_deepseek_safe(messages: list, *, model: str, max_tokens: int, timeout:
 def _local_fallback(telemetry_context=None, reason="provider_failure"):
     context = telemetry_context or {}
     _runtime_metric(context, "fallback_sent")
+    _runtime_fallback_reason_metric(context, reason)
     logger.warning(
         "[CHATBOT_LOCAL_FALLBACK] trace_id=%s reason=%s phone_hash=%s",
         context.get("trace_id") or context.get("request_correlation_id") or "unknown",
@@ -384,6 +408,7 @@ def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context
         fallback_used=True, timeout=result.failure_type == "timeout",
     )
     _runtime_metric(telemetry_context, "fallback_sent")
+    _runtime_fallback_reason_metric(telemetry_context, result.failure_type or "provider_error")
     logger.warning(
         "[CHATBOT_LOCAL_FALLBACK] trace_id=%s reason=%s phone_hash=%s",
         (telemetry_context or {}).get("trace_id")

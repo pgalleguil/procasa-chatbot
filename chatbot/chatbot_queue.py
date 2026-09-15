@@ -28,6 +28,9 @@ ST_RECEIVED = "received"
 ST_BATCHING = "batching"
 ST_PENDING = "pending"
 ST_PROCESSING = "processing"
+# ``responded`` is the durable chatbot outcome: a response was generated and
+# the provider accepted the send. Provider delivery/read progress is tracked
+# independently in ``provider_status``/``delivery_status``.
 ST_RESPONDED = "responded"
 ST_FAILED_RETRYABLE = "failed_retryable"
 ST_FAILED_TERMINAL = "failed_terminal"
@@ -61,6 +64,11 @@ def _as_comparable(value, reference):
 def _valid_text(value):
     text = str(value or "").strip()
     return text if text and not ID_LIKE_RE.fullmatch(text) else None
+
+
+def _increment_metric(metrics, name, amount=1):
+    if isinstance(metrics, dict):
+        metrics[name] = int(metrics.get(name, 0) or 0) + amount
 
 
 def ensure_queue_indexes(db):
@@ -148,7 +156,10 @@ def _recent_bot_response_is_duplicate(db, *, phone, response):
 
 
 def _update_generated_response(db, *, phone, batch_id, status, content=None,
-                               generation_id=None, provider_message_id=None):
+                               generation_id=None, provider_message_id=None,
+                               provider_status=None, provider_status_code=None,
+                               response_source=None, response_reason=None,
+                               fallback_intent=None):
     """Reconcile the generated lead message with the durable delivery state."""
     try:
         from .storage import update_generated_response_delivery
@@ -158,6 +169,9 @@ def _update_generated_response(db, *, phone, batch_id, status, content=None,
         return update_generated_response_delivery(
             phone, db=db, batch_id=batch_id, status=status, content=content,
             generation_id=generation_id, provider_message_id=provider_message_id,
+            provider_status=provider_status, provider_status_code=provider_status_code,
+            response_source=response_source, response_reason=response_reason,
+            fallback_intent=fallback_intent,
         )
     except (KeyError, AssertionError, AttributeError):
         # Queue-only test doubles may not expose the leads collection.
@@ -502,7 +516,8 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
 
 
 def record_delivery_attempt(db, *, batch_id, worker_id, delivery_token, status,
-                            provider_message_id=None, http_status=None, error=None, now=None):
+                            provider_message_id=None, http_status=None, error=None, now=None,
+                            provider_status=None, provider_status_code=None):
     now = now or utc_now()
     attempt = {
         "at": now,
@@ -513,6 +528,10 @@ def record_delivery_attempt(db, *, batch_id, worker_id, delivery_token, status,
         "http_status": http_status,
         "error": error,
     }
+    if provider_status is not None:
+        attempt["provider_status"] = provider_status
+    if provider_status_code is not None:
+        attempt["provider_status_code"] = int(provider_status_code)
     result = db[JOB_COLLECTION].update_one(
         {"_id": batch_id, "kind": KIND_BATCH, "lease_owner": worker_id,
          "delivery_token": delivery_token},
@@ -524,7 +543,9 @@ def record_delivery_attempt(db, *, batch_id, worker_id, delivery_token, status,
 
 def finalize_batch(db, *, batch_id, state, outbound_provider_message_id=None,
                    error=None, worker_id=None, delivery_token=None,
-                   next_attempt_at=None, now=None):
+                   next_attempt_at=None, now=None, provider_status=None,
+                   provider_status_code=None):
+    """Finalize a batch without conflating provider acceptance and delivery."""
     now = now or utc_now()
     selector = {"_id": batch_id, "kind": KIND_BATCH}
     if worker_id:
@@ -540,6 +561,22 @@ def finalize_batch(db, *, batch_id, state, outbound_provider_message_id=None,
     if outbound_provider_message_id:
         update["outbound_provider_message_id"] = outbound_provider_message_id
         update["accepted_delivery_token"] = delivery_token
+    if provider_status in {"accepted", "sent", "delivered", "read", "failed", "unknown"}:
+        update["provider_status"] = provider_status
+        update["delivery_status"] = provider_status
+        update["last_delivery_update_at"] = now
+        if provider_status_code is not None:
+            update["provider_status_code"] = int(provider_status_code)
+        timestamp_field = {
+            "accepted": "accepted_at", "delivered": "delivered_at",
+            "read": "read_at", "failed": "failed_at",
+        }.get(provider_status)
+        current_batch = db[JOB_COLLECTION].find_one(
+            {"_id": batch_id, "kind": KIND_BATCH},
+            {timestamp_field: 1} if timestamp_field else {"_id": 1},
+        ) or {}
+        if timestamp_field and not current_batch.get(timestamp_field):
+            update[timestamp_field] = now
     if state == ST_RESPONDED:
         update["responded_at"] = now
     unset = {"lease_owner": "", "lease_until": ""}
@@ -558,6 +595,19 @@ def finalize_batch(db, *, batch_id, state, outbound_provider_message_id=None,
         {"_id": {"$in": result.get("job_ids", [])}, "kind": KIND_JOB},
         {"$set": {"state": state, "batch_id": batch_id, "updated_at": now}},
     )
+    if outbound_provider_message_id:
+        # If a provider callback arrived after the lead message was updated
+        # but before this batch was finalized, apply the parked status now.
+        try:
+            from .storage import reconcile_pending_chatbot_delivery
+            reconcile_pending_chatbot_delivery(
+                outbound_provider_message_id, db=db, batch_id=batch_id,
+            )
+        except Exception:
+            logger.exception(
+                "[CHATBOT_DELIVERY] pending status reconciliation failed batch_id=%s",
+                batch_id,
+            )
     return result
 
 
@@ -656,9 +706,11 @@ def get_queue_health(db, *, heartbeat=None, now=None, heartbeat_max_age_seconds=
         degraded_reasons.append("stuck_due_batches")
     if states[ST_FAILED_RETRYABLE]:
         degraded_reasons.append("failed_retryable_present")
-    if states[ST_DELIVERY_UNKNOWN]:
-        degraded_reasons.append("delivery_unknown_present")
     queue_depth = sum(states.get(state, 0) for state in ACTIVE_BATCH_STATES)
+    historical_reconciliation_pending = {
+        "delivery_unknown": states[ST_DELIVERY_UNKNOWN],
+        "total": states[ST_DELIVERY_UNKNOWN],
+    }
     oldest_reference = None
     if oldest:
         oldest_reference = oldest.get("window_end_at") or oldest.get("processing_started_at")
@@ -682,6 +734,8 @@ def get_queue_health(db, *, heartbeat=None, now=None, heartbeat_max_age_seconds=
         "terminal_invalid_batches": terminal_invalid_batches,
         "stuck_due_batches": stuck_due_batches,
         "delivery_unknown": states[ST_DELIVERY_UNKNOWN],
+        "service_status": "degraded" if degraded_reasons else "healthy",
+        "historical_reconciliation_pending": historical_reconciliation_pending,
         "recent_worker_errors": recent_errors,
         "degraded_reasons": degraded_reasons,
     }
@@ -713,6 +767,9 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     max_regenerations = max(int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")), 0)
     regenerations = 0
     generation_id = None
+    fallback_used = False
+    fallback_intent = None
+    fallback_reason = None
 
     async def _invoke_llm(current_text):
         params = inspect.signature(llm).parameters
@@ -765,9 +822,23 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         except asyncio.CancelledError:
             raise
         except asyncio.TimeoutError:
-            response = LOCAL_LLM_FALLBACK_TEXT
-            if isinstance(metrics, dict):
-                metrics["fallback_sent"] = int(metrics.get("fallback_sent", 0) or 0) + 1
+            from .conversation_policy import build_local_fallback_response
+            response, fallback_intent = build_local_fallback_response(
+                text,
+                operational_intent=(claimed.get("snapshot") or [{}])[-1].get("operation"),
+                property_facts={
+                    "property_code": (claimed.get("snapshot") or [{}])[-1].get("property_code"),
+                },
+            )
+            fallback_used = True
+            fallback_reason = "deepseek_timeout"
+            _increment_metric(metrics, "fallback_sent")
+            by_reason = metrics.setdefault("fallback_by_reason", {}) if isinstance(metrics, dict) else {}
+            if isinstance(by_reason, dict):
+                by_reason["deepseek_timeout"] = int(by_reason.get("deepseek_timeout", 0) or 0) + 1
+            by_intent = metrics.setdefault("fallback_by_intent", {}) if isinstance(metrics, dict) else {}
+            if isinstance(by_intent, dict):
+                by_intent[fallback_intent] = int(by_intent.get(fallback_intent, 0) or 0) + 1
             logger.warning(
                 "[CHATBOT_LOCAL_FALLBACK] batch_id=%s reason=queue_llm_timeout",
                 batch_id,
@@ -948,6 +1019,9 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     await asyncio.to_thread(_update_generated_response,
         db, phone=claimed["phone"], batch_id=batch_id,
         generation_id=generation_id, status="generated", content=response,
+        response_source="local_fallback" if fallback_used else None,
+        response_reason=fallback_reason,
+        fallback_intent=fallback_intent,
     )
 
     await asyncio.to_thread(
@@ -983,6 +1057,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     try:
         receipt = await _send_with_delivery_guard()
     except asyncio.CancelledError:
+        _increment_metric(metrics, "outbound_unknown")
         await asyncio.to_thread(_update_generated_response,
             db, phone=claimed["phone"], batch_id=batch_id,
             generation_id=generation_id, status="delivery_unknown", content=response,
@@ -994,6 +1069,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         )
         raise
     except Exception as exc:
+        _increment_metric(metrics, "outbound_unknown")
         logger.exception(
             "[CHATBOT_DELIVERY] provider call failed batch_id=%s error=%s",
             batch_id, type(exc).__name__,
@@ -1033,17 +1109,33 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     http_status = receipt.get("http_status")
     provider_id = receipt.get("provider_message_id")
     if receipt.get("provider_call_uncertain"):
+        _increment_metric(metrics, "outbound_unknown")
         state, error, retry_at = ST_DELIVERY_UNKNOWN, "provider_call_uncertain", None
     elif receipt.get("success") and provider_id:
+        provider_status = receipt.get("delivery_status")
+        if provider_status not in {"accepted", "sent", "delivered", "read", "failed", "unknown"}:
+            provider_status = "accepted"
+        provider_status_code = receipt.get("provider_status_code")
+        _increment_metric(metrics, "outbound_accepted")
+        if provider_status == "delivered":
+            _increment_metric(metrics, "outbound_delivered")
+        elif provider_status == "read":
+            _increment_metric(metrics, "outbound_read")
         await asyncio.to_thread(_update_generated_response,
             db, phone=claimed["phone"], batch_id=batch_id,
             generation_id=generation_id, status="accepted", content=response,
             provider_message_id=provider_id,
+            provider_status=provider_status,
+            provider_status_code=provider_status_code,
+            response_source="local_fallback" if fallback_used else None,
+            response_reason=fallback_reason,
+            fallback_intent=fallback_intent,
         )
         await asyncio.to_thread(
             record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
             delivery_token=token,
             status="accepted", provider_message_id=provider_id, http_status=http_status,
+            provider_status=provider_status, provider_status_code=provider_status_code,
         )
         await asyncio.to_thread(record_observability_event, "RESPONSE_SENT", {
             **_lead_event_context(db, claimed),
@@ -1075,22 +1167,35 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
             outbound_provider_message_id=provider_id, worker_id=worker_id,
-            delivery_token=token,
+            delivery_token=token, provider_status=provider_status,
+            provider_status_code=provider_status_code,
         )
     elif receipt.get("success") and not provider_id:
+        _increment_metric(metrics, "outbound_unknown")
         state, error = ST_DELIVERY_UNKNOWN, "accepted_without_provider_message_id"
         retry_at = None
     elif http_status == 422:
+        _increment_metric(metrics, "outbound_failed")
         state, error, retry_at = ST_FAILED_TERMINAL, "http_422", None
     elif http_status == 429:
+        _increment_metric(metrics, "outbound_failed")
         retry_after = max(int(receipt.get("retry_after") or 60), 1)
         state, error = ST_FAILED_RETRYABLE, "http_429"
         retry_at = (now or utc_now()) + timedelta(seconds=retry_after)
     else:
+        _increment_metric(metrics, "outbound_failed")
         state, error, retry_at = ST_FAILED_RETRYABLE, f"http_{http_status or 'unknown'}", None
+    provider_status = (
+        "failed"
+        if receipt.get("delivery_status") == "failed"
+        or (http_status is not None and not receipt.get("success"))
+        else "unknown"
+    )
+    message_delivery_status = "failed" if provider_status == "failed" else "delivery_unknown"
     await asyncio.to_thread(_update_generated_response,
         db, phone=claimed["phone"], batch_id=batch_id,
-        generation_id=generation_id, status="delivery_unknown", content=response,
+        generation_id=generation_id, status=message_delivery_status, content=response,
+        provider_status=provider_status,
     )
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
@@ -1101,6 +1206,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         finalize_batch, db, batch_id=batch_id, state=state, error=error,
         worker_id=worker_id,
         delivery_token=token, next_attempt_at=retry_at,
+        provider_status=provider_status,
     )
 
 
@@ -1187,6 +1293,13 @@ async def chatbot_response_worker_loop():
         "deepseek_empty_responses": 0,
         "deepseek_circuit_open": 0,
         "fallback_sent": 0,
+        "fallback_by_reason": {},
+        "fallback_by_intent": {},
+        "outbound_accepted": 0,
+        "outbound_delivered": 0,
+        "outbound_read": 0,
+        "outbound_failed": 0,
+        "outbound_unknown": 0,
         "batches_completed": 0,
     }
     active_tasks = set()
@@ -1240,6 +1353,7 @@ async def chatbot_response_worker_loop():
                                    "provider_message_ids": provider_message_ids or [],
                                    "property_contexts": property_contexts or [],
                                    "provider_message_id": (provider_message_ids or [None])[0],
+                                   "_runtime_metrics": runtime_metrics or metrics,
                                    "runtime_metrics": runtime_metrics or metrics},
             )
 

@@ -1089,7 +1089,7 @@
                         {{ s.label }}
                     </div>
                     {% if is_active %}
-                    <div class="mt-2 badge bg-primary" style="
+                    <div class="mt-2 badge bg-primary" data-captacion-status style="
                 font-size: 0.7rem;
                 padding: 4px 10px;
                 border-radius: 8px;
@@ -1158,6 +1158,8 @@
                             <span>{{ prop.precio_display }}</span>
                         </div>
                         <span
+                            id="captacion-visible-status"
+                            data-captacion-status
                             class="badge {{ 'badge-nuevo' if prop.gestion.estado == 'NUEVO' else 'badge-gestion' }} badge-custom">
                             {{ prop.gestion.estado }}
                         </span>
@@ -1266,7 +1268,9 @@
                                          <i class="fa-brands fa-whatsapp"></i>
                                      </button>
                                  </div>
-                                <div id="known-broker-auto-match-alert" class="alert alert-warning mt-3 mb-0 d-none" role="status"></div>
+                                <div id="known-broker-auto-match-alert"
+                                    class="alert alert-warning mt-3 mb-0 {% if not prop.gestion.known_broker_auto_match %}d-none{% endif %}"
+                                    role="status" aria-live="polite">{% if prop.gestion.known_broker_auto_match %}Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.{% endif %}</div>
                              </div>
 
                             <div class="col-md-6">
@@ -1293,6 +1297,7 @@
                             <div class="col-12 mt-4">
                                 <button
                                     class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2 py-3 rounded-2xl"
+                                    id="save-contact-btn"
                                     onclick="saveContactInfo(event)" style="font-weight: 700; letter-spacing: 0.5px;">
                                     <i class="fa-solid fa-floppy-disk"></i> GUARDAR DATOS DE CONTACTO
                                 </button>
@@ -1339,6 +1344,7 @@
                             <div class="col-12 mt-2">
                                 <button
                                     class="btn btn-primary w-100 d-flex align-items-center justify-content-center gap-2"
+                                    id="update-status-btn"
                                     onclick="updateStatus()" style="background: var(--accent)">
                                     <i class="fa-solid fa-check-circle"></i> ACTUALIZAR ESTADO
                                 </button>
@@ -1602,6 +1608,57 @@
             <script src="https://cdn.jsdelivr.net/npm/flatpickr" defer></script>
             <script>
                 const followupContextToken = new URLSearchParams(window.location.search).get('followup_token') || '';
+                const PHONE_LEARNING_BROKER_MESSAGE = 'Teléfono identificado como corredor previamente. El dato fue marcado como Corredor y no requiere continuar la gestión.';
+                const PHONE_LEARNING_CAN_REVIEW = {{ 'true' if user_role in ['supervisor', 'admin', 'jefatura'] else 'false' }};
+                let phoneLearningBrokerLocked = {{ 'true' if prop.gestion.known_broker_auto_match else 'false' }};
+
+                function phoneLearningLockApplies() {
+                    return phoneLearningBrokerLocked && !PHONE_LEARNING_CAN_REVIEW;
+                }
+
+                function applyPhoneLearningBrokerState() {
+                    const alert = document.getElementById('known-broker-auto-match-alert');
+                    if (phoneLearningBrokerLocked && alert) {
+                        alert.textContent = PHONE_LEARNING_BROKER_MESSAGE;
+                        alert.classList.remove('d-none');
+                    }
+
+                    if (phoneLearningBrokerLocked) {
+                        document.querySelectorAll('[data-captacion-status]').forEach((element) => {
+                            element.textContent = 'Corredor';
+                        });
+                        const statusSelect = document.getElementById('statusSelect');
+                        if (statusSelect) statusSelect.value = 'Corredor';
+                    }
+
+                    const locked = phoneLearningLockApplies();
+                    const controlIds = [
+                        'wa-telefono',
+                        'contact-nombre',
+                        'contact-email',
+                        'contact-notas',
+                        'proximo-contacto',
+                        'statusSelect',
+                        'notes',
+                        'save-contact-btn',
+                        'update-status-btn',
+                        'btn-call',
+                        'btn-whatsapp',
+                        'btn-email',
+                    ];
+                    controlIds.forEach((id) => {
+                        const element = document.getElementById(id);
+                        if (!element) return;
+                        element.disabled = locked;
+                        element.setAttribute('aria-disabled', locked ? 'true' : 'false');
+                        if (locked) {
+                            element.title = 'Este dato fue marcado como Corredor por Phone Learning.';
+                        }
+                    });
+                    syncCommButtons();
+                    if (typeof updateSendLink === 'function') updateSendLink();
+                }
+
                 // Scripts originales de inicialización
                 document.addEventListener("DOMContentLoaded", () => {
                     flatpickr(".flatpickr-date", {
@@ -1613,6 +1670,8 @@
                                 ? "light"
                                 : "dark",
                     });
+
+                    applyPhoneLearningBrokerState();
 
                     // Initial validation
                     syncCommButtons();
@@ -1639,28 +1698,29 @@
                     const btnCall = document.getElementById('btn-call');
                     const btnWA = document.getElementById('btn-whatsapp');
                     const btnEmail = document.getElementById('btn-email');
+                    const brokerLocked = phoneLearningLockApplies();
 
                     // Logic: Enabled only if NOT empty AND NOT changed (saved)
                     if (btnCall) {
-                        const canUsePhone = phone && !phoneChanged;
+                        const canUsePhone = phone && !phoneChanged && !brokerLocked;
                         btnCall.disabled = !canUsePhone;
                         btnCall.style.opacity = canUsePhone ? "1" : "0.5";
                         btnCall.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnCall.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar");
+                        btnCall.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "Llamar"));
                     }
                     if (btnWA) {
-                        const canUsePhone = phone && !phoneChanged;
+                        const canUsePhone = phone && !phoneChanged && !brokerLocked;
                         btnWA.disabled = !canUsePhone;
                         btnWA.style.opacity = canUsePhone ? "1" : "0.5";
                         btnWA.style.cursor = canUsePhone ? "pointer" : "not-allowed";
-                        btnWA.title = !phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp");
+                        btnWA.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!phone ? "Ingrese un teléfono" : (phoneChanged ? "Guarde los cambios para activar" : "WhatsApp"));
                     }
                     if (btnEmail) {
-                        const canUseEmail = email && !emailChanged;
+                        const canUseEmail = email && !emailChanged && !brokerLocked;
                         btnEmail.disabled = !canUseEmail;
                         btnEmail.style.opacity = canUseEmail ? "1" : "0.5";
                         btnEmail.style.cursor = canUseEmail ? "pointer" : "not-allowed";
-                        btnEmail.title = !email ? "Ingrese un email" : (emailChanged ? "Guarde los cambios para activar" : "Enviar Email");
+                        btnEmail.title = brokerLocked ? "Este dato fue marcado como Corredor por Phone Learning." : (!email ? "Ingrese un email" : (emailChanged ? "Guarde los cambios para activar" : "Enviar Email"));
                     }
                 }
 
@@ -1716,6 +1776,7 @@
 
                 function startCallManagement(event) {
                     event.preventDefault();
+                    if (phoneLearningLockApplies()) return false;
                     const phone = document.getElementById('wa-telefono').value;
                     window.location.href = 'tel:' + phone;
                     return false;
@@ -1723,6 +1784,7 @@
 
                 function startMessageManagement(event) {
                     event.preventDefault();
+                    if (phoneLearningLockApplies()) return false;
                     const link = event.currentTarget;
                     const destination = link.href;
                     bootstrap.Modal.getInstance(document.getElementById('commModal'))?.hide();
@@ -1733,6 +1795,10 @@
 
                 async function saveContactInfo(event) {
                     event.preventDefault();
+                    if (phoneLearningLockApplies()) {
+                        applyPhoneLearningBrokerState();
+                        return false;
+                    }
                     const btn = event.currentTarget;
                     const originalHtml = btn.innerHTML;
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> GUARDANDO...';
@@ -1755,9 +1821,17 @@
                         const data = await res.json();
                         if (data.status === 'ok') {
                             const knownBrokerAlert = document.getElementById('known-broker-auto-match-alert');
-                            if (knownBrokerAlert && data.known_broker_auto_match && data.message) {
-                                knownBrokerAlert.textContent = data.message;
-                                knownBrokerAlert.classList.remove('d-none');
+                            const brokerDetected = (
+                                data.resulting_state === 'Corredor'
+                                || (data.identity_status === 'CORREDOR_CONFIRMED' && data.known_broker_auto_match)
+                            );
+                            if (brokerDetected) {
+                                phoneLearningBrokerLocked = true;
+                                if (knownBrokerAlert) {
+                                    knownBrokerAlert.textContent = data.message || PHONE_LEARNING_BROKER_MESSAGE;
+                                    knownBrokerAlert.classList.remove('d-none');
+                                }
+                                applyPhoneLearningBrokerState();
                             }
                             // Update last saved state
                             lastSavedPhone = payload.telefono;
@@ -1769,7 +1843,7 @@
                             setTimeout(() => {
                                 btn.innerHTML = originalHtml;
                                 btn.classList.remove('bg-success', 'border-success');
-                                btn.disabled = false;
+                                btn.disabled = phoneLearningLockApplies();
                             }, 2000);
                         } else {
                             throw new Error(data.message || "Error en servidor");
@@ -1782,7 +1856,11 @@
                 }
 
                 async function updateStatus() {
-                    const btn = document.querySelector('button[onclick="updateStatus()"]');
+                    const btn = document.getElementById('update-status-btn');
+                    if (phoneLearningLockApplies()) {
+                        applyPhoneLearningBrokerState();
+                        return false;
+                    }
                     const originalHtml = btn.innerHTML;
                     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ACTUALIZANDO...';
                     btn.disabled = true;
@@ -2313,6 +2391,7 @@
                 let currentCommChannel = 'wa';
 
                 async function openCommPanel(target, defaultChannel = 'wa') {
+                    if (phoneLearningLockApplies()) return false;
                     try {
                         currentCommTarget = target;
                         currentCommChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
@@ -2561,7 +2640,7 @@
                     const isWA = currentCommChannel === 'wa';
                     btn.innerHTML = isWA ? '<i class="fa-brands fa-whatsapp"></i> Abrir WhatsApp' : '<i class="fa-solid fa-envelope"></i> Abrir Correo';
 
-                    if (msg.trim().length > 0) {
+                    if (msg.trim().length > 0 && !phoneLearningLockApplies()) {
                         btn.style.opacity = "1";
                         btn.style.cursor = "pointer";
                         btn.style.pointerEvents = "auto";

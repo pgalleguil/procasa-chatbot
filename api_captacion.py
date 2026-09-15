@@ -1944,6 +1944,11 @@ def update_contact_info(obj_id, nombre=None, telefono=None, email=None, notas=No
             "identity_status": (contact_identity or {}).get("status"),
             "identity_id": str((contact_identity or {}).get("_id") or (contact_identity or {}).get("identity_key") or ""),
             "known_broker_event_id": (known_broker_match or {}).get("event_id"),
+            "resulting_state": (
+                "Corredor"
+                if known_broker_match and known_broker_match.get("matched")
+                else None
+            ),
         }
 
     return True

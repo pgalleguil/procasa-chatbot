@@ -12,6 +12,29 @@ def test_detail_broadcasts_successful_management_to_captacion_list():
     assert "if (result !== 'cancel') notifyCaptacionMetricsUpdated();" in source
 
 
+def test_phone_learning_match_updates_detail_and_locks_normal_executive_controls():
+    source = (ROOT / "templates" / "captacion_detail.html").read_text(encoding="utf-8")
+
+    assert "data.resulting_state === 'Corredor'" in source
+    assert "PHONE_LEARNING_BROKER_MESSAGE" in source
+    assert "phoneLearningBrokerLocked = true" in source
+    assert "applyPhoneLearningBrokerState();" in source
+    assert "data-captacion-status" in source
+    assert "id=\"statusSelect\"" in source
+    assert "id=\"update-status-btn\"" in source
+    assert "id=\"save-contact-btn\"" in source
+    assert "PHONE_LEARNING_CAN_REVIEW" in source
+    assert "if (phoneLearningLockApplies()) return false;" in source
+
+
+def test_contact_response_exposes_resulting_state_without_changing_phone_learning_backend():
+    source = (ROOT / "api_captacion.py").read_text(encoding="utf-8")
+
+    assert '"resulting_state":' in source
+    assert '"Corredor"' in source
+    assert '"known_broker_auto_match"' in source
+
+
 def test_captacion_list_refreshes_when_detail_management_changes_metrics():
     source = (ROOT / "templates" / "captacion_list.html").read_text(encoding="utf-8")
 

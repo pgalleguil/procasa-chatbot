@@ -3220,7 +3220,6 @@ async def api_crm_management_result(request: Request):
             idempotency_key=str(data.get("management_request_id") or data.get("idempotency_key") or ""),
             next_follow_up_at=data.get("next_follow_up_at"),
             details_json=data.get("details_json") if isinstance(data.get("details_json"), dict) else {},
-            followup_token=data.get("followup_token"),
             actor_can_manage_any_cycle=can_administer_leads(user.get("rol")),
         )
     try:

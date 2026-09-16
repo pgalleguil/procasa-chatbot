@@ -1030,6 +1030,90 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
                 delivery_token=token,
             )
 
+        # Normalize legacy safety transforms before the canonical barrier.
+        # Nothing below the barrier may mutate customer-facing text; otherwise
+        # a safe validated response could become unsafe or drop required
+        # answer components after validation.
+        from chatbot.conversation_policy import (
+            outbound_phone_request,
+            safe_phone_free_response,
+            outbound_unconfirmed_visit_claim,
+            safe_visit_claim_free_response,
+        )
+        if outbound_phone_request(response):
+            await asyncio.to_thread(
+                record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+                delivery_token=token, status="blocked_phone_request",
+                error="outbound_explicit_phone_request",
+            )
+            await asyncio.to_thread(_record_queue_observability_event, db, "phone_request_blocked", {
+                **_lead_event_context(db, claimed),
+            })
+            response = safe_phone_free_response(response)
+        if outbound_unconfirmed_visit_claim(response):
+            await asyncio.to_thread(
+                _record_queue_observability_event, db,
+                "visit_claim_blocked",
+                _lead_event_context(db, claimed),
+            )
+            response = safe_visit_claim_free_response(response)
+        if await asyncio.to_thread(
+            _recent_bot_response_is_duplicate,
+            db, phone=claimed["phone"], response=response,
+        ):
+            await asyncio.to_thread(
+                _record_queue_observability_event, db,
+                "bot_response_duplicate_blocked",
+                _lead_event_context(db, claimed),
+            )
+            from chatbot.conversation_policy import duplicate_response_fallback
+            response = duplicate_response_fallback(response)
+
+        # Canonical customer-facing admission barrier. Every source (LLM,
+        # deterministic response, timeout fallback or legacy core path) has
+        # converged into ``response`` at this point, before freshness and the
+        # provider call. Nothing below may call ``sender`` with the raw text.
+        try:
+            from .final_response_barrier import admit_customer_response
+        except ImportError:
+            from chatbot.final_response_barrier import admit_customer_response
+        snapshot = claimed.get("snapshot") or [{}]
+        latest_snapshot = snapshot[-1] if snapshot else {}
+        try:
+            guardrail_lead = await asyncio.to_thread(
+                db["leads"].find_one, {"phone": claimed["phone"]},
+                {"_id": 1, "prospecto": 1, "conversation_id": 1,
+                 "conversation_owner": 1, "human_active": 1, "messages": 1},
+            ) or {}
+        except Exception:
+            guardrail_lead = {}
+        generated_facts = {}
+        for item in reversed(guardrail_lead.get("messages") or []):
+            if item.get("role") == "assistant" and item.get("batch_id") == batch_id and item.get("generation_id") == generation_id:
+                generated_facts = dict(item.get("guardrail_facts") or {})
+                break
+        guardrail = admit_customer_response(
+            candidate=response, customer_message=text, lead=guardrail_lead,
+            property_context={"property_code": latest_snapshot.get("property_code"),
+                              "operation": latest_snapshot.get("operation")},
+            facts=generated_facts, source="local_fallback" if fallback_used else "writer_or_deterministic",
+        )
+        if not guardrail["approved"]:
+            await asyncio.to_thread(
+                record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+                delivery_token=token, status="blocked_final_response_validator",
+                error=";".join(guardrail["final_validation"].get("reasons") or ["validator_rejected"]),
+            )
+            return await asyncio.to_thread(
+                finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
+                error="suppressed_final_response_validator", worker_id=worker_id,
+                delivery_token=token,
+            )
+        response = guardrail["response"]
+        if isinstance(metrics, dict):
+            metrics["final_validator_repaired"] = int(metrics.get("final_validator_repaired", 0) or 0) + int(guardrail["repaired"])
+            metrics["final_validator_safe_renderer"] = int(metrics.get("final_validator_safe_renderer", 0) or 0) + int(guardrail["used_safe_renderer"])
+
         try:
             from .conversation_observability import record_conversation_event
             generated_context = await asyncio.to_thread(
@@ -1084,12 +1168,6 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     except Exception:
         logger.exception("[COMMERCIAL_INTAKE] durable commercial processing failed")
 
-    from chatbot.conversation_policy import (
-        outbound_phone_request,
-        safe_phone_free_response,
-        outbound_unconfirmed_visit_claim,
-        safe_visit_claim_free_response,
-    )
     # A human message received after generation is a hard cutoff. The check is
     # deliberately immediately before delivery so it also covers a response
     # generated before the executive message but delayed by provider I/O.
@@ -1113,37 +1191,6 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             error="suppressed_human_takeover", worker_id=worker_id,
             delivery_token=token,
         )
-
-    if outbound_phone_request(response):
-        await asyncio.to_thread(
-            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
-            delivery_token=token, status="blocked_phone_request",
-            error="outbound_explicit_phone_request",
-        )
-        await asyncio.to_thread(_record_queue_observability_event, db, "phone_request_blocked", {
-            **_lead_event_context(db, claimed),
-        })
-        response = safe_phone_free_response(response)
-
-    if outbound_unconfirmed_visit_claim(response):
-        await asyncio.to_thread(
-            _record_queue_observability_event, db,
-            "visit_claim_blocked",
-            _lead_event_context(db, claimed),
-        )
-        response = safe_visit_claim_free_response(response)
-
-    if await asyncio.to_thread(
-        _recent_bot_response_is_duplicate,
-        db, phone=claimed["phone"], response=response,
-    ):
-        await asyncio.to_thread(
-            _record_queue_observability_event, db,
-            "bot_response_duplicate_blocked",
-            _lead_event_context(db, claimed),
-        )
-        from chatbot.conversation_policy import duplicate_response_fallback
-        response = duplicate_response_fallback(response)
 
     await asyncio.to_thread(_update_generated_response,
         db, phone=claimed["phone"], batch_id=batch_id,

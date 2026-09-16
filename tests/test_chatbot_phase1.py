@@ -266,6 +266,48 @@ def test_visit_date_range_is_preserved():
     assert preference == "jueves en la manana desde el 23 en adelante"
 
 
+def test_schedule_change_replaces_previous_day():
+    preference = extract_visit_preference(
+        "El sábado no puedo, mejor domingo", visit_context=True,
+    )
+    assert preference == "domingo"
+
+
+def test_visit_preference_accepts_bare_hours_with_day():
+    preference = extract_visit_preference(
+        "viernes 11, 14:15 o 16", visit_context=True,
+    )
+    assert preference == "viernes 11 14:15 16"
+
+
+def test_visit_preference_does_not_capture_property_numbers_with_visit_context():
+    preference = extract_visit_preference(
+        "54 m2, piso 8, 2 dormitorios y 3 cuotas", visit_context=True,
+    )
+    assert preference is None
+
+
+def test_schedule_change_replaces_previous_day():
+    preference = extract_visit_preference(
+        "El sábado no puedo, mejor domingo", visit_context=True,
+    )
+    assert preference == "domingo"
+
+
+def test_visit_preference_accepts_bare_hours_with_day():
+    preference = extract_visit_preference(
+        "viernes 11, 14:15 o 16", visit_context=True,
+    )
+    assert preference == "viernes 11 14:15 16"
+
+
+def test_visit_preference_does_not_capture_property_numbers_with_visit_context():
+    preference = extract_visit_preference(
+        "54 m2, piso 8, 2 dormitorios y 3 cuotas", visit_context=True,
+    )
+    assert preference is None
+
+
 def test_no_false_availability_confirmation():
     assert outbound_unconfirmed_visit_claim(
         "La visita está confirmada para mañana."

@@ -401,6 +401,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         }})
         return ""
     prospecto_actual = lead_doc_full.get("prospecto", {})
+    # The resolved property is populated later, but the persistence helper is
+    # also used by early deterministic returns.  Keeping one outer reference
+    # lets every queue-bound response carry the same verified facts.
+    propiedad = None
+    # A single unambiguous RAG result can provide verified facts to the final
+    # response barrier without silently making that option the active
+    # property. Multiple results remain descriptive candidates only.
+    rag_verified_facts = {}
+    rag_result_count = None
     conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
     if not conversation_id:
         conversation_id = await _run_sync(ensure_conversation_id, phone)
@@ -417,6 +426,37 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "generation_id": generation_id,
         }
         lead = lead_doc or lead_doc_full
+        fact_fields = {
+            "precio_uf", "precio_clp", "gastos_comunes", "dormitorios",
+            "banos", "estacionamientos", "superficie_util", "superficie_total",
+            "orientacion", "incluye_gastos_comunes", "rag_result_count",
+        }
+        verified_facts = {}
+        # Current resolved listing wins over historical lead fields; explicit
+        # metadata supplied by a verified caller wins over both.
+        for source in (prospecto_actual or {}, propiedad or {}, rag_verified_facts or {},
+                       (metadata or {}).get("guardrail_facts") or {}):
+            if isinstance(source, dict):
+                verified_facts.update({
+                    key: value for key, value in source.items()
+                    if key in fact_fields and value not in (None, "")
+                })
+        if propiedad:
+            current_property_operation = get_prop_operation(propiedad)
+            active_operation = str(current_property_operation.get("operacion") or "").casefold()
+            # ``metadata`` is built from the lead snapshot captured before a
+            # link/property switch.  It may therefore reintroduce the old
+            # operation's price after the current property was merged.  The
+            # active listing is authoritative for operation-specific prices.
+            if active_operation == "arriendo":
+                verified_facts.pop("precio_uf", None)
+                if current_property_operation.get("precio_clp") not in (None, ""):
+                    verified_facts["precio_clp"] = current_property_operation["precio_clp"]
+            elif active_operation == "venta":
+                verified_facts.pop("precio_clp", None)
+                if current_property_operation.get("precio_uf") not in (None, ""):
+                    verified_facts["precio_uf"] = current_property_operation["precio_uf"]
+        effective_metadata["guardrail_facts"] = verified_facts
         lead_id = str(lead.get("_id")) if lead.get("_id") else None
         try:
             await _run_sync(log_event, phone, InteractionType.BOT_MSG, "bot", {
@@ -525,7 +565,22 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         ),
     )
     stored_visit_preference = prospecto_actual.get("visit_preference") or {}
-    if not visit_preference and isinstance(stored_visit_preference, dict):
+    # A stored visit preference belongs to the visit state, but it must not
+    # turn every later customer message (for example a mortgage question)
+    # into another visit turn. Reuse it only when the current inbound is an
+    # explicit visit follow-up, contains a temporal signal, or answers a
+    # pending visit prompt.
+    current_visit_followup = bool(
+        is_explicit_visit_intent(original_message)
+        or pending_property_identifier
+        or pending_visit_scheduling
+        or re.search(
+            r"\b(?:hoy|mañana|pasado\s+mañana|lunes|martes|miércoles|jueves|viernes|sábado|domingo|"
+            r"a\s+las?|tipo\s+\d{1,2}|después\s+de\s+las?|en\s+la\s+(?:mañana|tarde|noche))\b",
+            original_message or "", re.IGNORECASE,
+        )
+    )
+    if not visit_preference and current_visit_followup and isinstance(stored_visit_preference, dict):
         current_property = str(prospecto_actual.get("codigo") or "")
         stored_property = str(stored_visit_preference.get("property_id") or "")
         if not stored_property or not current_property or stored_property == current_property:
@@ -687,6 +742,31 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # 3. ANÁLISIS PRELIMINAR DE DATOS Y EXTRACCIÓN PROACTIVA
     # =======================================================
     prospecto_actual = await _run_sync(obtener_prospecto, phone) or {}
+    operation_switch = None
+    explicit_operation_switch = re.search(
+        r"\b(?:en\s+realidad|finalmente|mejor|ahora)\s+"
+        r"(?:busco|quiero|prefiero)\s+(arrendar|alquilar|comprar|vender)\b",
+        original_message or "", re.IGNORECASE,
+    )
+    if explicit_operation_switch:
+        requested_operation = (
+            "Arriendo" if explicit_operation_switch.group(1).casefold() in {"arrendar", "alquilar"}
+            else "Venta"
+        )
+        current_operation = str(prospecto_actual.get("operacion") or "")
+        if current_operation.casefold() != requested_operation.casefold():
+            operation_switch = requested_operation
+            await _run_sync(actualizar_prospecto, phone, {
+                "operacion": requested_operation,
+                "operacion_fuente": "CUSTOMER_EXPLICIT_SWITCH",
+            })
+            prospecto_actual["operacion"] = requested_operation
+            prospecto_actual["operacion_fuente"] = "CUSTOMER_EXPLICIT_SWITCH"
+            # Operation-specific readiness must not leak across a switch.
+            if requested_operation == "Arriendo":
+                prospecto_actual.pop("financing_status", None)
+            else:
+                prospecto_actual.pop("rental_docs_readiness", None)
     updates_datos = {}
     
     # A) EXTRACCIÓN PROACTIVA DE DATOS PERSONALES
@@ -766,7 +846,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 4. ANÁLISIS DE PROPIEDAD (LINK O CÓDIGO) - VERSIÓN CORREGIDA
     # =======================================================
-    propiedad = None
     nuevo_origen = None
     codigo_externo = None  # Solo para trazabilidad, no para routing si no hay match
     codigo_detectado = None
@@ -956,11 +1035,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # Actualizar prospecto si encontramos propiedad nueva
     if propiedad and codigo_detectado:
         prop_loc = get_prop_location(propiedad)
-        prop_op = get_prop_operation(propiedad, operation_override=link_operation)
+        prop_op = get_prop_operation(
+            propiedad,
+            operation_override=link_operation or operation_switch,
+        )
         updates_prop = {
             "ultimo_mensaje": datetime.now(CHILE_TZ).isoformat(),
             "codigo": codigo_detectado,
             "precio_uf": prop_op.get("precio_uf"),
+            "precio_clp": prop_op.get("precio_clp"),
             "comuna": prop_loc.get("comuna"),
             "tipo": prop_op.get("tipo"),
             "operacion": prop_op.get("operacion"),
@@ -977,6 +1060,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
         logger.info(f"[LINK_FLOW] trace={trace_id} phone={phone} actualizando prospecto.codigo={codigo_detectado} origen={nuevo_origen}")
         await _run_sync(actualizar_prospecto, phone, updates_prop, trace_id)
+        # Do not leave a price from the previous operation in the active
+        # conversational snapshot.  ``actualizar_prospecto`` intentionally
+        # ignores None, so remove only the stale operation-specific field when
+        # the newly resolved listing does not provide it.
+        stale_price_field = None
+        if prop_op.get("operacion") == "Arriendo" and not prop_op.get("precio_uf"):
+            stale_price_field = "prospecto.precio_uf"
+        elif prop_op.get("operacion") == "Venta" and not prop_op.get("precio_clp"):
+            stale_price_field = "prospecto.precio_clp"
+        if stale_price_field:
+            await _run_sync(
+                db["leads"].update_one,
+                {"phone": phone}, {"$unset": {stale_price_field: ""}},
+            )
         logger.info(
             f"[PROPERTY_AFTER] trace={trace_id} phone={phone} variable=prospecto.codigo "
             f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=LINK_FLOW_FINAL"
@@ -1470,6 +1567,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             texto_rag = formatear_resultados_texto(resultados_rag)
             
             if resultados_rag:
+                rag_result_count = len(resultados_rag)
+                if len(resultados_rag) == 1 and isinstance(resultados_rag[0], dict):
+                    rag_fact_fields = {
+                        "precio_uf", "precio_clp", "gastos_comunes", "dormitorios",
+                        "banos", "estacionamientos", "superficie_util", "superficie_total",
+                        "orientacion", "incluye_gastos_comunes",
+                    }
+                    rag_verified_facts = {
+                        key: value for key, value in resultados_rag[0].items()
+                        if key in rag_fact_fields and value not in (None, "")
+                    }
+                rag_verified_facts["rag_result_count"] = rag_result_count
                 # --- CORRECCIÓN: ALMACENAMIENTO DE VISTOS ---
                 # Usamos p.get() para seguridad y forzamos str() para que coincida con MongoDB
                 nuevos_codigos = [str(p.get("codigo")) for p in resultados_rag if p.get("codigo")]
@@ -1497,6 +1606,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                         "status": "consumed", "consumed_at": datetime.now(CHILE_TZ).isoformat(),
                     })
             else:
+                rag_result_count = 0
+                rag_verified_facts = {"rag_result_count": 0}
                 if not relaxation_accepted:
                     await _run_sync(actualizar_prospecto, phone, {
                         "rag_filter_relaxation": {
@@ -2042,7 +2153,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     )
     return await _persist_generated_outbound(
         respuesta,
-        {**metadata_tipo, "lead_intent": selected_intent},
+        {**metadata_tipo, "lead_intent": selected_intent,
+         "guardrail_facts": {key: value for key, value in {
+             "precio_uf": prospecto_actual.get("precio_uf") or (propiedad or {}).get("precio_uf"), "precio_clp": prospecto_actual.get("precio_clp") or (propiedad or {}).get("precio_clp"),
+             "gastos_comunes": prospecto_actual.get("gastos_comunes") or (propiedad or {}).get("gastos_comunes"), "dormitorios": prospecto_actual.get("dormitorios") or (propiedad or {}).get("dormitorios"),
+             "banos": prospecto_actual.get("banos") or (propiedad or {}).get("banos"), "estacionamientos": prospecto_actual.get("estacionamientos") or (propiedad or {}).get("estacionamientos"),
+             "superficie_util": prospecto_actual.get("superficie_util") or (propiedad or {}).get("superficie_util"), "superficie_total": prospecto_actual.get("superficie_total") or (propiedad or {}).get("superficie_total"),
+         }.items() if value not in (None, "")}},
         intent=intencion,
         lead_doc=lead_doc,
     )

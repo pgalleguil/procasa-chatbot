@@ -50,6 +50,7 @@ class DeepSeekResult:
     total_tokens: int = 0
     latency_ms: int = 0
     usage: object | None = None
+    attempts: int = 1
 
 
 class _DeepSeekCircuitBreaker:
@@ -323,6 +324,23 @@ def _call_deepseek_safe(messages: list, *, model: str, max_tokens: int, timeout:
         message = getattr(choice, "message", None) if choice else None
         content = getattr(message, "content", None) if message else None
         content = str(content or "").strip()
+        attempts = 1
+        # A provider response with HTTP success, finish_reason=stop and usage
+        # but no message content is neither a parser nor a timeout failure.
+        # Retry that typed provider anomaly once; SDK retries remain disabled.
+        if not content:
+            logger.warning(
+                "[DEEPSEEK_EMPTY_CONTENT_RETRY] trace_id=%s finish_reason=%s completion_tokens=%s",
+                context.get("trace_id") or context.get("request_correlation_id") or "unknown",
+                getattr(choice, "finish_reason", None),
+                int(_usage_value(getattr(response, "usage", None), "completion_tokens", 0) or 0),
+            )
+            attempts = 2
+            response = client.chat.completions.create(**kwargs)
+            choices = getattr(response, "choices", None) or []
+            choice = choices[0] if choices else None
+            message = getattr(choice, "message", None) if choice else None
+            content = str(getattr(message, "content", None) or "").strip()
         reasoning_content = getattr(message, "reasoning_content", None) if message else None
         finish_reason = getattr(choice, "finish_reason", None) if choice else None
         usage = getattr(response, "usage", None)
@@ -341,6 +359,7 @@ def _call_deepseek_safe(messages: list, *, model: str, max_tokens: int, timeout:
             total_tokens=total_tokens,
             latency_ms=int((time.monotonic() - started_at) * 1000),
             usage=usage,
+            attempts=attempts,
         )
         if result.ok:
             _deepseek_circuit.success()

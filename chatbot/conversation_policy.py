@@ -145,9 +145,24 @@ _VISIT_DAYPART_RE = re.compile(
 _VISIT_QUESTION_RE = re.compile(
     r"(?:qu[eé]\s+d[ií]a|rango\s+horario|a\s+qu[eé]\s+hora|cu[aá]ndo).*"
     r"(?:visita|ir|ver|coordinar|agendar)|"
+    r"(?:qu[eé]\s+(?:d[ií]a|horario|hora)).{0,35}\b(?:acomoda|conviene|puedes|tienes\s+disponibilidad)\b|"
     r"(?:horario|hora)\s+(?:te\s+)?acomoda|"
     r"(?:coordinar|agendar)\s+(?:una\s+)?visita|"
     r"(?:te\s+)?gustar[ií]a\s+(?:coordinar|agendar|visitar)",
+    re.IGNORECASE,
+)
+_VISIT_SCHEDULE_CHANGE_RE = re.compile(
+    r"\b(?:mejor|en\s+vez(?:\s+de)?)\s+(?:el\s+)?"
+    r"(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|lunes|martes|mi[eé]rcoles|jueves|"
+    r"viernes|s[aá]bado|domingo)(?:\b|\s+)",
+    re.IGNORECASE,
+)
+_OWNER_SERVICE_RE = re.compile(
+    r"\b(?:tengo\s+(?:una\s+)?(?:propiedad|casa|departamento|depto|local)|"
+    r"quiero\s+(?:vender|arrendar|alquilar|publicar)\s+mi|"
+    r"busco\s+(?:una\s+)?corredora|quiero\s+que\s+ustedes\s+la\s+"
+    r"(?:arrienden|vendan)|capt(?:ar|aci[oó]n)|sin\s+exclusividad|"
+    r"comisi[oó]n)\b",
     re.IGNORECASE,
 )
 
@@ -211,24 +226,56 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     normalized = _normalize_text(message)
     if not normalized:
         return None
-    day = _VISIT_DAY_RE.search(normalized)
-    date_range = _VISIT_DATE_RANGE_RE.search(normalized)
-    time = _VISIT_TIME_RE.search(normalized)
-    daypart = _VISIT_DAYPART_RE.search(normalized)
-    if not (day or date_range or time or daypart):
+    if _OWNER_SERVICE_RE.search(normalized):
+        return None
+    schedule_change = _VISIT_SCHEDULE_CHANGE_RE.search(normalized)
+    scoped = normalized[schedule_change.start():] if schedule_change else normalized
+    days = list(_VISIT_DAY_RE.finditer(scoped))
+    date_ranges = list(_VISIT_DATE_RANGE_RE.finditer(scoped))
+    times = list(_VISIT_TIME_RE.finditer(scoped))
+    dayparts = list(_VISIT_DAYPART_RE.finditer(scoped))
+    if not (days or date_ranges or times or dayparts):
         return None
     if not visit_context and not is_explicit_visit_intent(normalized):
         return None
 
     parts = []
-    matches = sorted(
-        (match for match in (day, date_range, time, daypart) if match),
-        key=lambda match: match.start(),
-    )
+    matches = sorted(days + date_ranges + times + dayparts, key=lambda match: match.start())
+    # ``_VISIT_DAY_RE`` also recognizes "mañana", while the day-part matcher
+    # recognizes the more informative phrase "en la mañana". Keep the
+    # containing match and avoid duplicating the same temporal signal.
+    matches = [
+        match for match in matches
+        if not any(
+            other is not match
+            and other.start() <= match.start()
+            and match.end() <= other.end()
+            and (other.start() < match.start() or other.end() > match.end())
+            for other in matches
+        )
+    ]
     for match in matches:
         value = match.group(0).strip()
         if value not in parts:
             parts.append(value)
+    # A customer may provide several bare hours: "viernes 11, 14:15 o 16".
+    # They are valid only in visit context and only when a day/date exists.
+    # Reject values attached to property facts so m², floor, bedrooms,
+    # installments, UF, prices and export timestamps cannot become visit data.
+    if days and (visit_context or is_explicit_visit_intent(normalized)):
+        structured_spans = [(match.start(), match.end()) for match in matches]
+        for match in re.finditer(r"(?<![\w/:])(?:[01]?\d|2[0-3])(?::[0-5]\d)?(?![\w/:])", scoped):
+            token = match.group(0)
+            if any(start <= match.start() and match.end() <= end for start, end in structured_spans):
+                continue
+            before = scoped[max(0, match.start() - 14):match.start()]
+            after = scoped[match.end():match.end() + 14]
+            if re.search(r"(?:\$|uf|m2|m²|piso|dormitorio|baño|cuota)\s*$", before, re.I):
+                continue
+            if re.match(r"\s*(?:m2|m²|uf|cuotas?|dormitorios?|baños?|piso)\b", after, re.I):
+                continue
+            if token not in parts:
+                parts.append(token)
     return " ".join(parts) or None
 
 
@@ -357,8 +404,8 @@ def _display_visit_preference(preference: str | None) -> str:
 def build_visit_scheduling_request() -> str:
     """Ask for a visit time after the property is already identified."""
     return (
-        "Sí, podemos gestionar una visita. ¿Qué día y horario te acomodaría? "
-        "Lo dejamos solicitado con el ejecutivo encargado de la propiedad para confirmar disponibilidad."
+        "Sí, podemos solicitar una visita. ¿Qué día y horario te acomodaría? "
+        "La disponibilidad debe confirmarse antes de agendar."
     )
 
 
@@ -366,8 +413,8 @@ def build_visit_preference_confirmation(preference: str | None) -> str:
     """Confirm a preference without claiming that the visit is booked."""
     display = _display_visit_preference(preference) or "ese horario"
     return (
-        f"Perfecto, dejo registrada tu preferencia para {display}. El ejecutivo encargado "
-        "revisará la disponibilidad y continuará contigo la coordinación."
+        f"Perfecto, dejo registrada tu preferencia para {display}. "
+        "La disponibilidad debe confirmarse antes de agendar."
     )
 
 
@@ -646,7 +693,7 @@ def safe_visit_claim_free_response(original: str) -> str:
     sentences = re.split(r"(?<=[.!?])\s+", text)
     retained = [sentence for sentence in sentences if not outbound_unconfirmed_visit_claim(sentence)]
     useful = " ".join(retained).strip()
-    suffix = "Registré tu interés; el ejecutivo confirmará la disponibilidad y coordinará el horario contigo."
+    suffix = "Podemos continuar con la coordinación; la disponibilidad debe confirmarse antes de agendar."
     return f"{useful} {suffix}".strip() if useful else suffix
 
 
@@ -671,7 +718,7 @@ def duplicate_response_fallback(original: str) -> str:
     if re.search(r"\b(?:rut|correo|email|nombre|datos)\b", normalized):
         return "Ya registré lo que me indicaste. ¿Qué otra información necesitas?"
     if re.search(r"\b(?:visita|verla|verlo|coordinar|agendar)\b", normalized):
-        return "Ya registré tu interés. El ejecutivo confirmará la coordinación contigo."
+        return "Podemos continuar con la coordinación; la disponibilidad debe confirmarse antes de agendar."
     return "Gracias, sigo atento a tu consulta."
 
 

@@ -65,12 +65,105 @@ def test_history_is_cycle_sourced_read_only_and_excludes_contact_data():
     assert len(rows) == 1
     row = rows[0]
     assert row["assignment_cycle_id"] == "cycle-old"
-    assert row["status_label"] == "Reasignado por vencimiento de SLA"
+    assert row["status_label"] == "Reasignado por SLA"
     assert row["codigo_propiedad"] == "7733"
     assert row["historical"] is True
     assert row["actions_disabled"] is True
     assert row["operational_url"] is None
     assert not {"phone", "email", "whatsapp", "notes", "recommendations"}.intersection(row)
+
+
+def test_history_filter_reconciles_previous_owner_and_keeps_same_code_isolated():
+    db = _db()
+    from bson import ObjectId
+
+    mariela_id = ObjectId()
+    hernan_id = ObjectId()
+    db["usuarios"].insert_many([
+        {"_id": mariela_id, "nombre": "Mariela Arriagada", "rol": "agente"},
+        {"_id": hernan_id, "nombre": "Hernán Castro", "rol": "agente"},
+    ])
+
+    lead_ids = [ObjectId() for _ in range(4)]
+    codes = ["16897", "5695", "7733", "7733"]
+    for index, (lead_id, code) in enumerate(zip(lead_ids, codes), start=1):
+        db["leads"].insert_one({
+            "_id": lead_id,
+            "prospecto": {
+                "nombre": f"Cliente histórico {index}",
+                "codigo": code,
+                "operacion": "Venta",
+                "comuna": "Santiago",
+            },
+            "phone": f"+569000000{index:02d}",
+            "email": f"private-{index}@example.invalid",
+            "lead_temperature_effective": "HOT" if index == 1 else "NORMAL",
+            "lifecycle": {"current_assignment_cycle_id": f"dest-{index}"},
+        })
+        db["crm_assignment_cycles"].insert_many([
+            {
+                "_id": f"source-doc-{index}",
+                "assignment_cycle_id": f"source-{index}",
+                "lead_id": lead_id,
+                "assigned_to_user_id": mariela_id,
+                "assigned_to_display_name": "Mariela Arriagada",
+                "assigned_at": datetime(2026, 9, 16, 13, index, tzinfo=timezone.utc),
+                "sla_breached_at": datetime(2026, 9, 16, 16, index, tzinfo=timezone.utc),
+                "reassigned_at": datetime(2026, 9, 16, 16, 1, index, tzinfo=timezone.utc),
+                "cycle_status": "reassigned",
+                "closed_reason": "sla_reassignment",
+                "property_code": code,
+                "temperature_at_assignment": "HOT" if index == 1 else "NORMAL",
+            },
+            {
+                "_id": f"destination-doc-{index}",
+                "assignment_cycle_id": f"dest-{index}",
+                "lead_id": lead_id,
+                "assigned_to_user_id": hernan_id,
+                "assigned_to_display_name": "Hernán Castro",
+                "cycle_status": "active",
+                "unassigned_at": None,
+                "reassignment_source_cycle_id": f"source-{index}",
+            },
+        ])
+
+    rows = get_historical_assignment_rows(
+        db, user_name="Mariela Arriagada", limit=100
+    )
+
+    assert len(rows) == 4
+    assert {(row["lead_id"], row["assignment_cycle_id"]) for row in rows} == {
+        (str(lead_id), f"source-{index}")
+        for index, lead_id in enumerate(lead_ids, start=1)
+    }
+    assert [row["codigo_propiedad"] for row in rows].count("7733") == 2
+    assert all(row["status_label"] == "Reasignado por SLA" for row in rows)
+    assert all(row["sla_state_label"] == "Vencido" for row in rows)
+    assert all(row["response_label"] == "🔒 Reasignado" for row in rows)
+    assert all(row["operational_url"] is None and row["actions_disabled"] for row in rows)
+    assert not any(
+        {"phone", "email", "whatsapp", "notes", "recommendations", "url"}.intersection(row)
+        for row in rows
+    )
+
+
+def test_history_filter_contract_is_visible_and_non_operational():
+    from pathlib import Path
+
+    template = Path(__file__).parents[1].joinpath(
+        "templates", "crm_leads_list.html"
+    ).read_text(encoding="utf-8")
+
+    assert 'value="SLA_REASSIGNED_HISTORY"' in template
+    assert "Reasignados por SLA" in template
+    assert "Reasignados SLA:" in template
+    assert "history_filter_active" in template
+    history_block = template.split("{% if history_filter_active %}", 1)[1].split(
+        "{% endif %}", 1
+    )[0]
+    assert "data-lead-url" not in history_block
+    assert "data-quick-management" not in history_block
+    assert "data-phone" not in history_block
 
 
 def test_old_owner_is_locked_while_current_owner_remains_allowed():

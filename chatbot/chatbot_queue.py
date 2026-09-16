@@ -329,8 +329,10 @@ def create_inbound_job(
     received_at=None,
     is_from_me=False,
     max_wait_seconds=None,
+    ingress_timings=None,
 ):
     """Idempotently persist one inbound and attach it to one durable batch."""
+    timings = ingress_timings if isinstance(ingress_timings, dict) else None
     provider_id = str(inbound_provider_message_id or "").strip()
     clean_text = _valid_text(text)
     if not provider_id:
@@ -343,6 +345,7 @@ def create_inbound_job(
     now = received_at or utc_now()
     coll = db[JOB_COLLECTION]
     lead = {}
+    lead_lookup_started = time.perf_counter()
     try:
         lead = db["leads"].find_one(
             {"phone": phone},
@@ -353,7 +356,11 @@ def create_inbound_job(
         conversation_id = conversation_id or lead.get("conversation_id")
     except (KeyError, AssertionError, AttributeError):
         pass
+    finally:
+        if timings is not None:
+            timings["lead_lookup_ms"] = round((time.perf_counter() - lead_lookup_started) * 1000, 1)
     if not conversation_id:
+        conversation_started = time.perf_counter()
         try:
             from .conversation_observability import resolve_or_create_conversation
             conversation_id = resolve_or_create_conversation(
@@ -363,6 +370,15 @@ def create_inbound_job(
             # The durable job must remain enqueueable even if observability is
             # unavailable; the consumer will repair the live lead on persist.
             conversation_id = None
+        finally:
+            if timings is not None:
+                timings["conversation_resolution_ms"] = round(
+                    (time.perf_counter() - conversation_started) * 1000, 1
+                )
+    elif timings is not None:
+        timings["conversation_resolution_ms"] = 0.0
+    if timings is not None:
+        timings["conversation_id"] = conversation_id
     job_id = str(uuid.uuid4())
     message_id = str(uuid.uuid4())
     property_code = ((lead.get("prospecto") or {}).get("codigo") if lead else None)
@@ -392,6 +408,7 @@ def create_inbound_job(
         "responsible_service": "chatbot_response_delivery",
         "idempotency_key": f"chatbot:inbound:{provider_id}",
     }
+    job_insert_started = time.perf_counter()
     try:
         coll.insert_one(job)
     except DuplicateKeyError:
@@ -401,7 +418,13 @@ def create_inbound_job(
         })
         if not existing:
             raise
+        if timings is not None:
+            timings["job_insert_ms"] = round((time.perf_counter() - job_insert_started) * 1000, 1)
+            timings["idempotency_collision"] = True
         return existing["_id"]
+    finally:
+        if timings is not None and "job_insert_ms" not in timings:
+            timings["job_insert_ms"] = round((time.perf_counter() - job_insert_started) * 1000, 1)
 
     try:
         from .conversation_observability import record_conversation_event
@@ -417,6 +440,7 @@ def create_inbound_job(
 
     quiet_seconds, maximum_wait_seconds = _batch_settings(max_wait_seconds)
     conversation_key = _conversation_key(phone, conversation_id)
+    batch_attach_started = time.perf_counter()
     # Repair any terminal legacy batch before looking for an active one.  A
     # terminal result can never accept another inbound message.
     _release_terminal_conversation_lock(coll, conversation_key, now)
@@ -498,6 +522,8 @@ def create_inbound_job(
             "window_end_at": max(previous_deadline, current_deadline),
         }, "$inc": {"conversation_sequence": 1}},
     )
+    if timings is not None:
+        timings["batch_attach_ms"] = round((time.perf_counter() - batch_attach_started) * 1000, 1)
     return job_id
 
 
@@ -849,6 +875,15 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         return None
     batch_id = claimed["_id"]
     token = claimed["delivery_token"]
+    provider_message_ids = [
+        item.get("provider_id") for item in (claimed.get("snapshot") or [])
+        if item.get("provider_id")
+    ]
+    logger.info(
+        "[CHATBOT_BATCH_CLAIMED] batch_id=%s job_ids=%s conversation_id=%s provider_message_ids=%s",
+        batch_id, claimed.get("job_ids") or [], claimed.get("conversation_id"),
+        provider_message_ids,
+    )
     text = _valid_text(claimed.get("combined_text"))
     if not text:
         return await asyncio.to_thread(
@@ -864,6 +899,10 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     except ImportError:  # direct module loading used by the queue unit tests
         from chatbot.conversation_policy import is_acknowledgement_only
     if is_acknowledgement_only(text):
+        logger.info(
+            "[CHATBOT_NO_REPLY] reason=acknowledgement_only batch_id=%s provider_message_ids=%s",
+            batch_id, provider_message_ids,
+        )
         try:
             try:
                 from .conversation_observability import record_conversation_event
@@ -1099,6 +1138,10 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             facts=generated_facts, source="local_fallback" if fallback_used else "writer_or_deterministic",
         )
         if not guardrail["approved"]:
+            logger.info(
+                "[CHATBOT_NO_REPLY] reason=final_response_validator batch_id=%s provider_message_ids=%s",
+                batch_id, provider_message_ids,
+            )
             await asyncio.to_thread(
                 record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
                 delivery_token=token, status="blocked_final_response_validator",
@@ -1289,6 +1332,10 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         )
 
     if receipt.get("__suppressed_human_takeover__"):
+        logger.info(
+            "[CHATBOT_NO_REPLY] reason=human_takeover batch_id=%s provider_message_ids=%s",
+            batch_id, provider_message_ids,
+        )
         await asyncio.to_thread(_update_generated_response,
             db, phone=claimed["phone"], batch_id=batch_id,
             generation_id=generation_id, status="suppressed", content=response,
@@ -1377,6 +1424,32 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         _increment_metric(metrics, "outbound_unknown")
         state, error = ST_DELIVERY_UNKNOWN, "accepted_without_provider_message_id"
         retry_at = None
+    elif http_status == 401:
+        # Authentication rejection is definitive for this attempt.  Retrying
+        # the same response after credentials are restored could send stale
+        # customer-facing text hours later, so quarantine it terminally.
+        logger.error(
+            "[WHATSAPP_PROVIDER_AUTH_FAILURE] http_status=401 provider_message_id=%s",
+            provider_id or "null",
+        )
+        _increment_metric(metrics, "outbound_failed")
+        state, error, retry_at = (
+            ST_FAILED_TERMINAL,
+            "provider_authentication_failed_http_401",
+            None,
+        )
+    elif http_status == 403:
+        # Authorization rejection is also definitive and must not be retried.
+        logger.error(
+            "[WHATSAPP_PROVIDER_AUTH_FAILURE] http_status=403 provider_message_id=%s",
+            provider_id or "null",
+        )
+        _increment_metric(metrics, "outbound_failed")
+        state, error, retry_at = (
+            ST_FAILED_TERMINAL,
+            "provider_authorization_failed_http_403",
+            None,
+        )
     elif http_status == 422:
         _increment_metric(metrics, "outbound_failed")
         state, error, retry_at = ST_FAILED_TERMINAL, "http_422", None

@@ -3624,6 +3624,7 @@ async def webhook(
     request: Request,
     x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")
 ):
+    webhook_started = time.perf_counter()
     raw_body = await request.body()
     if Config.WASENDER_WEBHOOK_SECRET:
         expected = hmac.new(
@@ -3738,7 +3739,9 @@ async def webhook(
     # Si quien escribe es un ejecutivo (excepto Pablo Galleguillos), 
     # forzamos from_me=True para que el bot no responda.
     user_lookup_phone = sender_phone if from_me else (sender_phone or phone)
+    user_lookup_started = time.perf_counter()
     user_found = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_user_by_phone(user_lookup_phone))
+    user_lookup_ms = round((time.perf_counter() - user_lookup_started) * 1000, 1)
     if not from_me and user_found and user_found.get("rol") in ["agente", "supervisor"]:
         if user_found.get("nombre") != "Pablo Galleguillos":
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
@@ -3779,6 +3782,8 @@ async def webhook(
     phone = _normalize_webhook_phone(phone)
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
+    ingress_timings = {"user_lookup_ms": user_lookup_ms}
+    log_event_started = time.perf_counter()
     try:
         from chatbot.storage import log_event, EventType, get_db as _sync_db
         # Para el log de eventos, usamos el número limpio sin el '+'
@@ -3794,6 +3799,7 @@ async def webhook(
         )
     except:
         pass
+    ingress_timings["log_event_ms"] = round((time.perf_counter() - log_event_started) * 1000, 1)
 
     provider_message_id = (
         key.get("id")
@@ -3858,6 +3864,7 @@ async def webhook(
                     phone=phone,
                     text=text,
                     conversation_id=None,
+                    ingress_timings=ingress_timings,
                 ),
             )
         except ValueError as exc:
@@ -3866,6 +3873,27 @@ async def webhook(
         except Exception:
             logger.exception("[CHATBOT_QUEUE] persistence failed")
             raise HTTPException(status_code=503, detail="Durable queue unavailable")
+        ingress_timings["webhook_total_ms"] = round(
+            (time.perf_counter() - webhook_started) * 1000, 1
+        )
+        logger.info(
+            "[CHATBOT_INGRESS_ACCEPTED] provider_message_id=%s job_id=%s phone=%s conversation_id=%s",
+            str(provider_message_id), str(job_id), phone,
+            ingress_timings.get("conversation_id"),
+        )
+        logger.info(
+            "[CHATBOT_INGRESS_TIMING] provider_message_id=%s user_lookup_ms=%.1f "
+            "log_event_ms=%.1f lead_lookup_ms=%.1f conversation_resolution_ms=%.1f "
+            "job_insert_ms=%.1f batch_attach_ms=%.1f webhook_total_ms=%.1f",
+            str(provider_message_id),
+            float(ingress_timings.get("user_lookup_ms", 0.0)),
+            float(ingress_timings.get("log_event_ms", 0.0)),
+            float(ingress_timings.get("lead_lookup_ms", 0.0)),
+            float(ingress_timings.get("conversation_resolution_ms", 0.0)),
+            float(ingress_timings.get("job_insert_ms", 0.0)),
+            float(ingress_timings.get("batch_attach_ms", 0.0)),
+            float(ingress_timings.get("webhook_total_ms", 0.0)),
+        )
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
 
     if from_me and bot_outbound:

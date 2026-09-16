@@ -187,6 +187,43 @@ def test_duplicate_webhook_creates_one_job_and_one_batch():
     assert len(db.collection.find({"kind": queue.KIND_BATCH})) == 1
 
 
+def test_inbound_enqueue_records_stage_timings_and_claim_observability(caplog):
+    db = DB()
+    timings = {"user_lookup_ms": 0.0, "log_event_ms": 0.0}
+    job_id = queue.create_inbound_job(
+        db, inbound_provider_message_id="wamid-observable", phone="+56911112222",
+        text="hola", received_at=NOW, ingress_timings=timings,
+    )
+    assert job_id
+    assert all(
+        key in timings
+        for key in (
+            "user_lookup_ms",
+            "lead_lookup_ms",
+            "conversation_resolution_ms",
+            "job_insert_ms",
+            "batch_attach_ms",
+        )
+    )
+    batch = db.collection.find_one({"kind": queue.KIND_BATCH})
+    assert batch["job_ids"] == [job_id]
+
+    async def llm(phone, text):
+        return "respuesta"
+
+    async def sender(phone, text):
+        return {"success": True, "provider_message_id": "out-observable", "http_status": 200}
+
+    with caplog.at_level("INFO", logger=queue.logger.name):
+        result = asyncio.run(queue.process_one_batch(
+            db, worker_id="w-observable", llm=llm, sender=sender,
+            now=NOW + timedelta(seconds=15),
+        ))
+
+    assert result["state"] == queue.ST_RESPONDED
+    assert any("[CHATBOT_BATCH_CLAIMED]" in record.message for record in caplog.records)
+
+
 def test_webhook_acknowledges_job_already_attached_by_worker_race():
     class RaceCollection(Collection):
         def update_one(self, query, update):
@@ -372,6 +409,135 @@ def test_422_terminal_429_retry_after_and_unknown_delivery():
         "success": False, "provider_call_uncertain": True, "http_status": None,
     }))
     assert uncertain["state"] == queue.ST_DELIVERY_UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("http_status", "expected_error"),
+    [
+        (401, "provider_authentication_failed_http_401"),
+        (403, "provider_authorization_failed_http_403"),
+    ],
+)
+def test_provider_auth_failures_are_terminal_and_never_retried(http_status, expected_error):
+    db = DB()
+    add(db, f"wamid-auth-{http_status}", "hola")
+    sender_calls = []
+
+    async def llm(_phone, _text):
+        return "respuesta"
+
+    async def sender(_phone, _text):
+        sender_calls.append(http_status)
+        return {"success": False, "http_status": http_status,
+                "provider_message_id": None, "delivery_status": "failed"}
+
+    result = asyncio.run(queue.process_one_batch(
+        db, worker_id="auth-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert result["state"] == queue.ST_FAILED_TERMINAL
+    assert result["last_error"] == expected_error
+    assert result["next_attempt_at"] is None
+
+    # Credential recovery must not resurrect the old customer-facing reply.
+    async def recovered_sender(_phone, _text):
+        return {"success": True, "provider_message_id": "late"}
+
+    assert asyncio.run(queue.process_one_batch(
+        db, worker_id="auth-worker-2", llm=llm,
+        sender=recovered_sender,
+        now=NOW + timedelta(hours=1),
+    )) is None
+    assert sender_calls == [http_status]
+
+
+def test_401_auth_failure_is_observable_without_logging_credentials(caplog):
+    db = DB()
+    add(db, "wamid-auth-observable", "hola")
+    secret = "do-not-log-provider-token"
+
+    async def llm(_phone, _text):
+        return "respuesta"
+
+    async def sender(_phone, _text):
+        return {"success": False, "http_status": 401,
+                "provider_message_id": None, "delivery_status": "failed"}
+
+    with caplog.at_level("ERROR", logger=queue.logger.name):
+        result = asyncio.run(queue.process_one_batch(
+            db, worker_id="auth-observable", llm=llm, sender=sender,
+            now=NOW + timedelta(seconds=15),
+        ))
+
+    assert result["state"] == queue.ST_FAILED_TERMINAL
+    messages = "\n".join(record.message for record in caplog.records)
+    assert "[WHATSAPP_PROVIDER_AUTH_FAILURE]" in messages
+    assert "http_status=401" in messages
+    assert "provider_message_id=null" in messages
+    assert secret not in messages
+
+
+def test_429_retries_after_retry_after_and_can_succeed():
+    db = DB()
+    add(db, "wamid-rate-limit", "hola")
+    sender_calls = []
+
+    async def llm(_phone, _text):
+        return "respuesta"
+
+    async def sender(_phone, _text):
+        sender_calls.append(1)
+        if len(sender_calls) == 1:
+            return {"success": False, "http_status": 429,
+                    "retry_after": 30, "provider_message_id": None,
+                    "delivery_status": "failed"}
+        return {"success": True, "http_status": 200,
+                "provider_message_id": "accepted-after-429",
+                "delivery_status": "accepted"}
+
+    first = asyncio.run(queue.process_one_batch(
+        db, worker_id="rate-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert first["state"] == queue.ST_FAILED_RETRYABLE
+    assert first["last_error"] == "http_429"
+    assert first["next_attempt_at"] == NOW + timedelta(seconds=45)
+
+    assert asyncio.run(queue.process_one_batch(
+        db, worker_id="rate-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=44),
+    )) is None
+    second = asyncio.run(queue.process_one_batch(
+        db, worker_id="rate-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=46),
+    ))
+    assert second["state"] == queue.ST_RESPONDED
+    assert sender_calls == [1, 1]
+
+
+def test_network_uncertainty_is_delivery_unknown_and_never_blindly_retried():
+    db = DB()
+    add(db, "wamid-network-uncertain", "hola")
+    sender_calls = []
+
+    async def llm(_phone, _text):
+        return "respuesta"
+
+    async def sender(_phone, _text):
+        sender_calls.append(1)
+        raise TimeoutError("provider response uncertain")
+
+    result = asyncio.run(queue.process_one_batch(
+        db, worker_id="network-worker", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert result["state"] == queue.ST_DELIVERY_UNKNOWN
+    assert result["last_error"] == "send:TimeoutError"
+    assert asyncio.run(queue.process_one_batch(
+        db, worker_id="network-worker-2", llm=llm, sender=sender,
+        now=NOW + timedelta(hours=1),
+    )) is None
+    assert sender_calls == [1]
 
 
 def test_health_degrades_for_missing_heartbeat_and_expired_lease():

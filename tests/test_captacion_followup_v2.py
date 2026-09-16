@@ -31,6 +31,7 @@ from chatbot.followup_tracking import (
     _issue_legacy_followup_token,
     record_followup_event,
     record_followup_open,
+    followup_token_binding_matches_task,
     validate_followup_token_runtime,
     verify_followup_token,
 )
@@ -172,6 +173,21 @@ def test_v2_task_open_requires_existing_non_terminal_task_and_recipient(v2_secre
                 entity_id=terminal["obj_id"],
                 actor_user_id="user-1",
             )
+
+
+def test_new_crm_followup_token_binds_cycle_and_recipient(v2_secret):
+    task = _task(followup_cycle_id="cycle-current")
+    token = issue_followup_token(
+        task["task_id"], now=UTC_NOW,
+        assignment_cycle_id="cycle-current", recipient_user_id="user-1",
+    )
+    payload = verify_followup_token(token, now=UTC_NOW)
+    assert payload["assignment_cycle_id"] == "cycle-current"
+    assert payload["recipient_user_id"] == "user-1"
+    assert followup_token_binding_matches_task(payload, task)
+    assert not followup_token_binding_matches_task(
+        {**payload, "assignment_cycle_id": "cycle-old"}, task
+    )
 
 
 def test_reminder_clicked_is_idempotent_and_updates_task_timestamp(v2_secret):
@@ -478,6 +494,84 @@ def test_public_followup_route_authenticates_before_click(monkeypatch, v2_secret
     assert response.status_code == 302
     assert events and events[-1]["event_type"] == "reminder_clicked"
     assert events[-1]["actor_user_id"] == "user-1"
+
+
+def test_old_crm_followup_link_works_before_reassignment(monkeypatch, v2_secret):
+    webhook = _import_webhook_without_network_initialization(monkeypatch)
+    db = mongomock.MongoClient()["crm_followup_before"]
+    lead_id = ObjectId()
+    lead = {
+        "_id": lead_id, "phone": "56911111111", "ejecutivo_asignado": "Old Owner",
+        "lifecycle": {"current_assignment_cycle_id": "cycle-old"},
+    }
+    task = _task(
+        task_id="crm-before", obj_id=str(lead_id), lead_type="crm",
+        followup_cycle_id="cycle-old", recipient_user_id="old-user",
+        target_user_id="old-user",
+    )
+    db["leads"].insert_one(lead)
+    db["crm_assignment_cycles"].insert_one({
+        "_id": "old-cycle", "assignment_cycle_id": "cycle-old", "lead_id": str(lead_id),
+        "assigned_to_user_id": "old-user", "assigned_to_display_name": "Old Owner",
+        "cycle_status": "active", "unassigned_at": None,
+    })
+    db["crm_tasks"].insert_one(task)
+    monkeypatch.setattr("chatbot.storage.get_db", lambda: db)
+    monkeypatch.setattr(webhook.Config, "CRM_SLA_SECURITY_LAYER_ENABLED", True)
+    monkeypatch.setattr(webhook, "get_lead_detail_data", lambda phone, lead_doc=None: {
+        "phone": lead_doc.get("phone"), "ejecutivo_asignado": "Old Owner",
+    })
+    monkeypatch.setattr(webhook, "lead_is_assigned_to_user", lambda detail, user: True)
+
+    async def current_user(_request):
+        return {"_id": "old-user", "nombre": "Old Owner", "rol": "agente"}
+
+    monkeypatch.setattr(webhook, "get_current_user_doc", current_user)
+    token = issue_followup_token(
+        task["task_id"], now=UTC_NOW,
+        assignment_cycle_id="cycle-old", recipient_user_id="old-user",
+    )
+    response = asyncio.run(webhook.open_followup_link(SimpleNamespace(), token))
+    assert response.status_code == 302
+
+
+def test_old_crm_followup_link_is_locked_after_reassignment(monkeypatch, v2_secret):
+    webhook = _import_webhook_without_network_initialization(monkeypatch)
+    db = mongomock.MongoClient()["crm_followup_after"]
+    lead_id = ObjectId()
+    db["leads"].insert_one({
+        "_id": lead_id, "phone": "56911111111", "ejecutivo_asignado": "New Owner",
+        "assigned_by": "sla_reassignment", "reassigned_by_sla": True,
+        "lifecycle": {"current_assignment_cycle_id": "cycle-new"},
+    })
+    task = _task(
+        task_id="crm-after", obj_id=str(lead_id), lead_type="crm",
+        followup_cycle_id="cycle-old", recipient_user_id="old-user",
+        target_user_id="old-user",
+    )
+    db["crm_tasks"].insert_one(task)
+    db["crm_assignment_cycles"].insert_many([
+        {"_id": "old-cycle", "assignment_cycle_id": "cycle-old", "lead_id": str(lead_id),
+         "assigned_to_user_id": "old-user", "cycle_status": "reassigned", "unassigned_at": UTC_NOW},
+        {"_id": "new-cycle", "assignment_cycle_id": "cycle-new", "lead_id": str(lead_id),
+         "assigned_to_user_id": "new-user", "assigned_to_display_name": "New Owner",
+         "cycle_status": "active", "unassigned_at": None},
+    ])
+    monkeypatch.setattr("chatbot.storage.get_db", lambda: db)
+    monkeypatch.setattr(webhook.Config, "CRM_SLA_SECURITY_LAYER_ENABLED", True)
+
+    async def old_user(_request):
+        return {"_id": "old-user", "rol": "agente"}
+
+    monkeypatch.setattr(webhook, "get_current_user_doc", old_user)
+    token = issue_followup_token(
+        task["task_id"], now=UTC_NOW,
+        assignment_cycle_id="cycle-old", recipient_user_id="old-user",
+    )
+    with pytest.raises(HTTPException) as locked:
+        asyncio.run(webhook.open_followup_link(SimpleNamespace(), token))
+    assert locked.value.status_code == 409
+    assert locked.value.detail == "LEAD_REASSIGNED_SLA_LOCKED"
 
 
 def test_followup_login_returns_to_same_reminder(monkeypatch, v2_secret):

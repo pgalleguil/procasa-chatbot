@@ -33,7 +33,11 @@ RESULT_RULES = {
 class StaleAssignmentCycleError(ValueError):
     """The client attempted to manage a cycle that is no longer active."""
 
-    code = "stale_assignment_cycle"
+    code = "ASSIGNMENT_CYCLE_REFRESH_REQUIRED"
+
+    def __init__(self, current_assignment_cycle_id: str | None = None):
+        super().__init__(self.code)
+        self.current_assignment_cycle_id = str(current_assignment_cycle_id or "")
 
 
 class LeadReassignedSlaLockedError(ValueError):

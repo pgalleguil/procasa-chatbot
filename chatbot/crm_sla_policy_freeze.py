@@ -81,6 +81,8 @@ RM_TIER1_IDENTITIES = frozenset({MARIA_NAME, HERNAN_NAME})
 # historical usuarios row is still marked ``agente``; keep the SLA selector
 # fail-closed by denying the canonical user identity explicitly.
 RM_ADMIN_EXCLUDED_USER_IDS = frozenset({"69796bc4bbebf240378eb739"})
+TIER1_BALANCED_SELECTION = "TIER1_BALANCED"
+TIER1_BALANCE_WINDOW_SIZE = 20
 
 
 def _uid(row: Mapping[str, Any]) -> str:
@@ -102,8 +104,8 @@ def _rm_candidate_tier(row: Mapping[str, Any]) -> int:
     return 1 if _candidate_identity(row) in RM_TIER1_IDENTITIES else 2
 
 
-def _state_for(leads: Iterable[Mapping[str, Any]], keys: tuple[str, ...] = ("rm_candidates", "jpc_candidates")) -> dict[str, dict[str, float]]:
-    state: dict[str, dict[str, float]] = {}
+def _state_for(leads: Iterable[Mapping[str, Any]], keys: tuple[str, ...] = ("rm_candidates", "jpc_candidates")) -> dict[str, dict[str, Any]]:
+    state: dict[str, dict[str, Any]] = {}
     for lead in leads:
         for key in keys:
             for raw in lead.get(key, []):
@@ -115,11 +117,13 @@ def _state_for(leads: Iterable[Mapping[str, Any]], keys: tuple[str, ...] = ("rm_
                     "simulated_unmanaged_current": _number(raw.get("unmanaged_current_policy")),
                     "simulated_expired_current": _number(raw.get("expired_current_policy")),
                     "shadow_received_count": _number(raw.get("shadow_received_count")),
+                    "tier1_recent_count_before": int(_number(raw.get("tier1_recent_count_before"))),
+                    "tier1_last_assignment_at": str(raw.get("tier1_last_assignment_at") or ""),
                 })
     return state
 
 
-def _update_state(state: dict[str, dict[str, float]], winner: Mapping[str, Any]) -> None:
+def _update_state(state: dict[str, dict[str, Any]], winner: Mapping[str, Any]) -> None:
     user_id = _uid(winner)
     if not user_id:
         return
@@ -128,10 +132,41 @@ def _update_state(state: dict[str, dict[str, float]], winner: Mapping[str, Any])
         "simulated_unmanaged_current": _number(winner.get("unmanaged_current_policy")),
         "simulated_expired_current": _number(winner.get("expired_current_policy")),
         "shadow_received_count": _number(winner.get("shadow_received_count")),
+        "tier1_recent_count_before": int(_number(winner.get("tier1_recent_count_before"))),
+        "tier1_last_assignment_at": str(winner.get("tier1_last_assignment_at") or ""),
     })
     state[user_id]["simulated_open_current"] += 1
     state[user_id]["simulated_unmanaged_current"] += 1
     state[user_id]["shadow_received_count"] += 1
+    if int(winner.get("candidate_tier") or 0) == 1:
+        # Worker-backed state carries the authoritative last-20 event list so
+        # a batch crossing the window boundary remains exact. Pure analytical
+        # callers carry only the per-user counters and still get deterministic
+        # in-batch balancing.
+        history = state.get("__tier1_balance_history__")
+        if isinstance(history, list):
+            history.append({
+                "user_id": user_id,
+                "at": str(winner.get("tier1_assignment_at") or winner.get("assigned_at") or ""),
+            })
+            del history[:-TIER1_BALANCE_WINDOW_SIZE]
+            counts = Counter(str(row.get("user_id") or "") for row in history if row.get("user_id"))
+            last_at: dict[str, str] = {}
+            for row in history:
+                candidate_id = str(row.get("user_id") or "")
+                if candidate_id:
+                    last_at[candidate_id] = str(row.get("at") or "")
+            for candidate_id, values in state.items():
+                if candidate_id.startswith("__"):
+                    continue
+                values["tier1_recent_count_before"] = counts.get(candidate_id, 0)
+                values["tier1_last_assignment_at"] = last_at.get(candidate_id, "")
+        else:
+            current_count = int(_number(state[user_id].get("tier1_recent_count_before")))
+            state[user_id]["tier1_recent_count_before"] = current_count + 1
+            state[user_id]["tier1_last_assignment_at"] = str(
+                winner.get("tier1_assignment_at") or winner.get("assigned_at") or ""
+            )
 
 
 def bootstrap_sequence(pool: Iterable[Mapping[str, Any]], size: int, rng: random.Random, prefix: str) -> list[dict[str, Any]]:
@@ -231,6 +266,10 @@ def _decision_row(
     review_reason: str = "",
     best_pool: Iterable[Mapping[str, Any]] | None = None,
     tier_fallback_reason: str = "",
+    selection_rule: str = "",
+    tier1_recent_count_before: int | None = None,
+    tier1_last_assignment_at: str = "",
+    balance_reason: str = "",
 ) -> dict[str, Any]:
     comparison_pool = list(best_pool) if best_pool is not None else scored
     best = max((_number(row.get("global_rescue_score")) for row in comparison_pool if row.get("performance_data_valid")), default=None)
@@ -263,12 +302,16 @@ def _decision_row(
         "review_reason": review_reason,
         "candidate_tier": winner.get("candidate_tier") if winner else None,
         "tier_fallback_reason": tier_fallback_reason,
+        "selection_rule": selection_rule,
+        "tier1_recent_count_before": tier1_recent_count_before,
+        "tier1_last_assignment_at": tier1_last_assignment_at,
+        "balance_reason": balance_reason,
     }
 
 
 def _rm_selection(
     lead: Mapping[str, Any],
-    state: Mapping[str, Mapping[str, float]],
+    state: Mapping[str, Mapping[str, Any]],
     rm_history: list[str],
     *,
     scenario: str,
@@ -320,31 +363,70 @@ def _rm_selection(
             if row.get("candidate_tier") == 2:
                 row["tier_exclusion_reason"] = "TIER2_DEFERRED_TIER1_AVAILABLE"
 
-    ordered = _order_scored(selection_pool, "dynamic_rescue_score", params.tie_threshold)
     best_non_low = max((_number(row.get("dynamic_rescue_score")) for row in selection_pool if row.get("performance_data_valid") and row.get("performance_confidence") != "LOW"), default=None)
     guarded: list[dict[str, Any]] = []
     winner: dict[str, Any] | None = None
     applied_reason = ""
-    for raw in ordered:
-        row = dict(raw)
-        if low_policy == L1_LOW_NEEDS_PLUS_5 and row.get("performance_confidence") == "LOW" and best_non_low is not None and _number(row.get("dynamic_rescue_score")) < best_non_low + 5.0:
-            row["low_sample_exclusion_reason"] = "LOW_REQUIRES_PLUS_5_OVER_BEST_NON_LOW"
-            guarded.append(row)
-            continue
-        reason = _guardrail_violation(row, selection_pool, rm_history, scenario=scenario)
-        if reason:
-            row["guardrail_exclusion_reason"] = reason
-            guarded.append(row)
-            applied_reason = applied_reason or reason
-            continue
-        winner = row
-        break
+    balance_reason = ""
+    selection_rule = "RM_R2"
+    if tier1_present:
+        # Tier 1 is a strict priority pool.  Once it exists, neither score nor
+        # R2 may promote a Tier 2 candidate or decide between the two Tier 1
+        # agents. L1 remains an eligibility guard for insufficient samples.
+        balance_pool = []
+        for raw in selection_pool:
+            row = dict(raw)
+            if low_policy == L1_LOW_NEEDS_PLUS_5 and row.get("performance_confidence") == "LOW" and best_non_low is not None and _number(row.get("dynamic_rescue_score")) < best_non_low + 5.0:
+                row["low_sample_exclusion_reason"] = "LOW_REQUIRES_PLUS_5_OVER_BEST_NON_LOW"
+                guarded.append(row)
+            else:
+                balance_pool.append(row)
+        if balance_pool:
+            def balance_key(row: Mapping[str, Any]) -> tuple[Any, ...]:
+                count = int(_number(row.get("tier1_recent_count_before")))
+                last = str(row.get("tier1_last_assignment_at") or "")
+                stable_tier_order = {MARIA_NAME: 0, HERNAN_NAME: 1}
+                # Empty means no assignment in the window and is therefore
+                # older than every recorded timestamp.
+                return (count, 1 if last else 0, last, stable_tier_order.get(_candidate_identity(row), 99), _uid(row))
+
+            winner = min(balance_pool, key=balance_key)
+            winner_count = int(_number(winner.get("tier1_recent_count_before")))
+            tied_count = [row for row in balance_pool if int(_number(row.get("tier1_recent_count_before"))) == winner_count]
+            if len(tied_count) == 1:
+                balance_reason = "LOWER_TIER1_RECENT_COUNT"
+            else:
+                oldest = min(str(row.get("tier1_last_assignment_at") or "") for row in tied_count)
+                oldest_rows = [row for row in tied_count if str(row.get("tier1_last_assignment_at") or "") == oldest]
+                balance_reason = (
+                    "TIER1_COUNT_TIE_OLDEST_LAST_ASSIGNMENT"
+                    if len(oldest_rows) == 1 else
+                    "TIER1_COUNT_AND_RECENCY_TIE_DETERMINISTIC"
+                )
+            selection_rule = TIER1_BALANCED_SELECTION
+            winner["tier1_assignment_at"] = str(lead.get("evaluated_at") or lead.get("assigned_at") or "")
+    else:
+        ordered = _order_scored(selection_pool, "dynamic_rescue_score", params.tie_threshold)
+        for raw in ordered:
+            row = dict(raw)
+            if low_policy == L1_LOW_NEEDS_PLUS_5 and row.get("performance_confidence") == "LOW" and best_non_low is not None and _number(row.get("dynamic_rescue_score")) < best_non_low + 5.0:
+                row["low_sample_exclusion_reason"] = "LOW_REQUIRES_PLUS_5_OVER_BEST_NON_LOW"
+                guarded.append(row)
+                continue
+            reason = _guardrail_violation(row, selection_pool, rm_history, scenario=scenario)
+            if reason:
+                row["guardrail_exclusion_reason"] = reason
+                guarded.append(row)
+                applied_reason = applied_reason or reason
+                continue
+            winner = row
+            break
     exclusions = excluded + guarded
     if winner:
         winner["effective_selection_score"] = winner.get("dynamic_rescue_score")
-        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=winner, reason=POLICY_VERSION if scenario == R0_NO_GUARDRAIL and low_policy == L1_LOW_NEEDS_PLUS_5 else "rm_guardrail_or_low_policy_adjusted", guardrail_reason=applied_reason, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason)
+        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=winner, reason=balance_reason or (POLICY_VERSION if scenario == R0_NO_GUARDRAIL and low_policy == L1_LOW_NEEDS_PLUS_5 else "rm_guardrail_or_low_policy_adjusted"), guardrail_reason=applied_reason, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason, selection_rule=selection_rule, tier1_recent_count_before=int(_number(winner.get("tier1_recent_count_before"))) if tier1_present else None, tier1_last_assignment_at=str(winner.get("tier1_last_assignment_at") or "") if tier1_present else "", balance_reason=balance_reason)
     else:
-        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=None, reason=NO_ELIGIBLE_RESCUER, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason)
+        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=None, reason=NO_ELIGIBLE_RESCUER, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason, selection_rule=selection_rule, balance_reason=balance_reason)
     result["selection_pool"] = selection_pool
     return result
 

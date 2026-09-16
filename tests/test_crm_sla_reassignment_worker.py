@@ -27,6 +27,7 @@ from chatbot.crm_sla_reassignment_worker import (
     crm_sla_reassignment_worker_loop,
     load_jpc_distribution_state,
     load_rm_r2_distribution_state,
+    load_tier1_balance_state,
     multi_worker_strategy,
     r2_guardrail_status,
     run_sla_reassignment_worker_iteration,
@@ -309,6 +310,29 @@ def test_r2_twenty_plus_restart_has_same_next_guardrail_outcome():
     alternatives = [{"user_id": "b", "dynamic_rescue_score": 90, "performance_data_valid": True}]
     assert first["history"] == restarted["history"]
     assert r2_guardrail_status("a", 100, alternatives, first["history"]) == r2_guardrail_status("a", 100, alternatives, restarted["history"])
+
+
+def test_tier1_balance_window_excludes_policy_repairs_and_keeps_last_twenty():
+    events = []
+    for index in range(21):
+        events.append({
+            "_id": f"valid-{index}", "decision_id": f"valid-{index}",
+            "event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION,
+            "policy_branch": RM_GLOBAL_RESCUE,
+            "target_owner_user_id": "hernan-id" if index % 2 else "maria-id",
+            "reassigned_at": f"2026-09-10T17:{index:02d}:00+00:00",
+            "actor": "sla_reassignment_service",
+        })
+    events.append({
+        "_id": "repair", "decision_id": "repair", "event_type": COMMITTED_EVENT,
+        "policy_version": POLICY_VERSION, "policy_branch": RM_GLOBAL_RESCUE,
+        "target_owner_user_id": "hernan-id", "reassigned_at": "2026-09-10T18:00:00+00:00",
+        "actor": "sla_reassignment_service", "policy_repair_reason": "POLICY_REPAIR_TIER1",
+    })
+    state = asyncio.run(load_tier1_balance_state(events=events, tier1_user_ids=("maria-id", "hernan-id")))
+    assert len(state["events"]) == 20
+    assert state["counts"] == {"maria-id": 10, "hernan-id": 10}
+    assert "repair" not in {row["decision_id"] for row in state["events"]}
 
 
 def test_jpc_state_rebuilds_counts_and_observed_share():

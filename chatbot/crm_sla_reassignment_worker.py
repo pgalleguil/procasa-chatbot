@@ -45,6 +45,7 @@ from .crm_sla_hybrid_stabilization import (
 )
 from .crm_sla_policy_freeze import (
     POLICY_VERSION,
+    TIER1_BALANCE_WINDOW_SIZE,
     _jpc_selection,
     _rm_selection,
     _update_state,
@@ -956,9 +957,14 @@ def _policy_row(cycle: Mapping[str, Any], lead: Mapping[str, Any], snapshot: Map
     }
 
 
-def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts: Mapping[str, int] | None = None) -> dict[str, dict[str, float]]:
+def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts: Mapping[str, int] | None = None, tier1_balance_state: Mapping[str, Any] | None = None) -> dict[str, dict[str, Any]]:
     committed_counts = committed_counts or {}
-    state: dict[str, dict[str, float]] = {}
+    state: dict[str, dict[str, Any]] = {}
+    balance = tier1_balance_state or {}
+    balance_counts = balance.get("counts") or {}
+    balance_last = balance.get("last_assignment_at") or {}
+    if tier1_balance_state is not None:
+        state["__tier1_balance_history__"] = [dict(event) for event in (balance.get("events") or [])]
     for row in rows:
         user_id = _text(row.get("user_id"))
         if not user_id:
@@ -968,12 +974,14 @@ def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts
             "simulated_unmanaged_current": _number(row.get("unmanaged_current_policy")),
             "simulated_expired_current": _number(row.get("expired_current_policy")),
             "shadow_received_count": _number(committed_counts.get(user_id, row.get("shadow_received_count", 0))),
+            "tier1_recent_count_before": int(_number(balance_counts.get(user_id, row.get("tier1_recent_count_before", 0)))),
+            "tier1_last_assignment_at": str(balance_last.get(user_id, row.get("tier1_last_assignment_at") or "")),
         })
     return state
 
 
 def _state_counts(state: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
-    return {user_id: int(_number(values.get("shadow_received_count"))) for user_id, values in state.items()}
+    return {user_id: int(_number(values.get("shadow_received_count"))) for user_id, values in state.items() if not str(user_id).startswith("__")}
 
 
 def _event_sort_key(event: Mapping[str, Any]) -> tuple[str, str]:
@@ -998,7 +1006,10 @@ async def _load_committed_events(
         {"_id": 1, "event_type": 1, "decision_id": 1, "lead_id": 1, "source_cycle_id": 1,
          "target_owner_user_id": 1, "selected_user_id": 1, "policy_version": 1, "policy_branch": 1,
          "branch": 1, "source_cycle_sla_breached_at": 1, "sla_breached_at": 1,
-         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "assignment_number": 1},
+         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "assignment_number": 1,
+         "selection_rule": 1, "actor": 1, "assigned_by": 1,
+         "reassignment_reason": 1, "policy_repair_id": 1, "policy_repair_reason": 1,
+         "repair_type": 1, "reverted": 1, "reversed": 1, "reversal": 1},
         instrumentation=read_instrumentation,
         query_name="worker.distribution.committed_events",
     )
@@ -1036,6 +1047,78 @@ async def load_rm_r2_distribution_state(
         "window_size": 20, "prior_window_size": R2_HISTORY_WINDOW, "max_share": 0.40,
         "score_distance": R2_SCORE_DISTANCE, "events": state_rows,
         "distribution_state_version": _json_version(state_rows),
+    }
+
+
+def _valid_tier1_assignment_event(event: Mapping[str, Any], tier1_user_ids: set[str]) -> bool:
+    """Accept only committed automatic RM assignments for the Tier 1 window."""
+    if _text(event.get("event_type")) != COMMITTED_EVENT:
+        return False
+    if _text(event.get("policy_branch") or event.get("branch")) != RM_GLOBAL_RESCUE:
+        return False
+    target = _text(event.get("target_owner_user_id") or event.get("selected_user_id"))
+    if not target or target not in tier1_user_ids:
+        return False
+    actor = event.get("actor")
+    if actor not in (None, "", "sla_reassignment_service"):
+        return False
+    if _text(event.get("assigned_by")) not in ("", "sla_reassignment"):
+        return False
+    markers = (
+        event.get("policy_repair_id"), event.get("policy_repair_reason"),
+        event.get("repair_type"), event.get("reverted"), event.get("reversed"),
+        event.get("reversal"),
+    )
+    if any(marker not in (None, "", False, [], {}) for marker in markers):
+        return False
+    reason = _text(event.get("reassignment_reason")).upper()
+    if reason.startswith("POLICY_REPAIR") or "POLICY_REPAIR" in reason:
+        return False
+    return True
+
+
+async def load_tier1_balance_state(
+    db: Any = None,
+    *,
+    tier1_user_ids: Iterable[Any],
+    events: Iterable[Mapping[str, Any]] | None = None,
+    read_instrumentation: ReadInstrumentation | None = None,
+) -> dict[str, Any]:
+    """Rebuild the authoritative rolling Tier 1 assignment window."""
+    tier1_ids = {_text(value) for value in tier1_user_ids if _text(value)}
+    if not tier1_ids:
+        return {
+            "window_size": TIER1_BALANCE_WINDOW_SIZE,
+            "events": [], "counts": {}, "last_assignment_at": {},
+            "state_version": "empty",
+        }
+    source = await _load_committed_events(
+        db, events=events, read_instrumentation=read_instrumentation,
+    )
+    valid = [event for event in source if _valid_tier1_assignment_event(event, tier1_ids)]
+    valid.sort(key=_event_sort_key)
+    window = valid[-TIER1_BALANCE_WINDOW_SIZE:]
+    counts = Counter(
+        _text(event.get("target_owner_user_id") or event.get("selected_user_id"))
+        for event in window
+    )
+    last_assignment_at: dict[str, str] = {}
+    rows = []
+    for event in window:
+        target = _text(event.get("target_owner_user_id") or event.get("selected_user_id"))
+        at = _event_sort_key(event)[0]
+        last_assignment_at[target] = at
+        rows.append({
+            "decision_id": _text(event.get("decision_id") or event.get("_id")),
+            "target_user_id": target,
+            "at": at,
+        })
+    return {
+        "window_size": TIER1_BALANCE_WINDOW_SIZE,
+        "events": rows,
+        "counts": dict(counts),
+        "last_assignment_at": last_assignment_at,
+        "state_version": _json_version(rows),
     }
 
 
@@ -1205,7 +1288,7 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         performance_confidence=_text(winner.get("performance_confidence")), assignment_number=_assignment_number(cycle),
         excluded_previous_owners=excluded, management_evidence_checked_at=evaluated_at.isoformat(),
         sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=POLICY_VERSION,
-        candidate_scores_snapshot=scored, selection_rule="RM_R2" if branch == RM_GLOBAL_RESCUE else "JPC_J3",
+        candidate_scores_snapshot=scored, selection_rule=_text(result.get("selection_rule")) or ("RM_R2" if branch == RM_GLOBAL_RESCUE else "JPC_J3"),
         guardrail_applied=bool(result.get("guardrail_reason")), guardrail_reason=_text(result.get("guardrail_reason")),
         jpc_target_share=result.get("jpc_target_share") if branch == REGION_JPC_MARIA_HERNAN else None,
         previous_owner_user_ids=excluded, automatic_reassignment_number=_assignment_number(cycle),
@@ -1214,6 +1297,9 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         cutover_policy_version=CUTOVER_POLICY_VERSION,
         candidate_tier=result.get("candidate_tier"),
         tier_fallback_reason=_text(result.get("tier_fallback_reason")),
+        tier1_recent_count_before=result.get("tier1_recent_count_before"),
+        tier1_last_assignment_at=_text(result.get("tier1_last_assignment_at")),
+        balance_reason=_text(result.get("balance_reason")),
     )
     payload = decision.to_dict()
     payload["selected_user_display_name"] = _text(winner.get("executive")) if winner else ""
@@ -1267,6 +1353,8 @@ async def run_sla_reassignment_worker_iteration(
     """
     started = time.perf_counter()
     result = SLAWorkerIterationResult(status="disabled")
+    if committed_events is not None and not isinstance(committed_events, list):
+        committed_events = [dict(event) for event in committed_events]
     execution_mode = str(execution_mode or "shadow").strip().lower()
     if execution_mode not in {"shadow", "live"}:
         result.status = "invalid_execution_mode"
@@ -1363,6 +1451,21 @@ async def run_sla_reassignment_worker_iteration(
         params = RescueParameters(performance_window_days=PERFORMANCE_WINDOW_DAYS)
         team = _normalise_team(snapshot)
         all_candidates = list(snapshot.get("candidates") or [])
+        maria_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
+        hernan_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)
+        if db is None and context is not None:
+            tier1_balance_state = {
+                "window_size": TIER1_BALANCE_WINDOW_SIZE,
+                "events": [], "counts": {}, "last_assignment_at": {},
+                "state_version": "injected-empty",
+            }
+        else:
+            tier1_balance_state = await load_tier1_balance_state(
+                db,
+                tier1_user_ids=(maria_id, hernan_id),
+                events=committed_events,
+                read_instrumentation=read_instrumentation,
+            )
         if shadow_state_mode and db is None:
             # Unit/replay callers may inject the complete scan context without
             # a database.  Production startup always supplies the guarded DB;
@@ -1378,20 +1481,16 @@ async def run_sla_reassignment_worker_iteration(
                 db, cutover_at=cutover, events=committed_events,
                 read_instrumentation=read_instrumentation,
             )
-            maria_id = next((_text(row.get("user_id")) for row in (performance_snapshot or {}).get("candidates", []) if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
-            hernan_id = next((_text(row.get("user_id")) for row in (performance_snapshot or {}).get("candidates", []) if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)
             jpc_state = await load_jpc_distribution_state(
                 db, cutover_at=cutover, events=committed_events,
                 maria_user_id=maria_id, hernan_user_id=hernan_id,
                 read_instrumentation=read_instrumentation,
             )
-        maria_id = next((_text(row.get("user_id")) for row in (performance_snapshot or {}).get("candidates", []) if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
-        hernan_id = next((_text(row.get("user_id")) for row in (performance_snapshot or {}).get("candidates", []) if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)
         jpc_state["maria_received"] = jpc_state.get("counts", {}).get(_text(maria_id), 0) if maria_id else 0
         jpc_state["hernan_received"] = jpc_state.get("counts", {}).get(_text(hernan_id), 0) if hernan_id else 0
         committed_counts = Counter(rm_state.get("received_counts") or {})
         committed_counts.update(jpc_state.get("counts") or {})
-        shadow_state = _initial_candidate_state(all_candidates, committed_counts)
+        shadow_state = _initial_candidate_state(all_candidates, committed_counts, tier1_balance_state)
         rm_history = list(rm_state.get("history") or [])
         jpc_counts = Counter(jpc_state.get("counts") or {})
         future_jpc_count = 0
@@ -1444,7 +1543,7 @@ async def run_sla_reassignment_worker_iteration(
         evaluations: list[dict[str, Any]] = []
         decisions: list[dict[str, Any]] = []
         perf_version = _text(snapshot.get("performance_snapshot_version"))
-        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version"))).encode("utf-8")).hexdigest()
+        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version")) + _text(tier1_balance_state.get("state_version"))).encode("utf-8")).hexdigest()
         for lead_row, cycle, exp, protection, owner_status in ordered:
             try:
                 lead_id = _text(cycle.get("lead_id"))
@@ -1503,6 +1602,7 @@ async def run_sla_reassignment_worker_iteration(
                     continue
                 lead_row["rm_candidates"] = [dict(row) for row in lead_row.get("rm_candidates", [])]
                 lead_row["jpc_candidates"] = [dict(row) for row in lead_row.get("jpc_candidates", [])]
+                lead_row["evaluated_at"] = as_of.isoformat()
                 counts = _state_counts(shadow_state)
                 for candidate in lead_row["rm_candidates"] + lead_row["jpc_candidates"]:
                     candidate["shadow_received_count"] = counts.get(_text(candidate.get("user_id")), 0)

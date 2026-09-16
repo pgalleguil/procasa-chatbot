@@ -259,6 +259,30 @@ def test_old_owner_is_locked_after_reassignment(monkeypatch):
     assert str(error.value) == LeadReassignedSlaLockedError.code
 
 
+def test_current_owner_must_use_current_cycle_then_can_save(monkeypatch):
+    from chatbot.crm_sla_reassignment_executor import execute_sla_reassignment_transaction
+    from tests.test_crm_sla_reassignment_executor import enable_flags
+
+    enable_flags(monkeypatch)
+    db, decision = make_fixture()
+    result = execute_sla_reassignment_transaction(db, decision)
+    assert result.status == "APPLIED"
+
+    with pytest.raises(LeadReassignedSlaLockedError):
+        record_management_result(
+            db, lead_id="lead-1", assignment_cycle_id="cycle-1", actor_user_id="new-user",
+            result_type="EFFECTIVE_CONTACT", source="crm_quick_action",
+            idempotency_key="stale-current-cycle",
+        )
+
+    saved = record_management_result(
+        db, lead_id="lead-1", assignment_cycle_id=result.destination_cycle_id,
+        actor_user_id="new-user", result_type="EFFECTIVE_CONTACT",
+        source="crm_quick_action", idempotency_key="current-cycle-save",
+    )
+    assert saved["assignment_cycle_id"] == result.destination_cycle_id
+
+
 def test_async_notification_wrapper_offloads_delivery():
     db, decision = notification_db()
     db["usuarios"].update_one({"_id": "new-user"}, {"$set": {"telefono": "+56911111111"}})

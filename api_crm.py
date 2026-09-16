@@ -1754,8 +1754,9 @@ def update_lead_crm_data(phone, data):
         if requested_cycle_id else active_assignment_cycle(db, current_lead["_id"])
     )
     if not cycle:
-        if requested_cycle_id and active_assignment_cycle(db, current_lead["_id"]):
-            raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+        current_cycle = active_assignment_cycle(db, current_lead["_id"])
+        if requested_cycle_id and current_cycle:
+            raise StaleAssignmentCycleError(current_cycle.get("assignment_cycle_id"))
         raise ValueError("El lead no tiene un ciclo de asignación activo")
 
     result = record_legacy_management_result(

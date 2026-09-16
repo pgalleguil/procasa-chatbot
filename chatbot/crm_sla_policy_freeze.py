@@ -77,6 +77,10 @@ BOOTSTRAP_REPLICATES = 100
 BOOTSTRAP_SEED = 20260910
 MAX_AUTOMATIC_REASSIGNMENTS = 2
 RM_TIER1_IDENTITIES = frozenset({MARIA_NAME, HERNAN_NAME})
+# Pablo is the CRM administrator/owner of the operational account.  His
+# historical usuarios row is still marked ``agente``; keep the SLA selector
+# fail-closed by denying the canonical user identity explicitly.
+RM_ADMIN_EXCLUDED_USER_IDS = frozenset({"69796bc4bbebf240378eb739"})
 
 
 def _uid(row: Mapping[str, Any]) -> str:
@@ -287,6 +291,22 @@ def _rm_selection(
         row["candidate_tier"] = _rm_candidate_tier(row)
     for row in excluded:
         row["candidate_tier"] = _rm_candidate_tier(row)
+
+    # Role data is not sufficient for the configured administrator because
+    # the production usuarios record currently carries the agent role.  Move
+    # the canonical administrator identity to the hard-excluded set before
+    # Tier 1/Tier 2 selection, so fallback can never select it either.
+    admin_excluded = []
+    eligible_scored = []
+    for row in scored:
+        if str(row.get("user_id") or "") in RM_ADMIN_EXCLUDED_USER_IDS:
+            denied = dict(row)
+            denied["excluded_reason"] = "admin_excluded"
+            admin_excluded.append(denied)
+        else:
+            eligible_scored.append(row)
+    scored = eligible_scored
+    excluded.extend(admin_excluded)
 
     tier1_candidates = [row for row in scored if row.get("candidate_tier") == 1]
     tier1_available = [row for row in tier1_candidates if row.get("performance_data_valid")]

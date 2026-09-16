@@ -148,7 +148,7 @@ def detect_hard_broker_signal(
             if (
                 "/inmobiliarias/" in raw_value.lower()
                 or "/corredora/" in raw_value.lower()
-                or "corredoras" in text
+                or re.search(r"\bcorredor(?:a|es)?\b", text)
             ):
                 return {
                     "source_field": field,
@@ -211,7 +211,7 @@ def detect_hard_broker_signal(
         if (
             "/inmobiliarias/" in raw_value.lower()
             or "/corredora/" in raw_value.lower()
-            or "corredoras" in text
+            or re.search(r"\bcorredor(?:a|es)?\b", text)
         ):
             return {
                 "source_field": field,

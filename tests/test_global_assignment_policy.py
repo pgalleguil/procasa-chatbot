@@ -143,6 +143,22 @@ def test_toctoc_corredora_profile_logo_is_hard_even_for_personal_display_name():
     assert "hard_broker_publisher_veto" in decision["assignment_block_reasons"]
 
 
+def test_toctoc_corredor_operation_evidence_is_hard_without_catalog_brand():
+    document = _document("toctoc", "INCIERTO")
+    document.update({
+        "publicador_visible": "Vendedor Particular",
+        "seller_type": "EMPRESA",
+        "seller_type_source": "detail_next_data.client_operation",
+        "seller_type_evidence": "client_id=123; operation=Venta Usado Corredor",
+    })
+
+    decision = calculate_assignment_eligibility(document, contact_identity=None)
+
+    assert decision["assignment_ready"] is False
+    assert "hard_broker_publisher_veto" in decision["assignment_block_reasons"]
+    assert decision["effective_state"] == "CORREDOR_SEGURO"
+
+
 @pytest.mark.parametrize("portal", ["chilepropiedades", "yapo", "toctoc"])
 @pytest.mark.parametrize("state", ["AD_REMOVED", "BLOCKED", "INVALID"])
 def test_invalid_removed_or_blocked_states_are_not_assignable(portal, state):

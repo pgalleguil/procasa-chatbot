@@ -5927,7 +5927,10 @@ async def _render_crm_list(
     from chatbot.storage import get_async_db, get_db as get_sync_db
     from chatbot.crm_updates import get_crm_leads_version_async
     from chatbot.crm_filters import build_crm_card_urls, build_crm_filter_urls
-    from chatbot.crm_assignment_history import get_historical_assignment_rows
+    from chatbot.crm_assignment_history import (
+        HISTORICAL_FILTER_STATE,
+        get_historical_assignment_rows,
+    )
 
     # Una sola selección normalizada gobierna consulta, KPI, tarjetas y enlaces.
     temperatura = normalize_crm_temperature(temperatura)
@@ -5946,31 +5949,55 @@ async def _render_crm_list(
     crm_version = await get_crm_leads_version_async(adb)
 
     limit = 15
-    leads_task = get_crm_leads_list(
-        filtro_estado=estado,
-        busqueda=busqueda,
-        ordenar_por=orden,
-        user_role=user_role,
-        user_name=user_name,
-        ejecutivo_filter=ejecutivo,
-        temperatura_filter=temperatura,
-        page=page,
-        limit=limit,
-        property_code=property_code,
-    )
+    is_history_filter = estado == HISTORICAL_FILTER_STATE
+    if is_history_filter:
+        empty_kpis = {
+            "total": 0, "scope_total": 0, "hot": 0, "cold": 0,
+            "nuevo": 0, "gestion": 0, "visita": 0, "cerrado": 0,
+            "sin_asignar": 0, "sin_asignar_global": 0, "managed": 0,
+            "managed_percent": 0.0, "hot_percent": 0.0, "cold_percent": 0.0,
+            "nuevo_percent": 0.0, "gestion_percent": 0.0,
+            "visita_percent": 0.0, "cerrado_percent": 0.0,
+            "nuevo_hot": 0, "nuevo_cold": 0, "gestion_hot": 0,
+            "gestion_cold": 0, "visita_hot": 0, "visita_cold": 0,
+            "cerrado_hot": 0, "cerrado_cold": 0,
+        }
+        leads_task = asyncio.sleep(0, result=([], empty_kpis, 0))
+    else:
+        leads_task = get_crm_leads_list(
+            filtro_estado=estado,
+            busqueda=busqueda,
+            ordenar_por=orden,
+            user_role=user_role,
+            user_name=user_name,
+            ejecutivo_filter=ejecutivo,
+            temperatura_filter=temperatura,
+            page=page,
+            limit=limit,
+            property_code=property_code,
+        )
     exec_task = get_unique_executives() if can_administer else asyncio.sleep(0, result=[])
     history_user_id = None if can_administer else str(user.get("_id") or "")
+    history_user_name = ejecutivo if can_administer and ejecutivo not in (None, "", "Todos") else None
     history_task = asyncio.get_running_loop().run_in_executor(
         _WEB_THREAD_POOL,
         lambda: get_historical_assignment_rows(
             get_sync_db(),
             user_id=history_user_id,
+            user_name=history_user_name,
+            limit=1000,
         ),
     )
-    leads_payload, executives, historical_leads = await asyncio.gather(
+    leads_payload, executives, historical_rows = await asyncio.gather(
         leads_task, exec_task, history_task
     )
     leads, kpis, total_count = leads_payload
+    kpis["historical_total"] = len(historical_rows)
+    historical_leads = historical_rows if is_history_filter else []
+    if is_history_filter:
+        offset = max(int(page or 1) - 1, 0) * limit
+        total_count = len(historical_rows)
+        historical_leads = historical_rows[offset:offset + limit]
 
     total_pages = max(1, (total_count + limit - 1) // limit)
     page = min(max(page, 1), total_pages)
@@ -6008,6 +6035,7 @@ async def _render_crm_list(
         "current_temperatura": temperatura,
         "crm_version": crm_version,
         "partial": partial,
+        "history_filter_active": is_history_filter,
         "card_urls": build_crm_card_urls(card_query_params),
         "filter_urls": build_crm_filter_urls(card_query_params),
         "pagination_base_url": pagination_base_url,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
+import re
 from typing import Any, Mapping
 
 from .crm_metrics import coerce_utc_datetime
@@ -16,13 +17,23 @@ from .mongo_identity import mongo_id_variants
 
 
 HISTORICAL_CYCLE_STATUSES = frozenset({"reassigned", "closed"})
+HISTORICAL_FILTER_STATE = "SLA_REASSIGNED_HISTORY"
 HISTORICAL_REASONS = frozenset({
     "sla_reassignment",
     "policy_repair_tier1",
     "policy_repair_admin_excluded",
     "orphan_lead_not_found_repair",
 })
-HISTORICAL_STATE_LABEL = "Reasignado por vencimiento de SLA"
+HISTORICAL_STATE_LABEL = "Reasignado por SLA"
+HISTORICAL_SLA_STATE_LABEL = "Vencido"
+HISTORICAL_RESPONSE_LABEL = "🔒 Reasignado"
+HISTORICAL_REASON_FIELDS = (
+    "closed_reason",
+    "unassigned_reason",
+    "reassignment_reason",
+    "reassignment_source",
+    "reason",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -51,18 +62,56 @@ def _same_id(left: Any, right: Any) -> bool:
 
 def _is_sla_historical_cycle(cycle: Mapping[str, Any]) -> bool:
     status = _text(cycle.get("cycle_status")).casefold()
-    reason = _text(
-        cycle.get("closed_reason")
-        or cycle.get("reassignment_reason")
-        or cycle.get("reassignment_source")
-    ).casefold()
-    return status in HISTORICAL_CYCLE_STATUSES and (
-        status == "reassigned"
-        or reason in HISTORICAL_REASONS
-        or bool(cycle.get("reassigned_by_sla"))
-        or bool(cycle.get("reassignment_decision_id"))
-        or bool(cycle.get("reassignment_source_cycle_id"))
+    reasons = {
+        _text(cycle.get(field)).casefold()
+        for field in HISTORICAL_REASON_FIELDS
+        if _text(cycle.get(field))
+    }
+    has_reason = bool(reasons & HISTORICAL_REASONS)
+    has_reassignment_evidence = any(
+        cycle.get(field) not in (None, "")
+        for field in (
+            "reassigned_at",
+            "reassignment_decision_id",
+            "reassignment_source_cycle_id",
+            "reassignment_new_cycle_id",
+            "reassigned_to_user_id",
+        )
     )
+    has_breach_evidence = any(
+        cycle.get(field) not in (None, "")
+        for field in (
+            "sla_breached_at",
+            "breached_at",
+            "source_cycle_sla_breached_at",
+            "previous_cycle_sla_breached_at",
+        )
+    )
+    return (
+        status in HISTORICAL_CYCLE_STATUSES
+        and status != "active"
+        and (has_reason or bool(cycle.get("reassigned_by_sla")))
+        and (has_reassignment_evidence or has_breach_evidence)
+    )
+
+
+def _historical_user_ids_by_name(db: Any, user_name: Any) -> list[Any]:
+    """Resolve the admin's display filter to canonical user ids only."""
+    name = _text(user_name)
+    if not name or name.casefold() == "todos":
+        return []
+    exact_name = re.compile(rf"^{re.escape(name)}$", re.IGNORECASE)
+    projection = {"_id": 1}
+    matches = db["usuarios"].find(
+        {"$or": [{"nombre": exact_name}, {"display_name": exact_name}, {"name": exact_name}]},
+        projection,
+    )
+    variants: list[Any] = []
+    for match in matches:
+        for value in mongo_id_variants(match.get("_id")):
+            if value not in variants:
+                variants.append(value)
+    return variants
 
 
 def _property_code(lead: Mapping[str, Any] | None, cycle: Mapping[str, Any]) -> str:
@@ -149,30 +198,58 @@ def build_historical_assignment_row(
         "breached_at_display": breached_at,
         "reassigned_at": reassigned_at,
         "reassigned_at_display": reassigned_at,
+        "sla_state_label": HISTORICAL_SLA_STATE_LABEL,
         "status_label": HISTORICAL_STATE_LABEL,
+        "response_label": HISTORICAL_RESPONSE_LABEL,
+        "management_before_breach": _management_before_breach(cycle, breached_at),
         "previous_owner_user_id": _text(cycle.get("assigned_to_user_id")),
         "previous_owner_name": _text(cycle.get("assigned_to_display_name"), "Ejecutivo"),
     }
+
+
+def _management_before_breach(
+    cycle: Mapping[str, Any], breached_at: datetime | None
+) -> str:
+    if breached_at is None:
+        return "S/I"
+    management_at = _display_datetime(
+        cycle.get("first_valid_management_at")
+        or cycle.get("first_effective_contact_at")
+        or cycle.get("first_management_at")
+    )
+    if management_at is None:
+        return "No"
+    return "Sí" if management_at <= breached_at else "No"
 
 
 def get_historical_assignment_rows(
     db: Any,
     *,
     user_id: Any = None,
+    user_name: Any = None,
     limit: int = 250,
 ) -> list[dict[str, Any]]:
-    """Return historical SLA rows for one actor or all actors (admin view)."""
+    """Return historical SLA rows sourced from non-active assignment cycles."""
     query: dict[str, Any] = {
-        "cycle_status": {"$in": list(HISTORICAL_CYCLE_STATUSES)},
+        "cycle_status": {"$ne": "active"},
         "$or": [
+            {"closed_reason": {"$in": list(HISTORICAL_REASONS)}},
+            {"unassigned_reason": {"$in": list(HISTORICAL_REASONS)}},
+            {"reassignment_reason": {"$in": list(HISTORICAL_REASONS)}},
+            {"reassignment_source": {"$in": list(HISTORICAL_REASONS)}},
+            {"reason": {"$in": list(HISTORICAL_REASONS)}},
             {"reassigned_by_sla": True},
             {"reassignment_decision_id": {"$exists": True}},
             {"reassignment_source_cycle_id": {"$exists": True}},
-            {"closed_reason": {"$in": list(HISTORICAL_REASONS)}},
         ],
     }
     if user_id not in (None, ""):
         query["assigned_to_user_id"] = {"$in": list(mongo_id_variants(user_id))}
+    elif user_name not in (None, "") and _text(user_name).casefold() != "todos":
+        user_ids = _historical_user_ids_by_name(db, user_name)
+        if not user_ids:
+            return []
+        query["assigned_to_user_id"] = {"$in": user_ids}
 
     try:
         cycles = list(
@@ -190,9 +267,32 @@ def get_historical_assignment_rows(
         return []
 
     lead_values = [cycle.get("lead_id") for cycle in cycles if cycle.get("lead_id") not in (None, "")]
+    lead_lookup_values: list[Any] = []
+    for value in lead_values:
+        for variant in mongo_id_variants(value):
+            if variant not in lead_lookup_values:
+                lead_lookup_values.append(variant)
     leads_by_id: dict[str, Mapping[str, Any]] = {}
     try:
-        for lead in db["leads"].find({"_id": {"$in": lead_values}}):
+        for lead in db["leads"].find(
+            {"_id": {"$in": lead_lookup_values}},
+            {
+                "_id": 1,
+                "prospecto.nombre": 1,
+                "prospecto.codigo": 1,
+                "prospecto.operacion": 1,
+                "prospecto.comuna": 1,
+                "datos_propiedad.codigo": 1,
+                "datos_propiedad.operacion": 1,
+                "datos_propiedad.comuna": 1,
+                "property_code": 1,
+                "operation": 1,
+                "operacion": 1,
+                "commune": 1,
+                "comuna": 1,
+                "lead_temperature_effective": 1,
+            },
+        ):
             leads_by_id[str(lead.get("_id"))] = lead
     except Exception:
         logger.exception("CRM historical lead snapshot read failed")
@@ -203,7 +303,7 @@ def get_historical_assignment_rows(
         active_cursor = db["crm_assignment_cycles"].find({
             "cycle_status": "active",
             "unassigned_at": None,
-            "lead_id": {"$in": lead_values},
+            "lead_id": {"$in": lead_lookup_values},
         }, {"assignment_cycle_id": 1})
         for active in active_cursor:
             if active.get("assignment_cycle_id") not in (None, ""):
@@ -213,23 +313,54 @@ def get_historical_assignment_rows(
         return []
 
     rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    destination_by_source: dict[str, Mapping[str, Any]] = {}
+    try:
+        destination_cursor = db["crm_assignment_cycles"].find({
+            "$or": [
+                {"reassignment_source_cycle_id": {"$in": [str(cycle.get("assignment_cycle_id")) for cycle in cycles]}},
+                {"previous_assignment_cycle_id": {"$in": [str(cycle.get("assignment_cycle_id")) for cycle in cycles]}},
+            ],
+            "lead_id": {"$in": lead_lookup_values},
+        })
+        for destination in destination_cursor:
+            for key in ("reassignment_source_cycle_id", "previous_assignment_cycle_id"):
+                source_id = _text(destination.get(key))
+                if source_id:
+                    destination_by_source[source_id] = destination
+    except Exception:
+        logger.exception("CRM historical destination-cycle read failed")
+
+    seen: set[tuple[str, str]] = set()
     for cycle in cycles:
         cycle_id = _text(cycle.get("assignment_cycle_id"))
-        if not cycle_id or cycle_id in seen or cycle_id in current_cycle_ids:
+        lead_key = _text(cycle.get("lead_id"))
+        identity = (lead_key, cycle_id)
+        if not cycle_id or identity in seen or cycle_id in current_cycle_ids:
             continue
         if not _is_sla_historical_cycle(cycle):
             continue
-        row = build_historical_assignment_row(cycle, leads_by_id.get(str(cycle.get("lead_id"))))
+        effective_cycle = dict(cycle)
+        destination = destination_by_source.get(cycle_id) or {}
+        for field in (
+            "sla_breached_at",
+            "breached_at",
+            "source_cycle_sla_breached_at",
+            "previous_cycle_sla_breached_at",
+        ):
+            if effective_cycle.get(field) in (None, "") and destination.get(field) not in (None, ""):
+                effective_cycle[field] = destination[field]
+        row = build_historical_assignment_row(effective_cycle, leads_by_id.get(str(cycle.get("lead_id"))))
         if not row["lead_id"]:
             continue
-        seen.add(cycle_id)
+        seen.add(identity)
         rows.append(row)
     return rows
 
 
 __all__ = [
     "HISTORICAL_STATE_LABEL",
+    "HISTORICAL_FILTER_STATE",
+    "HISTORICAL_RESPONSE_LABEL",
     "build_historical_assignment_row",
     "get_historical_assignment_rows",
 ]

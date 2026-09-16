@@ -2796,6 +2796,7 @@
             {% set executive_label = current_ejecutivo if current_ejecutivo != 'Todos' else 'todos los ejecutivos' %}
             {% set temperature_label = 'Leads Hot' if selected_temperature == 'HOT' else 'Leads' if selected_temperature == 'COLD' else 'Todos los leads' %}
             {% set management_title = 'Gestión de todos los leads' %}
+            {% set history_filter_active = history_filter_active|default(false) %}
             {% set state_metrics = [
                 ('nuevo', 'NEW', 'Sin atender', kpis.nuevo, kpis.nuevo_percent, kpis.nuevo_hot, kpis.nuevo_cold),
                 ('gestion', 'GRUPO_GESTION', 'En gestión', kpis.gestion, kpis.gestion_percent, kpis.gestion_hot, kpis.gestion_cold),
@@ -2803,6 +2804,7 @@
                 ('cerrado', 'GRUPO_CERRADO', 'Cerrados', kpis.cerrado, kpis.cerrado_percent, kpis.cerrado_hot, kpis.cerrado_cold)
             ] %}
 
+            {% if not history_filter_active %}
             <!-- Universo completo del ejecutivo/búsqueda -->
             <div class="row g-3 mb-4 row-cols-1 row-cols-md-3 temperature-cards">
                 <div class="col">
@@ -2898,6 +2900,17 @@
                     {% endfor %}
                 </div>
             </section>
+            {% endif %}
+
+            <div class="operational-alerts" aria-label="Historial SLA">
+                <a href="{{ filter_urls.historical }}" class="operational-alert {{ 'is-active' if history_filter_active }}"
+                    aria-current="{{ 'true' if history_filter_active else 'false' }}">
+                    <i class="fa-solid fa-clock-rotate-left text-info"></i>
+                    <strong>Reasignados SLA: {{ kpis.historical_total|default(0) }}</strong>
+                    <span class="small text-secondary">Solo lectura</span>
+                    <i class="fa-solid fa-chevron-right small opacity-50"></i>
+                </a>
+            </div>
 
             <!-- TOOLBAR DE FILTROS -->
             <div class="table-container">
@@ -2940,6 +2953,7 @@
                         <option value="GRUPO_GESTION" {% if selected_state == 'GRUPO_GESTION' %}selected{% endif %}>En gestión</option>
                         <option value="GRUPO_VISITA" {% if selected_state == 'GRUPO_VISITA' %}selected{% endif %}>Visitas</option>
                         <option value="GRUPO_CERRADO" {% if selected_state == 'GRUPO_CERRADO' %}selected{% endif %}>Cerrados</option>
+                        <option value="SLA_REASSIGNED_HISTORY" {% if selected_state == 'SLA_REASSIGNED_HISTORY' %}selected{% endif %}>Reasignados por SLA</option>
                     </select>
                 </label>
 
@@ -2976,7 +2990,7 @@
                 </div>
             </form>
 
-            {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar'} %}
+            {% set state_labels = {'NEW': 'Sin atender', 'GRUPO_GESTION': 'En gestión', 'GRUPO_VISITA': 'Visitas', 'GRUPO_CERRADO': 'Cerrados', 'UNASSIGNED': 'Sin asignar', 'SLA_REASSIGNED_HISTORY': 'Reasignados por SLA'} %}
             {% set order_labels = {'sla_priority': 'Prioridad SLA', 'sla_urgente': 'Prioridad SLA', 'oldest_assigned': 'Más antiguos', 'antiguos': 'Más antiguos', 'oldest_unmanaged': 'Más antiguos sin atender', 'antiguos_sin_atender': 'Más antiguos sin atender', 'recent_assigned': 'Más recientes', 'recientes': 'Más recientes'} %}
             {% set has_active_crm_filters = selected_temperature != 'Todos' or selected_state or (current_ejecutivo != 'Todos' and can_administer_leads) or request.query_params.get('busqueda') or request.query_params.get('property_code') or request.query_params.get('orden') in order_labels and request.query_params.get('orden') not in ['recent_assigned', 'recientes'] %}
             <div class="filter-toolbar-meta">
@@ -3000,6 +3014,7 @@
             </div>
             </div>
 
+            {% if not history_filter_active %}
             <!-- TABLA -->
             {% set show_executive = true %}
             <div class="table-responsive">
@@ -3218,28 +3233,33 @@
             </div>
             {% endif %}
 
-            {% if historical_leads %}
+            {% endif %}
+
+            {% if history_filter_active %}
             <section class="crm-history-panel" aria-labelledby="crm-history-title">
                 <div class="crm-history-heading">
                     <div>
-                        <h2 id="crm-history-title">Historial de leads reasignados</h2>
-                        <p>Leads que estuvieron en tu cartera y fueron reasignados por vencimiento de SLA.</p>
+                        <h2 id="crm-history-title">Reasignados por SLA</h2>
+                        <p>Historial de ciclos que estuvieron en la cartera de {{ executive_label }}. Esta vista es informativa y no permite operar el lead.</p>
                     </div>
                     <span class="crm-history-badge">Solo lectura</span>
                 </div>
+                {% if historical_leads %}
                 <div class="table-responsive">
                     <table class="crm-table crm-history-table">
                         <thead>
                             <tr>
                                 <th>Asignado originalmente</th>
                                 <th>Tipo</th>
+                                <th>Estado SLA</th>
                                 <th>Cliente</th>
                                 <th>Código</th>
                                 <th>Operación</th>
                                 <th>Comuna</th>
                                 <th>Venció</th>
+                                <th>Gestión antes del vencimiento</th>
                                 <th>Reasignado</th>
-                                <th>Estado</th>
+                                <th>Respuesta</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -3249,6 +3269,7 @@
                                     {{ historical.assigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.assigned_at_display else 'S/I' }}
                                 </td>
                                 <td data-label="Tipo">{{ historical.sla_label }}</td>
+                                <td data-label="Estado SLA">{{ historical.sla_state_label }}</td>
                                 <td data-label="Cliente">{{ historical.cliente }}</td>
                                 <td data-label="Código">{{ historical.codigo_propiedad }}</td>
                                 <td data-label="Operación">{{ historical.operacion }}</td>
@@ -3256,15 +3277,25 @@
                                 <td data-label="Venció">
                                     {{ historical.breached_at_display.strftime('%d/%m/%Y %H:%M') if historical.breached_at_display else 'S/I' }}
                                 </td>
+                                <td data-label="Gestión antes del vencimiento">{{ historical.management_before_breach }}</td>
                                 <td data-label="Reasignado">
                                     {{ historical.reassigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.reassigned_at_display else 'S/I' }}
                                 </td>
-                                <td data-label="Estado"><span class="crm-history-status">{{ historical.status_label }}</span></td>
+                                <td data-label="Respuesta">
+                                    <span class="crm-history-status">{{ historical.status_label }}</span>
+                                    <span class="crm-history-response">{{ historical.response_label }}</span>
+                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                {% else %}
+                <div class="text-center text-secondary py-5" role="status">
+                    <div class="opacity-50 mb-3"><i class="fa-solid fa-clock-rotate-left fa-3x"></i></div>
+                    <p class="m-0 fw-medium">No hay ciclos reasignados por SLA para este filtro.</p>
+                </div>
+                {% endif %}
             </section>
             {% endif %}
             </div>

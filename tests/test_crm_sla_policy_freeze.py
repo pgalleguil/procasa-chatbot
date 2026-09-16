@@ -24,6 +24,7 @@ from chatbot.crm_sla_policy_freeze import (
     intervention_count,
     sequence_summary,
     simulate_combined,
+    TIER1_BALANCED_SELECTION,
 )
 
 
@@ -189,3 +190,55 @@ def test_rm_never_selects_configured_admin_even_when_tier1_unavailable() -> None
     assert decision["winner_user_id"] == ""
     denied = [item for item in decision["hard_excluded"] if item.get("user_id") == pablo["user_id"]]
     assert denied and denied[0]["excluded_reason"] == "admin_excluded"
+
+
+def test_tier1_balance_prefers_lower_recent_count_over_score() -> None:
+    row = lead(100)
+    row["rm_candidates"][0]["tier1_recent_count_before"] = 4
+    row["rm_candidates"][1]["tier1_recent_count_before"] = 5
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    decision = result["decisions"][0]
+    assert decision["winner_user_id"] == "maria"
+    assert decision["selection_rule"] == TIER1_BALANCED_SELECTION
+    assert decision["balance_reason"] == "LOWER_TIER1_RECENT_COUNT"
+
+
+def test_tier1_balance_breaks_count_tie_by_oldest_assignment() -> None:
+    row = lead(101)
+    row["rm_candidates"][0].update(tier1_recent_count_before=5, tier1_last_assignment_at="2026-09-16T10:00:00+00:00")
+    row["rm_candidates"][1].update(tier1_recent_count_before=5, tier1_last_assignment_at="2026-09-16T11:00:00+00:00")
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    assert result["decisions"][0]["winner_user_id"] == "maria"
+    assert result["decisions"][0]["balance_reason"] == "TIER1_COUNT_TIE_OLDEST_LAST_ASSIGNMENT"
+
+
+def test_tier1_balance_keeps_next_assignment_within_one() -> None:
+    rows = [lead(102), lead(103)]
+    for row in rows:
+        row["rm_candidates"][0].update(tier1_recent_count_before=5, tier1_last_assignment_at="2026-09-16T10:00:00+00:00")
+        row["rm_candidates"][1].update(tier1_recent_count_before=5, tier1_last_assignment_at="2026-09-16T11:00:00+00:00")
+    result = simulate_combined(rows, rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    winners = [decision["winner_user_id"] for decision in result["decisions"]]
+    assert winners == ["maria", "hernan"]
+    counts = {user_id: result["final_state"][user_id]["tier1_recent_count_before"] for user_id in ("maria", "hernan")}
+    assert abs(counts["maria"] - counts["hernan"]) <= 1
+
+
+def test_tier1_balance_uses_remaining_agent_when_other_is_ineligible() -> None:
+    row = lead(104)
+    row["rm_candidates"][0]["active"] = False
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    assert result["decisions"][0]["winner_user_id"] == "hernan"
+    row["rm_candidates"][0]["active"] = True
+    row["rm_candidates"][1]["active"] = False
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    assert result["decisions"][0]["winner_user_id"] == "maria"
+
+
+def test_tier2_never_promotes_over_an_eligible_tier1() -> None:
+    row = lead(105)
+    row["rm_candidates"][2]["p50_first_management_business_minutes"] = 1
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    decision = result["decisions"][0]
+    assert decision["winner_user_id"] in {"maria", "hernan"}
+    assert all(item.get("tier_exclusion_reason") == "TIER2_DEFERRED_TIER1_AVAILABLE" for item in decision["scored"] if item["user_id"] == "other")

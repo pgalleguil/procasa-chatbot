@@ -116,6 +116,7 @@ from chatbot.followup_tracking import (
     build_followup_open_url,
     expected_actor_id,
     find_tracked_task,
+    followup_token_binding_matches_task,
     record_captacion_detail_open,
     record_followup_event,
     record_followup_open,
@@ -3208,8 +3209,9 @@ async def api_crm_management_result(request: Request):
             if requested_cycle_id else active_assignment_cycle(db, lead["_id"])
         )
         if not cycle:
-            if requested_cycle_id and active_assignment_cycle(db, lead["_id"]):
-                raise StaleAssignmentCycleError(StaleAssignmentCycleError.code)
+            current_cycle = active_assignment_cycle(db, lead["_id"])
+            if requested_cycle_id and current_cycle:
+                raise StaleAssignmentCycleError(current_cycle.get("assignment_cycle_id"))
             raise ValueError("El lead no tiene un ciclo de asignación activo")
         return record_management_result(
             db, lead_id=lead["_id"], assignment_cycle_id=cycle["assignment_cycle_id"],
@@ -5001,6 +5003,8 @@ async def open_followup_link(request: Request, signed_token: str):
                     payload.get("task_id"), payload.get("v"),
                 )
                 raise FollowupTokenError("followup_task_not_found")
+            if not followup_token_binding_matches_task(payload, task):
+                raise FollowupTokenError("followup_token_stale")
             if (
                 task.get("status") in {"failed_terminal", "cancelled"}
                 or task.get("resolution") in {"superseded", "superseded_duplicate"}
@@ -5048,14 +5052,14 @@ async def open_followup_link(request: Request, signed_token: str):
             entity_id = task_entity_id(task)
             expected_recipient = expected_actor_id(task, payload.get("v"))
             current_user_id = str(user.get("_id") or "").strip()
-            if not expected_recipient or not current_user_id or current_user_id != expected_recipient:
-                logger.warning(
-                    "[FOLLOWUP] recipient_mismatch task_id=%s obj_id=%s token_version=%s",
-                    task.get("task_id"), entity_id, payload.get("v"),
-                )
-                raise FollowupTokenError("followup_actor_forbidden")
 
             if task.get("lead_type") == "captacion":
+                if not expected_recipient or not current_user_id or current_user_id != expected_recipient:
+                    logger.warning(
+                        "[FOLLOWUP] recipient_mismatch task_id=%s obj_id=%s token_version=%s",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_actor_forbidden")
                 captacion = get_captacion_detail(entity_id)
                 if not captacion:
                     raise FollowupTokenError("followup_entity_missing")
@@ -5079,6 +5083,22 @@ async def open_followup_link(request: Request, signed_token: str):
                     access_context = resolve_crm_lead_access_context(db, user=user, lead=lead)
                     if not access_context.access_allowed:
                         raise FollowupTokenError(access_context.lock_reason or "followup_access_denied")
+                    bound_cycle = str(payload.get("assignment_cycle_id") or "").strip()
+                    bound_recipient = str(payload.get("recipient_user_id") or "").strip()
+                    if bound_cycle and bound_cycle != str(access_context.current_assignment_cycle_id or ""):
+                        if access_context.reassigned_by_sla:
+                            raise FollowupTokenError("LEAD_REASSIGNED_SLA_LOCKED")
+                        raise FollowupTokenError("followup_token_stale")
+                    if bound_recipient and bound_recipient != str(access_context.current_owner_user_id or ""):
+                        if access_context.reassigned_by_sla:
+                            raise FollowupTokenError("LEAD_REASSIGNED_SLA_LOCKED")
+                        raise FollowupTokenError("followup_token_stale")
+                if not expected_recipient or not current_user_id or current_user_id != expected_recipient:
+                    logger.warning(
+                        "[FOLLOWUP] recipient_mismatch task_id=%s obj_id=%s token_version=%s",
+                        task.get("task_id"), entity_id, payload.get("v"),
+                    )
+                    raise FollowupTokenError("followup_actor_forbidden")
                 detail = get_lead_detail_data(lead.get("phone") or "", lead_doc=lead)
                 if not detail or not (
                     can_administer_leads(user.get("rol"))

@@ -349,6 +349,9 @@ def build_new_cycle_document(
         "candidate_scores_snapshot": decision.get("candidate_scores_snapshot"),
         "candidate_tier": decision.get("candidate_tier"),
         "tier_fallback_reason": decision.get("tier_fallback_reason"),
+        "tier1_recent_count_before": decision.get("tier1_recent_count_before"),
+        "tier1_last_assignment_at": decision.get("tier1_last_assignment_at"),
+        "balance_reason": decision.get("balance_reason"),
         "selection_rule": decision.get("selection_rule"),
         "guardrail_applied": decision.get("guardrail_applied"),
         "guardrail_reason": decision.get("guardrail_reason"),
@@ -452,6 +455,9 @@ def build_reassignment_audit_event(
         "candidate_scores_snapshot": decision.get("candidate_scores_snapshot"),
         "candidate_tier": decision.get("candidate_tier"),
         "tier_fallback_reason": decision.get("tier_fallback_reason"),
+        "tier1_recent_count_before": decision.get("tier1_recent_count_before"),
+        "tier1_last_assignment_at": decision.get("tier1_last_assignment_at"),
+        "balance_reason": decision.get("balance_reason"),
         "scores": decision.get("candidate_scores_snapshot"),
         "before": {
             "lead_cycle_pointer": lead.get("lifecycle", {}).get(

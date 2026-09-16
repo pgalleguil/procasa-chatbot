@@ -642,6 +642,9 @@ class SLAReassignmentDecision:
     cutover_policy_version: str = ""
     candidate_tier: int | None = None
     tier_fallback_reason: str = ""
+    tier1_recent_count_before: int | None = None
+    tier1_last_assignment_at: str = ""
+    balance_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -680,6 +683,9 @@ def build_decision(
     cutover_policy_version: str = "",
     candidate_tier: int | None = None,
     tier_fallback_reason: str = "",
+    tier1_recent_count_before: int | None = None,
+    tier1_last_assignment_at: str = "",
+    balance_reason: str = "",
 ) -> SLAReassignmentDecision:
     review = assignment_number >= 2 if requires_supervisor_review is None else bool(requires_supervisor_review)
     reason = review_reason or (SUPERVISOR_REVIEW_REQUIRED if review else "")
@@ -730,6 +736,9 @@ def build_decision(
         cutover_policy_version=cutover_version,
         candidate_tier=int(candidate_tier) if candidate_tier is not None else None,
         tier_fallback_reason=str(tier_fallback_reason or ""),
+        tier1_recent_count_before=(int(tier1_recent_count_before) if tier1_recent_count_before is not None else None),
+        tier1_last_assignment_at=str(tier1_last_assignment_at or ""),
+        balance_reason=str(balance_reason or ""),
     )
 
 

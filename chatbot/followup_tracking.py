@@ -116,6 +116,8 @@ def _issue_token_for_version(
     *,
     expires_at: Any = None,
     now: Any = None,
+    assignment_cycle_id: Any = None,
+    recipient_user_id: Any = None,
     version: int = TOKEN_VERSION,
 ) -> str:
     task_value = str(task_id or "").strip()
@@ -144,6 +146,16 @@ def _issue_token_for_version(
     else:
         expiry_epoch = current_epoch + TOKEN_TTL.total_seconds()
     payload = {"v": version, "task_id": task_value, "exp": int(expiry_epoch)}
+    # New CRM links carry the assignment identity that was current when the
+    # link was issued. Legacy tokens remain verifiable for existing delivery,
+    # but server authorization still resolves the current cycle/owner.
+    if version == TOKEN_VERSION:
+        cycle_value = str(assignment_cycle_id or "").strip()
+        recipient_value = str(recipient_user_id or "").strip()
+        if cycle_value:
+            payload["assignment_cycle_id"] = cycle_value
+        if recipient_value:
+            payload["recipient_user_id"] = recipient_value
     body = _encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
     try:
         signature = _sign(body, version=version)
@@ -157,12 +169,17 @@ def _issue_token_for_version(
     return f"{body}.{signature}"
 
 
-def issue_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None) -> str:
+def issue_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None, assignment_cycle_id: Any = None, recipient_user_id: Any = None) -> str:
     """Issue a new v2 token. New code cannot accidentally mint legacy v1."""
-    return _issue_token_for_version(task_id, expires_at=expires_at, now=now, version=TOKEN_VERSION)
+    return _issue_token_for_version(
+        task_id, expires_at=expires_at, now=now,
+        assignment_cycle_id=assignment_cycle_id,
+        recipient_user_id=recipient_user_id,
+        version=TOKEN_VERSION,
+    )
 
 
-def _issue_legacy_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None) -> str:
+def _issue_legacy_followup_token(task_id: Any, *, expires_at: Any = None, now: Any = None, assignment_cycle_id: Any = None, recipient_user_id: Any = None) -> str:
     """Issue v1 only for an explicitly enabled legacy delivery path."""
     return _issue_token_for_version(task_id, expires_at=expires_at, now=now, version=1)
 
@@ -288,6 +305,18 @@ def task_followup_cycle_id(task: Mapping[str, Any]) -> str | None:
     ).strip() or None
 
 
+def followup_token_binding_matches_task(payload: Mapping[str, Any], task: Mapping[str, Any]) -> bool:
+    """Validate optional v2 cycle/recipient binding against the task record."""
+    for payload_key, expected in (
+        ("assignment_cycle_id", task_followup_cycle_id(task)),
+        ("recipient_user_id", task_recipient_id(task)),
+    ):
+        bound = str(payload.get(payload_key) or "").strip()
+        if bound and (not expected or bound != str(expected)):
+            return False
+    return True
+
+
 def build_followup_open_url(
     task: Mapping[str, Any], *, base_url: str | None = None, emitted_at: Any = None
 ) -> str | None:
@@ -298,11 +327,22 @@ def build_followup_open_url(
 
     task_version = 2 if task.get("followup_tracking_version") == TRACKING_VERSION else 1
     issue = issue_followup_token if task_version == TOKEN_VERSION else _issue_legacy_followup_token
-    token = issue(task["task_id"], expires_at=task.get("execute_at"), now=emitted_at)
+    cycle_binding = task_followup_cycle_id(task)
+    token_kwargs = {"expires_at": task.get("execute_at"), "now": emitted_at}
+    if task_version == TOKEN_VERSION and cycle_binding:
+        token_kwargs.update({
+            "assignment_cycle_id": cycle_binding,
+            "recipient_user_id": task_recipient_id(task),
+        })
+    token = issue(task["task_id"], **token_kwargs)
     # A generated link is never sent until the same process proves that its
     # validator accepts it. This catches configuration drift before delivery.
     validated = verify_followup_token(token)
-    if validated.get("task_id") != str(task["task_id"]) or int(validated.get("v") or 0) != task_version:
+    if (
+        validated.get("task_id") != str(task["task_id"])
+        or int(validated.get("v") or 0) != task_version
+        or not followup_token_binding_matches_task(validated, task)
+    ):
         raise FollowupTokenError("followup_token_invalid")
     base = str(base_url or Config.CRM_BASE_URL).rstrip("/")
     if not base:
@@ -600,6 +640,8 @@ def record_followup_open(db, *, token: str, entity_id: Any, actor_user_id: Any =
     task = find_tracked_task(db, payload["task_id"], token_version=payload.get("v"))
     if not task:
         raise FollowupTokenError("followup_task_not_found")
+    if not followup_token_binding_matches_task(payload, task):
+        raise FollowupTokenError("followup_token_stale")
     if task.get("status") in TERMINAL_UNATTRIBUTABLE_STATUSES or task.get("resolution") in {"superseded", "superseded_duplicate"}:
         raise FollowupTokenError("followup_task_unavailable")
     if str(entity_id) != task_entity_id(task):
@@ -630,6 +672,8 @@ def record_followup_management(
     task = find_tracked_task(db, payload["task_id"], token_version=payload.get("v"))
     if not task:
         raise FollowupTokenError("followup_task_not_found")
+    if not followup_token_binding_matches_task(payload, task):
+        raise FollowupTokenError("followup_token_stale")
     if task.get("status") in TERMINAL_UNATTRIBUTABLE_STATUSES or task.get("resolution") in {"superseded", "superseded_duplicate"}:
         raise FollowupTokenError("followup_task_unavailable")
     if str(entity_id) != task_entity_id(task):

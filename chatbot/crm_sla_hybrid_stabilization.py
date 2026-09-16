@@ -640,6 +640,8 @@ class SLAReassignmentDecision:
     source_cycle_sla_breached_at: str = ""
     cutover_eligible: bool = False
     cutover_policy_version: str = ""
+    candidate_tier: int | None = None
+    tier_fallback_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -676,6 +678,8 @@ def build_decision(
     source_cycle_sla_breached_at: Any = "",
     cutover_eligible: bool | None = None,
     cutover_policy_version: str = "",
+    candidate_tier: int | None = None,
+    tier_fallback_reason: str = "",
 ) -> SLAReassignmentDecision:
     review = assignment_number >= 2 if requires_supervisor_review is None else bool(requires_supervisor_review)
     reason = review_reason or (SUPERVISOR_REVIEW_REQUIRED if review else "")
@@ -724,6 +728,8 @@ def build_decision(
         source_cycle_sla_breached_at=str(breach_value),
         cutover_eligible=cutover_eligible_value,
         cutover_policy_version=cutover_version,
+        candidate_tier=int(candidate_tier) if candidate_tier is not None else None,
+        tier_fallback_reason=str(tier_fallback_reason or ""),
     )
 
 

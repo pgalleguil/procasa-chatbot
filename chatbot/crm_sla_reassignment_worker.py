@@ -1191,10 +1191,11 @@ def _normalise_team(snapshot: Mapping[str, Any]) -> dict[str, Any]:
 def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, result: Mapping[str, Any], branch: str, breach_at: datetime, cutover: datetime, evaluated_at: datetime, params: RescueParameters) -> Any:
     winner = result.get("winner") or {}
     scored = list(result.get("scored") or [])
+    selection_scored = list(result.get("selection_pool") or scored)
     winner_id = _text(winner.get("user_id")) or None
     score_field = "dynamic_rescue_score" if branch == RM_GLOBAL_RESCUE else "global_rescue_score"
     selected_score = _number(winner.get(score_field)) if winner else None
-    second_id, second_score = _select_second(scored, winner_id or "", score_field)
+    second_id, second_score = _select_second(selection_scored, winner_id or "", score_field)
     excluded = list(lead_row.get("previous_owner_user_ids") or ())
     decision = build_decision(
         lead_id=lead_row.get("lead_id"), current_assignment_cycle_id=lead_row.get("assignment_cycle_id"),
@@ -1211,6 +1212,8 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         cycle_version=_text(cycle.get("cycle_version")), reassignment_cutover_at=cutover.isoformat(),
         source_cycle_sla_breached_at=breach_at.isoformat(), cutover_eligible=True,
         cutover_policy_version=CUTOVER_POLICY_VERSION,
+        candidate_tier=result.get("candidate_tier"),
+        tier_fallback_reason=_text(result.get("tier_fallback_reason")),
     )
     payload = decision.to_dict()
     payload["selected_user_display_name"] = _text(winner.get("executive")) if winner else ""

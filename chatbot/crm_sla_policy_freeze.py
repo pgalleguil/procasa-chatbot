@@ -76,6 +76,7 @@ COMBINED_SIZES = (100, 250, 500)
 BOOTSTRAP_REPLICATES = 100
 BOOTSTRAP_SEED = 20260910
 MAX_AUTOMATIC_REASSIGNMENTS = 2
+RM_TIER1_IDENTITIES = frozenset({MARIA_NAME, HERNAN_NAME})
 
 
 def _uid(row: Mapping[str, Any]) -> str:
@@ -90,6 +91,11 @@ def _normalised(value: Any) -> str:
 
 def _candidate_identity(row: Mapping[str, Any]) -> str:
     return _normalised(row.get("identity_key") or row.get("executive_key") or row.get("executive"))
+
+
+def _rm_candidate_tier(row: Mapping[str, Any]) -> int:
+    """Return the frozen RM priority tier for an analytical candidate."""
+    return 1 if _candidate_identity(row) in RM_TIER1_IDENTITIES else 2
 
 
 def _state_for(leads: Iterable[Mapping[str, Any]], keys: tuple[str, ...] = ("rm_candidates", "jpc_candidates")) -> dict[str, dict[str, float]]:
@@ -219,8 +225,11 @@ def _decision_row(
     jpc_target_share: Mapping[str, float] | None = None,
     supervisor_review: bool = False,
     review_reason: str = "",
+    best_pool: Iterable[Mapping[str, Any]] | None = None,
+    tier_fallback_reason: str = "",
 ) -> dict[str, Any]:
-    best = max((_number(row.get("global_rescue_score")) for row in scored if row.get("performance_data_valid")), default=None)
+    comparison_pool = list(best_pool) if best_pool is not None else scored
+    best = max((_number(row.get("global_rescue_score")) for row in comparison_pool if row.get("performance_data_valid")), default=None)
     selected = _number(winner.get("global_rescue_score")) if winner else None
     return {
         "lead": dict(lead),
@@ -248,6 +257,8 @@ def _decision_row(
         "jpc_target_share": dict(jpc_target_share or {}),
         "requires_supervisor_review": supervisor_review,
         "review_reason": review_reason,
+        "candidate_tier": winner.get("candidate_tier") if winner else None,
+        "tier_fallback_reason": tier_fallback_reason,
     }
 
 
@@ -272,8 +283,25 @@ def _rm_selection(
         params=params,
         dynamic=True,
     )
-    ordered = _order_scored([row for row in scored if row.get("performance_data_valid")], "dynamic_rescue_score", params.tie_threshold)
-    best_non_low = max((_number(row.get("dynamic_rescue_score")) for row in scored if row.get("performance_data_valid") and row.get("performance_confidence") != "LOW"), default=None)
+    for row in scored:
+        row["candidate_tier"] = _rm_candidate_tier(row)
+    for row in excluded:
+        row["candidate_tier"] = _rm_candidate_tier(row)
+
+    tier1_candidates = [row for row in scored if row.get("candidate_tier") == 1]
+    tier1_available = [row for row in tier1_candidates if row.get("performance_data_valid")]
+    tier1_present = bool(tier1_available)
+    tier_fallback_reason = "" if tier1_present else "TIER1_NO_ELIGIBLE_CANDIDATE"
+    selection_pool = tier1_available if tier1_present else [
+        row for row in scored if row.get("performance_data_valid")
+    ]
+    if tier1_present:
+        for row in scored:
+            if row.get("candidate_tier") == 2:
+                row["tier_exclusion_reason"] = "TIER2_DEFERRED_TIER1_AVAILABLE"
+
+    ordered = _order_scored(selection_pool, "dynamic_rescue_score", params.tie_threshold)
+    best_non_low = max((_number(row.get("dynamic_rescue_score")) for row in selection_pool if row.get("performance_data_valid") and row.get("performance_confidence") != "LOW"), default=None)
     guarded: list[dict[str, Any]] = []
     winner: dict[str, Any] | None = None
     applied_reason = ""
@@ -283,7 +311,7 @@ def _rm_selection(
             row["low_sample_exclusion_reason"] = "LOW_REQUIRES_PLUS_5_OVER_BEST_NON_LOW"
             guarded.append(row)
             continue
-        reason = _guardrail_violation(row, scored, rm_history, scenario=scenario)
+        reason = _guardrail_violation(row, selection_pool, rm_history, scenario=scenario)
         if reason:
             row["guardrail_exclusion_reason"] = reason
             guarded.append(row)
@@ -294,9 +322,10 @@ def _rm_selection(
     exclusions = excluded + guarded
     if winner:
         winner["effective_selection_score"] = winner.get("dynamic_rescue_score")
-        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=winner, reason=POLICY_VERSION if scenario == R0_NO_GUARDRAIL and low_policy == L1_LOW_NEEDS_PLUS_5 else "rm_guardrail_or_low_policy_adjusted", guardrail_reason=applied_reason)
+        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=winner, reason=POLICY_VERSION if scenario == R0_NO_GUARDRAIL and low_policy == L1_LOW_NEEDS_PLUS_5 else "rm_guardrail_or_low_policy_adjusted", guardrail_reason=applied_reason, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason)
     else:
-        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=None, reason=NO_ELIGIBLE_RESCUER)
+        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=None, reason=NO_ELIGIBLE_RESCUER, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason)
+    result["selection_pool"] = selection_pool
     return result
 
 

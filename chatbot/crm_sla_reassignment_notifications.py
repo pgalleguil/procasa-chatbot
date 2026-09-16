@@ -9,11 +9,23 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import uuid
 from typing import Any, Callable, Mapping
 
 from .crm_delivery import get_executive_phone, resolve_executive_user, validate_executive_recipient
-from .crm_notifications import COLLECTION, claim_next, create_pending, finalize_attempt, individual_identity
+from .crm_notifications import (
+    COLLECTION,
+    claim_next,
+    content_hash,
+    create_pending,
+    finalize_attempt,
+    individual_identity,
+    record_delivery_attempt,
+    refresh_lease,
+    reserve_for_delivery,
+)
 from .crm_metrics import utc_now
+from .mongo_identity import mongo_id_variants
 
 
 logger = logging.getLogger(__name__)
@@ -121,6 +133,55 @@ def _delivery_state(receipt: Mapping[str, Any]) -> tuple[str, str | None]:
     )
 
 
+def _validate_pending_notification(db: Any, notification: Mapping[str, Any]) -> tuple[bool, str]:
+    """Revalidate the post-commit target immediately before delivery.
+
+    A successful reassignment notification is only current while its lead still
+    resolves, its destination cycle is active, and the lead points at that
+    cycle/owner.  This is deliberately read-only and runs after claim but
+    before the provider reservation/call.
+    """
+    lead_id = str(notification.get("lead_id") or "").strip()
+    cycle_id = str(notification.get("assignment_cycle_id") or "").strip()
+    recipient_id = str(notification.get("recipient_user_id") or "").strip()
+    if not lead_id or not cycle_id or not recipient_id:
+        return False, "missing_notification_identity"
+
+    lead = db["leads"].find_one({"_id": {"$in": list(mongo_id_variants(lead_id))}})
+    if not lead:
+        return False, "lead_not_found"
+    cycle = db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": cycle_id,
+        "cycle_status": "active",
+    })
+    if not cycle:
+        return False, "destination_cycle_not_current_active"
+    if str(cycle.get("assigned_to_user_id") or "") != recipient_id:
+        return False, "destination_owner_changed"
+    if str(cycle.get("lead_id") or "") != str(lead.get("_id") or ""):
+        return False, "cycle_lead_mismatch"
+
+    lifecycle = lead.get("lifecycle") or {}
+    current_cycle = lifecycle.get("current_assignment_cycle_id") or lead.get("assignment_cycle_id")
+    if current_cycle in (None, "") or str(current_cycle) != cycle_id:
+        return False, "lead_current_cycle_changed"
+    owner_ids = (
+        lifecycle.get("assigned_to_user_id"),
+        lead.get("assignment_mirror_owner_user_id"),
+        lead.get("assigned_to_user_id"),
+    )
+    if any(value not in (None, "") and str(value) != recipient_id for value in owner_ids):
+        return False, "lead_current_owner_changed"
+
+    successful = db[COLLECTION].find_one({
+        "individual_identity": notification.get("individual_identity"),
+        "state": "sent",
+    })
+    if successful and successful.get("_id") != notification.get("_id"):
+        return False, "successful_delivery_already_exists"
+    return True, ""
+
+
 def process_one_sla_reassignment_sync(
     db: Any,
     *,
@@ -147,6 +208,18 @@ def process_one_sla_reassignment_sync(
     )
     if not notification:
         return {"status": "idle"}
+
+    valid, invalid_reason = _validate_pending_notification(db, notification)
+    if not valid:
+        finalize_attempt(
+            db,
+            notification_id=notification["_id"],
+            worker_id=worker_id,
+            state="stale_not_sent",
+            error=invalid_reason,
+            now=current,
+        )
+        return {"status": "stale_not_sent", "reason": invalid_reason}
 
     recipient_id = str(notification.get("recipient_user_id") or "")
     user = resolve_executive_user(db, recipient_id)
@@ -175,6 +248,23 @@ def process_one_sla_reassignment_sync(
 
     payload = notification.get("payload") or {}
     message = str(payload.get("message") or "").strip()
+    delivery_token = str(uuid.uuid4())
+    reserved = reserve_for_delivery(
+        db,
+        notification_id=notification["_id"],
+        worker_id=worker_id,
+        delivery_token=delivery_token,
+        now=current,
+    )
+    if not reserved:
+        logger.warning(
+            "[SLA_REASSIGNMENT_NOTIFICATION] delivery slot already reserved notif=%s",
+            str(notification["_id"])[-12:],
+        )
+        return {"status": "already_reserved", "reason": "delivery_in_progress"}
+    refresh_lease(db, notification_id=notification["_id"], worker_id=worker_id, now=current)
+    call_started = utc_now()
+    payload_hash = content_hash(payload)
     try:
         if sender is not None:
             receipt = dict(sender(phone, message) or {})
@@ -182,6 +272,18 @@ def process_one_sla_reassignment_sync(
             from .whatsapp_client import send_whatsapp_message_detailed_sync
             receipt = send_whatsapp_message_detailed_sync(phone, message)
     except Exception as exc:
+        record_delivery_attempt(
+            db,
+            notification_id=notification["_id"],
+            delivery_token=delivery_token,
+            attempt_data={
+                "started_at": call_started,
+                "worker_id": worker_id,
+                "content_hash": payload_hash,
+                "result": "exception",
+            },
+            now=current,
+        )
         finalize_attempt(
             db,
             notification_id=notification["_id"],
@@ -190,10 +292,30 @@ def process_one_sla_reassignment_sync(
             error=type(exc).__name__,
             now=current,
         )
+        db[COLLECTION].update_one(
+            {"_id": notification["_id"], "state": "failed_retryable", "provider_message_id": None},
+            {"$unset": {"provider_call_started_at": "", "delivery_token": ""},
+             "$set": {"next_attempt_at": current + timedelta(seconds=60), "updated_at": current}},
+        )
         return {"status": "failed_retryable", "error": type(exc).__name__}
 
     state, error = _delivery_state(receipt)
     provider_id = receipt.get("provider_message_id")
+    record_delivery_attempt(
+        db,
+        notification_id=notification["_id"],
+        delivery_token=delivery_token,
+        attempt_data={
+            "started_at": call_started,
+            "worker_id": worker_id,
+            "http_status": receipt.get("http_status"),
+            "provider_message_id": provider_id,
+            "provider_request_id": receipt.get("provider_request_id"),
+            "content_hash": payload_hash,
+            "result": state,
+        },
+        now=current,
+    )
     finalize_attempt(
         db,
         notification_id=notification["_id"],
@@ -212,7 +334,8 @@ def process_one_sla_reassignment_sync(
                 retry_after = 60
         db[COLLECTION].update_one(
             {"_id": notification["_id"], "state": "failed_retryable"},
-            {"$set": {"next_attempt_at": current + timedelta(seconds=retry_after), "updated_at": current}},
+            {"$unset": {"provider_call_started_at": "", "delivery_token": ""},
+             "$set": {"next_attempt_at": current + timedelta(seconds=retry_after), "updated_at": current}},
         )
     if state == "sent":
         db[COLLECTION].update_one(

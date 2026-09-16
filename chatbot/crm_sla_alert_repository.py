@@ -146,6 +146,7 @@ async def persist_candidate(db, candidate: dict) -> dict:
     doc = {
         "_id": candidate.get("idempotency_dedup_key"),
         "message_domain": MESSAGE_DOMAIN,
+        "notification_type": candidate.get("notification_type"),
         "assignment_cycle_id": candidate["assignment_cycle_id"],
         "lead_id": candidate["lead_id"],
         "recipient_user_id": candidate["recipient_user_id"],

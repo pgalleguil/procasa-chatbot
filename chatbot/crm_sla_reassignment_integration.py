@@ -11,13 +11,17 @@ from .crm_sla_reassignment_executor import (
     execute_sla_reassignment_transaction_async,
 )
 from .crm_sla_reassignment_models import SLAReassignmentResult
-from .crm_sla_reassignment_notifications import enqueue_sla_reassignment_notification
+from .crm_sla_reassignment_notifications import (
+    enqueue_sla_reassignment_away_notification,
+    enqueue_sla_reassignment_notification,
+)
 
 
 @dataclass(frozen=True)
 class SLAReassignmentExecution:
     result: SLAReassignmentResult
     notification: dict[str, Any] | None = None
+    notifications: dict[str, Any] | None = None
     notification_error: str | None = None
 
 
@@ -31,7 +35,7 @@ async def execute_sla_reassignment_with_notification(
     metrics: MutableMapping[str, int] | None = None,
     metrics_hook: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> SLAReassignmentExecution:
-    """Commit the reassignment, then enqueue one notification for the new owner.
+    """Commit the reassignment, then enqueue both post-commit notices.
 
     Notification persistence is intentionally outside the Mongo transaction. A
     queue failure is surfaced in the return contract and logs, but ownership
@@ -51,14 +55,30 @@ async def execute_sla_reassignment_with_notification(
 
     try:
         notification = await asyncio.to_thread(
-            enqueue_sla_reassignment_notification,
+            _enqueue_post_commit_notifications,
             db,
             decision=decision,
             result=result,
         )
-        return SLAReassignmentExecution(result=result, notification=notification)
+        return SLAReassignmentExecution(
+            result=result,
+            notification=(notification or {}).get("new_owner"),
+            notifications=notification,
+        )
     except Exception as exc:
         # The assignment transaction has already committed.  Returning the
         # terminal result lets the caller monitor/retry notification creation
         # without attempting a destructive rollback.
         return SLAReassignmentExecution(result=result, notification_error=type(exc).__name__)
+
+
+def _enqueue_post_commit_notifications(db: Any, *, decision: Any, result: Any) -> dict[str, Any] | None:
+    """Persist independent previous/new owner notices after commit.
+
+    Keeping the two writes separate means an existing notification can be
+    reused safely if the process is interrupted between them.  The assignment
+    transaction is already committed before this helper is called.
+    """
+    new_owner = enqueue_sla_reassignment_notification(db, decision=decision, result=result)
+    previous_owner = enqueue_sla_reassignment_away_notification(db, decision=decision, result=result)
+    return {"previous_owner": previous_owner, "new_owner": new_owner}

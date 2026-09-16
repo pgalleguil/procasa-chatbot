@@ -7,6 +7,7 @@ from __future__ import annotations
 from config import Config
 
 MESSAGE_DOMAIN = "crm_sla_alert"
+SLA_BREACH_WARNING = "SLA_BREACH_WARNING"
 
 # ---------------------------------------------------------------------------
 # Explanations per outreach state
@@ -78,8 +79,8 @@ ACTION = {
 }
 
 BREACHED_ACTION_NONE = (
-    "Contacta al cliente y registra inmediatamente "
-    "el resultado en el CRM."
+    "Si el lead continúa asignado a ti, registra la gestión inmediatamente.\n"
+    "Si ya fue reasignado, el CRM bloqueará automáticamente su gestión."
 )
 
 CHANNEL_LABELS: dict[str, str] = {
@@ -109,6 +110,21 @@ def build_sla_message(
 ) -> str:
     limit = 60 if hot else 180
     has_action = outreach_state != "none"
+
+    # This is the race-safe message for a breach with no valid management.  It
+    # explicitly tells the recipient that the owner may have changed between
+    # alert delivery and review; the server-side access gate remains decisive.
+    if breached and not has_action:
+        return (
+            "⚠️ Lead con SLA vencido\n\n"
+            f"Cliente: {client_first_name}\n"
+            f"Propiedad: {property_code}\n"
+            f"SLA utilizado: {elapsed_minutes} minutos hábiles\n"
+            f"Venció el: {deadline_display}\n\n"
+            "Aún no existe una gestión válida registrada.\n\n"
+            f"{BREACHED_ACTION_NONE}\n\n"
+            f"🔗 Revisar lead: {lead_url}"
+        )
 
     # Headers with action detection
     if hot and breached:

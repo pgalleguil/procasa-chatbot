@@ -441,6 +441,65 @@
             font-size: 0.84rem;
         }
 
+        .crm-history-panel {
+            margin-top: 28px;
+            padding: 18px;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            background: color-mix(in srgb, var(--bg-card) 94%, var(--accent-color));
+        }
+
+        .crm-history-heading {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .crm-history-heading h2 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 750;
+        }
+
+        .crm-history-heading p {
+            margin: 4px 0 0;
+            color: var(--text-secondary);
+            font-size: .78rem;
+        }
+
+        .crm-history-badge,
+        .crm-history-status {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid color-mix(in srgb, var(--text-secondary) 40%, transparent);
+            border-radius: 999px;
+            padding: 4px 9px;
+            color: var(--text-secondary);
+            font-size: .7rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .crm-history-table {
+            min-width: 980px;
+        }
+
+        .crm-history-row {
+            cursor: default;
+        }
+
+        .crm-history-row:hover td {
+            background: transparent !important;
+        }
+
+        @media (max-width: 768px) {
+            .crm-history-panel { padding: 14px; }
+            .crm-history-heading { align-items: flex-start; }
+            .crm-history-table { min-width: 860px; }
+        }
+
         .management-panel {
             margin-bottom: 18px;
             padding: 20px;
@@ -3157,6 +3216,56 @@
                     {% endif %}
                 </div>
             </div>
+            {% endif %}
+
+            {% if historical_leads %}
+            <section class="crm-history-panel" aria-labelledby="crm-history-title">
+                <div class="crm-history-heading">
+                    <div>
+                        <h2 id="crm-history-title">Historial de leads reasignados</h2>
+                        <p>Leads que estuvieron en tu cartera y fueron reasignados por vencimiento de SLA.</p>
+                    </div>
+                    <span class="crm-history-badge">Solo lectura</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="crm-table crm-history-table">
+                        <thead>
+                            <tr>
+                                <th>Asignado originalmente</th>
+                                <th>Tipo</th>
+                                <th>Cliente</th>
+                                <th>Código</th>
+                                <th>Operación</th>
+                                <th>Comuna</th>
+                                <th>Venció</th>
+                                <th>Reasignado</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for historical in historical_leads %}
+                            <tr class="crm-history-row" aria-label="Historial de {{ historical.cliente }}">
+                                <td data-label="Asignado originalmente">
+                                    {{ historical.assigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.assigned_at_display else 'S/I' }}
+                                </td>
+                                <td data-label="Tipo">{{ historical.sla_label }}</td>
+                                <td data-label="Cliente">{{ historical.cliente }}</td>
+                                <td data-label="Código">{{ historical.codigo_propiedad }}</td>
+                                <td data-label="Operación">{{ historical.operacion }}</td>
+                                <td data-label="Comuna">{{ historical.comuna }}</td>
+                                <td data-label="Venció">
+                                    {{ historical.breached_at_display.strftime('%d/%m/%Y %H:%M') if historical.breached_at_display else 'S/I' }}
+                                </td>
+                                <td data-label="Reasignado">
+                                    {{ historical.reassigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.reassigned_at_display else 'S/I' }}
+                                </td>
+                                <td data-label="Estado"><span class="crm-history-status">{{ historical.status_label }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
             {% endif %}
             </div>
 

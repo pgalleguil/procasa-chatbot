@@ -110,7 +110,7 @@ class TestTemplateVariants:
 
     def test_hot_breached_none(self):
         t = _msg(hot=True, breached=True, outreach_state="none", elapsed_minutes=65)
-        assert "Hot con SLA vencido" in t and "65 minutos h\u00e1biles" in t
+        assert "Lead con SLA vencido" in t and "65 minutos h\u00e1biles" in t
 
     def test_hot_breached_whatsapp_opened(self):
         t = _msg(hot=True, breached=True, outreach_state="whatsapp_opened", elapsed_minutes=62)
@@ -140,7 +140,10 @@ class TestUniformText:
             w_paras = w.split("\n\n")
             b_paras = b.split("\n\n")
             # p[2] is the explanation paragraph â€” must match between warning and breached
-            assert w_paras[2] == b_paras[2], f"explain differs for state={state}"
+            if state == "none":
+                assert b_paras[2] == "A\u00fan no existe una gesti\u00f3n v\u00e1lida registrada."
+            else:
+                assert w_paras[2] == b_paras[2], f"explain differs for state={state}"
 
     def test_warning_and_breached_same_action(self):
         for state in ACTION:

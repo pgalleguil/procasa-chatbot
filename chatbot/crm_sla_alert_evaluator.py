@@ -33,7 +33,7 @@ from .crm_metrics import (
 )
 from .crm_sla_alert_templates import (
     MESSAGE_DOMAIN, build_sla_message, build_lead_url, build_deadline_display,
-    outreach_channel_label,
+    outreach_channel_label, SLA_BREACH_WARNING,
 )
 from .storage import get_async_db
 from .utils import calculate_business_minutes
@@ -500,6 +500,7 @@ async def evaluate_sla_alerts(
 
         alerts.append({
             "message_domain": MESSAGE_DOMAIN,
+            "notification_type": SLA_BREACH_WARNING,
             "assignment_cycle_id": cycle_id,
             "lead_id": str(lid),
             "sla_started_at": sla_started_at,

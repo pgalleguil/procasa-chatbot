@@ -2000,6 +2000,7 @@
             .crm-table td {
                 border: none;
                 background: transparent !important;
+                box-shadow: none !important;
                 padding: 4px;
                 display: grid;
                 grid-template-columns: minmax(0, 1fr);
@@ -2007,6 +2008,10 @@
                 align-items: center;
                 text-align: left;
                 min-height: auto;
+            }
+
+            .crm-table tbody tr:hover td {
+                background-color: transparent !important;
             }
 
             .crm-table .col-priority,

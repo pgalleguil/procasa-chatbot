@@ -71,6 +71,7 @@ def build_crm_filter_urls(query_params) -> dict[str, str]:
         "state": without("estado"),
         "executive": without("ejecutivo"),
         "search": without("busqueda"),
+        "property_code": without("property_code"),
         "order": without("orden"),
         "clear": "/crm",
     }

@@ -17,11 +17,11 @@ from pymongo.errors import DuplicateKeyError
 from .crm_metrics import utc_now
 
 COLLECTION = "crm_notifications_v1"
-TERMINAL_STATES = frozenset({"sent", "failed_final", "suppressed", "quarantined", "skipped"})
+TERMINAL_STATES = frozenset({"sent", "failed_final", "suppressed", "quarantined", "skipped", "stale_not_sent"})
 VALID_STATES = frozenset({
     "pending", "sending", "sent", "failed_retryable", "failed_final",
     "suppressed", "quarantined", "skipped", "failed_recipient", "failed_validation",
-    "rate_limited", "held",
+    "rate_limited", "held", "stale_not_sent",
 })
 DEDUP_ACTIVE_STATES = frozenset({"pending", "sending", "sent", "failed_retryable"})
 ALLOWED_COMMERCIAL_REASONS = frozenset({

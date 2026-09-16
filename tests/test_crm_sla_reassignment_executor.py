@@ -117,6 +117,19 @@ class FakeCollection:
             else:
                 for path, value in update.get("$set", {}).items():
                     _set_path(row, path, deepcopy(value))
+                for path in update.get("$unset", {}):
+                    parts = path.split(".")
+                    current = row
+                    for part in parts[:-1]:
+                        current = current.get(part, {}) if isinstance(current, dict) else {}
+                    if isinstance(current, dict):
+                        current.pop(parts[-1], None)
+                for path, value in update.get("$push", {}).items():
+                    existing = row.get(path)
+                    if not isinstance(existing, list):
+                        existing = []
+                        row[path] = existing
+                    existing.append(deepcopy(value))
             self.rows[key] = row
             return FakeResult(1)
         return FakeResult(0)

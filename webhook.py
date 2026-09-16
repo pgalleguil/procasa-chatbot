@@ -6073,7 +6073,33 @@ async def process_pending_leads_loop():
         try:
             background_tasks_status["notifications_loop"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             background_tasks_status["notifications_loop"]["status"] = "running"
-            
+
+            # SLA reassignment notifications are durable post-commit work.
+            # They must be consumed independently of the legacy business-hours
+            # queue so a committed reassignment cannot remain pending merely
+            # because that queue has a different schedule.
+            if (Config.CRM_SLA_REASSIGNMENT_ENABLED
+                    and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED):
+                from chatbot.crm_sla_reassignment_notifications import process_one_sla_reassignment_sync
+                from chatbot.storage import get_db as _get_sync_db
+                loop = asyncio.get_running_loop()
+                import functools
+                sync_db = _get_sync_db()
+                sla_fn = functools.partial(
+                    process_one_sla_reassignment_sync,
+                    sync_db,
+                    worker_id=f"sla-notifier:render:{os.getpid()}",
+                )
+                # Drain a bounded batch so a small backlog is cleared in one
+                # heartbeat without allowing provider work to monopolize the
+                # shared worker pool.
+                for _ in range(10):
+                    sla_result = await loop.run_in_executor(_WORKER_THREAD_POOL, sla_fn)
+                    if sla_result and sla_result.get("status") not in ("idle", "disabled"):
+                        logger.info("[SLA_REASSIGNMENT_NOTIFICATION] Resultado: %s", sla_result)
+                    if not sla_result or sla_result.get("status") in {"idle", "disabled", "already_reserved"}:
+                        break
+
             if should_send_now():
                 # Canonical Hot worker. Fully sync — runs in threadpool.
                 if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:

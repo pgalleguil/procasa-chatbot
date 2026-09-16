@@ -167,3 +167,25 @@ def test_policy_version_and_requested_policy_constants() -> None:
     assert JPC_LONG_RUN_SIZES == (30, 100, 250)
     assert all((R1_CONSECUTIVE, R2_ROLLING_SHARE, R3_COMBINED))
     assert SUPERVISOR_REVIEW_REQUIRED == "SUPERVISOR_REVIEW_REQUIRED"
+
+
+def test_rm_never_selects_configured_admin_even_when_tier1_unavailable() -> None:
+    from chatbot.crm_sla_policy_freeze import simulate_combined
+
+    maria = candidate("maria", "María Paz Galleguillos", p50=20, active=False)
+    hernan = candidate("hernan", "Hernán Castro", p50=25, active=False)
+    pablo = candidate("69796bc4bbebf240378eb739", "Pablo Galleguillos", p50=10)
+    row = lead(1)
+    row["rm_candidates"] = [maria, hernan, pablo]
+    row["jpc_candidates"] = [maria, hernan]
+
+    result = simulate_combined(
+        [row], rm_policy=R2_ROLLING_SHARE,
+        jpc_targets={"maria": 0.5, "hernan": 0.5}, team=team(),
+        params=RescueParameters(),
+    )
+
+    decision = result["decisions"][0]
+    assert decision["winner_user_id"] == ""
+    denied = [item for item in decision["hard_excluded"] if item.get("user_id") == pablo["user_id"]]
+    assert denied and denied[0]["excluded_reason"] == "admin_excluded"

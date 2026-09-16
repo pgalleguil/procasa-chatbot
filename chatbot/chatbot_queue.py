@@ -219,7 +219,7 @@ def claimed_value(value):
 
 
 def _batch_settings(max_wait_seconds=None):
-    quiet = max(int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15")), 1)
+    quiet = max(int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "5")), 1)
     maximum = max(int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", str(max_wait_seconds or 60))), quiet)
     return quiet, maximum
 
@@ -778,10 +778,16 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
     # Pure acknowledgements are a terminal no-reply outcome.  Evaluate this
     # before invoking the injected LLM so the production worker cannot create
     # a fallback or outbound message for "👍" / "muchas gracias, quedo atento".
-    from .conversation_policy import is_acknowledgement_only
+    try:
+        from .conversation_policy import is_acknowledgement_only
+    except ImportError:  # direct module loading used by the queue unit tests
+        from chatbot.conversation_policy import is_acknowledgement_only
     if is_acknowledgement_only(text):
         try:
-            from .conversation_observability import record_conversation_event
+            try:
+                from .conversation_observability import record_conversation_event
+            except ImportError:
+                from chatbot.conversation_observability import record_conversation_event
             await asyncio.to_thread(
                 record_conversation_event, db,
                 event_type="ack_only_no_reply",
@@ -1088,6 +1094,16 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
                 started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at"),
             ):
                 return {"__suppressed_human_takeover__": True}
+            params = inspect.signature(sender).parameters
+            accepts_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in params.values()
+            )
+            if accepts_kwargs or "traffic_class" in params:
+                return await sender(
+                    claimed["phone"], response, traffic_class="customer_reply"
+                )
+            # Test doubles and legacy senders remain source-compatible.
             return await sender(claimed["phone"], response)
         finally:
             await asyncio.to_thread(release_delivery_guard, guard)

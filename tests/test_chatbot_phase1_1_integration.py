@@ -103,6 +103,25 @@ def test_delivery_state_machine_persists_final_text_and_sent_only_after_acceptan
     assert [event for event, _ in events].count("RESPONSE_SENT") == 1
 
 
+def test_customer_reply_sender_receives_fast_traffic_class(monkeypatch):
+    db = _db()
+    _seed_batch(db, provider_id="phase11-customer-class")
+    traffic_classes = []
+
+    async def llm(*_args, **_kwargs):
+        return "respuesta"
+
+    async def sender(_phone, _text, *, traffic_class):
+        traffic_classes.append(traffic_class)
+        return {"success": True, "provider_message_id": "wamid-customer-class"}
+
+    asyncio.run(queue.process_one_batch(
+        db, worker_id="phase11-customer-class-worker", llm=llm,
+        sender=sender, now=NOW + timedelta(seconds=15),
+    ))
+    assert traffic_classes == ["customer_reply"]
+
+
 def test_ACK_ONLY_NO_REPLY_before_llm_and_without_outbound(monkeypatch):
     db = _db()
     queue.create_inbound_job(
@@ -358,7 +377,78 @@ def test_F_FULL_CONVERSATION_simulation_resolves_7733_assigns_mariela_and_preser
     assert pending["status"] == "resolved"
     assert db["crm_notifications_v1"].count_documents({"recipient_user_id": "mariela-user"}) == 1
     assert db["leads"].count_documents({"prospecto.codigo": "6186"}) == 0
-    assert llm_calls == [True, True]
+    # The normal opening turn may use the model; the visit question and the
+    # captured preference are deterministic and must not call it.
+    assert llm_calls == [True]
+
+
+def test_control_flow_three_customer_turns_has_one_outbound_each_and_zero_visit_llm(monkeypatch):
+    """Reproduce the live control sequence without provider or production DB."""
+    db = _db()
+    db["leads"].insert_one({
+        "phone": "+56983219804", "conversation_id": "control-conversation",
+        "prospecto": {
+            "codigo": "7733", "comuna": "Ñuñoa", "operacion": "Arriendo",
+        },
+        "messages": [],
+    })
+    _patch_core_orchestration(monkeypatch, db)
+    pending = {}
+
+    def pending_get(_phone, response_type):
+        state = pending if pending.get("type") == response_type else None
+        return dict(state) if state and state.get("status") == "waiting" else None
+
+    def pending_set(_phone, response_type, property_code, conversation_id):
+        pending.update({
+            "type": response_type, "property_code": property_code,
+            "conversation_id": conversation_id, "status": "waiting",
+        })
+
+    def pending_resolve(_phone, status):
+        pending["status"] = status
+
+    monkeypatch.setattr(storage, "get_pending_response", pending_get)
+    monkeypatch.setattr(storage, "set_pending_response", pending_set)
+    monkeypatch.setattr(storage, "resolve_pending_response", pending_resolve)
+    llm_calls = []
+
+    def fake_llm(_messages, *_args):
+        llm_calls.append(True)
+        return {
+            "intencion": "consulta_general",
+            "respuesta_bot": "La orientación depende de la distribución de la propiedad.",
+            "datos_extraidos": {},
+        }
+
+    monkeypatch.setattr(core, "generar_respuesta_estructurada", fake_llm)
+
+    first = asyncio.run(core.process_user_message(
+        "+56983219804", "¿Qué orientación tiene?",
+    ))
+    second = asyncio.run(core.process_user_message(
+        "+56983219804", "¿Se puede visitar?",
+    ))
+    third = asyncio.run(core.process_user_message(
+        "+56983219804", "Mañana",
+    ))
+
+    messages = db["leads"].find_one({"phone": "+56983219804"})["messages"]
+    assistant_messages = [item for item in messages if item.get("role") == "assistant"]
+    assert len(assistant_messages) == 3
+    assert first == "La orientación depende de la distribución de la propiedad."
+    assert second == core.build_visit_scheduling_request()
+    assert third == core.build_visit_preference_confirmation("manana")
+    assert llm_calls == [True]
+    assert not any("Gracias por escribirnos" in item["content"] for item in assistant_messages)
+    assert pending["status"] == "captured"
+
+
+def test_customer_reply_throttle_bucket_is_fast_and_isolated_from_automation():
+    from chatbot import whatsapp_client
+
+    assert whatsapp_client._throttle_parameters("customer_reply") == (2.0, 1.0)
+    assert whatsapp_client._throttle_parameters("bulk_automation") == (12.0, 8.0)
 
 
 def test_takeover_suppresses_generated_response_and_excludes_it_from_history(monkeypatch):
@@ -958,12 +1048,15 @@ def test_provider_status_mapping_matches_wasender_contract():
 
 def test_local_fallbacks_are_intent_specific_and_do_not_claim_facts():
     visit, visit_intent = build_local_fallback_response("Quiero visitar la propiedad")
+    explicit_visit, explicit_visit_intent = build_local_fallback_response("¿Se puede visitar?")
     availability, availability_intent = build_local_fallback_response("¿Sigue disponible?")
     price, price_intent = build_local_fallback_response("¿Cuál es el precio?")
     general, general_intent = build_local_fallback_response("Hola")
 
     assert visit_intent == "ASK_VISIT"
+    assert explicit_visit_intent == "ASK_VISIT"
     assert "coordinar una visita" in visit
+    assert "Gracias por escribirnos. Recibimos tu consulta" not in explicit_visit
     assert availability_intent == "ASK_AVAILABILITY"
     assert "continúa disponible" in availability
     assert price_intent == "ASK_PRICE"

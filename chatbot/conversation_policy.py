@@ -317,6 +317,36 @@ def build_pending_visit_preference_acknowledgement() -> str:
     )
 
 
+def _display_visit_preference(preference: str | None) -> str:
+    """Restore the most common Spanish accents removed by normalization."""
+    value = re.sub(r"\s+", " ", str(preference or "")).strip()
+    replacements = {
+        "manana": "mañana",
+        "miercoles": "miércoles",
+        "sabado": "sábado",
+    }
+    for source, target in replacements.items():
+        value = re.sub(rf"\b{source}\b", target, value, flags=re.IGNORECASE)
+    return value
+
+
+def build_visit_scheduling_request() -> str:
+    """Ask for a visit time after the property is already identified."""
+    return (
+        "Sí, podemos gestionar una visita. ¿Qué día y horario te acomodaría? "
+        "Lo dejamos solicitado con el ejecutivo encargado de la propiedad para confirmar disponibilidad."
+    )
+
+
+def build_visit_preference_confirmation(preference: str | None) -> str:
+    """Confirm a preference without claiming that the visit is booked."""
+    display = _display_visit_preference(preference) or "ese horario"
+    return (
+        f"Perfecto, dejo registrada tu preferencia para {display}. El ejecutivo encargado "
+        "revisará la disponibilidad y continuará contigo la coordinación."
+    )
+
+
 def classify_local_fallback_intent(message: str, *, operational_intent: str | None = None) -> str:
     """Classify a local fallback without invoking an LLM.
 

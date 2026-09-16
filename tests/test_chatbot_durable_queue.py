@@ -237,7 +237,7 @@ def test_two_messages_in_window_make_one_batch_and_one_response():
     batches = db.collection.find({"kind": queue.KIND_BATCH})
     assert len(batches) == 1
     assert len(batches[0]["job_ids"]) == 2
-    assert batches[0]["window_end_at"] == NOW + timedelta(seconds=25)
+    assert batches[0]["window_end_at"] == NOW + timedelta(seconds=15)
 
     sent = []
 
@@ -251,7 +251,7 @@ def test_two_messages_in_window_make_one_batch_and_one_response():
 
     result = asyncio.run(queue.process_one_batch(
         db, worker_id="w1", llm=llm, sender=sender,
-        now=NOW + timedelta(seconds=25),
+        now=NOW + timedelta(seconds=15),
     ))
     assert result["state"] == queue.ST_RESPONDED
     assert sent == [("+56911112222", "respuesta")]
@@ -308,7 +308,7 @@ def test_process_one_batch_offloads_all_sync_mongo_from_event_loop(monkeypatch):
 def test_batch_not_claimed_before_window_and_two_workers_cannot_claim():
     db = DB()
     add(db, "wamid-1", "hola")
-    assert queue.claim_pending_batch(db, worker_id="w1", now=NOW + timedelta(seconds=14)) is None
+    assert queue.claim_pending_batch(db, worker_id="w1", now=NOW + timedelta(seconds=4)) is None
     first = queue.claim_pending_batch(db, worker_id="w1", now=NOW + timedelta(seconds=15))
     second = queue.claim_pending_batch(db, worker_id="w2", now=NOW + timedelta(seconds=15))
     assert first["lease_owner"] == "w1"

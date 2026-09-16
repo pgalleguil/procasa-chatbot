@@ -13,12 +13,31 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Global outbound throttle (anti-bot): space consecutive sends with jitter
+# Outbound throttle buckets. Customer replies have a short, isolated bucket;
+# notifications/digests/automation retain the conservative anti-burst bucket.
 # ---------------------------------------------------------------------------
 _LAST_SEND_AT = 0.0
+_LAST_SEND_AT_BY_CLASS: dict[str, float] = {}
+
+TRAFFIC_CLASS_CUSTOMER_REPLY = "customer_reply"
+TRAFFIC_CLASS_BULK_AUTOMATION = "bulk_automation"
 
 
-async def throttle_outgoing_message() -> None:
+def _throttle_parameters(traffic_class: str) -> tuple[float, float]:
+    if traffic_class == TRAFFIC_CLASS_CUSTOMER_REPLY:
+        return (
+            max(float(getattr(Config, "WHATSAPP_CUSTOMER_REPLY_MIN_SEND_INTERVAL_SECONDS", 2.0)), 0),
+            max(float(getattr(Config, "WHATSAPP_CUSTOMER_REPLY_JITTER_MAX_SECONDS", 1.0)), 0),
+        )
+    return (
+        max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0),
+        max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0),
+    )
+
+
+async def throttle_outgoing_message(
+    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
+) -> None:
     """Wait until the next slot for an outbound WhatsApp send.
 
     Spacing is random (base interval + jitter) so a batch of digest/alert
@@ -28,28 +47,36 @@ async def throttle_outgoing_message() -> None:
     global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    base = max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0)
-    jitter = max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0)
+    base, jitter = _throttle_parameters(traffic_class)
     delay = base + random.uniform(0, jitter)
-    elapsed = time.monotonic() - _LAST_SEND_AT
+    last_send_at = _LAST_SEND_AT_BY_CLASS.get(traffic_class, 0.0)
+    elapsed = time.monotonic() - last_send_at
     if elapsed < delay:
         wait = delay - elapsed
         await asyncio.sleep(wait)
-    _LAST_SEND_AT = time.monotonic()
+    now = time.monotonic()
+    _LAST_SEND_AT_BY_CLASS[traffic_class] = now
+    if traffic_class == TRAFFIC_CLASS_BULK_AUTOMATION:
+        _LAST_SEND_AT = now
 
 
-def throttle_outgoing_message_sync() -> None:
+def throttle_outgoing_message_sync(
+    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
+) -> None:
     """Synchronous variant for workers that run in threads."""
     global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    base = max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0)
-    jitter = max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0)
+    base, jitter = _throttle_parameters(traffic_class)
     delay = base + random.uniform(0, jitter)
-    elapsed = time.monotonic() - _LAST_SEND_AT
+    last_send_at = _LAST_SEND_AT_BY_CLASS.get(traffic_class, 0.0)
+    elapsed = time.monotonic() - last_send_at
     if elapsed < delay:
         time.sleep(delay - elapsed)
-    _LAST_SEND_AT = time.monotonic()
+    now = time.monotonic()
+    _LAST_SEND_AT_BY_CLASS[traffic_class] = now
+    if traffic_class == TRAFFIC_CLASS_BULK_AUTOMATION:
+        _LAST_SEND_AT = now
 
 
 def normalize_whatsapp_recipient(number: str) -> str:
@@ -165,7 +192,12 @@ async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_second
     return last
 
 
-async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
+async def send_whatsapp_message_detailed(
+    number: str,
+    text: str,
+    *,
+    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
+) -> dict:
     """Envía por WASender y retorna metadatos seguros de aceptación del proveedor."""
     if not text:
         return {"success": False, "delivery_status": "rejected_empty_message", "provider_message_id": None}
@@ -185,7 +217,7 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
 
     # Anti-bot: never send messages back-to-back from a batch.  Waits a jittered
     # interval since the last outbound send (global across all senders).
-    await throttle_outgoing_message()
+    await throttle_outgoing_message(traffic_class)
 
     # One HTTP call per durable delivery attempt. Retrying here would bypass the
     # queue lease/idempotency policy and can duplicate an accepted-but-timed-out
@@ -253,13 +285,25 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     }
 
 
-async def send_whatsapp_message(number: str, text: str) -> bool:
+async def send_whatsapp_message(
+    number: str,
+    text: str,
+    *,
+    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
+) -> bool:
     """API compatible: conserva el booleano usado por los módulos existentes."""
-    result = await send_whatsapp_message_detailed(number, text)
+    result = await send_whatsapp_message_detailed(
+        number, text, traffic_class=traffic_class
+    )
     return bool(result.get("success"))
 
 
-def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
+def send_whatsapp_message_detailed_sync(
+    number: str,
+    text: str,
+    *,
+    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
+) -> dict:
     """Versión síncrona de ``send_whatsapp_message_detailed`` (sin asyncio).
 
     Para workers que corren en hilos (p. ej. el digest no-HOT): evita el
@@ -282,7 +326,7 @@ def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
         "Content-Type": "application/json",
     }
     # Anti-bot: space outbound sends even in threaded workers.
-    throttle_outgoing_message_sync()
+    throttle_outgoing_message_sync(traffic_class)
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=20)
     except Exception as exc:

@@ -44,7 +44,7 @@ def test_sliding_window_and_max_wait():
     add(database, "in-1", "uno")
     add(database, "in-2", "dos", NOW + timedelta(seconds=10))
     batch = database.chatbot_inbound_jobs.find_one({"kind": queue.KIND_BATCH})
-    assert batch["window_end_at"] == NOW + timedelta(seconds=25)
+    assert batch["window_end_at"] == NOW + timedelta(seconds=15)
     add(database, "in-3", "tres", NOW + timedelta(seconds=59))
     batch = database.chatbot_inbound_jobs.find_one({"kind": queue.KIND_BATCH})
     assert batch["window_end_at"] == NOW + timedelta(seconds=60)

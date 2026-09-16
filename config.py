@@ -185,7 +185,10 @@ class Config:
 
     # Chatbot inbound batching.  The quiet window is renewed for every inbound
     # message, but a bounded total wait keeps an active conversation deliverable.
-    CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))
+    # Customer turns should settle quickly.  The previous 15-second quiet
+    # window made a second short visit turn look like a crossed reply when
+    # DeepSeek and the outbound throttle were also slow.
+    CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "5"))
     CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "60"))
     CHATBOT_BATCH_MAX_REGENERATIONS = int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2"))
     # Bounded concurrency keeps one slow provider call from monopolizing the
@@ -248,10 +251,13 @@ class Config:
     # automation (and trigger 429 / temporary blocks), every outbound send waits
     # a random jittered interval after the previous one.  Applied globally in
     # whatsapp_client so it covers leads, digests and alert messages alike.
-    # Hardcoded on purpose (no env): the spacing is a safety constant.
+    # Customer replies use a separate short bucket; notifications and bulk
+    # automation retain the conservative global interval below.
     WHATSAPP_THROTTLE_ENABLED = True
     WHATSAPP_MIN_SEND_INTERVAL_SECONDS = 12.0
     WHATSAPP_SEND_JITTER_MAX_SECONDS = 8.0
+    WHATSAPP_CUSTOMER_REPLY_MIN_SEND_INTERVAL_SECONDS = 2.0
+    WHATSAPP_CUSTOMER_REPLY_JITTER_MAX_SECONDS = 1.0
 
     # === Prop360 (Convecta) periodic ingestion ===
     # Polls recent leads every PROP360_POLL_INTERVAL_SECONDS and ingests them

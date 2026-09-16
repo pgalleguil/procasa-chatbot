@@ -73,6 +73,8 @@ from .conversation_policy import (
     build_property_identifier_request,
     build_property_identifier_clarification,
     build_pending_visit_preference_acknowledgement,
+    build_visit_scheduling_request,
+    build_visit_preference_confirmation,
     is_acknowledgement_only,
 )
 
@@ -474,9 +476,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         get_pending_response,
         resolve_pending_response,
         set_pending_property_identifier,
+        set_pending_response,
     )
     pending_property_identifier = await _run_sync(
         get_pending_response, phone, "PROPERTY_IDENTIFIER"
+    )
+    pending_visit_scheduling = await _run_sync(
+        get_pending_response, phone, "VISIT_SCHEDULING"
     )
     recent_visit_context = any(
         item.get("role") == "assistant"
@@ -492,6 +498,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         visit_context=(
             recent_visit_context
             or bool(pending_property_identifier)
+            or bool(pending_visit_scheduling)
             or is_explicit_visit_intent(original_message)
         ),
     )
@@ -991,7 +998,26 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # without asking DeepSeek to infer the handoff.
     visit_requested = bool(
         is_explicit_visit_intent(original_message)
-        or (pending_property_identifier and visit_preference)
+        or (
+            visit_preference
+            and (pending_property_identifier or pending_visit_scheduling or recent_visit_context)
+        )
+    )
+    # Keep the existing optional-data flow for a broad first expression such
+    # as "Quiero verla", but make concrete scheduling turns fully
+    # deterministic.  These are the turns that were crossing/falling back in
+    # production: availability questions, date/time preferences and explicit
+    # coordination requests.
+    visit_scheduling_turn = bool(
+        visit_preference
+        or has_near_term_visit_urgency(original_message)
+        or re.search(
+            r"(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)|"
+            r"(?:coordinar|agendar)\s+(?:una\s+)?visita|"
+            r"(?:tienen|hay)\s+disponibilidad\b.*(?:visita|ver|ir)",
+            original_message,
+            re.IGNORECASE,
+        )
     )
     identifier_action = property_identifier_action(
         visit_requested=visit_requested,
@@ -1099,6 +1125,54 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             window_minutes=60, lead_type_label="Interés de Visita",
         )
         deterministic_handoff_executed = True
+
+        # A resolved visit turn is operational, not generative.  Persist the
+        # existing pending-response mechanism so a short follow-up such as
+        # "Mañana" remains attached to this visit and never falls through to
+        # DeepSeek.  The handoff and the customer reply are intentionally
+        # independent of the model/parser result.
+        property_code = str(codigo_detectado or prospecto_actual.get("codigo") or "")
+        if visit_scheduling_turn and visit_data_state.get("status") not in {
+            "offered", "accepted", "declined", "completed",
+        }:
+            # Preserve the existing optional visit-data state machine without
+            # making it a prerequisite for the deterministic scheduling turn.
+            visit_data_state = await _run_sync(update_visit_data_state, phone, {
+                "status": "offered",
+                "offered_at": datetime.now(CHILE_TZ).isoformat(),
+                "property_id": property_code,
+                "cycle_id": visit_data_state.get("cycle_id") or str(uuid.uuid4()),
+                "conversation_id": conversation_id,
+            })
+        if visit_scheduling_turn:
+            if visit_preference:
+                if pending_visit_scheduling:
+                    await _run_sync(resolve_pending_response, phone, "captured")
+                response = build_visit_preference_confirmation(visit_preference)
+                return await _persist_generated_outbound(
+                    response,
+                    {"tipo": "visit_preference_captured", "intencion": "agendar_visita",
+                     "lead_intent": LeadIntent.ASK_VISIT,
+                     "visit_urgency": resolved_criteria["visit_urgency"],
+                     "response_source": "deterministic_visit"},
+                    intent="agendar_visita",
+                )
+            if not pending_visit_scheduling:
+                await _run_sync(
+                    set_pending_response, phone, "VISIT_SCHEDULING",
+                    property_code, conversation_id,
+                )
+            response = build_visit_scheduling_request()
+            return await _persist_generated_outbound(
+                response,
+                {"tipo": "visit_scheduling_request", "intencion": "agendar_visita",
+                 "lead_intent": LeadIntent.ASK_VISIT,
+                 "visit_urgency": resolved_criteria["visit_urgency"],
+                 "response_source": "deterministic_visit"},
+                intent="agendar_visita",
+            )
+        # A broad first visit expression (for example, "Quiero verla")
+        # retains the established optional-data qualification flow.
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:

@@ -216,6 +216,10 @@ background_tasks_status = {
     "ficha_sync": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None},
+    "chatbot_response_v2": {
+        "status": "starting", "health": "STARTING", "registered": False,
+        "last_heartbeat": None,
+    },
     "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
 }
 _OAUTH_HTTP_CLIENT = None
@@ -1154,6 +1158,18 @@ async def lifespan(app: FastAPI):
     # Chatbot response worker — durable inbound → batch → LLM → WASender
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
     cb_task = asyncio.create_task(_crwl())
+
+    # V2 worker — always registered for liveness, but ownership remains fully
+    # controlled by the canonical runtime document.  In V1_ACTIVE this loop
+    # stays standby and cannot claim V1 work or call the provider.
+    from chatbot.turn_queue_v2_worker import production_worker_loop as _v2wl
+    v2_stop_event = asyncio.Event()
+    v2_task = asyncio.create_task(
+        _v2wl(
+            status=background_tasks_status["chatbot_response_v2"],
+            stop_event=v2_stop_event,
+        )
+    )
     
     # Prop360 (Convecta) periodic ingestion — feature-flagged, self-contained
     prop360_task = None
@@ -1287,6 +1303,8 @@ async def lifespan(app: FastAPI):
     c1_task.cancel()
     c2_task.cancel()
     cb_task.cancel()
+    v2_stop_event.set()
+    v2_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
     if sla_reassignment_task is not None:
@@ -1308,6 +1326,7 @@ async def lifespan(app: FastAPI):
     try:
         await asyncio.gather(
             n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
+            v2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),
@@ -3984,6 +4003,7 @@ async def health_check():
         "background_tasks": background_tasks_status,
         "chatbot": {
             "worker": background_tasks_status.get("chatbot_response", {"status": "missing"}),
+            "v2_worker": background_tasks_status.get("chatbot_response_v2", {"status": "missing"}),
             "queue": queue_health,
         },
         "process_service": {

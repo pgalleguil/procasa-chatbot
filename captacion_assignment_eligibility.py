@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 from config import Config
+from broker_identity import detect_hard_broker_signal
 
 
 ASSIGNMENT_GATE_VERSION = "global-assignment-gate-v1-incierto-assignable"
@@ -71,6 +72,9 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
     gestion = doc.get("gestion") or {}
     reasons: list[str] = []
     state = normalize_classification_state(cls.get("state") or cls.get("final_state"))
+    hard_broker_signal = detect_hard_broker_signal(doc, extracted=doc)
+    if hard_broker_signal:
+        reasons.append("hard_broker_publisher_veto")
     if state not in FINAL_STATES and state != "INCIERTO":
         reasons.append("classification_not_assignable")
     if state != "INCIERTO" and cls.get("assignment_ready") is not True:
@@ -123,7 +127,24 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
     manual_approved = bool(cls.get("manual_review_approved") or trace.get("manual_review_approved"))
     deterministic = source in {"structural_rules", "rules_json", "html_validation", "profile_correlation", "rules", "rules_fallback"}
     deepseek_persisted = source == "deepseek" and ds_status == "VALID" and bool(trace.get("deepseek_raw") or cls.get("deepseek_raw"))
-    if not (manual_approved or deterministic or deepseek_persisted):
+    # Yapo's v5 pipeline persists a complete deterministic evidence result for
+    # some INCIERTO documents without a populated ``decision_source``.  That
+    # is still an auditable final decision: the evidence engine, completeness
+    # marker, and probability are persisted.  The global policy makes INCIERTO
+    # assignable, so stale portal-specific ``NON_OWNER_STATE_NOT_ASSIGNABLE``
+    # flags must not turn this valid result into a quality veto.
+    evidence_engine_complete = (
+        state == "INCIERTO"
+        and str(cls.get("owner_probability_source") or "").lower() == "deterministic_evidence_engine"
+        and (cls.get("owner_probability_completeness") or {}).get("complete") is True
+        and cls.get("owner_probability") is not None
+    )
+    v5_rule_decision = (
+        state == "INCIERTO"
+        and str(cls.get("version") or "").lower() == "v5-rule-based"
+        and bool(cls.get("reason") or cls.get("evidence"))
+    )
+    if not (manual_approved or deterministic or deepseek_persisted or evidence_engine_complete or v5_rule_decision):
         reasons.append("no_auditable_final_decision")
     return not reasons, sorted(set(reasons))
 
@@ -181,6 +202,7 @@ def calculate_assignment_eligibility(
     human-confirmed broker phone gate.
     """
     if not is_chilepropiedades_document(document):
+        hard_broker_signal = detect_hard_broker_signal(document, extracted=document)
         eligible, reasons = _legacy_assignment_eligibility(document)
         if getattr(Config, "PHONE_LEARNING_ENABLED", False):
             identity_reasons = _contact_identity_reasons(contact_identity)
@@ -191,6 +213,9 @@ def calculate_assignment_eligibility(
         if "contact_identity_broker_confirmed" in identity_reasons:
             effective_state = "CORREDOR_SEGURO"
             effective_reason = "PHONE_HUMAN_CONFIRMED_BROKER"
+        elif hard_broker_signal:
+            effective_state = "CORREDOR_SEGURO"
+            effective_reason = "HARD_BROKER_PUBLISHER_VETO"
         elif "contact_identity_conflict" in identity_reasons:
             effective_state = "INCIERTO"
             effective_reason = "CONTACT_IDENTITY_CONFLICT"
@@ -218,9 +243,12 @@ def calculate_assignment_eligibility(
 
     cls = document.get("classification") or {}
     state = normalize_classification_state(cls.get("state") or cls.get("final_state"))
+    hard_broker_signal = detect_hard_broker_signal(document, extracted=document)
     if not getattr(Config, "PHONE_LEARNING_ENABLED", False):
         contact_identity = None
     reasons = _contact_identity_reasons(contact_identity)
+    if hard_broker_signal:
+        reasons.append("hard_broker_publisher_veto")
     if state not in ASSIGNABLE_STATES:
         reasons.append("classification_not_assignable")
 
@@ -255,6 +283,9 @@ def calculate_assignment_eligibility(
     if "contact_identity_broker_confirmed" in reasons:
         effective_state = "CORREDOR_SEGURO"
         effective_reason = "PHONE_HUMAN_CONFIRMED_BROKER"
+    elif hard_broker_signal:
+        effective_state = "CORREDOR_SEGURO"
+        effective_reason = "HARD_BROKER_PUBLISHER_VETO"
     elif "contact_identity_conflict" in reasons:
         effective_state = "INCIERTO"
         effective_reason = "CONTACT_IDENTITY_CONFLICT"

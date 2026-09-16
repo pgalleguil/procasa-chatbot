@@ -20,6 +20,7 @@ PUBLISHER_IDENTITY_FIELDS = (
     "listing_advertiser",
     "company_name",
     "broker_brand",
+    "seller_profile_logo",
     "seller_type_evidence",
 )
 
@@ -28,6 +29,7 @@ PROFILE_FIELDS = (
     "seller_url",
     "profile_url",
     "seller_profile_id",
+    "seller_profile_logo",
 )
 
 # A brand is hard evidence only when it appears in an identity/profile field.
@@ -54,6 +56,7 @@ KNOWN_BROKER_BRANDS = frozenset({
     "magnolia property",
     "property partners",
     "alejandro jaime realty corp",
+    "dataprop.cl",
 })
 
 # These terms are intentionally commercial/real-estate-specific.  A generic
@@ -142,7 +145,11 @@ def detect_hard_broker_signal(
         if field == "seller_type_evidence":
             # A profile path under the portal's inmobiliaria section is an
             # explicit profile classification, not a personal-name guess.
-            if "/inmobiliarias/" in raw_value.lower() or "corredoras" in text:
+            if (
+                "/inmobiliarias/" in raw_value.lower()
+                or "/corredora/" in raw_value.lower()
+                or "corredoras" in text
+            ):
                 return {
                     "source_field": field,
                     "value": raw_value,
@@ -201,7 +208,11 @@ def detect_hard_broker_signal(
 
     for field, raw_value in _values(doc, extracted, PROFILE_FIELDS):
         text = normalize_identity_text(raw_value)
-        if "/inmobiliarias/" in raw_value.lower() or "corredoras" in text:
+        if (
+            "/inmobiliarias/" in raw_value.lower()
+            or "/corredora/" in raw_value.lower()
+            or "corredoras" in text
+        ):
             return {
                 "source_field": field,
                 "value": raw_value,
@@ -222,7 +233,9 @@ def detect_hard_broker_signal(
             "reason_code": "BROKER_SELLER_TYPE",
             "evidence": f"seller_type={extracted.get('seller_type') or doc.get('seller_type')}",
         }
-    if seller_type == "empresa" and "inmobiliaria" in seller_type_source:
+    if seller_type == "empresa" and (
+        "inmobiliaria" in seller_type_source or "corredor" in seller_type_source
+    ):
         return {
             "source_field": "seller_type",
             "value": extracted.get("seller_type") or doc.get("seller_type"),

@@ -132,7 +132,8 @@ async def production_worker_loop(*, status: dict[str, Any],
     db = None
     current_phone = {"value": ""}
 
-    def _update_status(control: Mapping[str, Any] | None = None) -> None:
+    def _update_status(control: Mapping[str, Any] | None = None,
+                       queue_state: Mapping[str, Any] | None = None) -> None:
         selected = dict(control or {})
         mode = selected.get("mode") or runtime.V1_ACTIVE
         generation = int(selected.get("generation", 1) or 1)
@@ -148,13 +149,21 @@ async def production_worker_loop(*, status: dict[str, Any],
             "send_enabled": mode == runtime.V2_ACTIVE,
             "metrics": dict(metrics),
         })
+        if queue_state is not None:
+            status["queue"] = dict(queue_state)
+
+    async def _refresh_status(control: Mapping[str, Any] | None = None) -> None:
+        queue_state: Mapping[str, Any] | None = None
         if db is not None:
             try:
-                status["queue"] = queue.queue_snapshot(db)
+                # queue_snapshot uses the synchronous Mongo client.  Keep it
+                # off the event loop even while the worker is only on standby.
+                queue_state = await asyncio.to_thread(queue.queue_snapshot, db)
             except Exception:
                 # Liveness must remain visible even if the diagnostic query
                 # is temporarily unavailable.
-                status["queue"] = {"metrics_available": False}
+                queue_state = {"metrics_available": False}
+        _update_status(control, queue_state)
 
     async def _response_factory(turn: Mapping[str, Any]) -> str:
         from chatbot.core import process_user_message_sync
@@ -252,12 +261,14 @@ async def production_worker_loop(*, status: dict[str, Any],
 
         db = await asyncio.to_thread(get_db)
         await asyncio.to_thread(queue.ensure_indexes, db)
-        _update_status(await asyncio.to_thread(runtime.get_runtime_control, db, create=False))
+        await _refresh_status(
+            await asyncio.to_thread(runtime.get_runtime_control, db, create=False)
+        )
         while not stop_event.is_set():
             control = await asyncio.to_thread(
                 runtime.get_runtime_control, db, create=False,
             )
-            _update_status(control)
+            await _refresh_status(control)
             result = await process_one_turn(
                 db,
                 worker_id=worker_id,
@@ -268,7 +279,7 @@ async def production_worker_loop(*, status: dict[str, Any],
             if result is not None:
                 metrics["turns_claimed"] += 1
                 metrics["turns_completed"] += int(result.state in queue.TERMINAL_TURN_STATES)
-                _update_status(control)
+                await _refresh_status(control)
                 continue
             try:
                 await asyncio.wait_for(

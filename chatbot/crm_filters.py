@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 
 STATE_CARDS = ("NEW", "GRUPO_GESTION", "GRUPO_VISITA", "GRUPO_CERRADO")
+HISTORICAL_FILTER_STATE = "SLA_REASSIGNED_HISTORY"
 
 
 def build_crm_card_urls(query_params) -> dict[str, str]:
@@ -24,6 +25,7 @@ def build_crm_card_urls(query_params) -> dict[str, str]:
         return "/crm?" + urlencode(params)
 
     urls = {"total": url(remove=("temperatura", "estado"))}
+    urls["historical"] = url({"estado": HISTORICAL_FILTER_STATE})
     for temperature, key in (("HOT", "hot"), ("COLD", "cold")):
         if current.get("temperatura") == temperature:
             urls[key] = url(remove=("temperatura", "estado"))
@@ -66,6 +68,12 @@ def build_crm_filter_urls(query_params) -> dict[str, str]:
         params["page"] = "1"
         return "/crm?" + urlencode(params)
 
+    def with_state(state):
+        params = dict(current)
+        params["estado"] = state
+        params["page"] = "1"
+        return "/crm?" + urlencode(params)
+
     return {
         "temperature": without("temperatura"),
         "state": without("estado"),
@@ -73,5 +81,6 @@ def build_crm_filter_urls(query_params) -> dict[str, str]:
         "search": without("busqueda"),
         "property_code": without("property_code"),
         "order": without("orden"),
+        "historical": with_state(HISTORICAL_FILTER_STATE),
         "clear": "/crm",
     }

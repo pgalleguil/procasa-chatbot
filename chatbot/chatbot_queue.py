@@ -19,6 +19,11 @@ from pymongo import ASCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from config import Config
 
+try:
+    from . import runtime_control as runtime
+except ImportError:  # compatibility with isolated module loaders in tests
+    from chatbot import runtime_control as runtime
+
 logger = logging.getLogger(__name__)
 
 JOB_COLLECTION = "chatbot_inbound_jobs"
@@ -85,6 +90,8 @@ def _record_queue_observability_event(db, event_type, payload=None):
 
 
 def ensure_queue_indexes(db):
+    runtime.ensure_runtime_control_indexes(db)
+    runtime.ensure_runtime_control(db)
     coll = db[JOB_COLLECTION]
     coll.create_index(
         [("inbound_provider_message_id", ASCENDING)],
@@ -344,6 +351,59 @@ def create_inbound_job(
 
     now = received_at or utc_now()
     coll = db[JOB_COLLECTION]
+    # Check both queues before routing. A provider duplicate can arrive after
+    # a cutover/rollback; routing it by the *current* mode must not create a
+    # second durable job for an inbound already owned by the other pipeline.
+    for existing_collection, id_field in (
+        (JOB_COLLECTION, "inbound_provider_message_id"),
+        ("chatbot_turn_jobs", "provider_message_id"),
+    ):
+        try:
+            existing = db[existing_collection].find_one({id_field: provider_id})
+        except (KeyError, AssertionError, AttributeError, TypeError):
+            existing = None
+        if existing:
+            if timings is not None:
+                timings["idempotency_collision"] = True
+            return existing["_id"]
+    runtime_route = runtime.route_new_inbound(db, now=now)
+    # Route at ingress.  During a controlled migration new inbounds go to V2
+    # and never enter the draining V1 batch collection.
+    if runtime_route["pipeline_version"] == runtime.V2:
+        from .turn_queue import persist_inbound
+        v2_lead_id = lead_id
+        v2_conversation_id = conversation_id
+        try:
+            lead_for_v2 = db["leads"].find_one(
+                {"phone": phone}, {"_id": 1, "conversation_id": 1},
+            ) or {}
+            v2_lead_id = v2_lead_id or (str(lead_for_v2.get("_id")) if lead_for_v2.get("_id") else None)
+            v2_conversation_id = v2_conversation_id or lead_for_v2.get("conversation_id")
+        except (KeyError, AssertionError, AttributeError, TypeError):
+            pass
+        if not v2_conversation_id:
+            try:
+                from .conversation_observability import resolve_or_create_conversation
+                v2_conversation_id = resolve_or_create_conversation(
+                    db, lead_id=v2_lead_id, phone=phone,
+                )
+            except Exception:
+                v2_conversation_id = None
+        result = persist_inbound(
+            db,
+            provider_message_id=provider_id,
+            conversation_id=v2_conversation_id,
+            lead_id=v2_lead_id,
+            phone=phone,
+            text=clean_text,
+            received_at=now,
+            quiet_seconds=float(_batch_settings(max_wait_seconds)[0]),
+        )
+        if timings is not None:
+            timings["runtime_pipeline_version"] = runtime.V2
+            timings["runtime_generation"] = int(runtime_route["runtime_generation"])
+            timings["conversation_id"] = v2_conversation_id
+        return result.job_id
     lead = {}
     lead_lookup_started = time.perf_counter()
     try:
@@ -396,6 +456,10 @@ def create_inbound_job(
         "phone": phone,
         "received_at": now,
         "text": clean_text,
+        "pipeline_version": runtime_route["pipeline_version"],
+        "runtime_generation": int(runtime_route["runtime_generation"]),
+        "runtime_mode_at_ingest": runtime_route["runtime_mode_at_ingest"],
+        "runtime_stamped_at": runtime_route["stamped_at"],
         "state": ST_RECEIVED,
         "attempts": 0,
         "is_from_me": False,
@@ -463,6 +527,10 @@ def create_inbound_job(
                 "active_conversation_key": conversation_key,
                 "job_ids": [],
                 "state": ST_BATCHING,
+                "pipeline_version": runtime_route["pipeline_version"],
+                "runtime_generation": int(runtime_route["runtime_generation"]),
+                "runtime_mode_at_ingest": runtime_route["runtime_mode_at_ingest"],
+                "runtime_stamped_at": runtime_route["stamped_at"],
                 "attempts": 0,
                 "conversation_sequence": 0,
                 "window_started_at": now,
@@ -527,6 +595,33 @@ def create_inbound_job(
     return job_id
 
 
+def _stamp_legacy_inbound_job(db, job, *, now=None):
+    """Backfill the immutable V1 stamp for pre-Release-A inbound rows."""
+    if job.get("pipeline_version") and job.get("runtime_generation") is not None:
+        return job
+    control = runtime.get_runtime_control(db)
+    mode = control.get("mode")
+    generation = (
+        control.get("draining_generation")
+        if mode == runtime.DRAINING_TO_V2 and control.get("draining_generation") is not None
+        else control.get("generation", 1)
+    )
+    update = {
+        "pipeline_version": runtime.V1,
+        "runtime_generation": int(generation),
+        "runtime_mode_at_ingest": mode,
+        "runtime_stamped_at": now or utc_now(),
+    }
+    db[JOB_COLLECTION].update_one(
+        {"_id": job["_id"], "$or": [
+            {"pipeline_version": {"$exists": False}},
+            {"runtime_generation": {"$exists": False}},
+        ]},
+        {"$set": update},
+    )
+    return {**job, **update}
+
+
 def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=None):
     """Compatibility entry point; attach legacy received jobs without closing early."""
     now = now or utc_now()
@@ -537,6 +632,10 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "state": ST_RECEIVED,
         "is_from_me": False,
     }).sort("received_at", ASCENDING))
+    if not jobs:
+        return None
+    jobs = [_stamp_legacy_inbound_job(db, job, now=now) for job in jobs
+            if job.get("pipeline_version") in {None, runtime.V1}]
     if not jobs:
         return None
     first = jobs[0]
@@ -550,6 +649,11 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "lead_id": first.get("lead_id"),
         "job_ids": [],
         "state": ST_BATCHING,
+        "pipeline_version": first.get("pipeline_version") or runtime.V1,
+        "runtime_generation": int(first.get("runtime_generation") or (
+            (runtime.get_runtime_control(db) or {}).get("generation", 1)
+        )),
+        "runtime_mode_at_ingest": first.get("runtime_mode_at_ingest"),
         "attempts": 0,
         "window_end_at": window_end,
         "created_at": now,
@@ -574,6 +678,35 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
     return coll.find_one({"_id": batch_id})
 
 
+def _legacy_runtime_stamp(db, document, *, now=None):
+    """Resolve compatibility stamps for batches created before Release A."""
+    if document.get("pipeline_version") and document.get("runtime_generation") is not None:
+        return document
+    control = runtime.get_runtime_control(db)
+    mode = control.get("mode")
+    # An unstamped legacy batch is old V1 work.  During V1->V2 drain its old
+    # generation remains claimable for bookkeeping, but is fenced at send.
+    generation = (
+        control.get("draining_generation")
+        if mode == runtime.DRAINING_TO_V2 and control.get("draining_generation") is not None
+        else control.get("generation", 1)
+    )
+    update = {
+        "pipeline_version": runtime.V1,
+        "runtime_generation": int(generation),
+        "runtime_mode_at_ingest": document.get("runtime_mode_at_ingest") or mode,
+        "runtime_stamped_at": document.get("runtime_stamped_at") or now or utc_now(),
+    }
+    db[JOB_COLLECTION].update_one(
+        {"_id": document["_id"], "$or": [
+            {"pipeline_version": {"$exists": False}},
+            {"runtime_generation": {"$exists": False}},
+        ]},
+        {"$set": update},
+    )
+    return {**document, **update}
+
+
 def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
     """Atomically claim a due, undelivered batch and freeze its message snapshot."""
     now = now or utc_now()
@@ -590,7 +723,12 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
             {"$or": [{"next_attempt_at": {"$exists": False}}, {"next_attempt_at": {"$lte": now}}]},
         ],
     }
-    candidate = coll.find_one(query, sort=[("window_end_at", ASCENDING)])
+    candidates = coll.find(query).sort("window_end_at", ASCENDING)
+    candidate = next((
+        _legacy_runtime_stamp(db, item, now=now)
+        for item in candidates
+        if runtime.worker_can_claim(db, _legacy_runtime_stamp(db, item, now=now))
+    ), None)
     if not candidate:
         return None
     jobs = list(coll.find({
@@ -1265,6 +1403,48 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
                 started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at"),
             ):
                 return {"__suppressed_human_takeover__": True}
+            # Runtime ownership is the final cross-pipeline fence.  It is
+            # intentionally checked after batching/generation/pacing and
+            # immediately before the provider invocation.  A transition to a
+            # drain therefore cannot be followed by an old-generation HTTP
+            # call, even when this batch was already processing.
+            runtime_fence = await asyncio.to_thread(
+                runtime.runtime_fence, db, claimed, phase="send",
+            )
+            if not runtime_fence["allowed"]:
+                logger.warning(
+                    "[CHATBOT_RUNTIME_FENCED_OUT] pipeline=%s generation=%s "
+                    "mode=%s batch_id=%s",
+                    runtime_fence.get("pipeline_version"),
+                    runtime_fence.get("runtime_generation"),
+                    runtime_fence.get("current_mode"), batch_id,
+                )
+                await asyncio.to_thread(
+                    record_delivery_attempt, db, batch_id=batch_id,
+                    worker_id=worker_id, delivery_token=token,
+                    status="fenced_out", error="FENCED_OUT_RUNTIME_GENERATION",
+                )
+                await asyncio.to_thread(
+                    _record_queue_observability_event, db,
+                    "chatbot_runtime_fenced_out", {
+                        **_lead_event_context(db, claimed),
+                        "pipeline_version": runtime_fence.get("pipeline_version"),
+                        "runtime_generation": runtime_fence.get("runtime_generation"),
+                        "current_generation": runtime_fence.get("current_generation"),
+                    },
+                )
+                return {"__fenced_out__": True}
+            control = await asyncio.to_thread(runtime.get_runtime_control, db)
+            await asyncio.to_thread(
+                db[JOB_COLLECTION].update_one,
+                {"_id": batch_id, "lease_owner": worker_id,
+                 "delivery_token": token},
+                {"$set": {
+                    "provider_send_authorized": True,
+                    "provider_send_authorized_mode": control.get("mode"),
+                    "provider_send_authorized_generation": int(control.get("generation", 1)),
+                }},
+            )
             # This is the last read before the provider call. A response is
             # authorized only for the exact conversation snapshot that was
             # generated; a newer inbound reopens the batch and never reaches
@@ -1351,6 +1531,32 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             error="suppressed_human_takeover", worker_id=worker_id,
             delivery_token=token,
         )
+
+    if receipt.get("__fenced_out__"):
+        # No provider call was made and no customer response was accepted.
+        # The batch is terminalized as fenced so the old worker cannot retry
+        # it after cutover.  A future cutover coordinator may migrate only
+        # batches that have no uncertain provider attempt.
+        migration = {"migrated": False}
+        if claimed.get("pipeline_version") == runtime.V1:
+            try:
+                from .turn_queue import migrate_legacy_batch_to_v2
+                migration = await asyncio.to_thread(
+                    migrate_legacy_batch_to_v2, db, batch_id=batch_id,
+                    now=now, fenced_before_provider=True,
+                )
+            except Exception:
+                logger.exception(
+                    "[CHATBOT_RUNTIME_FENCED_OUT] V1 to V2 migration failed batch_id=%s",
+                    batch_id,
+                )
+        finalized = await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
+            error="FENCED_OUT_RUNTIME_GENERATION", worker_id=worker_id,
+            delivery_token=token,
+        )
+        finalized["runtime_migration"] = migration
+        return finalized
 
     if receipt.get("__superseded__"):
         return await _supersede_and_requeue("new_inbound_at_final_delivery_barrier")

@@ -185,11 +185,8 @@ class Config:
 
     # Chatbot inbound batching.  The quiet window is renewed for every inbound
     # message, but a bounded total wait keeps an active conversation deliverable.
-    # Customer turns should settle quickly.  The previous 15-second quiet
-    # window made a second short visit turn look like a crossed reply when
-    # DeepSeek and the outbound throttle were also slow.
-    CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "5"))
-    CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "20"))
+    CHATBOT_BATCH_QUIET_SECONDS = int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "15"))
+    CHATBOT_BATCH_MAX_WAIT_SECONDS = int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", "60"))
     CHATBOT_BATCH_MAX_REGENERATIONS = int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2"))
     # Bounded concurrency keeps one slow provider call from monopolizing the
     # chatbot worker while the durable batch/lease state preserves ordering per
@@ -342,22 +339,12 @@ class Config:
     DEEPSEEK_TEMPERATURE = float(os.getenv("DEEPSEEK_TEMPERATURE") or os.getenv("GROK_TEMPERATURE") or "0.1")
     
     DEEPSEEK_MAX_TOKENS_FAST = int(os.getenv("DEEPSEEK_MAX_TOKENS_FAST") or "1500")
-    # Provider calls must be bounded even if an old deployment environment
-    # still contains the former 30/60 second values.  The external provider
-    # timeout is the primary safety barrier; the queue has a separate lease.
-    DEEPSEEK_TIMEOUT_FAST = max(1, min(int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "25"), 25))
+    DEEPSEEK_TIMEOUT_FAST = int(os.getenv("DEEPSEEK_TIMEOUT_FAST") or "30")
     
     DEEPSEEK_MAX_TOKENS_REASONER = int(os.getenv("DEEPSEEK_MAX_TOKENS_REASONER") or "4096")
-    DEEPSEEK_TIMEOUT_REASONER = max(
-        1,
-        min(int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or str(DEEPSEEK_TIMEOUT_FAST)), 25),
-    )
+    DEEPSEEK_TIMEOUT_REASONER = int(os.getenv("DEEPSEEK_TIMEOUT_REASONER") or "60")
     
-    # Structured chatbot turns must always be returned as JSON by the provider.
-    # A blank, whitespace-only, or unsupported environment value must never
-    # silently disable the response format in production.
-    _DEEPSEEK_RESPONSE_FORMAT_ENV = str(os.getenv("DEEPSEEK_RESPONSE_FORMAT") or "").strip().lower()
-    DEEPSEEK_RESPONSE_FORMAT = "json_object"
+    DEEPSEEK_RESPONSE_FORMAT = os.getenv("DEEPSEEK_RESPONSE_FORMAT") or ""
 
     # === DeepSeek Adjudicator (scraper classification) ===
     # El adjudicador también debe usar siempre Flash, independientemente de

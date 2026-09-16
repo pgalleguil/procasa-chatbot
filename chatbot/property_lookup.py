@@ -1,5 +1,4 @@
 import re
-import unicodedata
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import Any, Dict, Iterable, Optional
 
@@ -248,43 +247,6 @@ def operation_from_property_url(url: str) -> Optional[str]:
     return None
 
 
-def validate_property_link_semantics(prop: Dict[str, Any], url: str) -> tuple[bool, str]:
-    """Reject an exact-looking link match whose listing semantics disagree.
-
-    A portal id is the primary identity, but legacy data can contain stale or
-    cross-portal mappings.  Operation, commune, and broad property category
-    from the URL are cheap safety checks before the lead context is updated.
-    """
-    if not prop:
-        return False, "missing_property"
-
-    def _fold(value: Any) -> str:
-        text = unicodedata.normalize("NFKD", str(value or ""))
-        return "".join(char for char in text if not unicodedata.combining(char)).casefold()
-
-    slug = _fold(url)
-    operation = _fold(get_prop_operation(prop).get("operacion", ""))
-    location = get_prop_location(prop)
-    comuna = _fold(location.get("comuna"))
-    tipo = _fold(get_prop_operation(prop).get("tipo", ""))
-
-    expected_operation = operation_from_property_url(url)
-    if expected_operation and operation and expected_operation != operation:
-        return False, "operation_mismatch"
-    if "nunoa" in slug and "nunoa" not in comuna:
-        return False, "commune_mismatch"
-    if any(token in slug for token in ("local-comercial", "comercios", "comercial")):
-        if not any(token in tipo for token in ("local", "comercial")):
-            return False, "property_type_mismatch"
-    if "oficina" in slug and "oficina" not in tipo:
-        return False, "property_type_mismatch"
-    if "departamento" in slug and "departamento" not in tipo:
-        return False, "property_type_mismatch"
-    if "casa" in slug and "casa" not in tipo:
-        return False, "property_type_mismatch"
-    return True, "match"
-
-
 def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTION_NAME):
     """Resolve a publication using its canonical external identity.
 
@@ -379,36 +341,6 @@ def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTIO
                 return prop, {"portal": portal, "external_id": external_id,
                               "operation": operation_from_property_url(url),
                               "url_normalized": normalized, "match_method": "legacy_url_external_id"}
-
-        # Prop360's current Yapo schema stores the publication aliases in a
-        # keyed object (for example ``publicaciones.yapo.publicaciones.A``),
-        # rather than in ``codigo_yapo`` or a flat URL field.  Resolve the
-        # external identity in those keyed records before declaring the link
-        # missing.  The explicit-link path must never fall back to the lead's
-        # historical property code.
-        if portal == "yapo":
-            for variant in ("A", "V", "R", "arriendo", "venta"):
-                for field in ("code", "codigo", "external_id"):
-                    prop = collection.find_one({
-                        f"publicaciones.yapo.publicaciones.{variant}.{field}": {
-                            "$in": list(id_values)
-                        }
-                    })
-                    if prop:
-                        return prop, {"portal": portal, "external_id": external_id,
-                                      "operation": operation_from_property_url(url),
-                                      "url_normalized": normalized,
-                                      "match_method": "nested_publication_external_id"}
-                prop = collection.find_one({
-                    f"publicaciones.yapo.publicaciones.{variant}.url": {
-                        "$regex": external_pattern, "$options": "i"
-                    }
-                })
-                if prop:
-                    return prop, {"portal": portal, "external_id": external_id,
-                                  "operation": operation_from_property_url(url),
-                                  "url_normalized": normalized,
-                                  "match_method": "nested_publication_url_external_id"}
     return None, {"portal": portal, "external_id": external_id,
                    "operation": operation_from_property_url(url),
                    "url_normalized": normalized, "match_method": None}

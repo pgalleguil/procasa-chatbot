@@ -18,10 +18,7 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
-    r"\b(?:puedo|podr[ií]a)\s+ir(?:\s+(?:tipo|a\s+las?)\s+\d{1,2}(?::\d{2})?)?\b",
-    r"\bse\s+pu[eé]d(?:e)?\s+ver(?:la|lo)?\b",
     r"\b(?:puedo|podr[ií]a)\s+ir\s+(?:ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
-    r"\b(?:puedo|podr[ií]a)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
     r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
@@ -86,65 +83,7 @@ _VISIT_DAY_RE = re.compile(
 _VISIT_TIME_RE = re.compile(
     r"\b(?:a\s+las?\s+\d{1,2}(?::\d{2})?|entre\s+\d{1,2}(?::\d{2})?\s+y\s+\d{1,2}(?::\d{2})?|"
     r"de\s+\d{1,2}(?::\d{2})?\s+a\s+\d{1,2}(?::\d{2})?|"
-    r"(?:tipo\s+|a\s+las?\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas)|"
-    r"tipo\s+\d{1,2}(?::\d{2})?)\b",
-    re.IGNORECASE,
-)
-
-_PROPERTY_IDENTIFIER_RE = re.compile(
-    r"(?:https?://|www\.)|"
-    r"\b(?:c[oó]digo|c[oó]d|id|ref(?:erencia)?|folio)\s*[:#-]?\s*[a-z0-9][a-z0-9_-]{2,}\b|"
-    r"\b(?:calle|avenida|av\.?|pasaje|camino|ruta)\s+[a-záéíóúñü0-9]|"
-    r"\b[a-záéíóúñü]{3,}\s+con\s+[a-záéíóúñü]{3,}\b",
-    re.IGNORECASE,
-)
-_VISIT_DATE_RANGE_RE = re.compile(
-    r"\b(?:desde\s+(?:el\s+)?|a\s+partir\s+del\s+|a\s+contar\s+del\s+)\d{1,2}\s+en\s+adelante\b",
-    re.IGNORECASE,
-)
-_NEAR_TERM_VISIT_RE = re.compile(
-    r"\b(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|esta\s+(?:ma[nñ]ana|tarde|noche)|"
-    r"este\s+fin\s+de\s+semana|fin\s+de\s+semana|lunes|martes|mi[eé]rcoles|jueves|"
-    r"viernes|s[aá]bado|domingo)\b",
-    re.IGNORECASE,
-)
-
-_FALLBACK_AVAILABILITY_RE = re.compile(
-    r"\b(?:disponible|disponibilidad|dispnible|disponble|sigue\s+disponible|a[uú]n\s+est[aá])\b",
-    re.IGNORECASE,
-)
-_PROPERTY_SEARCH_RE = re.compile(
-    r"\b(?:busco|buscar|estoy\s+buscando|necesito|quiero\s+encontrar)\b"
-    r"(?:\s+(?:una?|alguna?))?\s+"
-    r"(?:propiedad(?:es)?|casa(?:s)?|depto(?:s)?|departamento(?:s)?|"
-    r"oficina(?:s)?|local(?:es)?|sitio(?:s)?|terreno(?:s)?|algo|opciones?)\b|"
-    r"\bquiero\s+(?:comprar|arrendar|alquilar)\b(?!\s+mi\b)|"
-    r"\bbusco\s+(?:algo|una?\s+opci[oó]n)\s+en\b",
-    re.IGNORECASE,
-)
-_FALLBACK_PRICE_RE = re.compile(
-    r"\b(?:precio|valor|cu[aá]nto\s+(?:vale|cuesta|sale)|cu[aá]nto\s+es|uf)\b",
-    re.IGNORECASE,
-)
-_PRICE_NEGOTIATION_RE = re.compile(
-    r"\b(?:se\s+puede\s+(?:bajar|negociar|rebajar)|podemos\s+(?:negociar|bajar)|"
-    r"aceptan\s+ofertas?|hacer\s+una\s+oferta|descuento|rebaja|est[aá]\s+muy\s+car[oa]|ta\s+car[oa])\b",
-    re.IGNORECASE,
-)
-_PRICE_INCLUSIONS_RE = re.compile(
-    r"\b(?:incluye|incluyen|incluido|inclu[ií]do|considera|contempla)\b.{0,70}\b(?:"
-    r"servicios?\s+b[aá]sicos?|gastos?\s+comunes?|luz|agua|gas|internet)\b|"
-    r"\b(?:servicios?\s+b[aá]sicos?|gastos?\s+comunes?)\b.{0,70}\b(?:incluye|incluido|"
-    r"considera|contempla)\b",
-    re.IGNORECASE,
-)
-_COMMON_EXPENSES_RE = re.compile(
-    r"\b(?:gastos?\s+comunes?|gc|qu[eé]\s+gastos?\s+t(?:ien|iene|ienen))\b",
-    re.IGNORECASE,
-)
-_PROPERTY_ATTRIBUTE_RE = re.compile(
-    r"\b(?:orientaci[oó]n|dormitorios?|habitaciones?|ba[nñ]os?|superficie|metros?|"
-    r"estacionamientos?|estac\w*|bodegas?|antig[uü]edad)\b",
+    r"\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas))\b",
     re.IGNORECASE,
 )
 _VISIT_DAYPART_RE = re.compile(
@@ -154,43 +93,9 @@ _VISIT_DAYPART_RE = re.compile(
 _VISIT_QUESTION_RE = re.compile(
     r"(?:qu[eé]\s+d[ií]a|rango\s+horario|a\s+qu[eé]\s+hora|cu[aá]ndo).*"
     r"(?:visita|ir|ver|coordinar|agendar)|"
-    r"(?:qu[eé]\s+(?:d[ií]a|horario|hora)).{0,35}\b(?:acomoda|conviene|puedes|tienes\s+disponibilidad)\b|"
     r"(?:horario|hora)\s+(?:te\s+)?acomoda|"
     r"(?:coordinar|agendar)\s+(?:una\s+)?visita|"
     r"(?:te\s+)?gustar[ií]a\s+(?:coordinar|agendar|visitar)",
-    re.IGNORECASE,
-)
-_VISIT_SCHEDULE_CHANGE_RE = re.compile(
-    r"\b(?:mejor|en\s+vez(?:\s+de)?)\s+(?:el\s+)?"
-    r"(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|lunes|martes|mi[eé]rcoles|jueves|"
-    r"viernes|s[aá]bado|domingo)(?:\b|\s+)",
-    re.IGNORECASE,
-)
-_OWNER_SERVICE_RE = re.compile(
-    r"\b(?:tengo\s+(?:una\s+)?(?:propiedad|casa|departamento|depto|local)|"
-    r"quiero\s+(?:vender|arrendar|alquilar|publicar)\s+mi|"
-    r"busco\s+(?:una\s+)?corredora|quiero\s+que\s+ustedes\s+la\s+"
-    r"(?:arrienden|vendan)|capt(?:ar|aci[oó]n)|sin\s+exclusividad|"
-    r"comisi[oó]n)\b",
-    re.IGNORECASE,
-)
-
-# Short acknowledgements are not a conversational turn that needs an LLM.
-# Keep this allow-list deliberately conservative: any question, date, URL,
-# contact detail, property signal or operational verb is treated as new
-# information and must continue through the normal pipeline.
-_ACK_ONLY_PHRASES = frozenset({
-    "ok", "okay", "oki", "gracias", "muchas gracias", "quedo atento",
-    "gracias quedo atento", "muchas gracias quedo atento",
-    "perfecto", "perfecto gracias", "bueno gracias", "listo", "dale",
-    "de acuerdo", "entendido", "👍", "👌", "✅", "🙏",
-})
-_ACK_ONLY_NEW_INFORMATION_RE = re.compile(
-    r"(?:\?|¿|https?://|www\.|\b(?:visita|visitar|ver|ir|disponib|\d{1,2}\s*:\s*\d{2}|"
-    r"hoy|ma[nñ]ana|jueves|viernes|lunes|martes|mi[eé]rcoles|s[aá]bado|domingo|"
-    r"correo|email|mail|gasto|habitacional|valor|precio|c[oó]digo|direcci[oó]n|"
-    r"propiedad|local|oficina|departamento|casa|tengo|puedo|quiero|necesito)\b|"
-    r"\b\d{2,}\b|@)",
     re.IGNORECASE,
 )
 
@@ -199,159 +104,6 @@ def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
-
-
-def is_property_search_intent(message: str) -> bool:
-    """Detect a general property search, distinct from a specific listing.
-
-    This is intentionally based on the customer's current wording.  A URL,
-    code or other explicit identifier belongs to the property-specific flow;
-    a generic request such as ``"busco una propiedad"`` must instead enter
-    progressive search and never be redirected to the link/code gate.
-    """
-    normalized = _normalize_text(message)
-    if not normalized or contains_property_identifier(normalized):
-        return False
-    return bool(_PROPERTY_SEARCH_RE.search(normalized))
-
-
-def extract_search_criteria(message: str, existing: dict | None = None) -> dict:
-    """Extract only lightweight search criteria from one customer message.
-
-    The durable RAG extractor remains the source of truth for database
-    searches.  This companion extractor gives the policy/fallback layers a
-    stable, I/O-free state representation so they can ask the next missing
-    criterion when the writer is unavailable.
-    """
-    text = _normalize_text(message)
-    criteria = dict(existing or {})
-    if not text:
-        return criteria
-
-    if re.search(r"\b(?:venta|comprar|compra)\b", text):
-        criteria["operation"] = "Venta"
-        criteria["operacion"] = "Venta"
-    elif re.search(r"\b(?:arriendo|arrendar|alquiler|alquilar)\b", text):
-        criteria["operation"] = "Arriendo"
-        criteria["operacion"] = "Arriendo"
-
-    type_patterns = (
-        (r"\b(?:departamento|depto|depa|flat)\b", "Departamento"),
-        (r"\bcasas?\b", "Casa"),
-        (r"\boficinas?\b", "Oficina"),
-        (r"\blocal(?:es)?(?:\s+comercial(?:es)?)?\b", "Local Comercial"),
-        (r"\b(?:sitio|terreno)s?\b", "Sitio"),
-    )
-    for pattern, value in type_patterns:
-        if re.search(pattern, text, re.IGNORECASE):
-            criteria["property_type"] = value
-            criteria["tipo"] = value
-            break
-
-    # Keep this list deliberately explicit.  It avoids treating arbitrary
-    # words after "en" as a commune while covering the communes used by the
-    # RAG/search flow and the historical fixtures.
-    commune_names = (
-        ("providencia", "Providencia"), ("ñuñoa", "Ñuñoa"), ("nunoa", "Ñuñoa"),
-        ("maipu", "Maipú"), ("maipú", "Maipú"), ("santiago", "Santiago"),
-        ("las condes", "Las Condes"), ("vitacura", "Vitacura"),
-        ("la reina", "La Reina"), ("la florida", "La Florida"), ("macul", "Macul"),
-        ("san miguel", "San Miguel"), ("estación central", "Estación Central"),
-        ("estacion central", "Estación Central"), ("quilicura", "Quilicura"),
-        ("colina", "Colina"), ("lo barnechea", "Lo Barnechea"),
-        ("independencia", "Independencia"), ("recoleta", "Recoleta"),
-        ("peñalolén", "Peñalolén"), ("penalolen", "Peñalolén"),
-        ("concepción", "Concepción"), ("concepcion", "Concepción"),
-        ("viña del mar", "Viña del Mar"), ("vina del mar", "Viña del Mar"),
-    )
-    for commune, display_name in sorted(commune_names, key=lambda item: len(item[0]), reverse=True):
-        if re.search(rf"\b{re.escape(commune)}\b", text, re.IGNORECASE):
-            criteria["commune"] = display_name
-            criteria["comuna"] = criteria["commune"]
-            break
-
-    budget = re.search(
-        r"(?:m[aá]ximo|hasta|tope|presupuesto(?:\s+de)?|no\s+m[aá]s\s+de)\s*"
-        r"(?:\$\s*)?([\d.]+(?:,\d+)?)\s*(uf|mil|millones?|m)?\b|"
-        r"\b([\d.]+(?:,\d+)?)\s*(uf|mil|millones?)\b",
-        text,
-        re.IGNORECASE,
-    )
-    if budget:
-        amount = next((group for group in budget.groups()[::2] if group), None)
-        unit = next((group for group in budget.groups()[1::2] if group), None)
-        if amount:
-            criteria["budget"] = f"{amount} {unit}".strip() if unit else amount
-            criteria["presupuesto"] = criteria["budget"]
-
-    bedrooms = re.search(
-        r"\b(\d+)\s*(?:dormitorios?|habitaciones?)\b|"
-        r"\b(?:dormitorios?|habitaciones?)\s*[:=]?\s*(\d+)\b",
-        text,
-        re.IGNORECASE,
-    )
-    if bedrooms:
-        value = bedrooms.group(1) or bedrooms.group(2)
-        criteria["bedrooms"] = int(value)
-        criteria["dormitorios"] = int(value)
-    return criteria
-
-
-def build_property_search_response(
-    criteria: dict | None = None,
-    *,
-    rag_result_count: int | None = None,
-) -> str:
-    """Render the next useful search step without requiring a listing code."""
-    raw = dict(criteria or {})
-
-    def value(*keys):
-        return next((raw.get(key) for key in keys if raw.get(key) not in (None, "")), None)
-
-    if rag_result_count is not None:
-        try:
-            result_count = int(rag_result_count)
-        except (TypeError, ValueError):
-            result_count = None
-        if result_count is not None:
-            if result_count > 0:
-                return "Encontré opciones que coinciden con los criterios que compartiste. ¿Quieres que revisemos alguna?"
-            return "No encontré opciones exactas con esos criterios. ¿Quieres que ampliemos o cambiemos algún criterio de búsqueda?"
-
-    missing = (
-        ("operation", "operacion", "¿Buscas comprar o arrendar?"),
-        ("commune", "comuna", "Perfecto. ¿En qué comuna o sector buscas?"),
-        ("property_type", "tipo", "¿Buscas departamento, casa u otro tipo de propiedad?"),
-        ("budget", "presupuesto", "¿Tienes un presupuesto máximo para la búsqueda?"),
-        ("bedrooms", "dormitorios", "¿Cuántos dormitorios necesitas?"),
-    )
-    for first, second, question in missing:
-        if value(first, second) in (None, ""):
-            return question
-    return "Perfecto, buscaré opciones con esos criterios y te mostraré las alternativas encontradas."
-
-
-def is_acknowledgement_only(message: str) -> bool:
-    """Return True only for a pure acknowledgement with no new intent.
-
-    This gate runs before DeepSeek. It deliberately does not infer sentiment
-    or intent: it only recognizes a small set of closing/waiting phrases and
-    rejects anything that could carry a question, visit timing, property
-    identity or contact/qualification data.
-    """
-    raw = str(message or "").strip()
-    normalized = _normalize_text(raw)
-    if not normalized or _ACK_ONLY_NEW_INFORMATION_RE.search(raw):
-        return False
-    # Remove common acknowledgement emoji and punctuation while retaining
-    # words, then compare the complete turn rather than a substring.
-    cleaned = re.sub(r"[👍👌✅🙏🙂😊😉🙌👏❤️❤]+", " ", normalized)
-    cleaned = re.sub(r"[^\wáéíóúñü]+", " ", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if cleaned in _ACK_ONLY_PHRASES:
-        return True
-    # Emoji-only messages become empty after normalization.
-    return not cleaned and bool(re.search(r"[👍👌✅🙏🙂😊😉🙌👏❤️❤]", raw))
 
 
 def extract_visit_preference(message: str, *, visit_context: bool = False) -> str | None:
@@ -365,56 +117,20 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     normalized = _normalize_text(message)
     if not normalized:
         return None
-    if _OWNER_SERVICE_RE.search(normalized):
-        return None
-    schedule_change = _VISIT_SCHEDULE_CHANGE_RE.search(normalized)
-    scoped = normalized[schedule_change.start():] if schedule_change else normalized
-    days = list(_VISIT_DAY_RE.finditer(scoped))
-    date_ranges = list(_VISIT_DATE_RANGE_RE.finditer(scoped))
-    times = list(_VISIT_TIME_RE.finditer(scoped))
-    dayparts = list(_VISIT_DAYPART_RE.finditer(scoped))
-    if not (days or date_ranges or times or dayparts):
+    day = _VISIT_DAY_RE.search(normalized)
+    time = _VISIT_TIME_RE.search(normalized)
+    daypart = _VISIT_DAYPART_RE.search(normalized)
+    if not (day or time or daypart):
         return None
     if not visit_context and not is_explicit_visit_intent(normalized):
         return None
 
     parts = []
-    matches = sorted(days + date_ranges + times + dayparts, key=lambda match: match.start())
-    # ``_VISIT_DAY_RE`` also recognizes "mañana", while the day-part matcher
-    # recognizes the more informative phrase "en la mañana". Keep the
-    # containing match and avoid duplicating the same temporal signal.
-    matches = [
-        match for match in matches
-        if not any(
-            other is not match
-            and other.start() <= match.start()
-            and match.end() <= other.end()
-            and (other.start() < match.start() or other.end() > match.end())
-            for other in matches
-        )
-    ]
-    for match in matches:
-        value = match.group(0).strip()
-        if value not in parts:
-            parts.append(value)
-    # A customer may provide several bare hours: "viernes 11, 14:15 o 16".
-    # They are valid only in visit context and only when a day/date exists.
-    # Reject values attached to property facts so m², floor, bedrooms,
-    # installments, UF, prices and export timestamps cannot become visit data.
-    if days and (visit_context or is_explicit_visit_intent(normalized)):
-        structured_spans = [(match.start(), match.end()) for match in matches]
-        for match in re.finditer(r"(?<![\w/:])(?:[01]?\d|2[0-3])(?::[0-5]\d)?(?![\w/:])", scoped):
-            token = match.group(0)
-            if any(start <= match.start() and match.end() <= end for start, end in structured_spans):
-                continue
-            before = scoped[max(0, match.start() - 14):match.start()]
-            after = scoped[match.end():match.end() + 14]
-            if re.search(r"(?:\$|uf|m2|m²|piso|dormitorio|baño|cuota)\s*$", before, re.I):
-                continue
-            if re.match(r"\s*(?:m2|m²|uf|cuotas?|dormitorios?|baños?|piso)\b", after, re.I):
-                continue
-            if token not in parts:
-                parts.append(token)
+    for match in (day, time, daypart):
+        if match:
+            value = match.group(0).strip()
+            if value not in parts:
+                parts.append(value)
     return " ".join(parts) or None
 
 
@@ -471,282 +187,6 @@ def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
     return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
-
-
-def contains_property_identifier(message: str) -> bool:
-    """Return whether the current turn contains a usable property identifier signal."""
-    return bool(_PROPERTY_IDENTIFIER_RE.search(str(message or "")))
-
-
-def has_near_term_visit_urgency(message: str) -> bool:
-    """Detect a near-term date/daypart that makes a visit request operationally urgent."""
-    return bool(_NEAR_TERM_VISIT_RE.search(_normalize_text(message)))
-
-
-def property_identifier_action(
-    *,
-    visit_requested: bool,
-    property_resolved: bool,
-    awaiting_identifier: bool,
-    identifier_in_message: bool,
-) -> str:
-    """Choose the deterministic property-identity gate action for a visit turn."""
-    if property_resolved and (not awaiting_identifier or identifier_in_message):
-        return "resolved"
-    if awaiting_identifier and visit_requested and not identifier_in_message:
-        # The identifier question was already sent.  A subsequent timing
-        # reply should be acknowledged and preserved, not asked again.
-        return "acknowledge"
-    if awaiting_identifier:
-        return "clarify"
-    if visit_requested and not property_resolved:
-        return "ask"
-    return "none"
-
-
-def build_property_identifier_request() -> str:
-    return (
-        "Para poder coordinarte la visita lo antes posible, ¿me puedes enviar el enlace "
-        "de la publicación de la propiedad que quieres visitar? Así identifico exactamente "
-        "cuál es y revisamos disponibilidad para el día que necesitas."
-    )
-
-
-def build_property_identifier_clarification() -> str:
-    return (
-        "Para continuar con la visita necesito identificar la propiedad. ¿Me compartes "
-        "el enlace, la dirección o el código de la publicación?"
-    )
-
-
-def build_pending_visit_preference_acknowledgement() -> str:
-    """Acknowledge timing without repeating an already-sent link request."""
-    return (
-        "Perfecto, dejo registrada tu disponibilidad. Solo me falta el enlace de la "
-        "publicación para identificar exactamente la propiedad y continuar con la coordinación."
-    )
-
-
-def _display_visit_preference(preference: str | None) -> str:
-    """Restore the most common Spanish accents removed by normalization."""
-    value = re.sub(r"\s+", " ", str(preference or "")).strip()
-    replacements = {
-        "manana": "mañana",
-        "miercoles": "miércoles",
-        "sabado": "sábado",
-    }
-    for source, target in replacements.items():
-        value = re.sub(rf"\b{source}\b", target, value, flags=re.IGNORECASE)
-    return value
-
-
-def build_visit_scheduling_request() -> str:
-    """Ask for a visit time after the property is already identified."""
-    return (
-        "Sí, podemos solicitar una visita. ¿Qué día y horario te acomodaría? "
-        "La disponibilidad debe confirmarse antes de agendar."
-    )
-
-
-def build_visit_preference_confirmation(preference: str | None) -> str:
-    """Confirm a preference without claiming that the visit is booked."""
-    display = _display_visit_preference(preference) or "ese horario"
-    return (
-        f"Perfecto, dejo registrada tu preferencia para {display}. "
-        "La disponibilidad debe confirmarse antes de agendar."
-    )
-
-
-def classify_local_fallback_intent(message: str, *, operational_intent: str | None = None) -> str:
-    """Classify a local fallback without invoking an LLM.
-
-    The classifier is deliberately conservative: it only selects an
-    operational category when the customer's own text provides a strong
-    signal.  In particular, availability alone is not treated as a visit
-    request, so the fallback never claims a booking or a confirmed slot.
-    """
-    normalized = _normalize_text(message)
-    if is_explicit_visit_intent(normalized) or str(operational_intent or "").casefold() in {"agendar_visita", "ask_visit"}:
-        return "ASK_VISIT"
-    if contains_property_identifier(normalized):
-        return "PROPERTY_SPECIFIC"
-    if _PRICE_NEGOTIATION_RE.search(normalized):
-        return "PRICE_NEGOTIATION"
-    if _PRICE_INCLUSIONS_RE.search(normalized):
-        return "PRICE_INCLUSIONS"
-    if _COMMON_EXPENSES_RE.search(normalized):
-        return "COMMON_EXPENSES"
-    if _PROPERTY_ATTRIBUTE_RE.search(normalized):
-        return "PROPERTY_ATTRIBUTE"
-    if _FALLBACK_PRICE_RE.search(normalized):
-        return "PRICE_CURRENT_VALUE"
-    if _FALLBACK_AVAILABILITY_RE.search(normalized):
-        return "ASK_AVAILABILITY"
-    # A search request is a real conversational intent even when the model is
-    # unavailable.  Preserve an already-started RAG search for criterion-only
-    # replies such as "Arrendar" or "Providencia" via ``intent_override`` or
-    # the state-aware caller; the current-message detector handles the first
-    # turn without any special-case phrase.
-    if is_property_search_intent(normalized):
-        return "PROPERTY_SEARCH"
-    return "GENERAL"
-
-
-def classify_local_semantic_intents(message: str) -> tuple[str, ...]:
-    """Return all deterministic sub-intents present in one inbound burst."""
-    normalized = _normalize_text(message)
-    intents = []
-    if _PRICE_NEGOTIATION_RE.search(normalized):
-        intents.append("PRICE_NEGOTIATION")
-    if _PRICE_INCLUSIONS_RE.search(normalized):
-        intents.append("PRICE_INCLUSIONS")
-    elif _COMMON_EXPENSES_RE.search(normalized):
-        intents.append("COMMON_EXPENSES")
-    if _PROPERTY_ATTRIBUTE_RE.search(normalized):
-        intents.append("PROPERTY_ATTRIBUTE")
-    if _FALLBACK_PRICE_RE.search(normalized) and not any(
-        item in intents for item in {"PRICE_NEGOTIATION", "PRICE_INCLUSIONS", "COMMON_EXPENSES"}
-    ):
-        intents.append("PRICE_CURRENT_VALUE")
-    if is_explicit_visit_intent(normalized):
-        intents.append("ASK_VISIT")
-    if _FALLBACK_AVAILABILITY_RE.search(normalized):
-        intents.append("ASK_AVAILABILITY")
-    if is_property_search_intent(normalized):
-        intents.append("PROPERTY_SEARCH")
-    return tuple(dict.fromkeys(intents))
-
-
-def build_local_fallback_response(
-    message: str,
-    *,
-    operational_intent: str | None = None,
-    property_facts: dict | None = None,
-    intent_override: str | None = None,
-) -> tuple[str, str]:
-    """Build a safe deterministic fallback and return ``(text, intent)``.
-
-    Only facts explicitly present in ``property_facts`` are rendered. Unknown
-    facts remain explicitly unknown; the fallback never invents a value.
-    """
-    facts = property_facts or {}
-
-    def _nested(*paths):
-        for path in paths:
-            value = facts
-            try:
-                for key in path:
-                    value = value[key]
-            except (KeyError, TypeError):
-                value = None
-            if value not in (None, "", 0, False):
-                return value
-        return None
-
-    operation = str(facts.get("operacion") or "").casefold()
-    price_block_paths = (
-        ("tipo_operacion", "precio_venta") if operation in {"venta", "comprar", "compra"}
-        else ("tipo_operacion", "precio_arriendo") if operation in {"arriendo", "arrendar", "alquilar", "alquiler"}
-        else ()
-    )
-    price_paths = [price_block_paths] if price_block_paths else []
-    price_uf = _nested(("precio_uf",), *(path + ("precio_uf",) for path in price_paths))
-    price_clp = _nested(("precio_clp",), *(path + ("precio_clp",) for path in price_paths))
-    common_expenses = _nested(("gastos_comunes",), ("tipo_operacion", "gastos_comunes"))
-    orientation = _nested(("orientacion",), ("caracteristicas", "orientacion"))
-
-    def _number(value, *, prefix=""):
-        if value is None:
-            return None
-        try:
-            numeric = float(value)
-            if numeric.is_integer():
-                rendered = f"{int(numeric):,}".replace(",", ".")
-            else:
-                rendered = f"{numeric:.2f}".rstrip("0").rstrip(".").replace(".", ",")
-            return f"{prefix}{rendered}"
-        except (TypeError, ValueError):
-            return str(value)
-
-    price_display = _number(price_uf, prefix="")
-    if price_display is not None:
-        price_display = f"{price_display} UF"
-    elif price_clp is not None:
-        price_display = _number(price_clp, prefix="$" )
-    persisted_search_intent = bool(
-        facts.get("search_intent")
-        or (facts.get("rag_search_state") or {}).get("search_intent")
-    ) if isinstance(facts.get("rag_search_state") or {}, dict) else bool(facts.get("search_intent"))
-    search_state = facts.get("search_criteria") or facts.get("rag_search_state") or {}
-    if isinstance(search_state, dict) and isinstance(search_state.get("criteria"), dict):
-        search_criteria = dict(search_state.get("criteria") or {})
-    elif isinstance(search_state, dict):
-        search_criteria = dict(search_state)
-    else:
-        search_criteria = {}
-    if isinstance(facts.get("search_criteria"), dict):
-        search_criteria.update(facts["search_criteria"])
-    if is_property_search_intent(message) or facts.get("search_intent") or persisted_search_intent:
-        search_criteria = extract_search_criteria(message, search_criteria)
-    intent = intent_override or classify_local_fallback_intent(
-        message, operational_intent=operational_intent,
-    )
-    if not intent_override and intent == "GENERAL" and persisted_search_intent and not facts.get("property_code"):
-        intent = "PROPERTY_SEARCH"
-    if not intent_override and intent == "GENERAL" and is_property_search_intent(message):
-        intent = "PROPERTY_SEARCH"
-    if intent == "PROPERTY_SEARCH":
-        result_count = facts.get("rag_result_count")
-        return build_property_search_response(search_criteria, rag_result_count=result_count), intent
-    responses = {
-        "ASK_VISIT": (
-            "Gracias por escribirnos. Podemos ayudarte a coordinar una visita. "
-            "Vamos a confirmar la disponibilidad de la propiedad para continuar "
-            "con la coordinación."
-        ),
-        "ASK_AVAILABILITY": (
-            "Gracias por tu consulta. Vamos a confirmar si la propiedad continúa "
-            "disponible y te ayudaremos con la información."
-        ),
-        "PRICE_CURRENT_VALUE": (
-            f"El valor publicado es {price_display}. Si quieres, puedo ayudarte con los "
-            "antecedentes de la propiedad." if price_display else
-            "El valor publicado no aparece confirmado en la ficha. Lo podemos consultar "
-            "para entregarte la información correcta."
-        ),
-        "PRICE_NEGOTIATION": (
-            f"El valor publicado es {price_display}. Si quieres hacer una oferta, podemos "
-            "transmitirla al ejecutivo o propietario para que la evalúen; no puedo garantizar "
-            "que sea aceptada." if price_display else
-            "Podemos transmitir una oferta al ejecutivo o propietario para que la evalúen, "
-            "pero no puedo garantizar que sea aceptada."
-        ),
-        "PRICE_INCLUSIONS": (
-            f"La ficha indica que los gastos comunes son { _number(common_expenses, prefix='$') }. "
-            "Sobre los servicios básicos, revisaremos si están incluidos." if common_expenses is not None else
-            "Ese dato no aparece confirmado en la ficha. Lo podemos consultar con el ejecutivo "
-            "encargado para darte la información correcta."
-        ),
-        "COMMON_EXPENSES": (
-            f"Los gastos comunes informados son { _number(common_expenses, prefix='$') }." if common_expenses is not None else
-            "El valor de los gastos comunes no aparece confirmado en la ficha. Lo podemos "
-            "consultar con el ejecutivo encargado."
-        ),
-        "PROPERTY_ATTRIBUTE": (
-            f"La orientación informada en la ficha es {orientation}." if orientation is not None else
-            "Ese dato no aparece confirmado en la ficha. Lo podemos consultar con el ejecutivo "
-            "encargado para darte la información correcta."
-        ),
-        "PROPERTY_SPECIFIC": (
-            "Recibí la referencia de la propiedad. Revisaré la información disponible para "
-            "orientarte con precisión."
-        ),
-        "GENERAL": (
-            "Gracias por escribirnos. Recibimos tu consulta y la estamos revisando "
-            "para poder ayudarte con la información de la propiedad."
-        ),
-    }
-    return responses[intent], intent
 
 
 def should_offer_visit_data(
@@ -869,7 +309,7 @@ def safe_visit_claim_free_response(original: str) -> str:
     sentences = re.split(r"(?<=[.!?])\s+", text)
     retained = [sentence for sentence in sentences if not outbound_unconfirmed_visit_claim(sentence)]
     useful = " ".join(retained).strip()
-    suffix = "Podemos continuar con la coordinación; la disponibilidad debe confirmarse antes de agendar."
+    suffix = "Registré tu interés; el ejecutivo confirmará la disponibilidad y coordinará el horario contigo."
     return f"{useful} {suffix}".strip() if useful else suffix
 
 
@@ -894,7 +334,7 @@ def duplicate_response_fallback(original: str) -> str:
     if re.search(r"\b(?:rut|correo|email|nombre|datos)\b", normalized):
         return "Ya registré lo que me indicaste. ¿Qué otra información necesitas?"
     if re.search(r"\b(?:visita|verla|verlo|coordinar|agendar)\b", normalized):
-        return "Podemos continuar con la coordinación; la disponibilidad debe confirmarse antes de agendar."
+        return "Ya registré tu interés. El ejecutivo confirmará la coordinación contigo."
     return "Gracias, sigo atento a tu consulta."
 
 
@@ -996,8 +436,6 @@ def nudge_eligibility(lead: dict) -> dict:
         return {"eligible": False, "reason": "blocked_external_broker", "evidence": status, "state": status}
     if status in {"STOPPED_BY_CLIENT", "CLOSED", "HUMAN_HANDOFF"}:
         return {"eligible": False, "reason": "conversation_status", "evidence": status, "state": status}
-    if lead.get("conversation_owner") == "human" or lead.get("human_active") is True:
-        return {"eligible": False, "reason": "human_ownership_active", "evidence": True, "state": "human_handoff"}
     if stage in {"ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON", "VISIT_DONE", "VISIT_SCHEDULED"}:
         return {"eligible": False, "reason": "terminal_stage", "evidence": stage, "state": stage}
     # Intent, an executive assignment and an alert are not proof that a person

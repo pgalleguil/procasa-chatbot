@@ -2,10 +2,10 @@
 import re
 import logging
 from typing import Tuple, Optional
-from .storage import get_db, record_observability_event
+from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
-from .property_lookup import (PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, lookup_property_link, canonical_portal, normalize_property_url, extract_property_external_id, operation_from_property_url, validate_property_link_semantics)
+from .property_lookup import (PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, lookup_property_link, canonical_portal, normalize_property_url, extract_property_external_id, operation_from_property_url)
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 logger = logging.getLogger(__name__)
@@ -137,34 +137,15 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         # Aliases: resolver primero por ID externo y luego por URL normalizada.
         alias_prop, alias_meta = lookup_property_link(db, url_clean)
         if alias_prop:
-            semantic_match, semantic_reason = validate_property_link_semantics(alias_prop, url_clean)
-            if not semantic_match:
-                logger.warning(
-                    "[PROPERTY_MATCH_REJECTED] trace=%s phone=%s reason=semantic_mismatch detail=%s portal=%s external_id=%s candidate_code=%s",
-                    trace_id or "unknown", phone or "unknown", semantic_reason,
-                    alias_meta.get("portal"), alias_meta.get("external_id"), alias_prop.get("codigo"),
-                )
-                if phone:
-                    record_observability_event("PROPERTY_MATCH_REJECTED", {
-                        "phone": phone,
-                        "trace_id": trace_id,
-                        "reason": "semantic_mismatch",
-                        "detail": semantic_reason,
-                        "portal": alias_meta.get("portal"),
-                        "external_id": alias_meta.get("external_id"),
-                        "candidate_property_id": str(alias_prop.get("codigo") or ""),
-                    })
-                alias_prop = None
-            else:
-                propiedad = dict(alias_prop)
-                propiedad["_link_match"] = alias_meta
-                codigo_externo = alias_meta.get("external_id")
-                logger.info(
-                    "[PROPERTY_LINK_MATCH] portal=%s external_id=%s operation=%s property_code=%s match_method=%s",
-                    alias_meta.get("portal"), alias_meta.get("external_id"), alias_meta.get("operation"),
-                    propiedad.get("codigo"), alias_meta.get("match_method"),
-                )
-                return True, propiedad, plataforma, codigo_externo
+            propiedad = dict(alias_prop)
+            propiedad["_link_match"] = alias_meta
+            codigo_externo = alias_meta.get("external_id")
+            logger.info(
+                "[PROPERTY_LINK_MATCH] portal=%s external_id=%s operation=%s property_code=%s match_method=%s",
+                alias_meta.get("portal"), alias_meta.get("external_id"), alias_meta.get("operation"),
+                propiedad.get("codigo"), alias_meta.get("match_method"),
+            )
+            return True, propiedad, plataforma, codigo_externo
         
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {PROPERTY_COLLECTION_NAME}")
         print(f"[LINK_DEBUG] URL recibida: {url_clean}")
@@ -347,26 +328,6 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             # No hacemos inventos; solo dejamos trazabilidad del link.
             propiedad = None
             codigo_externo = None
-
-        if propiedad:
-            semantic_match, semantic_reason = validate_property_link_semantics(propiedad, url_clean)
-            if not semantic_match:
-                logger.warning(
-                    "[PROPERTY_MATCH_REJECTED] trace=%s phone=%s reason=semantic_mismatch detail=%s portal=%s external_id=%s candidate_code=%s",
-                    trace_id or "unknown", phone or "unknown", semantic_reason,
-                    canonical_portal(url_clean), codigo_externo, propiedad.get("codigo"),
-                )
-                if phone:
-                    record_observability_event("PROPERTY_MATCH_REJECTED", {
-                        "phone": phone,
-                        "trace_id": trace_id,
-                        "reason": "semantic_mismatch",
-                        "detail": semantic_reason,
-                        "portal": canonical_portal(url_clean),
-                        "external_id": codigo_externo,
-                        "candidate_property_id": str(propiedad.get("codigo") or ""),
-                    })
-                propiedad = None
 
         if propiedad:
             legacy_meta = {

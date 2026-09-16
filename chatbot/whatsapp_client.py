@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import random
-import threading
 import time
 from typing import Any
 
@@ -14,68 +13,43 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Outbound traffic classes share one provider gate. A separate clock per class
-# allows a customer reply and an alert to leave back-to-back and trigger 429s.
+# Global outbound throttle (anti-bot): space consecutive sends with jitter
 # ---------------------------------------------------------------------------
 _LAST_SEND_AT = 0.0
-_NEXT_SEND_AT = 0.0
-_THROTTLE_LOCK = threading.Lock()
-
-TRAFFIC_CLASS_CUSTOMER_REPLY = "customer_reply"
-TRAFFIC_CLASS_BULK_AUTOMATION = "bulk_automation"
 
 
-def _throttle_parameters(traffic_class: str) -> tuple[float, float]:
-    global_floor = max(
-        float(getattr(Config, "WHATSAPP_GLOBAL_MIN_SEND_INTERVAL_SECONDS", 5.2)), 0
-    )
-    if traffic_class == TRAFFIC_CLASS_CUSTOMER_REPLY:
-        return global_floor, 0.0
-    return (
-        max(global_floor, float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS)),
-        max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0),
-    )
-
-
-def _reserve_provider_slot(traffic_class: str) -> float:
-    """Reserve a single process-wide slot and return seconds to wait."""
-    global _NEXT_SEND_AT, _LAST_SEND_AT
-    base, jitter = _throttle_parameters(traffic_class)
-    delay = base + (random.uniform(0, jitter) if jitter else 0.0)
-    now = time.monotonic()
-    with _THROTTLE_LOCK:
-        scheduled = max(now, _NEXT_SEND_AT)
-        wait = max(0.0, scheduled - now)
-        _NEXT_SEND_AT = scheduled + delay
-        _LAST_SEND_AT = scheduled
-    return wait
-
-
-async def throttle_outgoing_message(
-    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
-) -> None:
+async def throttle_outgoing_message() -> None:
     """Wait until the next slot for an outbound WhatsApp send.
 
     Spacing is random (base interval + jitter) so a batch of digest/alert
     messages is not delivered in a single instantaneous burst that a non-
     official Meta API would flag as automation.  Uses a process-wide clock.
     """
+    global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    wait = _reserve_provider_slot(traffic_class)
-    if wait > 0:
+    base = max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0)
+    jitter = max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0)
+    delay = base + random.uniform(0, jitter)
+    elapsed = time.monotonic() - _LAST_SEND_AT
+    if elapsed < delay:
+        wait = delay - elapsed
         await asyncio.sleep(wait)
+    _LAST_SEND_AT = time.monotonic()
 
 
-def throttle_outgoing_message_sync(
-    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
-) -> None:
+def throttle_outgoing_message_sync() -> None:
     """Synchronous variant for workers that run in threads."""
+    global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    wait = _reserve_provider_slot(traffic_class)
-    if wait > 0:
-        time.sleep(wait)
+    base = max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0)
+    jitter = max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0)
+    delay = base + random.uniform(0, jitter)
+    elapsed = time.monotonic() - _LAST_SEND_AT
+    if elapsed < delay:
+        time.sleep(delay - elapsed)
+    _LAST_SEND_AT = time.monotonic()
 
 
 def normalize_whatsapp_recipient(number: str) -> str:
@@ -141,15 +115,6 @@ def normalize_provider_status(value) -> str:
     return aliases.get(text, text or "unknown")
 
 
-def provider_status_code(value) -> int | None:
-    """Return the provider's numeric status code when one was supplied."""
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
-    return None
-
-
 async def get_whatsapp_message_status(provider_message_id: str) -> dict:
     if not provider_message_id:
         return {"delivery_status": "unknown", "provider_message_id": None}
@@ -159,12 +124,9 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
         response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
         data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
-        raw_status = (data or {}).get("status") if isinstance(data, dict) else None
-        status = normalize_provider_status(raw_status)
+        status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
         return {
             "delivery_status": status,
-            "provider_status": status,
-            "provider_status_code": provider_status_code(raw_status),
             "provider_message_id": str(provider_message_id),
             "http_status": response.status_code,
         }
@@ -174,10 +136,7 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
             provider_message_id,
             type(exc).__name__,
         )
-        return {
-            "delivery_status": "unknown", "provider_status": "unknown",
-            "provider_status_code": None, "provider_message_id": str(provider_message_id),
-        }
+        return {"delivery_status": "unknown", "provider_message_id": str(provider_message_id)}
 
 
 async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_seconds=30) -> dict:
@@ -191,12 +150,7 @@ async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_second
     return last
 
 
-async def send_whatsapp_message_detailed(
-    number: str,
-    text: str,
-    *,
-    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
-) -> dict:
+async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     """Envía por WASender y retorna metadatos seguros de aceptación del proveedor."""
     if not text:
         return {"success": False, "delivery_status": "rejected_empty_message", "provider_message_id": None}
@@ -216,7 +170,7 @@ async def send_whatsapp_message_detailed(
 
     # Anti-bot: never send messages back-to-back from a batch.  Waits a jittered
     # interval since the last outbound send (global across all senders).
-    await throttle_outgoing_message(traffic_class)
+    await throttle_outgoing_message()
 
     # One HTTP call per durable delivery attempt. Retrying here would bypass the
     # queue lease/idempotency policy and can duplicate an accepted-but-timed-out
@@ -249,8 +203,7 @@ async def send_whatsapp_message_detailed(
     if success:
         message_id = _provider_message_id(body)
         data = body.get("data") if isinstance(body.get("data"), dict) else {}
-        raw_provider_status = data.get("status") or body.get("status")
-        provider_status = normalize_provider_status(raw_provider_status)
+        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
         logger.info(
             "[WHATSAPP_SEND] recipient=%s status=accepted provider_message_id=%s",
             masked,
@@ -259,8 +212,6 @@ async def send_whatsapp_message_detailed(
         return {
             "success": True,
             "delivery_status": provider_status if provider_status != "unknown" else "accepted",
-            "provider_status": provider_status if provider_status != "unknown" else "accepted",
-            "provider_status_code": provider_status_code(raw_provider_status),
             "provider_message_id": message_id,
             "http_status": response.status_code,
         }
@@ -284,25 +235,13 @@ async def send_whatsapp_message_detailed(
     }
 
 
-async def send_whatsapp_message(
-    number: str,
-    text: str,
-    *,
-    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
-) -> bool:
+async def send_whatsapp_message(number: str, text: str) -> bool:
     """API compatible: conserva el booleano usado por los módulos existentes."""
-    result = await send_whatsapp_message_detailed(
-        number, text, traffic_class=traffic_class
-    )
+    result = await send_whatsapp_message_detailed(number, text)
     return bool(result.get("success"))
 
 
-def send_whatsapp_message_detailed_sync(
-    number: str,
-    text: str,
-    *,
-    traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
-) -> dict:
+def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
     """Versión síncrona de ``send_whatsapp_message_detailed`` (sin asyncio).
 
     Para workers que corren en hilos (p. ej. el digest no-HOT): evita el
@@ -325,7 +264,7 @@ def send_whatsapp_message_detailed_sync(
         "Content-Type": "application/json",
     }
     # Anti-bot: space outbound sends even in threaded workers.
-    throttle_outgoing_message_sync(traffic_class)
+    throttle_outgoing_message_sync()
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=20)
     except Exception as exc:
@@ -344,14 +283,11 @@ def send_whatsapp_message_detailed_sync(
     if success:
         message_id = _provider_message_id(body)
         data = body.get("data") if isinstance(body.get("data"), dict) else {}
-        raw_provider_status = data.get("status") or body.get("status")
-        provider_status = normalize_provider_status(raw_provider_status)
+        provider_status = normalize_provider_status(data.get("status") or body.get("status"))
         logger.info("[WHATSAPP_SEND_SYNC] recipient=%s status=accepted provider_message_id=%s",
                     masked, message_id or "unavailable")
         return {"success": True,
                 "delivery_status": provider_status if provider_status != "unknown" else "accepted",
-                "provider_status": provider_status if provider_status != "unknown" else "accepted",
-                "provider_status_code": provider_status_code(raw_provider_status),
                 "provider_message_id": message_id,
                 "http_status": response.status_code}
     retry_after = None

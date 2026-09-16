@@ -29,7 +29,6 @@ from chatbot.storage import (
     observability_mark,
     observability_snapshot_and_reset,
     observability_event_loop_blocked_recent,
-    record_chatbot_delivery_status_webhook,
     run_in_threadpool,
 )
 
@@ -216,10 +215,6 @@ background_tasks_status = {
     "ficha_sync": {"status": "starting", "last_heartbeat": None},
     "captacion_distributor": {"status": "post_scrape_trigger", "last_heartbeat": None},
     "lead_processing": {"status": "starting", "last_heartbeat": None},
-    "chatbot_response_v2": {
-        "status": "starting", "health": "STARTING", "registered": False,
-        "last_heartbeat": None,
-    },
     "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
 }
 _OAUTH_HTTP_CLIENT = None
@@ -1159,18 +1154,6 @@ async def lifespan(app: FastAPI):
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
     cb_task = asyncio.create_task(_crwl())
 
-    # V2 worker — always registered for liveness, but ownership remains fully
-    # controlled by the canonical runtime document.  In V1_ACTIVE this loop
-    # stays standby and cannot claim V1 work or call the provider.
-    from chatbot.turn_queue_v2_worker import production_worker_loop as _v2wl
-    v2_stop_event = asyncio.Event()
-    v2_task = asyncio.create_task(
-        _v2wl(
-            status=background_tasks_status["chatbot_response_v2"],
-            stop_event=v2_stop_event,
-        )
-    )
-    
     # Prop360 (Convecta) periodic ingestion — feature-flagged, self-contained
     prop360_task = None
     try:
@@ -1303,8 +1286,6 @@ async def lifespan(app: FastAPI):
     c1_task.cancel()
     c2_task.cancel()
     cb_task.cancel()
-    v2_stop_event.set()
-    v2_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
     if sla_reassignment_task is not None:
@@ -1326,7 +1307,6 @@ async def lifespan(app: FastAPI):
     try:
         await asyncio.gather(
             n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
-            v2_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),
@@ -3644,7 +3624,6 @@ async def webhook(
     request: Request,
     x_webhook_signature: str = Header(None, alias="X-Webhook-Signature")
 ):
-    webhook_started = time.perf_counter()
     raw_body = await request.body()
     if Config.WASENDER_WEBHOOK_SECRET:
         expected = hmac.new(
@@ -3666,14 +3645,9 @@ async def webhook(
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    if data.get("event") in {"messages.update", "message.update", "messages.status", "message.status"}:
-        def _record_delivery_updates():
-            weekly_updated = record_delivery_status_webhook(data)
-            chatbot_updated = record_chatbot_delivery_status_webhook(data)
-            return bool(weekly_updated or chatbot_updated)
-
+    if data.get("event") == "messages.update":
         updated = await asyncio.get_running_loop().run_in_executor(
-            _WEB_THREAD_POOL, _record_delivery_updates
+            _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
         )
         return JSONResponse({"status": "delivery_updated" if updated else "delivery_not_tracked"}, status_code=200)
 
@@ -3759,9 +3733,7 @@ async def webhook(
     # Si quien escribe es un ejecutivo (excepto Pablo Galleguillos), 
     # forzamos from_me=True para que el bot no responda.
     user_lookup_phone = sender_phone if from_me else (sender_phone or phone)
-    user_lookup_started = time.perf_counter()
     user_found = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: get_user_by_phone(user_lookup_phone))
-    user_lookup_ms = round((time.perf_counter() - user_lookup_started) * 1000, 1)
     if not from_me and user_found and user_found.get("rol") in ["agente", "supervisor"]:
         if user_found.get("nombre") != "Pablo Galleguillos":
             logger.info(f"[FILTER] Mensaje de EJECUTIVO ({user_found.get('nombre')}) detectado. Forzando modo manual.")
@@ -3802,8 +3774,6 @@ async def webhook(
     phone = _normalize_webhook_phone(phone)
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
-    ingress_timings = {"user_lookup_ms": user_lookup_ms}
-    log_event_started = time.perf_counter()
     try:
         from chatbot.storage import log_event, EventType, get_db as _sync_db
         # Para el log de eventos, usamos el número limpio sin el '+'
@@ -3819,47 +3789,6 @@ async def webhook(
         )
     except:
         pass
-    ingress_timings["log_event_ms"] = round((time.perf_counter() - log_event_started) * 1000, 1)
-
-    provider_message_id = (
-        key.get("id")
-        or msg_obj.get("id")
-        or msg_obj.get("messageId")
-        or data.get("message_id")
-        or data.get("id")
-    )
-
-    # Manual executive messages are persisted with an explicit actor type so
-    # role=assistant is never interpreted as proof that the bot authored them.
-    if from_me and not bot_outbound and text:
-        try:
-            from chatbot.storage import guardar_mensaje
-            from chatbot.conversation_observability import record_conversation_event
-            human_message = await loop.run_in_executor(
-                _WEB_THREAD_POOL,
-                lambda: guardar_mensaje(
-                    phone, "assistant", text,
-                    {
-                        "actor_type": "human_agent",
-                        "actor_id": str((user_found or {}).get("_id") or "human_agent"),
-                        "provider_message_id": str(provider_message_id) if provider_message_id else None,
-                    },
-                ),
-            )
-            await loop.run_in_executor(
-                _WEB_THREAD_POOL,
-                lambda: record_conversation_event(
-                    _sync_db(), event_type="human_message_sent",
-                    conversation_id=human_message.get("conversation_id"),
-                    lead_id=human_message.get("lead_id"),
-                    message_id=human_message.get("message_id"),
-                    actor_type="human_agent",
-                    actor_id=str((user_found or {}).get("_id") or "human_agent"),
-                    metadata={"provider_message_id_present": bool(provider_message_id)},
-                ),
-            )
-        except Exception:
-            logger.exception("[CHATBOT_OBSERVABILITY] human message persistence failed")
     
     # Persist to the durable queue. The durable worker is the only component
     # authorized to batch, invoke the LLM and send a chatbot response.
@@ -3884,7 +3813,6 @@ async def webhook(
                     phone=phone,
                     text=text,
                     conversation_id=None,
-                    ingress_timings=ingress_timings,
                 ),
             )
         except ValueError as exc:
@@ -3893,27 +3821,6 @@ async def webhook(
         except Exception:
             logger.exception("[CHATBOT_QUEUE] persistence failed")
             raise HTTPException(status_code=503, detail="Durable queue unavailable")
-        ingress_timings["webhook_total_ms"] = round(
-            (time.perf_counter() - webhook_started) * 1000, 1
-        )
-        logger.info(
-            "[CHATBOT_INGRESS_ACCEPTED] provider_message_id=%s job_id=%s phone=%s conversation_id=%s",
-            str(provider_message_id), str(job_id), phone,
-            ingress_timings.get("conversation_id"),
-        )
-        logger.info(
-            "[CHATBOT_INGRESS_TIMING] provider_message_id=%s user_lookup_ms=%.1f "
-            "log_event_ms=%.1f lead_lookup_ms=%.1f conversation_resolution_ms=%.1f "
-            "job_insert_ms=%.1f batch_attach_ms=%.1f webhook_total_ms=%.1f",
-            str(provider_message_id),
-            float(ingress_timings.get("user_lookup_ms", 0.0)),
-            float(ingress_timings.get("log_event_ms", 0.0)),
-            float(ingress_timings.get("lead_lookup_ms", 0.0)),
-            float(ingress_timings.get("conversation_resolution_ms", 0.0)),
-            float(ingress_timings.get("job_insert_ms", 0.0)),
-            float(ingress_timings.get("batch_attach_ms", 0.0)),
-            float(ingress_timings.get("webhook_total_ms", 0.0)),
-        )
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
 
     if from_me and bot_outbound:
@@ -3932,8 +3839,6 @@ async def webhook(
             _WEB_THREAD_POOL,
             lambda: mark_human_takeover(
                 phone, source="whatsapp_human_message",
-                reason="human_agent_message",
-                agent_id=str((user_found or {}).get("_id") or "human_agent"),
             ),
         )
         cancelled = await loop.run_in_executor(
@@ -4003,7 +3908,6 @@ async def health_check():
         "background_tasks": background_tasks_status,
         "chatbot": {
             "worker": background_tasks_status.get("chatbot_response", {"status": "missing"}),
-            "v2_worker": background_tasks_status.get("chatbot_response_v2", {"status": "missing"}),
             "queue": queue_health,
         },
         "process_service": {

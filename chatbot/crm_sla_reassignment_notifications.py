@@ -31,6 +31,9 @@ from .mongo_identity import mongo_id_variants
 logger = logging.getLogger(__name__)
 
 NOTIFICATION_TYPE = "sla_reassignment"
+SLA_BREACH_WARNING = "SLA_BREACH_WARNING"
+SLA_REASSIGNED_AWAY = "SLA_REASSIGNED_AWAY"
+SLA_REASSIGNED_TO = "SLA_REASSIGNED_TO"
 MAX_AUTOMATIC_REASSIGNMENT_NUMBER = 2
 COMMITTED_STATUSES = frozenset({"APPLIED", "ALREADY_APPLIED"})
 
@@ -41,12 +44,139 @@ def _value(item: Any, key: str, default: Any = None) -> Any:
     return getattr(item, key, default)
 
 
-def _message(*, lead_id: str, destination_cycle_id: str) -> str:
+def _same_id(left: Any, right: Any) -> bool:
+    return left not in (None, "") and right not in (None, "") and str(left) == str(right)
+
+
+def _lead_for_notification(db: Any, lead_id: str) -> dict[str, Any]:
+    lead = db["leads"].find_one({"_id": {"$in": list(mongo_id_variants(lead_id))}})
+    return dict(lead or {})
+
+
+def _field(lead: Mapping[str, Any], *paths: str, default: str = "") -> str:
+    for path in paths:
+        value: Any = lead
+        for part in path.split("."):
+            if not isinstance(value, Mapping) or part not in value:
+                value = None
+                break
+            value = value[part]
+        if value not in (None, ""):
+            return str(value).strip()
+    return default
+
+
+def _notification_context(db: Any, lead_id: str, destination_cycle_id: str) -> dict[str, str]:
+    lead = _lead_for_notification(db, lead_id)
+    cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": destination_cycle_id}) or {}
+    code = _field(
+        cycle, "property_code", "codigo", "prospecto.codigo", "datos_propiedad.codigo",
+        default="",
+    ) or _field(
+        lead, "property_code", "codigo", "prospecto.codigo", "datos_propiedad.codigo",
+        default="S/N",
+    )
+    client = _field(cycle, "client_name", "lead_name", default="") or _field(
+        lead, "prospecto.nombre", "client_name", default="Cliente"
+    )
+    operation = _field(
+        cycle, "operation", "operacion", default=""
+    ) or _field(lead, "operation", "operacion", "prospecto.operacion", "datos_propiedad.operacion", default="S/I")
+    commune = _field(
+        cycle, "commune", "comuna", default=""
+    ) or _field(lead, "commune", "comuna", "prospecto.comuna", "datos_propiedad.comuna", default="S/I")
+    priority = _field(cycle, "temperature_at_assignment", default="") or _field(
+        lead, "lead_temperature_effective", default="NORMAL"
+    )
+    priority = priority.upper()
+    if priority not in {"HOT", "NORMAL", "COLD"}:
+        priority = "NORMAL"
+    try:
+        from .lead_router import build_secure_crm_url
+        secure_url = build_secure_crm_url(lead, code) if lead else "/crm"
+    except Exception:
+        secure_url = "/crm"
+    return {
+        "client": client,
+        "code": code,
+        "operation": operation,
+        "commune": commune,
+        "priority": "HOT" if priority == "HOT" else "NORMAL",
+        "secure_url": secure_url,
+    }
+
+
+def _new_owner_message(context: Mapping[str, str]) -> str:
     return (
-        "Nuevo lead asignado por vencimiento de SLA.\n"
-        f"Lead: {lead_id}\n"
-        f"Ciclo: {destination_cycle_id}\n"
-        "Abre el lead en el CRM para revisar los datos de contacto."
+        "🔄 Nuevo lead reasignado\n\n"
+        "Se te ha asignado un lead por vencimiento de SLA del ejecutivo anterior.\n\n"
+        f"Cliente: {context['client']}\n"
+        f"Propiedad: {context['code']}\n"
+        f"Operación: {context['operation']}\n"
+        f"Comuna: {context['commune']}\n"
+        f"Prioridad: {context['priority']}\n\n"
+        "⏱️ Tu SLA comienza desde esta nueva asignación.\n\n"
+        f"👉 Gestionar lead:\n{context['secure_url']}"
+    )
+
+
+def _previous_owner_message(context: Mapping[str, str]) -> str:
+    return (
+        "🔄 Lead reasignado por vencimiento de SLA\n\n"
+        f"El lead de la propiedad {context['code']} superó el tiempo de gestión establecido "
+        "y fue reasignado automáticamente.\n\n"
+        "Este lead ya no está disponible para tu gestión en el CRM."
+    )
+
+
+def _create_reassignment_notification(
+    db: Any,
+    *,
+    lead_id: str,
+    assignment_cycle_id: str,
+    notification_type: str,
+    recipient_user_id: str,
+    decision_id: str,
+    reassignment_number: int,
+    message: str,
+    role: str,
+) -> dict[str, Any]:
+    identity = individual_identity(
+        lead_id=lead_id,
+        assignment_cycle_id=assignment_cycle_id,
+        notification_type=notification_type,
+        recipient_user_id=recipient_user_id,
+    )
+    payload = {
+        "message": message,
+        "lead_id": lead_id,
+        "assignment_cycle_id": assignment_cycle_id,
+        "decision_id": decision_id,
+        "automatic_reassignment_number": reassignment_number,
+        "notification_role": role,
+    }
+    return create_pending(
+        db,
+        identity_field="individual_identity",
+        identity=identity,
+        payload=payload,
+        send_after=utc_now(),
+        canonical_fields={
+            "lead_id": lead_id,
+            "assignment_cycle_id": assignment_cycle_id,
+            "notification_type": notification_type,
+            "recipient_user_id": recipient_user_id,
+            "sla_reassignment_decision_id": decision_id,
+            "automatic_reassignment_number": reassignment_number,
+            "notification_role": role,
+            "dedupe_active": True,
+        },
+        metadata={
+            "lead_id": lead_id,
+            "assignment_cycle_id": assignment_cycle_id,
+            "decision_id": decision_id,
+            "notification_role": role,
+        },
     )
 
 
@@ -56,7 +186,7 @@ def enqueue_sla_reassignment_notification(
     decision: Any,
     result: Any,
 ) -> dict[str, Any] | None:
-    """Create or reuse the notification for the new owner only.
+    """Create or reuse the post-commit notification for the new owner.
 
     The deterministic identity is scoped to the reassignment decision and
     recipient.  A third automatic reassignment is rejected defensively even if
@@ -86,35 +216,82 @@ def enqueue_sla_reassignment_notification(
         )
         return None
 
-    identity = f"sla-reassignment:{decision_id}:{recipient_user_id}"
-    payload = {
-        "message": _message(lead_id=lead_id, destination_cycle_id=destination_cycle_id),
-        "lead_id": lead_id,
-        "assignment_cycle_id": destination_cycle_id,
-        "decision_id": decision_id,
-        "automatic_reassignment_number": reassignment_number,
-    }
-    return create_pending(
+    context = _notification_context(db, lead_id, destination_cycle_id)
+    return _create_reassignment_notification(
         db,
-        identity_field="individual_identity",
-        identity=identity,
-        payload=payload,
-        send_after=utc_now(),
-        canonical_fields={
-            "lead_id": lead_id,
-            "assignment_cycle_id": destination_cycle_id,
-            "notification_type": NOTIFICATION_TYPE,
-            "recipient_user_id": recipient_user_id,
-            "sla_reassignment_decision_id": decision_id,
-            "automatic_reassignment_number": reassignment_number,
-            "dedupe_active": True,
-        },
-        metadata={
-            "lead_id": lead_id,
-            "assignment_cycle_id": destination_cycle_id,
-            "decision_id": decision_id,
-        },
+        lead_id=lead_id,
+        assignment_cycle_id=destination_cycle_id,
+        notification_type=SLA_REASSIGNED_TO,
+        recipient_user_id=recipient_user_id,
+        decision_id=decision_id,
+        reassignment_number=reassignment_number,
+        message=_new_owner_message(context),
+        role="new_owner",
     )
+
+
+def enqueue_sla_reassignment_away_notification(
+    db: Any,
+    *,
+    decision: Any,
+    result: Any,
+) -> dict[str, Any] | None:
+    """Create the independent post-commit notice for the previous owner."""
+    status = str(_value(result, "status", "") or "")
+    if not bool(_value(result, "committed", False)) or status not in COMMITTED_STATUSES:
+        return None
+    decision_id = str(_value(result, "decision_id") or _value(decision, "decision_id") or "").strip()
+    lead_id = str(_value(result, "lead_id") or _value(decision, "lead_id") or "").strip()
+    recipient_user_id = str(
+        _value(result, "previous_owner_user_id")
+        or _value(decision, "previous_owner_user_id")
+        or ""
+    ).strip()
+    source_cycle_id = str(
+        _value(result, "source_cycle_id")
+        or _value(decision, "current_assignment_cycle_id")
+        or ""
+    ).strip()
+    reassignment_number = _value(result, "automatic_reassignment_number")
+    try:
+        reassignment_number = int(reassignment_number)
+    except (TypeError, ValueError):
+        reassignment_number = None
+    if not decision_id or not lead_id or not recipient_user_id or not source_cycle_id:
+        raise ValueError("sla reassignment away notification identity is incomplete")
+    if reassignment_number not in range(1, MAX_AUTOMATIC_REASSIGNMENT_NUMBER + 1):
+        return None
+    context = _notification_context(db, lead_id, source_cycle_id)
+    return _create_reassignment_notification(
+        db,
+        lead_id=lead_id,
+        assignment_cycle_id=source_cycle_id,
+        notification_type=SLA_REASSIGNED_AWAY,
+        recipient_user_id=recipient_user_id,
+        decision_id=decision_id,
+        reassignment_number=reassignment_number,
+        message=_previous_owner_message(context),
+        role="previous_owner",
+    )
+
+
+def enqueue_sla_reassignment_notifications(
+    db: Any,
+    *,
+    decision: Any,
+    result: Any,
+) -> dict[str, Any] | None:
+    """Create both notices after the transaction has committed.
+
+    The existing singular function remains the new-owner compatibility entry
+    point for callers/tests.  The production integration calls this function,
+    which gives each recipient an independent idempotency identity.
+    """
+    if not bool(_value(result, "committed", False)) or str(_value(result, "status", "") or "") not in COMMITTED_STATUSES:
+        return None
+    previous = enqueue_sla_reassignment_away_notification(db, decision=decision, result=result)
+    current = enqueue_sla_reassignment_notification(db, decision=decision, result=result)
+    return {"previous_owner": previous, "new_owner": current}
 
 
 def _delivery_state(receipt: Mapping[str, Any]) -> tuple[str, str | None]:
@@ -150,28 +327,52 @@ def _validate_pending_notification(db: Any, notification: Mapping[str, Any]) -> 
     lead = db["leads"].find_one({"_id": {"$in": list(mongo_id_variants(lead_id))}})
     if not lead:
         return False, "lead_not_found"
-    cycle = db["crm_assignment_cycles"].find_one({
-        "assignment_cycle_id": cycle_id,
-        "cycle_status": "active",
-    })
-    if not cycle:
-        return False, "destination_cycle_not_current_active"
-    if str(cycle.get("assigned_to_user_id") or "") != recipient_id:
-        return False, "destination_owner_changed"
-    if str(cycle.get("lead_id") or "") != str(lead.get("_id") or ""):
-        return False, "cycle_lead_mismatch"
+    notification_type = str(notification.get("notification_type") or "").strip()
+    role = str(
+        notification.get("notification_role")
+        or (notification.get("metadata") or {}).get("notification_role")
+        or (notification.get("payload") or {}).get("notification_role")
+        or ""
+    ).strip()
+    is_previous_owner = notification_type == SLA_REASSIGNED_AWAY or role == "previous_owner"
+    if is_previous_owner:
+        cycle = db["crm_assignment_cycles"].find_one({
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": {"$in": ["reassigned", "closed"]},
+        })
+        if not cycle:
+            return False, "source_cycle_not_reassigned"
+        if str(cycle.get("assigned_to_user_id") or "") != recipient_id:
+            return False, "source_owner_changed"
+        if not _same_id(cycle.get("lead_id"), lead.get("_id")):
+            return False, "cycle_lead_mismatch"
+        lifecycle = lead.get("lifecycle") or {}
+        current_cycle = lifecycle.get("current_assignment_cycle_id") or lead.get("assignment_cycle_id")
+        if current_cycle in (None, "") or str(current_cycle) == cycle_id:
+            return False, "lead_current_cycle_changed"
+    else:
+        cycle = db["crm_assignment_cycles"].find_one({
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": "active",
+        })
+        if not cycle:
+            return False, "destination_cycle_not_current_active"
+        if str(cycle.get("assigned_to_user_id") or "") != recipient_id:
+            return False, "destination_owner_changed"
+        if not _same_id(cycle.get("lead_id"), lead.get("_id")):
+            return False, "cycle_lead_mismatch"
 
-    lifecycle = lead.get("lifecycle") or {}
-    current_cycle = lifecycle.get("current_assignment_cycle_id") or lead.get("assignment_cycle_id")
-    if current_cycle in (None, "") or str(current_cycle) != cycle_id:
-        return False, "lead_current_cycle_changed"
-    owner_ids = (
-        lifecycle.get("assigned_to_user_id"),
-        lead.get("assignment_mirror_owner_user_id"),
-        lead.get("assigned_to_user_id"),
-    )
-    if any(value not in (None, "") and str(value) != recipient_id for value in owner_ids):
-        return False, "lead_current_owner_changed"
+        lifecycle = lead.get("lifecycle") or {}
+        current_cycle = lifecycle.get("current_assignment_cycle_id") or lead.get("assignment_cycle_id")
+        if current_cycle in (None, "") or str(current_cycle) != cycle_id:
+            return False, "lead_current_cycle_changed"
+        owner_ids = (
+            lifecycle.get("assigned_to_user_id"),
+            lead.get("assignment_mirror_owner_user_id"),
+            lead.get("assigned_to_user_id"),
+        )
+        if any(value not in (None, "") and str(value) != recipient_id for value in owner_ids):
+            return False, "lead_current_owner_changed"
 
     successful = db[COLLECTION].find_one({
         "individual_identity": notification.get("individual_identity"),
@@ -200,7 +401,9 @@ def process_one_sla_reassignment_sync(
         worker_id=worker_id,
         now=current,
         extra_filter={
-            "notification_type": NOTIFICATION_TYPE,
+            "notification_type": {"$in": [
+                NOTIFICATION_TYPE, SLA_REASSIGNED_AWAY, SLA_REASSIGNED_TO,
+            ]},
             "message_domain": "commercial_notification",
             "provider_message_id": {"$in": [None]},
             "actually_delivered": {"$ne": True},

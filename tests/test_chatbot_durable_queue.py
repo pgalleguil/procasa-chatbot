@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+import mongomock
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -583,3 +584,158 @@ def test_expired_lease_is_retryable_before_send_but_unknown_after_send_started()
     )
     recovered = queue.reconcile_expired_leases(after, now=NOW + timedelta(seconds=17))
     assert recovered == {"retryable": 0, "delivery_unknown": 1}
+
+
+def _runtime_test_db(name="runtime-control-tests"):
+    from chatbot import runtime_control as rc
+    database = mongomock.MongoClient()[name]
+    rc.ensure_runtime_control(database, initial_mode=rc.V1_ACTIVE, now=NOW)
+    queue.ensure_queue_indexes(database)
+    from chatbot import turn_queue as tq
+    tq.ensure_indexes(database)
+    return database, rc, tq
+
+
+def test_runtime_drain_routes_new_inbounds_and_fences_old_v1_before_provider():
+    db, rc, tq = _runtime_test_db("runtime-drain")
+    old_job_id = queue.create_inbound_job(
+        db, inbound_provider_message_id="old-v1-inbound", phone="+56911112222",
+        text="quiero verla", received_at=NOW,
+    )
+    old_batch = queue.claim_pending_batch(
+        db, worker_id="v1-worker", now=NOW + timedelta(seconds=15),
+    )
+    assert old_batch and old_batch["pipeline_version"] == rc.V1
+    assert rc.transition_runtime(
+        db, to_mode=rc.DRAINING_TO_V2, expected_mode=rc.V1_ACTIVE,
+        now=NOW + timedelta(seconds=16),
+    )
+    new = tq.persist_inbound(
+        db, provider_message_id="new-v2-inbound", conversation_id="conv-1",
+        lead_id="lead-1", phone="+56911112222", text="mañana", received_at=NOW,
+        quiet_seconds=0,
+    )
+    new_job = db[tq.JOB_COLLECTION].find_one({"_id": new.job_id})
+    assert new_job["pipeline_version"] == rc.V2
+    assert db[tq.TURN_COLLECTION].find_one({"_id": new.turn_id})["state"] == tq.TURN_PENDING
+    assert rc.worker_can_claim(db, old_batch) is True
+    assert rc.worker_can_send(db, old_batch) is False
+    assert rc.runtime_fence(db, old_batch, phase="send")["reason"] == "FENCED_OUT"
+    assert db[queue.JOB_COLLECTION].find_one({"_id": old_job_id})["state"] == queue.ST_BATCHING
+    assert db[queue.JOB_COLLECTION].find_one({"_id": old_job_id}).get("outbound_provider_message_id") is None
+
+
+def test_fenced_v1_batch_is_recoverable_by_v2_and_activation_is_atomic():
+    db, rc, tq = _runtime_test_db("runtime-migration")
+    old_job_id = queue.create_inbound_job(
+        db, inbound_provider_message_id="migrate-v1-inbound", phone="+56911112222",
+        text="quiero verla mañana", received_at=NOW,
+    )
+    old_batch = queue.claim_pending_batch(db, worker_id="v1-worker", now=NOW + timedelta(seconds=15))
+    rc.transition_runtime(db, to_mode=rc.DRAINING_TO_V2, expected_mode=rc.V1_ACTIVE, now=NOW + timedelta(seconds=16))
+    migration = tq.migrate_legacy_batch_to_v2(
+        db, batch_id=old_batch["_id"], now=NOW + timedelta(seconds=17),
+    )
+    assert migration["migrated"] is True
+    assert db[tq.JOB_COLLECTION].count_documents({"pipeline_version": rc.V2}) == 1
+    queue.finalize_batch(
+        db, batch_id=old_batch["_id"], state=queue.ST_FAILED_TERMINAL,
+        error="FENCED_OUT_RUNTIME_GENERATION", worker_id="v1-worker",
+        delivery_token=old_batch["delivery_token"], now=NOW + timedelta(seconds=18),
+    )
+    active = rc.activate_after_drain(
+        db, expected_drain_mode=rc.DRAINING_TO_V2, now=NOW + timedelta(seconds=19),
+    )
+    assert active and active["mode"] == rc.V2_ACTIVE
+    migrated_turn = tq.claim_pending_turn(db, worker_id="v2-worker", now=NOW + timedelta(seconds=20))
+    assert migrated_turn and migrated_turn["pipeline_version"] == rc.V2
+    sent = []
+    delivered = tq.deliver_claimed_turn(
+        db, turn=migrated_turn, worker_id="v2-worker", response="continuidad",
+        sender=lambda phone, text: sent.append((phone, text)) or {
+            "success": True, "provider_message_id": "v2-out", "delivery_status": "accepted",
+        }, now=NOW + timedelta(seconds=21),
+    )
+    assert delivered.sent is True
+    assert len(sent) == 1
+    assert db[queue.JOB_COLLECTION].find_one({"_id": old_job_id})["state"] == queue.ST_FAILED_TERMINAL
+
+
+def test_runtime_accepted_and_delivery_unknown_work_never_migrate():
+    from chatbot import runtime_control as rc
+    accepted = rc.migration_decision({"outbound_provider_message_id": "out-1"})
+    unknown = rc.migration_decision({"delivery_attempts": [{"status": "started"}]})
+    assert accepted["eligible"] is False
+    assert unknown["eligible"] is False
+
+
+def test_runtime_rollback_drains_v2_then_routes_new_v1():
+    db, rc, tq = _runtime_test_db("runtime-rollback")
+    rc.transition_runtime(db, to_mode=rc.DRAINING_TO_V2, expected_mode=rc.V1_ACTIVE, now=NOW)
+    rc.transition_runtime(db, to_mode=rc.V2_ACTIVE, expected_mode=rc.DRAINING_TO_V2, now=NOW + timedelta(seconds=1))
+    v2 = tq.persist_inbound(
+        db, provider_message_id="rollback-v2", conversation_id="rollback",
+        lead_id="lead-r", phone="+56911112222", text="hola", received_at=NOW,
+        quiet_seconds=0,
+    )
+    v2_turn = tq.claim_pending_turn(db, worker_id="v2-worker", now=NOW + timedelta(seconds=2))
+    assert v2_turn
+    tq.deliver_claimed_turn(
+        db, turn=v2_turn, worker_id="v2-worker", response="respuesta",
+        sender=lambda _phone, _text: {"success": True, "provider_message_id": "rollback-out"},
+        now=NOW + timedelta(seconds=3),
+    )
+    draining = rc.transition_runtime(db, to_mode=rc.DRAINING_TO_V1, expected_mode=rc.V2_ACTIVE, now=NOW + timedelta(seconds=4))
+    assert draining and draining["target"] == rc.V1
+    v1_job = queue.create_inbound_job(
+        db, inbound_provider_message_id="rollback-v1", phone="+56911112222",
+        text="nueva consulta", received_at=NOW + timedelta(seconds=4),
+    )
+    v1_doc = db[queue.JOB_COLLECTION].find_one({"_id": v1_job})
+    assert v1_doc["pipeline_version"] == rc.V1
+    assert queue.claim_pending_batch(db, worker_id="v1-worker", now=NOW + timedelta(seconds=20)) is None
+    active = rc.activate_after_drain(db, expected_drain_mode=rc.DRAINING_TO_V1, now=NOW + timedelta(seconds=21))
+    assert active and active["mode"] == rc.V1_ACTIVE
+    assert queue.claim_pending_batch(db, worker_id="v1-worker", now=NOW + timedelta(seconds=22))
+
+
+def test_release_a_keeps_v1_active_and_does_not_admit_v2_sender():
+    db, rc, tq = _runtime_test_db("release-a-v1")
+    control = rc.get_runtime_control(db)
+    assert control["mode"] == rc.V1_ACTIVE
+    assert rc.route_new_inbound(db)["pipeline_version"] == rc.V1
+    legacy_job = queue.create_inbound_job(
+        db, inbound_provider_message_id="release-a-inbound", phone="+56911112222",
+        text="consulta", received_at=NOW,
+    )
+    assert db[tq.JOB_COLLECTION].count_documents({"kind": tq.KIND_JOB}) == 0
+    assert db[queue.JOB_COLLECTION].find_one({"_id": legacy_job})["pipeline_version"] == rc.V1
+    assert tq.claim_pending_turn(db, worker_id="v2-disabled", now=NOW + timedelta(seconds=10)) is None
+
+
+def test_provider_duplicate_is_idempotent_across_cutover_and_rollback():
+    db, rc, tq = _runtime_test_db("cross-pipeline-idempotency")
+    old_id = queue.create_inbound_job(
+        db, inbound_provider_message_id="cross-pipeline-1", phone="+56911112222",
+        text="original", received_at=NOW,
+    )
+    rc.transition_runtime(db, to_mode=rc.DRAINING_TO_V2, expected_mode=rc.V1_ACTIVE, now=NOW)
+    duplicate_old = queue.create_inbound_job(
+        db, inbound_provider_message_id="cross-pipeline-1", phone="+56911112222",
+        text="duplicado", received_at=NOW + timedelta(seconds=1),
+    )
+    assert duplicate_old == old_id
+    assert db[tq.JOB_COLLECTION].count_documents({"kind": tq.KIND_JOB}) == 0
+
+    rc.transition_runtime(db, to_mode=rc.V2_ACTIVE, expected_mode=rc.DRAINING_TO_V2, now=NOW + timedelta(seconds=1))
+    v2_result = tq.persist_inbound(
+        db, provider_message_id="cross-pipeline-2", conversation_id="cross",
+        lead_id="lead-cross", phone="+56911112222", text="v2 original",
+        received_at=NOW, quiet_seconds=0,
+    )
+    rc.transition_runtime(db, to_mode=rc.DRAINING_TO_V1, expected_mode=rc.V2_ACTIVE, now=NOW + timedelta(seconds=2))
+    duplicate_v2 = queue.create_inbound_job(
+        db, inbound_provider_message_id="cross-pipeline-2", phone="+56911112222",
+        text="duplicado v2", received_at=NOW + timedelta(seconds=3),
+    )
+    assert duplicate_v2 == v2_result.job_id

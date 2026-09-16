@@ -77,6 +77,7 @@ from .conversation_policy import (
     build_visit_preference_confirmation,
     is_acknowledgement_only,
     classify_local_semantic_intents,
+    is_property_search_intent,
 )
 
 logger = logging.getLogger(__name__)
@@ -1467,6 +1468,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     rejection_without_alternative = property_rejected(original_message) and not alternatives_requested_now
     rag_search_state = dict(prospecto_actual.get("rag_search_state") or {})
     stored_rag_criteria = dict(rag_search_state.get("criteria") or {})
+    search_intent_active = bool(
+        rag_search_state.get("search_intent")
+        or prospecto_actual.get("search_intent")
+        or is_property_search_intent(original_message)
+    )
     extracted_rag_filters, _ = extraer_filtros_estructurados(original_message)
     explicit_rag_criteria = {}
     if extracted_rag_filters.get("operacion"):
@@ -1481,13 +1487,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     budget = extracted_rag_filters.get("precio_uf_max") or extracted_rag_filters.get("precio_clp_max")
     if budget:
         explicit_rag_criteria["presupuesto"] = budget
-    if explicit_rag_criteria:
+    if explicit_rag_criteria or search_intent_active:
         stored_rag_criteria.update(explicit_rag_criteria)
         rag_search_state = await _run_sync(update_rag_search_state, phone, {
             "criteria": stored_rag_criteria,
+            "search_intent": search_intent_active,
             "criteria_updated_at": datetime.now(CHILE_TZ).isoformat(),
         })
         prospecto_actual["rag_search_state"] = rag_search_state
+        prospecto_actual["search_intent"] = search_intent_active
 
     # A property's original attributes are not copied as customer preferences.
     # Operation may still be used as transactional context for the existing RAG
@@ -1513,7 +1521,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     else:
         # LÓGICA RAG: la propiedad activa no impide buscar alternativas cuando
         # el cliente las solicita. Un rechazo sin solicitud solo ofrece ayuda.
-        is_search_intent = any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones", "más"])
+        is_search_intent = bool(
+            search_intent_active
+            or any(x in msg_lower for x in ["busco", "otra", "tienes", "opciones", "más"])
+        )
         is_initial_search = len(historial) <= 6 # Heurística para etapas tempranas
         rag_state = (prospecto_actual.get("rag_filter_relaxation") or {})
         relaxation_accepted = filter_relaxation_accepted(

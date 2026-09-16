@@ -26,7 +26,15 @@ def _safe_renderer(state, facts, message):
         if result_count > 0:
             return "Encontré una alternativa que coincide con los criterios que compartiste. Puedo mostrarte sus detalles para que la revises."
         return "No encontré opciones exactas con esos criterios. Podemos ampliar la búsqueda si quieres."
-    action = select_next_best_action(state, message, facts=facts, property_resolved=bool(state.get("property_code")))
+    # ``PROPERTY_SEARCH`` is intentionally independent of a listing code.  A
+    # safe repair for a general search must continue the criteria flow rather
+    # than falling back to the property-specific link/code request.
+    action = select_next_best_action(
+        state,
+        message,
+        facts=facts,
+        property_resolved=bool(state.get("property_code")),
+    )
     return deterministic_response(state, action, facts, message) or ""
 
 
@@ -52,7 +60,14 @@ def _required_components(plan, facts):
     available = {"price": ("precio_uf", "precio_clp"), "common_expenses": ("gastos_comunes",),
                  "bedrooms": ("dormitorios",), "parking": ("estacionamientos",),
                  "surface": ("superficie_util", "superficie_total")}
-    return [item for item in plan.get("primary_intents", []) if item not in available or any(facts.get(key) not in (None, "") for key in available[item])]
+    # Search is an action, not a factual component that the writer must
+    # mention verbatim.  Requiring it here would make the final safety repair
+    # treat a valid progressive question as a dropped property fact.
+    return [
+        item for item in plan.get("primary_intents", [])
+        if item != "PROPERTY_SEARCH"
+        and (item not in available or any(facts.get(key) not in (None, "") for key in available[item]))
+    ]
 
 
 def _covers(component, response, facts):

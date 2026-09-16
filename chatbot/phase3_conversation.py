@@ -10,6 +10,13 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 
+from chatbot.conversation_policy import (
+    build_property_search_response,
+    contains_property_identifier,
+    extract_search_criteria,
+    is_property_search_intent,
+)
+
 POLICY_VERSION = "conversation_policy_v3_1"
 PROMPT_VERSION = "prompt_phase3_grounded_nba_v2"
 ACTION_VALUES = {"ANSWER_ONLY", "ASK_CLARIFICATION", "ASK_QUALIFICATION", "PROPOSE_VISIT", "HANDOFF_HUMAN", "WAIT_CUSTOMER", "SEARCH_PROPERTY"}
@@ -228,6 +235,54 @@ def build_conversation_state(lead: dict, messages: list[dict] | None = None, eve
     last = _last_user(messages)
     message = str(last.get("content") or "")
     operation = normalize_operation(context.get("operation") or prospect.get("operacion") or lead.get("operacion"))
+    persisted_search_state = prospect.get("rag_search_state") or lead.get("rag_search_state") or {}
+    persisted_search_criteria = (
+        persisted_search_state.get("criteria")
+        if isinstance(persisted_search_state, dict)
+        else {}
+    ) or prospect.get("search_criteria") or lead.get("search_criteria") or {}
+    search_criteria = dict(persisted_search_criteria) if isinstance(persisted_search_criteria, dict) else {}
+    search_intent_seen = bool(
+        prospect.get("search_intent") or lead.get("search_intent")
+        or (persisted_search_state.get("search_intent") if isinstance(persisted_search_state, dict) else False)
+        or search_criteria
+    )
+    # Rebuild the search state from causal customer turns.  This keeps
+    # criterion-only follow-ups ("Arrendar", "Providencia", "2 dormitorios")
+    # attached to the original search without treating assistant text or
+    # export artefacts as new customer criteria.
+    for item in messages:
+        if item.get("role") != "user":
+            continue
+        content = str(item.get("content") or "")
+        if is_property_search_intent(content):
+            search_intent_seen = True
+        if search_intent_seen:
+            search_criteria = extract_search_criteria(content, search_criteria)
+    current_property_specific = contains_property_identifier(message)
+    if current_property_specific:
+        # A current explicit URL/code belongs to the property-specific route;
+        # previous search criteria remain useful history but are not the
+        # active intent for this turn.
+        current_search_intent = False
+    else:
+        current_search_intent = bool(search_intent_seen)
+        last_search_index = max(
+            (index for index, item in enumerate(messages)
+             if item.get("role") == "user" and is_property_search_intent(str(item.get("content") or ""))),
+            default=-1,
+        )
+        last_identifier_index = max(
+            (index for index, item in enumerate(messages)
+             if item.get("role") == "user" and contains_property_identifier(str(item.get("content") or ""))),
+            default=-1,
+        )
+        if last_identifier_index > last_search_index:
+            # A resolved explicit listing closes the previous general-search
+            # turn.  A later explicit search will reopen it.
+            current_search_intent = False
+    if not operation:
+        operation = normalize_operation(search_criteria.get("operation") or search_criteria.get("operacion"))
     owner = "human" if lead.get("human_active") or lead.get("conversation_owner") == "human" else "bot"
     owner_seen_in_history = any(
         item.get("role") == "user" and _OWNER.search(str(item.get("content") or ""))
@@ -262,10 +317,25 @@ def build_conversation_state(lead: dict, messages: list[dict] | None = None, eve
         "property_id": context.get("property_id") or context.get("property_code") or prospect.get("codigo"),
         "property_code": context.get("property_code") or context.get("property_id") or prospect.get("codigo"),
         "operation": operation,
+        "search_intent": current_search_intent,
+        "search_criteria": search_criteria,
+        "property_specific_intent": current_property_specific,
         "actor_intent": actor_intent,
-        "current_intent": "OWNER_SERVICE_REQUEST" if actor_intent == "OWNER" else ("VISIT_INTENT" if (_VISIT.search(message) or preference) else ("HUMAN_REQUEST" if _HUMAN.search(message) else "EXPLORATORY")),
-        "intent_confidence": 0.95 if (_VISIT.search(message) or preference or _HUMAN.search(message)) else 0.55,
-        "intent_evidence": "explicit_visit_or_preference" if (_VISIT.search(message) or preference) else "customer_message",
+        "current_intent": "OWNER_SERVICE_REQUEST" if actor_intent == "OWNER" else (
+            "PROPERTY_SPECIFIC" if current_property_specific else (
+                "PROPERTY_SEARCH" if current_search_intent else (
+                    "VISIT_INTENT" if (_VISIT.search(message) or preference) else (
+                        "HUMAN_REQUEST" if _HUMAN.search(message) else "EXPLORATORY"
+                    )
+                )
+            )
+        ),
+        "intent_confidence": 0.95 if (current_property_specific or current_search_intent or _VISIT.search(message) or preference or _HUMAN.search(message)) else 0.55,
+        "intent_evidence": "explicit_property_reference" if current_property_specific else (
+            "property_search_context" if current_search_intent else (
+                "explicit_visit_or_preference" if (_VISIT.search(message) or preference) else "customer_message"
+            )
+        ),
         "customer_goal": message or None,
         "financing_status": readiness.get("financing_status") or prospect.get("financing_status") or "unknown",
         "rental_docs_readiness": readiness.get("rental_docs_readiness") or prospect.get("rental_docs_readiness") or "unknown",
@@ -310,12 +380,25 @@ def build_response_plan(state: dict, user_message: str, facts: dict | None = Non
         if any(term in text for term in terms): topics.append(topic)
     if _PRICE_QUESTION.search(text) and "price" not in topics:
         topics.append("price")
+    current_search_signal = bool(
+        is_property_search_intent(user_message)
+        or extract_search_criteria(user_message)
+    ) and not contains_property_identifier(user_message)
+    search_active = bool(
+        current_search_signal
+        and (state.get("search_intent") or is_property_search_intent(user_message))
+        and not state.get("property_specific_intent")
+    )
+    if search_active:
+        topics.append("PROPERTY_SEARCH")
     secondary = []
     if _VISIT.search(user_message) or state.get("visit_intent"): secondary.append("VISIT")
     if _HUMAN.search(user_message): secondary.append("HUMAN_HANDOFF")
-    return {"actor": state.get("actor_intent"), "primary_intents": topics,
+    return {"actor": state.get("actor_intent"), "primary_intents": list(dict.fromkeys(topics)),
             "secondary_intents": secondary, "facts_required": topics,
-            "business_actions": (["CAPTURE_VISIT"] if "VISIT" in secondary else []) +
+            "search_criteria": dict(state.get("search_criteria") or {}),
+            "business_actions": (["SEARCH_PROPERTY"] if search_active else []) +
+                                (["CAPTURE_VISIT"] if "VISIT" in secondary else []) +
                                 (["HANDOFF"] if "HUMAN_HANDOFF" in secondary else [])}
 
 
@@ -336,7 +419,18 @@ def select_next_best_action(state: dict, user_message: str, *, facts=None, prope
         action, reason = "PROPOSE_VISIT", "explicit_visit_signal_precedes_qualification"
     elif state.get("operation") in _OPERATION_CONFLICT and _OPERATION_CONFLICT[state["operation"]].search(text):
         action, reason = "ASK_CLARIFICATION", "operation_context_conflict"
-    elif not property_resolved and (_PROPERTY_SIGNAL.search(text) or _FACT_QUESTION.search(text)):
+    elif (
+        (is_property_search_intent(text) or extract_search_criteria(text))
+        and (state.get("search_intent") or is_property_search_intent(text))
+        and not state.get("property_specific_intent")
+        and not contains_property_identifier(text)
+    ):
+        action, reason = "SEARCH_PROPERTY", "progressive_property_search"
+    elif (
+        not property_resolved
+        and (_PROPERTY_SIGNAL.search(text) or _FACT_QUESTION.search(text))
+        and not _has_fact_for_question(text, facts)
+    ):
         action, reason = "ASK_CLARIFICATION", "property_context_unresolved"
     elif state.get("operation") == "Arriendo" and state.get("rental_docs_readiness") == "needs_guidance":
         action, reason = "ASK_QUALIFICATION", "provide_rental_guidance_without_sensitive_request"
@@ -377,6 +471,14 @@ def deterministic_response(state: dict, action: dict, facts: dict, user_message:
         return "Podemos revisar los antecedentes de tu propiedad y el servicio de captación. Un ejecutivo puede confirmar las condiciones aplicables."
     if kind == "HANDOFF_HUMAN":
         return "Entiendo. Voy a derivar tu solicitud a un ejecutivo para que continúe la atención."
+    if kind == "SEARCH_PROPERTY":
+        criteria = dict(state.get("search_criteria") or {})
+        if isinstance(facts.get("search_criteria"), dict):
+            criteria.update(facts["search_criteria"])
+        return build_property_search_response(
+            criteria,
+            rag_result_count=facts.get("rag_result_count"),
+        )
     if kind == "PROPOSE_VISIT":
         factual = _fact_answer(user_message, facts)
         preference = state.get("visit_preference")

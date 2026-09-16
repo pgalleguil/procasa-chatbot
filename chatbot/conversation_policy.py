@@ -113,6 +113,15 @@ _FALLBACK_AVAILABILITY_RE = re.compile(
     r"\b(?:disponible|disponibilidad|dispnible|disponble|sigue\s+disponible|a[uú]n\s+est[aá])\b",
     re.IGNORECASE,
 )
+_PROPERTY_SEARCH_RE = re.compile(
+    r"\b(?:busco|buscar|estoy\s+buscando|necesito|quiero\s+encontrar)\b"
+    r"(?:\s+(?:una?|alguna?))?\s+"
+    r"(?:propiedad(?:es)?|casa(?:s)?|depto(?:s)?|departamento(?:s)?|"
+    r"oficina(?:s)?|local(?:es)?|sitio(?:s)?|terreno(?:s)?|algo|opciones?)\b|"
+    r"\bquiero\s+(?:comprar|arrendar|alquilar)\b(?!\s+mi\b)|"
+    r"\bbusco\s+(?:algo|una?\s+opci[oó]n)\s+en\b",
+    re.IGNORECASE,
+)
 _FALLBACK_PRICE_RE = re.compile(
     r"\b(?:precio|valor|cu[aá]nto\s+(?:vale|cuesta|sale)|cu[aá]nto\s+es|uf)\b",
     re.IGNORECASE,
@@ -190,6 +199,136 @@ def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def is_property_search_intent(message: str) -> bool:
+    """Detect a general property search, distinct from a specific listing.
+
+    This is intentionally based on the customer's current wording.  A URL,
+    code or other explicit identifier belongs to the property-specific flow;
+    a generic request such as ``"busco una propiedad"`` must instead enter
+    progressive search and never be redirected to the link/code gate.
+    """
+    normalized = _normalize_text(message)
+    if not normalized or contains_property_identifier(normalized):
+        return False
+    return bool(_PROPERTY_SEARCH_RE.search(normalized))
+
+
+def extract_search_criteria(message: str, existing: dict | None = None) -> dict:
+    """Extract only lightweight search criteria from one customer message.
+
+    The durable RAG extractor remains the source of truth for database
+    searches.  This companion extractor gives the policy/fallback layers a
+    stable, I/O-free state representation so they can ask the next missing
+    criterion when the writer is unavailable.
+    """
+    text = _normalize_text(message)
+    criteria = dict(existing or {})
+    if not text:
+        return criteria
+
+    if re.search(r"\b(?:venta|comprar|compra)\b", text):
+        criteria["operation"] = "Venta"
+        criteria["operacion"] = "Venta"
+    elif re.search(r"\b(?:arriendo|arrendar|alquiler|alquilar)\b", text):
+        criteria["operation"] = "Arriendo"
+        criteria["operacion"] = "Arriendo"
+
+    type_patterns = (
+        (r"\b(?:departamento|depto|depa|flat)\b", "Departamento"),
+        (r"\bcasas?\b", "Casa"),
+        (r"\boficinas?\b", "Oficina"),
+        (r"\blocal(?:es)?(?:\s+comercial(?:es)?)?\b", "Local Comercial"),
+        (r"\b(?:sitio|terreno)s?\b", "Sitio"),
+    )
+    for pattern, value in type_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            criteria["property_type"] = value
+            criteria["tipo"] = value
+            break
+
+    # Keep this list deliberately explicit.  It avoids treating arbitrary
+    # words after "en" as a commune while covering the communes used by the
+    # RAG/search flow and the historical fixtures.
+    commune_names = (
+        ("providencia", "Providencia"), ("ñuñoa", "Ñuñoa"), ("nunoa", "Ñuñoa"),
+        ("maipu", "Maipú"), ("maipú", "Maipú"), ("santiago", "Santiago"),
+        ("las condes", "Las Condes"), ("vitacura", "Vitacura"),
+        ("la reina", "La Reina"), ("la florida", "La Florida"), ("macul", "Macul"),
+        ("san miguel", "San Miguel"), ("estación central", "Estación Central"),
+        ("estacion central", "Estación Central"), ("quilicura", "Quilicura"),
+        ("colina", "Colina"), ("lo barnechea", "Lo Barnechea"),
+        ("independencia", "Independencia"), ("recoleta", "Recoleta"),
+        ("peñalolén", "Peñalolén"), ("penalolen", "Peñalolén"),
+        ("concepción", "Concepción"), ("concepcion", "Concepción"),
+        ("viña del mar", "Viña del Mar"), ("vina del mar", "Viña del Mar"),
+    )
+    for commune, display_name in sorted(commune_names, key=lambda item: len(item[0]), reverse=True):
+        if re.search(rf"\b{re.escape(commune)}\b", text, re.IGNORECASE):
+            criteria["commune"] = display_name
+            criteria["comuna"] = criteria["commune"]
+            break
+
+    budget = re.search(
+        r"(?:m[aá]ximo|hasta|tope|presupuesto(?:\s+de)?|no\s+m[aá]s\s+de)\s*"
+        r"(?:\$\s*)?([\d.]+(?:,\d+)?)\s*(uf|mil|millones?|m)?\b|"
+        r"\b([\d.]+(?:,\d+)?)\s*(uf|mil|millones?)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if budget:
+        amount = next((group for group in budget.groups()[::2] if group), None)
+        unit = next((group for group in budget.groups()[1::2] if group), None)
+        if amount:
+            criteria["budget"] = f"{amount} {unit}".strip() if unit else amount
+            criteria["presupuesto"] = criteria["budget"]
+
+    bedrooms = re.search(
+        r"\b(\d+)\s*(?:dormitorios?|habitaciones?)\b|"
+        r"\b(?:dormitorios?|habitaciones?)\s*[:=]?\s*(\d+)\b",
+        text,
+        re.IGNORECASE,
+    )
+    if bedrooms:
+        value = bedrooms.group(1) or bedrooms.group(2)
+        criteria["bedrooms"] = int(value)
+        criteria["dormitorios"] = int(value)
+    return criteria
+
+
+def build_property_search_response(
+    criteria: dict | None = None,
+    *,
+    rag_result_count: int | None = None,
+) -> str:
+    """Render the next useful search step without requiring a listing code."""
+    raw = dict(criteria or {})
+
+    def value(*keys):
+        return next((raw.get(key) for key in keys if raw.get(key) not in (None, "")), None)
+
+    if rag_result_count is not None:
+        try:
+            result_count = int(rag_result_count)
+        except (TypeError, ValueError):
+            result_count = None
+        if result_count is not None:
+            if result_count > 0:
+                return "Encontré opciones que coinciden con los criterios que compartiste. ¿Quieres que revisemos alguna?"
+            return "No encontré opciones exactas con esos criterios. ¿Quieres que ampliemos o cambiemos algún criterio de búsqueda?"
+
+    missing = (
+        ("operation", "operacion", "¿Buscas comprar o arrendar?"),
+        ("commune", "comuna", "Perfecto. ¿En qué comuna o sector buscas?"),
+        ("property_type", "tipo", "¿Buscas departamento, casa u otro tipo de propiedad?"),
+        ("budget", "presupuesto", "¿Tienes un presupuesto máximo para la búsqueda?"),
+        ("bedrooms", "dormitorios", "¿Cuántos dormitorios necesitas?"),
+    )
+    for first, second, question in missing:
+        if value(first, second) in (None, ""):
+            return question
+    return "Perfecto, buscaré opciones con esos criterios y te mostraré las alternativas encontradas."
 
 
 def is_acknowledgement_only(message: str) -> bool:
@@ -429,6 +568,8 @@ def classify_local_fallback_intent(message: str, *, operational_intent: str | No
     normalized = _normalize_text(message)
     if is_explicit_visit_intent(normalized) or str(operational_intent or "").casefold() in {"agendar_visita", "ask_visit"}:
         return "ASK_VISIT"
+    if contains_property_identifier(normalized):
+        return "PROPERTY_SPECIFIC"
     if _PRICE_NEGOTIATION_RE.search(normalized):
         return "PRICE_NEGOTIATION"
     if _PRICE_INCLUSIONS_RE.search(normalized):
@@ -441,6 +582,13 @@ def classify_local_fallback_intent(message: str, *, operational_intent: str | No
         return "PRICE_CURRENT_VALUE"
     if _FALLBACK_AVAILABILITY_RE.search(normalized):
         return "ASK_AVAILABILITY"
+    # A search request is a real conversational intent even when the model is
+    # unavailable.  Preserve an already-started RAG search for criterion-only
+    # replies such as "Arrendar" or "Providencia" via ``intent_override`` or
+    # the state-aware caller; the current-message detector handles the first
+    # turn without any special-case phrase.
+    if is_property_search_intent(normalized):
+        return "PROPERTY_SEARCH"
     return "GENERAL"
 
 
@@ -464,6 +612,8 @@ def classify_local_semantic_intents(message: str) -> tuple[str, ...]:
         intents.append("ASK_VISIT")
     if _FALLBACK_AVAILABILITY_RE.search(normalized):
         intents.append("ASK_AVAILABILITY")
+    if is_property_search_intent(normalized):
+        intents.append("PROPERTY_SEARCH")
     return tuple(dict.fromkeys(intents))
 
 
@@ -523,9 +673,31 @@ def build_local_fallback_response(
         price_display = f"{price_display} UF"
     elif price_clp is not None:
         price_display = _number(price_clp, prefix="$" )
+    persisted_search_intent = bool(
+        facts.get("search_intent")
+        or (facts.get("rag_search_state") or {}).get("search_intent")
+    ) if isinstance(facts.get("rag_search_state") or {}, dict) else bool(facts.get("search_intent"))
+    search_state = facts.get("search_criteria") or facts.get("rag_search_state") or {}
+    if isinstance(search_state, dict) and isinstance(search_state.get("criteria"), dict):
+        search_criteria = dict(search_state.get("criteria") or {})
+    elif isinstance(search_state, dict):
+        search_criteria = dict(search_state)
+    else:
+        search_criteria = {}
+    if isinstance(facts.get("search_criteria"), dict):
+        search_criteria.update(facts["search_criteria"])
+    if is_property_search_intent(message) or facts.get("search_intent") or persisted_search_intent:
+        search_criteria = extract_search_criteria(message, search_criteria)
     intent = intent_override or classify_local_fallback_intent(
         message, operational_intent=operational_intent,
     )
+    if not intent_override and intent == "GENERAL" and persisted_search_intent and not facts.get("property_code"):
+        intent = "PROPERTY_SEARCH"
+    if not intent_override and intent == "GENERAL" and is_property_search_intent(message):
+        intent = "PROPERTY_SEARCH"
+    if intent == "PROPERTY_SEARCH":
+        result_count = facts.get("rag_result_count")
+        return build_property_search_response(search_criteria, rag_result_count=result_count), intent
     responses = {
         "ASK_VISIT": (
             "Gracias por escribirnos. Podemos ayudarte a coordinar una visita. "
@@ -564,6 +736,10 @@ def build_local_fallback_response(
             f"La orientación informada en la ficha es {orientation}." if orientation is not None else
             "Ese dato no aparece confirmado en la ficha. Lo podemos consultar con el ejecutivo "
             "encargado para darte la información correcta."
+        ),
+        "PROPERTY_SPECIFIC": (
+            "Recibí la referencia de la propiedad. Revisaré la información disponible para "
+            "orientarte con precisión."
         ),
         "GENERAL": (
             "Gracias por escribirnos. Recibimos tu consulta y la estamos revisando "

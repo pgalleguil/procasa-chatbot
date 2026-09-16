@@ -56,6 +56,29 @@ def test_assignment_gate_requires_probability_at_least_50():
     assert not eligible
 
 
+def test_magnolia_property_hard_veto_never_becomes_owner_probable():
+    item = complete_doc(
+        publicador_visible="Magnolia Property",
+        seller_name="Magnolia Property",
+        seller_type="EMPRESA",
+        description="Soy dueño y vendo mi casa sin comisión.",
+    )
+    item["classification"]["state"] = "DUEÑO_PROBABLE"
+    item["classification"]["source"] = "deepseek"
+    apply_owner_probability_to_document(item)
+    assert item["classification"]["hard_broker_signal"] is True
+    assert item["classification"]["hard_veto"] == "PROFESSIONAL"
+    assert item["classification"]["state"] == "CORREDOR_SEGURO"
+    assert item["classification"]["final_state"] == "CORREDOR_SEGURO"
+    assert item["classification"]["assignment_ready"] is False
+
+
+def test_hard_veto_does_not_match_person_name_alone():
+    item = complete_doc(publicador_visible="Juan Pérez", seller_name="Juan Pérez")
+    apply_owner_probability_to_document(item)
+    assert item["classification"].get("hard_broker_signal") is not True
+
+
 def test_view_uses_probability_and_signal_tooltip():
     item = complete_doc()
     apply_owner_probability_to_document(item)

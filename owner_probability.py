@@ -12,6 +12,8 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from broker_identity import detect_hard_broker_signal
+
 
 OWNER_PROBABILITY_VERSION = "owner-probability-evidence-v1"
 OWNER_PROBABILITY_SOURCE = "deterministic_evidence_engine"
@@ -512,9 +514,10 @@ def apply_owner_probability_to_document(
     canonical ``classification.confidence`` is derived from owner_probability.
     """
     classification = dict(doc.get("classification") or {})
+    hard_broker_signal = detect_hard_broker_signal(doc, extracted=extracted or doc)
     if classification.get("status") in {
         "PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED",
-    }:
+    } and not hard_broker_signal:
         # Processing states are not classification decisions and must not be
         # converted into an artificial INCIERTO document.
         doc["classification"] = classification
@@ -526,6 +529,7 @@ def apply_owner_probability_to_document(
     previous_state = normalize_state(
         classification.get("state") or classification.get("final_state")
     )
+    technical_confidence = classification.get("confidence")
     classification_source = str(classification.get("source") or "").lower()
     hard_veto = str(
         classification.get("hard_veto")
@@ -543,6 +547,12 @@ def apply_owner_probability_to_document(
         and classification.get("strong_signal_found", True) is not False
     ):
         hard_veto = "PROFESSIONAL"
+    if hard_broker_signal:
+        hard_veto = "PROFESSIONAL"
+        classification["hard_broker_signal"] = True
+        classification["hard_broker_signal_source_field"] = hard_broker_signal["source_field"]
+        classification["hard_broker_signal_reason"] = hard_broker_signal["reason_code"]
+        classification["hard_broker_signal_evidence"] = [hard_broker_signal["evidence"]]
     if hard_veto == "PROFESSIONAL":
         classification["hard_veto"] = "PROFESSIONAL"
         classification["professional_hard_veto"] = True
@@ -562,9 +572,9 @@ def apply_owner_probability_to_document(
 
     classification["previous_classification_state"] = previous_state
     if probability is not None:
-        if hard_veto != "PROFESSIONAL":
+        if technical_confidence is None:
             classification["confidence"] = probability
-            classification["canonical_confidence"] = probability
+        classification["canonical_confidence"] = probability
         classification["state"] = final_state
         classification["final_state"] = final_state
         classification["classification_semantics"] = (

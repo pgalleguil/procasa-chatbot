@@ -1617,7 +1617,7 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
             results.extend(global_zone_results)
             collected_codes.update({doc.get("codigo") for _, doc in global_zone_results})
             results.sort(key=lambda x: x[0], reverse=True)
-        elif not include_neighbors:
+        elif not include_neighbors and not allow_filter_relaxation:
             logger.info(f"[RAG-HYBRID] Cero resultados en toda la red para {geo_scope}. include_neighbors=False, fin de búsqueda.")
             return [] 
 

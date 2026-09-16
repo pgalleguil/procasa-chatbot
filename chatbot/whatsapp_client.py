@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+import threading
 import time
 from typing import Any
 
@@ -13,26 +14,41 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Outbound throttle buckets. Customer replies have a short, isolated bucket;
-# notifications/digests/automation retain the conservative anti-burst bucket.
+# Outbound traffic classes share one provider gate. A separate clock per class
+# allows a customer reply and an alert to leave back-to-back and trigger 429s.
 # ---------------------------------------------------------------------------
 _LAST_SEND_AT = 0.0
-_LAST_SEND_AT_BY_CLASS: dict[str, float] = {}
+_NEXT_SEND_AT = 0.0
+_THROTTLE_LOCK = threading.Lock()
 
 TRAFFIC_CLASS_CUSTOMER_REPLY = "customer_reply"
 TRAFFIC_CLASS_BULK_AUTOMATION = "bulk_automation"
 
 
 def _throttle_parameters(traffic_class: str) -> tuple[float, float]:
+    global_floor = max(
+        float(getattr(Config, "WHATSAPP_GLOBAL_MIN_SEND_INTERVAL_SECONDS", 5.2)), 0
+    )
     if traffic_class == TRAFFIC_CLASS_CUSTOMER_REPLY:
-        return (
-            max(float(getattr(Config, "WHATSAPP_CUSTOMER_REPLY_MIN_SEND_INTERVAL_SECONDS", 2.0)), 0),
-            max(float(getattr(Config, "WHATSAPP_CUSTOMER_REPLY_JITTER_MAX_SECONDS", 1.0)), 0),
-        )
+        return global_floor, 0.0
     return (
-        max(float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS), 0),
+        max(global_floor, float(Config.WHATSAPP_MIN_SEND_INTERVAL_SECONDS)),
         max(float(Config.WHATSAPP_SEND_JITTER_MAX_SECONDS), 0),
     )
+
+
+def _reserve_provider_slot(traffic_class: str) -> float:
+    """Reserve a single process-wide slot and return seconds to wait."""
+    global _NEXT_SEND_AT, _LAST_SEND_AT
+    base, jitter = _throttle_parameters(traffic_class)
+    delay = base + (random.uniform(0, jitter) if jitter else 0.0)
+    now = time.monotonic()
+    with _THROTTLE_LOCK:
+        scheduled = max(now, _NEXT_SEND_AT)
+        wait = max(0.0, scheduled - now)
+        _NEXT_SEND_AT = scheduled + delay
+        _LAST_SEND_AT = scheduled
+    return wait
 
 
 async def throttle_outgoing_message(
@@ -44,39 +60,22 @@ async def throttle_outgoing_message(
     messages is not delivered in a single instantaneous burst that a non-
     official Meta API would flag as automation.  Uses a process-wide clock.
     """
-    global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    base, jitter = _throttle_parameters(traffic_class)
-    delay = base + random.uniform(0, jitter)
-    last_send_at = _LAST_SEND_AT_BY_CLASS.get(traffic_class, 0.0)
-    elapsed = time.monotonic() - last_send_at
-    if elapsed < delay:
-        wait = delay - elapsed
+    wait = _reserve_provider_slot(traffic_class)
+    if wait > 0:
         await asyncio.sleep(wait)
-    now = time.monotonic()
-    _LAST_SEND_AT_BY_CLASS[traffic_class] = now
-    if traffic_class == TRAFFIC_CLASS_BULK_AUTOMATION:
-        _LAST_SEND_AT = now
 
 
 def throttle_outgoing_message_sync(
     traffic_class: str = TRAFFIC_CLASS_BULK_AUTOMATION,
 ) -> None:
     """Synchronous variant for workers that run in threads."""
-    global _LAST_SEND_AT
     if not Config.WHATSAPP_THROTTLE_ENABLED:
         return
-    base, jitter = _throttle_parameters(traffic_class)
-    delay = base + random.uniform(0, jitter)
-    last_send_at = _LAST_SEND_AT_BY_CLASS.get(traffic_class, 0.0)
-    elapsed = time.monotonic() - last_send_at
-    if elapsed < delay:
-        time.sleep(delay - elapsed)
-    now = time.monotonic()
-    _LAST_SEND_AT_BY_CLASS[traffic_class] = now
-    if traffic_class == TRAFFIC_CLASS_BULK_AUTOMATION:
-        _LAST_SEND_AT = now
+    wait = _reserve_provider_slot(traffic_class)
+    if wait > 0:
+        time.sleep(wait)
 
 
 def normalize_whatsapp_recipient(number: str) -> str:

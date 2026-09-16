@@ -71,6 +71,19 @@ def _increment_metric(metrics, name, amount=1):
         metrics[name] = int(metrics.get(name, 0) or 0) + amount
 
 
+def _record_queue_observability_event(db, event_type, payload=None):
+    """Record queue telemetry against the injected DB when possible."""
+    try:
+        from .storage import record_observability_event
+    except ImportError:
+        from chatbot.storage import record_observability_event
+    try:
+        return record_observability_event(event_type, payload, db=db)
+    except TypeError:
+        # Small test doubles often monkeypatch the historical two-argument API.
+        return record_observability_event(event_type, payload)
+
+
 def ensure_queue_indexes(db):
     coll = db[JOB_COLLECTION]
     coll.create_index(
@@ -220,8 +233,76 @@ def claimed_value(value):
 
 def _batch_settings(max_wait_seconds=None):
     quiet = max(int(os.getenv("CHATBOT_BATCH_QUIET_SECONDS", "5")), 1)
-    maximum = max(int(os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS", str(max_wait_seconds or 60))), quiet)
+    configured_max = os.getenv("CHATBOT_BATCH_MAX_WAIT_SECONDS")
+    if configured_max is None:
+        configured_max = os.getenv(
+            "CHATBOT_CONVERSATIONAL_MAX_WAIT_SECONDS",
+            str(max_wait_seconds or 20),
+        )
+    maximum = max(int(configured_max), quiet)
     return quiet, maximum
+
+
+def _batch_snapshot_is_stale(db, *, batch_id, snapshot_sequence, snapshot_job_ids=None,
+                             worker_id=None, delivery_token=None):
+    """Read the live conversation fence used by the final delivery barrier."""
+    selector = {"_id": batch_id, "kind": KIND_BATCH}
+    if worker_id:
+        selector["lease_owner"] = worker_id
+    if delivery_token:
+        selector["delivery_token"] = delivery_token
+    current = db[JOB_COLLECTION].find_one(selector) or {}
+    if not current:
+        raise RuntimeError("batch_lease_lost_before_delivery")
+    live_sequence = int(current.get("conversation_sequence", 0) or 0)
+    snapshot_sequence = int(snapshot_sequence or 0)
+    if live_sequence > snapshot_sequence:
+        return True, current
+    live_job_ids = {str(value) for value in (current.get("job_ids") or [])}
+    frozen_job_ids = {str(value) for value in (snapshot_job_ids or [])}
+    return bool(live_job_ids - frozen_job_ids), current
+
+
+def _requeue_batch_after_new_inbound(db, *, batch_id, worker_id, delivery_token,
+                                     snapshot_sequence, now=None):
+    """Return a processing batch to batching without releasing its conversation key."""
+    now = now or utc_now()
+    coll = db[JOB_COLLECTION]
+    current = coll.find_one({"_id": batch_id, "kind": KIND_BATCH}) or {}
+    quiet_seconds, _maximum = _batch_settings()
+    last_message_at = current.get("last_message_at") or now
+    try:
+        last_message_at = _as_comparable(last_message_at, now)
+    except (TypeError, ValueError, AttributeError):
+        last_message_at = now
+    maximum_deadline = current.get("max_window_end_at")
+    if maximum_deadline:
+        try:
+            maximum_deadline = _as_comparable(maximum_deadline, now)
+        except (TypeError, ValueError, AttributeError):
+            maximum_deadline = None
+    window_end = last_message_at + timedelta(seconds=quiet_seconds)
+    if maximum_deadline:
+        window_end = min(window_end, maximum_deadline)
+    if window_end < now:
+        window_end = now
+    result = coll.update_one(
+        {"_id": batch_id, "kind": KIND_BATCH, "state": ST_PROCESSING,
+         "lease_owner": worker_id, "delivery_token": delivery_token},
+        {"$set": {
+            "state": ST_BATCHING,
+            "window_end_at": window_end,
+            "updated_at": now,
+            "last_error": "response_superseded_by_new_inbound",
+            "superseded_snapshot_sequence": int(snapshot_sequence or 0),
+        }, "$unset": {
+            "lease_owner": "", "lease_until": "", "delivery_token": "",
+            "processing_started_at": "", "next_attempt_at": "",
+        }},
+    )
+    if result.matched_count != 1:
+        raise RuntimeError("batch_requeue_lease_lost")
+    return coll.find_one({"_id": batch_id, "kind": KIND_BATCH})
 
 
 def _conversation_key(phone, conversation_id=None):
@@ -808,8 +889,6 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             error="suppressed_ack_only", worker_id=worker_id,
             delivery_token=token,
         )
-    max_regenerations = max(int(os.getenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")), 0)
-    regenerations = 0
     generation_id = None
     fallback_used = False
     fallback_intent = None
@@ -856,6 +935,54 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         if accepts_kwargs or "runtime_metrics" in params:
             kwargs["runtime_metrics"] = metrics
         return await llm(claimed["phone"], current_text, **kwargs)
+
+    async def _supersede_and_requeue(reason="new_inbound_after_snapshot"):
+        """Make an obsolete generation auditable and wait for a fresh batch turn."""
+        _increment_metric(metrics, "SUPERSEDED")
+        await asyncio.to_thread(
+            _update_generated_response,
+            db, phone=claimed["phone"], batch_id=batch_id,
+            generation_id=generation_id, status="superseded", content=response,
+        )
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token, status="response_superseded_by_new_inbound",
+            error=reason,
+        )
+        def _record_superseded_event():
+            try:
+                db["event_log"].insert_one({
+                    "event": "response_superseded_by_new_inbound",
+                    "timestamp": utc_now().isoformat(),
+                    "batch_id": batch_id,
+                    "generation_id": generation_id,
+                    "snapshot_sequence": claimed.get("snapshot_sequence"),
+                    "reason": reason,
+                })
+            except Exception:
+                # Queue-only fakes may expose only chatbot_inbound_jobs.
+                return False
+            return True
+        await asyncio.to_thread(_record_superseded_event)
+        try:
+            from .conversation_observability import record_conversation_event
+            await asyncio.to_thread(
+                record_conversation_event, db,
+                event_type="response_superseded_by_new_inbound",
+                conversation_id=claimed.get("conversation_id"),
+                lead_id=claimed.get("lead_id"), actor_type="bot", actor_id="chatbot",
+                metadata={"batch_id": batch_id, "generation_id": generation_id,
+                          "snapshot_sequence": claimed.get("snapshot_sequence")},
+            )
+        except Exception:
+            logger.exception("[CHATBOT_OBSERVABILITY] superseded response event failed")
+        return await asyncio.to_thread(
+            _requeue_batch_after_new_inbound,
+            db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token,
+            snapshot_sequence=claimed.get("snapshot_sequence"),
+            now=now or utc_now(),
+        )
 
     while True:
         try:
@@ -911,7 +1038,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             )
             await asyncio.to_thread(
                 record_conversation_event, db,
-                event_type="bot_message_generated",
+                event_type="response_generated",
                 conversation_id=generated_context.get("conversation_id") or claimed.get("conversation_id"),
                 lead_id=generated_context.get("lead_id") or claimed.get("lead_id"),
                 message_id=generated_context.get("message_id"),
@@ -924,6 +1051,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             )
         except Exception:
             logger.exception("[CHATBOT_OBSERVABILITY] bot generation event failed")
+        _increment_metric(metrics, "GENERATED")
 
         latest = await asyncio.to_thread(
             db[JOB_COLLECTION].find_one, {"_id": batch_id, "lease_owner": worker_id,
@@ -931,47 +1059,9 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         )
         if not latest:
             raise RuntimeError("batch_lease_lost_before_delivery")
-        if latest.get("conversation_sequence", 0) <= claimed.get("conversation_sequence", 0):
-            break
-        if regenerations >= max_regenerations:
-            await asyncio.to_thread(
-                record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
-                delivery_token=token, status="stale_regeneration_limit",
-                error="new_inbound_after_snapshot",
-            )
-            return await asyncio.to_thread(
-                # Do not retry the same stale snapshot indefinitely.  Closing
-                # this turn without delivery preserves the invariant that no
-                # incomplete response is sent and releases the next inbound
-                # message to form a fresh, complete turn.
-                finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
-                error="stale_regeneration_limit", worker_id=worker_id, delivery_token=token,
-            )
-        jobs = await asyncio.to_thread(lambda: list(db[JOB_COLLECTION].find({
-            "_id": {"$in": latest.get("job_ids", [])}, "kind": KIND_JOB,
-        }).sort("received_at", ASCENDING)))
-        messages = [
-            {"job_id": job["_id"], "provider_id": job.get("inbound_provider_message_id"),
-             "message_id": job.get("message_id"),
-             "property_code": job.get("property_code"), "operation": job.get("operation"),
-             "text": _valid_text(job.get("text")), "received_at": job.get("received_at")}
-            for job in jobs
-        ]
-        if not messages or any(not item["text"] for item in messages):
-            return await asyncio.to_thread(
-                finalize_batch, db, batch_id=batch_id, state=ST_FAILED_TERMINAL,
-                error="invalid_or_empty_snapshot", worker_id=worker_id, delivery_token=token,
-            )
-        claimed = await asyncio.to_thread(
-            db[JOB_COLLECTION].find_one_and_update,
-            {"_id": batch_id, "lease_owner": worker_id, "delivery_token": token},
-            {"$set": {"snapshot": messages, "combined_text": "\n".join(x["text"] for x in messages),
-                      "snapshot_at": utc_now(), "snapshot_sequence": latest.get("conversation_sequence", 0),
-                      "updated_at": utc_now()}},
-            return_document=ReturnDocument.AFTER,
-        )
-        text = claimed["combined_text"]
-        regenerations += 1
+        if latest.get("conversation_sequence", 0) > claimed.get("snapshot_sequence", 0):
+            return await _supersede_and_requeue()
+        break
 
     # Commercial work is a separate durable state machine. It observes the
     # verified inbound snapshot, but cannot reuse or block chatbot delivery.
@@ -1000,11 +1090,6 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         outbound_unconfirmed_visit_claim,
         safe_visit_claim_free_response,
     )
-    try:
-        from .storage import record_observability_event
-    except ImportError:
-        from chatbot.storage import record_observability_event
-
     # A human message received after generation is a hard cutoff. The check is
     # deliberately immediately before delivery so it also covers a response
     # generated before the executive message but delayed by provider I/O.
@@ -1021,7 +1106,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             delivery_token=token, status="bot_response_suppressed_human_takeover",
             error="human_message_after_batch_start",
         )
-        await asyncio.to_thread(record_observability_event,
+        await asyncio.to_thread(_record_queue_observability_event, db,
             "bot_response_suppressed_human_takeover", _lead_event_context(db, claimed))
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
@@ -1035,14 +1120,14 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             delivery_token=token, status="blocked_phone_request",
             error="outbound_explicit_phone_request",
         )
-        await asyncio.to_thread(record_observability_event, "phone_request_blocked", {
+        await asyncio.to_thread(_record_queue_observability_event, db, "phone_request_blocked", {
             **_lead_event_context(db, claimed),
         })
         response = safe_phone_free_response(response)
 
     if outbound_unconfirmed_visit_claim(response):
         await asyncio.to_thread(
-            record_observability_event,
+            _record_queue_observability_event, db,
             "visit_claim_blocked",
             _lead_event_context(db, claimed),
         )
@@ -1053,7 +1138,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         db, phone=claimed["phone"], response=response,
     ):
         await asyncio.to_thread(
-            record_observability_event,
+            _record_queue_observability_event, db,
             "bot_response_duplicate_blocked",
             _lead_event_context(db, claimed),
         )
@@ -1073,10 +1158,6 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
         delivery_token=token,
         status="started",
     )
-    await asyncio.to_thread(_update_generated_response,
-        db, phone=claimed["phone"], batch_id=batch_id,
-        generation_id=generation_id, status="provider_attempt", content=response,
-    )
     # The final cutoff and provider call share the same process-local fence
     # used by transition_to_human.  A takeover therefore waits for an already
     # admitted provider call instead of becoming owner while that call is in
@@ -1094,6 +1175,23 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
                 started_at=claimed.get("processing_started_at") or claimed.get("snapshot_at"),
             ):
                 return {"__suppressed_human_takeover__": True}
+            # This is the last read before the provider call. A response is
+            # authorized only for the exact conversation snapshot that was
+            # generated; a newer inbound reopens the batch and never reaches
+            # send_whatsapp_message_detailed.
+            stale, _live_batch = await asyncio.to_thread(
+                _batch_snapshot_is_stale,
+                db, batch_id=batch_id,
+                snapshot_sequence=claimed.get("snapshot_sequence"),
+                snapshot_job_ids=[item.get("job_id") for item in (claimed.get("snapshot") or [])],
+                worker_id=worker_id, delivery_token=token,
+            )
+            if stale:
+                return {"__superseded__": True}
+            await asyncio.to_thread(_update_generated_response,
+                db, phone=claimed["phone"], batch_id=batch_id,
+                generation_id=generation_id, status="provider_attempt", content=response,
+            )
             params = inspect.signature(sender).parameters
             accepts_kwargs = any(
                 parameter.kind == inspect.Parameter.VAR_KEYWORD
@@ -1152,7 +1250,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             worker_id=worker_id, delivery_token=token,
             status="bot_response_suppressed_human_takeover",
             error="human_message_before_provider")
-        await asyncio.to_thread(record_observability_event,
+        await asyncio.to_thread(_record_queue_observability_event, db,
             "bot_response_suppressed_human_takeover", _lead_event_context(db, claimed))
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
@@ -1160,12 +1258,16 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             delivery_token=token,
         )
 
+    if receipt.get("__superseded__"):
+        return await _supersede_and_requeue("new_inbound_at_final_delivery_barrier")
+
     http_status = receipt.get("http_status")
     provider_id = receipt.get("provider_message_id")
     if receipt.get("provider_call_uncertain"):
         _increment_metric(metrics, "outbound_unknown")
         state, error, retry_at = ST_DELIVERY_UNKNOWN, "provider_call_uncertain", None
     elif receipt.get("success") and provider_id:
+        _increment_metric(metrics, "DELIVERED")
         provider_status = receipt.get("delivery_status")
         if provider_status not in {"accepted", "sent", "delivered", "read", "failed", "unknown"}:
             provider_status = "accepted"
@@ -1191,7 +1293,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             status="accepted", provider_message_id=provider_id, http_status=http_status,
             provider_status=provider_status, provider_status_code=provider_status_code,
         )
-        await asyncio.to_thread(record_observability_event, "RESPONSE_SENT", {
+        await asyncio.to_thread(_record_queue_observability_event, db, "RESPONSE_SENT", {
             **_lead_event_context(db, claimed),
             "provider_message_id": provider_id,
             "response_len": len(response or ""),
@@ -1204,7 +1306,7 @@ async def _process_one_batch_impl(db, *, worker_id, llm, sender, now=None, metri
             )
             await asyncio.to_thread(
                 record_conversation_event, db,
-                event_type="bot_message_sent",
+                event_type="response_delivered",
                 conversation_id=sent_context.get("conversation_id") or claimed.get("conversation_id"),
                 lead_id=sent_context.get("lead_id") or claimed.get("lead_id"),
                 message_id=sent_context.get("message_id"),
@@ -1354,6 +1456,9 @@ async def chatbot_response_worker_loop():
         "outbound_read": 0,
         "outbound_failed": 0,
         "outbound_unknown": 0,
+        "GENERATED": 0,
+        "SUPERSEDED": 0,
+        "DELIVERED": 0,
         "batches_completed": 0,
     }
     active_tasks = set()

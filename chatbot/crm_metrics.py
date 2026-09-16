@@ -260,6 +260,16 @@ def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:
     return {event["lead_id"] for event in events if event_evidence(event)["management"]}
 
 
+def _assignment_cycle_selector(cycle: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a narrow identity selector for real and lightweight DB adapters."""
+    assignment_cycle_id = cycle.get("assignment_cycle_id")
+    if assignment_cycle_id:
+        return {"assignment_cycle_id": assignment_cycle_id}
+    if cycle.get("_id") is not None:
+        return {"_id": cycle["_id"]}
+    return {}
+
+
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
                             reason, assigned_at=None, assigned_to_display_name=None,
                             property_code=None) -> dict[str, Any]:
@@ -289,17 +299,22 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         if property_code:
             prop_code = str(property_code).strip()
             if str(active.get("property_code") or "").strip() != prop_code:
-                db["crm_assignment_cycles"].update_one(
-                    {"_id": active["_id"]},
-                    {"$set": {"property_code": prop_code}},
-                )
+                cycle_selector = _assignment_cycle_selector(active)
+                if cycle_selector:
+                    db["crm_assignment_cycles"].update_one(
+                        cycle_selector,
+                        {"$set": {"property_code": prop_code}},
+                    )
                 active["property_code"] = prop_code
         return active
     if active:
-        db["crm_assignment_cycles"].update_one(
-            {"_id": active["_id"], "unassigned_at": None},
-            {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
-        )
+        cycle_selector = _assignment_cycle_selector(active)
+        if cycle_selector:
+            cycle_selector["unassigned_at"] = None
+            db["crm_assignment_cycles"].update_one(
+                cycle_selector,
+                {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
+            )
     # Determine SLA policy version for this cycle
     sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
     # Only leads created by real commercial events are notification-eligible

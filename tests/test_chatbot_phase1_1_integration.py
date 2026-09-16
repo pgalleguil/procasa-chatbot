@@ -444,10 +444,10 @@ def test_control_flow_three_customer_turns_has_one_outbound_each_and_zero_visit_
     assert pending["status"] == "captured"
 
 
-def test_customer_reply_throttle_bucket_is_fast_and_isolated_from_automation():
+def test_customer_reply_throttle_uses_shared_provider_floor():
     from chatbot import whatsapp_client
 
-    assert whatsapp_client._throttle_parameters("customer_reply") == (2.0, 1.0)
+    assert whatsapp_client._throttle_parameters("customer_reply") == (5.2, 0.0)
     assert whatsapp_client._throttle_parameters("bulk_automation") == (12.0, 8.0)
 
 
@@ -1059,8 +1059,8 @@ def test_local_fallbacks_are_intent_specific_and_do_not_claim_facts():
     assert "Gracias por escribirnos. Recibimos tu consulta" not in explicit_visit
     assert availability_intent == "ASK_AVAILABILITY"
     assert "continúa disponible" in availability
-    assert price_intent == "ASK_PRICE"
-    assert "valor actualizado" in price
+    assert price_intent == "PRICE_CURRENT_VALUE"
+    assert "valor publicado" in price
     assert general_intent == "GENERAL"
     for response in (visit, availability, price, general):
         assert "está disponible" not in response.lower()

@@ -90,7 +90,7 @@ def _dashboard_query_shape(name, args):
     return {}
 
 
-def record_observability_event(event_type: str, payload: dict | None = None) -> str:
+def record_observability_event(event_type: str, payload: dict | None = None, *, db=None) -> str:
     """
     Registro pasivo de eventos del flujo en la colección event_log.
     Nunca lanza error al caller.
@@ -103,8 +103,8 @@ def record_observability_event(event_type: str, payload: dict | None = None) -> 
         }
         if payload:
             event.update(payload)
-        db = get_db()
-        db["event_log"].insert_one(event)
+        active_db = db if db is not None else get_db()
+        active_db["event_log"].insert_one(event)
         return event["id"]
     except Exception:
         return ""
@@ -438,7 +438,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
     outbound_pending = (
         role == "assistant"
         and message.get("delivery_status") in {
-            "generated", "provider_attempt", "suppressed", "delivery_unknown",
+            "generated", "provider_attempt", "superseded", "suppressed", "delivery_unknown",
         }
     )
     snapshot_fields = {} if outbound_pending else {
@@ -509,7 +509,9 @@ def obtener_conversacion(phone: str) -> List[Dict]:
     doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"messages": 1})
     if not doc:
         return []
-    excluded_delivery_states = {"generated", "provider_attempt", "suppressed", "delivery_unknown"}
+    excluded_delivery_states = {
+        "generated", "provider_attempt", "superseded", "suppressed", "delivery_unknown",
+    }
     return [
         message for message in (doc.get("messages", []) or [])
         if not (

@@ -18,6 +18,8 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
+    r"\b(?:puedo|podr[ií]a)\s+ir(?:\s+(?:tipo|a\s+las?)\s+\d{1,2}(?::\d{2})?)?\b",
+    r"\bse\s+pu[eé]d(?:e)?\s+ver(?:la|lo)?\b",
     r"\b(?:puedo|podr[ií]a)\s+ir\s+(?:ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
     r"\b(?:puedo|podr[ií]a)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
@@ -84,7 +86,8 @@ _VISIT_DAY_RE = re.compile(
 _VISIT_TIME_RE = re.compile(
     r"\b(?:a\s+las?\s+\d{1,2}(?::\d{2})?|entre\s+\d{1,2}(?::\d{2})?\s+y\s+\d{1,2}(?::\d{2})?|"
     r"de\s+\d{1,2}(?::\d{2})?\s+a\s+\d{1,2}(?::\d{2})?|"
-    r"\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas))\b",
+    r"(?:tipo\s+|a\s+las?\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm|hrs?|horas)|"
+    r"tipo\s+\d{1,2}(?::\d{2})?)\b",
     re.IGNORECASE,
 )
 
@@ -107,11 +110,32 @@ _NEAR_TERM_VISIT_RE = re.compile(
 )
 
 _FALLBACK_AVAILABILITY_RE = re.compile(
-    r"\b(?:disponible|disponibilidad|sigue\s+disponible|a[uú]n\s+est[aá])\b",
+    r"\b(?:disponible|disponibilidad|dispnible|disponble|sigue\s+disponible|a[uú]n\s+est[aá])\b",
     re.IGNORECASE,
 )
 _FALLBACK_PRICE_RE = re.compile(
-    r"\b(?:precio|valor|cu[aá]nto\s+(?:vale|cuesta)|cu[aá]nto\s+es|uf)\b",
+    r"\b(?:precio|valor|cu[aá]nto\s+(?:vale|cuesta|sale)|cu[aá]nto\s+es|uf)\b",
+    re.IGNORECASE,
+)
+_PRICE_NEGOTIATION_RE = re.compile(
+    r"\b(?:se\s+puede\s+(?:bajar|negociar|rebajar)|podemos\s+(?:negociar|bajar)|"
+    r"aceptan\s+ofertas?|hacer\s+una\s+oferta|descuento|rebaja|est[aá]\s+muy\s+car[oa]|ta\s+car[oa])\b",
+    re.IGNORECASE,
+)
+_PRICE_INCLUSIONS_RE = re.compile(
+    r"\b(?:incluye|incluyen|incluido|inclu[ií]do|considera|contempla)\b.{0,70}\b(?:"
+    r"servicios?\s+b[aá]sicos?|gastos?\s+comunes?|luz|agua|gas|internet)\b|"
+    r"\b(?:servicios?\s+b[aá]sicos?|gastos?\s+comunes?)\b.{0,70}\b(?:incluye|incluido|"
+    r"considera|contempla)\b",
+    re.IGNORECASE,
+)
+_COMMON_EXPENSES_RE = re.compile(
+    r"\b(?:gastos?\s+comunes?|gc|qu[eé]\s+gastos?\s+t(?:ien|iene|ienen))\b",
+    re.IGNORECASE,
+)
+_PROPERTY_ATTRIBUTE_RE = re.compile(
+    r"\b(?:orientaci[oó]n|dormitorios?|habitaciones?|ba[nñ]os?|superficie|metros?|"
+    r"estacionamientos?|estac\w*|bodegas?|antig[uü]edad)\b",
     re.IGNORECASE,
 )
 _VISIT_DAYPART_RE = re.compile(
@@ -356,13 +380,44 @@ def classify_local_fallback_intent(message: str, *, operational_intent: str | No
     request, so the fallback never claims a booking or a confirmed slot.
     """
     normalized = _normalize_text(message)
-    if is_explicit_visit_intent(normalized) or str(operational_intent or "").casefold() == "agendar_visita":
+    if is_explicit_visit_intent(normalized) or str(operational_intent or "").casefold() in {"agendar_visita", "ask_visit"}:
         return "ASK_VISIT"
+    if _PRICE_NEGOTIATION_RE.search(normalized):
+        return "PRICE_NEGOTIATION"
+    if _PRICE_INCLUSIONS_RE.search(normalized):
+        return "PRICE_INCLUSIONS"
+    if _COMMON_EXPENSES_RE.search(normalized):
+        return "COMMON_EXPENSES"
+    if _PROPERTY_ATTRIBUTE_RE.search(normalized):
+        return "PROPERTY_ATTRIBUTE"
     if _FALLBACK_PRICE_RE.search(normalized):
-        return "ASK_PRICE"
+        return "PRICE_CURRENT_VALUE"
     if _FALLBACK_AVAILABILITY_RE.search(normalized):
         return "ASK_AVAILABILITY"
     return "GENERAL"
+
+
+def classify_local_semantic_intents(message: str) -> tuple[str, ...]:
+    """Return all deterministic sub-intents present in one inbound burst."""
+    normalized = _normalize_text(message)
+    intents = []
+    if _PRICE_NEGOTIATION_RE.search(normalized):
+        intents.append("PRICE_NEGOTIATION")
+    if _PRICE_INCLUSIONS_RE.search(normalized):
+        intents.append("PRICE_INCLUSIONS")
+    elif _COMMON_EXPENSES_RE.search(normalized):
+        intents.append("COMMON_EXPENSES")
+    if _PROPERTY_ATTRIBUTE_RE.search(normalized):
+        intents.append("PROPERTY_ATTRIBUTE")
+    if _FALLBACK_PRICE_RE.search(normalized) and not any(
+        item in intents for item in {"PRICE_NEGOTIATION", "PRICE_INCLUSIONS", "COMMON_EXPENSES"}
+    ):
+        intents.append("PRICE_CURRENT_VALUE")
+    if is_explicit_visit_intent(normalized):
+        intents.append("ASK_VISIT")
+    if _FALLBACK_AVAILABILITY_RE.search(normalized):
+        intents.append("ASK_AVAILABILITY")
+    return tuple(dict.fromkeys(intents))
 
 
 def build_local_fallback_response(
@@ -370,16 +425,58 @@ def build_local_fallback_response(
     *,
     operational_intent: str | None = None,
     property_facts: dict | None = None,
+    intent_override: str | None = None,
 ) -> tuple[str, str]:
     """Build a safe deterministic fallback and return ``(text, intent)``.
 
-    ``property_facts`` is accepted as a future extension point, but this
-    version intentionally does not render price or availability values.  That
-    guarantees that a fallback cannot invent facts while the structured
-    property lookup is incomplete.
+    Only facts explicitly present in ``property_facts`` are rendered. Unknown
+    facts remain explicitly unknown; the fallback never invents a value.
     """
-    del property_facts
-    intent = classify_local_fallback_intent(
+    facts = property_facts or {}
+
+    def _nested(*paths):
+        for path in paths:
+            value = facts
+            try:
+                for key in path:
+                    value = value[key]
+            except (KeyError, TypeError):
+                value = None
+            if value not in (None, "", 0, False):
+                return value
+        return None
+
+    operation = str(facts.get("operacion") or "").casefold()
+    price_block_paths = (
+        ("tipo_operacion", "precio_venta") if operation in {"venta", "comprar", "compra"}
+        else ("tipo_operacion", "precio_arriendo") if operation in {"arriendo", "arrendar", "alquilar", "alquiler"}
+        else ()
+    )
+    price_paths = [price_block_paths] if price_block_paths else []
+    price_uf = _nested(("precio_uf",), *(path + ("precio_uf",) for path in price_paths))
+    price_clp = _nested(("precio_clp",), *(path + ("precio_clp",) for path in price_paths))
+    common_expenses = _nested(("gastos_comunes",), ("tipo_operacion", "gastos_comunes"))
+    orientation = _nested(("orientacion",), ("caracteristicas", "orientacion"))
+
+    def _number(value, *, prefix=""):
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+            if numeric.is_integer():
+                rendered = f"{int(numeric):,}".replace(",", ".")
+            else:
+                rendered = f"{numeric:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+            return f"{prefix}{rendered}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    price_display = _number(price_uf, prefix="")
+    if price_display is not None:
+        price_display = f"{price_display} UF"
+    elif price_clp is not None:
+        price_display = _number(price_clp, prefix="$" )
+    intent = intent_override or classify_local_fallback_intent(
         message, operational_intent=operational_intent,
     )
     responses = {
@@ -392,9 +489,34 @@ def build_local_fallback_response(
             "Gracias por tu consulta. Vamos a confirmar si la propiedad continúa "
             "disponible y te ayudaremos con la información."
         ),
-        "ASK_PRICE": (
-            "Gracias por tu consulta. Vamos a confirmar el valor actualizado de "
-            "la propiedad para entregarte la información correcta."
+        "PRICE_CURRENT_VALUE": (
+            f"El valor publicado es {price_display}. Si quieres, puedo ayudarte con los "
+            "antecedentes de la propiedad." if price_display else
+            "El valor publicado no aparece confirmado en la ficha. Lo podemos consultar "
+            "para entregarte la información correcta."
+        ),
+        "PRICE_NEGOTIATION": (
+            f"El valor publicado es {price_display}. Si quieres hacer una oferta, podemos "
+            "transmitirla al ejecutivo o propietario para que la evalúen; no puedo garantizar "
+            "que sea aceptada." if price_display else
+            "Podemos transmitir una oferta al ejecutivo o propietario para que la evalúen, "
+            "pero no puedo garantizar que sea aceptada."
+        ),
+        "PRICE_INCLUSIONS": (
+            f"La ficha indica que los gastos comunes son { _number(common_expenses, prefix='$') }. "
+            "Sobre los servicios básicos, revisaremos si están incluidos." if common_expenses is not None else
+            "Ese dato no aparece confirmado en la ficha. Lo podemos consultar con el ejecutivo "
+            "encargado para darte la información correcta."
+        ),
+        "COMMON_EXPENSES": (
+            f"Los gastos comunes informados son { _number(common_expenses, prefix='$') }." if common_expenses is not None else
+            "El valor de los gastos comunes no aparece confirmado en la ficha. Lo podemos "
+            "consultar con el ejecutivo encargado."
+        ),
+        "PROPERTY_ATTRIBUTE": (
+            f"La orientación informada en la ficha es {orientation}." if orientation is not None else
+            "Ese dato no aparece confirmado en la ficha. Lo podemos consultar con el ejecutivo "
+            "encargado para darte la información correcta."
         ),
         "GENERAL": (
             "Gracias por escribirnos. Recibimos tu consulta y la estamos revisando "

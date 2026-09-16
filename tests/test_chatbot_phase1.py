@@ -47,7 +47,9 @@ def test_sliding_window_and_max_wait():
     assert batch["window_end_at"] == NOW + timedelta(seconds=15)
     add(database, "in-3", "tres", NOW + timedelta(seconds=59))
     batch = database.chatbot_inbound_jobs.find_one({"kind": queue.KIND_BATCH})
-    assert batch["window_end_at"] == NOW + timedelta(seconds=60)
+    # Conversational accumulation is bounded so a burst cannot remain stale
+    # for a minute before its first coherent turn is generated.
+    assert batch["window_end_at"] == NOW + timedelta(seconds=20)
 
 
 def test_concurrent_producers_create_one_active_batch():
@@ -68,7 +70,7 @@ def test_concurrent_producers_create_one_active_batch():
     assert len(batches[0]["job_ids"]) == 2
 
 
-def test_message_arriving_during_llm_regenerates_before_send():
+def test_message_arriving_during_llm_supersedes_generation_and_requeues_batch():
     database = db()
     add(database, "in-1", "primero")
     generated = []
@@ -87,6 +89,15 @@ def test_message_arriving_during_llm_regenerates_before_send():
     result = asyncio.run(queue.process_one_batch(
         database, worker_id="worker-1", llm=llm, sender=sender,
         now=NOW + timedelta(seconds=15),
+    ))
+    assert generated == ["primero"]
+    assert sent == []
+    assert result["state"] == queue.ST_BATCHING
+    assert result["delivery_attempts"][-1]["status"] == "response_superseded_by_new_inbound"
+
+    result = asyncio.run(queue.process_one_batch(
+        database, worker_id="worker-1", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=20),
     ))
     assert generated == ["primero", "primero\nsegundo"]
     assert sent == ["respuesta: primero\nsegundo"]
@@ -135,33 +146,37 @@ def test_nudges_are_blocked_for_broker_handoff_and_visit():
     assert nudge_eligibility({"stage": "OPEN"})["eligible"]
 
 
-def test_regeneration_limit_closes_turn_without_sending_or_retry_loop(monkeypatch):
+def test_final_freshness_barrier_prevents_provider_call(monkeypatch):
     database = db()
     add(database, "in-1", "primero")
     generated = []
     sent = []
-    monkeypatch.setenv("CHATBOT_BATCH_MAX_REGENERATIONS", "2")
-
     async def llm(_phone, _text):
         generated.append("called")
-        add(database, f"in-{len(generated) + 1}", f"nuevo {len(generated)}", NOW + timedelta(seconds=16))
         return "respuesta"
 
     async def sender(_phone, text):
         sent.append(text)
         return {"success": True, "provider_message_id": "unexpected", "http_status": 200}
 
+    original_barrier = queue._batch_snapshot_is_stale
+
+    def stale_after_generation(*args, **kwargs):
+        add(database, "in-2", "segundo", NOW + timedelta(seconds=16))
+        return original_barrier(*args, **kwargs)
+
+    monkeypatch.setattr(queue, "_batch_snapshot_is_stale", stale_after_generation)
     result = asyncio.run(queue.process_one_batch(
         database, worker_id="worker-limit", llm=llm, sender=sender,
         now=NOW + timedelta(seconds=15),
     ))
 
-    assert len(generated) == 3  # initial generation + exactly two regenerations
+    assert len(generated) == 1
     assert sent == []
-    assert result["state"] == queue.ST_FAILED_TERMINAL
-    assert result["last_error"] == "stale_regeneration_limit"
-    assert "active_conversation_key" not in result
-    assert result["delivery_attempts"][-1]["status"] == "stale_regeneration_limit"
+    assert result["state"] == queue.ST_BATCHING
+    assert result["last_error"] == "response_superseded_by_new_inbound"
+    assert "active_conversation_key" in result
+    assert result["delivery_attempts"][-1]["status"] == "response_superseded_by_new_inbound"
 
 
 def test_visit_without_property_asks_identifier_first():

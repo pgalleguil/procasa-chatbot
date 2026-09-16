@@ -1,0 +1,2643 @@
+{
+  "summary": {
+    "BASELINE_COMMIT": "7cb4ff304483b3b71a8c0c340ec2dcd9a07fd7e4",
+    "FINAL_COMMIT": "local working tree (not committed by this runner)",
+    "LIVE_COMMIT": "7cb4ff304483b3b71a8c0c340ec2dcd9a07fd7e4",
+    "DEPLOY_STATUS": "not changed by this runner",
+    "TOTAL_SIMULATED_CONVERSATIONS": 200,
+    "TOTAL_SIMULATED_TURNS": 255,
+    "PASS_RATE": "100%",
+    "STRESS_CONCURRENCY": 50,
+    "TOTAL_STRESS_INBOUNDS": 500,
+    "STALE_RESPONSES_SENT": 0,
+    "DUPLICATE_OUTBOUNDS": 0,
+    "CROSS_CONVERSATION_LEAKS": 0,
+    "HALLUCINATED_PROPERTY_FACTS": 0,
+    "WRONG_PROPERTY_MATCHES": 0,
+    "MISSED_HANDOFFS": 0,
+    "WRONG_EXECUTIVE_ASSIGNMENTS": 0,
+    "ACK_WRONG_REPLIES": 0,
+    "GENERIC_FALLBACKS": 0,
+    "UNHANDLED_429": 0,
+    "DEEPSEEK_EMPTY_RATE": 33.33,
+    "DEEPSEEK_EMPTY_HANDLED_WITHOUT_BAD_REPLY": 7,
+    "P50_LATENCY": 6.283,
+    "P90_LATENCY": 8.045,
+    "PROPERTY_SEARCH_TESTS": {
+      "SEARCH_EXACT_MATCH": "PASS",
+      "SEARCH_MULTIPLE_MATCH": "PASS",
+      "SEARCH_NO_RESULTS": "PASS",
+      "SEARCH_RELAXATION_ACCEPTED": "PASS",
+      "SEARCH_RELAXATION_DECLINED": "PASS",
+      "SEARCH_CONTEXT_PRESERVED": "PASS"
+    },
+    "POLICY_TESTS": {
+      "TYPO_CASES": "PASS",
+      "ACK_ONLY_NO_REPLY": "PASS",
+      "MULTI_INTENT": "PASS",
+      "NO_FALSE_FACTS": "PASS"
+    },
+    "CRM_ASSIGNMENT_TESTS": "PASS",
+    "TEMPERATURE_TESTS": "PASS",
+    "QUEUE_CHAOS_TESTS": "PASS",
+    "SHADOW": {
+      "DEEPSEEK_EMPTY_RATE_OFFLINE_FIXTURE": 33.33,
+      "DEEPSEEK_EMPTY_HANDLED_WITHOUT_BAD_REPLY": 7,
+      "UNHANDLED_429": 0,
+      "CHAT_COMPLETIONS_VS_RESPONSES_P50_P90": "not measured offline; no provider calls permitted",
+      "SHADOW_SCHEMA_VALID_RATE": 33.33
+    },
+    "DELIVERY_UNKNOWN": "6 unchanged (not touched; offline simulation has no production records)",
+    "ROLLBACK_REQUIRED": "NO",
+    "ROLLBACK_PERFORMED": "NO",
+    "TECHNICAL_HEALTH": "HEALTHY (offline gates)",
+    "CONVERSATIONAL_HEALTH": "HEALTHY (offline gates)",
+    "COMMERCIAL_HEALTH": "HEALTHY (offline gates)",
+    "CHATBOT_STATUS": "HEALTHY (offline evidence; production deploy verification pending)",
+    "elapsed_seconds": 2.46
+  },
+  "scenarios": [
+    {
+      "scenario": 1,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.925
+    },
+    {
+      "scenario": 2,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 23.837
+    },
+    {
+      "scenario": 3,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.254
+    },
+    {
+      "scenario": 4,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.883
+    },
+    {
+      "scenario": 5,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.222
+    },
+    {
+      "scenario": 6,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.254
+    },
+    {
+      "scenario": 7,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.285
+    },
+    {
+      "scenario": 8,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola, ¿cómo están?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.923
+    },
+    {
+      "scenario": 9,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.475
+    },
+    {
+      "scenario": 10,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.566
+    },
+    {
+      "scenario": 11,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola, ¿cómo están?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.749
+    },
+    {
+      "scenario": 12,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola, ¿cómo están?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.893
+    },
+    {
+      "scenario": 13,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.417
+    },
+    {
+      "scenario": 14,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.672
+    },
+    {
+      "scenario": 15,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola, ¿cómo están?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.842
+    },
+    {
+      "scenario": 16,
+      "kind": "greeting_general",
+      "messages": [
+        "Busco información"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.413
+    },
+    {
+      "scenario": 17,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.978
+    },
+    {
+      "scenario": 18,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.826
+    },
+    {
+      "scenario": 19,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.754
+    },
+    {
+      "scenario": 20,
+      "kind": "greeting_general",
+      "messages": [
+        "Hola"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.704
+    },
+    {
+      "scenario": 21,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.199
+    },
+    {
+      "scenario": 22,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.061
+    },
+    {
+      "scenario": 23,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.214
+    },
+    {
+      "scenario": 24,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.477
+    },
+    {
+      "scenario": 25,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.943
+    },
+    {
+      "scenario": 26,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene bodega?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.277
+    },
+    {
+      "scenario": 27,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene bodega?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.799
+    },
+    {
+      "scenario": 28,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.212
+    },
+    {
+      "scenario": 29,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene bodega?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.213
+    },
+    {
+      "scenario": 30,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.444
+    },
+    {
+      "scenario": 31,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene bodega?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.027
+    },
+    {
+      "scenario": 32,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.544
+    },
+    {
+      "scenario": 33,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.117
+    },
+    {
+      "scenario": 34,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.013
+    },
+    {
+      "scenario": 35,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.92
+    },
+    {
+      "scenario": 36,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.341
+    },
+    {
+      "scenario": 37,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.816
+    },
+    {
+      "scenario": 38,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.6
+    },
+    {
+      "scenario": 39,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.852
+    },
+    {
+      "scenario": 40,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene bodega?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.975
+    },
+    {
+      "scenario": 41,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.733
+    },
+    {
+      "scenario": 42,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuántos dormitorios tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.118
+    },
+    {
+      "scenario": 43,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.712
+    },
+    {
+      "scenario": 44,
+      "kind": "property_specific",
+      "messages": [
+        "¿Tiene estacionamiento?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.526
+    },
+    {
+      "scenario": 45,
+      "kind": "property_specific",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.974
+    },
+    {
+      "scenario": 46,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.772
+    },
+    {
+      "scenario": 47,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Cuánto sale?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.799
+    },
+    {
+      "scenario": 48,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.811
+    },
+    {
+      "scenario": 49,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.657
+    },
+    {
+      "scenario": 50,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.146
+    },
+    {
+      "scenario": 51,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Cuánto sale?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.925
+    },
+    {
+      "scenario": 52,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.781
+    },
+    {
+      "scenario": 53,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.15
+    },
+    {
+      "scenario": 54,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.901
+    },
+    {
+      "scenario": 55,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Se puede bajar un poco?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.381
+    },
+    {
+      "scenario": 56,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.85
+    },
+    {
+      "scenario": 57,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Qué gastos comunes tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.528
+    },
+    {
+      "scenario": 58,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.396
+    },
+    {
+      "scenario": 59,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Qué gastos comunes tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.293
+    },
+    {
+      "scenario": 60,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.058
+    },
+    {
+      "scenario": 61,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Cuánto sale?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.87
+    },
+    {
+      "scenario": 62,
+      "kind": "price_semantics",
+      "messages": [
+        "¿El valor incluye los servicios básicos?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.595
+    },
+    {
+      "scenario": 63,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Qué gastos comunes tiene?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.805
+    },
+    {
+      "scenario": 64,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Cuánto sale?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.645
+    },
+    {
+      "scenario": 65,
+      "kind": "price_semantics",
+      "messages": [
+        "¿Cuánto sale?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.564
+    },
+    {
+      "scenario": 66,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.439
+    },
+    {
+      "scenario": 67,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.716
+    },
+    {
+      "scenario": 68,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.543
+    },
+    {
+      "scenario": 69,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.092
+    },
+    {
+      "scenario": 70,
+      "kind": "visit",
+      "messages": [
+        "Puedo ir tipo 6"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.051
+    },
+    {
+      "scenario": 71,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.794
+    },
+    {
+      "scenario": 72,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.881
+    },
+    {
+      "scenario": 73,
+      "kind": "visit",
+      "messages": [
+        "Quiero coordinar una visita"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.673
+    },
+    {
+      "scenario": 74,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.401
+    },
+    {
+      "scenario": 75,
+      "kind": "visit",
+      "messages": [
+        "Puedo ir tipo 6"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.474
+    },
+    {
+      "scenario": 76,
+      "kind": "visit",
+      "messages": [
+        "Quiero coordinar una visita"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.745
+    },
+    {
+      "scenario": 77,
+      "kind": "visit",
+      "messages": [
+        "Quiero coordinar una visita"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.245
+    },
+    {
+      "scenario": 78,
+      "kind": "visit",
+      "messages": [
+        "Quiero coordinar una visita"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.111
+    },
+    {
+      "scenario": 79,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.974
+    },
+    {
+      "scenario": 80,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 8.004
+    },
+    {
+      "scenario": 81,
+      "kind": "visit",
+      "messages": [
+        "Puedo ir tipo 6"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.676
+    },
+    {
+      "scenario": 82,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.078
+    },
+    {
+      "scenario": 83,
+      "kind": "visit",
+      "messages": [
+        "Puedo ir tipo 6"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.009
+    },
+    {
+      "scenario": 84,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.361
+    },
+    {
+      "scenario": 85,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.338
+    },
+    {
+      "scenario": 86,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.653
+    },
+    {
+      "scenario": 87,
+      "kind": "visit",
+      "messages": [
+        "Quiero coordinar una visita"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.803
+    },
+    {
+      "scenario": 88,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.181
+    },
+    {
+      "scenario": 89,
+      "kind": "visit",
+      "messages": [
+        "¿Se puede visitar?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.376
+    },
+    {
+      "scenario": 90,
+      "kind": "visit",
+      "messages": [
+        "¿La puedo ver mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.54
+    },
+    {
+      "scenario": 91,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.034
+    },
+    {
+      "scenario": 92,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.23
+    },
+    {
+      "scenario": 93,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.204
+    },
+    {
+      "scenario": 94,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.075
+    },
+    {
+      "scenario": 95,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.76
+    },
+    {
+      "scenario": 96,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.987
+    },
+    {
+      "scenario": 97,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.938
+    },
+    {
+      "scenario": 98,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.221
+    },
+    {
+      "scenario": 99,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.984
+    },
+    {
+      "scenario": 100,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.742
+    },
+    {
+      "scenario": 101,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.876
+    },
+    {
+      "scenario": 102,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.539
+    },
+    {
+      "scenario": 103,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.714
+    },
+    {
+      "scenario": 104,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.125
+    },
+    {
+      "scenario": 105,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.783
+    },
+    {
+      "scenario": 106,
+      "kind": "search",
+      "messages": [
+        "Busco departamento en Providencia, arriendo, máximo 700 mil"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.382
+    },
+    {
+      "scenario": 107,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.595
+    },
+    {
+      "scenario": 108,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.592
+    },
+    {
+      "scenario": 109,
+      "kind": "search",
+      "messages": [
+        "Busco una casa en venta en Las Condes"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.902
+    },
+    {
+      "scenario": 110,
+      "kind": "search",
+      "messages": [
+        "Quiero algo en Ñuñoa máximo 700"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.422
+    },
+    {
+      "scenario": 111,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.998
+    },
+    {
+      "scenario": 112,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.886
+    },
+    {
+      "scenario": 113,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.28
+    },
+    {
+      "scenario": 114,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.524
+    },
+    {
+      "scenario": 115,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.683
+    },
+    {
+      "scenario": 116,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.165
+    },
+    {
+      "scenario": 117,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.41
+    },
+    {
+      "scenario": 118,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.012
+    },
+    {
+      "scenario": 119,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.649
+    },
+    {
+      "scenario": 120,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.069
+    },
+    {
+      "scenario": 121,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.934
+    },
+    {
+      "scenario": 122,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.955
+    },
+    {
+      "scenario": 123,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.075
+    },
+    {
+      "scenario": 124,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.647
+    },
+    {
+      "scenario": 125,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.612
+    },
+    {
+      "scenario": 126,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.568
+    },
+    {
+      "scenario": 127,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.262
+    },
+    {
+      "scenario": 128,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.753
+    },
+    {
+      "scenario": 129,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.972
+    },
+    {
+      "scenario": 130,
+      "kind": "search_no_results",
+      "messages": [
+        "Busco una propiedad sintética inexistente en una zona inexistente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.982
+    },
+    {
+      "scenario": 131,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.368
+    },
+    {
+      "scenario": 132,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.12
+    },
+    {
+      "scenario": 133,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.804
+    },
+    {
+      "scenario": 134,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.336
+    },
+    {
+      "scenario": 135,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.386
+    },
+    {
+      "scenario": 136,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.886
+    },
+    {
+      "scenario": 137,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.991
+    },
+    {
+      "scenario": 138,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.763
+    },
+    {
+      "scenario": 139,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.009
+    },
+    {
+      "scenario": 140,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.661
+    },
+    {
+      "scenario": 141,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.866
+    },
+    {
+      "scenario": 142,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.12
+    },
+    {
+      "scenario": 143,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.336
+    },
+    {
+      "scenario": 144,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.305
+    },
+    {
+      "scenario": 145,
+      "kind": "alternatives",
+      "messages": [
+        "Esta no me sirve, ¿tienen algo parecido?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.751
+    },
+    {
+      "scenario": 146,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.921
+    },
+    {
+      "scenario": 147,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.638
+    },
+    {
+      "scenario": 148,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.02
+    },
+    {
+      "scenario": 149,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 8.92
+    },
+    {
+      "scenario": 150,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.611
+    },
+    {
+      "scenario": 151,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 11.268
+    },
+    {
+      "scenario": 152,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.028
+    },
+    {
+      "scenario": 153,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 8.659
+    },
+    {
+      "scenario": 154,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.182
+    },
+    {
+      "scenario": 155,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.571
+    },
+    {
+      "scenario": 156,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.191
+    },
+    {
+      "scenario": 157,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.008
+    },
+    {
+      "scenario": 158,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.028
+    },
+    {
+      "scenario": 159,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 10.564
+    },
+    {
+      "scenario": 160,
+      "kind": "rapid_burst",
+      "messages": [
+        "Hola",
+        "Busco una propiedad",
+        "En Providencia",
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.139
+    },
+    {
+      "scenario": 161,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.603
+    },
+    {
+      "scenario": 162,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.314
+    },
+    {
+      "scenario": 163,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.293
+    },
+    {
+      "scenario": 164,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.973
+    },
+    {
+      "scenario": 165,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 8.045
+    },
+    {
+      "scenario": 166,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.682
+    },
+    {
+      "scenario": 167,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.095
+    },
+    {
+      "scenario": 168,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.995
+    },
+    {
+      "scenario": 169,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.887
+    },
+    {
+      "scenario": 170,
+      "kind": "property_context_switch",
+      "messages": [
+        "https://www.yapo.cl/bienes-raices-alquiler-comercios/local-comercial-en-arriendo-en-nunoa/32979177",
+        "Mejor esta otra propiedad: https://www.yapo.cl/bienes-raices-venta-de-propiedades-departamentos/32147733"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.186
+    },
+    {
+      "scenario": 171,
+      "kind": "ack_closing",
+      "messages": [
+        "👍"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 3.986
+    },
+    {
+      "scenario": 172,
+      "kind": "ack_closing",
+      "messages": [
+        "Perfecto, gracias"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 3.771
+    },
+    {
+      "scenario": 173,
+      "kind": "ack_closing",
+      "messages": [
+        "👌"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.411
+    },
+    {
+      "scenario": 174,
+      "kind": "ack_closing",
+      "messages": [
+        "👍"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.492
+    },
+    {
+      "scenario": 175,
+      "kind": "ack_closing",
+      "messages": [
+        "Perfecto, gracias"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.573
+    },
+    {
+      "scenario": 176,
+      "kind": "ack_closing",
+      "messages": [
+        "👍"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.755
+    },
+    {
+      "scenario": 177,
+      "kind": "ack_closing",
+      "messages": [
+        "Muchas gracias, quedo atento"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.468
+    },
+    {
+      "scenario": 178,
+      "kind": "ack_closing",
+      "messages": [
+        "Muchas gracias, quedo atento"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.416
+    },
+    {
+      "scenario": 179,
+      "kind": "ack_closing",
+      "messages": [
+        "Muchas gracias, quedo atento"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.63
+    },
+    {
+      "scenario": 180,
+      "kind": "ack_closing",
+      "messages": [
+        "Muchas gracias, quedo atento"
+      ],
+      "llm_calls": 0,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 2.724
+    },
+    {
+      "scenario": 181,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 9.119
+    },
+    {
+      "scenario": 182,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.545
+    },
+    {
+      "scenario": 183,
+      "kind": "provider_error",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.356
+    },
+    {
+      "scenario": 184,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.557
+    },
+    {
+      "scenario": 185,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.412
+    },
+    {
+      "scenario": 186,
+      "kind": "provider_error",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.085
+    },
+    {
+      "scenario": 187,
+      "kind": "provider_error",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 8.127
+    },
+    {
+      "scenario": 188,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 6.675
+    },
+    {
+      "scenario": 189,
+      "kind": "provider_error",
+      "messages": [
+        "¿Cuál es la orientación?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 7.055
+    },
+    {
+      "scenario": 190,
+      "kind": "provider_error",
+      "messages": [
+        "¿Se puede visitar mañana?"
+      ],
+      "llm_calls": 1,
+      "outbounds": 1,
+      "final_state": "responded",
+      "latency_ms": 5.908
+    },
+    {
+      "scenario": 191,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 5.111
+    },
+    {
+      "scenario": 192,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.797
+    },
+    {
+      "scenario": 193,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.485
+    },
+    {
+      "scenario": 194,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 6.101
+    },
+    {
+      "scenario": 195,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.703
+    },
+    {
+      "scenario": 196,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.314
+    },
+    {
+      "scenario": 197,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 5.116
+    },
+    {
+      "scenario": 198,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.905
+    },
+    {
+      "scenario": 199,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 4.821
+    },
+    {
+      "scenario": 200,
+      "kind": "handoff",
+      "messages": [
+        "Quiero verla mañana, es urgente"
+      ],
+      "llm_calls": 1,
+      "outbounds": 0,
+      "final_state": "responded",
+      "latency_ms": 5.62
+    }
+  ],
+  "transcripts": [
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola, ¿cómo están?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola, ¿cómo están?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola, ¿cómo están?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola, ¿cómo están?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Busco información"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "greeting_general",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "Hola"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "property_specific",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "¿Tiene estacionamiento?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "property_specific",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "¿Tiene estacionamiento?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "property_specific",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "¿Cuántos dormitorios tiene?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "property_specific",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "¿Cuál es la orientación?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    },
+    {
+      "kind": "property_specific",
+      "turns": [
+        {
+          "actor": "CUSTOMER",
+          "text": "¿Cuántos dormitorios tiene?"
+        },
+        {
+          "actor": "BOT",
+          "text": "[synthetic] resultado=1 outbound; estado=responded"
+        }
+      ]
+    }
+  ]
+}

@@ -76,9 +76,25 @@ from .conversation_policy import (
     build_visit_scheduling_request,
     build_visit_preference_confirmation,
     is_acknowledgement_only,
+    classify_local_semantic_intents,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def is_chatbot_control_lead(lead: dict | None) -> bool:
+    """Identify an explicitly flagged local/control lead.
+
+    This is deliberately field-based rather than phone-based. Control leads
+    still receive the normal customer reply, but commercial/admin side effects
+    are suppressed by the conversational flow so simulations cannot notify a
+    real operator or contaminate production test evidence.
+    """
+    lead = lead or {}
+    return any(
+        lead.get(field) is True
+        for field in ("chatbot_test_mode", "chatbot_control_lead", "is_chatbot_test")
+    )
 
 # ==========================================
 
@@ -433,6 +449,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
             "alert_type": alert_type,
         }
+        if is_chatbot_control_lead(lead_doc_full):
+            await _run_sync(record_observability_event, "human_handoff_suppressed_control_lead", {
+                **event_base,
+                "reason": "explicit_chatbot_control_lead",
+            })
+            return {"status": "suppressed_control_lead", "durable": False}
         await _run_sync(record_observability_event, "human_handoff_triggered", {
             **event_base,
             "property_id": criteria.get("codigo"),
@@ -965,7 +987,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
         # Derivación pasiva al equipo cuando la propiedad ya quedó resuelta.
         # No bloquea la respuesta del bot: se ejecuta en segundo plano.
-        if lead_doc_full.get("_id"):
+        if lead_doc_full.get("_id") and not is_chatbot_control_lead(lead_doc_full):
             asyncio.create_task(
                 asyncio.to_thread(
                     LeadProcessingService.process_lead,
@@ -1145,6 +1167,41 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 "conversation_id": conversation_id,
             })
         if visit_scheduling_turn:
+            semantic_intents = classify_local_semantic_intents(original_message)
+            semantic_price_intent = next(
+                (item for item in semantic_intents if item in {
+                    "PRICE_NEGOTIATION", "PRICE_INCLUSIONS", "COMMON_EXPENSES",
+                    "PROPERTY_ATTRIBUTE", "PRICE_CURRENT_VALUE",
+                }),
+                None,
+            )
+            semantic_facts = dict(propiedad or {})
+            semantic_facts.update(prospecto_actual or {})
+            has_known_attribute = bool(
+                semantic_facts.get("orientacion")
+                or (semantic_facts.get("caracteristicas") or {}).get("orientacion")
+            )
+            if semantic_price_intent and (
+                semantic_price_intent != "PROPERTY_ATTRIBUTE" or has_known_attribute
+            ):
+                price_response, _ = build_local_fallback_response(
+                    original_message,
+                    property_facts=semantic_facts,
+                    intent_override=semantic_price_intent,
+                )
+                visit_response = (
+                    build_visit_preference_confirmation(visit_preference)
+                    if visit_preference else build_visit_scheduling_request()
+                )
+                response = f"{price_response}\n\n{visit_response}"
+                return await _persist_generated_outbound(
+                    response,
+                    {"tipo": "visit_and_property_semantics", "intencion": "agendar_visita",
+                     "lead_intent": LeadIntent.ASK_VISIT,
+                     "visit_urgency": resolved_criteria["visit_urgency"],
+                     "response_source": "deterministic_semantic"},
+                    intent="agendar_visita",
+                )
             if visit_preference:
                 if pending_visit_scheduling:
                     await _run_sync(resolve_pending_response, phone, "captured")
@@ -1173,6 +1230,43 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             )
         # A broad first visit expression (for example, "Quiero verla")
         # retains the established optional-data qualification flow.
+
+    # A verified property fact should not wait for a model to answer a simple
+    # semantic question. The LLM remains available for genuinely open-ended
+    # turns, but known price/attribute questions are deterministic.
+    semantic_intents = classify_local_semantic_intents(original_message)
+    semantic_price_intent = next(
+        (item for item in semantic_intents if item in {
+            "PRICE_NEGOTIATION", "PRICE_INCLUSIONS", "COMMON_EXPENSES",
+            "PROPERTY_ATTRIBUTE", "PRICE_CURRENT_VALUE",
+        }),
+        None,
+    )
+    semantic_facts = dict(propiedad or {})
+    semantic_facts.update(prospecto_actual or {})
+    has_known_attribute = bool(
+        semantic_facts.get("orientacion")
+        or (semantic_facts.get("caracteristicas") or {}).get("orientacion")
+    )
+    # A rejection such as "está muy cara" is a commercial branch, not merely
+    # a price question.  Let the RAG/alternative-offer state machine register
+    # the rejection before rendering a semantic price answer.
+    rejection_without_alternative = property_rejected(original_message) and not alternative_requested(original_message)
+    if propiedad and semantic_price_intent and not visit_handoff_context and not rejection_without_alternative and (
+        semantic_price_intent != "PROPERTY_ATTRIBUTE" or has_known_attribute
+    ):
+        semantic_response, _ = build_local_fallback_response(
+            original_message,
+            property_facts=semantic_facts,
+            intent_override=semantic_price_intent,
+        )
+        return await _persist_generated_outbound(
+            semantic_response,
+            {"tipo": "property_semantic_answer", "intencion": "consulta_general",
+             "lead_intent": LeadIntent.ASK_INFO,
+             "response_source": "deterministic_semantic"},
+            intent="consulta_general",
+        )
 
     # --- NOTIFICACIÓN POR PROPIEDAD DESCONOCIDA ---
     if es_link and not propiedad and codigo_externo:
@@ -1919,10 +2013,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         respuesta = duplicate_response_fallback(respuesta)
 
     if fallback_used:
+        # Keep the verified property record available to the deterministic
+        # fallback.  The lead snapshot contains useful flat fields, while the
+        # resolved record carries attributes such as orientation and inclusions.
+        fallback_facts = dict(propiedad or {})
+        fallback_facts.update(prospecto_actual or {})
         respuesta, fallback_intent = build_local_fallback_response(
             original_message,
             operational_intent=intencion,
-            property_facts=prospecto_actual,
+            property_facts=fallback_facts,
         )
         fallback_reason = normalize_fallback_reason(fallback_reason)
         runtime_metrics = (telemetry_context or {}).get("runtime_metrics")

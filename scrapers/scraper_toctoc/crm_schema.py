@@ -117,7 +117,17 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
     if state == "INCONCLUSIVE": state = "INCIERTO"
     if state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "AD_REMOVED"):
         state = "INCIERTO"
-    rule_state = raw.get("rule_state", "INCONCLUSIVE")
+    # A deterministic rules result does not always carry an explicit
+    # ``rule_state`` key.  Falling back to INCONCLUSIVE here erased the fact
+    # that the hard publisher veto fired, even though ``state`` was already
+    # CORREDOR_SEGURO.  Keep INCONCLUSIVE only for genuinely semantic/unknown
+    # decisions.
+    rule_state = raw.get("rule_state")
+    if not rule_state:
+        rule_state = raw_state if str(decision_source).lower() in {
+            "structural_rules", "rules_json", "structural_professional_rule",
+            "html_validation", "rules", "rules_fallback",
+        } else "INCONCLUSIVE"
     if rule_state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "INCONCLUSIVE", "AD_REMOVED"):
         rule_state = "INCONCLUSIVE"
     confidence = raw.get("confidence", 0.0)
@@ -385,12 +395,14 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "seller_text": seller_text, "seller_avatar_alt": seller_avatar,
         "seller_profile_id": str(raw.get("seller_profile_id") or ""),
         "seller_profile_logo": str(raw.get("seller_profile_logo") or ""),
+        "seller_profile_url": str(raw.get("seller_profile_url") or ""),
         "company_name": str(raw.get("company_name") or ""),
         "broker_brand": str(raw.get("broker_brand") or ""),
         "seller_is_pro": bool(raw.get("seller_is_pro")),
         "seller_type": seller_type,
         "seller_type_source": str(raw.get("seller_type_source") or ""),
         "seller_type_evidence": str(raw.get("seller_type_evidence") or ""),
+        "operation_label_raw": str(raw.get("operation_label_raw") or ""),
         "phone_original_value": phone_original_value,
         "telefono_normalizado": phone_normalized,
         "phone_normalized": phone_normalized,
@@ -432,6 +444,8 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
             "superficie_util_raw": m2c_raw if is_m2c_range else "",
             "seller_type_source": str(raw.get("seller_type_source") or ""),
             "seller_type_evidence": str(raw.get("seller_type_evidence") or ""),
+            "seller_profile_url": str(raw.get("seller_profile_url") or ""),
+            "operation_label_raw": str(raw.get("operation_label_raw") or ""),
             "comuna_source": str(raw.get("comuna_source") or ""),
             "region_source": str(raw.get("region_source") or ""),
             "location_validation": raw.get("location_validation", {}),

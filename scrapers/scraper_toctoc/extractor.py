@@ -170,8 +170,13 @@ def _publicador_visible(soup: Any, html: str) -> tuple[str, str]:
     return "", status
 
 
-def _seller_type(soup: Any) -> dict[str, Any]:
-    result = {"seller_type": "DESCONOCIDO", "seller_type_source": "", "seller_type_evidence": ""}
+def _seller_type(soup: Any, source_url: str = "") -> dict[str, Any]:
+    result = {
+        "seller_type": "DESCONOCIDO",
+        "seller_type_source": "",
+        "seller_type_evidence": "",
+        "seller_profile_url": "",
+    }
     contacto = soup.select_one("div.cf-contacto")
     if contacto:
         titulo = contacto.select_one(".contacto-anunciante .info-anunciante li.titulo strong")
@@ -187,8 +192,13 @@ def _seller_type(soup: Any) -> dict[str, Any]:
         if logo and logo.get("alt") and result["seller_type"] == "DESCONOCIDO":
             result.update({"seller_type": "EMPRESA", "seller_type_source": "logo_alt", "seller_type_evidence": str(logo.get("alt",""))})
         link = contacto.select_one(".contacto-anunciante .info-anunciante li a")
-        if link and link.get("href") and "/inmobiliarias/" in link.get("href","").lower():
-            result.update({"seller_type": "EMPRESA", "seller_type_source": "link_inmobiliaria", "seller_type_evidence": link.get("href","")})
+        if link and link.get("href"):
+            href = str(link.get("href", "")).strip()
+            result["seller_profile_url"] = urljoin(source_url or "https://www.toctoc.com", href)
+            href_lower = href.lower()
+            if "/inmobiliarias/" in href_lower or "/corredoras/" in href_lower or "/corredora/" in href_lower:
+                source = "link_corredora" if "/corredora" in href_lower else "link_inmobiliaria"
+                result.update({"seller_type": "EMPRESA", "seller_type_source": source, "seller_type_evidence": href})
     return result
 
 
@@ -304,8 +314,14 @@ def _extract_from_next_data(next_data: dict[str, Any], source_url: str) -> dict[
             client_logo = str(client.get("logo") or "")
             if client_logo:
                 fields["seller_profile_logo"] = client_logo
+            for profile_key in ("url", "profileUrl", "profile_url", "link"):
+                if client.get(profile_key):
+                    fields["seller_profile_url"] = str(client[profile_key])
+                    break
             operation = detail.get("operation") if isinstance(detail.get("operation"), dict) else {}
             operation_label = str(operation.get("operation") or "")
+            if operation_label:
+                fields["operation_label_raw"] = operation_label
             if "/corredora/" in client_logo.lower() or re.search(
                 r"\bcorredor(?:a|es)?\b", operation_label, re.IGNORECASE
             ):
@@ -449,8 +465,11 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
 
     pub_name, pub_status = _publicador_visible(soup, html)
     publicador_visible = next_fields.get("publicador_visible") or pub_name
-    publisher_extraction_status = pub_status if not pub_name else "FOUND"
-    seller_info = _seller_type(soup)
+    if next_fields.get("publicador_visible"):
+        publisher_extraction_status = "FOUND_NEXT_DATA"
+    else:
+        publisher_extraction_status = pub_status if not pub_name else "FOUND"
+    seller_info = _seller_type(soup, source_url=source_url)
     seller_type_val = seller_info.get("seller_type", "DESCONOCIDO")
     seller_type_source = seller_info.get("seller_type_source", "")
     seller_type_evidence = seller_info.get("seller_type_evidence", "")
@@ -590,6 +609,8 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
         "contact_name": contact_name,
         "seller_jsonld_name": seller_jsonld_name,
         "seller_type": seller_type_val, "seller_type_source": seller_type_source, "seller_type_evidence": seller_type_evidence,
+        "seller_profile_url": next_fields.get("seller_profile_url") or seller_info.get("seller_profile_url", ""),
+        "operation_label_raw": next_fields.get("operation_label_raw", ""),
         "listing_advertiser": next_fields.get("listing_advertiser", ""),
         "dormitorios": dorm_lo, "dormitorios_min": dorm_lo, "dormitorios_max": dorm_hi, "dormitorios_raw": dorm_raw,
         "banos": ban_lo, "banos_min": ban_lo, "banos_max": ban_hi, "banos_raw": ban_raw,

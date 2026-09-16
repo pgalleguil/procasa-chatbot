@@ -401,6 +401,38 @@ def ensure_assignment_cycle(db, property_doc: dict) -> str:
     return cycle_id
 
 
+def close_active_assignment_cycles_for_broker(
+    db,
+    property_id,
+    *,
+    occurred_at=None,
+    reason="broker_veto",
+) -> int:
+    """Close stale captacion cycles when a property becomes non-assignable.
+
+    The property document and the cycle ledger are separate sources used by
+    different CRM views.  Updating only ``gestion`` can leave an old cycle
+    active and make a broker appear assigned after cleanup.  This helper is
+    idempotent and closes only active cycles for the exact property id.
+    """
+    property_key = clean_id(property_id)
+    if not property_key:
+        return 0
+    occurred_at = occurred_at or datetime.now(timezone.utc)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    result = db[ASSIGNMENT_CYCLE_COLLECTION].update_many(
+        {"property_id": property_key, "status": "active"},
+        {"$set": {
+            "status": "closed",
+            "closed_at": occurred_at.astimezone(timezone.utc),
+            "closed_reason": str(reason),
+            "updated_at": occurred_at.astimezone(timezone.utc),
+        }},
+    )
+    return int(getattr(result, "modified_count", 0) or 0)
+
+
 def record_known_broker_auto_match(
     db,
     *,
@@ -537,6 +569,12 @@ def _mark_known_broker_property(db, property_doc: dict, event_id, occurred_at, a
             "source": "KNOWN_BROKER_AUTO_MATCH",
         }}
     collection.update_one({"_id": property_doc.get("_id")}, update)
+    close_active_assignment_cycles_for_broker(
+        db,
+        property_doc.get("_id"),
+        occurred_at=occurred_at,
+        reason="known_broker_auto_match",
+    )
 
 
 def management_dedup_key(property_id, actor_user_id, occurred_at, timezone_name=DEFAULT_TIMEZONE) -> str:

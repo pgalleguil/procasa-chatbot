@@ -22,6 +22,7 @@ PUBLISHER_IDENTITY_FIELDS = (
     "broker_brand",
     "seller_profile_logo",
     "seller_type_evidence",
+    "operation_label_raw",
 )
 
 PROFILE_FIELDS = (
@@ -142,6 +143,16 @@ def detect_hard_broker_signal(
         if not text:
             continue
         compact = text.replace(" ", "")
+        if field == "operation_label_raw" and re.search(
+            r"\b(?:venta|arriendo)\s+(?:usado|nuevo)\s+corred(?:or|ora|ores|oras)\b",
+            text,
+        ):
+            return {
+                "source_field": field,
+                "value": raw_value,
+                "reason_code": "BROKER_OPERATION_LABEL",
+                "evidence": f"{field}={raw_value}",
+            }
         if field == "seller_type_evidence":
             # A profile path under the portal's inmobiliaria section is an
             # explicit profile classification, not a personal-name guess.

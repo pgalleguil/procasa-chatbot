@@ -4,7 +4,12 @@ import mongomock
 
 from chatbot import chatbot_queue as queue
 from chatbot.constants import LeadIntent
-from chatbot.conversation_policy import is_explicit_visit_intent, is_visit_confirmation
+from chatbot.conversation_policy import (
+    has_visit_intent_veto,
+    is_explicit_visit_intent,
+    is_visit_confirmation,
+    resolve_visit_intent,
+)
 from chatbot.crm_service import CrmService
 from chatbot.lead_temperature import derive_effective_temperature
 from chatbot.property_lookup import (
@@ -87,6 +92,59 @@ def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positive
     ]
     assert all(is_explicit_visit_intent(message) for message in positives)
     assert not any(is_explicit_visit_intent(message) for message in negatives)
+
+
+def test_semantic_visit_intent_survives_when_regex_has_no_matching_phrase():
+    message = "Después de salir del trabajo podría pasar a conocer el departamento"
+    assert not is_explicit_visit_intent(message)
+
+    resolution = resolve_visit_intent(
+        "agendar_visita",
+        message,
+        deterministic_visit=False,
+    )
+
+    assert resolution["visit"] is True
+    assert resolution["source"] == "model"
+    # This is the same canonical path used by production CRM temperature
+    # derivation; no second classifier or LLM call is involved.
+    assert LeadIntent.ASK_VISIT.value == "ASK_VISIT"
+    assert derive_effective_temperature(
+        {"lead_temperature_effective": "COLD"},
+        overrides={"last_intent": LeadIntent.ASK_VISIT.value},
+    ) == "HOT"
+
+
+def test_model_visit_is_rejected_by_explicit_negative_guardrails():
+    cases = [
+        "¿Tienen visita virtual?",
+        "Visité otro departamento ayer.",
+        "Mañana voy a revisar el aviso.",
+        "Mi hermano fue a verlo.",
+        "Solo estoy mirando por ahora.",
+        "No quiero visitarlo.",
+        "Quiero saber si aceptan mascotas.",
+    ]
+    for message in cases:
+        resolution = resolve_visit_intent(
+            "agendar_visita",
+            message,
+            deterministic_visit=False,
+        )
+        assert has_visit_intent_veto(message) or "mascota" in message.lower()
+        assert resolution["visit"] is False, message
+        assert resolution["negative_veto"] is True, message
+
+
+def test_property_url_without_visit_signal_is_not_semantic_confirmation():
+    resolution = resolve_visit_intent(
+        "agendar_visita",
+        YAPO_URL,
+        deterministic_visit=False,
+        property_reference_only=True,
+    )
+    assert resolution["visit"] is False
+    assert resolution["negative_veto"] is True
 
 
 def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):

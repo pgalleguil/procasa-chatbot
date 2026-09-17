@@ -15,11 +15,22 @@ from .mongo_identity import mongo_id_variants
 from .lead_router import get_active_executive_phone, should_send_now
 from .notification_service import NotificationService
 from .storage import get_async_db
+from .crm_sla_alert_settings import sla_alerts_enabled
 
 logger = logging.getLogger(__name__)
 
 
 async def monitor_sla_thresholds():
+    # The canonical crm_sla_alert orchestrator owns SLA warnings in
+    # production.  Keep this compatibility monitor callable for isolated
+    # legacy tests/tools, but never allow it to send while the canonical
+    # pipeline is enabled; the two pipelines have different queues and
+    # idempotency namespaces and could otherwise duplicate alerts.
+    if sla_alerts_enabled():
+        logger.warning(
+            "[SLA_MONITOR] Legacy monitor blocked while canonical SLA alerts are enabled."
+        )
+        return
     if not Config.CRM_SLA_ALERTS_ENABLED:
         logger.info("[SLA_MONITOR] Alertas a ejecutivos desactivadas.")
         return

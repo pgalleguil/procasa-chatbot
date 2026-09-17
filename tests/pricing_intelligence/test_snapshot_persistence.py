@@ -30,7 +30,8 @@ def _property(code="P1", price=5000):
     return {
         "codigo": code,
         "tipo_operacion": {
-            "tipo": "Venta",
+            "tipo": "Departamento",
+            "venta": True,
             "precio_venta": {"precio_uf": price, "precio_clp": 190000000},
         },
         "metadata": {"tipo_propiedad": "Departamento"},

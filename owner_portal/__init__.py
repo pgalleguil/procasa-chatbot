@@ -9,6 +9,12 @@ from .service import (
     is_procasa_sucre_property,
     select_preview_property_code,
 )
+from .semantics import (
+    canonical_region,
+    operation_price,
+    region_to_macrozone,
+    resolve_property_operations,
+)
 from .schemas import (
     DemandForecastViewV1,
     MarketIndicatorV1,
@@ -34,6 +40,10 @@ __all__ = [
     "get_owner_portal_property_view",
     "is_procasa_sucre_property",
     "select_preview_property_code",
+    "canonical_region",
+    "operation_price",
+    "region_to_macrozone",
+    "resolve_property_operations",
     "OwnerPortalAccessV1",
     "OwnerPortalEventV1",
     "OwnerPortalPropertyViewV1",

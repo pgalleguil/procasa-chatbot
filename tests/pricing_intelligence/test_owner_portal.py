@@ -30,6 +30,7 @@ def master_doc(code: str, office: str = "PROCASA SUCRE", *, active: bool = True,
         "estado": {"oficina": office, "disponible_prop360": active},
         "tipo_operacion": {
             "tipo": "Departamento",
+            "venta": True,
             "precio_venta": {"precio_uf": 3200, "precio_clp": 120000000} if price else {},
         },
         "metadata": {"tipo_propiedad": "Departamento"},

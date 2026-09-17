@@ -31,6 +31,7 @@ from .time_utils import (
     to_utc,
     validate_operational_as_of,
 )
+from owner_portal.semantics import operation_price, resolve_property_operations
 
 
 SNAPSHOT_SCHEMA_VERSION = "PropertyDailySnapshotV1"
@@ -95,25 +96,15 @@ def _boolean(value: Any) -> Optional[bool]:
     return None
 
 
-def _operation_key(operation: Optional[str]) -> str:
-    value = (operation or "").casefold()
-    value = "".join(
-        character
-        for character in unicodedata.normalize("NFKD", value)
-        if not unicodedata.combining(character)
-    )
-    return value
-
-
-def _current_prices(document: Mapping[str, Any]) -> tuple[Optional[float], Optional[float]]:
-    operation = _operation_key(_text(_path_value(document, "tipo_operacion.tipo")))
-    if "arriend" in operation:
-        price_block = _path_value(document, "tipo_operacion.precio_arriendo") or {}
-    else:
-        price_block = _path_value(document, "tipo_operacion.precio_venta") or {}
-    if not isinstance(price_block, Mapping):
+def _current_prices(
+    document: Mapping[str, Any],
+    operation: Optional[str] = None,
+) -> tuple[Optional[float], Optional[float]]:
+    selected = operation or resolve_property_operations(document).get("primary_operation")
+    if selected not in {"venta", "arriendo"}:
         return None, None
-    return _number(price_block.get("precio_uf")), _number(price_block.get("precio_clp"))
+    prices = operation_price(document, selected)
+    return prices["uf"], prices["clp"]
 
 
 def _publication_states(document: Mapping[str, Any]) -> tuple[PublicationState, ...]:
@@ -357,11 +348,12 @@ class PropertySnapshotBuilder:
                 separate_events=events_by_code.get(code, ()),
             )
 
-            operation = _text(_path_value(document, "tipo_operacion.tipo"))
+            resolved_operations = resolve_property_operations(document)
+            operation = resolved_operations.get("primary_operation")
             property_type = _text(_path_value(document, "metadata.tipo_propiedad")) or _text(
                 _path_value(document, "metadata.tipo_propiedad_detectado")
             )
-            current_price_uf, current_price_clp = _current_prices(document)
+            current_price_uf, current_price_clp = _current_prices(document, operation)
             bedrooms = _number(_path_value(document, "caracteristicas.dormitorios"))
             bathrooms = _number(_path_value(document, "caracteristicas.banos"))
             parking = _number(_path_value(document, "caracteristicas.estacionamientos"))

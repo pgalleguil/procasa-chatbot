@@ -32,6 +32,12 @@ from .schemas import (
     OwnerPortalTimelineEventV1,
     MarketIndicatorV1,
 )
+from .semantics import (
+    canonical_region,
+    operation_price,
+    region_to_macrozone,
+    resolve_property_operations,
+)
 
 OFFICE_SCOPE = "PROCASA_SUCRE"
 SUCRE_OFFICE_FIELD = "estado.oficina"
@@ -217,22 +223,31 @@ def _text_variants(value: Any) -> list[str]:
     return sorted(value for value in values if value)
 
 
-def _operation(doc: Mapping[str, Any]) -> str | None:
-    return _text(_path(doc, "tipo_operacion.tipo"))
+def _property_type(doc: Mapping[str, Any]) -> str | None:
+    """Read the property type separately from the transaction operation."""
+
+    return (
+        _text(_path(doc, "metadata.tipo_propiedad"))
+        or _text(_path(doc, "metadata.tipo_propiedad_detectado"))
+        or _text(_path(doc, "tipo_operacion.tipo"))
+    )
 
 
-def _price(doc: Mapping[str, Any]) -> dict[str, float | None]:
-    operation = (_operation(doc) or "").casefold()
-    block = _path(doc, "tipo_operacion.precio_arriendo") if "arriend" in operation else _path(doc, "tipo_operacion.precio_venta")
-    if not isinstance(block, Mapping):
-        block = _path(doc, "tipo_operacion.precio_venta") or _path(doc, "tipo_operacion.precio_arriendo")
-    block = block if isinstance(block, Mapping) else {}
-    uf = _number(block.get("precio_uf"))
-    clp = _number(block.get("precio_clp"))
-    return {
-        "uf": uf if uf is not None and uf > 0 else None,
-        "clp": clp if clp is not None and clp > 0 else None,
-    }
+def _operation(doc: Mapping[str, Any], operation: str | None = None) -> str | None:
+    """Return one explicitly selected operation, or the single canonical one."""
+
+    resolved = resolve_property_operations(doc)
+    if operation is not None:
+        normalized = str(operation).strip().casefold()
+        return normalized if normalized in resolved["operations"] else None
+    return resolved["primary_operation"]
+
+
+def _price(doc: Mapping[str, Any], operation: str | None = None) -> dict[str, float | None]:
+    """Read the price belonging to one canonical operation, without fallback."""
+
+    selected = _operation(doc, operation)
+    return operation_price(doc, selected) if selected else {"uf": None, "clp": None}
 
 
 def is_procasa_sucre_property(property_doc: Mapping[str, Any]) -> bool:
@@ -485,8 +500,13 @@ def _captacion_by_ids(db: Any, listing_ids: Iterable[str]) -> list[dict[str, Any
 
 
 def _eligible_score(doc: Mapping[str, Any], image_count: int) -> tuple[int, str]:
+    resolved_operations = resolve_property_operations(doc)
+    available_prices = any(
+        any(value is not None for value in _price(doc, operation).values())
+        for operation in resolved_operations["operations"]
+    )
     values = [
-        _price(doc)["uf"] is not None or _price(doc)["clp"] is not None,
+        available_prices,
         image_count > 0,
         _path(doc, "ubicacion.comuna") is not None,
         _path(doc, "caracteristicas.dormitorios") is not None,
@@ -767,13 +787,33 @@ def _safe_property(
     doc: Mapping[str, Any],
     image_urls: list[str],
     captures: Iterable[Mapping[str, Any]] = (),
+    operation: str | None = None,
 ) -> dict[str, Any]:
-    price = _price(doc)
+    resolved_operations = resolve_property_operations(doc)
+    requested_operation = operation.strip().casefold() if isinstance(operation, str) else None
+    if requested_operation is not None:
+        selected_operation = (
+            requested_operation if requested_operation in resolved_operations["operations"] else None
+        )
+    else:
+        selected_operation = resolved_operations["primary_operation"]
+    selection_required = bool(
+        resolved_operations["conflict"]
+        or (len(resolved_operations["operations"]) > 1 and selected_operation is None)
+        or (operation is not None and selected_operation is None)
+    )
+    price = _price(doc, selected_operation)
+    raw_region = _text(_path(doc, "ubicacion.region")) or ""
     return {
         "code": _text(doc.get("codigo")),
-        "operation": _operation(doc) or "",
-        "property_type": _text(_path(doc, "metadata.tipo_propiedad")) or "",
-        "region": _text(_path(doc, "ubicacion.region")) or "",
+        "operation": selected_operation,
+        "operations": tuple(resolved_operations["operations"]),
+        "operation_selection_required": selection_required,
+        "operation_conflict": bool(resolved_operations["conflict"]),
+        "property_type": _property_type(doc) or "",
+        "region": raw_region,
+        "canonical_region": canonical_region(raw_region),
+        "macrozone": region_to_macrozone(raw_region),
         "commune": _text(_path(doc, "ubicacion.comuna")) or "",
         "sector": _text(_path(doc, "ubicacion.sector")) or "",
         "bedrooms": _number(_path(doc, "caracteristicas.dormitorios")),
@@ -840,12 +880,13 @@ def _as_of_or_now(as_of: datetime | None) -> datetime:
 def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = None) -> dict[str, Any]:
     as_of = _as_of_or_now(as_of)
     commune, property_type = prop["commune"], prop["property_type"]
+    operation = prop.get("operation")
     market_client = getattr(db, "client", db)
     cache_key = (
         id(market_client),
         _market_match_key(commune, property_type),
         as_of.astimezone(timezone.utc).date().isoformat(),
-        _text(prop.get("operation")) or "",
+        _text(operation) or "",
     )
     now = time.monotonic()
     cached = _MARKET_CONTEXT_CACHE.get(cache_key)
@@ -873,7 +914,7 @@ def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = N
             {"match_key": _market_match_key(commune, property_type)},
             aggregate_projection,
         ) or {}
-    result = _comparables(db, prop, aggregate, as_of)
+    result = _comparables(db, prop, aggregate, as_of, operation)
     _MARKET_CONTEXT_CACHE[cache_key] = (now, market_client, result)
     if len(_MARKET_CONTEXT_CACHE) > 64:
         oldest_key = min(_MARKET_CONTEXT_CACHE, key=lambda key: _MARKET_CONTEXT_CACHE[key][0])
@@ -881,11 +922,34 @@ def _market_context(db: Any, prop: Mapping[str, Any], as_of: datetime | None = N
     return result
 
 
-def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any], as_of: datetime) -> dict[str, Any]:
+def _comparables(
+    db: Any,
+    prop: Mapping[str, Any],
+    aggregate: Mapping[str, Any],
+    as_of: datetime,
+    operation: str | None,
+) -> dict[str, Any]:
+    operation = operation.strip().casefold() if isinstance(operation, str) else None
+    if operation not in {"venta", "arriendo"}:
+        return {
+            "minimum_comparables": 5,
+            "comparables_count": 0,
+            "median_price_uf": None,
+            "median_uf_m2": None,
+            "range_price_uf": [None, None],
+            "aggregate": {},
+            "indicators": {},
+            "range_reference": {},
+            "valid_rows": [],
+            "source": None,
+            "aggregate_updated_at": None,
+            "market_as_of": None,
+            "explanation": "La operación debe estar seleccionada explícitamente para construir comparables.",
+        }
     query = {
         "comuna": {"$in": _text_variants(prop["commune"])},
         "tipo_propiedad": {"$in": _text_variants(prop["property_type"])},
-        "operacion": {"$in": _text_variants("venta")},
+        "operacion": {"$in": _text_variants(operation)},
     }
     rows = list(
         db[CAPTACION_COLLECTION].find(
@@ -919,7 +983,7 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             continue
         if _normalized_label(row.get("tipo_propiedad")) != _normalized_label(prop["property_type"]):
             continue
-        if _normalized_label(row.get("operacion")) != "venta":
+        if _normalized_label(row.get("operacion")) != operation:
             continue
         price = _number(row.get("precio_uf"))
         surface = next(
@@ -960,17 +1024,35 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
                 "date_basis": date_basis,
             }
         )
-    market_sale = aggregate.get("mercado_venta") if isinstance(aggregate.get("mercado_venta"), Mapping) else {}
-    indicators = aggregate.get("indicadores_mercado") if isinstance(aggregate.get("indicadores_mercado"), Mapping) else {}
-    ranges = aggregate.get("rangos_precio_venta") if isinstance(aggregate.get("rangos_precio_venta"), Mapping) else {}
-    source = aggregate.get("source") if isinstance(aggregate.get("source"), Mapping) else {}
+    # ``mercado_comunal`` currently exposes only an audited sale aggregate.
+    # Never attach it to an arriendo cohort until a rent aggregate exists.
+    market_sale = (
+        aggregate.get("mercado_venta")
+        if operation == "venta" and isinstance(aggregate.get("mercado_venta"), Mapping)
+        else {}
+    )
+    indicators = (
+        aggregate.get("indicadores_mercado")
+        if operation == "venta" and isinstance(aggregate.get("indicadores_mercado"), Mapping)
+        else {}
+    )
+    ranges = (
+        aggregate.get("rangos_precio_venta")
+        if operation == "venta" and isinstance(aggregate.get("rangos_precio_venta"), Mapping)
+        else {}
+    )
+    source = (
+        aggregate.get("source")
+        if operation == "venta" and isinstance(aggregate.get("source"), Mapping)
+        else {}
+    )
     market_as_of = _format_date(
         source.get("fecha_reporte")
         or source.get("report_date")
-        or aggregate.get("as_of")
-        or aggregate.get("fecha_corte")
-        or aggregate.get("fecha_actualizacion")
-        or aggregate.get("updated_at")
+        or (aggregate.get("as_of") if operation == "venta" else None)
+        or (aggregate.get("fecha_corte") if operation == "venta" else None)
+        or (aggregate.get("fecha_actualizacion") if operation == "venta" else None)
+        or (aggregate.get("updated_at") if operation == "venta" else None)
     )
     if len(valid) >= 5:
         prices = [item["price_uf"] for item in valid]
@@ -985,8 +1067,12 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
             "indicators": dict(indicators),
             "range_reference": dict(ranges),
             "valid_rows": valid,
-            "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
-            "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
+            "source": dict(source) if source else None,
+            "aggregate_updated_at": (
+                aggregate.get("updated_at") or aggregate.get("fecha_actualizacion")
+                if operation == "venta"
+                else None
+            ),
             "market_as_of": market_as_of,
             "explanation": "Comparables descriptivos: misma comuna, tipo y operación; precio y superficie válidos; fecha reciente cuando está disponible.",
         }
@@ -1000,8 +1086,12 @@ def _comparables(db: Any, prop: Mapping[str, Any], aggregate: Mapping[str, Any],
         "indicators": dict(indicators),
         "range_reference": dict(ranges),
         "valid_rows": valid,
-        "source": dict(aggregate.get("source")) if isinstance(aggregate.get("source"), Mapping) else None,
-        "aggregate_updated_at": aggregate.get("updated_at") or aggregate.get("fecha_actualizacion"),
+        "source": dict(source) if source else None,
+        "aggregate_updated_at": (
+            aggregate.get("updated_at") or aggregate.get("fecha_actualizacion")
+            if operation == "venta"
+            else None
+        ),
         "market_as_of": market_as_of,
         "explanation": "Se requieren al menos 5 comparables válidos para mostrar una mediana o rango representativo.",
     }
@@ -1068,6 +1158,7 @@ def _comparable_examples(
 def _cohort_statistics(
     rows: list[Mapping[str, Any]],
     *,
+    operation: str,
     level: str,
     label: str,
     surface_rule: str,
@@ -1088,6 +1179,7 @@ def _cohort_statistics(
         return None
     uf_m2 = [float(row["price_uf"]) / float(row["surface_m2"]) for row in rows]
     return OwnerPortalComparableCohortV1(
+        operation=operation,
         level=level,
         label=label,
         count=len(rows),
@@ -1115,6 +1207,9 @@ def _select_comparable_cohort(
     """Select the most similar cohort with the explicit N>=8 guard."""
 
     broad = list(market.get("valid_rows") or [])
+    operation = prop.get("operation")
+    if operation not in {"venta", "arriendo"}:
+        return None
     target_surface = _number(prop.get("built_area_m2")) or _number(prop.get("land_area_m2"))
     target_bedrooms = _number(prop.get("bedrooms"))
     target_bathrooms = _number(prop.get("bathrooms"))
@@ -1146,6 +1241,7 @@ def _select_comparable_cohort(
     selected = (
         _cohort_statistics(
             high_similarity,
+            operation=operation,
             level="high_similarity",
             label="Alta similitud",
             surface_rule="superficie ±20%",
@@ -1156,6 +1252,7 @@ def _select_comparable_cohort(
         )
         or _cohort_statistics(
             similar,
+            operation=operation,
             level="similar",
             label="Propiedades similares",
             surface_rule="superficie ±25%",
@@ -1166,6 +1263,7 @@ def _select_comparable_cohort(
         )
         or _cohort_statistics(
             broad,
+            operation=operation,
             level="broad",
             label="Mercado amplio",
             surface_rule="misma comuna, tipo y operación; superficie válida",
@@ -1619,6 +1717,7 @@ def get_owner_portal_property_view(
     db: Any,
     property_code: str,
     as_of: datetime,
+    operation: str | None = None,
 ) -> OwnerPortalPropertyViewV1 | None:
     """Build one explicit, read-only, PII-free owner portal DTO."""
 
@@ -1635,9 +1734,10 @@ def get_owner_portal_property_view(
             if image not in image_urls:
                 image_urls.append(image)
 
-    prop = _safe_property(doc, image_urls, captures)
+    prop = _safe_property(doc, image_urls, captures, operation=operation)
     code = prop["code"] or str(property_code)
-    snapshot = _snapshot(db, code, cutoff)
+    selection_required = bool(prop["operation_selection_required"])
+    snapshot = None if selection_required else _snapshot(db, code, cutoff)
     leads = _lead_metrics_for_property(db, doc, cutoff)
     market = _market_context(db, prop, cutoff)
     national_indicators = _national_indicators(db, cutoff)
@@ -1683,7 +1783,7 @@ def get_owner_portal_property_view(
         exact_lead_dates=leads.get("exact_lead_dates", ()),
     )
     market_intelligence_snapshot = _market_intelligence_snapshot(db, cutoff)
-    market_available = cohort is not None
+    market_available = cohort is not None and not selection_required
     data_quality = OwnerPortalDataQualityV1(
         photo_available=bool(image_urls),
         price_available=current_price.uf is not None or current_price.clp is not None,
@@ -1699,8 +1799,12 @@ def get_owner_portal_property_view(
         property_code=code,
         property_type=prop["property_type"],
         operation=prop["operation"],
+        operations=prop["operations"],
+        operation_selection_required=selection_required,
         commune=prop["commune"],
         region=prop["region"],
+        canonical_region=prop["canonical_region"],
+        macrozone=prop["macrozone"],
         main_image_url=image_urls[0] if image_urls else None,
         current_price_uf=current_price.uf,
         current_price_clp=current_price.clp,

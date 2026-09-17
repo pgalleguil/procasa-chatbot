@@ -11,8 +11,12 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "property_code",
         "property_type",
         "operation",
+        "operations",
+        "operation_selection_required",
         "commune",
         "region",
+        "canonical_region",
+        "macrozone",
         "main_image_url",
         "current_price_uf",
         "current_price_clp",
@@ -307,6 +311,7 @@ class OwnerPortalComparableExampleV1:
 class OwnerPortalComparableCohortV1:
     """Selected statistical cohort and the rules used to build it."""
 
+    operation: str
     level: str
     label: str
     count: int
@@ -327,6 +332,7 @@ class OwnerPortalComparableCohortV1:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "operation": self.operation,
             "level": self.level,
             "label": self.label,
             "count": self.count,
@@ -404,9 +410,13 @@ class OwnerPortalPropertyViewV1:
 
     property_code: str
     property_type: str
-    operation: str
+    operation: str | None
+    operations: tuple[str, ...]
+    operation_selection_required: bool
     commune: str
     region: str
+    canonical_region: str | None
+    macrozone: str | None
     main_image_url: str | None
     current_price_uf: float | None
     current_price_clp: float | None
@@ -451,8 +461,12 @@ class OwnerPortalPropertyViewV1:
             "property_code": self.property_code,
             "property_type": self.property_type,
             "operation": self.operation,
+            "operations": list(self.operations),
+            "operation_selection_required": self.operation_selection_required,
             "commune": self.commune,
             "region": self.region,
+            "canonical_region": self.canonical_region,
+            "macrozone": self.macrozone,
             "main_image_url": self.main_image_url,
             "current_price_uf": self.current_price_uf,
             "current_price_clp": self.current_price_clp,
@@ -700,7 +714,7 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
     cohort = payload.get("comparable_cohort")
     if isinstance(cohort, Mapping):
         expected = {
-            "level", "label", "count", "p10_uf", "p25_uf", "median_uf", "p75_uf",
+            "operation", "level", "label", "count", "p10_uf", "p25_uf", "median_uf", "p75_uf",
             "p90_uf", "median_uf_m2", "surface_rule", "bedroom_rule", "bathroom_rule",
             "date_rule", "broad_count", "similar_count", "high_similarity_count", "examples",
         }

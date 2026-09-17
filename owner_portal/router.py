@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -425,6 +425,7 @@ def _convergent_payload(view: dict) -> dict:
 @router.get("/owner-portal-preview", response_class=HTMLResponse, include_in_schema=False)
 async def owner_portal_preview(
     request: Request,
+    operation: str | None = Query(default=None),
     _user=Depends(require_internal_preview),
 ) -> HTMLResponse:
     db = get_db()
@@ -432,7 +433,7 @@ async def owner_portal_preview(
     code = await run_in_threadpool(select_preview_property_code, db)
     if not code:
         raise HTTPException(status_code=404, detail="No eligible PROCASA SUCRE property")
-    view = await run_in_threadpool(get_owner_portal_property_view, db, code, as_of)
+    view = await run_in_threadpool(get_owner_portal_property_view, db, code, as_of, operation)
     if view is None:
         raise HTTPException(status_code=404, detail="Property is not available in PROCASA SUCRE scope")
     return _render(request, view.to_dict())
@@ -442,10 +443,11 @@ async def owner_portal_preview(
 async def owner_portal_preview_for_property(
     property_code: str,
     request: Request,
+    operation: str | None = Query(default=None),
     _user=Depends(require_internal_preview),
 ) -> HTMLResponse:
     as_of = datetime.now(BUSINESS_TZ)
-    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of)
+    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of, operation)
     if view is None:
         raise HTTPException(status_code=404, detail="Property is not available in PROCASA SUCRE scope")
     return _render(request, view.to_dict())
@@ -487,9 +489,10 @@ async def owner_portal_concept_c(
 async def _owner_portal_convergent(
     request: Request,
     property_code: str,
+    operation: str | None = None,
 ) -> HTMLResponse:
     as_of = datetime.now(BUSINESS_TZ)
-    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of)
+    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of, operation)
     if view is None:
         raise HTTPException(status_code=404, detail="Property is not available in PROCASA SUCRE scope")
     return _templates.TemplateResponse(
@@ -516,6 +519,7 @@ async def owner_portal_convergent(
 async def owner_portal_convergent_for_property(
     property_code: str,
     request: Request,
+    operation: str | None = Query(default=None),
     _user=Depends(require_internal_preview),
 ) -> HTMLResponse:
-    return await _owner_portal_convergent(request, property_code)
+    return await _owner_portal_convergent(request, property_code, operation)

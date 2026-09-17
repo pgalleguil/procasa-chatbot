@@ -20,7 +20,11 @@ NOW = datetime(2026, 9, 9, 12, tzinfo=BUSINESS_TZ)
 def property_doc(*, price=5000, include_surface=True):
     document = {
         "codigo": "P1",
-        "tipo_operacion": {"tipo": "Venta", "precio_venta": {"precio_uf": price, "precio_clp": 190000000}},
+        "tipo_operacion": {
+            "tipo": "Departamento",
+            "venta": True,
+            "precio_venta": {"precio_uf": price, "precio_clp": 190000000},
+        },
         "metadata": {"tipo_propiedad": "Departamento"},
         "ubicacion": {"region": "RM", "comuna": "Santiago", "sector": None, "calle": "NO_COPY"},
         "caracteristicas": {"dormitorios": 2, "banos": 2, "estacionamientos": 1},

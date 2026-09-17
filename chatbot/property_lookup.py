@@ -161,6 +161,89 @@ def get_prop_operation(prop: Dict[str, Any], operation_override: Optional[str] =
     }
 
 
+PROPERTY_AVAILABILITY_STATES = frozenset({
+    "PROPERTY_FOUND",
+    "PROPERTY_NOT_FOUND",
+    "PROPERTY_FOUND_BUT_INACTIVE",
+    "PROPERTY_FOUND_AVAILABILITY_UNKNOWN",
+    "PROPERTY_FOUND_AVAILABLE",
+})
+
+
+def property_availability_state(prop: Dict[str, Any] | None) -> str:
+    """Return the bounded availability state for an already resolved property.
+
+    Resolving a publication and proving that it is currently available are
+    separate facts.  The chatbot must not turn an unknown availability value
+    into a false ``not in portfolio`` claim.
+    """
+    if not prop:
+        return "PROPERTY_NOT_FOUND"
+
+    state = prop.get("estado") if isinstance(prop.get("estado"), dict) else {}
+    values = [
+        prop.get("disponible_prop360"),
+        prop.get("disponible"),
+        state.get("disponible_prop360"),
+        state.get("disponible"),
+        state.get("active"),
+        state.get("activo"),
+    ]
+    if any(value is True for value in values):
+        return "PROPERTY_FOUND_AVAILABLE"
+    if any(value is False for value in values):
+        return "PROPERTY_FOUND_BUT_INACTIVE"
+
+    text_status = " ".join(
+        str(value or "").strip().casefold()
+        for value in (prop.get("status"), prop.get("estado"), state.get("status"), state.get("estado"))
+        if not isinstance(value, dict)
+    )
+    if any(token in text_status for token in ("inactive", "inactivo", "inactiva", "retirad", "vendid", "cerrad", "no disponible")):
+        return "PROPERTY_FOUND_BUT_INACTIVE"
+    return "PROPERTY_FOUND_AVAILABILITY_UNKNOWN"
+
+
+def canonical_property_context(prop: Dict[str, Any] | None, operation_override: Optional[str] = None) -> Dict[str, Any]:
+    """Build the one turn-local property identity used by downstream code."""
+    if not prop:
+        return {}
+    location = get_prop_location(prop)
+    operation = get_prop_operation(prop, operation_override=operation_override)
+    return {
+        "codigo": _clean_text(prop.get("codigo")),
+        "comuna": location.get("comuna") or "",
+        "region": location.get("region") or "",
+        "tipo": operation.get("tipo") or "",
+        "operacion": operation.get("operacion") or "",
+        "precio_uf": operation.get("precio_uf"),
+        "property_availability_state": property_availability_state(prop),
+    }
+
+
+_NOT_PORTFOLIO_CLAIM_RE = re.compile(
+    r"(?:no\s+(?:es|est[aá]|forma\s+parte|pertenece)|fuera\s+de)"
+    r".{0,80}(?:nuestro|el|la|un|una)?\s*(?:portafolio|cat[aá]logo|cartera)"
+    r"|(?:no\s+(?:est[aá]|forma\s+parte|pertenece))"
+    r".{0,80}(?:portafolio|cat[aá]logo|cartera)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def guard_resolved_property_response(response: str, prop: Dict[str, Any] | None) -> str:
+    """Replace only a false portfolio denial after a successful resolution."""
+    if not prop or not _NOT_PORTFOLIO_CLAIM_RE.search(str(response or "")):
+        return response
+
+    code = _clean_text(prop.get("codigo")) or "la propiedad"
+    state = property_availability_state(prop)
+    if state == "PROPERTY_FOUND_BUT_INACTIVE":
+        availability = "Su estado actual indica que podría no estar disponible; lo verificaremos antes de coordinar una visita."
+    else:
+        availability = "La propiedad está registrada en nuestro sistema y verificaré su disponibilidad actual antes de coordinar una visita."
+    return f"Encontré la propiedad {code} en nuestro sistema. {availability} ¿Qué información te gustaría revisar?"
+
+
 def get_prop_executive(prop: Dict[str, Any]) -> str:
     estado = prop.get("estado", {}) or {}
     for key in ("ejecutivo", "captador", "responsable"):

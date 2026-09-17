@@ -125,6 +125,7 @@ from chatbot.followup_tracking import (
 )
 from chatbot.manual_entry import create_manual_lead, check_lead_duplicate, resolve_property_code
 from chatbot.processing_service import LeadProcessingService
+from chatbot.webhook_event_policy import is_outbound_message_event
 from chatbot.crm_permissions import (
     can_administer_leads,
     lead_is_assigned_to_user,
@@ -3650,6 +3651,13 @@ async def webhook(
             _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
         )
         return JSONResponse({"status": "delivery_updated" if updated else "delivery_not_tracked"}, status_code=200)
+
+    # Wasender emits ``message.sent`` for outbound provider activity. It is
+    # delivery/observability input only; it must never be interpreted as a
+    # customer turn or enter the inbound queue/DeepSeek path.
+    if is_outbound_message_event(data):
+        logger.info("[WHATSAPP] outbound provider event acknowledged without chatbot processing")
+        return JSONResponse({"ok": True, "status": "outbound_event_ignored"}, status_code=200)
 
     # --- LOG AGRESIVO PARA DEBUG ---
     logger.info(f"Incoming Webhook Event: {data.get('event')} | Payload size: {len(raw_body)}")

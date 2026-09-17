@@ -79,7 +79,7 @@ ACTION = {
 }
 
 RACE_SAFE_BREACH_CLAUSE = (
-    "Si el lead continúa asignado a ti, registra el resultado inmediatamente.\n"
+    "Si el lead continúa asignado a ti, registra la gestión o resultado inmediatamente.\n"
     "Si ya fue reasignado, el CRM bloqueará automáticamente su gestión."
 )
 
@@ -111,7 +111,6 @@ def build_sla_message(
     lead_url: str,
     outreach_state: str,
 ) -> str:
-    limit = 60 if hot else 180
     has_action = outreach_state != "none"
 
     # Headers with action detection
@@ -129,7 +128,7 @@ def build_sla_message(
             "\U0001f525\u26a0\ufe0f *Lead Hot pr\u00f3ximo a vencer*"
         )
         timing = (
-            f"Tiempo transcurrido: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} minutos h\u00e1biles\n"
             f"Hora l\u00edmite: {deadline_display}"
         )
         link_label = "🔗 Revisar lead:"
@@ -147,7 +146,7 @@ def build_sla_message(
             "\u26a0\ufe0f *Lead pr\u00f3ximo a vencer*"
         )
         timing = (
-            f"Tiempo transcurrido: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} minutos h\u00e1biles\n"
             f"Hora l\u00edmite: {deadline_display}"
         )
         link_label = "🔗 Revisar lead:"

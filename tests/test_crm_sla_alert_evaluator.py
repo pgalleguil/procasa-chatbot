@@ -48,7 +48,7 @@ class TestTemplateVariants:
     def test_standard_warning_none(self):
         t = _msg(hot=False, breached=False, outreach_state="none")
         assert "pr\u00f3ximo a vencer" in t
-        assert "160 de 180" in t
+        assert "Tiempo transcurrido: 160 minutos h\u00e1biles" in t
         assert "Hora l\u00edmite: 24/07/2026 12:00" in t
 
     def test_standard_warning_whatsapp_opened(self):
@@ -98,7 +98,7 @@ class TestTemplateVariants:
 
     def test_hot_warning_none(self):
         t = _msg(hot=True, breached=False, outreach_state="none", elapsed_minutes=48)
-        assert "Hot pr\u00f3ximo a vencer" in t and "48 de 60" in t
+        assert "Hot pr\u00f3ximo a vencer" in t and "Tiempo transcurrido: 48 minutos h\u00e1biles" in t
 
     def test_hot_warning_whatsapp_opened(self):
         t = _msg(hot=True, breached=False, outreach_state="whatsapp_opened", elapsed_minutes=46)
@@ -162,7 +162,7 @@ class TestUniformText:
     @pytest.mark.parametrize("state", list(EXPLAIN))
     def test_all_breach_variants_have_race_safe_copy(self, hot, state):
         text = _msg(hot=hot, breached=True, outreach_state=state)
-        assert "Si el lead contin\u00faa asignado a ti, registra el resultado inmediatamente." in text
+        assert "Si el lead contin\u00faa asignado a ti, registra la gesti\u00f3n o resultado inmediatamente." in text
         assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
         assert "Tiempo transcurrido:" in text
         assert "SLA utilizado" not in text
@@ -175,7 +175,7 @@ class TestUniformText:
     @pytest.mark.parametrize("state", list(EXPLAIN))
     def test_near_breach_variants_also_use_unified_footer(self, hot, state):
         text = _msg(hot=hot, breached=False, outreach_state=state)
-        assert "Si el lead contin\u00faa asignado a ti, registra el resultado inmediatamente." in text
+        assert "Si el lead contin\u00faa asignado a ti, registra la gesti\u00f3n o resultado inmediatamente." in text
         assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
         assert "Tiempo transcurrido:" in text
         assert "SLA utilizado" not in text

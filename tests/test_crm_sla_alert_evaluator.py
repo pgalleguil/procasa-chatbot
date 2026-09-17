@@ -833,7 +833,8 @@ class TestEvaluatorE2E:
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         msg = report["alerts"][0]["message"]
         assert "Carlos" in msg
-        assert "/crm/lead-id/" in msg
+        assert "/crm/sla-cycle/" in msg
+        assert "/crm/lead-id/" not in msg
         assert "/08/2026" in msg
 
 

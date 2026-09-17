@@ -13,6 +13,7 @@ from chatbot.crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
     REGION_REVIEW_REQUIRED,
     RM_GLOBAL_RESCUE,
+    REGIONAL_GLOBAL_RESCUE,
     REGIONAL_POLICY_NOT_DEFINED,
     classify_policy,
     hybrid_pool,
@@ -91,15 +92,20 @@ def score_kwargs() -> dict:
 def test_policy_classification_rm_jpc_undefined_and_review() -> None:
     assert classify_policy("metropolitanasantiago", region_resolved=True, property_executive_status="AMBIGUOUS", property_is_jpc=False) == RM_GLOBAL_RESCUE
     assert classify_policy("maule", region_resolved=True, property_executive_status="RESOLVED", property_is_jpc=True) == REGION_JPC_MARIA_HERNAN
-    assert classify_policy("maule", region_resolved=True, property_executive_status="RESOLVED", property_is_jpc=False) == REGIONAL_POLICY_NOT_DEFINED
+    assert classify_policy("maule", region_resolved=True, property_executive_status="RESOLVED", property_is_jpc=False) == REGIONAL_GLOBAL_RESCUE
     assert classify_policy(None, region_resolved=False, property_executive_status="RESOLVED", property_is_jpc=True) == REGION_REVIEW_REQUIRED
-    assert classify_policy("maule", region_resolved=True, property_executive_status="AMBIGUOUS", property_is_jpc=False) == PROPERTY_EXECUTIVE_UNRESOLVED
+    assert classify_policy("maule", region_resolved=True, property_executive_status="AMBIGUOUS", property_is_jpc=False) == REGIONAL_GLOBAL_RESCUE
 
 
 def test_rm_pool_is_global_and_jpc_pool_is_only_maria_hernan() -> None:
     rows = [candidate("1", "María Paz Galleguillos"), candidate("2", "Hernán Castro"), candidate("3", "Rocío Aliaga",)]
     assert {row["user_id"] for row in hybrid_pool(RM_GLOBAL_RESCUE, rows)} == {"1", "2", "3"}
     assert {row["user_id"] for row in hybrid_pool(REGION_JPC_MARIA_HERNAN, rows)} == {"1", "2"}
+
+
+def test_regional_global_rescue_keeps_the_same_global_candidate_pool() -> None:
+    rows = [candidate("1", "María Paz Galleguillos"), candidate("2", "Hernán Castro"), candidate("3", "Rocío Aliaga")]
+    assert {row["user_id"] for row in hybrid_pool(REGIONAL_GLOBAL_RESCUE, rows)} == {"1", "2", "3"}
 
 
 def test_jpc_owner_exclusion_leaves_only_the_other_rescuer() -> None:

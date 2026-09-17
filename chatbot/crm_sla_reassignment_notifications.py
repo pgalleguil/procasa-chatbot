@@ -387,6 +387,81 @@ def _validate_pending_notification(db: Any, notification: Mapping[str, Any]) -> 
     return True, ""
 
 
+def rearm_stale_new_owner_notification(
+    db: Any,
+    *,
+    lead_id: str,
+    assignment_cycle_id: str,
+    recipient_user_id: str,
+    now: Any = None,
+) -> dict[str, Any]:
+    """Re-open one stale notification without creating a new identity.
+
+    This is a narrowly-scoped recovery primitive for a committed destination
+    cycle whose first delivery was incorrectly marked ``stale_not_sent``.
+    It refuses to create a replacement record, requires the exact lead/cycle/
+    recipient identity, and reuses the existing idempotency key/payload.
+    """
+    identity = individual_identity(
+        lead_id=str(lead_id).strip(),
+        assignment_cycle_id=str(assignment_cycle_id).strip(),
+        notification_type=SLA_REASSIGNED_TO,
+        recipient_user_id=str(recipient_user_id).strip(),
+    )
+    notification = db[COLLECTION].find_one({
+        "individual_identity": identity,
+        "notification_type": SLA_REASSIGNED_TO,
+        "notification_role": "new_owner",
+    })
+    if not notification:
+        return {"status": "not_found", "identity": identity}
+    if notification.get("provider_message_id") or notification.get("actually_delivered") is True:
+        return {"status": "already_delivered", "notification_id": notification.get("_id")}
+    if notification.get("state") != "stale_not_sent":
+        return {"status": "not_stale", "state": notification.get("state"), "notification_id": notification.get("_id")}
+
+    valid, reason = _validate_pending_notification(db, notification)
+    if not valid:
+        return {
+            "status": "blocked",
+            "reason": reason,
+            "notification_id": notification.get("_id"),
+        }
+    recovered_at = now or utc_now()
+    update = db[COLLECTION].update_one(
+        {
+            "_id": notification.get("_id"),
+            "individual_identity": identity,
+            "state": "stale_not_sent",
+            "provider_message_id": {"$in": [None]},
+            "actually_delivered": {"$ne": True},
+        },
+        {
+            "$set": {
+                "state": "pending",
+                "next_attempt_at": recovered_at,
+                "rearmed_at": recovered_at,
+                "repair_reason": "STALE_NEW_OWNER_NOTIFICATION_RECOVERY",
+                "updated_at": recovered_at,
+            },
+            "$unset": {
+                "error": "",
+                "lease_owner": "",
+                "lease_expires_at": "",
+                "delivery_token": "",
+                "provider_call_started_at": "",
+            },
+        },
+    )
+    if int(getattr(update, "modified_count", 0) or 0) != 1:
+        return {"status": "race_lost", "notification_id": notification.get("_id")}
+    return {
+        "status": "rearmed",
+        "notification_id": notification.get("_id"),
+        "identity": identity,
+    }
+
+
 def process_one_sla_reassignment_sync(
     db: Any,
     *,

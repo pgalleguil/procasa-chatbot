@@ -267,6 +267,7 @@ def build_lead_owner_mirror_update(
     target_display_name: str,
     new_cycle_id: str,
     reassigned_at: datetime,
+    effective_sla_started_at: datetime,
 ) -> dict[str, Any]:
     """Build only derived lead mirrors and the current-cycle pointer."""
 
@@ -277,9 +278,14 @@ def build_lead_owner_mirror_update(
                 _required(target_display_name, "target_display_name")
             ),
             "lifecycle.assigned_at": _aware(reassigned_at, "reassigned_at"),
+            "lifecycle.assignment_cycle_id": str(_required(new_cycle_id, "new_cycle_id")),
             "lifecycle.current_assignment_cycle_id": str(
                 _required(new_cycle_id, "new_cycle_id")
             ),
+            "lifecycle.assigned_to_user_id": str(_required(target_user_id, "target_user_id")),
+            "lifecycle.assigned_to_display_name": str(_required(target_display_name, "target_display_name")),
+            "lifecycle.cycle_started_at": _aware(reassigned_at, "reassigned_at"),
+            "lifecycle.sla_started_at": _aware(effective_sla_started_at, "effective_sla_started_at"),
             "last_crm_update": _aware(reassigned_at, "reassigned_at"),
             "assignment_mirror_source": "crm_assignment_cycles",
             "assignment_mirror_owner_user_id": str(
@@ -633,6 +639,7 @@ def build_transaction_plan(
         ),
         new_cycle_id=new_cycle_id,
         reassigned_at=reassigned_at,
+        effective_sla_started_at=effective_sla_started_at,
     )
     new_cycle = build_new_cycle_document(
         decision=decision,

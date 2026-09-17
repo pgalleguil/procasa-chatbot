@@ -14,7 +14,7 @@ import pytest
 from bson import ObjectId
 
 from config import Config
-from chatbot.crm_sla_hybrid_rescue import REGION_JPC_MARIA_HERNAN, REGION_REVIEW_REQUIRED, RM_GLOBAL_RESCUE, REGIONAL_POLICY_NOT_DEFINED
+from chatbot.crm_sla_hybrid_rescue import REGION_JPC_MARIA_HERNAN, REGION_REVIEW_REQUIRED, RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGIONAL_POLICY_NOT_DEFINED, classify_policy
 from chatbot.crm_sla_reassignment_worker import (
     COMMITTED_EVENT,
     POLICY_VERSION,
@@ -32,6 +32,8 @@ from chatbot.crm_sla_reassignment_worker import (
     r2_guardrail_status,
     run_sla_reassignment_worker_iteration,
     scan_sla_reassignment_candidates,
+    scan_sla_reassignment_fast_path_candidates,
+    _record_missing_lead_issue,
 )
 
 
@@ -118,6 +120,7 @@ def test_flags_off_do_not_scan_or_create_a_result():
             "status": "disabled", "scanned": 0, "canonically_expired": 0, "pre_cutover_skipped": 0,
             "protected_skipped": 0, "undefined_skipped": 0, "review_skipped": 0, "max2_skipped": 0,
             "not_actually_expired": 0, "evaluated": 0, "would_reassign": 0, "errors": 0,
+            "lead_not_found_quarantined": 0, "orphan_repaired": 0,
             "duration_ms": pytest.approx(0, abs=1000), "error_codes": [],
         }, "evaluations": [], "decisions": [],
     }
@@ -249,7 +252,7 @@ def test_human_management_at_or_before_breach_protects_but_late_does_not():
         assert result["iteration"]["protected_skipped"] == expected_protected
 
 
-@pytest.mark.parametrize("branch,field", [(REGIONAL_POLICY_NOT_DEFINED, "undefined_skipped"), (REGION_REVIEW_REQUIRED, "review_skipped")])
+@pytest.mark.parametrize("branch,field", [(REGION_REVIEW_REQUIRED, "review_skipped")])
 def test_undefined_and_review_branches_never_call_selector(branch, field):
     row = cycle(1)
     result = run(**base_kwargs([row], [lead(1, branch=branch)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
@@ -264,6 +267,48 @@ def test_jpc_uses_only_maria_and_hernan_pool():
     decision = result["decisions"][0]
     assert decision["selection_rule"] == "JPC_J3"
     assert decision["selected_user_id"] in {"maria", "hernan"}
+
+
+def test_cartagena_valparaiso_uses_regional_global_rescue_and_tier1():
+    assert classify_policy("valparaiso", region_resolved=True, property_executive_status="RESOLVED", property_is_jpc=False) == REGIONAL_GLOBAL_RESCUE
+    row = cycle(1)
+    result = run(**base_kwargs([row], [lead(1, branch=REGIONAL_GLOBAL_RESCUE)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 1
+    assert result["decisions"][0]["selected_user_id"] in {"maria", "hernan"}
+    assert result["decisions"][0]["candidate_tier"] == 1
+
+
+def test_urgent_fast_path_ignores_maintenance_cursor():
+    import mongomock
+    db = mongomock.MongoClient()["test"]
+    row = cycle(1, assigned_at=datetime(2026, 9, 10, 12, tzinfo=UTC))
+    db["crm_assignment_cycles"].insert_one(row)
+    result = asyncio.run(scan_sla_reassignment_fast_path_candidates(
+        db, batch_size=10, now=NOW,
+        page_token={"assigned_at": "2099-01-01T00:00:00+00:00", "lead_id": "z", "assignment_cycle_id": "z"},
+    ))
+    assert result["urgent_path"] is True
+    assert result["ignored_page_token"] is True
+    assert result["next_page_token"] is None
+    assert result["cycles"][0]["assignment_cycle_id"] == "cycle-1"
+
+
+def test_missing_lead_is_quarantined_and_orphan_cycle_closed_without_breach():
+    import mongomock
+    db = mongomock.MongoClient()["test"]
+    row = cycle(1)
+    row["_id"] = "mongo-cycle-1"
+    db["crm_assignment_cycles"].insert_one(row)
+    outcome = asyncio.run(_record_missing_lead_issue(
+        db, row, lookup_status="not_found", now=NOW, execution_mode="live",
+    ))
+    assert outcome["status"] == "REPAIRED"
+    closed = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": "cycle-1"})
+    assert closed["cycle_status"] == "closed"
+    assert closed["closed_reason"] == "DATA_REPAIR_ORPHAN_LEAD_MISSING"
+    assert "sla_breached_at" not in closed
+    issue = db["crm_sla_reassignment_data_issues_v1"].find_one({"_id": "cycle-1:LEAD_NOT_FOUND"})
+    assert issue["status"] == "closed"
 
 
 def test_max_two_requires_supervisor_without_selector():
@@ -508,5 +553,4 @@ def test_worker_module_has_no_executor_or_startup_side_effect():
     assert "execute_sla_reassignment_transaction" not in source
     assert "create_task(" not in source
     assert "insert_one" not in source
-    assert "update_one" not in source
     assert "delete_one" not in source

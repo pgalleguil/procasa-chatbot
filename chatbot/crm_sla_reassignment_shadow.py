@@ -273,7 +273,7 @@ def reconstruct_shadow_distribution_state(documents: Any, *, policy_version: str
         counted_ids.append(cycle_id)
         target = _text(row.get("selected_user_id"))
         state_rows.append({"source_cycle_id": cycle_id, "target_user_id": target, "branch": _text(row.get("branch")), "counted_at": _iso(row.get("shadow_assignment_counted_at") or row.get("evaluated_at"))})
-        if _text(row.get("branch")) == "RM_GLOBAL_RESCUE":
+        if _text(row.get("branch")) in {"RM_GLOBAL_RESCUE", "REGIONAL_GLOBAL_RESCUE"}:
             if target:
                 rm_history.append(target)
         elif _text(row.get("branch")) == "REGION_JPC_MARIA_HERNAN":

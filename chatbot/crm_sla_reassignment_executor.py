@@ -32,7 +32,11 @@ from config import Config
 from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
 from .crm_metrics import calculate_sla, commercial_sla_start_at, coerce_utc_datetime, utc_now
 from .crm_sla_hybrid_stabilization import generate_decision_id
-from .crm_sla_hybrid_rescue import REGION_JPC_MARIA_HERNAN, RM_GLOBAL_RESCUE
+from .crm_sla_hybrid_rescue import (
+    REGION_JPC_MARIA_HERNAN,
+    REGIONAL_GLOBAL_RESCUE,
+    RM_GLOBAL_RESCUE,
+)
 from .crm_sla_reassignment_cutover import (
     CUTOVER_CONFIGURATION_INVALID,
     CUTOVER_NOT_CONFIGURED,
@@ -56,7 +60,7 @@ from .mongo_identity import mongo_id_variants
 logger = logging.getLogger(__name__)
 
 FROZEN_POLICY_VERSION = "crm_sla_reassignment_v1"
-ALLOWED_POLICY_BRANCHES = frozenset({RM_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN})
+ALLOWED_POLICY_BRANCHES = frozenset({RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN})
 MAX_TRANSACTION_ATTEMPTS = 3
 HUMAN_ACTOR_TYPES = frozenset({"human", "human_agent", "agent", "administrator", "supervisor"})
 PROTECTED_CYCLE_FIELDS = (

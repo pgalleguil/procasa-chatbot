@@ -24,6 +24,7 @@ from chatbot.crm_sla_global_rescue import (
 RM_GLOBAL_RESCUE = "RM_GLOBAL_RESCUE"
 REGION_JPC_MARIA_HERNAN = "REGION_JPC_MARIA_HERNAN"
 REGIONAL_POLICY_NOT_DEFINED = "REGIONAL_POLICY_NOT_DEFINED"
+REGIONAL_GLOBAL_RESCUE = "REGIONAL_GLOBAL_RESCUE"
 REGION_REVIEW_REQUIRED = "REGION_REVIEW_REQUIRED"
 PROPERTY_EXECUTIVE_UNRESOLVED = "PROPERTY_EXECUTIVE_UNRESOLVED"
 NO_ELIGIBLE_JPC_RESCUER = "NO_ELIGIBLE_JPC_RESCUER"
@@ -63,11 +64,13 @@ def classify_policy(
         return REGION_REVIEW_REQUIRED
     if canonical_region == REGION_METROPOLITANA:
         return RM_GLOBAL_RESCUE
-    if property_executive_status != "RESOLVED":
-        return PROPERTY_EXECUTIVE_UNRESOLVED
     if property_is_jpc:
         return REGION_JPC_MARIA_HERNAN
-    return REGIONAL_POLICY_NOT_DEFINED
+    # Every resolved non-RM territory has the same safe destination policy.
+    # An unresolved property executive must not strand an expired lead; the
+    # explicit JPC route is used only when the canonical property owner is
+    # positively identified as Jorge Pablo Caro.
+    return REGIONAL_GLOBAL_RESCUE
 
 
 def hybrid_pool(
@@ -76,7 +79,7 @@ def hybrid_pool(
 ) -> list[dict[str, Any]]:
     """Return the allowed pool before previous-owner exclusion."""
     source = [dict(candidate) for candidate in candidates]
-    if policy_category == RM_GLOBAL_RESCUE:
+    if policy_category in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return source
     if policy_category == REGION_JPC_MARIA_HERNAN:
         return [
@@ -106,7 +109,7 @@ def select_hybrid_winner(
     confidence_guard: bool = False,
 ) -> dict[str, Any]:
     """Score one already-classified lead under a hybrid policy category."""
-    if policy_category not in {RM_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:
+    if policy_category not in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:
         return {
             "policy_category": policy_category,
             "shadow_category": NOT_SIMULATED_POLICY,
@@ -145,7 +148,7 @@ def select_hybrid_winner(
     if not hard_valid:
         return {
             "policy_category": policy_category,
-            "shadow_category": NO_ELIGIBLE_JPC_RESCUER if policy_category == REGION_JPC_MARIA_HERNAN else "NO_ELIGIBLE_RM_RESCUER",
+            "shadow_category": NO_ELIGIBLE_JPC_RESCUER if policy_category == REGION_JPC_MARIA_HERNAN else "NO_ELIGIBLE_REGIONAL_RESCUER",
             "shadow_winner": None,
             "ordered": [],
             "scored": scored,
@@ -317,7 +320,7 @@ def simulate_hybrid(
     confidence_guard: bool = False,
 ) -> dict[str, Any]:
     source = [deepcopy(dict(lead)) for lead in leads]
-    rm = [lead for lead in source if lead.get("policy_category") == RM_GLOBAL_RESCUE]
+    rm = [lead for lead in source if lead.get("policy_category") in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}]
     jpc = [lead for lead in source if lead.get("policy_category") == REGION_JPC_MARIA_HERNAN]
     if mode == "H0_INDEPENDENT":
         rm_result = _simulate_queue(rm, pool_key="rm_candidates", queue="RM", scenario="H0_INDEPENDENT_DYNAMIC", state=_initial_state(rm, "rm_candidates"), team_sla_rate=team_sla_rate, team_attention_rate=team_attention_rate, team_p50_average=team_p50_average, team_p90_average=team_p90_average, weights=weights, params=params, confidence_guard=confidence_guard)
@@ -341,7 +344,7 @@ def simulate_hybrid(
     merged = []
     for lead in source:
         row = dict(lead)
-        row["combined_candidates"] = row.get("rm_candidates", []) if row.get("policy_category") == RM_GLOBAL_RESCUE else row.get("jpc_candidates", [])
+        row["combined_candidates"] = row.get("rm_candidates", []) if row.get("policy_category") in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else row.get("jpc_candidates", [])
         merged.append(row)
     result = _simulate_queue(merged, pool_key="combined_candidates", queue="COMBINED", scenario=scenario, state=_initial_state(merged, "combined_candidates"), team_sla_rate=team_sla_rate, team_attention_rate=team_attention_rate, team_p50_average=team_p50_average, team_p90_average=team_p90_average, weights=weights, params=params, confidence_guard=confidence_guard)
     return {"mode": mode, **result}

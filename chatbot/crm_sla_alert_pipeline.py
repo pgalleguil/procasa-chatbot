@@ -22,6 +22,7 @@ from .crm_sla_alert_settings import (
     MAX_PER_RUN,
     POLICY_VERSION,
     PERSIST_CONFIRMATION,
+    sla_reassignment_live_enabled,
     validate_persist_config,
 )
 from .crm_sla_alert_templates import MESSAGE_DOMAIN
@@ -123,8 +124,16 @@ async def run_evaluation_and_persist_once(
     max_per_recipient = MAX_PER_RECIPIENT_PER_RUN
     recipient_counts: Counter = Counter()
     to_persist = []
+    suppressed_reassignment_disabled = 0
 
     for c in authorized_for_persistence:
+        if c.get("alert_level") == "breached" and not sla_reassignment_live_enabled():
+            # Pre-warning remains operationally useful while the reassignment
+            # emergency stop is active.  A terminal breached alert must not
+            # promise an automatic move that is currently paused.
+            c["suppression_reason"] = "reassignment_disabled"
+            suppressed_reassignment_disabled += 1
+            continue
         if len(to_persist) >= max_total:
             break
         uid = c.get("recipient_user_id", "")
@@ -163,6 +172,7 @@ async def run_evaluation_and_persist_once(
         "excluded_no_phone": excluded_no_phone,
         "excluded_by_limit": excluded_by_limit,
         "excluded_by_catch_up": excluded_by_catch_up,
+        "suppressed_reassignment_disabled": suppressed_reassignment_disabled,
         "catch_up_cutover": catch_up.isoformat() if catch_up else None,
         "writes": persisted,
         "provider_calls": 0,

@@ -28,6 +28,11 @@ def sla_alerts_enabled() -> bool:
     """
     return _enabled()
 
+
+def sla_reassignment_live_enabled() -> bool:
+    """Read the reassignment master switch at the point of delivery."""
+    return os.getenv("CRM_SLA_REASSIGNMENT_ENABLED", "false").strip().lower() == "true"
+
 # Fixed production policy.
 DRY_RUN = False
 PERSIST = True

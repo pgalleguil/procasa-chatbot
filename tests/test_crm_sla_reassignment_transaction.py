@@ -145,6 +145,12 @@ def test_source_close_does_not_change_source_owner_and_lead_points_to_new_cycle(
         "sla-reassignment:decision-001"
     )
     assert lead_update["assignment_mirror_source"] == "crm_assignment_cycles"
+    assert lead_update["lifecycle.assignment_cycle_id"] == lead_update["lifecycle.current_assignment_cycle_id"]
+    assert lead_update["lifecycle.assigned_to_user_id"] == "user-new"
+    assert lead_update["lifecycle.assigned_to_display_name"] == "Ejecutivo Nuevo"
+    assert lead_update["lifecycle.cycle_started_at"] == NOW
+    assert lead_update["lifecycle.sla_started_at"] == SLA_STARTED
+    assert lead_update["assignment_mirror_owner_user_id"] == "user-new"
 
 
 def test_idempotency_is_deterministic_and_audit_is_immutable():

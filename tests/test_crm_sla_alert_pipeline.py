@@ -72,6 +72,13 @@ class DB(dict):
         return self[key]
 
 
+@pytest.fixture(autouse=True)
+def reassignment_live_for_existing_alert_contract(monkeypatch):
+    # Existing cases exercise live breached-alert persistence.  The emergency
+    # stop is covered by an explicit false-switch regression below.
+    monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "true")
+
+
 def cl(h, m=0, day=3):
     return CHILE_TZ.localize(datetime(2026, 8, day, h, m)).astimezone(timezone.utc)
 
@@ -117,6 +124,17 @@ async def test_disabled_switch_performs_zero_operations():
         result = await run_evaluation_and_persist_once(db=NoTouchDB())
     assert result["status"] == "disabled"
     assert result["writes"] == result["claims"] == result["sends"] == 0
+
+
+@pytest.mark.asyncio
+async def test_breached_alert_is_suppressed_while_reassignment_emergency_stop_is_active(monkeypatch):
+    db = populated_db()
+    monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "false")
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 30))
+    assert result["persisted"] == 0
+    assert result["suppressed_reassignment_disabled"] == 1
+    assert db[COLLECTION].docs == []
 
 
 @pytest.mark.asyncio

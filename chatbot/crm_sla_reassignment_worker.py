@@ -32,6 +32,8 @@ from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, OUTREACH_R
 from .crm_sla_global_rescue import RescueParameters
 from .crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
+    REGIONAL_GLOBAL_RESCUE,
+    PROPERTY_EXECUTIVE_UNRESOLVED,
     REGION_REVIEW_REQUIRED,
     RM_GLOBAL_RESCUE,
     REGIONAL_POLICY_NOT_DEFINED,
@@ -76,11 +78,15 @@ logger = logging.getLogger(__name__)
 
 WORKER_LOG_PREFIX = "[SLA_REASSIGNMENT_WORKER_SHADOW]"
 LEDGER_COLLECTION = "crm_sla_reassignment_audit_v1"
+DATA_ISSUE_COLLECTION = "crm_sla_reassignment_data_issues_v1"
 COMMITTED_EVENT = "SLA_REASSIGNMENT_COMMITTED"
 ALLOWED_BATCH_SIZES = (10, 25, 50, 100)
 ALLOWED_INTERVAL_SECONDS = (30, 60, 120)
 PERFORMANCE_WINDOW_DAYS = 60
 FAST_PATH_LOOKBACK_HOURS = 48
+LEAD_NOT_FOUND_RETRY_BASE_SECONDS = 15 * 60
+LEAD_NOT_FOUND_RETRY_MAX_SECONDS = 24 * 60 * 60
+ORPHAN_REPAIR_VERSION = "crm_sla_orphan_repair_20260915"
 R2_HISTORY_WINDOW = 19  # current candidate + 19 prior decisions = 20
 R2_MAX_PRIOR_SHARE_COUNT = 8  # 9/20 would exceed 40%
 R2_SCORE_DISTANCE = 15.0
@@ -310,6 +316,8 @@ class SLAWorkerIterationResult:
     evaluated: int = 0
     would_reassign: int = 0
     errors: int = 0
+    lead_not_found_quarantined: int = 0
+    orphan_repaired: int = 0
     duration_ms: float = 0.0
     error_codes: list[str] = field(default_factory=list)
 
@@ -420,6 +428,7 @@ def _cycle_projection() -> dict[str, int]:
         "cycle_status": 1, "unassigned_at": 1,
         "schema_version": 1, "sla_policy_version": 1, "policy_version": 1,
         "reason": 1, "cycle_origin": 1, "cycle_version": 1,
+        "property_code": 1,
         "first_valid_management_at": 1, "first_contact_attempt_at": 1,
         "reassignment_protection_at": 1,
         "automatic_reassignment_number": 1, "assignment_number": 1,
@@ -485,11 +494,14 @@ async def scan_sla_reassignment_fast_path_candidates(
     page_token: Mapping[str, Any] | None = None,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> dict[str, Any]:
-    """Read likely-expired active cycles before the full maintenance page.
+    """Read likely-expired active cycles from a fresh urgent snapshot.
 
     This is only a query accelerator.  ``canonical_expiration_recheck`` still
     decides expiry using the production SLA calculator, so persisted deadline
-    hints can never create an eligibility decision by themselves.
+    hints can never create an eligibility decision by themselves.  The urgent
+    path intentionally ignores the maintenance page token: every iteration
+    starts from ``now`` so a historical maintenance cursor cannot starve a
+    newly-expired cycle.
     """
     if db is None:
         from .storage import get_async_db
@@ -510,36 +522,33 @@ async def scan_sla_reassignment_fast_path_candidates(
         for field in ("assigned_at", "sla_started_at")
     ]
     fast_query = {"$and": [base_query, {"$or": [*urgent_hint, *recent_start]}]}
-    query = _page_filter(fast_query, page_token)
-    cycles = await _find_many(
-        db["crm_assignment_cycles"], query, _cycle_projection(),
+    raw_cycles = await _find_many(
+        db["crm_assignment_cycles"], fast_query, _cycle_projection(),
         limit=size,
         sort=[("assigned_at", 1), ("lead_id", 1), ("assignment_cycle_id", 1)],
         instrumentation=read_instrumentation,
         query_name="worker.scanner.fast_path_cycles",
     )
-    next_token = None
-    if cycles:
-        last = cycles[-1]
-        next_token = {
-            "assigned_at": _iso(last.get("assigned_at")),
-            "lead_id": _text(last.get("lead_id")),
-            "lead_id_type": type(last.get("lead_id")).__name__,
-            "assignment_cycle_id": _text(last.get("assignment_cycle_id")),
-            "_scan_mode": "fast_path",
-        }
+    quarantined_ids = await _active_lead_not_found_quarantine_ids(db, now=as_of)
+    cycles = [
+        cycle for cycle in raw_cycles
+        if _text(cycle.get("assignment_cycle_id")) not in quarantined_ids
+    ]
     return {
         "status": "scanned_fast_path",
         "scan_mode": "fast_path",
         "cycles": cycles,
         "scanned": len(cycles),
-        "documents_examined": len(cycles),
+        "documents_examined": len(raw_cycles),
+        "quarantined": len(raw_cycles) - len(cycles),
         "batch_size": size,
-        "query": query,
+        "query": fast_query,
         "candidate_query_superset": base_query,
         "current_policy_since": policy_since.isoformat(),
         "fast_path_lookback_hours": FAST_PATH_LOOKBACK_HOURS,
-        "next_page_token": next_token,
+        "next_page_token": None,
+        "urgent_path": True,
+        "ignored_page_token": bool(page_token),
     }
 
 
@@ -790,6 +799,143 @@ async def _batch_context(
     } | _index_context(active_cycles, results, events)
 
 
+async def _active_lead_not_found_quarantine_ids(db: Any, *, now: datetime) -> set[str]:
+    """Return cycle IDs whose missing-lead issue is still in backoff.
+
+    This collection is an operational data-issue quarantine, not a business
+    assignment store.  It is deliberately consulted by the urgent scanner so
+    a corrupt cycle cannot consume the same batch slot on every heartbeat.
+    """
+    try:
+        rows = await _find_many(
+            db[DATA_ISSUE_COLLECTION],
+            {
+                "error_code": "LEAD_NOT_FOUND",
+                "status": "quarantined",
+                "next_retry_at": {"$gt": now},
+            },
+            {"cycle_id": 1},
+            query_name="worker.quarantine.active_lead_not_found",
+        )
+    except Exception:
+        # A missing collection/index must not turn the urgent path into a
+        # hard failure.  The first occurrence is still recorded by the live
+        # evaluator when the guarded write path is available.
+        logger.exception("%s quarantine_read_failed", WORKER_LOG_PREFIX)
+        return set()
+    return {
+        _text(row.get("cycle_id"))
+        for row in rows
+        if _text(row.get("cycle_id"))
+    }
+
+
+async def _record_missing_lead_issue(
+    db: Any,
+    cycle: Mapping[str, Any],
+    *,
+    lookup_status: str,
+    now: datetime,
+    execution_mode: str,
+) -> dict[str, Any]:
+    """Quarantine a missing lead and close only a provable orphan.
+
+    The operation is live-only.  Shadow/replay paths remain read-only.  The
+    cycle update is compare-and-set against the exact active cycle so a race
+    with a legitimate close/reassignment cannot be overwritten.
+    """
+    cycle_id = _text(cycle.get("assignment_cycle_id"))
+    lead_id = cycle.get("lead_id")
+    if execution_mode != "live" or not cycle_id:
+        return {"status": "NOT_ATTEMPTED", "classification": "ORPHAN_LEAD_MISSING"}
+
+    issue_collection = db[DATA_ISSUE_COLLECTION]
+    issue_key = f"{cycle_id}:LEAD_NOT_FOUND"
+    existing = issue_collection.find_one({"_id": issue_key})
+    if inspect.isawaitable(existing):
+        existing = await existing
+    existing = dict(existing or {})
+    if existing.get("status") in {"closed", "resolved"}:
+        return {"status": "ALREADY_RESOLVED", "classification": existing.get("classification")}
+
+    retry_count = int(existing.get("retry_count") or 0) + 1
+    delay = min(
+        LEAD_NOT_FOUND_RETRY_MAX_SECONDS,
+        LEAD_NOT_FOUND_RETRY_BASE_SECONDS * (2 ** min(retry_count - 1, 6)),
+    )
+    next_retry_at = now + timedelta(seconds=delay)
+    if lookup_status == "not_found":
+        classification = "ORPHAN_LEAD_MISSING"
+    elif lookup_status == "invalid_lead_id":
+        classification = "CYCLE_CREATED_WITH_WRONG_LEAD_ID"
+    else:
+        classification = "ID_TYPE_MISMATCH_REMAINING"
+    issue = {
+        "_id": issue_key,
+        "cycle_id": cycle_id,
+        "lead_id": _text(lead_id),
+        "error_code": "LEAD_NOT_FOUND",
+        "classification": classification,
+        "lookup_status": lookup_status,
+        "status": "quarantined",
+        "retry_count": retry_count,
+        "first_seen_at": existing.get("first_seen_at") or now,
+        "last_seen_at": now,
+        "next_retry_at": next_retry_at,
+        "repair_version": ORPHAN_REPAIR_VERSION,
+    }
+    op = issue_collection.update_one(
+        {"_id": issue_key},
+        {"$set": issue, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+    if inspect.isawaitable(op):
+        await op
+
+    if classification != "ORPHAN_LEAD_MISSING":
+        return {"status": "QUARANTINED", "classification": classification}
+
+    # Both ObjectId and string variants were absent from the same batch
+    # context.  Close only this exact active cycle; do not manufacture an SLA
+    # breach, owner change, reassignment, or notification.
+    cycle_filter: dict[str, Any] = {
+        "assignment_cycle_id": cycle_id,
+        "cycle_status": "active",
+        "unassigned_at": None,
+    }
+    if cycle.get("_id") is not None:
+        cycle_filter["_id"] = cycle.get("_id")
+    repair = {
+        "$set": {
+            "cycle_status": "closed",
+            "unassigned_at": now,
+            "closed_at": now,
+            "closed_reason": "DATA_REPAIR_ORPHAN_LEAD_MISSING",
+            "repair_reason": "DATA_REPAIR_ORPHAN_LEAD_MISSING",
+            "repair_version": ORPHAN_REPAIR_VERSION,
+            "repaired_at": now,
+            "reassignment_state": "data_issue_quarantined",
+            "updated_at": now,
+        }
+    }
+    cycle_op = db["crm_assignment_cycles"].update_one(cycle_filter, repair)
+    if inspect.isawaitable(cycle_op):
+        cycle_op = await cycle_op
+    modified = int(getattr(cycle_op, "modified_count", 0) or 0)
+    if modified:
+        issue["status"] = "closed"
+        issue["closed_at"] = now
+        issue["closed_reason"] = "DATA_REPAIR_ORPHAN_LEAD_MISSING"
+        issue["repair_applied"] = True
+        closed_op = issue_collection.update_one(
+            {"_id": issue_key}, {"$set": issue}, upsert=True,
+        )
+        if inspect.isawaitable(closed_op):
+            await closed_op
+        return {"status": "REPAIRED", "classification": classification}
+    return {"status": "QUARANTINED", "classification": classification}
+
+
 def _index_context(active_cycles: Iterable[Mapping[str, Any]], results: Iterable[Mapping[str, Any]], events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     active_by_lead: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     results_by_cycle: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -990,18 +1136,27 @@ def _policy_row(cycle: Mapping[str, Any], lead: Mapping[str, Any], snapshot: Map
             property_status = _text(prop_info.get("status"))
             property_is_jpc = bool(prop_info.get("is_jpc"))
             branch = classification.get("policy_category") or REGION_REVIEW_REQUIRED
+            if branch in {REGIONAL_POLICY_NOT_DEFINED, PROPERTY_EXECUTIVE_UNRESOLVED}:
+                branch = REGIONAL_GLOBAL_RESCUE
         except Exception:
             territory = _fallback_territory(lead, prop)
             property_status = "RESOLVED" if territory.get("property_exec_resolved") else "MISSING"
             property_is_jpc = territory.get("property_exec") == "jorge pablo caro"
-            branch = REGION_REVIEW_REQUIRED
+            if not territory.get("resolved"):
+                branch = REGION_REVIEW_REQUIRED
+            elif territory.get("region") == "metropolitanasantiago":
+                branch = RM_GLOBAL_RESCUE
+            elif property_is_jpc:
+                branch = REGION_JPC_MARIA_HERNAN
+            else:
+                branch = REGIONAL_GLOBAL_RESCUE
     else:
         territory = _fallback_territory(lead, prop)
         property_status = "RESOLVED" if territory.get("property_exec_resolved") else "MISSING"
         property_is_jpc = territory.get("property_exec") == "jorge pablo caro"
         supplied_branch = _text(lead.get("policy_category"))
-        if supplied_branch in {RM_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN, REGIONAL_POLICY_NOT_DEFINED, REGION_REVIEW_REQUIRED}:
-            branch = supplied_branch
+        if supplied_branch in {RM_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN, REGIONAL_GLOBAL_RESCUE, REGIONAL_POLICY_NOT_DEFINED, REGION_REVIEW_REQUIRED}:
+            branch = REGIONAL_GLOBAL_RESCUE if supplied_branch == REGIONAL_POLICY_NOT_DEFINED else supplied_branch
         elif not territory.get("resolved"):
             branch = REGION_REVIEW_REQUIRED
         elif territory.get("region") == "metropolitanasantiago":
@@ -1009,7 +1164,7 @@ def _policy_row(cycle: Mapping[str, Any], lead: Mapping[str, Any], snapshot: Map
         elif property_is_jpc:
             branch = REGION_JPC_MARIA_HERNAN
         else:
-            branch = REGIONAL_POLICY_NOT_DEFINED
+            branch = REGIONAL_GLOBAL_RESCUE
     current_owner = _text(cycle.get("assigned_to_user_id"))
     previous = _previous_owner_ids(cycle)
     team = snapshot.get("team") or {}
@@ -1100,10 +1255,11 @@ async def _load_committed_events(
     )
 
 
-def _post_cutover_committed(events: Iterable[Mapping[str, Any]], cutover_at: datetime, branch: str) -> list[dict[str, Any]]:
+def _post_cutover_committed(events: Iterable[Mapping[str, Any]], cutover_at: datetime, branch: str | Iterable[str]) -> list[dict[str, Any]]:
+    branches = {_text(value) for value in branch} if not isinstance(branch, str) else {branch}
     output = []
     for event in events:
-        if _text(event.get("policy_branch") or event.get("branch")) != branch:
+        if _text(event.get("policy_branch") or event.get("branch")) not in branches:
             continue
         breach = _utc(event.get("source_cycle_sla_breached_at") or event.get("sla_breached_at"))
         if breach and breach >= cutover_at:
@@ -1121,7 +1277,10 @@ async def load_rm_r2_distribution_state(
     cutover = _utc(cutover_at)
     if not cutover:
         raise RuntimeError("reassignment cutover unavailable")
-    committed = _post_cutover_committed(await _load_committed_events(db, events=events, read_instrumentation=read_instrumentation), cutover, RM_GLOBAL_RESCUE)
+    committed = _post_cutover_committed(
+        await _load_committed_events(db, events=events, read_instrumentation=read_instrumentation),
+        cutover, {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE},
+    )
     history = [_text(event.get("target_owner_user_id") or event.get("selected_user_id")) for event in committed]
     history = [value for value in history if value]
     counts = Counter(history)
@@ -1139,7 +1298,7 @@ def _valid_tier1_assignment_event(event: Mapping[str, Any], tier1_user_ids: set[
     """Accept only committed automatic RM assignments for the Tier 1 window."""
     if _text(event.get("event_type")) != COMMITTED_EVENT:
         return False
-    if _text(event.get("policy_branch") or event.get("branch")) != RM_GLOBAL_RESCUE:
+    if _text(event.get("policy_branch") or event.get("branch")) not in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return False
     target = _text(event.get("target_owner_user_id") or event.get("selected_user_id"))
     if not target or target not in tier1_user_ids:
@@ -1272,7 +1431,7 @@ async def load_shadow_distribution_state(
         query_name="worker.distribution.shadow_state",
     )
     rebuilt = reconstruct_shadow_distribution_state(rows, policy_version=SHADOW_POLICY_VERSION, cutover_at=cutover)
-    rm_rows = [row for row in rebuilt.get("state_rows", []) if _text(row.get("branch")) == RM_GLOBAL_RESCUE]
+    rm_rows = [row for row in rebuilt.get("state_rows", []) if _text(row.get("branch")) in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}]
     jpc_rows = [row for row in rebuilt.get("state_rows", []) if _text(row.get("branch")) == REGION_JPC_MARIA_HERNAN]
     rm_history = [_text(row.get("target_user_id")) for row in rm_rows if _text(row.get("target_user_id"))]
     jpc_counts = Counter(_text(row.get("target_user_id")) for row in jpc_rows if _text(row.get("target_user_id")))
@@ -1361,7 +1520,7 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
     scored = list(result.get("scored") or [])
     selection_scored = list(result.get("selection_pool") or scored)
     winner_id = _text(winner.get("user_id")) or None
-    score_field = "dynamic_rescue_score" if branch == RM_GLOBAL_RESCUE else "global_rescue_score"
+    score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
     selected_score = _number(winner.get(score_field)) if winner else None
     second_id, second_score = _select_second(selection_scored, winner_id or "", score_field)
     excluded = list(lead_row.get("previous_owner_user_ids") or ())
@@ -1373,7 +1532,7 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         performance_confidence=_text(winner.get("performance_confidence")), assignment_number=_assignment_number(cycle),
         excluded_previous_owners=excluded, management_evidence_checked_at=evaluated_at.isoformat(),
         sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=POLICY_VERSION,
-        candidate_scores_snapshot=scored, selection_rule=_text(result.get("selection_rule")) or ("RM_R2" if branch == RM_GLOBAL_RESCUE else "JPC_J3"),
+        candidate_scores_snapshot=scored, selection_rule=_text(result.get("selection_rule")) or ("RM_R2" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "JPC_J3"),
         guardrail_applied=bool(result.get("guardrail_reason")), guardrail_reason=_text(result.get("guardrail_reason")),
         jpc_target_share=result.get("jpc_target_share") if branch == REGION_JPC_MARIA_HERNAN else None,
         previous_owner_user_ids=excluded, automatic_reassignment_number=_assignment_number(cycle),
@@ -1402,7 +1561,7 @@ def _shadow_error(cycle: Mapping[str, Any], *, now: datetime, cutover: datetime,
 
 
 def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, branch: str, state: dict[str, dict[str, float]], rm_history: list[str], jpc_counts: Counter[str], jpc_total: int, jpc_targets: Mapping[str, float], team: Mapping[str, Any], params: RescueParameters) -> dict[str, Any]:
-    if branch == RM_GLOBAL_RESCUE:
+    if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return _rm_selection(lead_row, state, rm_history, scenario=R2_ROLLING_SHARE, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
     if branch == REGION_JPC_MARIA_HERNAN:
         result = _jpc_selection(lead_row, state, jpc_counts, jpc_total, jpc_targets, team=team, params=params)
@@ -1500,24 +1659,23 @@ async def run_sla_reassignment_worker_iteration(
         scan_mode = "provided" if scan_result is not None else "maintenance"
         maintenance_page_token = page_token
         if scan_result is None:
-            fast_page_token = (
-                page_token if page_token and page_token.get("_scan_mode") == "fast_path"
-                else None
-            )
-            if fast_page_token:
-                maintenance_page_token = fast_page_token.get("_maintenance_page_token")
+            # The urgent path is intentionally independent from the
+            # maintenance cursor.  A previous fast-path token is only a
+            # compatibility envelope used to recover the maintenance token;
+            # it must never constrain the fresh expiry query.
+            if page_token and page_token.get("_scan_mode") == "fast_path":
+                maintenance_page_token = page_token.get("_maintenance_page_token")
             fast_result = await scan_sla_reassignment_fast_path_candidates(
-                db, batch_size=size, now=as_of, page_token=fast_page_token,
+                db, batch_size=size, now=as_of, page_token=None,
                 read_instrumentation=read_instrumentation,
             )
             if fast_result.get("cycles"):
                 scan_result = dict(fast_result)
                 scan_mode = "fast_path"
-                fast_next = scan_result.get("next_page_token")
-                if fast_next:
-                    fast_next = dict(fast_next)
-                    fast_next["_maintenance_page_token"] = maintenance_page_token
-                    scan_result["next_page_token"] = fast_next
+                scan_result["next_page_token"] = {
+                    "_scan_mode": "fast_path",
+                    "_maintenance_page_token": maintenance_page_token,
+                }
             else:
                 scan_result = await scan_sla_reassignment_candidates(
                     db, batch_size=size, page_token=maintenance_page_token,
@@ -1636,10 +1794,19 @@ async def run_sla_reassignment_worker_iteration(
                     lead_rows.append(({}, cycle, canonical_expiration_recheck(cycle, None, now=as_of), ManagementProtection(False), "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND"))
                     result.errors += 1
                     result.error_codes.append("LEAD_NOT_FOUND")
+                    issue_result = await _record_missing_lead_issue(
+                        db, cycle, lookup_status=lead_lookup_status,
+                        now=as_of, execution_mode=execution_mode,
+                    )
+                    if issue_result.get("status") == "REPAIRED":
+                        result.orphan_repaired += 1
+                    elif issue_result.get("status") == "QUARANTINED":
+                        result.lead_not_found_quarantined += 1
                     logger.warning(
-                        "%s cycle_id=%s lead_id=%s lookup_status=%s outcome=data_or_cycle_issue",
+                        "%s cycle_id=%s lead_id=%s lookup_status=%s classification=%s outcome=data_or_cycle_issue",
                         WORKER_LOG_PREFIX, _text(cycle.get("assignment_cycle_id")),
                         _text(cycle.get("lead_id")), lead_lookup_status,
+                        issue_result.get("classification") or "ORPHAN_LEAD_MISSING",
                     )
         ordered = sorted(lead_rows, key=lambda item: _worker_order_key(item[0] or {"lead_id": item[1].get("lead_id"), "assignment_cycle_id": item[1].get("assignment_cycle_id"), "assigned_at": item[1].get("assigned_at"), "temperature": item[1].get("temperature_at_assignment"), "current_overdue_business_minutes": 0}))
         jpc_targets: dict[str, float] = {}
@@ -1698,12 +1865,7 @@ async def run_sla_reassignment_worker_iteration(
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, SUPERVISOR_REVIEW_REQUIRED, assignment_number=assignment_number, decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
                     continue
                 branch = _text(lead_row.get("policy_category"))
-                if branch == REGIONAL_POLICY_NOT_DEFINED:
-                    result.undefined_skipped += 1
-                    reason = REGIONAL_POLICY_NOT_DEFINED
-                    evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), branch, False, reason, assignment_number=assignment_number, decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
-                    continue
-                if branch not in {RM_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:
+                if branch not in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:
                     result.review_skipped += 1
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), branch, False, REGION_REVIEW_REQUIRED, assignment_number=assignment_number, decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
                     continue
@@ -1718,18 +1880,18 @@ async def run_sla_reassignment_worker_iteration(
                 scored = list(selection.get("scored") or [])
                 candidate_ids = tuple(_text(row.get("user_id")) for row in scored if _text(row.get("user_id")))
                 selected_id = _text(winner.get("user_id")) if winner else None
-                score_field = "dynamic_rescue_score" if branch == RM_GLOBAL_RESCUE else "global_rescue_score"
+                score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
                 selected_score = _number(winner.get(score_field)) if winner else None
                 second_id, second_score = _select_second(scored, selected_id or "", score_field)
                 margin = selected_score - second_score if selected_id and second_score is not None and selected_score is not None else None
-                reason = _text(selection.get("selection_reason")) or ("NO_ELIGIBLE_RESCUER" if branch == RM_GLOBAL_RESCUE else "NO_ELIGIBLE_JPC_RESCUER")
+                reason = _text(selection.get("selection_reason")) or ("NO_ELIGIBLE_RESCUER" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "NO_ELIGIBLE_JPC_RESCUER")
                 decision = _make_decision(lead_row, cycle, result=selection, branch=branch, breach_at=exp.breach_at, cutover=cutover, evaluated_at=as_of, params=params)
                 already_counted = bool((existing_shadow.get(cycle_id) or {}).get("shadow_assignment_counted_at"))
                 if selected_id:
                     result.evaluated += 1
                     result.would_reassign += 1
                     if not already_counted:
-                        if branch == RM_GLOBAL_RESCUE:
+                        if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
                             rm_history.append(selected_id)
                         else:
                             jpc_counts[selected_id] += 1

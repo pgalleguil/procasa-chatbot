@@ -113,6 +113,11 @@ class FakeDB(dict):
         return self[key]
 
 
+@pytest.fixture(autouse=True)
+def reassignment_live_for_existing_alert_contract(monkeypatch):
+    monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "true")
+
+
 @pytest.fixture
 def db():
     return FakeDB()
@@ -132,6 +137,14 @@ def make_cycle(lid="lead-1", cid="cycle-1", uid="user-1"):
     return {"lead_id": lid, "assignment_cycle_id": cid, "assigned_to_user_id": uid,
             "assigned_at": chile_dt(9, 0).astimezone(timezone.utc),
             "unassigned_at": None, "cycle_status": "active", "reason": "lead_created"}
+
+
+@pytest.mark.asyncio
+async def test_terminal_breached_alert_is_cancelled_while_reassignment_is_disabled(db, monkeypatch):
+    db[COLLECTION]._docs.append(_alert_doc({"alert_level": "breached"}))
+    monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "false")
+    result = await process_one_alert(db=db, worker_id="w1", sender=FakeSender())
+    assert result == {"status": "cancelled", "reason": "reassignment_disabled"}
 
 
 def _alert_doc(overrides=None):

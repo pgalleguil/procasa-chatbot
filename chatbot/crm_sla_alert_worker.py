@@ -37,6 +37,7 @@ from .crm_sla_alert_settings import (
     MAX_PER_RUN,
     MAX_PER_RECIPIENT_PER_RUN,
     PROVIDER_TIMEOUT_SECONDS,
+    sla_reassignment_live_enabled,
     validate_live_send_config,
 )
 from .storage import get_async_db
@@ -141,6 +142,9 @@ async def process_one_alert(
     alert_id = alert["_id"]
 
     try:
+        if alert.get("alert_level") == "breached" and not sla_reassignment_live_enabled():
+            await cancel_alert(db, alert_id=alert_id, reason="reassignment_disabled")
+            return {"status": "cancelled", "reason": "reassignment_disabled"}
         # 2. Revalidate
         reason = await _revalidate(db, alert)
         if reason:

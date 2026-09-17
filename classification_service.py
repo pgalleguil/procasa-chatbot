@@ -93,6 +93,9 @@ def _classification_with_canonical(
     result["state"] = _legacy_state(final)
     result["final_state"] = result["state"]
     result["canonical_confidence"] = result.get("confidence", result.get("canonical_confidence"))
+    if final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"} and result.get("owner_probability") is None:
+        result["owner_probability"] = result.get("confidence", result.get("canonical_confidence"))
+        result["owner_probability_source"] = "canonical_classifier_confidence"
     result["pipeline_state"] = "CLASSIFIED" if pipeline_complete else "UNCERTAIN_PENDING_AI"
     result["pipeline_complete"] = bool(pipeline_complete)
     result["assignment_ready"] = bool(

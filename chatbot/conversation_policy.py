@@ -114,6 +114,15 @@ _VISIT_QUESTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_VISIT_NEGATIVE_VETO_PATTERNS = (
+    re.compile(r"\bvisita\s+virtual(?:es)?\b|\brecorrido\s+virtual\b|\btour\s+virtual\b", re.IGNORECASE),
+    re.compile(r"\b(?:visite|fui\s+a\s+ver|vi)\s+(?:otro|otra|un\s+otro|una\s+otra)\b", re.IGNORECASE),
+    re.compile(r"\bmi\s+(?:hermano|hermana|pareja|amigo|amiga|pap[aá])\b.{0,50}\b(?:fue|va|quiere|puede)\b.{0,30}\b(?:ver(?:lo|la)?|visitar(?:lo|la)?|conocer(?:lo|la)?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:no\s+quiero|no\s+me\s+interesa|no\s+me\s+gustar[ií]a)\b.{0,35}\b(?:visitar(?:lo|la)?|ver(?:lo|la)?|conocer(?:lo|la)?)\b", re.IGNORECASE),
+    re.compile(r"\bsolo\s+(?:estoy\s+)?(?:mirando|consultando)\b|\bpor\s+ahora\s+solo\s+miro\b", re.IGNORECASE),
+    re.compile(r"\b(?:ma[nñ]ana\s+)?(?:voy\s+a|quiero)\s+(?:revisar|mirar)\s+(?:el|la)\s+(?:aviso|publicaci[oó]n|anuncio)\b", re.IGNORECASE),
+)
+
 
 def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
@@ -246,6 +255,76 @@ def should_offer_visit_data(
     explicit = is_explicit_visit_intent(normalized)
     affirmative = bool(pending_visit_confirmation and _VISIT_ACCEPTANCE_RE.match(normalized))
     return bool(explicit or affirmative)
+
+
+def is_visit_intent_vetoed(message: str) -> bool:
+    """Reject only explicit non-visit meanings before honoring model intent.
+
+    This is deliberately a negative guardrail, not a second positive intent
+    classifier.  It prevents a model label from turning a virtual tour,
+    another person's visit, a historical visit, a rejection, or a URL-only
+    property reference into a customer visit request.
+    """
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    if any(pattern.search(normalized) for pattern in _VISIT_NEGATIVE_VETO_PATTERNS):
+        return True
+
+    urls = re.findall(r"(?:https?://|www\.)\S+", normalized)
+    if urls:
+        without_urls = re.sub(r"(?:https?://|www\.)\S+", " ", normalized)
+        without_urls = re.sub(r"\s+", " ", without_urls).strip()
+        if not without_urls:
+            return True
+
+    return False
+
+
+def resolve_visit_intent(
+    message: str,
+    model_intent: str | None,
+    *,
+    pending_visit_confirmation: bool = False,
+    visit_data_state: dict | None = None,
+) -> dict[str, object]:
+    """Resolve visit intent from one model result plus deterministic safeguards.
+
+    The structured model intent is a valid semantic positive signal.  The
+    deterministic layer remains responsible for positive fallback detection
+    and for optional visit-data enrichment; explicit negative meanings veto
+    both sources.  No additional model call is made here.
+    """
+    normalized_model_intent = _normalize_text(model_intent)
+    semantic_visit = normalized_model_intent in {
+        "agendar_visita",
+        "ask_visit",
+        "visita",
+    }
+    deterministic_visit = should_offer_visit_data(
+        message,
+        model_intent,
+        pending_visit_confirmation=pending_visit_confirmation,
+        visit_data_state=visit_data_state or {},
+    )
+    negative_veto = is_visit_intent_vetoed(message)
+    final_visit = bool((semantic_visit or deterministic_visit) and not negative_veto)
+    if negative_veto:
+        source = "negative_veto"
+    elif semantic_visit:
+        source = "model"
+    elif deterministic_visit:
+        source = "deterministic"
+    else:
+        source = "fallback"
+    return {
+        "model_intent": model_intent,
+        "semantic_visit": semantic_visit,
+        "deterministic_visit": deterministic_visit,
+        "negative_veto": negative_veto,
+        "visit_intent": final_visit,
+        "resolution_source": source,
+    }
 
 
 def classify_visit_data_reply(message: str, *, offer_pending: bool) -> str:

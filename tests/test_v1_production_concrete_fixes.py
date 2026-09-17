@@ -4,7 +4,11 @@ import mongomock
 
 from chatbot import chatbot_queue as queue
 from chatbot.constants import LeadIntent
-from chatbot.conversation_policy import is_explicit_visit_intent, is_visit_confirmation
+from chatbot.conversation_policy import (
+    is_explicit_visit_intent,
+    is_visit_confirmation,
+    resolve_visit_intent,
+)
 from chatbot.crm_service import CrmService
 from chatbot.lead_temperature import derive_effective_temperature
 from chatbot.property_lookup import (
@@ -87,6 +91,46 @@ def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positive
     ]
     assert all(is_explicit_visit_intent(message) for message in positives)
     assert not any(is_explicit_visit_intent(message) for message in negatives)
+
+
+def test_semantic_visit_intent_recovers_novel_phrase_without_second_llm_call():
+    message = "Después de salir del trabajo podría pasar a conocer el departamento"
+    assert not is_explicit_visit_intent(message)
+
+    resolved = resolve_visit_intent(message, "agendar_visita")
+
+    assert resolved["visit_intent"] is True
+    assert resolved["semantic_visit"] is True
+    assert resolved["deterministic_visit"] is False
+    assert resolved["negative_veto"] is False
+    assert resolved["resolution_source"] == "model"
+
+
+def test_semantic_visit_intent_is_vetoed_for_non_visit_meanings():
+    negatives = [
+        "¿Tienen visita virtual?",
+        "Visité otro departamento ayer.",
+        "Mañana voy a revisar el aviso.",
+        "Mi hermano fue a verlo.",
+        "Solo estoy mirando por ahora.",
+        "No quiero visitarlo.",
+        YAPO_URL,
+    ]
+
+    for message in negatives:
+        resolved = resolve_visit_intent(message, "agendar_visita")
+        assert resolved["visit_intent"] is False, message
+        assert resolved["negative_veto"] is True, message
+
+
+def test_semantic_visit_intent_keeps_optional_data_capture_conservative():
+    resolved = resolve_visit_intent(
+        "Estoy bastante interesado, quisiera conocerlo antes de decidir.",
+        "agendar_visita",
+    )
+
+    assert resolved["visit_intent"] is True
+    assert resolved["deterministic_visit"] is True
 
 
 def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):

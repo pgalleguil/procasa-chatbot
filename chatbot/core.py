@@ -66,6 +66,7 @@ from .conversation_policy import (
     replace_repeated_visit_question,
     is_explicit_visit_intent,
     is_visit_confirmation,
+    resolve_visit_intent,
     filter_relaxation_accepted,
     outbound_phone_request,
     safe_phone_free_response,
@@ -1344,7 +1345,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             llm_context,
         )
 
-        intencion = resultado_grok["intencion"]
+        model_intent = resultado_grok["intencion"]
+        intencion = model_intent
         respuesta = resultado_grok["respuesta_bot"]
         datos_extraidos = resultado_grok.get("datos_extraidos", {})
         operacion_contextual = str(
@@ -1388,6 +1390,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             respuesta = guarded_response
     except Exception as e:
         logger.error(f"Error Grok: {e}")
+        model_intent = "consulta_general"
         intencion = "consulta_general"
         respuesta = "Disculpa, tengo un problema técnico momentáneo."
 
@@ -1494,7 +1497,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 # Non-affirmative, non-negative, non-topic-change → leave pending
                 logger.info("[VISIT_CONFIRM] Pending response %s still waiting: %s", pending.get("type"), msg_l)
 
-    # --- GUARDRAIL DE INTENCIÓN (REGLAS DETERMINÍSTICAS) ---
+    # --- RESOLUCIÓN DE INTENCIÓN (MODELO + GUARDRAILES DETERMINÍSTICOS) ---
     msg_l = (original_message or "").lower()
     visit_terms = [
         "visita", "visitar", "ir a ver", "ver la propiedad", "verlo", "verla",
@@ -1506,32 +1509,31 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "asesor", "humano", "supervisor", "gerente"
     ]
 
-    if intencion == "consulta_general":
-        if should_offer_visit_data(
-            original_message,
-            intencion,
-            pending_visit_confirmation=bool(pending_visit_before),
-            # Intent detection is independent from whether enrichment was
-            # previously declined; a later explicit visit request still
-            # deserves a handoff.
-            visit_data_state={},
-        ):
-            intencion = "agendar_visita"
-        elif any(t in msg_l for t in contact_terms):
-            intencion = "contacto_directo"
+    if intencion == "consulta_general" and any(t in msg_l for t in contact_terms):
+        intencion = "contacto_directo"
 
-    # A broad model label is not sufficient to request personal data or trigger
-    # a visit handoff. Operational intent must pass the deterministic layer.
-    visit_intent_clear = should_offer_visit_data(
+    visit_resolution = resolve_visit_intent(
         original_message,
-        intencion,
+        model_intent,
         pending_visit_confirmation=bool(pending_visit_before),
         visit_data_state={},
     )
-    if intencion == "agendar_visita" and not visit_intent_clear:
-        intencion = "consulta_general"
-    elif visit_intent_clear:
+    visit_intent_clear = bool(visit_resolution["visit_intent"])
+    visit_data_offer_allowed = bool(visit_resolution["deterministic_visit"])
+    if visit_intent_clear:
         intencion = "agendar_visita"
+    elif intencion == "agendar_visita":
+        intencion = "consulta_general"
+
+    logger.info(
+        "[INTENT_RESOLUTION] model_intent=%s deterministic_visit=%s "
+        "negative_veto=%s final_intent=%s resolution_source=%s",
+        model_intent,
+        visit_resolution["deterministic_visit"],
+        visit_resolution["negative_veto"],
+        intencion,
+        visit_resolution["resolution_source"],
+    )
 
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
@@ -1614,7 +1616,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # The handoff is independent from enrichment. Offer data only after the
     # explicit visit signal and keep the offer optional/non-blocking.
-    if visit_intent_clear and visit_data_state.get("status") not in {"offered", "accepted", "declined", "completed"}:
+    if visit_data_offer_allowed and visit_data_state.get("status") not in {"offered", "accepted", "declined", "completed"}:
         optional_offer = (
             "Si quieres, puedo dejar adelantados tus datos para que el ejecutivo encargado "
             "pueda coordinar la visita más rápido. Es opcional; si prefieres, puedes entregárselos directamente."

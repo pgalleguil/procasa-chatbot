@@ -296,11 +296,7 @@ def resolve_visit_intent(
     both sources.  No additional model call is made here.
     """
     normalized_model_intent = _normalize_text(model_intent)
-    semantic_visit = normalized_model_intent in {
-        "agendar_visita",
-        "ask_visit",
-        "visita",
-    }
+    semantic_visit = normalized_model_intent == "agendar_visita"
     deterministic_visit = should_offer_visit_data(
         message,
         model_intent,

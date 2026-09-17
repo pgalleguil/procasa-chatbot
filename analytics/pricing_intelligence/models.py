@@ -185,6 +185,7 @@ class PropertyDailySnapshotV1:
     data_quality: DataQuality
     provenance: Mapping[str, Any]
     listed_at: Optional[datetime] = None
+    listed_at_source: Optional[str] = None
     days_published: Optional[int] = None
     run_id: Optional[str] = None
 
@@ -220,6 +221,7 @@ class PropertyDailySnapshotV1:
             "data_quality": self.data_quality.to_dict(),
             "provenance": dict(self.provenance),
             "listed_at": iso(self.listed_at),
+            "listed_at_source": self.listed_at_source,
             "days_published": self.days_published,
             **({"run_id": self.run_id} if self.run_id is not None else {}),
         }

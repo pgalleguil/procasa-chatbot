@@ -31,6 +31,7 @@ from .time_utils import (
     to_utc,
     validate_operational_as_of,
 )
+from .observability import PropertyObservationEvidence, coerce_observation_evidence
 from owner_portal.semantics import operation_price, resolve_property_operations
 
 
@@ -300,11 +301,15 @@ class PropertySnapshotBuilder:
         as_of: Optional[datetime] = None,
         separate_price_events: Iterable[Mapping[str, Any]] = (),
         property_code: Optional[str] = None,
+        observation_evidence_by_code: Optional[
+            Mapping[str, PropertyObservationEvidence | Mapping[str, Any]]
+        ] = None,
     ) -> SnapshotBuildResult:
         cutoff = self._validate_as_of(as_of)
         cutoff_local = to_business_time(cutoff)
         cutoff_utc = to_utc(cutoff)
         requested_code = normalize_identifier(property_code) if property_code else None
+        observation_evidence_by_code = observation_evidence_by_code or {}
 
         events_by_code: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
         for event in separate_price_events:
@@ -372,6 +377,30 @@ class PropertySnapshotBuilder:
             previous_uf = price_change.previous_value if price_change and price_change.unit == "uf" else None
             previous_clp = price_change.previous_value if price_change and price_change.unit == "clp" else None
             publications = _publication_states(document)
+            observation_evidence = coerce_observation_evidence(
+                observation_evidence_by_code.get(code)
+            )
+            listed_at = None
+            listed_at_source = None
+            days_published = None
+            if observation_evidence is not None:
+                candidate_listed_at = observation_evidence.earliest_verified_publication_at
+                if candidate_listed_at is not None and is_observable_before(candidate_listed_at, cutoff):
+                    listed_at = candidate_listed_at
+                    listed_at_source = next(
+                        (
+                            item.published_at_source
+                            for item in observation_evidence.portal_windows
+                            if item.published_at == candidate_listed_at and item.published_at_source
+                        ),
+                        None,
+                    )
+                    if listed_at_source is None:
+                        listed_at_source = observation_evidence.provenance.get("listed_at_source")
+                    days_published = max(
+                        0,
+                        (to_business_time(cutoff) - to_business_time(listed_at)).days,
+                    )
             quality = DataQuality(
                 missing_price=current_price_uf is None and current_price_clp is None,
                 missing_surface=built_area is None and land_area is None,
@@ -417,9 +446,11 @@ class PropertySnapshotBuilder:
                         "builder_version": self.builder_version,
                         "as_of_rule": "event_time < as_of",
                         "external_listing_views": "NOT_AVAILABLE_V1",
+                        "listed_at_source": listed_at_source,
                     },
-                    listed_at=None,
-                    days_published=None,
+                    listed_at=listed_at,
+                    listed_at_source=listed_at_source,
+                    days_published=days_published,
                 )
             )
 

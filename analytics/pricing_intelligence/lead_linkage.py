@@ -6,10 +6,10 @@ from collections import Counter
 from typing import Any, Iterable, Mapping
 
 from .models import LeadLinkageRecord, LinkageStatus
+from .lead_origin import resolve_lead_origin
 from .property_identity import (
     PropertyIdentityResolver,
     normalize_identifier,
-    normalize_portal_source,
 )
 from .time_utils import BUSINESS_TZ, parse_aware_datetime
 
@@ -53,26 +53,10 @@ def _prospecto(lead: Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _declared_source(prospecto: Mapping[str, Any]) -> str:
-    for field_name in (
-        "origen",
-        "fuente_lead",
-        "portal_origen",
-        "origen_anuncio",
-        "plataforma_origen",
-    ):
-        normalized = normalize_portal_source(prospecto.get(field_name))
-        if normalized:
-            return normalized
-        raw = normalize_identifier(prospecto.get(field_name))
-        if raw:
-            key = raw.casefold().replace(" ", "").replace("_", "").replace("-", "")
-            if key == "whatsapp":
-                return "whatsapp"
-            if key == "otroportal":
-                return "otro_portal"
-            if key == "test":
-                return "test"
-    return "MISSING_ORIGIN"
+    result = resolve_lead_origin({"prospecto": prospecto})
+    if result["confidence"] == "conflict":
+        return "CONFLICT"
+    return result["canonical_origin"] or "MISSING_ORIGIN"
 
 
 def _is_structured_identifier_field(field_name: str) -> bool:

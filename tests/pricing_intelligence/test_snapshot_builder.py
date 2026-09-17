@@ -9,6 +9,7 @@ from analytics.pricing_intelligence.snapshot_builder import (
     PropertySnapshotBuilder,
     get_latest_observable_price_change,
 )
+from analytics.pricing_intelligence.observability import build_observation_evidence
 from analytics.pricing_intelligence.snapshot_cli import main
 from analytics.pricing_intelligence.snapshot_repository import PersistenceDisabled, SnapshotRepository
 from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, HistoricalSnapshotNotSupported
@@ -88,6 +89,46 @@ def test_missing_surface_is_null_and_quality_flagged():
 def test_missing_listing_date_does_not_invent_days_published():
     snapshot = make_builder().build([property_doc()], as_of=NOW).snapshots[0]
     assert snapshot.listed_at is None
+    assert snapshot.days_published is None
+
+
+def test_verified_publication_evidence_populates_listed_at_and_days_published():
+    evidence = build_observation_evidence(
+        property_code="P1",
+        operation="venta",
+        as_of=NOW,
+        active_publication_portals=("yapo",),
+        publication_dates={
+            "yapo": (datetime(2026, 8, 1, tzinfo=BUSINESS_TZ), "captacion.fecha_publicacion")
+        },
+        crm_lead_capable_portals=("yapo",),
+        source_observable_from={"yapo": datetime(2026, 8, 1, tzinfo=BUSINESS_TZ)},
+    )
+    snapshot = make_builder().build(
+        [property_doc()],
+        as_of=NOW,
+        observation_evidence_by_code={"P1": evidence},
+    ).snapshots[0]
+    assert snapshot.listed_at == evidence.earliest_verified_publication_at
+    assert snapshot.listed_at_source == "captacion.fecha_publicacion"
+    assert snapshot.days_published == 39
+
+
+def test_updated_at_is_not_used_as_listed_at():
+    evidence = build_observation_evidence(
+        property_code="P1",
+        operation="venta",
+        as_of=NOW,
+        active_publication_portals=("yapo",),
+        publication_dates={"yapo": None},
+        crm_lead_capable_portals=("yapo",),
+        source_observable_from={"yapo": None},
+    )
+    snapshot = make_builder().build(
+        [property_doc()], as_of=NOW, observation_evidence_by_code={"P1": evidence}
+    ).snapshots[0]
+    assert snapshot.listed_at is None
+    assert snapshot.listed_at_source is None
     assert snapshot.days_published is None
 
 

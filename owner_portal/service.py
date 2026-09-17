@@ -15,6 +15,7 @@ from analytics.pricing_intelligence.models import LinkageStatus
 from analytics.pricing_intelligence.property_identity import (
     build_property_identity_resolver,
     normalize_identifier,
+    normalize_alias_identifier,
 )
 from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, is_in_previous_window, parse_aware_datetime
 
@@ -127,13 +128,24 @@ LEAD_PROJECTION = {
     "prospecto.codigo": 1,
     "prospecto.codigo_mercadolibre": 1,
     "prospecto.codigo_yapo": 1,
+    "prospecto.codigo_procasa": 1,
     "prospecto.codigo_propiedad": 1,
     "prospecto.propiedad_codigo": 1,
     "prospecto.origen": 1,
+    "prospecto.canal_origen": 1,
+    "prospecto.plataforma": 1,
     "prospecto.fuente_lead": 1,
     "prospecto.portal_origen": 1,
     "prospecto.origen_anuncio": 1,
     "prospecto.plataforma_origen": 1,
+    "origen": 1,
+    "source_type": 1,
+    "canal_envio": 1,
+    "source_events.portal_source": 1,
+    "source_events.source_system": 1,
+    "messages.portal": 1,
+    "messages.source": 1,
+    "messages.property_code": 1,
 }
 
 _MASTER_ALIAS_PORTALS: tuple[tuple[str, str], ...] = (
@@ -364,11 +376,7 @@ def _mongo_identifier_variants(values: Iterable[Any]) -> list[str | int]:
 def _verified_property_alias_values(property_doc: Mapping[str, Any]) -> dict[str, set[str]]:
     """Extract the namespace-aware aliases approved by the V2 resolver."""
 
-    values: dict[str, set[str]] = {
-        "mercadolibre": set(),
-        "yapo": set(),
-        "toctoc": set(),
-    }
+    values: dict[str, set[str]] = {source: set() for source, _ in _MASTER_ALIAS_PORTALS}
     publications = property_doc.get("publicaciones")
     if not isinstance(publications, Mapping):
         return values
@@ -382,12 +390,12 @@ def _verified_property_alias_values(property_doc: Mapping[str, Any]) -> dict[str
                 if not isinstance(record, Mapping):
                     continue
                 for field_name in ("code", "code_unique"):
-                    normalized = normalize_identifier(record.get(field_name))
+                    normalized = normalize_alias_identifier(source, record.get(field_name))
                     if normalized and source in values:
                         values[source].add(normalized)
         if portal_key == "chilepropiedades":
             for field_name in ("codigo_venta", "codigo_arriendo"):
-                normalized = normalize_identifier(portal.get(field_name))
+                normalized = normalize_alias_identifier(source, portal.get(field_name))
                 if normalized and source in values:
                     values[source].add(normalized)
     return values
@@ -413,6 +421,15 @@ def _lead_candidate_query(property_doc: Mapping[str, Any]) -> dict[str, Any]:
                 {"prospecto.propiedad_codigo": {"$in": toctoc_values}},
             ]
         )
+    if aliases["procasa"]:
+        procasa_values = _mongo_identifier_variants(aliases["procasa"])
+        clauses.append({"prospecto.codigo_procasa": {"$in": procasa_values}})
+        clauses.append({"messages.property_code": {"$in": procasa_values}})
+    for source in ("mercadolibre", "yapo", "chilepropiedades", "proppit"):
+        if not aliases[source]:
+            continue
+        values = _mongo_identifier_variants(aliases[source])
+        clauses.append({"messages.property_code": {"$in": values}})
     return {"$or": clauses} if clauses else {"_id": {"$exists": False}}
 
 

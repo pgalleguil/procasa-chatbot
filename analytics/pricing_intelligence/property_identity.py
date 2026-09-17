@@ -1,14 +1,17 @@
 """Deterministic property identity resolution.
 
 Only verified identifiers are accepted.  No fuzzy matching, address matching,
-owner matching, probabilistic logic, or URL parsing is performed here.
+owner matching, or probabilistic logic is performed here.  URL parsing is
+limited to trusted portal hosts and deterministic identifier shapes.
 """
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections import Counter, defaultdict
 from typing import Any, Iterable, Mapping, Optional
+from urllib.parse import urlparse
 
 from .models import AliasKey, LinkageStatus, PropertyIdentityResolution
 
@@ -17,6 +20,9 @@ CANONICAL_PATH = "prospecto.codigo"
 LEAD_ALIAS_PATHS: tuple[tuple[str, str], ...] = (
     ("mercadolibre", "prospecto.codigo_mercadolibre"),
     ("yapo", "prospecto.codigo_yapo"),
+    # Verified in the current leads collection and the master publication
+    # namespace.  Other portal-specific lead identifiers are not assumed.
+    ("procasa", "prospecto.codigo_procasa"),
 )
 CONTEXTUAL_LEAD_ALIAS_FIELDS: tuple[str, ...] = (
     "prospecto.codigo_propiedad",
@@ -34,6 +40,38 @@ MASTER_PUBLICATION_PORTALS: tuple[tuple[str, str], ...] = (
     ("proppit", "proppit"),
     ("procasa", "procasa"),
 )
+
+
+def normalize_alias_identifier(source: str, value: Any) -> Optional[str]:
+    """Normalize a portal identifier, including only trusted URL forms.
+
+    Generic URLs are intentionally left unresolved.  A URL is converted to an
+    alias only when its host belongs to the declared portal namespace and its
+    identifier shape is deterministic (MLC code or a numeric listing id).
+    """
+
+    normalized = normalize_identifier(value)
+    if not normalized:
+        return None
+    source = str(source).strip().casefold()
+    if not normalized.casefold().startswith(("http://", "https://")):
+        return normalized
+    try:
+        parsed = urlparse(normalized)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").casefold().removeprefix("www.")
+    path = parsed.path or ""
+    if source == "mercadolibre" and ("mercadolibre.cl" in host or "portalinmobiliario.com" in host):
+        match = re.search(r"\bMLC[-_]?([0-9]{6,})\b", path, re.IGNORECASE)
+        return f"MLC{match.group(1)}" if match else None
+    if source == "yapo" and "yapo.cl" in host:
+        match = re.search(r"(?:^|/)([0-9]{5,})(?:/)?$", path)
+        return match.group(1) if match else None
+    if source == "chilepropiedades" and "chilepropiedades.cl" in host:
+        match = re.search(r"(?:^|/)([0-9]{5,})(?:/)?$", path)
+        return match.group(1) if match else None
+    return None
 
 
 def normalize_identifier(value: Any) -> Optional[str]:
@@ -91,14 +129,14 @@ def _iter_master_aliases(document: Mapping[str, Any]) -> Iterable[tuple[AliasKey
                 if not isinstance(record, Mapping):
                     continue
                 for field_name in ("code", "code_unique"):
-                    value = normalize_identifier(record.get(field_name))
+                    value = normalize_alias_identifier(source, record.get(field_name))
                     if value:
                         yield AliasKey(source, value), f"publicaciones.{portal_key}.publicaciones.*.{field_name}"
 
         # ChilePropiedades also has verified root-level operation codes.
         if portal_key == "chilepropiedades":
             for field_name in ("codigo_venta", "codigo_arriendo"):
-                value = normalize_identifier(portal.get(field_name))
+                value = normalize_alias_identifier(source, portal.get(field_name))
                 if value:
                     yield AliasKey(source, value), f"publicaciones.{portal_key}.{field_name}"
 
@@ -143,11 +181,11 @@ class PropertyIdentityResolver:
     def _lead_aliases(self, lead: Mapping[str, Any]) -> list[tuple[AliasKey, str]]:
         prospecto = lead.get("prospecto")
         if not isinstance(prospecto, Mapping):
-            return []
+            prospecto = {}
         aliases: list[tuple[AliasKey, str]] = []
         for source, path in LEAD_ALIAS_PATHS:
             field_name = path.rsplit(".", 1)[-1]
-            value = normalize_identifier(prospecto.get(field_name))
+            value = normalize_alias_identifier(source, prospecto.get(field_name))
             if value:
                 aliases.append((AliasKey(source, value), path))
         if self.enable_contextual_aliases:
@@ -169,9 +207,22 @@ class PropertyIdentityResolver:
             if source == "toctoc":
                 for path in CONTEXTUAL_LEAD_ALIAS_FIELDS:
                     field_name = path.rsplit(".", 1)[-1]
-                    value = normalize_identifier(prospecto.get(field_name))
+                    value = normalize_alias_identifier(source, prospecto.get(field_name))
                     if value:
                         aliases.append((AliasKey(source, value), f"{path}[source=toctoc]"))
+        messages = lead.get("messages")
+        if isinstance(messages, list):
+            for item in messages:
+                if not isinstance(item, Mapping):
+                    continue
+                source_value = item.get("portal") or item.get("source")
+                source = normalize_portal_source(source_value)
+                if source not in {item[0] for item in MASTER_PUBLICATION_PORTALS}:
+                    continue
+                for field_name in ("property_code", "codigo_propiedad", "propiedad_codigo"):
+                    value = normalize_alias_identifier(source, item.get(field_name))
+                    if value:
+                        aliases.append((AliasKey(source, value), f"messages[].{field_name}"))
         return aliases
 
     def lead_aliases(self, lead: Mapping[str, Any]) -> tuple[tuple[AliasKey, str], ...]:

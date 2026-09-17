@@ -156,3 +156,20 @@ def test_arbitrary_url_number_is_not_resolved():
     )
     result = resolver.resolve({"prospecto": {"origen": "TocToc", "url": "https://example.invalid/listing/12345"}})
     assert result.status is LinkageStatus.UNMATCHED
+
+
+def test_procasa_alias_is_exact_when_the_master_namespace_matches():
+    resolver = build_property_identity_resolver(
+        [{"codigo": "P1", "publicaciones": {"procasa": {"publicaciones": {"V": {"code": "PC1"}}}}}]
+    )
+    result = resolver.resolve({"prospecto": {"codigo_procasa": "PC1"}})
+    assert result.status is LinkageStatus.EXACT_ALIAS
+    assert result.resolved_property_code == "P1"
+
+
+def test_unsupported_chilepropiedades_alias_is_not_forced():
+    resolver = build_property_identity_resolver(
+        [{"codigo": "P1", "publicaciones": {"chilepropiedades": {"codigo_venta": "CP1"}}}]
+    )
+    result = resolver.resolve({"prospecto": {"codigo_chilepropiedades": "CP1"}})
+    assert result.status is LinkageStatus.UNMATCHED

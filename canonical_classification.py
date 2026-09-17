@@ -13,6 +13,7 @@ CANONICAL_STATES = frozenset({
     "BROKER_CONFIRMED",
     "BROKER_PROBABLE",
     "UNCERTAIN",
+    "OUT_OF_SCOPE_NEW_DEVELOPMENT",
     "INVALID",
     "REMOVED",
     "EXPIRED",
@@ -55,6 +56,8 @@ def legacy_to_canonical(value: Any) -> str:
         "INCIERTO": "UNCERTAIN",
         "INCONCLUSIVE": "UNCERTAIN",
         "UNCERTAIN": "UNCERTAIN",
+        "OUT_OF_SCOPE_NEW_DEVELOPMENT": "OUT_OF_SCOPE_NEW_DEVELOPMENT",
+        "FUERA_DE_ALCANCE": "OUT_OF_SCOPE_NEW_DEVELOPMENT",
         "PENDIENTE": "UNCERTAIN",
     }.get(state, "UNCERTAIN")
 
@@ -85,7 +88,11 @@ def canonicalize_classification(
         or classification.get("rule_state")
     )
 
-    if structural:
+    if _state(current) == "OUT_OF_SCOPE_NEW_DEVELOPMENT" or _state(current) == "FUERA_DE_ALCANCE":
+        final = "OUT_OF_SCOPE_NEW_DEVELOPMENT"
+        final_reason = reason or "OUT_OF_SCOPE_NEW_DEVELOPMENT"
+        final_evidence = list(evidence or classification.get("evidence") or [])
+    elif structural:
         final = "BROKER_CONFIRMED"
         final_reason = "STRUCTURAL_BROKER_VETO"
         final_evidence = [structural.get("evidence") or structural.get("reason_code")]

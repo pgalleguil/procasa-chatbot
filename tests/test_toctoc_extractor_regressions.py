@@ -52,6 +52,7 @@ def test_seller_type_is_derived_from_id_type_without_contact_dom():
     assert result["seller_type"] == "CORREDOR"
     assert result["seller_type_source"] == "detail_next_data.client.idType"
     assert result["seller_id_type"] == "2"
+    assert result["seller_id_type_raw"] == "2"
 
 
 def test_id_type_particular_is_preserved_as_particular():

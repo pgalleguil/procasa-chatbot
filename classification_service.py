@@ -7,6 +7,7 @@ budget failures fail closed as ``UNCERTAIN_PENDING_AI``.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -37,6 +38,7 @@ def _legacy_state(canonical_state: str) -> str:
         "INVALID": "INVALID",
         "REMOVED": "AD_REMOVED",
         "EXPIRED": "EXPIRED",
+        "OUT_OF_SCOPE_NEW_DEVELOPMENT": "FUERA_DE_ALCANCE",
     }.get(canonical_state, "INCIERTO")
 
 
@@ -56,6 +58,51 @@ def _is_removed_or_invalid(document: dict[str, Any]) -> str | None:
     if state in {"EXPIRED", "PUBLICACION_EXPIRADA"}:
         return "EXPIRED"
     return None
+
+
+def detect_out_of_scope_new_development(document: dict[str, Any]) -> dict[str, Any] | None:
+    """Detect Toctoc new-development inventory before broker/AI layers.
+
+    ``Venta Nuevo`` is an operational scope decision for this owner-capture
+    pipeline, not a broker classification.  Keep the raw ``idType`` and the
+    operation label as evidence, but do not infer this state from a publisher
+    name alone.
+    """
+    portal = str(
+        document.get("portal")
+        or document.get("source_portal")
+        or document.get("origen")
+        or ""
+    ).strip().upper()
+    if portal and portal not in {"TOCTOC", "TOCTOC.COM"}:
+        return None
+
+    operation = str(
+        document.get("operation_label_raw")
+        or document.get("operation")
+        or document.get("operacion")
+        or ""
+    ).strip()
+    seller_id_type = str(
+        document.get("seller_id_type_raw")
+        or document.get("seller_id_type")
+        or ""
+    ).strip()
+    operation_is_new = bool(re.search(r"\b(?:venta|arriendo)\s+nuevo\b", operation, re.IGNORECASE))
+    id_type_is_new = seller_id_type == "3"
+    if not operation_is_new and not id_type_is_new:
+        return None
+    evidence = []
+    if operation:
+        evidence.append(f"operation_label={operation}")
+    if seller_id_type:
+        evidence.append(f"idType={seller_id_type}")
+    return {
+        "reason_code": "TOCTOC_NEW_DEVELOPMENT_OPERATION",
+        "evidence": evidence,
+        "operation_label": operation,
+        "seller_id_type_raw": seller_id_type,
+    }
 
 
 def _health_is_healthy(health: dict[str, Any] | None) -> bool:
@@ -100,13 +147,17 @@ def _classification_with_canonical(
     result["pipeline_complete"] = bool(pipeline_complete)
     result["assignment_ready"] = bool(
         pipeline_complete
-        and final not in {"BROKER_CONFIRMED", "BROKER_PROBABLE", "INVALID", "REMOVED", "EXPIRED"}
+        and final not in {
+            "BROKER_CONFIRMED", "BROKER_PROBABLE", "OUT_OF_SCOPE_NEW_DEVELOPMENT",
+            "INVALID", "REMOVED", "EXPIRED",
+        }
     )
     result["exclude_from_assignment"] = not result["assignment_ready"]
     if not result["assignment_ready"]:
         result["assignment_block_reasons"] = sorted(set(
             list(result.get("assignment_block_reasons") or [])
             + (["UNCERTAIN_PENDING_AI"] if not pipeline_complete else [])
+            + (["OUT_OF_SCOPE_NEW_DEVELOPMENT"] if final == "OUT_OF_SCOPE_NEW_DEVELOPMENT" else [])
         ))
     result["classifier_version"] = CLASSIFICATION_SERVICE_VERSION
     result["classified_at"] = _now()
@@ -186,9 +237,10 @@ def classify_capture(
     )
     budget = budget or AICostGuard(budget=budget_from_config(config))
     cache = cache or ClassificationCache()
-    structural = detect_hard_broker_signal(document, extracted=document)
+    scope_signal = detect_out_of_scope_new_development(document)
+    structural = None if scope_signal else detect_hard_broker_signal(document, extracted=document)
     registry_match = document.get("broker_identity_match") or {}
-    if db is not None:
+    if db is not None and not scope_signal:
         registry_match = resolve_broker_identity(db, document)
     contact_identity = document.get("contact_identity") or {}
     human_broker_match = bool(
@@ -221,6 +273,30 @@ def classify_capture(
             pipeline_complete=True,
         )
         base_result.update({"classification": classification, "reason": removed_state, "metrics": budget.report()})
+        return base_result
+
+    if scope_signal:
+        classification = _classification_with_canonical(
+            document,
+            {
+                "state": "OUT_OF_SCOPE_NEW_DEVELOPMENT",
+                "source": "scope_rules",
+                "reason": scope_signal["reason_code"],
+                "evidence": scope_signal["evidence"],
+                "ai_eligible": False,
+                "out_of_scope": True,
+            },
+            registry_match=registry_match,
+            human_broker_match=human_broker_match,
+            cross_portal_match=cross_portal_match,
+            strong_text_broker=False,
+            reason=scope_signal["reason_code"],
+            evidence=scope_signal["evidence"],
+            pipeline_complete=True,
+        )
+        classification["ai_eligible"] = False
+        classification["out_of_scope"] = True
+        base_result.update({"classification": classification, "reason": "out_of_scope_new_development", "metrics": budget.report()})
         return base_result
 
     if structural:

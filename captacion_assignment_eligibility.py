@@ -344,6 +344,8 @@ def can_assign_property(
     ).strip().upper()
     if final_state in BROKER_CANONICAL_STATES:
         reasons.add("canonical_broker_veto")
+    if final_state == "OUT_OF_SCOPE_NEW_DEVELOPMENT":
+        reasons.add("out_of_scope_new_development")
     if classification.get("hard_broker_veto") or classification.get("hard_veto") == "PROFESSIONAL":
         reasons.add("hard_broker_veto")
 

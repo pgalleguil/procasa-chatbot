@@ -318,6 +318,7 @@ def _extract_from_next_data(next_data: dict[str, Any], source_url: str) -> dict[
             client_id_type = client.get("idType") or client.get("id_type")
             if client_id_type not in (None, ""):
                 fields["seller_id_type"] = str(client_id_type)
+                fields["seller_id_type_raw"] = str(client_id_type)
                 fields["seller_id_type_source"] = "detail_next_data.client.idType"
             if explicit_profile_id not in (None, ""):
                 fields["seller_profile_id"] = str(explicit_profile_id)

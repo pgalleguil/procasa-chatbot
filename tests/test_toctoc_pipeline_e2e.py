@@ -77,6 +77,38 @@ def test_b2_structural_signal_blocks_when_seller_type_is_missing():
     assert report["qa_sample"]["BROKER"]
 
 
+def test_b3_new_development_is_out_of_scope_before_registry_text_or_ai():
+    calls = []
+    ledger = InMemoryPipelineLedger()
+    report = run_toctoc_pipeline(
+        [_record("B3", seller_type="EMPRESA", seller_id_type_raw="3", operation_label_raw="Venta Nuevo")],
+        options=_options(),
+        ledger=ledger,
+        deepseek_callable=lambda *a, **k: calls.append(1),
+    )
+    item = ledger.get_item(report["run_id"], "B3")
+    assert report["assignable"] == 0
+    assert report["ai"]["AI_CALLS_EXECUTED"] == 0
+    assert calls == []
+    assert report["total_processed"] == 1
+    assert report["anomalies"] == []
+    assert item["classification"]["final"] == "OUT_OF_SCOPE_NEW_DEVELOPMENT"
+    assert item["classification"]["ai_eligible"] is False
+
+
+def test_b4_id_type_three_is_out_of_scope_when_operation_label_is_missing():
+    ledger = InMemoryPipelineLedger()
+    report = run_toctoc_pipeline(
+        [_record("B4", seller_id_type_raw="3", operation_label_raw="")],
+        options=_options(),
+        ledger=ledger,
+    )
+    item = ledger.get_item(report["run_id"], "B4")
+    assert report["assignable"] == 0
+    assert report["real_deepseek_calls"] == 0
+    assert item["classification"]["final"] == "OUT_OF_SCOPE_NEW_DEVELOPMENT"
+
+
 def test_c_known_registry_identity_is_blocked_before_ai():
     calls = []
     report = run_toctoc_pipeline(

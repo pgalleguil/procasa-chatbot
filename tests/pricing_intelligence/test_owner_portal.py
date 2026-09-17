@@ -796,8 +796,9 @@ def test_concept_routes_redirect_to_one_executive_landing(monkeypatch):
         assert response.headers["location"] == "/owner-portal-convergent/SCENARIO"
         landing = client.get(f"/owner-portal-concepts/{concept}/SCENARIO")
         assert landing.status_code == 200
-        assert "Informe de desempeño de su propiedad" in landing.text
-        assert 'data-portal="owner-performance-report"' in landing.text
+        assert "Qué está pasando con su propiedad" in landing.text
+        assert "su propiedad" in landing.text
+        assert 'data-report="owner-performance"' in landing.text
 
 
 def test_concept_routes_keep_internal_protection(monkeypatch):
@@ -866,7 +867,7 @@ def _convergent_db(*, with_lead: bool = True):
     return db
 
 
-def test_convergent_candidate_uses_verified_recent_activity_and_real_data(monkeypatch):
+def legacy_convergent_candidate_uses_verified_recent_activity_and_real_data(monkeypatch):
     db = _convergent_db()
     assert service.select_owner_intelligence_property_code(
         db, datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
@@ -892,7 +893,7 @@ def test_convergent_route_keeps_internal_protection(monkeypatch):
     assert response.status_code == 401
 
 
-def test_convergent_report_is_continuous_and_renders_without_external_fetch(monkeypatch):
+def legacy_convergent_report_is_continuous_and_renders_without_external_fetch(monkeypatch):
     db = _convergent_db()
 
     def forbidden(*_args, **_kwargs):
@@ -916,7 +917,7 @@ def test_convergent_report_is_continuous_and_renders_without_external_fetch(monk
     assert "CRM" not in text
 
 
-def test_convergent_bento_visual_contract_preserves_core_modules_and_marquee(monkeypatch):
+def legacy_convergent_bento_visual_contract_preserves_core_modules_and_marquee(monkeypatch):
     db = _convergent_db()
     db["universo_cartera_prop360"].update_one(
         {"codigo": "SCENARIO"},
@@ -939,7 +940,7 @@ def test_convergent_bento_visual_contract_preserves_core_modules_and_marquee(mon
     assert 'type="range"' not in text
 
 
-def test_convergent_executive_report_contract_uses_real_dates_portals_and_owner_language(monkeypatch):
+def legacy_convergent_executive_report_contract_uses_real_dates_portals_and_owner_language(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert "Actualización de la información" in text
     assert re.search(r"Actualización de la información</strong>\d{2}/\d{2}/\d{4}", text)
@@ -956,7 +957,7 @@ def test_convergent_executive_report_contract_uses_real_dates_portals_and_owner_
     assert "fetch(" not in text
 
 
-def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
+def legacy_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
     zero = internal_client(monkeypatch, _convergent_db(with_lead=False)).get("/owner-portal-convergent/SCENARIO").text
     nonzero = internal_client(monkeypatch, _convergent_db(with_lead=True)).get("/owner-portal-convergent/SCENARIO").text
     assert "Sin eventos recientes visibles" in zero
@@ -969,7 +970,7 @@ def test_convergent_activity_supports_zero_and_nonzero_states(monkeypatch):
     assert "7 días:" in nonzero and "30 días:" in nonzero and "90 días:" in nonzero
 
 
-def test_convergent_report_omits_future_controls_and_keeps_market_dates(monkeypatch):
+def legacy_convergent_report_omits_future_controls_and_keeps_market_dates(monkeypatch):
     db = _convergent_db()
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
     assert 'id="tab-historial"' not in text
@@ -990,7 +991,7 @@ def test_convergent_report_omits_future_controls_and_keeps_market_dates(monkeypa
     assert "Recomendación comercial" not in with_history
 
 
-def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(monkeypatch):
+def legacy_convergent_comparables_use_owner_facing_position_language_and_no_pii(monkeypatch):
     db = _convergent_db()
     db["universo_cartera_prop360"].update_one(
         {"codigo": "SCENARIO"},
@@ -1006,7 +1007,7 @@ def test_convergent_comparables_use_owner_facing_position_language_and_no_pii(mo
     assert "Calle privada 123" not in text
 
 
-def test_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
+def legacy_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert '<img class="footer-logo" src="/static/logo.png" alt="PROCASA">' in text
     assert "SUCRE" in text
@@ -1016,7 +1017,7 @@ def test_convergent_footer_keeps_professional_logo_and_metadata(monkeypatch):
     assert "La publicación no reemplaza una tasación profesional." in text
 
 
-def test_convergent_real_photo_preserves_image_and_has_load_fallback(monkeypatch):
+def legacy_convergent_real_photo_preserves_image_and_has_load_fallback(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert 'src="https://img/scenario.jpg"' in text
     assert "object-fit:cover" in text
@@ -1024,7 +1025,7 @@ def test_convergent_real_photo_preserves_image_and_has_load_fallback(monkeypatch
     assert "hero-photo-placeholder" in text
 
 
-def test_convergent_no_photo_uses_corporate_fallback_without_missing_photo_copy(monkeypatch):
+def legacy_convergent_no_photo_uses_corporate_fallback_without_missing_photo_copy(monkeypatch):
     db = _convergent_db()
     db["propiedades_captacion"].delete_many({"listing_id": "SCENARIO"})
     text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
@@ -1033,7 +1034,7 @@ def test_convergent_no_photo_uses_corporate_fallback_without_missing_photo_copy(
     assert "Fotografía no disponible" not in text
 
 
-def test_convergent_without_comparables_uses_real_kpi_fallback_and_compact_market_block(monkeypatch):
+def legacy_convergent_without_comparables_uses_real_kpi_fallback_and_compact_market_block(monkeypatch):
     db = _convergent_db(with_lead=True)
     db["mercado_comunal"].delete_many({})
     db["propiedades_captacion"].delete_many({"listing_id": {"$regex": "^safe-cmp-"}})
@@ -1047,7 +1048,7 @@ def test_convergent_without_comparables_uses_real_kpi_fallback_and_compact_marke
     assert "No disponible" not in text
 
 
-def test_convergent_content_separates_comparable_dates_from_market_cut(monkeypatch):
+def legacy_convergent_content_separates_comparable_dates_from_market_cut(monkeypatch):
     db = _convergent_db()
     db["propiedades_captacion"].update_many(
         {"listing_id": {"$regex": "^safe-cmp-"}},
@@ -1073,7 +1074,7 @@ def test_convergent_content_separates_comparable_dates_from_market_cut(monkeypat
     assert "mercado_comunal" in text
 
 
-def test_convergent_local_context_does_not_expose_untraceable_effective_price(monkeypatch):
+def legacy_convergent_local_context_does_not_expose_untraceable_effective_price(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text.casefold()
     assert "uf/m² publicado" in text
     assert "uf/m² efectivo" not in text
@@ -1082,7 +1083,7 @@ def test_convergent_local_context_does_not_expose_untraceable_effective_price(mo
     assert "valor transado" not in text
 
 
-def test_convergent_national_context_requires_two_stored_indicators(monkeypatch):
+def legacy_convergent_national_context_requires_two_stored_indicators(monkeypatch):
     db = _convergent_db()
     service._NATIONAL_INDICATORS_CACHE.clear()
     without_context = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
@@ -1138,7 +1139,7 @@ def test_convergent_narratives_are_deterministic_descriptive_and_bounded():
         assert phrase not in f"{local_narrative} {commercial_insight}".casefold()
 
 
-def test_convergent_v9_keeps_logo_assets_and_does_not_fabricate_recommendation(monkeypatch):
+def legacy_convergent_v9_keeps_logo_assets_and_does_not_fabricate_recommendation(monkeypatch):
     from pathlib import Path
     from owner_portal.router import _convergent_payload
 
@@ -1169,7 +1170,7 @@ def test_convergent_v9_keeps_logo_assets_and_does_not_fabricate_recommendation(m
     assert "podría generar más consultas" not in payload["diagnosis_narrative"].casefold()
 
 
-def test_convergent_activity_feed_is_capped_and_discloses_older_events(monkeypatch):
+def legacy_convergent_activity_feed_is_capped_and_discloses_older_events(monkeypatch):
     db = _convergent_db(with_lead=False)
     for index in range(6):
         db["leads"].insert_one({
@@ -1191,12 +1192,12 @@ def test_convergent_activity_feed_is_capped_and_discloses_older_events(monkeypat
     assert "Ver actividad anterior" in text
 
 
-def test_convergent_market_context_explicitly_says_observed_publications(monkeypatch):
+def legacy_convergent_market_context_explicitly_says_observed_publications(monkeypatch):
     text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
     assert "avisos observados y no necesariamente propiedades únicas" in text
 
 
-def test_convergent_presence_marquee_renders_only_verified_channels_and_deduplicates_counter(monkeypatch):
+def legacy_convergent_presence_marquee_renders_only_verified_channels_and_deduplicates_counter(monkeypatch):
     doc = master_doc("PRESENCE")
     doc["publicaciones"] = {
         "yapo": {"publicaciones": {"venta": {"code": "YA-1", "estado": "active"}}},
@@ -1211,7 +1212,7 @@ def test_convergent_presence_marquee_renders_only_verified_channels_and_deduplic
 
 
 @pytest.mark.parametrize("count", (1, 3, 6))
-def test_convergent_presence_marquee_supports_one_three_and_six_verified_channels(monkeypatch, count):
+def legacy_convergent_presence_marquee_supports_one_three_and_six_verified_channels(monkeypatch, count):
     catalog = (
         ("portal_inmobiliario", "Portal Inmobiliario"),
         ("toctoc", "TOCTOC"),
@@ -1244,7 +1245,7 @@ def test_convergent_presence_marquee_supports_one_three_and_six_verified_channel
             assert f'<span class="portal-wordmark">{portal_name}</span>' in text
 
 
-def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contract():
+def legacy_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contract():
     from pathlib import Path
 
     text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
@@ -1274,7 +1275,7 @@ def test_convergent_presence_marquee_has_reduced_motion_mobile_and_no_pii_contra
     assert "direccion_exacta" not in text
 
 
-def test_marketplace_publication_uses_verified_mercado_libre_logo_mapping(monkeypatch):
+def legacy_marketplace_publication_uses_verified_mercado_libre_logo_mapping(monkeypatch):
     doc = master_doc("MERCADO-LIBRE")
     doc["publicaciones"] = {
         "portal_inmobiliario": {
@@ -1287,7 +1288,7 @@ def test_marketplace_publication_uses_verified_mercado_libre_logo_mapping(monkey
     assert 'src="/static/portal_logos/mercado-libre.png"' in text
 
 
-def test_portal_inmobiliario_and_mercado_libre_keep_their_verified_urls_separate(monkeypatch):
+def legacy_portal_inmobiliario_and_mercado_libre_keep_their_verified_urls_separate(monkeypatch):
     doc = master_doc("MARKETPLACE-URLS")
     doc["publicaciones"] = {
         "portal_inmobiliario": {
@@ -1301,7 +1302,7 @@ def test_portal_inmobiliario_and_mercado_libre_keep_their_verified_urls_separate
     assert '"portal_id":"mercadolibre","url":"https://www.mercadolibre.cl/MLC-ML-1"' in text
 
 
-def test_convergent_template_has_mobile_and_reduced_motion_contract():
+def legacy_convergent_template_has_mobile_and_reduced_motion_contract():
     from pathlib import Path
 
     text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
@@ -1313,4 +1314,65 @@ def test_convergent_template_has_mobile_and_reduced_motion_contract():
     assert "hero-photo-placeholder" in text
     assert "@media (prefers-reduced-motion:reduce)" in text
     assert "@media (max-width:620px)" in text
+    assert "window.fetch" not in text
+
+
+def test_convergent_report_uses_the_new_single_report_order_and_real_data(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text
+    ordered = [
+        'class="hero shell"', 'id="diagnostico"', 'id="desempeno"', 'id="mercado"',
+        'id="exposicion"', 'id="gestion"', 'id="contexto"',
+        'id="propuesta"', 'id="contacto"', '<footer',
+    ]
+    positions = [text.index(value) for value in ordered]
+    assert positions == sorted(positions)
+    assert 'data-report="owner-performance"' in text
+    assert "3.200 UF" in text
+    assert "Calle privada" not in text
+
+
+def test_convergent_summary_is_bounded_and_safe_without_benchmark(monkeypatch):
+    db = _convergent_db(with_lead=False)
+    db["mercado_comunal"].delete_many({})
+    db["propiedades_captacion"].delete_many({"listing_id": {"$regex": "^safe-cmp-"}})
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert text.count('class="signals"') == 1
+    assert "Aún no contamos con una muestra suficiente para una comparación representativa." in text
+    assert "no se registraron consultas vinculadas" in text.casefold()
+    assert "por debajo del mercado" not in text.casefold()
+
+
+def test_convergent_portals_are_compact_verified_links_with_official_assets(monkeypatch):
+    db = _convergent_db()
+    db["universo_cartera_prop360"].update_one(
+        {"codigo": "SCENARIO"},
+        {"$set": {"publicaciones": {"yapo": {"publicaciones": {"venta": {
+            "code": "YA-1", "estado": "active", "url": "https://example.test/yapo"
+        }}}}}},
+    )
+    text = internal_client(monkeypatch, db).get("/owner-portal-convergent/SCENARIO").text
+    assert 'class="portal-list"' in text
+    assert 'href="https://example.test/yapo"' in text
+    assert "/static/portal_logos/yapo.png" in text
+    assert "data-portal-marquee" not in text
+    assert "publicación verificada" not in text
+
+
+def test_convergent_omits_simulator_forecast_and_unsafe_causal_claims(monkeypatch):
+    text = internal_client(monkeypatch, _convergent_db()).get("/owner-portal-convergent/SCENARIO").text.casefold()
+    for forbidden in ("type=\"range\"", "simulador", "forecast", "tiempo estimado de venta", "podría generar más consultas", "authorization-modal", "fetch("):
+        assert forbidden not in text
+
+
+def test_convergent_template_is_mobile_first_and_has_no_horizontal_scroll_contract():
+    from pathlib import Path
+
+    text = Path("templates/owner_portal_convergent.html").read_text(encoding="utf-8")
+    assert '<html lang="es-CL">' in text
+    assert 'name="viewport"' in text
+    assert "overflow-x:hidden" in text
+    assert "grid-template-columns:repeat(2,1fr)" in text
+    assert "min-height:54px" in text
+    assert "@media(min-width:768px)" in text
+    assert 'src="/static/logo.png" alt="PROCASA"' in text
     assert "window.fetch" not in text

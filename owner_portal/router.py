@@ -40,6 +40,9 @@ def _format_owner_number(value: object, decimals: int = 2) -> str:
     return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+_templates.env.globals["format_number"] = _format_owner_number
+
+
 def _local_market_narrative(local: dict) -> str:
     """Build at most two descriptive sentences from the communal snapshot."""
 
@@ -110,7 +113,7 @@ def _diagnosis_payload(view: dict, payload: dict) -> dict:
     publications = len(view.get("publications") or [])
     comparable_cohort = view.get("comparable_cohort") or {}
     comparable_count = int(comparable_cohort.get("count") or 0)
-    current_price = (view.get("current_price") or {}).get("uf")
+    current_price = view.get("current_price_uf")
     delta = payload.get("market_delta_pct")
 
     if publications >= 5:
@@ -175,6 +178,90 @@ def _diagnosis_payload(view: dict, payload: dict) -> dict:
     return payload
 
 
+def _display_date(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    for pattern in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value[:10], pattern)
+        except ValueError:
+            continue
+    return None
+
+
+def _report_summary_payload(view: dict, payload: dict) -> None:
+    """Presentation-only summary, built exclusively from already exposed facts."""
+
+    inquiries = int(view.get("inquiries_previous_30d") or 0)
+    publications = list(view.get("publications") or [])
+    comparable_count = int((view.get("comparable_cohort") or {}).get("count") or 0)
+    position = str(payload.get("position_descriptor") or "")
+    items = [
+        (
+            f"La propiedad recibió {inquiries} consulta vinculada durante los últimos 30 días."
+            if inquiries == 1
+            else f"La propiedad recibió {inquiries} consultas vinculadas durante los últimos 30 días."
+        ),
+        (
+            f"La publicación se mantiene activa en {len(publications)} canal verificado."
+            if len(publications) == 1
+            else f"La publicación se mantiene activa en {len(publications)} canales verificados."
+        ),
+    ]
+    if comparable_count and position:
+        items.append(f"El precio publicado está {position.lower()} frente a {comparable_count} propiedades similares.")
+    else:
+        items.append("Aún no contamos con información suficiente para realizar una comparación representativa.")
+    payload["performance_summary"] = items[:3]
+
+    as_of = _display_date(view.get("data_updated_at"))
+    publication_dates = [
+        value
+        for publication in publications
+        if (value := _display_date(publication.get("published_at"))) is not None
+    ]
+    if as_of and publication_dates:
+        payload["days_published"] = max(0, (as_of - min(publication_dates)).days)
+    else:
+        payload["days_published"] = None
+
+    cohort = view.get("comparable_cohort") or {}
+    price_uf = view.get("current_price_uf")
+    market_rows = []
+    if price_uf is not None and cohort.get("p25_uf") is not None and cohort.get("p75_uf") is not None:
+        market_rows.append({
+            "label": "Precio publicado",
+            "property": f"{_format_owner_number(price_uf, 0)} UF",
+            "comparables": f"{_format_owner_number(cohort['p25_uf'], 0)}–{_format_owner_number(cohort['p75_uf'], 0)} UF",
+        })
+    if payload.get("property_uf_m2") is not None and cohort.get("median_uf_m2") is not None:
+        market_rows.append({
+            "label": "Precio por m²",
+            "property": f"{_format_owner_number(payload['property_uf_m2'])} UF/m²",
+            "comparables": f"{_format_owner_number(cohort['median_uf_m2'])} UF/m²",
+        })
+    if comparable_count and position:
+        market_rows.append({
+            "label": "Posición",
+            "property": position,
+            "comparables": "Rango observado",
+        })
+    payload["market_comparison_rows"] = market_rows
+
+    payload["recommendation_range"] = (
+        f"{_format_owner_number(cohort['p25_uf'], 0)}–{_format_owner_number(cohort['p75_uf'], 0)} UF"
+        if cohort.get("p25_uf") is not None and cohort.get("p75_uf") is not None
+        else None
+    )
+    if comparable_count and position:
+        payload["recommendation_diagnosis"] = (
+            f"La propiedad se encuentra {position.lower()} frente a {comparable_count} publicaciones comparables observadas."
+        )
+    else:
+        payload["recommendation_diagnosis"] = "La comparación de precio requiere una muestra mayor de propiedades similares."
+    payload["recommendation_action"] = "Conviene revisar la estrategia comercial junto con su ejecutivo antes de definir próximos pasos."
+
+
 def _convergent_payload(view: dict) -> dict:
     """Add small presentation-only labels without changing the shared DTO."""
 
@@ -185,9 +272,22 @@ def _convergent_payload(view: dict) -> dict:
             return str(value)
 
     payload = dict(view)
+    portal_logos = {
+        "portal_inmobiliario": "/static/portal_logos/portal-inmobiliario.png",
+        "mercadolibre": "/static/portal_logos/mercado-libre.png",
+        "mercado_libre": "/static/portal_logos/mercado-libre.png",
+        "toctoc": "/static/portal_logos/toctoc.png",
+        "yapo": "/static/portal_logos/yapo.png",
+        "chilepropiedades": "/static/portal_logos/chilepropiedades.png",
+        "proppit": "/static/portal_logos/proppit.png",
+        "procasa": "/static/logo.png",
+    }
+    payload["publications"] = [
+        {**publication, "logo_path": portal_logos.get(publication.get("portal_id"), "/static/logo.png")}
+        for publication in (view.get("publications") or [])
+    ]
     position = view.get("positioning") or {}
-    current = view.get("current_price") or {}
-    price_uf = current.get("uf")
+    price_uf = view.get("current_price_uf")
     p10 = position.get("p10_uf")
     p90 = position.get("p90_uf")
     if price_uf is not None and p10 is not None and p90 is not None and p90 > p10:
@@ -318,6 +418,7 @@ def _convergent_payload(view: dict) -> dict:
         else None
     )
     _diagnosis_payload(view, payload)
+    _report_summary_payload(view, payload)
     return payload
 
 

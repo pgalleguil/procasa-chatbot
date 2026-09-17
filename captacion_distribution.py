@@ -19,7 +19,7 @@ from pymongo.errors import DuplicateKeyError
 from pymongo import ReturnDocument
 from chatbot.constants import CHILE_TZ
 
-from captacion_assignment_eligibility import calculate_assignment_eligibility
+from captacion_assignment_eligibility import calculate_assignment_eligibility, can_assign_property
 from captacion_contact_identity import (
     get_contact_identity_evidence,
     phone_learning_global_lookup_enabled,
@@ -29,6 +29,7 @@ from captacion_kpis import (
     is_terminal_captacion_state,
 )
 from captacion_management import new_assignment_cycle
+from broker_registry import resolve_broker_identity
 from comuna_utils import normalize_commune_canonical
 from config import Config
 
@@ -370,7 +371,13 @@ def active_workable_backlogs(
             if phone_learning_global_lookup_enabled()
             else None
         )
-        decision = calculate_assignment_eligibility(property_doc, contact_identity=identity)
+        decision = can_assign_property(
+            property_doc,
+            {
+                "contact_identity": identity,
+                "broker_identity_match": resolve_broker_identity(db, property_doc),
+            },
+        )
         if not decision.get("assignment_ready") or has_broker_identity(property_doc):
             continue
         workloads[agent_id] += 1
@@ -533,7 +540,13 @@ def assign_captacion_candidate_atomically(
     if managed and not allow_management_evidence:
         return "managed"
     identity = get_contact_identity_evidence(db, fresh) if phone_learning_global_lookup_enabled() else None
-    decision = calculate_assignment_eligibility(fresh, contact_identity=identity)
+    decision = can_assign_property(
+        fresh,
+        {
+            "contact_identity": identity,
+            "broker_identity_match": resolve_broker_identity(db, fresh),
+        },
+    )
     if not decision.get("assignment_ready"):
         reasons = set(decision.get("assignment_block_reasons") or [])
         if "contact_identity_broker_confirmed" in reasons:
@@ -566,6 +579,10 @@ def assign_captacion_candidate_atomically(
     # classification/hold transition from being overwritten by the assignment.
     atomic_filter.update({
         "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
+        "classification.final": {"$nin": ["BROKER_CONFIRMED", "BROKER_PROBABLE"]},
+        "classification.hard_broker_veto": {"$ne": True},
+        "classification.hard_veto": {"$ne": "PROFESSIONAL"},
+        "pipeline_complete": True,
         "gestion.semantic_review_hold": {"$ne": True},
     })
     if mode == "new":

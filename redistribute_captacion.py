@@ -27,9 +27,10 @@ from chatbot.storage import get_db
 from bson import ObjectId
 from captacion_assignment_eligibility import (
     assignment_classification_priority,
-    calculate_assignment_eligibility,
+    can_assign_property,
     is_chilepropiedades_document,
 )
+from broker_registry import resolve_broker_identity
 from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
 from captacion_distribution import (
     CAPTACION_TERMINAL_STATES,
@@ -95,15 +96,18 @@ def has_management_evidence(prop, events_coll):
 
 
 def is_eligible(prop, db=None):
-    if is_chilepropiedades_document(prop):
-        contact_identity = get_contact_identity_evidence(db, prop) if db is not None else None
-        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
-    if db is not None and phone_learning_global_lookup_enabled():
-        # The central gate is authoritative for every portal. Do not fall
-        # back to the persisted assignment_ready flag: older Yapo/Toctoc
-        # uncertain records intentionally predate the global policy.
-        contact_identity = get_contact_identity_evidence(db, prop)
-        return bool(calculate_assignment_eligibility(prop, contact_identity=contact_identity)["assignment_ready"])
+    if db is not None:
+        contact_identity = (
+            get_contact_identity_evidence(db, prop)
+            if phone_learning_global_lookup_enabled() else None
+        )
+        return bool(can_assign_property(
+            prop,
+            {
+                "contact_identity": contact_identity,
+                "broker_identity_match": resolve_broker_identity(db, prop),
+            },
+        )["assignment_ready"])
     c = prop.get("classification") or {}
     if c.get("state") not in VISIBLE_CLASSIFICATION_STATES: return False
     if not c.get("assignment_ready"): return False

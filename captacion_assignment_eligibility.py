@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 from config import Config
 from broker_identity import detect_hard_broker_signal
+from canonical_classification import BROKER_CANONICAL_STATES
 
 
 ASSIGNMENT_GATE_VERSION = "global-assignment-gate-v1-incierto-assignable"
@@ -319,6 +320,80 @@ def assignment_eligibility(
     """Backward-compatible tuple API backed by the single central gate."""
     decision = calculate_assignment_eligibility(doc, contact_identity=contact_identity)
     return bool(decision["assignment_ready"]), list(decision["assignment_block_reasons"])
+
+
+def can_assign_property(
+    property_document: dict[str, Any],
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Single public assignment contract.
+
+    ``calculate_assignment_eligibility`` remains the backwards-compatible
+    portal-policy evaluator.  This wrapper adds the canonical pipeline and
+    identity invariants that every writer must enforce before mutation.
+    """
+    context = context or {}
+    document = property_document or {}
+    classification = document.get("classification") or {}
+    reasons: set[str] = set()
+
+    final_state = str(
+        classification.get("final")
+        or classification.get("canonical_final")
+        or ""
+    ).strip().upper()
+    if final_state in BROKER_CANONICAL_STATES:
+        reasons.add("canonical_broker_veto")
+    if classification.get("hard_broker_veto") or classification.get("hard_veto") == "PROFESSIONAL":
+        reasons.add("hard_broker_veto")
+
+    registry_match = context.get("broker_identity_match") or {}
+    if registry_match.get("conflict"):
+        reasons.add("broker_identity_conflict")
+    elif registry_match.get("matched"):
+        reasons.add("universal_broker_identity")
+
+    contact_identity = context.get("contact_identity")
+    if contact_identity and str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED":
+        reasons.add("contact_identity_broker_confirmed")
+
+    pipeline_state = str(
+        document.get("pipeline_state")
+        or classification.get("pipeline_state")
+        or ""
+    ).strip().upper()
+    incomplete_states = {
+        "EXTRACTED_ONLY",
+        "CLASSIFYING",
+        "UNCERTAIN_PENDING_AI",
+        "EXTRACTOR_DEGRADED",
+        "INVALID",
+    }
+    pipeline_complete = document.get("pipeline_complete")
+    if pipeline_complete is None:
+        pipeline_complete = classification.get("pipeline_complete")
+    # The central writer contract is fail-closed: a document is assignable
+    # only after the pipeline explicitly marks it complete.  Legacy
+    # ``assignment_eligibility`` callers remain available for read-only
+    # compatibility, but all productive writers use this function.
+    if pipeline_complete is not True or pipeline_state in incomplete_states:
+        reasons.add("pipeline_incomplete")
+
+    if final_state in {"REMOVED", "EXPIRED", "INVALID"}:
+        reasons.add("canonical_operational_block")
+
+    decision = calculate_assignment_eligibility(
+        document,
+        contact_identity=contact_identity,
+    )
+    reasons.update(decision.get("assignment_block_reasons") or [])
+    decision = dict(decision)
+    decision["assignment_block_reasons"] = sorted(reasons)
+    decision["assignment_ready"] = not reasons
+    decision["exclude_from_assignment"] = bool(reasons)
+    decision["canonical_final"] = final_state or None
+    decision["pipeline_complete"] = pipeline_complete is True and pipeline_state not in incomplete_states
+    return decision
 
 
 def apply_assignment_eligibility_fields(

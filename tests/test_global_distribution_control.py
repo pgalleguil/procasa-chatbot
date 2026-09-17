@@ -113,13 +113,14 @@ def test_stale_new_assignment_is_blocked_without_mutating_classification():
         "title": "Casa en venta",
         "description": "Descripción suficiente",
         "seller_name": "Particular",
-        "classification": {
-            "state": "INCIERTO",
-            "owner_probability": 0.41,
-            "source": "rules",
-            "assignment_ready": True,
-            "exclude_from_assignment": False,
-        },
+            "classification": {
+                "state": "INCIERTO",
+                "owner_probability": 0.41,
+                "source": "rules",
+                "assignment_ready": True,
+                "exclude_from_assignment": False,
+            },
+            "pipeline_complete": True,
         "comuna_slug": "santiago",
         "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
     }
@@ -262,9 +263,10 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
             "title": "Casa en venta",
             "description": "Descripción suficiente",
             "comuna_slug": "santiago",
-            "created_at": datetime.now(timezone.utc),
-            "classification": {"state": "INCIERTO", "source": "rules"},
-            "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
+                "created_at": datetime.now(timezone.utc),
+                "classification": {"state": "INCIERTO", "source": "rules"},
+                "pipeline_complete": True,
+                "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
         })
 
     metrics = []

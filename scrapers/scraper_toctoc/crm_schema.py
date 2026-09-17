@@ -28,6 +28,15 @@ except ImportError:  # ejecución directa desde scraper_toctoc/
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from owner_probability import expected_state_for_probability
 
+try:
+    from broker_registry import canonical_identity_payload
+    from canonical_classification import legacy_to_canonical
+except ImportError:  # ejecución directa desde scrapers/scraper_toctoc/
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from broker_registry import canonical_identity_payload
+    from canonical_classification import legacy_to_canonical
+
 def _utcnow() -> str: return datetime.now(timezone.utc).isoformat()
 
 
@@ -202,6 +211,18 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "deepseek_raw": ds_raw,
         "trace": raw.get("trace") or {},
     }
+    normalized["final"] = (
+        "BROKER_CONFIRMED"
+        if hard_veto == "PROFESSIONAL"
+        else legacy_to_canonical(state)
+    )
+    normalized["final_reason"] = (
+        "STRUCTURAL_BROKER_VETO"
+        if hard_veto == "PROFESSIONAL"
+        else str(raw.get("reason") or "CANONICALIZED_CLASSIFICATION")
+    )
+    normalized["final_evidence"] = evidence
+    normalized["canonical_classification_version"] = "canonical-classification-v1"
     normalized["assignment_ready"] = (
         state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
         and not raw.get("manual_review_required")
@@ -350,6 +371,30 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "classifier_original_signals": raw.get("classifier_original_signals", {}),
     }
     normalized_classification = normalize_classification(raw.get("classification", {}))
+    identity_source = {
+        **raw,
+        "portal": origen,
+        "listing_id": listing_id,
+        "publisher": seller_name,
+        "seller_profile_id": raw.get("seller_profile_id") or "",
+        "seller_client_id": raw.get("seller_client_id") or raw.get("client_id") or "",
+        "phone": phone_normalized,
+        "title": title,
+        "description": description,
+        "operation": raw.get("operation") or raw.get("operation_label_raw") or operacion,
+        "structural_signals": raw.get("structural_signals") or source_signal_snapshot,
+    }
+    normalized_identity = canonical_identity_payload(identity_source)
+    raw_classification = raw.get("classification") or {}
+    raw_status = str(raw_classification.get("status") or "").upper()
+    pipeline_state = str(raw.get("pipeline_state") or "").upper()
+    if not pipeline_state:
+        pipeline_state = (
+            "UNCERTAIN_PENDING_AI"
+            if raw_status in {"PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED"}
+            else "CLASSIFIED"
+        )
+    pipeline_complete = bool(raw.get("pipeline_complete", pipeline_state == "CLASSIFIED"))
     structured_label = raw.get("comuna_structured_label") or ""
     structured_source = raw.get("comuna_evidence_source") or ""
     structured_commune = bool(
@@ -394,6 +439,7 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "seller_name": seller_name, "publicador_visible": seller_name,
         "seller_text": seller_text, "seller_avatar_alt": seller_avatar,
         "seller_profile_id": str(raw.get("seller_profile_id") or ""),
+        "seller_client_id": str(raw.get("seller_client_id") or raw.get("client_id") or ""),
         "seller_profile_logo": str(raw.get("seller_profile_logo") or ""),
         "seller_profile_url": str(raw.get("seller_profile_url") or ""),
         "company_name": str(raw.get("company_name") or ""),
@@ -403,6 +449,7 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "seller_type_source": str(raw.get("seller_type_source") or ""),
         "seller_type_evidence": str(raw.get("seller_type_evidence") or ""),
         "operation_label_raw": str(raw.get("operation_label_raw") or ""),
+        "operation": str(raw.get("operation") or raw.get("operation_label_raw") or operacion),
         "phone_original_value": phone_original_value,
         "telefono_normalizado": phone_normalized,
         "phone_normalized": phone_normalized,
@@ -411,6 +458,10 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "main_image_url": str(images[0]) if images else "",
         "image_urls": images, "image_urls_count": len(images),
         "classification": normalized_classification,
+        "canonical_identity": normalized_identity,
+        "structural_signals": raw.get("structural_signals") or source_signal_snapshot,
+        "pipeline_state": pipeline_state,
+        "pipeline_complete": pipeline_complete,
         "publisher_identity_candidates": publisher_candidates,
         "publisher_activity": source_signal_snapshot["publisher_activity"],
         "source_signals": source_signal_snapshot,

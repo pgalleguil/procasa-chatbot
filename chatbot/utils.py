@@ -200,10 +200,11 @@ def extraer_nombre_explicito(texto: str) -> Optional[str]:
         re.IGNORECASE,
     )
 
+    nombre_stop = r"(?=\s+(?:y|pero|que|busco|necesito|quiero|estoy)\b|[,.!?;]|$)"
     patrones = [
-        r"me llamo\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})",
-        r"mi nombre es\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})",
-        r"soy\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})"
+        rf"me llamo\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{{2,40}}?){nombre_stop}",
+        rf"mi nombre es\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{{2,40}}?){nombre_stop}",
+        rf"soy\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{{2,40}}?){nombre_stop}"
     ]
 
     for patron in patrones:
@@ -213,7 +214,13 @@ def extraer_nombre_explicito(texto: str) -> Optional[str]:
         if match:
             nombre = match.group(1).strip().title()
             # Evitamos frases largas raras
-            if len(nombre.split()) <= 4 and nombre.casefold() not in {
+            invalid_name_tokens = {
+                "depto", "departamento", "casa", "oficina", "local", "nunoa",
+                "providencia", "maipu", "macul", "comprador", "arrendatario",
+            }
+            if len(nombre.split()) <= 4 and not any(
+                token.casefold() in invalid_name_tokens for token in nombre.split()
+            ) and nombre.casefold() not in {
                 "corredor", "corredora", "comprador", "compradora",
                 "propietario", "propietaria", "cliente", "arrendatario",
                 "arrendataria", "arrendador", "arrendadora", "inversionista",

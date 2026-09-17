@@ -11,10 +11,13 @@ from chatbot.customer_response_semantics import (
     build_specific_property_response,
 )
 from chatbot.constants import LeadIntent
+from chatbot.classifier import clasificar_corredor_externo
 from chatbot.conversation_policy import (
     alternative_offer_accepted,
     classify_visit_data_reply,
     enforce_whatsapp_response_length,
+    extract_visit_preference,
+    extract_spontaneous_lead_signals,
     is_actionable_customer_message,
     is_explicit_property_search_request,
     is_explicit_visit_intent,
@@ -207,6 +210,38 @@ def test_semantic_evaluator_rejects_previous_property_template_on_new_link():
     )
     assert audit["NO_TEMPLATE_CONTAMINATION"] is False
     assert audit["PASS"] is False
+
+
+def test_visit_semantics_reject_negation_and_historical_reference():
+    assert is_explicit_visit_intent("Quisiera ir a verla cuando se pueda.")
+    assert is_explicit_visit_intent("¿Hay algún horario para ir a verla?")
+    assert is_explicit_visit_intent("kiero verla mañana")
+    assert is_explicit_visit_intent("¿se pued visitar?")
+    assert not is_explicit_visit_intent("No quiero visitarla.")
+    assert not is_explicit_visit_intent("Cuando fui a verla el mes pasado, me gustó.")
+    assert extract_visit_preference(
+        "cuando fui a verla el 3/4/2026 a las 19:14",
+        visit_context=True,
+    ) is None
+
+
+def test_broker_and_name_variants_remain_semantically_separate():
+    assert not clasificar_corredor_externo("mi hermano es corredor")["is_external_broker"]
+    assert not clasificar_corredor_externo("hablé con un corredor")["is_external_broker"]
+    assert clasificar_corredor_externo(
+        "represento a mi cliente y hacemos canje"
+    )["is_external_broker"]
+    assert extraer_nombre_explicito("soy Pablo González y busco casa") == "Pablo González"
+    assert extraer_nombre_explicito("mi nombre es Depto Ñuñoa") is None
+
+
+def test_explicit_financing_and_narrative_property_reference_are_separate():
+    assert extract_spontaneous_lead_signals(
+        "Tengo crédito aprobado", "Venta"
+    )["financing_status"] == "preapproved"
+    assert not is_explicit_property_search_request(
+        "La otra propiedad de Macul que mencionaste ayer"
+    )
 
 
 def test_availability_states_do_not_conflate_resolution_with_availability():

@@ -15,6 +15,8 @@ _PHONE_REQUEST = re.compile(
 
 _VISIT_INTENT_PATTERNS = (
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a)\s+(?:ver(?:la|lo|la\s+propiedad|el\s+inmueble)?|visitar(?:la|lo)?|conocer(?:la|lo)?)\b",
+    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a|me\s+interesa|necesito)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
+    r"\b(?:me\s+interesa|quiero|quisiera|me\s+gustar[ií]a)\s+pasar\s+a\s+(?:verla|verlo|conocerla|conocerlo)\b",
     r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
@@ -22,7 +24,8 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a)\s+ir\s+(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|"
     r"el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
     r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
-    r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
+    r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:una\s+)?(?:visita|ir|verla|verlo)\b",
+    r"\b(?:tienen|hay)\s+(?:(?:un|algun)\s+)?(?:horario|hora)\s+para\s+(?:ir\s+a\s+)?(?:verla|verlo|visitarla|visitarlo)\b",
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
     r"\b(?:coordinar|agendar)\s+(?:una\s+)?visita\b",
     r"\b(?:podemos|podr[ií]amos|me\s+gustar[ií]a)\s+coordinar\b",
@@ -30,7 +33,7 @@ _VISIT_INTENT_PATTERNS = (
     r"ma[nñ]ana|pasado\s+ma[nñ]ana)\b",
     r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la|el)\b",
     r"\b(?:puedo|podr[ií]a|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+conocer(?:la|lo|el|la)?\b",
-    r"\b(?:puedo|podr[ií]a|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+ver(?:la|lo|el|la)?\b",
+    r"\b(?:puedo|podr[ií]a|quiero|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+ver(?:la|lo|el|la)?\b",
     # Some real WhatsApp turns use the noun first and add urgency afterwards
     # (including the common voice-typing typo ``vista``).  Keep the temporal
     # qualifier mandatory so ordinary mentions such as ``visitas virtuales``
@@ -197,6 +200,19 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     normalized = _normalize_text(message)
     if not normalized:
         return None
+    # Historical references are not current scheduling preferences.  Resume
+    # extraction only when the same turn also contains a new scheduling cue.
+    historical_visit = re.search(
+        r"\b(?:ya\s+visite|cuando\s+fui\s+a\s+verla|la\s+visita\s+.*\bfue|"
+        r"el\s+mes\s+pasado|la\s+semana\s+pasada)\b",
+        normalized,
+    )
+    if historical_visit and not re.search(
+        r"\b(?:ahora|hoy|ma[nñ]ana|podr[ií]a|puedo|quiero|quisiera|"
+        r"me\s+gustar[ií]a|prefiero|mejor|coordinar|agendar)\b",
+        normalized[historical_visit.end():],
+    ):
+        return None
     # When a client explicitly replaces an earlier option, extract only the
     # replacement clause.  Otherwise a sentence such as "el jueves se me
     # complica; podría ser el domingo" incorrectly preserves the obsolete
@@ -275,7 +291,31 @@ def replace_repeated_visit_question(
 def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
-    return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+    if not normalized:
+        return False
+    # Restrict fuzzy tolerance to a few high-value operational typos.  This
+    # does not turn general matching into an unrestricted spell corrector.
+    normalized = re.sub(r"\bkiero\b", "quiero", normalized)
+    normalized = re.sub(r"\bvisistar(la|lo)?\b", r"visitar\1", normalized)
+    normalized = re.sub(r"\bse\s+pued\b", "se puede", normalized)
+    if re.search(
+        r"\b(?:no|nunca|jamas)\s+(?:quiero|puedo|podria|quisiera|"
+        r"me\s+gustaria|me\s+encantaria)\b.{0,45}\b(?:visitar(?:la|lo)?|"
+        r"verla|verlo|ir|conocer(?:la|lo)?)\b",
+        normalized,
+    ):
+        return False
+    if re.search(
+        r"\b(?:ya\s+visite|cuando\s+fui\s+a\s+verla|la\s+visita\s+.*\bfue|"
+        r"el\s+mes\s+pasado|la\s+semana\s+pasada)\b",
+        normalized,
+    ) and not re.search(
+        r"\b(?:ahora|hoy|manana|podria|puedo|quiero|quisiera|"
+        r"me\s+gustaria|prefiero|mejor|coordinar|agendar)\b",
+        normalized,
+    ):
+        return False
+    return bool(any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
 
 
 def is_visit_confirmation(message: str) -> bool:
@@ -393,7 +433,18 @@ def alternative_offer_accepted(message: str, *, offer_pending: bool) -> bool:
 
 def is_explicit_property_search_request(message: str) -> bool:
     """Allow RAG criteria updates only for explicit search/criteria turns."""
-    return bool(_EXPLICIT_SEARCH_REQUEST_RE.search(_normalize_text(message)))
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    # A narrative reference to another listing is context, not a new search.
+    # Require a current search verb before allowing it to mutate RAG criteria.
+    if _OTHER_PROPERTY_REFERENCE_RE.search(normalized) and not re.search(
+        r"\b(?:busco|estoy\s+buscando|quiero\s+buscar|necesito\s+buscar|"
+        r"mu[eé]strame|ens[eé]name|dame\s+opciones?|quiero\s+ver\s+opciones?)\b",
+        normalized,
+    ):
+        return False
+    return bool(_EXPLICIT_SEARCH_REQUEST_RE.search(normalized))
 
 
 def is_actionable_customer_message(message: str) -> bool:
@@ -532,7 +583,7 @@ def extract_spontaneous_lead_signals(message: str, operation: str | None = None)
         elif re.search(r"\b(?:arrendar|arriendo|alquilar|alquiler)\b", normalized):
             explicit_operation = "arriendo"
 
-    if explicit_operation in {"venta", "comprar", "compra"} and re.search(r"\b(?:cr[eé]dito\s+)?pre\s*aprobado\b", normalized):
+    if explicit_operation in {"venta", "comprar", "compra"} and re.search(r"\b(?:cr[eé]dito\s+(?:pre\s*)?aprobado|pre\s*aprobado)\b", normalized):
         result["financing_status"] = "preapproved"
     elif explicit_operation in {"venta", "comprar", "compra"} and (re.search(r"\bcr[eé]dito\b.{0,35}\b(?:evaluaci[oó]n|revisando|en\s+proceso)\b", normalized) or re.search(r"\b(?:evaluando|revisando)\b.{0,25}\bcr[eé]dito\b", normalized)):
         result["financing_status"] = "under_evaluation"

@@ -13,7 +13,23 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-from config import Config
+try:
+    from config import Config
+except ImportError:
+    # Local scraper execution places scrapers/scraper_toctoc first on
+    # sys.path, where ``config`` is AppConfig-only. Load the CRM Config from
+    # the repository root without changing the scraper's module namespace.
+    import importlib.util
+    from pathlib import Path
+
+    _root_config_path = Path(__file__).resolve().with_name("config.py")
+    _root_config_spec = importlib.util.spec_from_file_location(
+        "_crm_root_config_for_identity", _root_config_path
+    )
+    _root_config_module = importlib.util.module_from_spec(_root_config_spec)
+    assert _root_config_spec.loader is not None
+    _root_config_spec.loader.exec_module(_root_config_module)
+    Config = _root_config_module.Config
 from chatbot.phone_utils import normalize_phone_strict
 
 

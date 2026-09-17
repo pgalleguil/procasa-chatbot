@@ -25,7 +25,12 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
     r"\b(?:coordinar|agendar)\s+(?:una\s+)?visita\b",
+    r"\b(?:podemos|podr[ií]amos|me\s+gustar[ií]a)\s+coordinar\b",
+    r"\b(?:mejor|prefiero)\s+(?:el\s+)?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
+    r"ma[nñ]ana|pasado\s+ma[nñ]ana)\b",
     r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la|el)\b",
+    r"\b(?:puedo|podr[ií]a|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+conocer(?:la|lo|el|la)?\b",
+    r"\b(?:puedo|podr[ií]a|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+ver(?:la|lo|el|la)?\b",
     # Some real WhatsApp turns use the noun first and add urgency afterwards
     # (including the common voice-typing typo ``vista``).  Keep the temporal
     # qualifier mandatory so ordinary mentions such as ``visitas virtuales``
@@ -52,7 +57,7 @@ _ALTERNATIVE_ACCEPTANCE_RE = re.compile(
 )
 _VISIT_DECLINE_RE = re.compile(
     r"^(?:no|no\s+gracias|prefiero\s+(?:d[aá]rselos|coordinar|hablar)|"
-    r"no\s+quiero(?:\s+dar)?|despu[eé]s|m[aá]s\s+adelante|"
+    r"no\s+quiero(?:\s+dar)?|despu[eé]s(?!\s+(?:de|del|a|que)\b)|m[aá]s\s+adelante|"
     r"prefiero\s+dar(?:los|le)|mejor\s+con\s+el\s+ejecutivo)(?:[,.!\s].*)?$",
     re.IGNORECASE,
 )
@@ -278,7 +283,10 @@ def should_offer_visit_data(
         return False
     normalized = _normalize_text(message)
     explicit = is_explicit_visit_intent(normalized)
-    affirmative = bool(pending_visit_confirmation and _VISIT_ACCEPTANCE_RE.match(normalized))
+    affirmative = bool(
+        pending_visit_confirmation
+        and _VISIT_SHORT_ACCEPTANCE_RE.fullmatch(normalized)
+    )
     return bool(explicit or affirmative)
 
 
@@ -287,6 +295,8 @@ def classify_visit_data_reply(message: str, *, offer_pending: bool) -> str:
     if not offer_pending:
         return "none"
     normalized = _normalize_text(message)
+    if re.search(r"\b(?:gracias|muchas\s+gracias|quedo\s+atento|ya\s+me\s+llamaron)\b", normalized):
+        return "unknown"
     if _VISIT_DECLINE_RE.match(normalized):
         return "declined"
     if _VISIT_ACCEPTANCE_RE.match(normalized):
@@ -352,7 +362,10 @@ def is_actionable_customer_message(message: str) -> bool:
         or re.search(
             r"\b(?:cu[aá]nto|cu[aá]l|c[oó]mo|d[oó]nde|qu[eé]|puedo|podr[ií]a|"
             r"disponible|precio|gastos?|visita|coordinar|agendar|otro\s+d[ií]a|"
-            r"empezar|iniciar|informaci[oó]n)\b",
+            r"empezar|iniciar|informaci[oó]n|monto|garant[ií]a|document(?:o|os)?|"
+            r"requisit(?:o|os)?|complementar|cr[eé]dito|hipotecario|financiamiento|"
+            r"corredor(?:a)?|mascota|orientaci[oó]n|estacionamiento|bodega|"
+            r"contado|pie|arrendar|arriendo|comprar|compra)\b",
             normalized,
         )
     )

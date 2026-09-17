@@ -6,7 +6,9 @@ from chatbot import chatbot_queue as queue
 from chatbot.constants import LeadIntent
 from chatbot.conversation_policy import (
     alternative_offer_accepted,
+    classify_visit_data_reply,
     enforce_whatsapp_response_length,
+    is_actionable_customer_message,
     is_explicit_property_search_request,
     is_explicit_visit_intent,
     is_visit_confirmation,
@@ -138,6 +140,9 @@ def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positive
         "Quiero visitar",
         "Se puede visitar mañana?",
         "Quiero verla hoy",
+        "Podría pasar a conocerlo después del trabajo",
+        "Podemos coordinar para el jueves en la mañana",
+        "Mejor el viernes después de las 18",
         "Vista ahora en una hora mas",
         "Te dije visita hoy en una hora mas",
     ]
@@ -150,6 +155,34 @@ def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positive
     ]
     assert all(is_explicit_visit_intent(message) for message in positives)
     assert not any(is_explicit_visit_intent(message) for message in negatives)
+
+
+def test_visit_sentence_starting_with_despues_is_not_a_data_decline():
+    assert classify_visit_data_reply(
+        "Después de salir de la oficina podría pasar a conocerlo",
+        offer_pending=True,
+    ) == "unknown"
+
+
+def test_closing_after_visit_is_not_a_visit_data_acceptance():
+    assert classify_visit_data_reply(
+        "Perfecto, entonces quedo atento.", offer_pending=True,
+    ) == "unknown"
+
+
+def test_conditional_si_does_not_accept_pending_visit_confirmation():
+    from chatbot.conversation_policy import should_offer_visit_data
+
+    assert not should_offer_visit_data(
+        "Si finalmente el banco me pide más antecedentes, ¿me pueden orientar?",
+        pending_visit_confirmation=True,
+    )
+
+
+def test_new_commercial_question_is_not_replaced_by_duplicate_fallback():
+    assert is_actionable_customer_message(
+        "No tengo confirmado el monto de la garantía."
+    )
 
 
 def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):

@@ -350,14 +350,23 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
     if not jobs:
         return None
     first = jobs[0]
-    batch_id = batch_id or f"batch:{uuid.uuid4()}"
+    conversation_key = _conversation_key(phone, first.get("conversation_id"))
+    existing_batch = coll.find_one({
+        "kind": KIND_BATCH,
+        "active_conversation_key": conversation_key,
+        "state": {"$in": list(ACTIVE_BATCH_STATES)},
+    })
+    # The compatibility worker may race the webhook producer after the job
+    # insert. Reuse the producer's active batch when it already exists.
+    batch_id = (existing_batch or {}).get("_id") or batch_id or f"batch:{uuid.uuid4()}"
     window_end = first.get("received_at", now) + timedelta(seconds=max_wait_seconds)
-    batch = {
+    batch = existing_batch or {
         "_id": batch_id,
         "kind": KIND_BATCH,
         "phone": phone,
         "conversation_id": first.get("conversation_id"),
         "lead_id": first.get("lead_id"),
+        "active_conversation_key": conversation_key,
         # Populate the batch before changing job states. claim_pending_batch
         # accepts the short-lived received state, so a concurrent claim gets a
         # real snapshot rather than terminalizing an empty batch.
@@ -376,7 +385,21 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "responsible_service": "chatbot_response_delivery",
         "idempotency_key": f"chatbot:batch:{batch_id}",
     }
-    coll.insert_one(batch)
+    if existing_batch is None:
+        try:
+            coll.insert_one(batch)
+        except DuplicateKeyError:
+            # A canonical producer won the unique conversation-key race.
+            # Continue by attaching to its durable batch instead of surfacing
+            # a transient webhook failure.
+            batch = coll.find_one({
+                "kind": KIND_BATCH,
+                "active_conversation_key": conversation_key,
+                "state": {"$in": list(ACTIVE_BATCH_STATES)},
+            })
+            if batch is None:
+                raise
+            batch_id = batch["_id"]
     for job in jobs:
         updated = coll.update_one(
             {"_id": job["_id"], "state": ST_RECEIVED},

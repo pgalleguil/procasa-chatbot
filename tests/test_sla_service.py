@@ -83,7 +83,8 @@ def test_first_valid_human_management_fulfils_sla_but_app_opening_does_not():
     assert still_pending["status"] == "critical"
 
 
-def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification():
+def test_async_sla_monitor_uses_shared_definition_and_deduplicated_notification(monkeypatch):
+    monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "true")
     lead = assigned_lead()
     db = AsyncDB(
         leads=AsyncCollection([lead]),

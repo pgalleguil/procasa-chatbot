@@ -145,6 +145,62 @@ def test_source_close_does_not_change_source_owner_and_lead_points_to_new_cycle(
         "sla-reassignment:decision-001"
     )
     assert lead_update["assignment_mirror_source"] == "crm_assignment_cycles"
+    assert lead_update["lifecycle.assignment_cycle_id"] == lead_update["lifecycle.current_assignment_cycle_id"]
+    assert lead_update["lifecycle.assigned_to_user_id"] == "user-new"
+    assert lead_update["lifecycle.assigned_to_display_name"] == "Ejecutivo Nuevo"
+    assert lead_update["lifecycle.cycle_started_at"] == NOW
+    assert lead_update["lifecycle.sla_started_at"] == SLA_STARTED
+    assert lead_update["assignment_mirror_owner_user_id"] == "user-new"
+
+
+def test_current_cycle_mirror_repair_is_derived_only_and_complete():
+    lead = {
+        "_id": "lead-001",
+        "owner_user_id": "user-new",
+        "ejecutivo_asignado": "Ejecutivo Antiguo",
+        "prospecto": {"ejecutivo": "Ejecutivo Antiguo"},
+        "lifecycle": {
+            "current_assignment_cycle_id": "sla-reassignment:decision-001",
+            "assigned_to_user_id": "user-old",
+        },
+    }
+    active_cycle = {
+        "assignment_cycle_id": "sla-reassignment:decision-001",
+        "assigned_to_user_id": "user-new",
+        "assigned_to_display_name": "Ejecutivo Nuevo",
+        "assigned_at": NOW,
+        "sla_started_at": SLA_STARTED,
+        "cycle_status": "active",
+        "unassigned_at": None,
+    }
+    repair = transaction.build_current_cycle_owner_mirror_repair(
+        lead=lead, active_cycles=[active_cycle], repaired_at=NOW
+    )
+    assert repair is not None
+    fields = repair["$set"]
+    assert fields["ejecutivo_asignado"] == "Ejecutivo Nuevo"
+    assert fields["prospecto.ejecutivo"] == "Ejecutivo Nuevo"
+    assert fields["lifecycle.assignment_cycle_id"] == active_cycle["assignment_cycle_id"]
+    assert fields["lifecycle.current_assignment_cycle_id"] == active_cycle["assignment_cycle_id"]
+    assert fields["lifecycle.assigned_to_user_id"] == "user-new"
+    assert fields["lifecycle.assigned_to_display_name"] == "Ejecutivo Nuevo"
+    assert fields["lifecycle.assigned_at"] == NOW
+    assert fields["lifecycle.cycle_started_at"] == NOW
+    assert fields["lifecycle.sla_started_at"] == SLA_STARTED
+    assert fields["assignment_mirror_owner_user_id"] == "user-new"
+    assert fields["assignment_mirror_source"] == "crm_assignment_cycles"
+
+
+def test_current_cycle_mirror_repair_refuses_ambiguous_or_non_current_cycles():
+    lead = {"lifecycle": {"current_assignment_cycle_id": "cycle-1"}}
+    cycle_one = {"assignment_cycle_id": "cycle-1", "cycle_status": "active", "unassigned_at": None}
+    assert transaction.build_current_cycle_owner_mirror_repair(
+        lead=lead, active_cycles=[cycle_one, dict(cycle_one)], repaired_at=NOW
+    ) is None
+    cycle_one["assignment_cycle_id"] = "cycle-2"
+    assert transaction.build_current_cycle_owner_mirror_repair(
+        lead=lead, active_cycles=[cycle_one], repaired_at=NOW
+    ) is None
 
 
 def test_idempotency_is_deterministic_and_audit_is_immutable():

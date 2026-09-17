@@ -26,6 +26,7 @@ from chatbot.crm_sla_hybrid_rescue import (
     HERNAN_NAME,
     MARIA_NAME,
     REGION_JPC_MARIA_HERNAN,
+    REGIONAL_GLOBAL_RESCUE,
     RM_GLOBAL_RESCUE,
     lead_sort_key,
     performance_confidence,

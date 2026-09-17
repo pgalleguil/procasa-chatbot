@@ -21,6 +21,7 @@ from config import Config
 from .crm_sla_reassignment_cutover import parse_explicit_santiago_timestamp
 from .crm_sla_reassignment_shadow import SHADOW_COLLECTION, SHADOW_POLICY_VERSION
 from .crm_sla_reassignment_worker import (
+    DATA_ISSUE_COLLECTION,
     _default_performance_snapshot,
     run_sla_reassignment_iteration_with_leader_lease,
     validate_worker_configuration,
@@ -37,7 +38,7 @@ WRITE_METHODS = frozenset({
     "find_one_and_delete", "bulk_write", "create_index", "drop_index",
     "drop_indexes", "drop", "rename",
 })
-ALLOWED_WRITE_COLLECTIONS = frozenset({SHADOW_COLLECTION, LEASE_COLLECTION})
+ALLOWED_WRITE_COLLECTIONS = frozenset({SHADOW_COLLECTION, LEASE_COLLECTION, DATA_ISSUE_COLLECTION})
 WORKER_HEALTHY_SECONDS = 5.0
 WORKER_DEGRADED_SECONDS = 15.0
 
@@ -410,6 +411,8 @@ async def run_crm_sla_live_worker(
         "already_applied": 0,
         "notification_errors": 0,
         "errors": 0,
+        "breach_to_reassignment_seconds": [],
+        "breach_to_reassignment_over_120": 0,
     }
     _set_status(
         status,
@@ -484,6 +487,25 @@ async def run_crm_sla_live_worker(
                         outcome = execution.result.status
                         if execution.result.committed:
                             runtime_metrics["committed_reassignments"] += 1
+                            breach_at = _utc(
+                                decision.get("source_cycle_sla_breached_at")
+                                or decision.get("sla_breached_at")
+                            )
+                            reassigned_at = _utc(
+                                getattr(execution.result, "reassigned_at", None)
+                                or decision.get("reassigned_at")
+                            ) or datetime.now(timezone.utc)
+                            if breach_at:
+                                latency = max(0.0, (reassigned_at - breach_at).total_seconds())
+                                latencies = runtime_metrics["breach_to_reassignment_seconds"]
+                                latencies.append(round(latency, 3))
+                                del latencies[:-100]
+                                if latency > 120.0:
+                                    runtime_metrics["breach_to_reassignment_over_120"] += 1
+                                    logger.warning(
+                                        "[SLA_LIVE_LATENCY] breach_to_reassignment_seconds=%.3f threshold=120",
+                                        latency,
+                                    )
                         if outcome == "ALREADY_APPLIED":
                             runtime_metrics["already_applied"] += 1
                         if execution.notification_error:

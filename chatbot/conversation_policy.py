@@ -57,7 +57,7 @@ _ALTERNATIVE_ACCEPTANCE_RE = re.compile(
 )
 _VISIT_DECLINE_RE = re.compile(
     r"^(?:no|no\s+gracias|prefiero\s+(?:d[aá]rselos|coordinar|hablar)|"
-    r"no\s+quiero(?:\s+dar)?|despu[eé]s(?!\s+(?:de|del|a|que)\b)|m[aá]s\s+adelante|"
+    r"no\s+quiero(?:\s+(?:dar|entregar))?|despu[eé]s(?!\s+(?:de|del|a|que)\b)|m[aá]s\s+adelante|"
     r"prefiero\s+dar(?:los|le)|mejor\s+con\s+el\s+ejecutivo)(?:[,.!\s].*)?$",
     re.IGNORECASE,
 )
@@ -136,7 +136,8 @@ _VISIT_TIME_RE = re.compile(
     re.IGNORECASE,
 )
 _VISIT_DAYPART_RE = re.compile(
-    r"\b(?:en|por)\s+la\s+(?:ma[nñ]ana|tarde|noche)\b|\b(?:ma[nñ]ana|tarde|noche)\b",
+    r"\b(?:en|por)\s+la\s+(?:ma[nñ]ana|tarde|noche)\b|"
+    r"\b(?:ma[nñ]ana|tarde|noche|despu[eé]s\s+de\s+(?:almuerzo|la\s+comida))\b",
     re.IGNORECASE,
 )
 _VISIT_QUESTION_RE = re.compile(
@@ -171,9 +172,18 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     normalized = _normalize_text(message)
     if not normalized:
         return None
-    day = _VISIT_DAY_RE.search(normalized)
-    time = _VISIT_TIME_RE.search(normalized)
-    daypart = _VISIT_DAYPART_RE.search(normalized)
+    # When a client explicitly replaces an earlier option, extract only the
+    # replacement clause.  Otherwise a sentence such as "el jueves se me
+    # complica; podría ser el domingo" incorrectly preserves the obsolete
+    # day and routes the stale preference downstream.
+    replacement_markers = list(re.finditer(
+        r"\b(?:mejor|finalmente|al\s+final|en\s+vez\s+de|se\s+me\s+complica|no\s+puedo)\b",
+        normalized,
+    ))
+    preference_text = normalized[replacement_markers[-1].start():] if replacement_markers else normalized
+    day = _VISIT_DAY_RE.search(preference_text)
+    time = _VISIT_TIME_RE.search(preference_text)
+    daypart = _VISIT_DAYPART_RE.search(preference_text)
     if not (day or time or daypart):
         return None
     if not visit_context and not is_explicit_visit_intent(normalized):
@@ -292,9 +302,18 @@ def should_offer_visit_data(
 
 def classify_visit_data_reply(message: str, *, offer_pending: bool) -> str:
     """Classify a response to the optional data offer as accept/decline/unknown."""
+    normalized = _normalize_text(message)
+    # An explicit refusal to share personal data is a durable privacy
+    # preference even when the optional enrichment offer was not the
+    # immediately preceding turn.  Remembering it prevents a later visit
+    # flow from offering the same fields again.
+    if (
+        _VISIT_DECLINE_RE.match(normalized)
+        and re.search(r"\b(?:rut|correo|email|datos|tel[eé]fono|telefono)\b", normalized)
+    ):
+        return "declined"
     if not offer_pending:
         return "none"
-    normalized = _normalize_text(message)
     if re.search(r"\b(?:gracias|muchas\s+gracias|quedo\s+atento|ya\s+me\s+llamaron)\b", normalized):
         return "unknown"
     if _VISIT_DECLINE_RE.match(normalized):

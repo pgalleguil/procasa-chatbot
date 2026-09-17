@@ -474,11 +474,19 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
         for item in historial[-4:]
     )
+    stored_visit_preference = prospecto_actual.get("visit_preference") or {}
     visit_preference = extract_visit_preference(
         original_message,
-        visit_context=recent_visit_context or is_explicit_visit_intent(original_message),
+        # A later day/time message must be able to replace the prior
+        # preference even when it omits the words "visita" or "coordinar".
+        # The stored preference is the durable evidence that this is an
+        # active scheduling conversation.
+        visit_context=(
+            recent_visit_context
+            or is_explicit_visit_intent(original_message)
+            or bool(stored_visit_preference)
+        ),
     )
-    stored_visit_preference = prospecto_actual.get("visit_preference") or {}
     if not visit_preference and isinstance(stored_visit_preference, dict):
         current_property = str(prospecto_actual.get("codigo") or "")
         stored_property = str(stored_visit_preference.get("property_id") or "")

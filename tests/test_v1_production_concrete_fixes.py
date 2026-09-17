@@ -185,6 +185,27 @@ def test_new_commercial_question_is_not_replaced_by_duplicate_fallback():
     )
 
 
+def test_visit_data_decline_accepts_entregar_variant():
+    assert classify_visit_data_reply(
+        "No quiero entregar RUT ni correo", offer_pending=True,
+    ) == "declined"
+
+
+def test_explicit_privacy_decline_is_remembered_without_pending_offer():
+    assert classify_visit_data_reply(
+        "No quiero entregar RUT ni correo", offer_pending=False,
+    ) == "declined"
+
+
+def test_replaced_visit_preference_drops_obsolete_day():
+    from chatbot.conversation_policy import extract_visit_preference
+
+    assert extract_visit_preference(
+        "Al final el jueves se me complica; podría ser el domingo después de almuerzo",
+        visit_context=True,
+    ) == "domingo despues de almuerzo"
+
+
 def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):
     db = mongomock.MongoClient().crm_hot
     db.leads.insert_one({

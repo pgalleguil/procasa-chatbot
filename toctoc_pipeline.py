@@ -29,6 +29,14 @@ from extractor_health import evaluate_extractor_health, measure_extractor_health
 PIPELINE_VERSION = "toctoc-pipeline-v1"
 PIPELINE_RUNS_COLLECTION = "pipeline_runs"
 PIPELINE_ITEMS_COLLECTION = "pipeline_run_items"
+TERMINAL_RUN_STATUSES = frozenset({
+    "SUCCESS",
+    "COMPLETED_WITH_ANOMALIES",
+    "STOPPED_REQUIRES_REVIEW",
+    "ABORTED_FAIL_CLOSED",
+    "FAILED",
+    "FINISHED",
+})
 
 ITEM_STATUSES = frozenset({
     "DISCOVERED",
@@ -79,13 +87,14 @@ def _assigned_executive(record: dict[str, Any]) -> str:
 
 
 def _item_key(record: dict[str, Any]) -> str:
-    return _key(
-        record.get("listing_id")
-        or record.get("publication_id")
-        or record.get("codigo")
-        or record.get("url")
-        or record.get("source_url")
-    )
+    for field in ("listing_id", "publication_id", "codigo"):
+        value = _key(record.get(field))
+        if value and value.casefold() not in {"0", "none", "null", "nan"}:
+            return value
+    url = _key(record.get("url") or record.get("source_url"))
+    if url:
+        return "url:" + hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
+    return ""
 
 
 def _normalise_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +112,52 @@ def _normalise_record(record: dict[str, Any]) -> dict[str, Any]:
     item["pipeline_version"] = PIPELINE_VERSION
     item["pipeline_item_key"] = listing_id
     return item
+
+
+def _run_is_closed(run: dict[str, Any] | None) -> bool:
+    if not run:
+        return False
+    if run.get("finished_at"):
+        return True
+    status = _key(run.get("run_status") or run.get("status")).upper()
+    return status in TERMINAL_RUN_STATUSES
+
+
+def _cap_records_for_run(
+    records: list[dict[str, Any]],
+    *,
+    existing_item_keys: set[str],
+    max_new_items: int | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Bound unique ledger additions before the first ledger write.
+
+    Duplicate inputs are retained only after their first key has been admitted;
+    they cannot consume the new-item budget.  A missing/sentinel listing id is
+    keyed by a URL hash, so ``listing_id=0`` can never collapse unrelated
+    pages into one ledger item.
+    """
+    if max_new_items is None:
+        return list(records), 0
+    limit = max(0, int(max_new_items))
+    selected: list[dict[str, Any]] = []
+    admitted: set[str] = set(existing_item_keys)
+    new_keys = 0
+    skipped = 0
+    for raw in records:
+        key = _item_key(raw)
+        if not key:
+            skipped += 1
+            continue
+        if key in admitted:
+            selected.append(raw)
+            continue
+        if new_keys >= limit:
+            skipped += 1
+            continue
+        admitted.add(key)
+        new_keys += 1
+        selected.append(raw)
+    return selected, skipped
 
 
 def _default_config(options: "PipelineOptions") -> Any:
@@ -124,6 +179,8 @@ class PipelineOptions:
     """Runtime switches. Defaults are safe dry-run settings."""
 
     run_id: str | None = None
+    resume_existing_run: bool = False
+    max_new_items: int | None = None
     test_mode: bool = False
     dry_run: bool = True
     allow_real_scraping: bool = False
@@ -142,6 +199,8 @@ class PipelineOptions:
 
 class PipelineLedger(Protocol):
     def start_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def get_run(self, run_id: str) -> dict[str, Any] | None: ...
+    def list_item_keys(self, run_id: str) -> set[str]: ...
     def get_item(self, run_id: str, item_key: str) -> dict[str, Any] | None: ...
     def set_item(self, run_id: str, item_key: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     def finish_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -168,6 +227,15 @@ class InMemoryPipelineLedger:
             self.runs[run_id] = row
             return copy.deepcopy(row)
 
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.runs.get(run_id)
+            return copy.deepcopy(row) if row else None
+
+    def list_item_keys(self, run_id: str) -> set[str]:
+        with self._lock:
+            return {item_key for (stored_run_id, item_key) in self.items if stored_run_id == run_id}
+
     def get_item(self, run_id: str, item_key: str) -> dict[str, Any] | None:
         with self._lock:
             row = self.items.get((run_id, item_key))
@@ -183,7 +251,7 @@ class InMemoryPipelineLedger:
     def finish_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             current = self.runs.setdefault(run_id, {"run_id": run_id})
-            current.update(copy.deepcopy(payload), finished_at=_now())
+            current.update(copy.deepcopy(payload), status="FINISHED", finished_at=_now())
             return copy.deepcopy(current)
 
     def acquire(self, run_id: str) -> bool:
@@ -228,6 +296,17 @@ class MongoPipelineLedger:
         row = self.runs.find_one({"run_id": run_id}) or {"run_id": run_id, **payload}
         return dict(row)
 
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        row = self.runs.find_one({"run_id": run_id})
+        return dict(row) if row else None
+
+    def list_item_keys(self, run_id: str) -> set[str]:
+        return {
+            str(row.get("item_key"))
+            for row in self.items.find({"run_id": run_id}, {"item_key": 1})
+            if row.get("item_key") not in (None, "")
+        }
+
     def get_item(self, run_id: str, item_key: str) -> dict[str, Any] | None:
         row = self.items.find_one({"run_id": run_id, "item_key": item_key})
         return dict(row) if row else None
@@ -241,7 +320,11 @@ class MongoPipelineLedger:
         return dict(self.items.find_one({"run_id": run_id, "item_key": item_key}) or payload)
 
     def finish_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self.runs.update_one({"run_id": run_id}, {"$set": {**payload, "finished_at": _now()}}, upsert=True)
+        self.runs.update_one(
+            {"run_id": run_id},
+            {"$set": {**payload, "status": "FINISHED", "finished_at": _now()}},
+            upsert=True,
+        )
         return dict(self.runs.find_one({"run_id": run_id}) or payload)
 
     def acquire(self, run_id: str) -> bool:
@@ -363,6 +446,16 @@ def run_toctoc_pipeline(
     run_id = options.run_id or f"toctoc-{uuid.uuid4().hex}"
     seed = int(qa_seed if qa_seed is not None else int.from_bytes(hashlib.sha256(run_id.encode("utf-8")).digest()[:4], "big"))
 
+    existing_run = ledger.get_run(run_id)
+    if _run_is_closed(existing_run) and not options.resume_existing_run:
+        return {
+            "run_id": run_id,
+            "run_status": "STOPPED_REQUIRES_REVIEW",
+            "reason": "RUN_ID_CLOSED_OR_ABORTED",
+            "existing_run_status": existing_run.get("run_status") or existing_run.get("status"),
+            "invariants": {},
+        }
+
     ledger.start_run(run_id, {"pipeline_version": PIPELINE_VERSION, "status": "RUNNING", "dry_run": options.dry_run})
     if not ledger.acquire(run_id):
         return {
@@ -391,6 +484,13 @@ def run_toctoc_pipeline(
             ledger.finish_run(run_id, report)
             return report
 
+        preexisting_item_keys = ledger.list_item_keys(run_id)
+        requested_record_count = len(records)
+        records, records_skipped_max_items = _cap_records_for_run(
+            records,
+            existing_item_keys=preexisting_item_keys,
+            max_new_items=options.max_new_items,
+        )
         for raw in records:
             item_key = _item_key(raw)
             prior_item = ledger.get_item(run_id, item_key) or {}
@@ -539,6 +639,11 @@ def run_toctoc_pipeline(
             "run_id": run_id,
             "pipeline_version": PIPELINE_VERSION,
             "total_discovered": len(records),
+            "requested_records": requested_record_count,
+            "max_new_items": options.max_new_items,
+            "records_skipped_max_items": records_skipped_max_items,
+            "preexisting_ledger_items": len(preexisting_item_keys),
+            "ledger_items_after_run": len(ledger.list_item_keys(run_id)),
             "duplicates": duplicate_count,
             "total_processed": len(processed_items),
             "new_properties": len(processed_items),

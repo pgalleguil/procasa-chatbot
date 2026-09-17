@@ -65,6 +65,18 @@ def test_b_structural_broker_is_blocked_before_ai():
     assert report["qa_sample"]["BROKER"]
 
 
+def test_b2_structural_signal_blocks_when_seller_type_is_missing():
+    calls = []
+    report = run_toctoc_pipeline(
+        [_record("B2", seller_type="", operation_label_raw="Venta Usado Corredor")],
+        options=_options(),
+        deepseek_callable=lambda *a, **k: calls.append(1),
+    )
+    assert report["assignable"] == 0
+    assert calls == []
+    assert report["qa_sample"]["BROKER"]
+
+
 def test_c_known_registry_identity_is_blocked_before_ai():
     calls = []
     report = run_toctoc_pipeline(
@@ -123,6 +135,26 @@ def test_g_extractor_degraded_stops_ai_and_assignment():
     assert report["assignable"] == 0
 
 
+def test_g2_extractor_degraded_performs_no_property_writes_or_assignments():
+    baseline = {field: 1.0 for field in (
+        "publisher_present", "seller_type_present", "profile_id_present",
+        "client_id_present", "description_present", "title_present",
+        "price_present", "commune_present", "structural_signal_present",
+    )}
+    writes = []
+    assignments = []
+    report = run_toctoc_pipeline(
+        [_record("G2")],
+        options=_options(health_min_sample=1, dry_run=False, allow_mongo_writes=True, allow_assignments=True),
+        health_baseline=baseline,
+        persist_fn=lambda item: writes.append(item),
+        assign_fn=lambda item: assignments.append(item),
+    )
+    assert report["extractor_health"] == "DEGRADED"
+    assert writes == []
+    assert assignments == []
+
+
 def test_h_ai_budget_exhaustion_blocks_residual():
     budget = AICostGuard(budget=AIBudget(max_calls=0, max_input_tokens=100000, max_output_tokens=100000, max_estimated_cost=100))
     report = run_toctoc_pipeline([_record("H")], options=_options(), budget=budget, deepseek_callable=_ai_owner)
@@ -149,7 +181,7 @@ def test_i_interruption_can_resume_without_duplicate_persist():
     )
     second = run_toctoc_pipeline(
         [_record("I", classification_hint=_owner_hint())],
-        options=_options(run_id="resume-i", dry_run=False, allow_mongo_writes=True),
+        options=_options(run_id="resume-i", resume_existing_run=True, dry_run=False, allow_mongo_writes=True),
         ledger=ledger, persist_fn=persist,
     )
     assert first["run_status"] == "COMPLETED_WITH_ANOMALIES"
@@ -209,5 +241,30 @@ def test_l_repeated_complete_run_does_not_persist_twice():
         ledger=ledger, persist_fn=persist,
     )
     assert first["run_status"] == "SUCCESS"
-    assert second["run_status"] == "SUCCESS"
+    assert second["run_status"] == "STOPPED_REQUIRES_REVIEW"
+    assert second["reason"] == "RUN_ID_CLOSED_OR_ABORTED"
     assert calls == ["L"]
+
+
+def test_m_max_new_items_is_enforced_before_ledger_writes():
+    ledger = InMemoryPipelineLedger()
+    records = [_record(str(index), classification_hint=_owner_hint()) for index in range(60)]
+    report = run_toctoc_pipeline(
+        records,
+        options=_options(run_id="max-50", max_new_items=50),
+        ledger=ledger,
+    )
+    assert report["requested_records"] == 60
+    assert report["total_discovered"] == 50
+    assert report["records_skipped_max_items"] == 10
+    assert report["ledger_items_after_run"] == 50
+
+
+def test_n_sentinel_listing_id_uses_url_key_without_collapsing_items():
+    ledger = InMemoryPipelineLedger()
+    records = [
+        _record("0", url="https://www.toctoc.com/a/one", classification_hint=_owner_hint()),
+        _record("0", url="https://www.toctoc.com/a/two", classification_hint=_owner_hint()),
+    ]
+    report = run_toctoc_pipeline(records, options=_options(run_id="sentinel-ids"), ledger=ledger)
+    assert report["ledger_items_after_run"] == 2

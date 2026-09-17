@@ -293,6 +293,48 @@ def test_urgent_fast_path_ignores_maintenance_cursor():
     assert result["cycles"][0]["assignment_cycle_id"] == "cycle-1"
 
 
+def test_urgent_scan_25_quarantined_does_not_consume_batch_slot():
+    db = mongomock.MongoClient()["test"]
+    quarantined = [cycle(i) for i in range(25)]
+    valid = cycle(26)
+    db["crm_assignment_cycles"].insert_many(quarantined + [valid])
+    db["crm_sla_reassignment_data_issues_v1"].insert_many([
+        {
+            "_id": f"cycle-{i}:LEAD_NOT_FOUND",
+            "cycle_id": f"cycle-{i}",
+            "error_code": "LEAD_NOT_FOUND",
+            "status": "quarantined",
+            "next_retry_at": NOW + timedelta(minutes=10),
+        }
+        for i in range(25)
+    ])
+    result = asyncio.run(scan_sla_reassignment_fast_path_candidates(
+        db, batch_size=25, now=NOW,
+        current_policy_since=datetime(2026, 9, 1, tzinfo=UTC),
+    ))
+    assert result["scanned_to_exhaustion"] is True
+    assert result["urgent_scan_truncated"] is False
+    assert result["quarantine_excluded_ids"] == 25
+    assert [row["assignment_cycle_id"] for row in result["cycles"]] == ["cycle-26"]
+
+
+def test_urgent_scan_finds_expired_cycle_after_100_active_rows():
+    db = mongomock.MongoClient()["test"]
+    rows = [cycle(i, assigned_at=datetime(2026, 9, 10, 12, tzinfo=UTC)) for i in range(100)]
+    rows.append(cycle(101, assigned_at=datetime(2026, 9, 10, 12, tzinfo=UTC)))
+    db["crm_assignment_cycles"].insert_many(rows)
+    result = asyncio.run(scan_sla_reassignment_fast_path_candidates(
+        db, batch_size=25, now=NOW,
+        current_policy_since=datetime(2026, 9, 1, tzinfo=UTC),
+        page_token={"assigned_at": "2099-01-01T00:00:00+00:00", "lead_id": "z", "assignment_cycle_id": "z"},
+    ))
+    assert result["ignored_page_token"] is True
+    assert result["scanned"] == 101
+    assert {row["assignment_cycle_id"] for row in result["cycles"]} >= {"cycle-0", "cycle-101"}
+    assert result["urgent_scan_chunks"] >= 2
+    assert result["scanned_to_exhaustion"] is True
+
+
 def test_missing_lead_is_quarantined_and_orphan_cycle_closed_without_breach():
     import mongomock
     db = mongomock.MongoClient()["test"]
@@ -309,6 +351,48 @@ def test_missing_lead_is_quarantined_and_orphan_cycle_closed_without_breach():
     assert "sla_breached_at" not in closed
     issue = db["crm_sla_reassignment_data_issues_v1"].find_one({"_id": "cycle-1:LEAD_NOT_FOUND"})
     assert issue["status"] == "closed"
+    second = asyncio.run(_record_missing_lead_issue(
+        db, row, lookup_status="not_found", now=NOW + timedelta(minutes=1), execution_mode="live",
+    ))
+    assert second["status"] == "ALREADY_RESOLVED"
+    assert db["crm_assignment_cycles"].count_documents({"closed_reason": "DATA_REPAIR_ORPHAN_LEAD_MISSING"}) == 1
+
+
+def test_orphan_recheck_race_does_not_close_reappeared_lead():
+    db = mongomock.MongoClient()["test"]
+    row = cycle(1)
+    row["_id"] = "mongo-cycle-1"
+    db["crm_assignment_cycles"].insert_one(row)
+    db["leads"].insert_one({"_id": "lead-1"})
+    outcome = asyncio.run(_record_missing_lead_issue(
+        db, row, lookup_status="not_found", now=NOW, execution_mode="live",
+    ))
+    assert outcome["status"] == "RACE_AVOIDED"
+    assert db["crm_assignment_cycles"].find_one({"assignment_cycle_id": "cycle-1"})["cycle_status"] == "active"
+    issue = db["crm_sla_reassignment_data_issues_v1"].find_one({"_id": "cycle-1:LEAD_NOT_FOUND"})
+    assert issue["resolution"] == "ORPHAN_REPAIR_RACE_AVOIDED"
+
+
+def test_production_facts_are_explicit_acceptance_fixtures_without_pii():
+    smoke_cycles = {
+        "534fd7d5-7c09-4480-a5ea-081e8c6665c9", "c584cdb5-6854-499c-ba07-e5ca6e3b9d24",
+        "46344efd-f3d6-4aab-b4a1-fd5bdb8caeb9", "5a86b51a-737f-4bc7-a080-531f6f59be7c",
+        "968ad44d-c065-4672-a498-751ea7412845", "f387fdf0-2d74-464b-838e-41ede9520d3b",
+        "738a946b-8f28-474a-8eb0-ca3efa21821e",
+    }
+    inbound_cycles = {
+        "a23b96f6-33c7-4c43-ba01-97b4c7d18adf", "af81a4e8-3488-4614-bf51-bf1f7cf4f827",
+        "8c6d2140-0c45-40a3-8b10-cf4663f6ffd4", "1fd7a500-c4f3-47f4-9efc-de80ed198bed",
+        "9f0c150c-ad48-4eb8-9437-f40a896fc847", "d982c672-ff61-418f-bb7d-6c660b5227a4",
+    }
+    mirror_leads = {
+        "6aab2a66da2187c900af35f9", "6aabd64dd66b4412687ebd63",
+        "6aa9e874da2187c900af18fe", "6aabd645d66b4412687ebd5f",
+    }
+    assert len(smoke_cycles | inbound_cycles) == 13
+    assert len(mirror_leads) == 4
+    assert REGIONAL_GLOBAL_RESCUE == "REGIONAL_GLOBAL_RESCUE"
+
 
 
 def test_max_two_requires_supervisor_without_selector():

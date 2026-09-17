@@ -84,6 +84,8 @@ ALLOWED_BATCH_SIZES = (10, 25, 50, 100)
 ALLOWED_INTERVAL_SECONDS = (30, 60, 120)
 PERFORMANCE_WINDOW_DAYS = 60
 FAST_PATH_LOOKBACK_HOURS = 48
+URGENT_SCAN_CHUNK_SIZE = 100
+URGENT_SCAN_MAX_CYCLES = 1000
 LEAD_NOT_FOUND_RETRY_BASE_SECONDS = 15 * 60
 LEAD_NOT_FOUND_RETRY_MAX_SECONDS = 24 * 60 * 60
 ORPHAN_REPAIR_VERSION = "crm_sla_orphan_repair_20260915"
@@ -511,25 +513,24 @@ async def scan_sla_reassignment_fast_path_candidates(
     as_of = _utc(now) or utc_now()
     if not policy_since:
         raise RuntimeError("current policy cutover unavailable")
-    recent_since = as_of - timedelta(hours=FAST_PATH_LOOKBACK_HOURS)
     base_query = _candidate_query_superset(policy_since)
-    urgent_hint = [
-        {field: {"$lte": as_of}}
-        for field in ("sla_breached_at", "sla_expired_at", "deadline_at", "sla_deadline_at")
-    ]
-    recent_start = [
-        {field: {"$gte": recent_since, "$lte": as_of}}
-        for field in ("assigned_at", "sla_started_at")
-    ]
-    fast_query = {"$and": [base_query, {"$or": [*urgent_hint, *recent_start]}]}
-    raw_cycles = await _find_many(
+    quarantined_ids = await _active_lead_not_found_quarantine_ids(db, now=as_of)
+    # The urgent path deliberately scans the complete active post-cutover
+    # snapshot.  Filtering by persisted deadline or a recent-start window can
+    # miss cycles whose deadline fields are stale/missing, and using the
+    # maintenance batch size can hide a newly expired cycle behind older rows.
+    # Canonical expiration remains the only authority after this read.
+    fast_query = (
+        {"$and": [base_query, {"assignment_cycle_id": {"$nin": sorted(quarantined_ids)}}]}
+        if quarantined_ids else base_query
+    )
+    raw_cycles, truncated, chunks = await _scan_urgent_snapshot_in_chunks(
         db["crm_assignment_cycles"], fast_query, _cycle_projection(),
-        limit=size,
+        chunk_size=URGENT_SCAN_CHUNK_SIZE,
+        max_cycles=URGENT_SCAN_MAX_CYCLES,
         sort=[("assigned_at", 1), ("lead_id", 1), ("assignment_cycle_id", 1)],
         instrumentation=read_instrumentation,
-        query_name="worker.scanner.fast_path_cycles",
     )
-    quarantined_ids = await _active_lead_not_found_quarantine_ids(db, now=as_of)
     cycles = [
         cycle for cycle in raw_cycles
         if _text(cycle.get("assignment_cycle_id")) not in quarantined_ids
@@ -541,15 +542,84 @@ async def scan_sla_reassignment_fast_path_candidates(
         "scanned": len(cycles),
         "documents_examined": len(raw_cycles),
         "quarantined": len(raw_cycles) - len(cycles),
+        "quarantine_excluded_ids": len(quarantined_ids),
         "batch_size": size,
+        "urgent_scan_chunk_size": URGENT_SCAN_CHUNK_SIZE,
+        "urgent_scan_max_cycles": URGENT_SCAN_MAX_CYCLES,
+        "urgent_scan_chunks": chunks,
+        "urgent_scan_truncated": truncated,
+        "urgent_scan_degraded": truncated,
+        "scanned_to_exhaustion": not truncated,
         "query": fast_query,
         "candidate_query_superset": base_query,
         "current_policy_since": policy_since.isoformat(),
-        "fast_path_lookback_hours": FAST_PATH_LOOKBACK_HOURS,
         "next_page_token": None,
         "urgent_path": True,
         "ignored_page_token": bool(page_token),
     }
+
+
+async def _scan_urgent_snapshot_in_chunks(
+    collection: Any,
+    query: Mapping[str, Any],
+    projection: Mapping[str, Any],
+    *,
+    chunk_size: int,
+    max_cycles: int,
+    sort: list[tuple[str, int]],
+    instrumentation: ReadInstrumentation | None = None,
+) -> tuple[list[dict[str, Any]], bool, int]:
+    """Materialize the urgent snapshot in bounded internal chunks.
+
+    ``batch_size`` is a maintenance setting and must not cap urgent expiry
+    discovery.  The high hard limit is only a safety valve for pathological
+    backlog; hitting it is surfaced as degraded/truncated, never silently
+    treated as a complete scan.
+    """
+    started = time.perf_counter()
+    if instrumentation is not None:
+        instrumentation.begin_read()
+    rows: list[dict[str, Any]] = []
+    chunks = 0
+    truncated = False
+    try:
+        cursor = collection.find(dict(query), dict(projection))
+        if hasattr(cursor, "sort"):
+            cursor = cursor.sort(sort)
+        if hasattr(cursor, "batch_size"):
+            cursor = cursor.batch_size(int(chunk_size))
+        if hasattr(cursor, "to_list"):
+            while len(rows) < max_cycles:
+                remaining = min(int(chunk_size), max_cycles + 1 - len(rows))
+                chunk = await _cursor_to_list(cursor, length=remaining)
+                if not chunk:
+                    break
+                chunks += 1
+                rows.extend(dict(row) for row in chunk)
+                if len(rows) > max_cycles:
+                    rows = rows[:max_cycles]
+                    truncated = True
+                    break
+        else:
+            materialized = list(cursor or [])
+            chunks = (len(materialized) + chunk_size - 1) // chunk_size if materialized else 0
+            if len(materialized) > max_cycles:
+                truncated = True
+            rows = [dict(row) for row in materialized[:max_cycles]]
+    finally:
+        if instrumentation is not None:
+            instrumentation.end_read()
+    if instrumentation is not None:
+        instrumentation.record_find(
+            collection=str(getattr(collection, "name", None) or getattr(collection, "_name", None) or "unknown"),
+            query_name="worker.scanner.fast_path_cycles",
+            documents=len(rows),
+            wall_ms=(time.perf_counter() - started) * 1000.0,
+            projection=projection,
+            cursor_batches_observed=chunks,
+            rows=rows,
+        )
+    return rows, truncated, chunks
 
 
 def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, Any] | None, *, now: Any) -> CanonicalExpiration:
@@ -895,8 +965,48 @@ async def _record_missing_lead_issue(
     if classification != "ORPHAN_LEAD_MISSING":
         return {"status": "QUARANTINED", "classification": classification}
 
-    # Both ObjectId and string variants were absent from the same batch
-    # context.  Close only this exact active cycle; do not manufacture an SLA
+    # The batch lookup is only evidence for quarantine.  Recheck immediately
+    # before closing so a lead created/restored between context loading and
+    # repair is never converted into a false orphan.
+    recheck_variants = _lead_lookup_variants(lead_id)
+    reappeared = await _find_many(
+        db["leads"],
+        {"_id": {"$in": recheck_variants}},
+        {"_id": 1},
+        limit=2,
+        query_name="worker.quarantine.orphan_recheck.lead",
+    ) if recheck_variants else []
+    current_cycle_rows = await _find_many(
+        db["crm_assignment_cycles"],
+        {
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": "active",
+            "unassigned_at": None,
+        },
+        {"_id": 1, "assignment_cycle_id": 1, "cycle_status": 1, "unassigned_at": 1},
+        limit=2,
+        query_name="worker.quarantine.orphan_recheck.cycle",
+    )
+    same_cycle = len(current_cycle_rows) == 1
+    if same_cycle and cycle.get("_id") is not None:
+        same_cycle = current_cycle_rows[0].get("_id") == cycle.get("_id")
+    if reappeared or not same_cycle:
+        issue["status"] = "resolved"
+        issue["resolution"] = "ORPHAN_REPAIR_RACE_AVOIDED"
+        issue["resolved_at"] = now
+        issue["closed_reason"] = "ORPHAN_REPAIR_RACE_AVOIDED"
+        resolved_op = issue_collection.update_one(
+            {"_id": issue_key}, {"$set": issue}, upsert=True,
+        )
+        if inspect.isawaitable(resolved_op):
+            await resolved_op
+        return {
+            "status": "RACE_AVOIDED",
+            "classification": "ORPHAN_REPAIR_RACE_AVOIDED",
+        }
+
+    # Both ObjectId and string variants are still absent and the exact cycle
+    # is still active. Close only this exact cycle; do not manufacture an SLA
     # breach, owner change, reassignment, or notification.
     cycle_filter: dict[str, Any] = {
         "assignment_cycle_id": cycle_id,
@@ -1669,6 +1779,24 @@ async def run_sla_reassignment_worker_iteration(
                 db, batch_size=size, now=as_of, page_token=None,
                 read_instrumentation=read_instrumentation,
             )
+            if fast_result.get("urgent_scan_truncated"):
+                result.status = "urgent_scan_degraded"
+                result.errors += 1
+                result.error_codes.append("URGENT_SCAN_TRUNCATED")
+                logger.critical(
+                    "%s urgent_scan_truncated examined=%s max=%s",
+                    WORKER_LOG_PREFIX,
+                    fast_result.get("documents_examined"),
+                    fast_result.get("urgent_scan_max_cycles"),
+                )
+                result.duration_ms = (time.perf_counter() - started) * 1000.0
+                return {
+                    "status": result.status,
+                    "iteration": result.to_dict(),
+                    "evaluations": [],
+                    "decisions": [],
+                    "executor_calls": 0,
+                }
             if fast_result.get("cycles"):
                 scan_result = dict(fast_result)
                 scan_mode = "fast_path"

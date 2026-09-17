@@ -295,6 +295,58 @@ def build_lead_owner_mirror_update(
     }
 
 
+def build_current_cycle_owner_mirror_repair(
+    *,
+    lead: Mapping[str, Any],
+    active_cycles: Sequence[Mapping[str, Any]],
+    repaired_at: datetime,
+) -> dict[str, Any] | None:
+    """Build a derived-mirror repair only for one unambiguous current cycle.
+
+    This pure builder deliberately does not alter canonical ownership.  It
+    refuses to produce an update unless exactly one active cycle exists, the
+    lead points to that cycle, and any explicit canonical owner id agrees
+    with the cycle owner.  Stale lifecycle/display fields are outputs of the
+    repair, not evidence used to reject the canonical cycle.
+    """
+    if not isinstance(lead, Mapping) or len(active_cycles) != 1:
+        return None
+    cycle = active_cycles[0]
+    if cycle.get("cycle_status") != "active" or cycle.get("unassigned_at") is not None:
+        return None
+    cycle_id = str(cycle.get("assignment_cycle_id") or "")
+    lifecycle = lead.get("lifecycle") or {}
+    if not cycle_id or str(lifecycle.get("current_assignment_cycle_id") or "") != cycle_id:
+        return None
+    owner_id = str(cycle.get("assigned_to_user_id") or "")
+    owner_name = str(cycle.get("assigned_to_display_name") or "")
+    assigned_at = cycle.get("assigned_at")
+    sla_started_at = cycle.get("sla_started_at") or assigned_at
+    if not owner_id or not owner_name or not isinstance(assigned_at, datetime) or not isinstance(sla_started_at, datetime):
+        return None
+
+    # These are the explicit canonical-owner fields when present.  Derived
+    # lifecycle/assignment mirrors are intentionally excluded because they
+    # are precisely what this repair synchronizes.
+    explicit_owner_ids = {
+        str(lead.get(key) or "")
+        for key in ("owner_user_id", "assigned_to_user_id")
+        if lead.get(key) not in (None, "")
+    }
+    if explicit_owner_ids and explicit_owner_ids != {owner_id}:
+        return None
+
+    update = build_lead_owner_mirror_update(
+        target_user_id=owner_id,
+        target_display_name=owner_name,
+        new_cycle_id=cycle_id,
+        reassigned_at=assigned_at,
+        effective_sla_started_at=sla_started_at,
+    )
+    update["$set"]["last_crm_update"] = _aware(repaired_at, "repaired_at")
+    return update
+
+
 def build_new_cycle_document(
     *,
     decision: Mapping[str, Any],

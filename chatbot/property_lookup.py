@@ -1,9 +1,13 @@
+import logging
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import Any, Dict, Iterable, Optional
 
 from config import Config
 from .utils import safe_int_conversion
+
+logger = logging.getLogger(__name__)
+URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 
 PROPERTY_COLLECTION_NAME = Config.PROPERTY_COLLECTION_NAME
 
@@ -168,6 +172,80 @@ def get_prop_executive(prop: Dict[str, Any]) -> str:
         if value:
             return value
     return ""
+
+
+def property_availability_state(prop: Optional[Dict[str, Any]]) -> str:
+    """Classify a resolved property without conflating identity and availability."""
+    if not prop:
+        return "PROPERTY_NOT_FOUND"
+    estado = prop.get("estado") or {}
+    explicit_inactive = (
+        prop.get("disponible_prop360") is False
+        or prop.get("disponible") is False
+        or estado.get("disponible_prop360") is False
+        or str(estado.get("estado_prop360") or "").strip().casefold()
+        in {"baja", "pasiva", "inactiva", "inactive", "no disponible"}
+    )
+    if explicit_inactive:
+        return "FOUND_BUT_INACTIVE"
+    explicit_active = (
+        prop.get("disponible_prop360") is True
+        or prop.get("disponible") is True
+        or estado.get("disponible_prop360") is True
+        or str(estado.get("estado_prop360") or "").strip().casefold()
+        in {"activa", "active", "disponible"}
+    )
+    return "FOUND_AVAILABLE" if explicit_active else "FOUND_AVAILABILITY_UNKNOWN"
+
+
+_FALSE_PORTFOLIO_CLAIM = re.compile(
+    r"(?:no\s+es|no\s+forma\s+parte|fuera\s+de)\s+(?:una\s+)?(?:propiedad\s+de\s+)?(?:nuestro|el\s+nuestro)\s+portafolio"
+    r"|(?:no\s+est[aá]\s+en|no\s+pertenece\s+a)\s+(?:nuestro\s+portafolio|nuestra\s+cartera)",
+    re.IGNORECASE,
+)
+_VISIT_SEMANTIC_TERMS = (
+    "quiero", "quisiera", "me gustaría", "me gustaria", "visitar",
+    "visista", "verla", "verlo", "agend", "coordin", "puedo ir",
+    "podría ir", "podria ir", "mañana", "manana", "jueves", "viernes",
+    "sábado", "sabado", "domingo", "hoy",
+)
+
+
+def is_property_reference_only(text: str) -> bool:
+    """URLs identify a property, but do not by themselves confirm a visit."""
+    normalized = str(text or "").casefold().strip()
+    return bool(URL_RE.search(normalized)) and not any(
+        term in normalized for term in _VISIT_SEMANTIC_TERMS
+    )
+
+
+def guard_resolved_property_identity_response(response: str, property_doc: dict,
+                                              external_id: str | None = None) -> str:
+    """Keep a resolved link from being downgraded by a model portfolio claim."""
+    if not property_doc or not _FALSE_PORTFOLIO_CLAIM.search(str(response or "")):
+        return response
+    code = str(property_doc.get("codigo") or "").strip()
+    external = str(
+        external_id
+        or (property_doc.get("_link_match") or {}).get("external_id")
+        or property_doc.get("codigo_yapo")
+        or ""
+    ).strip()
+    identity = f"código interno {code}" if code else "la publicación"
+    if external:
+        identity += f" y código de publicación {external}"
+    state = property_availability_state(property_doc)
+    if state == "FOUND_BUT_INACTIVE":
+        status = "La ficha fue identificada, pero actualmente aparece inactiva; un ejecutivo debe revisar si existe una alternativa vigente."
+    elif state == "FOUND_AVAILABLE":
+        status = "La ficha figura activa en nuestra cartera, pero la disponibilidad puntual y las condiciones actuales deben confirmarse con el ejecutivo."
+    else:
+        status = "La ficha fue identificada, pero no tengo la disponibilidad puntual confirmada en la información disponible."
+    logger.warning(
+        "[PROPERTY_IDENTITY_GUARD] resolved=%s state=%s source=deepseek_not_in_portfolio_claim",
+        identity, state,
+    )
+    return f"Encontré la propiedad asociada a {identity}. {status}"
 
 
 PORTAL_ALIASES = {

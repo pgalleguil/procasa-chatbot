@@ -3619,6 +3619,10 @@ def _remote_peer_phone(key, msg_obj):
             return _normalize_webhook_phone(raw.split("@", 1)[0])
     return None
 
+
+def _is_non_inbound_send_event(event_name):
+    return str(event_name or "").strip().lower() in {"message.sent", "messages.sent"}
+
 @app.post("/webhook")
 async def webhook(
     request: Request,
@@ -3645,7 +3649,15 @@ async def webhook(
         logger.info("TEST WEBHOOK EXITOSO")
         return JSONResponse({"ok": True}, status_code=200)
 
-    if data.get("event") == "messages.update":
+    event_name = str(data.get("event") or "").strip().lower()
+    if _is_non_inbound_send_event(event_name):
+        # Provider send acknowledgements are observability/delivery events,
+        # never customer inbound.  They must not enter the durable queue or
+        # invoke the conversational pipeline a second time.
+        logger.info("[WHATSAPP_EVENT_IGNORED] event=%s reason=non_inbound_send_event", event_name)
+        return JSONResponse({"status": "non_inbound_event_ignored"}, status_code=200)
+
+    if event_name == "messages.update":
         updated = await asyncio.get_running_loop().run_in_executor(
             _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
         )

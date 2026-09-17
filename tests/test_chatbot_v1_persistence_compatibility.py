@@ -8,6 +8,7 @@ import mongomock
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from chatbot import chatbot_queue as queue
+from chatbot.property_lookup import property_availability_state
 
 
 NOW = datetime(2026, 9, 16, 23, 0, tzinfo=timezone.utc)
@@ -133,6 +134,50 @@ def test_legacy_batch_seed_contains_job_before_state_update():
     assert batch["job_ids"] == [job_id]
     assert batch["conversation_sequence"] == 1
     assert collection.find_one({"_id": job_id})["message_domain"] == "chatbot"
+
+
+def test_canonical_attach_wins_over_legacy_batcher_without_parallel_batch(monkeypatch):
+    db = _db()
+    collection = db[queue.JOB_COLLECTION]
+    original_update_one = collection.update_one
+    raced = {"value": False}
+
+    def legacy_worker_wins(query, update, *args, **kwargs):
+        if (
+            not raced["value"]
+            and query.get("kind") == queue.KIND_JOB
+            and query.get("state") == queue.ST_RECEIVED
+        ):
+            raced["value"] = True
+            queue.batch_inbound_jobs(db, phone="+56911112222", now=NOW)
+        return original_update_one(query, update, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "update_one", legacy_worker_wins)
+    job_id = queue.create_inbound_job(
+        db,
+        inbound_provider_message_id="legacy-attach-race",
+        phone="+56911112222",
+        text="mañana a las 9",
+        received_at=NOW,
+    )
+
+    batches = list(collection.find({"kind": queue.KIND_BATCH}))
+    job = collection.find_one({"_id": job_id})
+    assert len(batches) == 1
+    assert job["batch_id"] == batches[0]["_id"]
+    assert batches[0]["job_ids"] == [job_id]
+
+
+def test_property_availability_keeps_identity_separate_from_status():
+    assert property_availability_state({"codigo": "17176"}) == "FOUND_AVAILABILITY_UNKNOWN"
+    assert property_availability_state({"codigo": "17176", "disponible_prop360": True}) == "FOUND_AVAILABLE"
+    assert property_availability_state({"codigo": "17176", "disponible_prop360": False}) == "FOUND_BUT_INACTIVE"
+
+
+def test_worker_legacy_compatibility_path_excludes_new_chatbot_domain_jobs():
+    source = __import__("pathlib").Path(__file__).parents[1].joinpath("chatbot", "chatbot_queue.py").read_text(encoding="utf-8")
+    assert '"message_domain": {"$exists": False}' in source
+    assert '"message_domain": None' in source
 
 
 def test_401_and_403_are_terminal_in_v1_delivery_state_machine():

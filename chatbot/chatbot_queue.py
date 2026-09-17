@@ -244,7 +244,13 @@ def create_inbound_job(
         })
         if not existing:
             raise
-        return existing["_id"]
+        # A webhook retry may arrive while the first producer is between the
+        # job insert and its batch attach.  Reuse a fully attached job, but
+        # continue through the attach path when the first attempt left it
+        # unbatched so the retry can repair that durable state.
+        if existing.get("batch_id"):
+            return existing["_id"]
+        job_id = existing["_id"]
 
     quiet_seconds, maximum_wait_seconds = _batch_settings(max_wait_seconds)
     conversation_key = _conversation_key(phone, conversation_id)
@@ -310,11 +316,24 @@ def create_inbound_job(
         # second durable path. Only accept the race when the persisted job
         # already points to this exact batch.
         attached_job = coll.find_one({"_id": job_id, "kind": KIND_JOB}) or {}
-        if attached_job.get("batch_id") != batch_id:
+        attached_batch_id = attached_job.get("batch_id")
+        if not attached_batch_id:
             raise RuntimeError("inbound_job_attach_failed")
-        if job_id not in (coll.find_one({"_id": batch_id}, {"job_ids": 1}) or {}).get("job_ids", []):
+        if attached_batch_id != batch_id:
+            # A compatibility worker may have won the race and attached the
+            # job to another durable batch.  The producer batch created above
+            # must not remain claimable with the same inbound in its snapshot.
             coll.update_one(
-                {"_id": batch_id, "kind": KIND_BATCH},
+                {"_id": batch_id, "kind": KIND_BATCH,
+                 "state": {"$in": list(ACTIVE_BATCH_STATES)}},
+                {"$set": {"state": ST_FAILED_TERMINAL,
+                           "last_error": "superseded_inbound_attach_race",
+                           "updated_at": now},
+                 "$unset": {"active_conversation_key": ""}},
+            )
+        if job_id not in (coll.find_one({"_id": attached_batch_id}, {"job_ids": 1}) or {}).get("job_ids", []):
+            coll.update_one(
+                {"_id": attached_batch_id, "kind": KIND_BATCH},
                 {"$addToSet": {"job_ids": job_id}},
             )
         return job_id
@@ -346,37 +365,60 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "phone": phone,
         "state": ST_RECEIVED,
         "is_from_me": False,
+        # This compatibility function is only for pre-domain legacy rows.
+        # Canonical webhook rows must never be picked up by it.
+        "$or": [{"message_domain": {"$exists": False}},
+                {"message_domain": None}],
     }).sort("received_at", ASCENDING))
     if not jobs:
         return None
     first = jobs[0]
+    if not batch_id:
+        # Reuse the canonical producer batch when it already exists.  The
+        # legacy compatibility path must never create a parallel batch for a
+        # job that create_inbound_job is still attaching.
+        active = coll.find_one({
+            "kind": KIND_BATCH,
+            "phone": phone,
+            "state": {"$in": list(ACTIVE_BATCH_STATES)},
+        }, sort=[("created_at", ASCENDING)])
+        batch_id = active.get("_id") if active else None
     batch_id = batch_id or f"batch:{uuid.uuid4()}"
     window_end = first.get("received_at", now) + timedelta(seconds=max_wait_seconds)
-    batch = {
-        "_id": batch_id,
-        "kind": KIND_BATCH,
-        "phone": phone,
-        "conversation_id": first.get("conversation_id"),
-        "lead_id": first.get("lead_id"),
-        # Populate the batch before changing job states. claim_pending_batch
-        # accepts the short-lived received state, so a concurrent claim gets a
-        # real snapshot rather than terminalizing an empty batch.
-        "job_ids": [job["_id"] for job in jobs],
-        "state": ST_BATCHING,
-        "attempts": 0,
-        "conversation_sequence": len(jobs),
-        "window_end_at": window_end,
-        "created_at": now,
-        "updated_at": now,
-        "delivery_attempts": [],
-        "message_domain": "chatbot",
-        "message_type": "chatbot_response",
-        "recipient_role": "client",
-        "state_source": JOB_COLLECTION,
-        "responsible_service": "chatbot_response_delivery",
-        "idempotency_key": f"chatbot:batch:{batch_id}",
-    }
-    coll.insert_one(batch)
+    batch = coll.find_one({"_id": batch_id, "kind": KIND_BATCH})
+    if batch is None:
+        conversation_key = _conversation_key(phone, first.get("conversation_id"))
+        batch = {
+            "_id": batch_id,
+            "kind": KIND_BATCH,
+            "phone": phone,
+            "conversation_id": first.get("conversation_id"),
+            "lead_id": first.get("lead_id"),
+            # Populate the batch before changing job states. claim_pending_batch
+            # accepts the short-lived received state, so a concurrent claim gets
+            # a real snapshot rather than terminalizing an empty batch.
+            "job_ids": [job["_id"] for job in jobs],
+            "active_conversation_key": conversation_key,
+            "state": ST_BATCHING,
+            "attempts": 0,
+            "conversation_sequence": 0,
+            "window_end_at": window_end,
+            "created_at": now,
+            "updated_at": now,
+            "delivery_attempts": [],
+            "message_domain": "chatbot",
+            "message_type": "chatbot_response",
+            "recipient_role": "client",
+            "state_source": JOB_COLLECTION,
+            "responsible_service": "chatbot_response_delivery",
+            "idempotency_key": f"chatbot:batch:{batch_id}",
+        }
+        try:
+            coll.insert_one(batch)
+        except DuplicateKeyError:
+            batch = coll.find_one({"_id": batch_id, "kind": KIND_BATCH})
+            if not batch:
+                raise
     for job in jobs:
         updated = coll.update_one(
             {"_id": job["_id"], "state": ST_RECEIVED},
@@ -385,7 +427,11 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
                       "message_domain": "chatbot"}},
         )
         if updated.modified_count:
-            coll.update_one({"_id": batch_id}, {"$addToSet": {"job_ids": job["_id"]}})
+            coll.update_one(
+                {"_id": batch_id},
+                {"$addToSet": {"job_ids": job["_id"]},
+                 "$inc": {"conversation_sequence": 1}},
+            )
     return coll.find_one({"_id": batch_id})
 
 
@@ -980,7 +1026,13 @@ async def chatbot_response_worker_loop():
             await run_in_threadpool(reconcile_expired_leases, db)
             legacy_phones = await run_in_threadpool(
                 db[JOB_COLLECTION].distinct, "phone",
-                {"state": ST_RECEIVED, "is_from_me": False},
+                {"state": ST_RECEIVED, "is_from_me": False,
+                 # New webhook jobs are explicitly stamped as chatbot
+                 # domain.  Only legacy documents without that stamp may use
+                 # the compatibility batcher; otherwise it can race the
+                 # canonical create_inbound_job attach window.
+                 "$or": [{"message_domain": {"$exists": False}},
+                         {"message_domain": None}]},
             )
             for phone in legacy_phones:
                 await run_in_threadpool(batch_inbound_jobs, db, phone=phone)

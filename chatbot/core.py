@@ -34,7 +34,14 @@ from .utils import parse_bool
 from .alert_service import send_alert_once
 from .classifier import es_propietario, clasificar_corredor_externo
 from .processing_service import LeadProcessingService
-from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
+from .property_lookup import (
+    PROPERTY_COLLECTION_NAME,
+    find_property_by_any_identifier,
+    get_prop_location,
+    get_prop_operation,
+    guard_resolved_property_identity_response,
+    is_property_reference_only,
+)
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente, extraer_filtros_estructurados
@@ -733,7 +740,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # 0. Resolución temprana de propiedad aunque NO haya URL.
     #    Esto usa el código ya guardado en prospecto o lo que exista en el historial.
-    if not propiedad:
+    if not propiedad and not hay_url:
         db_props = await _run_sync(get_db)
         candidatos_propiedad = []
 
@@ -1346,6 +1353,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion = "consulta_general"
         respuesta = "Disculpa, tengo un problema técnico momentáneo."
 
+    # A successful deterministic link match is authoritative for identity.
+    # The model must not turn a resolved property into a false "not in
+    # portfolio" answer because the portal slug or historical wording differs.
+    if propiedad:
+        respuesta = guard_resolved_property_identity_response(
+            respuesta, propiedad, external_id=codigo_externo,
+        )
+
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
@@ -1422,6 +1437,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 if t in msg_l:
                     is_affirmative = True
                     break
+
+            # A property URL identifies the listing; it is not a semantic
+            # confirmation that the client wants to visit it.  Keep the
+            # pending question open until the message also contains an
+            # explicit visit/coordination signal.
+            property_reference_only = is_property_reference_only(msg_l)
+            if property_reference_only:
+                is_affirmative = False
 
             topic_change_terms = ["precio", "cuánto", "cuanto", "gasto", "gastos",
                                   "comunes", "mascota", "estacionamiento", "bodega",

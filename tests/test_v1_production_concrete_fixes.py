@@ -5,10 +5,12 @@ import mongomock
 from chatbot import chatbot_queue as queue
 from chatbot.constants import LeadIntent
 from chatbot.conversation_policy import (
-    has_visit_intent_veto,
+    alternative_offer_accepted,
+    enforce_whatsapp_response_length,
+    is_explicit_property_search_request,
     is_explicit_visit_intent,
     is_visit_confirmation,
-    resolve_visit_intent,
+    property_rejected,
 )
 from chatbot.crm_service import CrmService
 from chatbot.lead_temperature import derive_effective_temperature
@@ -18,6 +20,8 @@ from chatbot.property_lookup import (
     lookup_property_link,
     property_availability_state,
 )
+from chatbot.utils import extraer_nombre_explicito
+from chatbot.prompts import PROMPT_PROPIEDAD_NO_ENCONTRADA
 from chatbot.webhook_event_policy import is_outbound_message_event
 
 
@@ -66,6 +70,60 @@ def test_visit_confirmation_requires_semantic_intent_and_rejects_url_only():
     assert is_visit_confirmation("sí")
     assert is_visit_confirmation(f"{YAPO_URL} se puede visitar mañana")
     assert is_visit_confirmation(f"{YAPO_URL} mañana a las 9")
+    assert not is_visit_confirmation("Perfecto, entonces quedo atento.")
+    assert is_visit_confirmation("Perfecto, quiero ir mañana.")
+
+
+def test_name_extractor_rejects_negated_roles_but_keeps_real_introductions():
+    assert extraer_nombre_explicito("yo no soy corredor") is None
+    assert extraer_nombre_explicito("No soy corredor") is None
+    assert extraer_nombre_explicito("Soy comprador") is None
+    assert extraer_nombre_explicito("Soy propietario") is None
+    assert extraer_nombre_explicito("Soy Pablo") == "Pablo"
+    assert extraer_nombre_explicito("Me llamo Pablo Galleguillos") == "Pablo Galleguillos"
+    assert extraer_nombre_explicito("Mi nombre es Pablo") == "Pablo"
+
+
+def test_unknown_property_response_requests_only_publication_link():
+    prompt = PROMPT_PROPIEDAD_NO_ENCONTRADA.casefold()
+    assert "prc-" not in prompt
+    assert "código de 5" not in prompt
+    assert "enlace de la publicación" in prompt
+
+
+def test_other_property_rejection_does_not_reject_active_property():
+    assert not property_rejected("También vi otro ayer con un corredor, pero no me gustó")
+    assert property_rejected("Esta propiedad no me gustó")
+
+
+def test_conditional_si_does_not_accept_pending_alternatives():
+    assert alternative_offer_accepted("Sí", offer_pending=True)
+    assert alternative_offer_accepted("Sí, muéstrame otras", offer_pending=True)
+    assert alternative_offer_accepted("Claro, muéstrame opciones", offer_pending=True)
+    assert alternative_offer_accepted("Dale, veamos otras propiedades", offer_pending=True)
+    assert not alternative_offer_accepted("Si finalmente el banco me pide más antecedentes", offer_pending=True)
+    assert not alternative_offer_accepted("Si no alcanzo mañana", offer_pending=True)
+    assert not alternative_offer_accepted("Si sigue disponible", offer_pending=True)
+    assert not alternative_offer_accepted("Sí, pero primero quiero saber el precio", offer_pending=True)
+
+
+def test_rag_updates_only_on_explicit_search_language():
+    narrative = (
+        "Mañana salgo de la pega cerca de Plaza Egaña como a las seis y algo. "
+        "Si al final sigo interesado, podría desviarme antes de volver a la casa "
+        "y pasar por el departamento."
+    )
+    assert not is_explicit_property_search_request(narrative)
+    assert is_explicit_property_search_request("Muéstrame casas en Ñuñoa")
+
+
+def test_whatsapp_length_policy_keeps_sentences_and_allows_explicit_detail():
+    normal = " ".join(["Esta es una oración completa con información útil."] * 80)
+    bounded = enforce_whatsapp_response_length(normal, "¿Está disponible?")
+    assert len(bounded) <= 1200
+    assert not bounded.endswith("información ú")
+    detailed = " ".join(["Detalle completo de la ficha."] * 100)
+    assert enforce_whatsapp_response_length(detailed, "Explícame la ficha completa") == detailed
 
 
 def test_availability_states_do_not_conflate_resolution_with_availability():
@@ -92,59 +150,6 @@ def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positive
     ]
     assert all(is_explicit_visit_intent(message) for message in positives)
     assert not any(is_explicit_visit_intent(message) for message in negatives)
-
-
-def test_semantic_visit_intent_survives_when_regex_has_no_matching_phrase():
-    message = "Después de salir del trabajo podría pasar a conocer el departamento"
-    assert not is_explicit_visit_intent(message)
-
-    resolution = resolve_visit_intent(
-        "agendar_visita",
-        message,
-        deterministic_visit=False,
-    )
-
-    assert resolution["visit"] is True
-    assert resolution["source"] == "model"
-    # This is the same canonical path used by production CRM temperature
-    # derivation; no second classifier or LLM call is involved.
-    assert LeadIntent.ASK_VISIT.value == "ASK_VISIT"
-    assert derive_effective_temperature(
-        {"lead_temperature_effective": "COLD"},
-        overrides={"last_intent": LeadIntent.ASK_VISIT.value},
-    ) == "HOT"
-
-
-def test_model_visit_is_rejected_by_explicit_negative_guardrails():
-    cases = [
-        "¿Tienen visita virtual?",
-        "Visité otro departamento ayer.",
-        "Mañana voy a revisar el aviso.",
-        "Mi hermano fue a verlo.",
-        "Solo estoy mirando por ahora.",
-        "No quiero visitarlo.",
-        "Quiero saber si aceptan mascotas.",
-    ]
-    for message in cases:
-        resolution = resolve_visit_intent(
-            "agendar_visita",
-            message,
-            deterministic_visit=False,
-        )
-        assert has_visit_intent_veto(message) or "mascota" in message.lower()
-        assert resolution["visit"] is False, message
-        assert resolution["negative_veto"] is True, message
-
-
-def test_property_url_without_visit_signal_is_not_semantic_confirmation():
-    resolution = resolve_visit_intent(
-        "agendar_visita",
-        YAPO_URL,
-        deterministic_visit=False,
-        property_reference_only=True,
-    )
-    assert resolution["visit"] is False
-    assert resolution["negative_veto"] is True
 
 
 def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):

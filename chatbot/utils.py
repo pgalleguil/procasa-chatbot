@@ -188,6 +188,17 @@ def extraer_nombre_explicito(texto: str) -> Optional[str]:
     - "soy María"
     """
     texto = texto.strip()
+    if not texto:
+        return None
+
+    negative_role = re.search(
+        r"\b(?:no|nunca|jam[aá]s)\s+(?:soy|somos)\s+"
+        r"(?:un|una|el|la)?\s*(?:corredor|corredora|comprador|compradora|"
+        r"propietario|propietaria|cliente|arrendatario|arrendataria|"
+        r"arrendador|arrendadora|inversionista|asesor|ejecutivo|persona)\b",
+        texto,
+        re.IGNORECASE,
+    )
 
     patrones = [
         r"me llamo\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})",
@@ -196,11 +207,18 @@ def extraer_nombre_explicito(texto: str) -> Optional[str]:
     ]
 
     for patron in patrones:
+        if negative_role and patron.startswith("soy\\s+"):
+            continue
         match = re.search(patron, texto, re.IGNORECASE)
         if match:
             nombre = match.group(1).strip().title()
             # Evitamos frases largas raras
-            if len(nombre.split()) <= 4:
+            if len(nombre.split()) <= 4 and nombre.casefold() not in {
+                "corredor", "corredora", "comprador", "compradora",
+                "propietario", "propietaria", "cliente", "arrendatario",
+                "arrendataria", "arrendador", "arrendadora", "inversionista",
+                "asesor", "ejecutivo", "persona", "usuario",
+            }:
                 return nombre
 
     return None

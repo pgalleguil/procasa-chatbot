@@ -66,7 +66,9 @@ from .conversation_policy import (
     replace_repeated_visit_question,
     is_explicit_visit_intent,
     is_visit_confirmation,
-    resolve_visit_intent,
+    is_explicit_property_search_request,
+    is_actionable_customer_message,
+    enforce_whatsapp_response_length,
     filter_relaxation_accepted,
     outbound_phone_request,
     safe_phone_free_response,
@@ -502,6 +504,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         original_message,
         offer_pending=visit_data_state.get("status") in {"offered", "accepted"},
     )
+    visit_data_declined_this_turn = pending_visit_data_reply == "declined"
     if pending_visit_data_reply == "accepted":
         visit_data_state = await _run_sync(update_visit_data_state, phone, {
             "status": "accepted",
@@ -1070,7 +1073,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     rejection_without_alternative = property_rejected(original_message) and not alternatives_requested_now
     rag_search_state = dict(prospecto_actual.get("rag_search_state") or {})
     stored_rag_criteria = dict(rag_search_state.get("criteria") or {})
-    extracted_rag_filters, _ = extraer_filtros_estructurados(original_message)
+    # Only explicit search/criteria turns may mutate the durable RAG criteria.
+    # Narrative mentions such as "volver a la casa" are not search filters.
+    if is_explicit_property_search_request(original_message) or alternatives_requested_now:
+        extracted_rag_filters, _ = extraer_filtros_estructurados(original_message)
+    else:
+        extracted_rag_filters = {}
     explicit_rag_criteria = {}
     if extracted_rag_filters.get("operacion"):
         explicit_rag_criteria["operacion"] = extracted_rag_filters["operacion"]
@@ -1330,7 +1338,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "rental_docs_readiness": {"ready", "partially_ready", "not_ready", "unknown"},
     }
 
-    model_intent = "consulta_general"
     try:
         llm_context = {
             "trace_id": trace_id,
@@ -1347,7 +1354,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
 
         intencion = resultado_grok["intencion"]
-        model_intent = intencion
         respuesta = resultado_grok["respuesta_bot"]
         datos_extraidos = resultado_grok.get("datos_extraidos", {})
         operacion_contextual = str(
@@ -1392,7 +1398,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
-        model_intent = "consulta_general"
         respuesta = "Disculpa, tengo un problema técnico momentáneo."
 
     # A successful deterministic link match is authoritative for identity.
@@ -1524,46 +1529,18 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         elif any(t in msg_l for t in contact_terms):
             intencion = "contacto_directo"
 
-    # The model's structured intent is already produced by the same DeepSeek
-    # call that writes the answer. Deterministic rules now act as a fallback
-    # and negative guardrails, rather than erasing novel semantic visit phrasing.
-    deterministic_visit = should_offer_visit_data(
+    # A broad model label is not sufficient to request personal data or trigger
+    # a visit handoff. Operational intent must pass the deterministic layer.
+    visit_intent_clear = should_offer_visit_data(
         original_message,
         intencion,
         pending_visit_confirmation=bool(pending_visit_before),
         visit_data_state={},
     )
-    pending_visit_signal = bool(
-        pending_visit_before
-        and is_visit_confirmation(original_message)
-        and not is_property_reference_only(msg_l)
-    )
-    visit_resolution = resolve_visit_intent(
-        model_intent,
-        original_message,
-        deterministic_visit=deterministic_visit,
-        pending_visit=pending_visit_signal,
-        property_reference_only=is_property_reference_only(msg_l),
-    )
-    visit_intent_clear = bool(visit_resolution["visit"])
-    if visit_intent_clear:
-        intencion = "agendar_visita"
-    elif model_intent == "agendar_visita":
+    if intencion == "agendar_visita" and not visit_intent_clear:
         intencion = "consulta_general"
-
-    visit_data_offer_allowed = bool(
-        deterministic_visit and not visit_resolution["negative_veto"]
-    )
-
-    logger.info(
-        "[INTENT_RESOLUTION] model_intent=%s deterministic_visit=%s "
-        "negative_veto=%s final_intent=%s resolution_source=%s",
-        model_intent,
-        deterministic_visit,
-        visit_resolution["negative_veto"],
-        intencion,
-        visit_resolution["source"],
-    )
+    elif visit_intent_clear:
+        intencion = "agendar_visita"
 
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
@@ -1590,15 +1567,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "intent": intencion,
         "lead_intent": str(selected_intent),
         "score": lead_score
-    })
-    await _run_sync(record_observability_event, "INTENT_RESOLUTION", {
-        "conversation_id": conversation_id,
-        "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
-        "model_intent": model_intent,
-        "deterministic_visit": deterministic_visit,
-        "negative_veto": visit_resolution["negative_veto"],
-        "final_intent": intencion,
-        "resolution_source": visit_resolution["source"],
     })
 
     if visit_intent_clear:
@@ -1655,7 +1623,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
     # The handoff is independent from enrichment. Offer data only after the
     # explicit visit signal and keep the offer optional/non-blocking.
-    if visit_data_offer_allowed and visit_data_state.get("status") not in {"offered", "accepted", "declined", "completed"}:
+    if visit_intent_clear and visit_data_state.get("status") not in {"offered", "accepted", "declined", "completed"}:
         optional_offer = (
             "Si quieres, puedo dejar adelantados tus datos para que el ejecutivo encargado "
             "pueda coordinar la visita más rápido. Es opcional; si prefieres, puedes entregárselos directamente."
@@ -1674,7 +1642,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
             "property_id": prospecto_actual.get("codigo"),
         })
-    elif visit_data_state.get("status") == "declined":
+    elif visit_data_declined_this_turn:
         # A decline closes this capture cycle; never let the model append the
         # next personal-field question after the client said no.
         respuesta = visit_data_declined_response()
@@ -1723,7 +1691,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "conversation_id": conversation_id,
             "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
         })
-        respuesta = duplicate_response_fallback(respuesta)
+        if not is_actionable_customer_message(original_message):
+            respuesta = duplicate_response_fallback(respuesta)
+        else:
+            logger.info(
+                "[DUPLICATE_RESPONSE_RETAINED] nueva consulta detectada; "
+                "se conserva la respuesta informativa en vez de usar fallback"
+            )
+
+    respuesta = enforce_whatsapp_response_length(respuesta, original_message)
 
     # =======================================================
     # 10. GUARDAR Y RETORNAR (COMPLETO)
@@ -1731,6 +1707,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     logger.info(
         "[MONGO_SAVE_SIZE] respuesta_len=%s",
         len(respuesta or "")
+    )
+    logger.info(
+        "[BOT_RESPONSE_LENGTH] chars=%s words=%s",
+        len(respuesta or ""), len((respuesta or "").split()),
     )
     return await _persist_generated_outbound(
         respuesta,

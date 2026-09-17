@@ -19,6 +19,8 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:cu[aá]ndo|qu[eé]\s+d[ií]a|a\s+qu[eé]\s+hora)\s+(?:la\s+puedo\s+ver|puedo\s+ir|se\s+puede\s+visitar|podemos\s+ir)\b",
     r"\b(?:puedo|podr[ií]a|me\s+acomoda)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
     r"\b(?:puedo|podr[ií]a)\s+ir\s+(?:ma[nñ]ana|hoy|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
+    r"\b(?:quiero|quisiera|me\s+gustar[ií]a)\s+ir\s+(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|"
+    r"el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
     r"\b(?:tienen|hay)\s+(?:hora|horario|disponibilidad)\s+para\s+(?:verla|verlo|visitarla|visitarlo)\b",
     r"\b(?:tienen|hay)\s+disponibilidad\s+(?:para\s+)?(?:visita|ir|verla|verlo)\b",
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
@@ -38,6 +40,16 @@ _VISIT_ACCEPTANCE_RE = re.compile(
     r"me\s+encanta(?:r[ií]a)?|adelante|puedes|bueno|de\s+acuerdo)(?:[,.!\s].*)?$",
     re.IGNORECASE,
 )
+_VISIT_SHORT_ACCEPTANCE_RE = re.compile(
+    r"^(?:s[ií]|claro|dale|por\s+supuesto|adelante|de\s+acuerdo|ok|okay)$",
+    re.IGNORECASE,
+)
+_ALTERNATIVE_ACCEPTANCE_RE = re.compile(
+    r"^(?:s[ií]|claro|dale|adelante|ok|okay|de\s+acuerdo)"
+    r"(?:[,.!]?[\s]+)(?:mu[eé]strame|veamos|revisemos|busquemos)\s+"
+    r"(?:otras?(?:\s+propiedades?)?|opciones?|alternativas?|propiedades?)\b",
+    re.IGNORECASE,
+)
 _VISIT_DECLINE_RE = re.compile(
     r"^(?:no|no\s+gracias|prefiero\s+(?:d[aá]rselos|coordinar|hablar)|"
     r"no\s+quiero(?:\s+dar)?|despu[eé]s|m[aá]s\s+adelante|"
@@ -54,20 +66,6 @@ _VISIT_CONFIRMATION_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_VISIT_INTENT_VETO_RE = re.compile(
-    r"(?:\bvisita\s+virtual\b|"
-    r"\b(?:no|nunca|jamas)\s+(?:quiero|deseo|me\s+interesa)\s+"
-    r"(?:visitar(?:la|lo)?|ver(?:la|lo)?|conocer(?:la|lo)?)\b|"
-    r"\b(?:solo\s+estoy\s+mirando|solo\s+consulto|solo\s+estoy\s+viendo)\b|"
-    r"\b(?:visite|visité|fui\s+a\s+ver|ya\s+fui\s+a\s+ver)\s+"
-    r"(?:otro|otra|un|una)\b|"
-    r"\b(?:mi|su)\s+(?:hermano|hermana|pareja|amigo|amiga|esposo|esposa|"
-    r"pap[aá]|mam[aá])\b.{0,45}\b(?:fue|visit[oó]|vio|vi[oó])\b|"
-    r"\b(?:hoy|ma[nñ]ana)\s+(?:voy\s+a\s+)?(?:revisar|leer)\s+"
-    r"(?:el\s+)?(?:aviso|anuncio|publicaci[oó]n)\b)",
-    re.IGNORECASE,
-)
-
 _ALTERNATIVE_REQUEST_RE = re.compile(
     r"\b(?:algo\s+parecido|otras?|otra\s+propiedad|qu[eé]\s+m[aá]s\s+tienen|"
     r"mu[eé]strame\s+otras|mu[eé]strame\s+m[aá]s|busco\s+otra|tienen\s+algo\s+m[aá]s|"
@@ -78,6 +76,23 @@ _PROPERTY_REJECTION_RE = re.compile(
     r"\b(?:no\s+me\s+gust(?:a|o|ó)|no\s+me\s+sirve|no\s+me\s+acomoda|"
     r"est[aá]\s+muy\s+(?:cara|caro|pequeñ[ao]|grande)|es\s+muy\s+pequeñ[ao]|"
     r"esa\s+comuna\s+no|no\s+me\s+interesa)\b",
+    re.IGNORECASE,
+)
+_OTHER_PROPERTY_REFERENCE_RE = re.compile(
+    r"(?:\b(?:vi|mir[eé]|conoc[ií]|revis[eé]|habl[eé]|visit[eé])\s+"
+    r"(?:a\s+)?(?:otro|otra|uno|una)\b|"
+    r"\b(?:otro|otra)\b.{0,45}\b(?:ayer|corredor|publicaci[oó]n|aviso|propiedad)\b|"
+    r"\b(?:el|la)\s+que\s+vi\b)",
+    re.IGNORECASE,
+)
+_EXPLICIT_SEARCH_REQUEST_RE = re.compile(
+    r"\b(?:busco|estoy\s+buscando|quiero\s+buscar|necesito\s+buscar|"
+    r"mu[eé]strame|ens[eé]ñame|dame\s+opciones?|quiero\s+ver\s+opciones?|"
+    r"algo\s+parecido|otra\s+propiedad|otras?\s+opciones?|"
+    r"cambiar\s+de\s+comuna|mejor\s+(?:en|por)\b|"
+    r"hasta\b.{0,40}\b(?:uf|pesos?|\$|mil)\b)"
+    r"|\b(?:quiero|necesito)\s+(?:una|un)\s+"
+    r"(?:casa|casas|departamento|departamentos|depto|oficina|local|parcela|terreno)\b",
     re.IGNORECASE,
 )
 
@@ -125,6 +140,11 @@ _VISIT_QUESTION_RE = re.compile(
     r"(?:horario|hora)\s+(?:te\s+)?acomoda|"
     r"(?:coordinar|agendar)\s+(?:una\s+)?visita|"
     r"(?:te\s+)?gustar[ií]a\s+(?:coordinar|agendar|visitar)",
+    re.IGNORECASE,
+)
+_DETAIL_REQUEST_RE = re.compile(
+    r"\b(?:detalle|detallado|ficha|completo|completa|expl[ií]came\s+todo|"
+    r"informaci[oó]n\s+completa)\b",
     re.IGNORECASE,
 )
 
@@ -218,53 +238,6 @@ def is_explicit_visit_intent(message: str) -> bool:
     return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
 
 
-def has_visit_intent_veto(message: str) -> bool:
-    """Reject only clear non-visit meanings when the model over-classifies."""
-    normalized = _normalize_text(message)
-    if _VISIT_INTENT_VETO_RE.search(normalized):
-        return True
-    # A standalone attribute question is not a visit request. If the same
-    # turn also says "quiero verla"/"puedo ir", the explicit visit signal wins.
-    if "mascota" in normalized and not is_explicit_visit_intent(normalized):
-        return True
-    return False
-
-
-def resolve_visit_intent(
-    model_intent: str | None,
-    message: str,
-    *,
-    deterministic_visit: bool,
-    pending_visit: bool = False,
-    property_reference_only: bool = False,
-) -> dict:
-    """Merge the model's existing intent with conservative deterministic vetoes.
-
-    The deterministic layer is a fallback and a negative guard, not a second
-    phrase dictionary that can erase a valid semantic classification.
-    """
-    model_visit = model_intent == "agendar_visita"
-    veto = has_visit_intent_veto(message)
-    if property_reference_only and not pending_visit and not is_explicit_visit_intent(message):
-        veto = True
-    visit = bool((model_visit or deterministic_visit or pending_visit) and not veto)
-    if not visit:
-        source = "negative_veto" if veto else "fallback"
-    elif pending_visit:
-        source = "pending"
-    elif model_visit:
-        source = "model"
-    else:
-        source = "deterministic"
-    return {
-        "visit": visit,
-        "model_visit": model_visit,
-        "deterministic_visit": bool(deterministic_visit),
-        "negative_veto": veto,
-        "source": source,
-    }
-
-
 def is_visit_confirmation(message: str) -> bool:
     """Accept only semantic visit intent for a pending visit question.
 
@@ -280,7 +253,7 @@ def is_visit_confirmation(message: str) -> bool:
     if not without_urls:
         return False
     return bool(
-        _VISIT_ACCEPTANCE_RE.fullmatch(without_urls)
+        _VISIT_SHORT_ACCEPTANCE_RE.fullmatch(without_urls)
         or is_explicit_visit_intent(without_urls)
         or _VISIT_CONFIRMATION_INTENT_RE.search(without_urls)
     )
@@ -349,14 +322,59 @@ def alternative_requested(message: str) -> bool:
 
 
 def property_rejected(message: str) -> bool:
-    return bool(_PROPERTY_REJECTION_RE.search(_normalize_text(message)))
+    normalized = _normalize_text(message)
+    if _OTHER_PROPERTY_REFERENCE_RE.search(normalized):
+        return False
+    return bool(_PROPERTY_REJECTION_RE.search(normalized))
 
 
 def alternative_offer_accepted(message: str, *, offer_pending: bool) -> bool:
     if not offer_pending:
         return False
     normalized = _normalize_text(message)
-    return bool(_VISIT_ACCEPTANCE_RE.fullmatch(normalized))
+    if normalized in {"si", "claro", "dale", "adelante", "ok", "okay", "de acuerdo"}:
+        return True
+    return bool(_ALTERNATIVE_ACCEPTANCE_RE.fullmatch(normalized))
+
+
+def is_explicit_property_search_request(message: str) -> bool:
+    """Allow RAG criteria updates only for explicit search/criteria turns."""
+    return bool(_EXPLICIT_SEARCH_REQUEST_RE.search(_normalize_text(message)))
+
+
+def is_actionable_customer_message(message: str) -> bool:
+    """Keep a valid answer when a duplicate guard sees a new customer question."""
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    return bool(
+        "?" in str(message)
+        or re.search(
+            r"\b(?:cu[aá]nto|cu[aá]l|c[oó]mo|d[oó]nde|qu[eé]|puedo|podr[ií]a|"
+            r"disponible|precio|gastos?|visita|coordinar|agendar|otro\s+d[ií]a|"
+            r"empezar|iniciar|informaci[oó]n)\b",
+            normalized,
+        )
+    )
+
+
+def enforce_whatsapp_response_length(response: str, request: str = "", *, max_chars: int = 1200) -> str:
+    """Keep ordinary WhatsApp answers bounded without cutting a sentence in half."""
+    text = str(response or "").strip()
+    if len(text) <= max_chars or _DETAIL_REQUEST_RE.search(_normalize_text(request)):
+        return text
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+    retained = []
+    current_len = 0
+    for part in parts:
+        next_len = current_len + len(part) + (2 if retained else 0)
+        if next_len > max_chars:
+            break
+        retained.append(part)
+        current_len = next_len
+    # Do not perform a raw character cut. If an individual sentence itself is
+    # too long, preserve it for the validator/log rather than corrupting text.
+    return "\n\n".join(retained) if retained else text
 
 
 def alternative_offer_declined(message: str, *, offer_pending: bool) -> bool:

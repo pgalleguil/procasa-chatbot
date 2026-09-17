@@ -492,7 +492,7 @@ def deterministic_response(state: dict, action: dict, facts: dict, user_message:
     if kind == "ASK_CLARIFICATION":
         if action.get("reason") == "operation_context_conflict":
             return "La información disponible corresponde a la operación publicada. Para confirmar si existe la alternativa que consultas, un ejecutivo debe revisarla."
-        return "Para responderte con precisión, ¿me puedes enviar el enlace o código de la propiedad?"
+        return "Para responderte con precisión, ¿me puedes enviar el enlace de la publicación de la propiedad?"
     if kind == "ASK_QUALIFICATION" and state.get("rental_docs_readiness") == "needs_guidance":
         return "Para arriendo suelen solicitar antecedentes de renta e identidad; un ejecutivo puede indicarte los requisitos vigentes para esta propiedad."
     if kind == "ANSWER_ONLY":
@@ -507,8 +507,8 @@ def deterministic_response(state: dict, action: dict, facts: dict, user_message:
             return answer
         if state.get("rental_docs_readiness") == "needs_guidance":
             return "Para arriendo suelen solicitar antecedentes de renta e identidad; un ejecutivo puede indicarte los requisitos vigentes para esta propiedad."
-        return "No tengo ese antecedente confirmado en la información disponible. Si me compartes el enlace o código de la propiedad, puedo orientar la consulta con precisión."
-    return "No tengo ese antecedente confirmado en la información disponible. Si me compartes el enlace o código de la propiedad, puedo orientar la consulta con precisión."
+        return "No tengo ese antecedente confirmado en la información disponible. Si me compartes el enlace de la publicación, puedo orientar la consulta con precisión."
+    return "No tengo ese antecedente confirmado en la información disponible. Si me compartes el enlace de la publicación, puedo orientar la consulta con precisión."
 
 
 def build_policy_instruction(state: dict, action: dict, facts: dict) -> str:

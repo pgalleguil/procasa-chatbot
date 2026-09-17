@@ -22,7 +22,7 @@ from ai_cost_guard import AICostGuard, budget_from_config
 from broker_identity import detect_hard_broker_signal
 from captacion_assignment_eligibility import can_assign_property
 from classification_cache import ClassificationCache
-from classification_service import classify_capture
+from classification_service import classify_capture, detect_out_of_scope_new_development
 from extractor_health import evaluate_extractor_health, measure_extractor_health
 
 
@@ -485,42 +485,63 @@ def run_toctoc_pipeline(
             ledger.finish_run(run_id, report)
             return report
 
+        normalizer = normalize_fn or _normalise_record
         preexisting_item_keys = ledger.list_item_keys(run_id)
         requested_record_count = len(records)
-        records, records_skipped_max_items = _cap_records_for_run(
-            records,
-            existing_item_keys=preexisting_item_keys,
-            max_new_items=options.max_new_items,
-        )
-        for raw in records:
-            item_key = _item_key(raw)
-            prior_item = ledger.get_item(run_id, item_key) or {}
-            if prior_item.get("status") not in {"PERSISTED", "ASSIGNED"}:
-                ledger.set_item(run_id, item_key, {"status": "DISCOVERED", "record": raw})
-
-        normalizer = normalize_fn or _normalise_record
-        normalized: list[dict[str, Any]] = []
-        seen: dict[str, str] = {}
+        normalization_failures = 0
         duplicate_count = 0
+        out_of_scope_removed = 0
+        normalized_candidates: list[dict[str, Any]] = []
+        seen: dict[str, str] = {}
+
+        # Admission order is intentional: normalize, deduplicate and remove
+        # out-of-scope new-development inventory before applying the run cap.
+        # This prevents Venta Nuevo records or repeated URLs from consuming
+        # the MAX_NEW_ITEMS budget intended for used-property candidates.
         for raw in records:
             try:
                 item = normalizer(raw)
                 item = _normalise_record(item)
                 item_key = _item_key(item)
-                prior_item = ledger.get_item(run_id, item_key) or {}
-                if prior_item.get("status") not in {"PERSISTED", "ASSIGNED"}:
-                    ledger.set_item(run_id, item_key, {"status": "EXTRACTED", "record": item})
-                    ledger.set_item(run_id, item_key, {"status": "NORMALIZED", "record": item})
+                if not item_key:
+                    raise ValueError("MISSING_ITEM_KEY")
                 if item_key in seen:
                     duplicate_count += 1
-                    ledger.set_item(run_id, item_key, {"status": "BLOCKED", "reason": "DUPLICATE", "duplicate_of": seen[item_key], "record": item})
                     continue
                 seen[item_key] = item_key
-                normalized.append(item)
+                if detect_out_of_scope_new_development(item):
+                    out_of_scope_removed += 1
+                    continue
+                normalized_candidates.append(item)
             except Exception as exc:
-                item_key = _item_key(raw) or f"invalid-{len(normalized)}"
-                ledger.set_item(run_id, item_key, {"status": "FAILED", "reason": f"NORMALIZATION_ERROR:{type(exc).__name__}", "record": raw})
+                normalization_failures += 1
+                item_key = _item_key(raw) or f"invalid-{normalization_failures}"
                 anomalies.append(f"NORMALIZATION_ERROR:{item_key}")
+                ledger.set_item(
+                    run_id,
+                    item_key,
+                    {"status": "FAILED", "reason": f"NORMALIZATION_ERROR:{type(exc).__name__}", "record": raw},
+                )
+
+        records, records_skipped_max_items = _cap_records_for_run(
+            normalized_candidates,
+            existing_item_keys=preexisting_item_keys,
+            max_new_items=options.max_new_items,
+        )
+        for item in records:
+            item_key = _item_key(item)
+            prior_item = ledger.get_item(run_id, item_key) or {}
+            if prior_item.get("status") not in {"PERSISTED", "ASSIGNED"}:
+                ledger.set_item(run_id, item_key, {"status": "DISCOVERED", "record": item})
+
+        normalized: list[dict[str, Any]] = []
+        for item in records:
+            item_key = _item_key(item)
+            prior_item = ledger.get_item(run_id, item_key) or {}
+            if prior_item.get("status") not in {"PERSISTED", "ASSIGNED"}:
+                ledger.set_item(run_id, item_key, {"status": "EXTRACTED", "record": item})
+                ledger.set_item(run_id, item_key, {"status": "NORMALIZED", "record": item})
+            normalized.append(item)
 
         health_metrics = measure_extractor_health(normalized)
         health = evaluate_extractor_health(
@@ -644,6 +665,9 @@ def run_toctoc_pipeline(
             "requested_records": requested_record_count,
             "max_new_items": options.max_new_items,
             "records_skipped_max_items": records_skipped_max_items,
+            "duplicates_removed": duplicate_count,
+            "out_of_scope_removed": out_of_scope_removed,
+            "normalization_failures": normalization_failures,
             "preexisting_ledger_items": len(preexisting_item_keys),
             "ledger_items_after_run": len(ledger.list_item_keys(run_id)),
             "duplicates": duplicate_count,

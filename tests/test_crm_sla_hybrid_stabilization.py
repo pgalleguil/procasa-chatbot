@@ -195,7 +195,8 @@ def test_anti_ping_pong_and_jpc_two_person_limit() -> None:
 def test_reassignment_limit_and_decision_id() -> None:
     assert reassignment_limit_status(0)["status"] == "AUTO_ELIGIBLE"
     assert reassignment_limit_status(1)["status"] == "AUTO_ELIGIBLE"
-    assert reassignment_limit_status(2)["status"] == SUPERVISOR_REVIEW_REQUIRED
+    assert reassignment_limit_status(2)["status"] == "AUTO_ELIGIBLE"
+    assert reassignment_limit_status(3)["status"] == "AUTO_ELIGIBLE"
     assert generate_decision_id("lead", "cycle", "v1") == generate_decision_id("lead", "cycle", "v1")
     assert generate_decision_id("lead", "cycle", "v1") != generate_decision_id("lead", "cycle-2", "v1")
 

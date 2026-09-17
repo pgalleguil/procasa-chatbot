@@ -19,7 +19,6 @@ ASSIGNMENT_CYCLES_COLLECTION = "crm_assignment_cycles"
 LEADS_COLLECTION = "leads"
 REASSIGNMENT_AUDIT_COLLECTION = "crm_sla_reassignment_audit_v1"
 
-MAX_AUTOMATIC_REASSIGNMENTS = 2
 SUPERVISOR_REVIEW_STATUSES = frozenset(
     {"PENDING", "APPROVED", "REJECTED", "NOT_REQUIRED"}
 )
@@ -151,10 +150,11 @@ def build_source_cycle_filter(
     if assignment_number is None:
         raise TransactionContractError("missing_required:assignment_number")
     assignment_number = int(assignment_number)
-    # Fase 1G stores the number of automatic rescues already performed on the
-    # source cycle: 0 means the first rescue, 1 the second, and 2 is blocked.
-    if not 0 <= assignment_number < MAX_AUTOMATIC_REASSIGNMENTS:
-        raise TransactionContractError("assignment_limit_reached")
+    # The number is an audit counter, not an operational ceiling.  A rescue
+    # remains eligible while a fresh commercial destination exists; the
+    # selector/anti-ping-pong policy decides when the pool is exhausted.
+    if assignment_number < 0:
+        raise TransactionContractError("assignment_number_invalid")
 
     source_filter: dict[str, Any] = {
         # Decisions transport string IDs, while live cycles can use BSON
@@ -166,22 +166,12 @@ def build_source_cycle_filter(
         "cycle_status": "active",
         "unassigned_at": None,
         "sla_policy_version": policy_version,
-        "reassignment_state": {"$in": [None, "eligible"]},
+        "reassignment_state": {"$in": [None, "eligible", "active"]},
         "reassignment_decision_id": {"$exists": False},
-            "$and": [
+        "$and": [
             _management_absent_filter("first_valid_management_at"),
             _management_absent_filter("first_contact_attempt_at"),
             _management_absent_filter("reassignment_protection_at"),
-            {
-                "$or": [
-                    {"automatic_reassignment_number": {"$exists": False}},
-                    {
-                        "automatic_reassignment_number": {
-                            "$lt": MAX_AUTOMATIC_REASSIGNMENTS
-                        }
-                    },
-                ]
-            },
         ],
     }
     if source_cycle.get("_id") is not None:
@@ -267,7 +257,7 @@ def build_lead_owner_mirror_update(
     target_display_name: str,
     new_cycle_id: str,
     reassigned_at: datetime,
-    effective_sla_started_at: datetime,
+    effective_sla_started_at: datetime | None,
 ) -> dict[str, Any]:
     """Build only derived lead mirrors and the current-cycle pointer."""
 
@@ -285,7 +275,11 @@ def build_lead_owner_mirror_update(
             "lifecycle.assigned_to_user_id": str(_required(target_user_id, "target_user_id")),
             "lifecycle.assigned_to_display_name": str(_required(target_display_name, "target_display_name")),
             "lifecycle.cycle_started_at": _aware(reassigned_at, "reassigned_at"),
-            "lifecycle.sla_started_at": _aware(effective_sla_started_at, "effective_sla_started_at"),
+            "lifecycle.sla_started_at": (
+                _aware(effective_sla_started_at, "effective_sla_started_at")
+                if effective_sla_started_at is not None else None
+            ),
+            "lifecycle.owner_notified_at": None,
             "last_crm_update": _aware(reassigned_at, "reassigned_at"),
             "assignment_mirror_source": "crm_assignment_cycles",
             "assignment_mirror_owner_user_id": str(
@@ -317,6 +311,9 @@ def build_current_cycle_owner_mirror_repair(
     cycle_id = str(cycle.get("assignment_cycle_id") or "")
     lifecycle = lead.get("lifecycle") or {}
     if not cycle_id or str(lifecycle.get("current_assignment_cycle_id") or "") != cycle_id:
+        return None
+    if str(cycle.get("reassignment_state") or "").upper() == "AWAITING_OWNER_NOTIFICATION":
+        # A mirror repair must not start an SLA clock as a side effect.
         return None
     owner_id = str(cycle.get("assigned_to_user_id") or "")
     owner_name = str(cycle.get("assigned_to_display_name") or "")
@@ -354,7 +351,7 @@ def build_new_cycle_document(
     target_user: Mapping[str, Any],
     new_cycle_id: str,
     reassigned_at: datetime,
-    effective_sla_started_at: datetime,
+    effective_sla_started_at: datetime | None,
     expected_sla_policy_version: str,
     previous_owner_user_ids: Sequence[str],
     assignment_number: int,
@@ -370,13 +367,16 @@ def build_new_cycle_document(
         raise TransactionContractError("selected_user_mismatch")
     if supervisor_review_status not in SUPERVISOR_REVIEW_STATUSES:
         raise TransactionContractError("invalid_supervisor_review_status")
-    if not 1 <= int(assignment_number) <= MAX_AUTOMATIC_REASSIGNMENTS:
-        raise TransactionContractError("assignment_limit_reached")
+    if int(assignment_number) < 1:
+        raise TransactionContractError("assignment_number_invalid")
 
     decision_id = str(_required(decision.get("decision_id"), "decision_id"))
     lead_id = str(_required(decision.get("lead_id"), "lead_id"))
     assigned_at = _aware(reassigned_at, "reassigned_at")
-    sla_started_at = _aware(effective_sla_started_at, "effective_sla_started_at")
+    sla_started_at = (
+        _aware(effective_sla_started_at, "effective_sla_started_at")
+        if effective_sla_started_at is not None else None
+    )
     source_reason = _required(source_cycle.get("reason"), "source_reason")
     source_origin = _required(source_cycle.get("cycle_origin"), "source_cycle_origin")
     notification_eligible = source_cycle.get("notification_eligible")
@@ -399,6 +399,7 @@ def build_new_cycle_document(
         "assigned_at": assigned_at,
         "cycle_started_at": assigned_at,
         "sla_started_at": sla_started_at,
+        "owner_notified_at": None,
         "temperature_at_assignment": str(
             new_temperature or source_cycle.get("temperature_at_assignment") or "COLD"
         ).upper(),
@@ -455,7 +456,7 @@ def build_new_cycle_document(
         "previous_owner_user_ids": list(previous_owner_user_ids),
         "automatic_reassignment_number": int(assignment_number),
         "supervisor_review_status": supervisor_review_status,
-        "reassignment_state": "active",
+        "reassignment_state": "AWAITING_OWNER_NOTIFICATION",
         "cycle_version": 1,
         "created_at": assigned_at,
         "updated_at": assigned_at,
@@ -597,7 +598,7 @@ def build_transaction_plan(
     lead: Mapping[str, Any],
     target_user: Mapping[str, Any],
     reassigned_at: datetime,
-    effective_sla_started_at: datetime,
+    effective_sla_started_at: datetime | None,
     expected_sla_policy_version: str,
     supervisor_review_status: str = "PENDING",
 ) -> ReassignmentTransactionPlan:
@@ -659,14 +660,18 @@ def build_transaction_plan(
     if assignment_number_value is None:
         raise TransactionContractError("missing_required:assignment_number")
     source_assignment_number = int(assignment_number_value)
-    if not 0 <= source_assignment_number < MAX_AUTOMATIC_REASSIGNMENTS:
-        raise TransactionContractError("assignment_limit_reached")
+    if source_assignment_number < 0:
+        raise TransactionContractError("assignment_number_invalid")
     destination_assignment_number = source_assignment_number + 1
 
     previous_owners = _previous_owner_ids(decision, source_cycle, current_owner)
     if target_id in previous_owners:
         raise TransactionContractError("target_in_previous_owner_history")
     new_cycle_id = decision_new_cycle_id(decision_id)
+    # A destination cycle never inherits a start time from the source or the
+    # transaction timestamp.  The notification consumer activates this clock
+    # after provider delivery.
+    destination_sla_started_at = None
 
     source_filter = build_source_cycle_filter(
         decision,
@@ -691,7 +696,7 @@ def build_transaction_plan(
         ),
         new_cycle_id=new_cycle_id,
         reassigned_at=reassigned_at,
-        effective_sla_started_at=effective_sla_started_at,
+        effective_sla_started_at=destination_sla_started_at,
     )
     new_cycle = build_new_cycle_document(
         decision=decision,
@@ -699,7 +704,7 @@ def build_transaction_plan(
         target_user=target_user,
         new_cycle_id=new_cycle_id,
         reassigned_at=reassigned_at,
-        effective_sla_started_at=effective_sla_started_at,
+        effective_sla_started_at=destination_sla_started_at,
         expected_sla_policy_version=expected_sla_policy_version,
         previous_owner_user_ids=previous_owners,
         assignment_number=destination_assignment_number,

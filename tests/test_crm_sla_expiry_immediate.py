@@ -143,7 +143,7 @@ def test_expired_owner_access_is_redacted_and_non_operational(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fast_path_reads_deadline_hints_before_maintenance(monkeypatch):
+async def test_fast_path_recalculates_from_now_without_deadline_or_maintenance_cursor(monkeypatch):
     observed = {}
     row = {"assignment_cycle_id": "cycle-1", "lead_id": "lead-1"}
 
@@ -164,4 +164,5 @@ async def test_fast_path_reads_deadline_hints_before_maintenance(monkeypatch):
     assert result["scan_mode"] == "fast_path"
     assert result["cycles"] == [row]
     assert observed["query_name"] == "worker.scanner.fast_path_cycles"
-    assert "sla_breached_at" in repr(observed["query"])
+    assert "sla_breached_at" not in repr(observed["query"])
+    assert "assignment_cycle_id" in repr(observed["query"])

@@ -370,6 +370,19 @@ async def evaluate_sla_alerts(
         if not cycle_id:
             excluded["missing_assignment_cycle_id"] += 1; continue
 
+        # A reassignment destination is not in an SLA window until its
+        # SLA_REASSIGNED_TO notification is actually delivered.  Do not let
+        # this alert path fall back to assigned_at and emit a false breach.
+        reassignment_state = str(cycle.get("reassignment_state") or "").upper()
+        awaiting_notification = reassignment_state == "AWAITING_OWNER_NOTIFICATION" or (
+            str(cycle.get("assigned_by") or "").lower() == "sla_reassignment"
+            and not coerce_utc_datetime(cycle.get("owner_notified_at"))
+            and not coerce_utc_datetime(cycle.get("sla_started_at"))
+        )
+        if awaiting_notification:
+            excluded["awaiting_owner_notification"] += 1
+            continue
+
         assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
         if not assigned_at:
             excluded["missing_assigned_at"] += 1; continue

@@ -74,8 +74,15 @@ def test_token_is_signed_opaque_and_deterministic(sla_secret):
     assert payload["assignment_cycle_id"] == "cycle-1"
 
 
-def test_current_owner_opens_active_cycle_link(sla_secret):
+def test_current_owner_opens_active_cycle_link(sla_secret, monkeypatch):
     db, lead_id = _fixture()
+    # Keep this authorization test before the fixture's normal 180-minute
+    # deadline; expiry behavior is covered by the explicit lock tests below.
+    from chatbot import crm_metrics
+    monkeypatch.setattr(
+        crm_metrics, "utc_now",
+        lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
+    )
     resolved = validate_sla_cycle_link(
         db, _token(lead_id), authenticated_user_id="owner-1",
     )

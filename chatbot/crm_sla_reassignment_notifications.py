@@ -24,7 +24,7 @@ from .crm_notifications import (
     refresh_lease,
     reserve_for_delivery,
 )
-from .crm_metrics import utc_now
+from .crm_metrics import coerce_utc_datetime, utc_now
 from .mongo_identity import mongo_id_variants
 from .crm_sla_cycle_links import build_sla_cycle_url
 
@@ -35,7 +35,6 @@ NOTIFICATION_TYPE = "sla_reassignment"
 SLA_BREACH_WARNING = "SLA_BREACH_WARNING"
 SLA_REASSIGNED_AWAY = "SLA_REASSIGNED_AWAY"
 SLA_REASSIGNED_TO = "SLA_REASSIGNED_TO"
-MAX_AUTOMATIC_REASSIGNMENT_NUMBER = 2
 COMMITTED_STATUSES = frozenset({"APPLIED", "ALREADY_APPLIED"})
 
 
@@ -119,7 +118,7 @@ def _new_owner_message(context: Mapping[str, str]) -> str:
         f"Operación: {context['operation']}\n"
         f"Comuna: {context['commune']}\n"
         f"Prioridad: {context['priority']}\n\n"
-        "⏱️ Tu SLA comienza desde esta nueva asignación.\n\n"
+        "⏱️ Tu SLA comenzará desde la entrega de esta notificación.\n\n"
         f"👉 Gestionar lead:\n{context['secure_url']}"
     )
 
@@ -193,8 +192,9 @@ def enqueue_sla_reassignment_notification(
     """Create or reuse the post-commit notification for the new owner.
 
     The deterministic identity is scoped to the reassignment decision and
-    recipient.  A third automatic reassignment is rejected defensively even if
-    a malformed caller tries to enqueue one outside the frozen worker policy.
+    recipient.  The reassignment counter is recorded for auditability; pool
+    exhaustion and anti-ping-pong policy, not a numeric ceiling, determine
+    whether a later reassignment may proceed.
     """
     status = str(_value(result, "status", "") or "")
     if not bool(_value(result, "committed", False)) or status not in COMMITTED_STATUSES:
@@ -212,7 +212,7 @@ def enqueue_sla_reassignment_notification(
 
     if not decision_id or not lead_id or not recipient_user_id or not destination_cycle_id:
         raise ValueError("sla reassignment notification identity is incomplete")
-    if reassignment_number not in range(1, MAX_AUTOMATIC_REASSIGNMENT_NUMBER + 1):
+    if reassignment_number is None or reassignment_number < 1:
         logger.warning(
             "[SLA_REASSIGNMENT_NOTIFICATION] suppressed invalid reassignment number decision_id=%s number=%s",
             decision_id,
@@ -263,7 +263,7 @@ def enqueue_sla_reassignment_away_notification(
         reassignment_number = None
     if not decision_id or not lead_id or not recipient_user_id or not source_cycle_id:
         raise ValueError("sla reassignment away notification identity is incomplete")
-    if reassignment_number not in range(1, MAX_AUTOMATIC_REASSIGNMENT_NUMBER + 1):
+    if reassignment_number is None or reassignment_number < 1:
         return None
     context = _notification_context(db, lead_id, source_cycle_id)
     return _create_reassignment_notification(
@@ -415,10 +415,14 @@ def rearm_stale_new_owner_notification(
     })
     if not notification:
         return {"status": "not_found", "identity": identity}
+    previous_state = str(notification.get("state") or "")
     if notification.get("provider_message_id") or notification.get("actually_delivered") is True:
         return {"status": "already_delivered", "notification_id": notification.get("_id")}
-    if notification.get("state") != "stale_not_sent":
-        return {"status": "not_stale", "state": notification.get("state"), "notification_id": notification.get("_id")}
+    recoverable_states = {
+        "stale_not_sent", "failed_retryable", "failed_recipient", "failed_validation",
+    }
+    if notification.get("state") not in recoverable_states:
+        return {"status": "not_recoverable", "state": notification.get("state"), "notification_id": notification.get("_id")}
 
     valid, reason = _validate_pending_notification(db, notification)
     if not valid:
@@ -432,7 +436,7 @@ def rearm_stale_new_owner_notification(
         {
             "_id": notification.get("_id"),
             "individual_identity": identity,
-            "state": "stale_not_sent",
+            "state": {"$in": sorted(recoverable_states)},
             "provider_message_id": {"$in": [None]},
             "actually_delivered": {"$ne": True},
         },
@@ -441,7 +445,11 @@ def rearm_stale_new_owner_notification(
                 "state": "pending",
                 "next_attempt_at": recovered_at,
                 "rearmed_at": recovered_at,
-                "repair_reason": "STALE_NEW_OWNER_NOTIFICATION_RECOVERY",
+                "repair_reason": (
+                    "STALE_NEW_OWNER_NOTIFICATION_RECOVERY"
+                    if previous_state == "stale_not_sent"
+                    else "NEW_OWNER_NOTIFICATION_RECOVERY"
+                ),
                 "updated_at": recovered_at,
             },
             "$unset": {
@@ -460,6 +468,151 @@ def rearm_stale_new_owner_notification(
         "notification_id": notification.get("_id"),
         "identity": identity,
     }
+
+
+def mark_new_owner_notification_delivered(
+    db: Any,
+    *,
+    notification_id: Any,
+    provider_message_id: Any,
+    delivered_at: Any = None,
+) -> dict[str, Any]:
+    """Activate the destination SLA clock only after confirmed delivery.
+
+    ``provider_message_id`` is evidence for the notification record, but the
+    cycle clock is advanced only by this routine after it has validated the
+    complete current lead/cycle/recipient identity.  Repeating the call is
+    idempotent and never creates another notification or reassignment.
+    """
+    provider_id = str(provider_message_id or "").strip()
+    if not provider_id:
+        return {"status": "blocked", "reason": "provider_message_id_required"}
+    delivered = coerce_utc_datetime(delivered_at) or utc_now()
+    notification = db[COLLECTION].find_one({
+        "_id": notification_id,
+        "notification_type": SLA_REASSIGNED_TO,
+        "notification_role": "new_owner",
+    })
+    if not notification:
+        return {"status": "not_found", "notification_id": notification_id}
+    # A provider message ID proves that the provider accepted/identified a
+    # message, but it is not by itself the delivery authority.  The caller
+    # must first persist ``actually_delivered=True`` from its delivery
+    # confirmation path; this routine only activates the SLA clock after that
+    # explicit fact is present.
+    if notification.get("provider_message_id") != provider_id:
+        return {"status": "blocked", "reason": "provider_message_id_mismatch", "notification_id": notification_id}
+    if notification.get("actually_delivered") is not True:
+        return {"status": "blocked", "reason": "notification_delivery_not_confirmed", "notification_id": notification_id}
+
+    lead_id = str(notification.get("lead_id") or "").strip()
+    cycle_id = str(notification.get("assignment_cycle_id") or "").strip()
+    recipient_id = str(notification.get("recipient_user_id") or "").strip()
+    lead = _lead_for_notification(db, lead_id)
+    cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle_id}) or {}
+    lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
+    current_cycle = lifecycle.get("current_assignment_cycle_id") or lead.get("assignment_cycle_id")
+    if (
+        not lead or not cycle
+        or cycle.get("cycle_status") != "active"
+        or str(cycle.get("assigned_to_user_id") or "") != recipient_id
+        or str(current_cycle or "") != cycle_id
+        or any(
+            value not in (None, "") and str(value) != recipient_id
+            for value in (
+                lifecycle.get("assigned_to_user_id"),
+                lead.get("assignment_mirror_owner_user_id"),
+                lead.get("assigned_to_user_id"),
+            )
+        )
+    ):
+        return {"status": "blocked", "reason": "destination_identity_changed", "notification_id": notification_id}
+
+    if (
+        str(cycle.get("reassignment_state") or "").upper() != "AWAITING_OWNER_NOTIFICATION"
+        and coerce_utc_datetime(cycle.get("sla_started_at"))
+    ):
+        return {"status": "already_active", "assignment_cycle_id": cycle_id, "notification_id": notification_id}
+
+    cycle_update = db["crm_assignment_cycles"].update_one(
+        {
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": "active",
+            "assigned_to_user_id": recipient_id,
+            "reassignment_state": {"$in": ["AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification"]},
+            "owner_notified_at": {"$in": [None]},
+        },
+        {"$set": {
+            "owner_notified_at": delivered,
+            "sla_started_at": delivered,
+            "reassignment_state": "active",
+            "notification_delivery_status": "delivered",
+            "updated_at": delivered,
+        }},
+    )
+    if int(getattr(cycle_update, "modified_count", 0) or 0) != 1:
+        refreshed = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle_id}) or {}
+        if not (
+            str(refreshed.get("reassignment_state") or "").upper() == "ACTIVE"
+            and coerce_utc_datetime(refreshed.get("owner_notified_at"))
+            and coerce_utc_datetime(refreshed.get("sla_started_at"))
+        ):
+            return {"status": "race_lost", "assignment_cycle_id": cycle_id, "notification_id": notification_id}
+
+    # Keep the lead's derived lifecycle start aligned with the cycle's
+    # canonical delivery timestamp.  Ownership and cycle pointers are not
+    # changed here.
+    db["leads"].update_one(
+        {
+            "_id": lead.get("_id"),
+            "lifecycle.current_assignment_cycle_id": cycle_id,
+            "lifecycle.assigned_to_user_id": recipient_id,
+        },
+        {"$set": {
+            "lifecycle.sla_started_at": delivered,
+            "lifecycle.owner_notified_at": delivered,
+        }},
+    )
+    return {
+        "status": "activated",
+        "assignment_cycle_id": cycle_id,
+        "owner_notified_at": delivered,
+        "sla_started_at": delivered,
+        "notification_id": notification_id,
+    }
+
+
+def _confirm_new_owner_notification_delivery(
+    db: Any,
+    *,
+    notification_id: Any,
+    provider_message_id: Any,
+    delivered_at: Any,
+) -> dict[str, Any] | None:
+    """Persist the provider-confirmed delivery fact before clock activation."""
+    provider_id = str(provider_message_id or "").strip()
+    if not provider_id:
+        return None
+    delivered = coerce_utc_datetime(delivered_at) or utc_now()
+    update = db[COLLECTION].update_one(
+        {
+            "_id": notification_id,
+            "notification_type": SLA_REASSIGNED_TO,
+            "notification_role": "new_owner",
+            "state": "sent",
+            "provider_message_id": provider_id,
+            "actually_delivered": {"$ne": True},
+        },
+        {"$set": {
+            "delivery_mode": "live",
+            "actually_delivered": True,
+            "delivered_at": delivered,
+            "updated_at": delivered,
+        }},
+    )
+    if int(getattr(update, "modified_count", 0) or 0) == 1:
+        return db[COLLECTION].find_one({"_id": notification_id})
+    return db[COLLECTION].find_one({"_id": notification_id})
 
 
 def process_one_sla_reassignment_sync(
@@ -620,14 +773,38 @@ def process_one_sla_reassignment_sync(
              "$set": {"next_attempt_at": current + timedelta(seconds=retry_after), "updated_at": current}},
         )
     if state == "sent":
-        db[COLLECTION].update_one(
-            {"_id": notification["_id"]},
-            {"$set": {"delivery_mode": "live", "actually_delivered": True}},
-        )
+        if notification.get("notification_type") == SLA_REASSIGNED_TO:
+            _confirm_new_owner_notification_delivery(
+                db,
+                notification_id=notification["_id"],
+                provider_message_id=provider_id,
+                delivered_at=current,
+            )
+            delivery_activation = mark_new_owner_notification_delivered(
+                db,
+                notification_id=notification["_id"],
+                provider_message_id=provider_id,
+                delivered_at=current,
+            )
+        else:
+            delivery_activation = None
+        if notification.get("notification_type") != SLA_REASSIGNED_TO:
+            db[COLLECTION].update_one(
+                {"_id": notification["_id"]},
+                {"$set": {"delivery_mode": "live", "actually_delivered": True}},
+            )
+        elif not delivery_activation or delivery_activation.get("status") not in {"activated", "already_active"}:
+            logger.error(
+                "[SLA_REASSIGNMENT_NOTIFICATION] delivered_without_cycle_activation "
+                "notification_id=%s status=%s",
+                str(notification.get("_id"))[-12:],
+                (delivery_activation or {}).get("status"),
+            )
     return {
         "status": state,
         "provider_message_id": provider_id,
         "delivery_id": notification.get("delivery_id"),
+        "cycle_activation": delivery_activation if state == "sent" and notification.get("notification_type") == SLA_REASSIGNED_TO else None,
     }
 
 

@@ -351,7 +351,10 @@ def _candidate_query_superset(current_policy_since: datetime) -> dict[str, Any]:
             {
                 "$or": [
                     {"reassignment_state": {"$exists": False}},
-                    {"reassignment_state": {"$nin": ["completed", "reassigned"]}},
+                    {"reassignment_state": {"$nin": [
+                        "completed", "reassigned",
+                        "AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification",
+                    ]}},
                 ]
             },
         ],
@@ -435,7 +438,7 @@ def _cycle_projection() -> dict[str, int]:
         "reassignment_protection_at": 1,
         "automatic_reassignment_number": 1, "assignment_number": 1,
         "previous_owner_user_ids": 1, "reassignment_decision_id": 1,
-        "reassignment_state": 1,
+        "reassignment_state": 1, "assigned_by": 1, "owner_notified_at": 1,
     }
 
 
@@ -576,6 +579,21 @@ async def _scan_urgent_snapshot_in_chunks(
     backlog; hitting it is surfaced as degraded/truncated, never silently
     treated as a complete scan.
     """
+    # Keep the scanner compatible with injected/read-only test adapters that
+    # expose the repository's async ``_find_many`` seam instead of a raw
+    # PyMongo collection. Production collections take the cursor path below.
+    if not hasattr(collection, "find"):
+        materialized = await _find_many(
+            collection,
+            dict(query),
+            dict(projection),
+            limit=max_cycles + 1,
+            sort=sort,
+            instrumentation=instrumentation,
+            query_name="worker.scanner.fast_path_cycles",
+        )
+        truncated = len(materialized) > max_cycles
+        return [dict(row) for row in materialized[:max_cycles]], truncated, 1 if materialized else 0
     started = time.perf_counter()
     if instrumentation is not None:
         instrumentation.begin_read()
@@ -630,6 +648,29 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
     silently create a false negative.
     """
     assigned_at = _utc(cycle.get("assigned_at"))
+    if _awaiting_owner_notification(cycle):
+        # Never fall back to assigned_at for a reassignment destination.  Its
+        # commercial SLA begins only after the provider confirms delivery.
+        temperature = _text(
+            cycle.get("temperature_at_assignment")
+            or (lead or {}).get("lead_temperature_effective")
+            or "NORMAL"
+        ).upper()
+        if temperature not in {"HOT", "NORMAL"}:
+            temperature = "NORMAL"
+        threshold = 60 if temperature == "HOT" else 180
+        persisted_deadline = next(
+            (
+                _utc(cycle.get(key))
+                for key in ("sla_breached_at", "sla_expired_at", "deadline_at", "sla_deadline_at")
+                if _utc(cycle.get(key))
+            ),
+            None,
+        )
+        return CanonicalExpiration(
+            None, None, None, threshold, None, 0.0, False,
+            temperature, "awaiting_owner_notification", persisted_deadline, False,
+        )
     persisted_start = _utc(cycle.get("sla_started_at"))
     started_at = persisted_start or assigned_at
     start_source = "persisted" if persisted_start else "fallback_assigned_at" if assigned_at else "missing"
@@ -783,6 +824,18 @@ def _lead_is_open(lead: Mapping[str, Any] | None) -> bool:
 
 def _assignment_number(cycle: Mapping[str, Any]) -> int:
     return int(_number(cycle.get("automatic_reassignment_number", cycle.get("assignment_number", 0))))
+
+
+def _awaiting_owner_notification(cycle: Mapping[str, Any]) -> bool:
+    """Whether a reassignment destination has not received its notice yet."""
+    state = _text(cycle.get("reassignment_state")).upper()
+    if state == "AWAITING_OWNER_NOTIFICATION":
+        return True
+    return (
+        _text(cycle.get("assigned_by")).lower() == "sla_reassignment"
+        and not _utc(cycle.get("owner_notified_at"))
+        and not _utc(cycle.get("sla_started_at"))
+    )
 
 
 def _previous_owner_ids(cycle: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1988,10 +2041,6 @@ async def run_sla_reassignment_worker_iteration(
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, "PROTECTED_BY_MANAGEMENT", assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
                     continue
                 assignment_number = _assignment_number(cycle)
-                if assignment_number >= 2:
-                    result.max2_skipped += 1
-                    evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, SUPERVISOR_REVIEW_REQUIRED, assignment_number=assignment_number, decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
-                    continue
                 branch = _text(lead_row.get("policy_category"))
                 if branch not in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:
                     result.review_skipped += 1

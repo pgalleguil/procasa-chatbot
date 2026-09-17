@@ -130,7 +130,9 @@ def test_new_cycle_preserves_existing_routing_contract_and_marks_reassignment():
     assert new_cycle["previous_owner_user_ids"] == ["user-old", "user-prior"]
     assert new_cycle["automatic_reassignment_number"] == 1
     assert new_cycle["first_valid_management_at"] is None
-    assert new_cycle["sla_started_at"] == SLA_STARTED
+    assert new_cycle["sla_started_at"] is None
+    assert new_cycle["owner_notified_at"] is None
+    assert new_cycle["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
 
 
 def test_source_close_does_not_change_source_owner_and_lead_points_to_new_cycle():
@@ -149,8 +151,37 @@ def test_source_close_does_not_change_source_owner_and_lead_points_to_new_cycle(
     assert lead_update["lifecycle.assigned_to_user_id"] == "user-new"
     assert lead_update["lifecycle.assigned_to_display_name"] == "Ejecutivo Nuevo"
     assert lead_update["lifecycle.cycle_started_at"] == NOW
-    assert lead_update["lifecycle.sla_started_at"] == SLA_STARTED
+    assert lead_update["lifecycle.sla_started_at"] is None
+    assert lead_update["lifecycle.owner_notified_at"] is None
     assert lead_update["assignment_mirror_owner_user_id"] == "user-new"
+
+
+def test_reassignment_counter_is_unbounded_and_history_excludes_all_previous_owners():
+    decision, source_cycle, lead, target = snapshots()
+    decision["assignment_number"] = 2
+    decision["automatic_reassignment_number"] = 2
+    source_cycle["automatic_reassignment_number"] = 2
+    decision["previous_owner_user_ids"] = ["user-old", "user-prior", "user-third"]
+    source_cycle["previous_owner_user_ids"] = ["user-old", "user-prior", "user-third"]
+    target["_id"] = "user-fourth"
+    target["nombre"] = "Ejecutivo Cuarto"
+    decision["selected_user_id"] = "user-fourth"
+    decision["selected_user_display_name"] = "Ejecutivo Cuarto"
+    decision["candidate_user_ids"] = ["user-fourth"]
+
+    plan = make_plan(
+        decision=decision,
+        source_cycle=source_cycle,
+        target_user=target,
+    ).as_dict()
+    new_cycle = plan["operations"][1]["document"]
+
+    assert new_cycle["automatic_reassignment_number"] == 3
+    assert new_cycle["previous_owner_user_ids"] == [
+        "user-old", "user-prior", "user-third"
+    ]
+    assert new_cycle["assigned_to_user_id"] not in new_cycle["previous_owner_user_ids"]
+    assert new_cycle["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
 
 
 def test_current_cycle_mirror_repair_is_derived_only_and_complete():

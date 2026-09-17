@@ -3,6 +3,13 @@ from pathlib import Path
 import mongomock
 
 from chatbot import chatbot_queue as queue
+from chatbot.customer_response_semantics import (
+    new_link_context_response as _new_link_context_response,
+    new_link_template_contaminated as _new_link_template_contaminated,
+    rag_customer_response as _rag_customer_response,
+    evaluate_customer_response,
+    build_specific_property_response,
+)
 from chatbot.constants import LeadIntent
 from chatbot.conversation_policy import (
     alternative_offer_accepted,
@@ -126,6 +133,80 @@ def test_whatsapp_length_policy_keeps_sentences_and_allows_explicit_detail():
     assert not bounded.endswith("información ú")
     detailed = " ".join(["Detalle completo de la ficha."] * 100)
     assert enforce_whatsapp_response_length(detailed, "Explícame la ficha completa") == detailed
+
+
+def test_specific_property_question_must_answer_requested_field():
+    message = "La cuota no la necesito todavía; ¿la ficha dice si acepta mascotas?"
+    property_doc = {"codigo": "B200", "caracteristicas": {}}
+
+    response = build_specific_property_response(message, property_doc)
+
+    assert response == "La ficha no indica si acepta mascotas, así que prefiero no confirmártelo sin verificarlo."
+    assert "resumen técnico completo" not in response.casefold()
+
+
+def test_specific_property_question_uses_verified_pet_fact_when_present():
+    response = build_specific_property_response(
+        "¿La ficha dice si acepta mascotas?",
+        {"codigo": "B200", "caracteristicas": {"acepta_mascotas": True}},
+    )
+    assert response == "La ficha indica que sí se aceptan mascotas."
+
+
+def test_rag_results_are_presented_as_concrete_whatsapp_options():
+    response = _rag_customer_response([
+        {"codigo": "B200", "tipo": "Departamento", "operacion": "Venta",
+         "comuna": "Ñuñoa", "precio_uf": 4000, "dormitorios": 2},
+        {"codigo": "B201", "tipo": "Casa", "operacion": "Venta",
+         "comuna": "Ñuñoa", "precio_uf": 4500, "m2_utiles": 90},
+        {"codigo": "B202", "tipo": "Casa", "operacion": "Venta",
+         "comuna": "Ñuñoa", "precio_uf": 5000},
+    ])
+
+    assert "B200" in response and "B201" in response
+    assert "B202" not in response
+    assert "https://www.procasa.cl/B200" in response
+    assert "https://www.procasa.cl/B201" in response
+    assert "Encontré una alternativa de búsqueda compatible" not in response
+
+
+def test_empty_rag_results_are_explicitly_reported():
+    response = _rag_customer_response([])
+    assert "no encontré coincidencias exactas" in response.casefold()
+
+
+def test_new_link_rejection_template_is_detected_and_replaced_by_context():
+    contaminated = "Entiendo; dejamos activa la propiedad B200 que estamos evaluando y no descarto esta por ese comentario."
+    assert _new_link_template_contaminated(contaminated)
+    response = _new_link_context_response(
+        {"codigo": "B200", "tipo": "Departamento", "comuna": "Ñuñoa", "operacion": "Venta"},
+        external_id="EXT-B200",
+    )
+    assert "B200" in response
+    assert "no descarto" not in response.casefold()
+    assert "dejamos activa" not in response.casefold()
+
+
+def test_semantic_evaluator_does_not_pass_internal_state_only():
+    rag_results = [{"codigo": "B200"}]
+    audit = evaluate_customer_response(
+        "Ahora sí, muéstrame otras opciones parecidas en Ñuñoa, venta, hasta 4.000 UF",
+        "Encontré una alternativa de búsqueda compatible.",
+        rag_results=rag_results,
+    )
+    assert audit["RAG_RESULTS_ACTUALLY_PRESENTED"] is False
+    assert audit["ANSWER_RELEVANCE"] is False
+    assert audit["PASS"] is False
+
+
+def test_semantic_evaluator_rejects_previous_property_template_on_new_link():
+    audit = evaluate_customer_response(
+        "https://www.procasa.cl/B200",
+        "Entiendo; dejamos activa la propiedad B200 y no descarto esta por ese comentario.",
+        resolved_property={"codigo": "B200"},
+    )
+    assert audit["NO_TEMPLATE_CONTAMINATION"] is False
+    assert audit["PASS"] is False
 
 
 def test_availability_states_do_not_conflate_resolution_with_availability():

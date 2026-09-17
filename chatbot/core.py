@@ -67,6 +67,7 @@ from .conversation_policy import (
     is_explicit_visit_intent,
     is_visit_confirmation,
     is_explicit_property_search_request,
+    is_specific_property_question,
     is_actionable_customer_message,
     enforce_whatsapp_response_length,
     filter_relaxation_accepted,
@@ -81,6 +82,16 @@ from .conversation_policy import (
 logger = logging.getLogger(__name__)
 
 # ==========================================
+
+
+# Keep the customer-facing semantic helpers in a side-effect-free module so
+# evaluator tests can exercise them without importing the production DB wiring.
+from .customer_response_semantics import (  # noqa: E402
+    build_specific_property_response,
+    rag_customer_response as _rag_customer_response,
+    new_link_context_response as _new_link_context_response,
+    new_link_template_contaminated as _new_link_template_contaminated,
+)
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente
@@ -1078,7 +1089,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # --- CONTEXTO 2: INFORMACIÓN DE PROPIEDADES (PRIORIDAD: ESPECÍFICA > BÚSQUEDA) ---
 
     alternatives_requested_now = alternative_requested(original_message)
-    rejection_without_alternative = property_rejected(original_message) and not alternatives_requested_now
+    rejection_without_alternative = (
+        property_rejected(original_message)
+        and not alternatives_requested_now
+        and not (es_link and propiedad)
+    )
+    rag_results_for_response = None
     rag_search_state = dict(prospecto_actual.get("rag_search_state") or {})
     stored_rag_criteria = dict(rag_search_state.get("criteria") or {})
     # Only explicit search/criteria turns may mutate the durable RAG criteria.
@@ -1184,6 +1200,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 criterios_estructurados=criterios_rag,
                 allow_filter_relaxation=relaxation_accepted,
             )
+            # Keep the concrete search result available for the customer-facing
+            # response.  Prompt instructions alone are insufficient: a model
+            # can acknowledge the search without actually presenting options.
+            rag_results_for_response = list(resultados_rag or [])
 
             await _run_sync(record_observability_event, "rag_search_completed", {
                 "conversation_id": conversation_id,
@@ -1403,6 +1423,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 trace_id, codigo_detectado,
             )
             respuesta = guarded_response
+
+        # A resolved link is authoritative for the current turn.  If a legacy
+        # rejection template leaked through the writer, replace only that
+        # contaminated response with a concise identity confirmation.
+        if es_link and propiedad and _new_link_template_contaminated(respuesta):
+            respuesta = _new_link_context_response(propiedad, external_id=codigo_externo)
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
@@ -1416,12 +1442,21 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             respuesta, propiedad, external_id=codigo_externo,
         )
 
+    # Present real RAG matches deterministically.  This protects the customer
+    # from a meta acknowledgement such as "encontré una alternativa" and
+    # guarantees that a positive search includes the actual listing options.
+    if rag_results_for_response is not None:
+        respuesta = _rag_customer_response(rag_results_for_response)
+
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
-    if propiedad and "ficha" in original_message.lower():
-         ficha_completa = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
-         respuesta = f"Aquí tienes el resumen técnico completo:\n\n{ficha_completa}"
+    specific_property_response = build_specific_property_response(original_message, propiedad)
+    if specific_property_response:
+        respuesta = specific_property_response
+    elif propiedad and "ficha" in original_message.lower() and not is_specific_property_question(original_message):
+        ficha_completa = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
+        respuesta = f"Aquí tienes el resumen técnico completo:\n\n{ficha_completa}"
 
     if rejection_without_alternative:
         respuesta = "Puedo buscarte alternativas que se ajusten mejor a lo que necesitas."

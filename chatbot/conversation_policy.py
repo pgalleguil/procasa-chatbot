@@ -154,11 +154,36 @@ _DETAIL_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SPECIFIC_PROPERTY_FIELD_RE = re.compile(
+    r"\b(?:mascot(?:a|as)|orientaci[oó]n|estacionamiento(?:s)?|bodega(?:s)?|"
+    r"dormitorio(?:s)?|ba[nñ]o(?:s)?|superficie|metros|m2|direcci[oó]n|"
+    r"gastos?\s+comunes|antig[uü]edad|piso|terraza|patio|fotos?)\b",
+    re.IGNORECASE,
+)
+
 
 def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def is_specific_property_question(message: str) -> bool:
+    """Return whether the current turn asks for one property field.
+
+    A request such as ``"¿la ficha dice si acepta mascotas?"`` must be
+    answered at field level.  It must not be widened into the legacy full-ficha
+    renderer merely because the word ``ficha`` appears in the message.
+    """
+    text = str(message or "")
+    normalized = _normalize_text(text)
+    if not normalized or not _SPECIFIC_PROPERTY_FIELD_RE.search(normalized):
+        return False
+    return "?" in text or bool(re.search(
+        r"\b(?:tiene|hay|acepta|admite|permite|indica|dice|cu[aá]l|cu[aá]nto|"
+        r"qu[eé]|incluye|cuenta|sabe|informaci[oó]n)\b",
+        normalized,
+    ))
 
 
 def extract_visit_preference(message: str, *, visit_context: bool = False) -> str | None:

@@ -169,9 +169,9 @@ def test_canonical_attach_wins_over_legacy_batcher_without_parallel_batch(monkey
 
 
 def test_property_availability_keeps_identity_separate_from_status():
-    assert property_availability_state({"codigo": "17176"}) == "FOUND_AVAILABILITY_UNKNOWN"
-    assert property_availability_state({"codigo": "17176", "disponible_prop360": True}) == "FOUND_AVAILABLE"
-    assert property_availability_state({"codigo": "17176", "disponible_prop360": False}) == "FOUND_BUT_INACTIVE"
+    assert property_availability_state({"codigo": "17176"}) == "PROPERTY_FOUND_AVAILABILITY_UNKNOWN"
+    assert property_availability_state({"codigo": "17176", "disponible_prop360": True}) == "PROPERTY_FOUND_AVAILABLE"
+    assert property_availability_state({"codigo": "17176", "disponible_prop360": False}) == "PROPERTY_FOUND_BUT_INACTIVE"
 
 
 def test_worker_legacy_compatibility_path_excludes_new_chatbot_domain_jobs():

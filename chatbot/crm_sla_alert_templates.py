@@ -78,10 +78,13 @@ ACTION = {
     ),
 }
 
-BREACHED_ACTION_NONE = (
-    "Si el lead continúa asignado a ti, registra la gestión inmediatamente.\n"
+RACE_SAFE_BREACH_CLAUSE = (
+    "Si el lead continúa asignado a ti, registra el resultado inmediatamente.\n"
     "Si ya fue reasignado, el CRM bloqueará automáticamente su gestión."
 )
+
+# Kept as an import-compatible alias for callers that used the old constant.
+BREACHED_ACTION_NONE = RACE_SAFE_BREACH_CLAUSE
 
 CHANNEL_LABELS: dict[str, str] = {
     "whatsapp_opened": "abriste WhatsApp",
@@ -111,33 +114,14 @@ def build_sla_message(
     limit = 60 if hot else 180
     has_action = outreach_state != "none"
 
-    # This is the race-safe message for a breach with no valid management.  It
-    # explicitly tells the recipient that the owner may have changed between
-    # alert delivery and review; the server-side access gate remains decisive.
-    if breached and not has_action:
-        return (
-            "⚠️ Lead con SLA vencido\n\n"
-            f"Cliente: {client_first_name}\n"
-            f"Propiedad: {property_code}\n"
-            f"SLA utilizado: {elapsed_minutes} minutos hábiles\n"
-            f"Venció el: {deadline_display}\n\n"
-            "Aún no existe una gestión válida registrada.\n\n"
-            f"{BREACHED_ACTION_NONE}\n\n"
-            f"🔗 Revisar lead: {lead_url}"
-        )
-
     # Headers with action detection
     if hot and breached:
-        title = (
-            "\U0001f525\U0001f6a8 *Lead Hot vencido: resultado pendiente*"
-            if has_action else
-            "\U0001f525\U0001f6a8 *Lead Hot con SLA vencido*"
-        )
+        title = "🔥⚠️ Lead con SLA vencido · Hot"
         timing = (
-            f"SLA Hot utilizado: {elapsed_minutes} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} minutos h\u00e1biles\n"
             f"Venci\u00f3 el: {deadline_display}"
         )
-        link_label = "\U0001f4dd *Registrar resultado:*"
+        link_label = "🔗 Revisar lead:"
     elif hot and not breached:
         title = (
             "\U0001f525\u26a0\ufe0f *Lead Hot pr\u00f3ximo a vencer: resultado pendiente*"
@@ -145,21 +129,17 @@ def build_sla_message(
             "\U0001f525\u26a0\ufe0f *Lead Hot pr\u00f3ximo a vencer*"
         )
         timing = (
-            f"SLA Hot utilizado: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
             f"Hora l\u00edmite: {deadline_display}"
         )
-        link_label = "\U0001f4dd *Registrar resultado:*"
+        link_label = "🔗 Revisar lead:"
     elif breached:
-        title = (
-            "\U0001f6a8 *Resultado pendiente: SLA vencido*"
-            if has_action else
-            "\U0001f6a8 *Lead con SLA vencido*"
-        )
+        title = "⚠️ Lead con SLA vencido"
         timing = (
-            f"SLA utilizado: {elapsed_minutes} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} minutos h\u00e1biles\n"
             f"Venci\u00f3 el: {deadline_display}"
         )
-        link_label = "\U0001f517 *Registrar gesti\u00f3n:*"
+        link_label = "🔗 Revisar lead:"
     else:
         title = (
             "\u26a0\ufe0f *Resultado pendiente: lead pr\u00f3ximo a vencer*"
@@ -167,26 +147,26 @@ def build_sla_message(
             "\u26a0\ufe0f *Lead pr\u00f3ximo a vencer*"
         )
         timing = (
-            f"SLA utilizado: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
+            f"Tiempo transcurrido: {elapsed_minutes} de {limit} minutos h\u00e1biles\n"
             f"Hora l\u00edmite: {deadline_display}"
         )
-        link_label = "\U0001f517 *Registrar gesti\u00f3n:*"
+        link_label = "🔗 Revisar lead:"
 
     explain = EXPLAIN.get(outreach_state, EXPLAIN["none"])
-    action = ACTION.get(outreach_state, ACTION["none"])
-
-    if breached and outreach_state == "none":
-        action = BREACHED_ACTION_NONE
-
-    return (
+    if breached and not has_action:
+        explain = "Aún no existe una gestión válida registrada."
+    paragraphs = [
         f"{title}\n\n"
         f"Cliente: {client_first_name}\n"
         f"Propiedad: {property_code}\n"
-        f"{timing}\n\n"
-        f"{explain}\n\n"
-        f"{action}\n\n"
-        f"{link_label} {lead_url}"
-    )
+        f"{timing}",
+        explain,
+    ]
+    if has_action:
+        paragraphs.append(ACTION.get(outreach_state, ACTION["none"]))
+    paragraphs.extend((RACE_SAFE_BREACH_CLAUSE, f"{link_label}\n{lead_url}"))
+
+    return "\n\n".join(paragraphs)
 
 
 def build_lead_url(lead: dict) -> str:

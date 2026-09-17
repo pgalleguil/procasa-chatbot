@@ -39,6 +39,15 @@ _VISIT_DECLINE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_VISIT_CONFIRMATION_INTENT_RE = re.compile(
+    r"\b(?:me\s+interesa\s+(?:visitar|ver(?:la|lo)?|conocer(?:la|lo)?)|"
+    r"ma[nñ]ana\s+(?:puedo|podr[ií]a)|"
+    r"(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana)\s+a\s+las?\s+\d{1,2}(?::\d{2})?|"
+    r"(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\s+"
+    r"(?:hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|el\s+\w+))\b",
+    re.IGNORECASE,
+)
+
 _ALTERNATIVE_REQUEST_RE = re.compile(
     r"\b(?:algo\s+parecido|otras?|otra\s+propiedad|qu[eé]\s+m[aá]s\s+tienen|"
     r"mu[eé]strame\s+otras|mu[eé]strame\s+m[aá]s|busco\s+otra|tienen\s+algo\s+m[aá]s|"
@@ -187,6 +196,27 @@ def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
     return bool(normalized and any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+
+
+def is_visit_confirmation(message: str) -> bool:
+    """Accept only semantic visit intent for a pending visit question.
+
+    A link is property context, not consent.  URLs are removed before the
+    semantic check so a token such as ``"ya"`` inside ``yapo.cl`` cannot be
+    mistaken for an affirmative reply.
+    """
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    without_urls = re.sub(r"(?:https?://|www\.)\S+", " ", normalized)
+    without_urls = re.sub(r"\s+", " ", without_urls).strip()
+    if not without_urls:
+        return False
+    return bool(
+        _VISIT_ACCEPTANCE_RE.fullmatch(without_urls)
+        or is_explicit_visit_intent(without_urls)
+        or _VISIT_CONFIRMATION_INTENT_RE.search(without_urls)
+    )
 
 
 def should_offer_visit_data(

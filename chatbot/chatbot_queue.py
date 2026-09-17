@@ -373,52 +373,58 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
     if not jobs:
         return None
     first = jobs[0]
-    if not batch_id:
-        # Reuse the canonical producer batch when it already exists.  The
-        # legacy compatibility path must never create a parallel batch for a
-        # job that create_inbound_job is still attaching.
-        active = coll.find_one({
-            "kind": KIND_BATCH,
-            "phone": phone,
-            "state": {"$in": list(ACTIVE_BATCH_STATES)},
-        }, sort=[("created_at", ASCENDING)])
-        batch_id = active.get("_id") if active else None
-    batch_id = batch_id or f"batch:{uuid.uuid4()}"
+    conversation_key = _conversation_key(phone, first.get("conversation_id"))
+    existing_batch = coll.find_one({
+        "kind": KIND_BATCH,
+        "active_conversation_key": conversation_key,
+        "state": {"$in": list(ACTIVE_BATCH_STATES)},
+    })
+    # The compatibility worker may race the canonical producer after the job
+    # insert. Reuse the producer's active batch when it already exists.
+    batch_id = (existing_batch or {}).get("_id") or batch_id or f"batch:{uuid.uuid4()}"
     window_end = first.get("received_at", now) + timedelta(seconds=max_wait_seconds)
-    batch = coll.find_one({"_id": batch_id, "kind": KIND_BATCH})
-    if batch is None:
-        conversation_key = _conversation_key(phone, first.get("conversation_id"))
-        batch = {
-            "_id": batch_id,
-            "kind": KIND_BATCH,
-            "phone": phone,
-            "conversation_id": first.get("conversation_id"),
-            "lead_id": first.get("lead_id"),
-            # Populate the batch before changing job states. claim_pending_batch
-            # accepts the short-lived received state, so a concurrent claim gets
-            # a real snapshot rather than terminalizing an empty batch.
-            "job_ids": [job["_id"] for job in jobs],
-            "active_conversation_key": conversation_key,
-            "state": ST_BATCHING,
-            "attempts": 0,
-            "conversation_sequence": 0,
-            "window_end_at": window_end,
-            "created_at": now,
-            "updated_at": now,
-            "delivery_attempts": [],
-            "message_domain": "chatbot",
-            "message_type": "chatbot_response",
-            "recipient_role": "client",
-            "state_source": JOB_COLLECTION,
-            "responsible_service": "chatbot_response_delivery",
-            "idempotency_key": f"chatbot:batch:{batch_id}",
-        }
+    batch = existing_batch or {
+        "_id": batch_id,
+        "kind": KIND_BATCH,
+        "phone": phone,
+        "conversation_id": first.get("conversation_id"),
+        "lead_id": first.get("lead_id"),
+        "active_conversation_key": conversation_key,
+        # Populate the batch before changing job states. claim_pending_batch
+        # accepts the short-lived received state, so a concurrent claim gets a
+        # real snapshot rather than terminalizing an empty batch.
+        "job_ids": [job["_id"] for job in jobs],
+        "state": ST_BATCHING,
+        "attempts": 0,
+        # The attach loop increments this for each state transition below.
+        # Start at zero so a seeded snapshot is not double-counted.
+        "conversation_sequence": 0,
+        "window_end_at": window_end,
+        "created_at": now,
+        "updated_at": now,
+        "delivery_attempts": [],
+        "message_domain": "chatbot",
+        "message_type": "chatbot_response",
+        "recipient_role": "client",
+        "state_source": JOB_COLLECTION,
+        "responsible_service": "chatbot_response_delivery",
+        "idempotency_key": f"chatbot:batch:{batch_id}",
+    }
+    if existing_batch is None:
         try:
             coll.insert_one(batch)
         except DuplicateKeyError:
-            batch = coll.find_one({"_id": batch_id, "kind": KIND_BATCH})
-            if not batch:
+            # A canonical producer won the unique conversation-key race.
+            # Continue by attaching to its durable batch instead of surfacing
+            # a transient webhook failure.
+            batch = coll.find_one({
+                "kind": KIND_BATCH,
+                "active_conversation_key": conversation_key,
+                "state": {"$in": list(ACTIVE_BATCH_STATES)},
+            })
+            if batch is None:
                 raise
+            batch_id = batch["_id"]
     for job in jobs:
         updated = coll.update_one(
             {"_id": job["_id"], "state": ST_RECEIVED},

@@ -152,3 +152,17 @@ def test_lead_without_canonical_assignment_cycle_never_alerts():
         from chatbot.sla_service import monitor_sla_thresholds
         asyncio.run(monitor_sla_thresholds())
     send.assert_not_awaited()
+
+
+def test_legacy_monitor_cannot_send_when_canonical_sla_is_enabled():
+    from chatbot.sla_service import monitor_sla_thresholds
+
+    send = AsyncMock(return_value=True)
+    with patch("chatbot.sla_service.Config.CRM_SLA_ALERTS_ENABLED", True), \
+         patch("chatbot.sla_service.sla_alerts_enabled", return_value=True), \
+         patch("chatbot.sla_service.get_async_db") as get_db, \
+         patch("chatbot.sla_service.NotificationService.send_notification", send):
+        asyncio.run(monitor_sla_thresholds())
+
+    get_db.assert_not_called()
+    send.assert_not_awaited()

@@ -36,11 +36,14 @@ from .classifier import es_propietario, clasificar_corredor_externo
 from .processing_service import LeadProcessingService
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
+    canonical_property_context,
     find_property_by_any_identifier,
     get_prop_location,
     get_prop_operation,
+    guard_resolved_property_response,
     guard_resolved_property_identity_response,
     is_property_reference_only,
+    property_availability_state,
 )
 
 # RAG IMPORT
@@ -62,6 +65,7 @@ from .conversation_policy import (
     build_visit_progress_question,
     replace_repeated_visit_question,
     is_explicit_visit_intent,
+    is_visit_confirmation,
     filter_relaxation_accepted,
     outbound_phone_request,
     safe_phone_free_response,
@@ -930,6 +934,12 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
         # Registrar para anti-repetición en RAG
         await _run_sync(registrar_propiedades_vistas, phone, [codigo_detectado])
+        # Keep every later decision in this turn on the same resolved
+        # document. In particular, routing and visit context must not prefer
+        # stale ``prospecto`` location/operation values.
+        prospecto_actual.update(
+            canonical_property_context(propiedad, operation_override=link_operation)
+        )
 
         # Derivación pasiva al equipo cuando la propiedad ya quedó resuelta.
         # No bloquea la respuesta del bot: se ejecuta en segundo plano.
@@ -1036,7 +1046,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     if current_exec and current_exec not in ["No Asignado", "Sin Asignar", None, ""]:
         # Verificamos que siga disponible
         from .lead_router import get_active_executive
-        comuna_lead = prospecto_actual.get("comuna") or (propiedad.get("comuna") if propiedad else "")
+        comuna_lead = (
+            get_prop_location(propiedad).get("comuna")
+            if propiedad
+            else prospecto_actual.get("comuna")
+        )
         effective_exec = get_active_executive(current_exec, comuna_lead)
         # Si fue reasignado, actualizamos tempranamente en la BD y en las variables
         if effective_exec != current_exec:
@@ -1095,6 +1109,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         system_parts.append(f"""
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
         {ficha_texto}
+        """)
+        system_parts.append(f"""
+        [IDENTIDAD Y DISPONIBILIDAD CANÓNICAS]
+        Código interno resuelto por el sistema: {codigo_detectado}
+        Estado de disponibilidad: {property_availability_state(propiedad)}
+        Esta propiedad fue encontrada en el portafolio interno. No afirmes que
+        está fuera del portafolio, aunque la disponibilidad actual sea incierta.
+        Si la disponibilidad no está confirmada, dilo explícitamente y ofrece
+        verificarla; no inventes horarios ni disponibilidad.
         """)
 
     # CASO B: Búsqueda / RAG (Solo si no hay propiedad específica activa)
@@ -1258,6 +1281,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # Canonical identity for the conversational pipeline.  Historical nested
     # phone variants remain read-compatible but are not used as a primary source.
     prospecto_actual["phone"] = lead_doc_full.get("phone") or phone
+    # Re-apply the resolved document after the compatibility reload.  The
+    # reload may contain a stale context written by an earlier turn; the
+    # property document selected above is the sole source of truth for this
+    # turn's identity, location and operation.
+    if propiedad and codigo_detectado:
+        prospecto_actual.update(
+            canonical_property_context(propiedad, operation_override=link_operation)
+        )
     current_property_id = str(prospecto_actual.get("codigo") or "") or None
     state_property_id = str(visit_data_state.get("property_id") or "") or None
     if (
@@ -1348,6 +1379,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 )
                 await _run_sync(actualizar_prospecto, phone, datos_seguros)
                 await _mark_visit_data_captured(datos_seguros.keys())
+        guarded_response = guard_resolved_property_response(respuesta, propiedad)
+        if guarded_response != respuesta:
+            logger.warning(
+                "[PROPERTY_GUARD] trace=%s replaced false portfolio denial for code=%s",
+                trace_id, codigo_detectado,
+            )
+            respuesta = guarded_response
     except Exception as e:
         logger.error(f"Error Grok: {e}")
         intencion = "consulta_general"
@@ -1413,12 +1451,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         negative_terms = ["no", "no ", "no," "no.", "no gracias", "no, gracias", "no quiero",
                           "por ahora no", "mas adelante", "más adelante", "solo estoy consultando",
                           "solo consulto", "despues", "después", "no me interesa"]
-        affirmative_terms = ["sí", "si", "sí, me encantaría", "si me encantaría", "sí me encantaría",
-                            "claro", "por supuesto", "perfecto", "me encantaría", "me gustaría",
-                            "quiero verla", "quiero verlo", "mañana podría", "mañana puedo",
-                            "agendemos", "coordinemos", "dale", "obvio", "ya", "sí quiero",
-                            "si quiero", "encantado", "encantada"]
-
         # Check negative first (explicit "no")
         is_negative = False
         for t in negative_terms:
@@ -1432,11 +1464,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
 
         else:
             # Check if response is a short affirmative or topic change
-            is_affirmative = False
-            for t in affirmative_terms:
-                if t in msg_l:
-                    is_affirmative = True
-                    break
+            # Do not use substring matching here: the old ``"ya"`` token
+            # matched the ``yapo`` domain and treated a property URL as a
+            # visit confirmation.  Confirmation requires semantic intent.
+            is_affirmative = is_visit_confirmation(original_message)
 
             # A property URL identifies the listing; it is not a semantic
             # confirmation that the client wants to visit it.  Keep the

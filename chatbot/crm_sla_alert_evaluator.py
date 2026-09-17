@@ -461,6 +461,7 @@ async def evaluate_sla_alerts(
         deadline_threshold = THRESHOLD_BREACHED_HOT if is_hot else THRESHOLD_BREACHED_NORMAL
         deadline_dt = add_business_minutes(effective_start, deadline_threshold)
         deadline_display = build_deadline_display(deadline_dt, CHILE_TZ)
+        remaining_minutes = max(0, deadline_threshold - elapsed)
 
         # ---- Reassignment fields (always disabled in this phase) ----
         sla_breached_at = deadline_dt.isoformat() if alert_level == ALERT_LEVEL_BREACHED else None
@@ -501,6 +502,7 @@ async def evaluate_sla_alerts(
             client_first_name=client_name, property_code=property_code,
             elapsed_minutes=elapsed, deadline_display=deadline_display,
             lead_url=lead_url, outreach_state=outreach_state,
+            remaining_minutes=remaining_minutes,
         )
 
         alerts.append({

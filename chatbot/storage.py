@@ -364,7 +364,10 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
         from config import Config
         if getattr(Config, "CRM_SLA_SECURITY_LAYER_ENABLED", False):
             from .crm_lead_access import resolve_crm_lead_access_context
-            from .crm_management import LeadReassignedSlaLockedError
+            from .crm_management import (
+                LeadReassignedSlaLockedError,
+                SlaExpiredPendingReassignmentError,
+            )
             actor_id = str(standard_metadata.get("actor_id") or "").strip()
             actor_doc = None
             actor_values = [actor_id] if actor_id else []
@@ -383,6 +386,10 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
             )
             if not access_context.access_allowed:
                 if access_context.is_locked:
+                    if access_context.lock_reason == "SLA_EXPIRED_PENDING_REASSIGNMENT":
+                        raise SlaExpiredPendingReassignmentError(
+                            SlaExpiredPendingReassignmentError.code
+                        )
                     raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
                 raise PermissionError(access_context.lock_reason or "CRM_ASSIGNMENT_CONTEXT_INVALID")
         if getattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", False):
@@ -415,6 +422,11 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
                     from .crm_management import LeadReassignedSlaLockedError
                     raise LeadReassignedSlaLockedError(
                         LeadReassignedSlaLockedError.code
+                    )
+                if gate_result.status == CycleGateStatus.SLA_EXPIRED_PENDING_REASSIGNMENT.value:
+                    from .crm_management import SlaExpiredPendingReassignmentError
+                    raise SlaExpiredPendingReassignmentError(
+                        SlaExpiredPendingReassignmentError.code
                     )
                 if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
                     raise PermissionError("human message actor does not own active cycle")

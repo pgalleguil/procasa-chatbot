@@ -228,9 +228,25 @@ def test_human_protection_is_not_invented_for_automatic_activity():
     human_kwargs = base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
     human_kwargs["context"] = context([row], [lead(1)], events={"lead-1": [human]})
     automatic_result = run(**auto_kwargs)
-    protected_result = run(**human_kwargs)
+    late_human_result = run(**human_kwargs)
     assert automatic_result["iteration"]["would_reassign"] == 1
-    assert protected_result["iteration"]["protected_skipped"] == 1
+    assert late_human_result["iteration"]["would_reassign"] == 1
+
+
+def test_human_management_at_or_before_breach_protects_but_late_does_not():
+    row = cycle(1)
+    deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+    before = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
+              "actor_type": "human", "timestamp": deadline - timedelta(seconds=1)}
+    exact = {"lead_id": "lead-1", "type": "CALL_COMPLETED_LEAD", "actor": "owner",
+             "actor_type": "human", "timestamp": deadline}
+    after = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
+             "actor_type": "human", "timestamp": deadline + timedelta(seconds=1)}
+    for event, expected_protected in ((before, 1), (exact, 1), (after, 0)):
+        kwargs = base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+        kwargs["context"] = context([row], [lead(1)], events={"lead-1": [event]})
+        result = run(**kwargs)
+        assert result["iteration"]["protected_skipped"] == expected_protected
 
 
 @pytest.mark.parametrize("branch,field", [(REGIONAL_POLICY_NOT_DEFINED, "undefined_skipped"), (REGION_REVIEW_REQUIRED, "review_skipped")])

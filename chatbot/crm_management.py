@@ -46,6 +46,12 @@ class LeadReassignedSlaLockedError(ValueError):
     code = "LEAD_REASSIGNED_SLA_LOCKED"
 
 
+class SlaExpiredPendingReassignmentError(ValueError):
+    """Management arrived after the SLA deadline, before reassignment commit."""
+
+    code = "SLA_EXPIRED_PENDING_REASSIGNMENT"
+
+
 class ScheduledTimeTooSoonError(ValueError):
     """A reminder or visit was scheduled too close to the current time."""
 
@@ -194,6 +200,10 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         )
         if gate_result.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value:
             raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
+        if gate_result.status == CycleGateStatus.SLA_EXPIRED_PENDING_REASSIGNMENT.value:
+            raise SlaExpiredPendingReassignmentError(
+                SlaExpiredPendingReassignmentError.code
+            )
         if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
             raise PermissionError("management cycle gate owner mismatch")
         if gate_result.status not in {

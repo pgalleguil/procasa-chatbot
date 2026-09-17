@@ -79,22 +79,22 @@ class TestTemplateVariants:
     def test_standard_breached_whatsapp_opened(self):
         t = _msg(hot=False, breached=True, outreach_state="whatsapp_opened")
         assert "detect\u00f3 que abriste WhatsApp" in t
-        assert "Abrir WhatsApp no detiene el SLA" in t
+        assert "Abrir WhatsApp no detiene el SLA" not in t
 
     def test_standard_breached_whatsapp_sent(self):
         t = _msg(hot=False, breached=True, outreach_state="whatsapp_sent")
         assert "registr\u00f3 que enviaste un WhatsApp" in t
-        assert "Enviar un WhatsApp no detiene el SLA" in t
+        assert "Enviar un WhatsApp no detiene el SLA" not in t
 
     def test_standard_breached_phone_opened(self):
         t = _msg(hot=False, breached=True, outreach_state="phone_opened")
         assert "abriste el tel\u00e9fono" in t
-        assert "Abrir el tel\u00e9fono del cliente no detiene el SLA" in t
+        assert "Abrir el tel\u00e9fono del cliente no detiene el SLA" not in t
 
     def test_standard_breached_call_without_result(self):
         t = _msg(hot=False, breached=True, outreach_state="call_without_result")
         assert "registr\u00f3 una llamada" in t
-        assert "Realizar una llamada sin registrar su resultado no detiene el SLA" in t
+        assert "Realizar una llamada sin registrar su resultado no detiene el SLA" not in t
 
     def test_hot_warning_none(self):
         t = _msg(hot=True, breached=False, outreach_state="none", elapsed_minutes=48)
@@ -138,10 +138,9 @@ class TestUniformText:
                                   elapsed_minutes=185, deadline_display="y",
                                   lead_url="http://x")
             if state == "none":
-                assert "A\u00fan no existe una gesti\u00f3n v\u00e1lida registrada." in b
-            else:
-                assert EXPLAIN[state] in w, f"explain missing in warning for state={state}"
-                assert EXPLAIN[state] in b, f"explain missing in breached for state={state}"
+                assert EXPLAIN[state] in b
+            assert EXPLAIN[state] in w, f"explain missing in warning for state={state}"
+            assert EXPLAIN[state] in b, f"explain missing in breached for state={state}"
 
     def test_warning_and_breached_same_action(self):
         for state in ACTION:
@@ -156,14 +155,18 @@ class TestUniformText:
                                   elapsed_minutes=185, deadline_display="y",
                                   lead_url="http://x")
             assert ACTION[state] in w, f"action missing in warning for state={state}"
-            assert ACTION[state] in b, f"action missing in breached for state={state}"
+            assert ACTION[state] not in b, f"late action CTA leaked for state={state}"
 
     @pytest.mark.parametrize("hot", [False, True])
     @pytest.mark.parametrize("state", list(EXPLAIN))
     def test_all_breach_variants_have_race_safe_copy(self, hot, state):
         text = _msg(hot=hot, breached=True, outreach_state=state)
-        assert "Si el lead contin\u00faa asignado a ti, registra la gesti\u00f3n o resultado inmediatamente." in text
-        assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
+        assert "El plazo de gesti\u00f3n termin\u00f3 y este lead ser\u00e1 reasignado autom\u00e1ticamente." in text
+        assert "Ya no corresponde registrar una nueva gesti\u00f3n sobre este lead." in text
+        assert "Si el lead contin\u00faa asignado a ti" not in text
+        assert "Si ya fue reasignado" not in text
+        assert "Gestionar lead" not in text
+        assert "crm/" not in text
         assert "Tiempo transcurrido:" in text
         assert "SLA utilizado" not in text
         assert "Registrar resultado" not in text
@@ -175,8 +178,10 @@ class TestUniformText:
     @pytest.mark.parametrize("state", list(EXPLAIN))
     def test_near_breach_variants_also_use_unified_footer(self, hot, state):
         text = _msg(hot=hot, breached=False, outreach_state=state)
-        assert "Si el lead contin\u00faa asignado a ti, registra la gesti\u00f3n o resultado inmediatamente." in text
-        assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
+        assert "Te quedan" in text
+        assert "Si el SLA vence sin gesti\u00f3n, el lead ser\u00e1 reasignado autom\u00e1ticamente." in text
+        assert "Esta es la \u00faltima oportunidad v\u00e1lida." in text
+        assert "Gestionar lead" in text
         assert "Tiempo transcurrido:" in text
         assert "SLA utilizado" not in text
 
@@ -239,7 +244,7 @@ class TestTemplateStructure:
             for breached in (False, True):
                 for state in ("none", "whatsapp_opened", "whatsapp_sent"):
                     t = _msg(hot=hot, breached=breached, outreach_state=state)
-                    assert t.count("crm/lead-id/") == 1
+                    assert t.count("crm/lead-id/") == (0 if breached else 1)
 
     def test_no_mojibake(self):
         t = build_sla_message(
@@ -833,7 +838,8 @@ class TestEvaluatorE2E:
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         msg = report["alerts"][0]["message"]
         assert "Carlos" in msg
-        assert "/crm/sla-cycle/" in msg
+        assert "/crm/sla-cycle/" not in msg
+        assert "El plazo de gesti\u00f3n termin\u00f3" in msg
         assert "/crm/lead-id/" not in msg
         assert "/08/2026" in msg
 

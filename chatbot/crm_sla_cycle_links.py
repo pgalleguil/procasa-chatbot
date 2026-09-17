@@ -24,6 +24,7 @@ TOKEN_VERSION = 1
 TOKEN_KIND = "crm_sla_cycle"
 LINK_PATH = "/crm/sla-cycle/"
 INVALID_LINK_CODE = "LEAD_REASSIGNED_SLA_LOCKED"
+SLA_EXPIRED_PENDING_REASSIGNMENT = "SLA_EXPIRED_PENDING_REASSIGNMENT"
 
 
 class SlaCycleLinkConfigurationError(RuntimeError):
@@ -200,11 +201,21 @@ def validate_sla_cycle_link(
     if any(value not in (None, "") and str(value).strip() != recipient_id for value in owner_values):
         _fail(409)
 
+    # The canonical SLA deadline invalidates the link immediately.  This is
+    # intentionally checked before the reassignment transaction commits, so
+    # the old owner cannot continue operating during scan/transaction delay.
+    from .crm_sla_reassignment_worker import canonical_expiration_recheck
+    from .crm_metrics import utc_now
+    link_check_now = utc_now()
+    expiration = canonical_expiration_recheck(cycle, lead, now=link_check_now)
+    if expiration.breach_at and link_check_now >= expiration.breach_at:
+        raise SlaCycleLinkError(SLA_EXPIRED_PENDING_REASSIGNMENT, 409)
+
     return SlaCycleLinkResolution(payload=payload, lead=lead, cycle=cycle)
 
 
 __all__ = [
-    "INVALID_LINK_CODE", "LINK_PATH", "SlaCycleLinkConfigurationError",
+    "INVALID_LINK_CODE", "SLA_EXPIRED_PENDING_REASSIGNMENT", "LINK_PATH", "SlaCycleLinkConfigurationError",
     "SlaCycleLinkError", "SlaCycleLinkResolution", "build_sla_cycle_url",
     "issue_sla_cycle_link_token", "validate_sla_cycle_link",
     "verify_sla_cycle_link_token",

@@ -100,7 +100,7 @@ def outreach_channel_label(outreach_state: str) -> str:
     return CHANNEL_LABELS.get(outreach_state, "")
 
 
-def build_sla_message(
+def _legacy_build_sla_message_old(
     *,
     hot: bool,
     breached: bool,
@@ -165,6 +165,70 @@ def build_sla_message(
         paragraphs.append(ACTION.get(outreach_state, ACTION["none"]))
     paragraphs.extend((RACE_SAFE_BREACH_CLAUSE, f"{link_label}\n{lead_url}"))
 
+    return "\n\n".join(paragraphs)
+
+
+def build_sla_message(
+    *,
+    hot: bool,
+    breached: bool,
+    client_first_name: str,
+    property_code: str,
+    elapsed_minutes: int,
+    deadline_display: str,
+    lead_url: str,
+    outreach_state: str,
+    remaining_minutes: int | None = None,
+) -> str:
+    """Build the canonical pre-warning and terminal breach messages.
+
+    The breach variant is informational only: it has no management CTA and
+    no link, because the cycle-bound link is invalid at the deadline.
+    """
+    has_action = outreach_state != "none"
+    explain = EXPLAIN.get(outreach_state, EXPLAIN["none"])
+    if hot:
+        title = "\U0001f525\u26a0\ufe0f Lead con SLA vencido · Hot" if breached else (
+            "\U0001f525\u26a0\ufe0f *Lead Hot próximo a vencer*"
+            if not has_action else
+            "\U0001f525\u26a0\ufe0f *Lead Hot próximo a vencer: resultado pendiente*"
+        )
+    else:
+        title = "\u26a0\ufe0f Lead con SLA vencido" if breached else (
+            "\u26a0\ufe0f *Lead próximo a vencer*"
+            if not has_action else
+            "\u26a0\ufe0f *Resultado pendiente: lead próximo a vencer*"
+        )
+    deadline_label = "Venci\u00f3 el" if breached else "Hora l\u00edmite"
+    timing = (
+        f"Tiempo transcurrido: {elapsed_minutes} minutos h\u00e1biles\n"
+        f"{deadline_label}: {deadline_display}"
+    )
+    paragraphs = [
+        f"{title}\n\nCliente: {client_first_name}\n"
+        f"Propiedad: {property_code}\n{timing}",
+        explain,
+    ]
+    if breached:
+        paragraphs.extend((
+            "El plazo de gesti\u00f3n termin\u00f3 y este lead ser\u00e1 reasignado autom\u00e1ticamente.",
+            "Ya no corresponde registrar una nueva gesti\u00f3n sobre este lead.\n"
+            "El CRM bloquear\u00e1 el acceso operativo al completar la reasignaci\u00f3n.",
+        ))
+        return "\n\n".join(paragraphs)
+
+    threshold = 60 if hot else 180
+    remaining = max(
+        0, int(remaining_minutes if remaining_minutes is not None else threshold - elapsed_minutes)
+    )
+    if has_action:
+        paragraphs.append(ACTION.get(outreach_state, ACTION["none"]))
+    paragraphs.extend((
+        f"Te quedan {remaining} minutos h\u00e1biles para registrar una gesti\u00f3n v\u00e1lida.\n"
+        "Si el SLA vence sin gesti\u00f3n, el lead ser\u00e1 reasignado autom\u00e1ticamente.",
+        "\U0001f517 Gestionar lead:\n" + lead_url,
+        "Esta es la \u00faltima oportunidad v\u00e1lida.",
+    ))
     return "\n\n".join(paragraphs)
 
 

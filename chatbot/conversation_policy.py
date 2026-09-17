@@ -24,6 +24,12 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:agendemos|coordinemos)\b(?:.{0,40}\bvisita\b)?",
     r"\b(?:coordinar|agendar)\s+(?:una\s+)?visita\b",
     r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la|el)\b",
+    # Some real WhatsApp turns use the noun first and add urgency afterwards
+    # (including the common voice-typing typo ``vista``).  Keep the temporal
+    # qualifier mandatory so ordinary mentions such as ``visitas virtuales``
+    # do not become a commercial visit intent.
+    r"\b(?:visita|vista)\s+(?:hoy|ahora|ma[nñ]ana|pasado\s+ma[nñ]ana|"
+    r"el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\b",
 )
 _VISIT_INTENT_RE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _VISIT_INTENT_PATTERNS)
 

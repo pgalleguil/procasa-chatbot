@@ -153,16 +153,20 @@ class CrmService:
         lead = CrmService.get_lead(phone)
         if not lead:
             return False
+        # Persist the canonical string value before deriving temperature.  A
+        # str-backed Enum otherwise stringifies as ``LeadIntent.ASK_VISIT``
+        # on some Python versions and misses the canonical HOT_INTENTS set.
+        intent_value = getattr(intent, "value", intent)
         effective_temperature = derive_effective_temperature(
             lead,
-            overrides={"last_intent": intent},
+            overrides={"last_intent": intent_value},
         )
         
         result = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
             {
                 "$set": {
-                    "last_intent": intent,
+                    "last_intent": intent_value,
                     "last_intent_at": now_iso,
                     "last_intent_actor": actor,
                     "lead_temperature_effective": effective_temperature,
@@ -178,7 +182,7 @@ class CrmService:
             )
             log_event(phone, InteractionType.BOT_MSG, actor, {
                 "action": "intent_detected",
-                "intent": intent
+                "intent": intent_value
             })
             return True
         return False

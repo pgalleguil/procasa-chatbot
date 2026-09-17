@@ -3,7 +3,10 @@ from pathlib import Path
 import mongomock
 
 from chatbot import chatbot_queue as queue
-from chatbot.conversation_policy import is_visit_confirmation
+from chatbot.constants import LeadIntent
+from chatbot.conversation_policy import is_explicit_visit_intent, is_visit_confirmation
+from chatbot.crm_service import CrmService
+from chatbot.lead_temperature import derive_effective_temperature
 from chatbot.property_lookup import (
     canonical_property_context,
     guard_resolved_property_response,
@@ -65,6 +68,52 @@ def test_availability_states_do_not_conflate_resolution_with_availability():
     assert property_availability_state({"codigo": "17176"}) == "PROPERTY_FOUND_AVAILABILITY_UNKNOWN"
     assert property_availability_state({"codigo": "17176", "disponible": True}) == "PROPERTY_FOUND_AVAILABLE"
     assert property_availability_state({"codigo": "17176", "disponible": False}) == "PROPERTY_FOUND_BUT_INACTIVE"
+
+
+def test_real_visit_urgency_phrases_reach_ask_visit_without_broad_false_positives():
+    positives = [
+        "Quiero visitar",
+        "Se puede visitar mañana?",
+        "Quiero verla hoy",
+        "Vista ahora en una hora mas",
+        "Te dije visita hoy en una hora mas",
+    ]
+    negatives = [
+        "Quiero saber si admiten mascotas",
+        "Solo estoy mirando",
+        "Vi otra propiedad",
+        "mañana reviso la publicación",
+        "¿La propiedad tiene visitas virtuales?",
+    ]
+    assert all(is_explicit_visit_intent(message) for message in positives)
+    assert not any(is_explicit_visit_intent(message) for message in negatives)
+
+
+def test_ask_visit_uses_canonical_hot_temperature_and_active_cycle_sync(monkeypatch):
+    db = mongomock.MongoClient().crm_hot
+    db.leads.insert_one({
+        "_id": "lead-hot-1", "phone": "+56911112222",
+        "last_intent": "ASK_INFO", "lead_temperature_effective": "COLD",
+    })
+    db.crm_assignment_cycles.insert_one({
+        "_id": "cycle-hot-1", "lead_id": "lead-hot-1",
+        "cycle_status": "active", "unassigned_at": None,
+        "temperature_at_assignment": "COLD",
+    })
+    monkeypatch.setattr("chatbot.crm_service.get_db", lambda: db)
+    monkeypatch.setattr("chatbot.crm_service.log_event", lambda *args, **kwargs: None)
+
+    assert derive_effective_temperature(
+        {"lead_temperature_effective": "COLD"},
+        overrides={"last_intent": LeadIntent.ASK_VISIT.value},
+    ) == "HOT"
+    assert CrmService.update_intent("+56911112222", LeadIntent.ASK_VISIT)
+
+    lead = db.leads.find_one({"_id": "lead-hot-1"})
+    cycle = db.crm_assignment_cycles.find_one({"_id": "cycle-hot-1"})
+    assert lead["last_intent"] == LeadIntent.ASK_VISIT
+    assert lead["lead_temperature_effective"] == "HOT"
+    assert cycle["temperature_at_assignment"] == "HOT"
 
 
 class _LegacyWorkerRaceCollection:

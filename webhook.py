@@ -5889,7 +5889,8 @@ async def _render_crm_list(
             get_sync_db(),
             user_id=history_user_id,
             user_name=history_user_name,
-            limit=1000,
+            limit=5000,
+            include_trace=can_administer,
         ),
     )
     leads_payload, executives, historical_rows = await asyncio.gather(

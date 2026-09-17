@@ -482,8 +482,35 @@
             white-space: nowrap;
         }
 
+        .crm-history-meta {
+            display: block;
+            margin-top: 3px;
+            color: var(--text-secondary);
+            font-size: .7rem;
+        }
+
+        .crm-history-trace {
+            margin-top: 8px;
+            font-size: .72rem;
+        }
+
+        .crm-history-trace summary {
+            cursor: pointer;
+            color: var(--text-secondary);
+        }
+
+        .crm-history-trace ol {
+            margin: 6px 0 0;
+            padding-left: 18px;
+        }
+
+        .crm-history-trace li span {
+            display: block;
+            color: var(--text-secondary);
+        }
+
         .crm-history-table {
-            min-width: 980px;
+            min-width: 920px;
         }
 
         .crm-history-row {
@@ -497,7 +524,7 @@
         @media (max-width: 768px) {
             .crm-history-panel { padding: 14px; }
             .crm-history-heading { align-items: flex-start; }
-            .crm-history-table { min-width: 860px; }
+            .crm-history-table { min-width: 820px; }
         }
 
         .management-panel {
@@ -3249,41 +3276,47 @@
                     <table class="crm-table crm-history-table">
                         <thead>
                             <tr>
-                                <th>Asignado originalmente</th>
-                                <th>Tipo</th>
-                                <th>Estado SLA</th>
-                                <th>Cliente</th>
-                                <th>Código</th>
-                                <th>Operación</th>
-                                <th>Comuna</th>
-                                <th>Venció</th>
-                                <th>Gestión antes del vencimiento</th>
-                                <th>Reasignado</th>
-                                <th>Respuesta</th>
+                                <th>Asignado</th>
+                                <th>SLA</th>
+                                <th>Lead</th>
+                                <th>Ejecutivo anterior</th>
+                                <th>Reasignado a</th>
+                                <th>Gestión previa</th>
+                                <th>Estado</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for historical in historical_leads %}
                             <tr class="crm-history-row" aria-label="Historial de {{ historical.cliente }}">
-                                <td data-label="Asignado originalmente">
+                                <td data-label="Asignado">
                                     {{ historical.assigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.assigned_at_display else 'S/I' }}
                                 </td>
-                                <td data-label="Tipo">{{ historical.sla_label }}</td>
-                                <td data-label="Estado SLA">{{ historical.sla_state_label }}</td>
-                                <td data-label="Cliente">{{ historical.cliente }}</td>
-                                <td data-label="Código">{{ historical.codigo_propiedad }}</td>
-                                <td data-label="Operación">{{ historical.operacion }}</td>
-                                <td data-label="Comuna">{{ historical.comuna }}</td>
-                                <td data-label="Venció">
-                                    {{ historical.breached_at_display.strftime('%d/%m/%Y %H:%M') if historical.breached_at_display else 'S/I' }}
+                                <td data-label="SLA">
+                                    <strong>{{ historical.sla_label }}</strong>
+                                    <span class="crm-history-meta">{{ historical.sla_state_label }} · {{ historical.breached_at_display.strftime('%d/%m/%Y %H:%M') if historical.breached_at_display else 'S/I' }}</span>
                                 </td>
-                                <td data-label="Gestión antes del vencimiento">{{ historical.management_before_breach }}</td>
-                                <td data-label="Reasignado">
-                                    {{ historical.reassigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.reassigned_at_display else 'S/I' }}
+                                <td data-label="Lead">
+                                    <strong>{{ historical.cliente }}</strong>
+                                    <span class="crm-history-meta">{{ historical.codigo_propiedad }} · {{ historical.operacion }} · {{ historical.comuna }}</span>
                                 </td>
-                                <td data-label="Respuesta">
-                                    <span class="crm-history-status">{{ historical.status_label }}</span>
-                                    <span class="crm-history-response">{{ historical.response_label }}</span>
+                                <td data-label="Ejecutivo anterior">{{ historical.previous_owner_name }}</td>
+                                <td data-label="Reasignado a">
+                                    <strong>{{ historical.final_owner_name }}</strong>
+                                    <span class="crm-history-meta">Reasignado el {{ historical.reassigned_at_display.strftime('%d/%m/%Y %H:%M') if historical.reassigned_at_display else 'S/I' }}</span>
+                                </td>
+                                <td data-label="Gestión previa">{{ historical.management_label }}</td>
+                                <td data-label="Estado">
+                                    <span class="crm-history-status">{{ historical.response_label }}</span>
+                                    {% if historical.trace %}
+                                    <details class="crm-history-trace">
+                                        <summary>Ver trazabilidad</summary>
+                                        <ol>
+                                            {% for trace_step in historical.trace %}
+                                            <li><strong>{{ trace_step.owner_name }}</strong><span>{{ trace_step.transition }}</span></li>
+                                            {% endfor %}
+                                        </ol>
+                                    </details>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

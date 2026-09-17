@@ -139,7 +139,8 @@ def test_history_filter_reconciles_previous_owner_and_keeps_same_code_isolated()
     assert [row["codigo_propiedad"] for row in rows].count("7733") == 2
     assert all(row["status_label"] == "Reasignado por SLA" for row in rows)
     assert all(row["sla_state_label"] == "Vencido" for row in rows)
-    assert all(row["response_label"] == "🔒 Reasignado" for row in rows)
+    assert all(row["response_label"] == "🔒 Reasignado por SLA" for row in rows)
+    assert all(row["final_owner_name"] == "Hernán Castro" for row in rows)
     assert all(row["operational_url"] is None and row["actions_disabled"] for row in rows)
     assert not any(
         {"phone", "email", "whatsapp", "notes", "recommendations", "url"}.intersection(row)
@@ -158,12 +159,126 @@ def test_history_filter_contract_is_visible_and_non_operational():
     assert "Reasignados por SLA" in template
     assert "Reasignados SLA:" in template
     assert "history_filter_active" in template
-    history_block = template.split("{% if history_filter_active %}", 1)[1].split(
-        "{% endif %}", 1
-    )[0]
+    assert "Ejecutivo anterior" in template
+    assert "Reasignado a" in template
+    assert "Reasignado el" in template
+    assert "Gestión previa" in template
+    assert "Ver trazabilidad" in template
+    history_start = template.index('<section class="crm-history-panel"')
+    history_block = template[history_start:template.index("</section>", history_start)]
     assert "data-lead-url" not in history_block
     assert "data-quick-management" not in history_block
     assert "data-phone" not in history_block
+    assert "historical.lead_id" not in history_block
+    assert "historical.assignment_cycle_id" not in history_block
+
+
+def test_history_deduplicates_policy_repairs_and_keeps_root_owner_scope():
+    db = _db()
+    from bson import ObjectId
+
+    mariela_id = ObjectId()
+    susana_id = ObjectId()
+    pablo_id = ObjectId()
+    hernan_id = ObjectId()
+    db["usuarios"].insert_many([
+        {"_id": mariela_id, "nombre": "Mariela Arriagada", "rol": "agente"},
+        {"_id": susana_id, "nombre": "Susana Ensignia", "rol": "agente"},
+        {"_id": pablo_id, "nombre": "Pablo Galleguillos", "rol": "agente"},
+        {"_id": hernan_id, "nombre": "Hernán Castro", "rol": "agente"},
+    ])
+
+    cases = [
+        ("7733", "lead-7733", "root-7733", "final-7733", None, hernan_id, "Hernán Castro"),
+        ("5695", "lead-5695", "root-5695", "final-5695", "repair-5695", hernan_id, "Hernán Castro"),
+        ("16897", "lead-16897", "root-16897", "final-16897", "repair-16897", hernan_id, "Hernán Castro"),
+    ]
+    repair_owners = {"repair-5695": (susana_id, "Susana Ensignia"), "repair-16897": (pablo_id, "Pablo Galleguillos")}
+    for code, lead_id, root_id, final_id, repair_id, final_owner_id, final_owner_name in cases:
+        db["leads"].insert_one({
+            "_id": lead_id,
+            "phone": "+56999999999",
+            "email": "private@example.invalid",
+            "prospecto": {"nombre": f"Cliente {code}", "codigo": code, "operacion": "Venta", "comuna": "Santiago"},
+            "lifecycle": {"current_assignment_cycle_id": final_id},
+            "lead_temperature_effective": "HOT" if code == "7733" else "NORMAL",
+        })
+        db["crm_assignment_cycles"].insert_one({
+            "assignment_cycle_id": root_id,
+            "lead_id": lead_id,
+            "assigned_to_user_id": mariela_id,
+            "assigned_to_display_name": "Mariela Arriagada",
+            "assigned_at": datetime(2026, 9, 16, 10, tzinfo=timezone.utc),
+            "sla_breached_at": datetime(2026, 9, 16, 13, tzinfo=timezone.utc),
+            "reassigned_at": datetime(2026, 9, 16, 13, 1, tzinfo=timezone.utc),
+            "reassignment_decision_id": f"decision-{code}",
+            # Keep the direct pointer on the root as a compatibility check;
+            # the helper must still include the policy-repair node when its
+            # source pointer proves that it is part of the chain.
+            "reassignment_new_cycle_id": final_id,
+            "cycle_status": "reassigned",
+            "closed_reason": "sla_reassignment",
+            "temperature_at_assignment": "HOT" if code == "7733" else "NORMAL",
+        })
+        if repair_id:
+            repair_owner_id, repair_owner_name = repair_owners[repair_id]
+            db["crm_assignment_cycles"].insert_one({
+                "assignment_cycle_id": repair_id,
+                "lead_id": lead_id,
+                "assigned_to_user_id": repair_owner_id,
+                "assigned_to_display_name": repair_owner_name,
+                "assigned_at": datetime(2026, 9, 16, 13, 1, tzinfo=timezone.utc),
+                "reassigned_at": datetime(2026, 9, 16, 13, 5, tzinfo=timezone.utc),
+                "reassignment_source_cycle_id": root_id,
+                "reassignment_new_cycle_id": final_id,
+                "cycle_status": "reassigned",
+                "closed_reason": "POLICY_REPAIR_TIER1",
+                "policy_repair_id": f"repair-decision-{code}",
+                "policy_repair_reason": "POLICY_REPAIR_TIER1",
+            })
+        db["crm_assignment_cycles"].insert_one({
+            "assignment_cycle_id": final_id,
+            "lead_id": lead_id,
+            "assigned_to_user_id": final_owner_id,
+            "assigned_to_display_name": final_owner_name,
+            "assigned_at": datetime(2026, 9, 16, 13, 6, tzinfo=timezone.utc),
+            "cycle_status": "active",
+            "unassigned_at": None,
+            "reassignment_source_cycle_id": repair_id or root_id,
+        })
+        db["crm_sla_reassignment_audit_v1"].insert_one({
+            "event_type": "SLA_REASSIGNMENT_COMMITTED",
+            "lead_id": lead_id,
+            "source_cycle_id": root_id,
+            "destination_cycle_id": repair_id or final_id,
+            "decision_id": f"decision-{code}",
+        })
+
+    rows = get_historical_assignment_rows(
+        db, user_name="Mariela Arriagada", limit=100, include_trace=True
+    )
+
+    assert len(rows) == 3
+    assert {row["codigo_propiedad"] for row in rows} == {"7733", "5695", "16897"}
+    assert {row["assignment_cycle_id"] for row in rows} == {"root-7733", "root-5695", "root-16897"}
+    assert all(row["previous_owner_name"] == "Mariela Arriagada" for row in rows)
+    assert all(row["final_owner_name"] == "Hernán Castro" for row in rows)
+    assert all(row["response_label"] == "🔒 Reasignado por SLA" for row in rows)
+    assert all(row["management_label"] == "Sin gestión" for row in rows)
+    assert all("phone" not in row and "email" not in row for row in rows)
+    trace_by_code = {row["codigo_propiedad"]: row["trace"] for row in rows}
+    assert len(trace_by_code["7733"]) == 2
+    assert [step["owner_name"] for step in trace_by_code["5695"]] == [
+        "Mariela Arriagada", "Susana Ensignia", "Hernán Castro"
+    ]
+    assert trace_by_code["5695"][1]["transition"] == "corrección de política"
+    assert [step["owner_name"] for step in trace_by_code["16897"]] == [
+        "Mariela Arriagada", "Pablo Galleguillos", "Hernán Castro"
+    ]
+
+    assert get_historical_assignment_rows(db, user_name="Hernán Castro") == []
+    assert get_historical_assignment_rows(db, user_name="Susana Ensignia") == []
+    assert get_historical_assignment_rows(db, user_name="Pablo Galleguillos") == []
 
 
 def test_old_owner_is_locked_while_current_owner_remains_allowed():

@@ -32,9 +32,10 @@ from .crm_metrics import (
     event_evidence, normalize_result, utc_now,
 )
 from .crm_sla_alert_templates import (
-    MESSAGE_DOMAIN, build_sla_message, build_lead_url, build_deadline_display,
+    MESSAGE_DOMAIN, build_sla_message, build_deadline_display,
     outreach_channel_label, SLA_BREACH_WARNING,
 )
+from .crm_sla_cycle_links import build_sla_cycle_url
 from .storage import get_async_db
 from .utils import calculate_business_minutes
 
@@ -490,7 +491,11 @@ async def evaluate_sla_alerts(
         # ---- Build message ----
         client_name = _lead_first_name(lead)
         property_code = _lead_property_code(lead)
-        lead_url = build_lead_url(lead)
+        lead_url = build_sla_cycle_url(
+            lead_id=lid,
+            recipient_user_id=recipient_user_id,
+            assignment_cycle_id=cycle_id,
+        )
         message = build_sla_message(
             hot=is_hot, breached=(alert_level == ALERT_LEVEL_BREACHED),
             client_first_name=client_name, property_code=property_code,

@@ -268,7 +268,10 @@ def create_inbound_job(
                 "conversation_id": conversation_id,
                 "lead_id": lead_id,
                 "active_conversation_key": conversation_key,
-                "job_ids": [],
+                # Seed the first job before the separate job-state update. A
+                # worker can claim between those two writes; an empty batch
+                # must never be mistaken for an invalid customer snapshot.
+                "job_ids": [job_id],
                 "state": ST_BATCHING,
                 "attempts": 0,
                 "conversation_sequence": 0,
@@ -301,7 +304,20 @@ def create_inbound_job(
         {"$set": {"state": ST_BATCHING, "batch_id": batch_id, "updated_at": now}},
     )
     if attached.modified_count != 1:
-        raise RuntimeError("inbound_job_attach_failed")
+        # The legacy worker can win the attach race after the job insert. The
+        # webhook producer must acknowledge that idempotent outcome instead of
+        # returning 503, which otherwise causes provider redelivery and a
+        # second durable path. Only accept the race when the persisted job
+        # already points to this exact batch.
+        attached_job = coll.find_one({"_id": job_id, "kind": KIND_JOB}) or {}
+        if attached_job.get("batch_id") != batch_id:
+            raise RuntimeError("inbound_job_attach_failed")
+        if job_id not in (coll.find_one({"_id": batch_id}, {"job_ids": 1}) or {}).get("job_ids", []):
+            coll.update_one(
+                {"_id": batch_id, "kind": KIND_BATCH},
+                {"$addToSet": {"job_ids": job_id}},
+            )
+        return job_id
     # A message may arrive while LLM generation is active.  It still attaches
     # to the same active batch and advances its sequence; the worker will mark
     # its stale snapshot and regenerate before provider delivery.
@@ -342,9 +358,13 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         "phone": phone,
         "conversation_id": first.get("conversation_id"),
         "lead_id": first.get("lead_id"),
-        "job_ids": [],
+        # Populate the batch before changing job states. claim_pending_batch
+        # accepts the short-lived received state, so a concurrent claim gets a
+        # real snapshot rather than terminalizing an empty batch.
+        "job_ids": [job["_id"] for job in jobs],
         "state": ST_BATCHING,
         "attempts": 0,
+        "conversation_sequence": len(jobs),
         "window_end_at": window_end,
         "created_at": now,
         "updated_at": now,
@@ -361,7 +381,8 @@ def batch_inbound_jobs(db, *, phone, batch_id=None, max_wait_seconds=15, now=Non
         updated = coll.update_one(
             {"_id": job["_id"], "state": ST_RECEIVED},
             {"$set": {"kind": KIND_JOB, "state": ST_BATCHING,
-                      "batch_id": batch_id, "updated_at": now}},
+                      "batch_id": batch_id, "updated_at": now,
+                      "message_domain": "chatbot"}},
         )
         if updated.modified_count:
             coll.update_one({"_id": batch_id}, {"$addToSet": {"job_ids": job["_id"]}})
@@ -390,14 +411,26 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
     jobs = list(coll.find({
         "_id": {"$in": candidate.get("job_ids", [])},
         "kind": KIND_JOB,
-        "message_domain": "chatbot",
-        "state": {"$in": [ST_BATCHING, ST_PENDING, ST_FAILED_RETRYABLE]},
+        # The compatibility producer adds message_domain in the same attach
+        # window. Accept a legacy missing value only for these inbound jobs;
+        # never mix an explicitly different domain into the chatbot queue.
+        "$or": [{"message_domain": "chatbot"},
+                {"message_domain": {"$exists": False}}],
+        # ``batch_inbound_jobs`` historically wrote the batch and job state in
+        # two operations. Include received jobs during that compatibility
+        # window so a concurrent claim still freezes a valid snapshot.
+        "state": {"$in": [ST_RECEIVED, ST_BATCHING, ST_PENDING, ST_FAILED_RETRYABLE]},
     }).sort("received_at", ASCENDING))
     messages = [
         {"job_id": job["_id"], "provider_id": job.get("inbound_provider_message_id"),
          "text": _valid_text(job.get("text")), "received_at": job.get("received_at")}
         for job in jobs
     ]
+    if not candidate.get("job_ids"):
+        # An empty batch may be observed transiently while a legacy producer
+        # is completing its attach. Leave it claimable and visible to health;
+        # never convert that race into a terminal customer failure.
+        return None
     if not messages or any(not item["text"] for item in messages):
         coll.update_one(
             {"_id": candidate["_id"], "state": candidate["state"]},
@@ -889,6 +922,16 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     elif receipt.get("success") and not provider_id:
         state, error = ST_DELIVERY_UNKNOWN, "accepted_without_provider_message_id"
         retry_at = None
+    elif http_status == 401:
+        state, error, retry_at = ST_FAILED_TERMINAL, "provider_authentication_failed_http_401", None
+        logger.error(
+            "[WHATSAPP_PROVIDER_AUTH_FAILURE] http_status=401 provider_message_id=null"
+        )
+    elif http_status == 403:
+        state, error, retry_at = ST_FAILED_TERMINAL, "provider_authorization_failed_http_403", None
+        logger.error(
+            "[WHATSAPP_PROVIDER_AUTH_FAILURE] http_status=403 provider_message_id=null"
+        )
     elif http_status == 422:
         state, error, retry_at = ST_FAILED_TERMINAL, "http_422", None
     elif http_status == 429:

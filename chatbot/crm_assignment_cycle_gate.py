@@ -38,6 +38,7 @@ class CycleGateStatus(str, Enum):
     CLAIMED = "CLAIMED"
     ALREADY_PROTECTED = "ALREADY_PROTECTED"
     LEAD_REASSIGNED_SLA_LOCKED = "LEAD_REASSIGNED_SLA_LOCKED"
+    SLA_EXPIRED_PENDING_REASSIGNMENT = "SLA_EXPIRED_PENDING_REASSIGNMENT"
     CYCLE_NOT_FOUND = "CYCLE_NOT_FOUND"
     OWNER_MISMATCH = "OWNER_MISMATCH"
     GATE_DISABLED = "GATE_DISABLED"
@@ -248,6 +249,24 @@ def claim_cycle_for_human_management(
             CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value,
             reason="cycle_not_active",
         )
+    # A human action recorded after the canonical deadline cannot retroactively
+    # protect the SLA.  The direct management gate enforces the same boundary
+    # as the worker and the signed-link/access layers.
+    lead = None
+    for lead_key in mongo_id_variants(current.get("lead_id") or requested_lead_id):
+        lead = _find_one(db["leads"], {"_id": lead_key}, session=session)
+        if lead:
+            break
+    if lead:
+        from .crm_metrics import utc_now
+        from .crm_sla_reassignment_worker import canonical_expiration_recheck
+        gate_now = utc_now()
+        expiration = canonical_expiration_recheck(current, lead, now=gate_now)
+        if expiration.breach_at and protected_at > expiration.breach_at:
+            return finish(
+                CycleGateStatus.SLA_EXPIRED_PENDING_REASSIGNMENT.value,
+                reason="deadline_reached",
+            )
     if not actor_can_manage_any_cycle and str(current.get("assigned_to_user_id")) != actor_id:
         return finish(
             CycleGateStatus.OWNER_MISMATCH.value,

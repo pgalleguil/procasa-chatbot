@@ -43,6 +43,24 @@ def _aware(value: datetime, name: str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _management_field_blocks(value: Any, breach_at: datetime | None) -> bool:
+    """Only management at/before breach protects the source cycle."""
+    if value in (None, ""):
+        return False
+    if breach_at is None:
+        return True
+    if isinstance(value, datetime):
+        parsed = _aware(value, "management_at")
+    elif isinstance(value, str):
+        try:
+            parsed = _aware(datetime.fromisoformat(value.replace("Z", "+00:00")), "management_at")
+        except (TypeError, ValueError):
+            return True
+    else:
+        return True
+    return parsed <= breach_at
+
+
 def _first_present(mapping: Mapping[str, Any], *keys: str) -> Any:
     for key in keys:
         value = mapping.get(key)
@@ -536,12 +554,29 @@ def build_transaction_plan(
         raise TransactionContractError("invalid_supervisor_review_status")
     if source_cycle.get("cycle_status") != "active" or source_cycle.get("unassigned_at") is not None:
         raise TransactionContractError("source_cycle_not_active")
-    if source_cycle.get("first_valid_management_at") not in (None, ""):
-        raise TransactionContractError("management_detected")
-    if source_cycle.get("first_contact_attempt_at") not in (None, ""):
-        raise TransactionContractError("management_detected")
-    if source_cycle.get("reassignment_protection_at") not in (None, ""):
-        raise TransactionContractError("management_detected")
+    raw_breach_at = _first_present(
+        decision, "source_cycle_sla_breached_at", "sla_breached_at"
+    )
+    breach_at = None
+    if raw_breach_at not in (None, ""):
+        try:
+            if isinstance(raw_breach_at, datetime):
+                breach_at = _aware(raw_breach_at, "source_cycle_sla_breached_at")
+            else:
+                breach_at = _aware(
+                    datetime.fromisoformat(str(raw_breach_at).replace("Z", "+00:00")),
+                    "source_cycle_sla_breached_at",
+                )
+        except (TypeError, ValueError):
+            # An invalid decision boundary cannot safely authorize a write.
+            raise TransactionContractError("invalid_datetime:source_cycle_sla_breached_at")
+    for field in (
+        "first_valid_management_at",
+        "first_contact_attempt_at",
+        "reassignment_protection_at",
+    ):
+        if _management_field_blocks(source_cycle.get(field), breach_at):
+            raise TransactionContractError("management_detected")
 
     decision_id = str(_required(decision.get("decision_id"), "decision_id"))
     lead_id = str(_required(decision.get("lead_id"), "lead_id"))

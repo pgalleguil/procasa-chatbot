@@ -328,6 +328,19 @@ def _find_one(collection: Any, filter_: Mapping[str, Any], *, session: Any) -> A
     return collection.find_one(filter_, session=session)
 
 
+def _find_many(collection: Any, filter_: Mapping[str, Any], *, session: Any) -> list[Mapping[str, Any]]:
+    """Read all matching evidence while preserving older test adapters."""
+    find = getattr(collection, "find", None)
+    if find is None:
+        one = _find_one(collection, filter_, session=session)
+        return [one] if one else []
+    try:
+        cursor = find(filter_, session=session)
+    except TypeError:
+        cursor = find(filter_)
+    return list(cursor or [])
+
+
 def _mongo_id_variants(value: Any) -> tuple[Any, ...]:
     """Try the decision's transport ID and its BSON/legacy form."""
 
@@ -346,53 +359,67 @@ def _open_lead(lead: Mapping[str, Any]) -> bool:
     )
 
 
-def _cycle_field_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any]) -> tuple[str, Any] | None:
+def _predeadline_evidence(value: Any, *, breach_at: datetime | None) -> bool:
+    if value in (None, ""):
+        return False
+    if breach_at is None:
+        return True
+    parsed = coerce_utc_datetime(value)
+    # An unparseable protection timestamp is fail-closed.  A parseable late
+    # timestamp is retained for audit but cannot stop this reassignment.
+    return parsed is None or parsed <= breach_at
+
+
+def _cycle_field_protection(
+    cycle: Mapping[str, Any], lead: Mapping[str, Any], *, breach_at: datetime | None
+) -> tuple[str, Any] | None:
     for field in PROTECTED_CYCLE_FIELDS:
         value = cycle.get(field)
-        if value not in (None, ""):
+        if _predeadline_evidence(value, breach_at=breach_at):
             return field, value
     lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
     for field in ("first_contact_attempt_at", "first_valid_management_at"):
         value = lifecycle.get(field)
-        if value not in (None, ""):
+        if _predeadline_evidence(value, breach_at=breach_at):
             return f"lifecycle.{field}", value
     return None
 
 
 def _human_evidence_in_collections(
-    db: Any, *, lead_id: str, cycle_id: str, assigned_at: Any, session: Any
+    db: Any, *, lead_id: str, cycle_id: str, assigned_at: Any,
+    breach_at: datetime | None, session: Any
 ) -> tuple[str, Any] | None:
     # Decisions arrive from the worker as text, while canonical management
     # results/events use the BSON ObjectId from leads._id.  Query both forms
     # without weakening the cycle identity or transaction predicate.
     for lead_key in mongo_id_variants(lead_id):
-        management = _find_one(
+        management_rows = _find_many(
             db["crm_management_results"],
             {"lead_id": lead_key, "assignment_cycle_id": cycle_id},
             session=session,
         )
-        if management:
+        for management in management_rows:
             protection = protection_type_for_management_result(
                 management.get("result_type") or management.get("result")
             )
-            if protection:
+            occurred = management.get("occurred_at")
+            if protection and _predeadline_evidence(occurred, breach_at=breach_at):
                 return protection, management.get("occurred_at")
 
     for lead_key in mongo_id_variants(lead_id):
-        events = _find_one(
+        events = _find_many(
             db["crm_events"],
             {
                 "lead_id": lead_key,
                 "assignment_cycle_id": cycle_id,
-                "confirmed": True,
-                "actor_type": {"$in": list(HUMAN_ACTOR_TYPES)},
             },
             session=session,
         )
-        if events:
-            protection = classify_human_protection(events)
-            if protection:
-                return protection, events.get("timestamp") or events.get("occurred_at")
+        for event in events:
+            protection = classify_human_protection(event)
+            occurred = event.get("timestamp") or event.get("occurred_at")
+            if protection and _predeadline_evidence(occurred, breach_at=breach_at):
+                return protection, occurred
 
     # Human WhatsApp messages are recorded in the separate append-only
     # conversation model.  They protect the cycle but do not become SLA stop
@@ -405,13 +432,15 @@ def _human_evidence_in_collections(
     assigned = coerce_utc_datetime(assigned_at)
     if assigned:
         conversation_filter["timestamp"] = {"$gte": assigned}
-    conversation_event = _find_one(
+    conversation_events = _find_many(
         db["conversation_events"],
         conversation_filter,
         session=session,
     )
-    if conversation_event:
-        return "WHATSAPP", conversation_event.get("timestamp")
+    for conversation_event in conversation_events:
+        occurred = conversation_event.get("timestamp")
+        if _predeadline_evidence(occurred, breach_at=breach_at):
+            return "WHATSAPP", occurred
     return None
 
 
@@ -494,7 +523,7 @@ def _revalidate(
     if source.get("reassignment_decision_id"):
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "source_already_reassigned")
 
-    field_protection = _cycle_field_protection(source, lead)
+    field_protection = _cycle_field_protection(source, lead, breach_at=canonical_breach)
     if field_protection:
         raise _KnownAbort(
             SLAReassignmentErrorCode.ABORT_MANAGEMENT_DETECTED,
@@ -505,6 +534,7 @@ def _revalidate(
         lead_id=lead_id,
         cycle_id=cycle_id,
         assigned_at=source.get("assigned_at"),
+        breach_at=canonical_breach,
         session=session,
     )
     if collection_protection:
@@ -518,9 +548,13 @@ def _revalidate(
         or source.get("temperature_at_assignment")
         or "COLD"
     ).upper()
+    first_valid_management_at = source.get("first_valid_management_at")
+    parsed_first_management = coerce_utc_datetime(first_valid_management_at)
+    if canonical_breach and parsed_first_management and parsed_first_management > canonical_breach:
+        first_valid_management_at = None
     sla = calculate_sla(
         assigned_at=source.get("assigned_at"),
-        first_valid_management_at=source.get("first_valid_management_at"),
+        first_valid_management_at=first_valid_management_at,
         now=evaluated_at,
         temperature=temperature,
         hot_started_at=source.get("hot_started_at"),

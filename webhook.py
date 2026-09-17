@@ -2735,18 +2735,29 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     return response
 
 
-def _sla_cycle_link_locked_response(status_code: int):
-    from chatbot.crm_lead_access import LEAD_REASSIGNED_SLA_LOCKED, LOCKED_LEAD_MESSAGE
+def _sla_cycle_link_locked_response(status_code: int, state_code: str | None = None):
+    from chatbot.crm_lead_access import (
+        EXPIRED_PENDING_MESSAGE,
+        LEAD_REASSIGNED_SLA_LOCKED,
+        LOCKED_LEAD_MESSAGE,
+        SLA_EXPIRED_PENDING_REASSIGNMENT,
+    )
+    state_code = state_code or LEAD_REASSIGNED_SLA_LOCKED
+    message = (
+        EXPIRED_PENDING_MESSAGE
+        if state_code == SLA_EXPIRED_PENDING_REASSIGNMENT
+        else LOCKED_LEAD_MESSAGE
+    )
 
     return HTMLResponse(
         "<main><h1>Lead no disponible</h1><p>"
-        + LOCKED_LEAD_MESSAGE
+        + message
         + "</p></main>",
         status_code=status_code,
         headers={
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
-            "X-CRM-Access-State": LEAD_REASSIGNED_SLA_LOCKED,
+            "X-CRM-Access-State": state_code,
         },
     )
 
@@ -2776,7 +2787,7 @@ async def view_crm_detail_by_sla_cycle(request: Request, signed_token: str):
     except SlaCycleLinkConfigurationError:
         raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
     except SlaCycleLinkError as exc:
-        return _sla_cycle_link_locked_response(exc.status_code)
+        return _sla_cycle_link_locked_response(exc.status_code, exc.code)
 
     resolved_lead_id = str(resolution.lead.get("_id") or "")
     target = (
@@ -2824,7 +2835,7 @@ async def view_crm_detail_by_id(
         except SlaCycleLinkConfigurationError:
             raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
         except SlaCycleLinkError as exc:
-            return _sla_cycle_link_locked_response(exc.status_code)
+            return _sla_cycle_link_locked_response(exc.status_code, exc.code)
         if str(sla_link_resolution.lead.get("_id") or "") != str(lead_id):
             return _sla_cycle_link_locked_response(409)
 
@@ -2849,7 +2860,6 @@ async def view_crm_detail_by_id(
     access_context = None
     if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
         from chatbot.crm_lead_access import (
-            LOCKED_LEAD_MESSAGE,
             resolve_crm_lead_access_context,
             safe_access_error,
             sanitize_lead_for_access,
@@ -2861,9 +2871,10 @@ async def view_crm_detail_by_id(
         request.state.crm_access_context = access_context
         if not access_context.access_allowed:
             if access_context.is_locked:
+                safe_error = safe_access_error(access_context)
                 return HTMLResponse(
                     "<main><h1>Lead no disponible</h1><p>"
-                    + LOCKED_LEAD_MESSAGE
+                    + str(safe_error.get("message") or "Lead no disponible")
                     + "</p></main>",
                     status_code=access_context.http_status,
                     headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
@@ -3282,6 +3293,7 @@ async def api_crm_management_result(request: Request):
         from chatbot.crm_management import (
             record_management_result,
             ScheduledTimeTooSoonError,
+            SlaExpiredPendingReassignmentError,
             StaleAssignmentCycleError,
             _find_assignment_cycle,
         )
@@ -3318,10 +3330,13 @@ async def api_crm_management_result(request: Request):
         from chatbot.crm_management import (
             LeadReassignedSlaLockedError,
             ScheduledTimeTooSoonError,
+            SlaExpiredPendingReassignmentError,
             StaleAssignmentCycleError,
         )
         if isinstance(exc, LeadReassignedSlaLockedError):
             raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
+        if isinstance(exc, SlaExpiredPendingReassignmentError):
+            raise HTTPException(status_code=409, detail=SlaExpiredPendingReassignmentError.code)
         if isinstance(exc, StaleAssignmentCycleError):
             raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
         if isinstance(exc, ScheduledTimeTooSoonError):
@@ -3426,9 +3441,15 @@ async def api_crm_update_lead(request: Request):
             )
         raise
     except Exception as e:
-        from chatbot.crm_management import LeadReassignedSlaLockedError, StaleAssignmentCycleError
+        from chatbot.crm_management import (
+            LeadReassignedSlaLockedError,
+            SlaExpiredPendingReassignmentError,
+            StaleAssignmentCycleError,
+        )
         if isinstance(e, LeadReassignedSlaLockedError):
             raise HTTPException(status_code=409, detail=LeadReassignedSlaLockedError.code)
+        if isinstance(e, SlaExpiredPendingReassignmentError):
+            raise HTTPException(status_code=409, detail=SlaExpiredPendingReassignmentError.code)
         if isinstance(e, StaleAssignmentCycleError):
             raise HTTPException(status_code=409, detail=StaleAssignmentCycleError.code)
         if isinstance(e, PermissionError):

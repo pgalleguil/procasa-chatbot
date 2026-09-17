@@ -475,7 +475,7 @@ def test_human_protection_is_not_click_or_bot_and_gate_blocks_reassignment(monke
         assignment_cycle_id="cycle-1",
         actor_user_id="old-user",
         protection_type=HumanProtectionType.WHATSAPP.value,
-        occurred_at=NOW,
+        occurred_at=datetime(2026, 9, 9, 15, 59, tzinfo=timezone.utc),
     )
     assert claimed.status == CycleGateStatus.CLAIMED.value
     result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
@@ -494,7 +494,7 @@ def test_reassignment_first_locks_old_owner_management(monkeypatch):
         assignment_cycle_id="cycle-1",
         actor_user_id="old-user",
         protection_type=HumanProtectionType.WHATSAPP.value,
-        occurred_at=NOW,
+        occurred_at=datetime(2026, 9, 9, 15, 59, tzinfo=timezone.utc),
     )
     assert gate.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value
 
@@ -553,7 +553,7 @@ def test_management_result_flag_on_claims_shared_gate_before_persist(monkeypatch
         result_type="EFFECTIVE_CONTACT",
         source="test",
         idempotency_key="management-on",
-        occurred_at=NOW,
+        occurred_at=datetime(2026, 9, 9, 15, 59, tzinfo=timezone.utc),
     )
     assert record["status"] == "completed"
     source = db["crm_assignment_cycles"].find_one({"_id": "mongo-cycle-1"})
@@ -578,15 +578,17 @@ def test_human_outbound_message_uses_gate_only_when_enabled(monkeypatch):
     db, _ = make_fixture()
     monkeypatch.setattr(crm_storage, "get_db", lambda: db)
     monkeypatch.setattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", True)
-    crm_storage.guardar_mensaje(
-        "synthetic-contact",
-        "assistant",
-        "mensaje humano",
-        {"actor_type": "human_agent", "actor_id": "old-user", "operation": "whatsapp"},
-        lead_id="lead-1",
-    )
+    from chatbot.crm_management import SlaExpiredPendingReassignmentError
+    with pytest.raises(SlaExpiredPendingReassignmentError):
+        crm_storage.guardar_mensaje(
+            "synthetic-contact",
+            "assistant",
+            "mensaje humano",
+            {"actor_type": "human_agent", "actor_id": "old-user", "operation": "whatsapp"},
+            lead_id="lead-1",
+        )
     source = db["crm_assignment_cycles"].find_one({"_id": "mongo-cycle-1"})
-    assert source["reassignment_protection_type"] == "WHATSAPP"
+    assert source.get("reassignment_protection_at") is None
 
 
 def test_index_migration_is_dry_run_and_does_not_create_indexes():

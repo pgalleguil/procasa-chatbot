@@ -19,8 +19,12 @@ from chatbot.crm_permissions import can_administer_leads, lead_is_assigned_to_us
 
 CRM_ASSIGNMENT_CONTEXT_INVALID = "CRM_ASSIGNMENT_CONTEXT_INVALID"
 LEAD_REASSIGNED_SLA_LOCKED = "LEAD_REASSIGNED_SLA_LOCKED"
+SLA_EXPIRED_PENDING_REASSIGNMENT = "SLA_EXPIRED_PENDING_REASSIGNMENT"
 LOCKED_LEAD_MESSAGE = (
     "Este lead fue reasignado por vencimiento SLA y ya no está disponible para tu gestión."
+)
+EXPIRED_PENDING_MESSAGE = (
+    "El plazo SLA terminó y este lead está pendiente de reasignación."
 )
 ACCESS_POLICY_VERSION = "crm_sla_security_v1"
 
@@ -180,7 +184,10 @@ class CrmLeadAccessContext:
 
     @property
     def is_locked(self) -> bool:
-        return self.lock_reason == LEAD_REASSIGNED_SLA_LOCKED
+        return self.lock_reason in {
+            LEAD_REASSIGNED_SLA_LOCKED,
+            SLA_EXPIRED_PENDING_REASSIGNMENT,
+        }
 
     def to_dict(self) -> dict[str, Any]:
         """Return an audit-safe context without contact PII."""
@@ -227,8 +234,27 @@ def _context_invalid(*, lead_id: Any, user: Mapping[str, Any] | None,
         lock_reason=reason,
         assignment_number=None,
         reassigned_by_sla=reassigned,
-        http_status=409 if reason in {CRM_ASSIGNMENT_CONTEXT_INVALID, LEAD_REASSIGNED_SLA_LOCKED} else 403,
+        http_status=409 if reason in {
+            CRM_ASSIGNMENT_CONTEXT_INVALID,
+            LEAD_REASSIGNED_SLA_LOCKED,
+            SLA_EXPIRED_PENDING_REASSIGNMENT,
+        } else 403,
     )
+
+
+def _is_sla_expired(cycle: Mapping[str, Any] | None, lead: Mapping[str, Any] | None) -> bool:
+    if not cycle or not lead:
+        return False
+    try:
+        from .crm_metrics import utc_now
+        from .crm_sla_reassignment_worker import canonical_expiration_recheck
+        access_check_now = utc_now()
+        expiration = canonical_expiration_recheck(cycle, lead, now=access_check_now)
+        return bool(expiration.breach_at and access_check_now >= expiration.breach_at)
+    except Exception:
+        # Access enforcement fails closed if the canonical expiry cannot be
+        # reconstructed, while ordinary non-SLA CRM access remains unchanged.
+        return False
 
 
 def resolve_crm_lead_access_context(
@@ -272,6 +298,25 @@ def resolve_crm_lead_access_context(
         if not owner_id:
             return _context_invalid(lead_id=resolved_id, user=user, reassigned=True)
         is_owner = bool(user_id and user_id == owner_id)
+        if is_owner and not is_admin and _is_sla_expired(current_cycle, resolved_lead):
+            return CrmLeadAccessContext(
+                lead_id=_id_text(resolved_id) or None,
+                user_id=user_id,
+                user_role=role or None,
+                current_assignment_cycle_id=pointer,
+                current_owner_user_id=owner_id,
+                current_owner_display_name=_text(current_cycle.get("assigned_to_display_name")) or None,
+                is_current_owner=True,
+                is_admin=False,
+                access_mode=AccessMode.CANONICAL.value,
+                access_allowed=False,
+                contact_visibility=ContactVisibility.NONE,
+                action_permissions=_base_permissions(allowed=False, admin=False),
+                lock_reason=SLA_EXPIRED_PENDING_REASSIGNMENT,
+                assignment_number=_assignment_number(resolved_lead, current_cycle),
+                reassigned_by_sla=True,
+                http_status=409,
+            )
         allowed = bool(is_admin or is_owner)
         if not allowed and user_id:
             return CrmLeadAccessContext(
@@ -323,6 +368,25 @@ def resolve_crm_lead_access_context(
             current_cycle = matches[0]
     if current_cycle is None and len(cycles) == 1:
         current_cycle = cycles[0]
+    if security_enabled and is_owner and not is_admin and _is_sla_expired(current_cycle, resolved_lead):
+        return CrmLeadAccessContext(
+            lead_id=_id_text(resolved_id) or None,
+            user_id=user_id,
+            user_role=role or None,
+            current_assignment_cycle_id=_text((current_cycle or {}).get("assignment_cycle_id")) or pointer or None,
+            current_owner_user_id=_id_text((current_cycle or {}).get("assigned_to_user_id")) or user_id,
+            current_owner_display_name=_text((current_cycle or {}).get("assigned_to_display_name")) or None,
+            is_current_owner=True,
+            is_admin=False,
+            access_mode=AccessMode.LEGACY.value,
+            access_allowed=False,
+            contact_visibility=ContactVisibility.NONE,
+            action_permissions=_base_permissions(allowed=False, admin=False),
+            lock_reason=SLA_EXPIRED_PENDING_REASSIGNMENT,
+            assignment_number=_assignment_number(resolved_lead, current_cycle or {}),
+            reassigned_by_sla=False,
+            http_status=409,
+        )
     return CrmLeadAccessContext(
         lead_id=_id_text(resolved_id) or None,
         user_id=user_id,
@@ -398,7 +462,11 @@ def safe_access_error(context: CrmLeadAccessContext) -> dict[str, Any]:
     body = {"error": context.lock_reason or CRM_ASSIGNMENT_CONTEXT_INVALID,
             "lead_id": context.lead_id, "locked": context.is_locked}
     if context.is_locked:
-        body["message"] = LOCKED_LEAD_MESSAGE
+        body["message"] = (
+            EXPIRED_PENDING_MESSAGE
+            if context.lock_reason == SLA_EXPIRED_PENDING_REASSIGNMENT
+            else LOCKED_LEAD_MESSAGE
+        )
     return body
 
 
@@ -410,7 +478,8 @@ def _security_enabled() -> bool:
 __all__ = [
     "ACCESS_POLICY_VERSION", "AccessMode", "ContactVisibility",
     "CRM_ASSIGNMENT_CONTEXT_INVALID", "LEAD_REASSIGNED_SLA_LOCKED",
-    "LOCKED_LEAD_MESSAGE", "CrmLeadAccessContext",
+    "SLA_EXPIRED_PENDING_REASSIGNMENT", "LOCKED_LEAD_MESSAGE",
+    "EXPIRED_PENDING_MESSAGE", "CrmLeadAccessContext",
     "resolve_crm_lead_access_context", "sanitize_lead_for_access",
     "safe_access_error", "_has_sla_reassignment_marker", "_security_enabled",
 ]

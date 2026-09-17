@@ -21,7 +21,7 @@ import logging
 import time
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any, Iterable, Mapping
 
@@ -80,6 +80,7 @@ COMMITTED_EVENT = "SLA_REASSIGNMENT_COMMITTED"
 ALLOWED_BATCH_SIZES = (10, 25, 50, 100)
 ALLOWED_INTERVAL_SECONDS = (30, 60, 120)
 PERFORMANCE_WINDOW_DAYS = 60
+FAST_PATH_LOOKBACK_HOURS = 48
 R2_HISTORY_WINDOW = 19  # current candidate + 19 prior decisions = 20
 R2_MAX_PRIOR_SHARE_COUNT = 8  # 9/20 would exceed 40%
 R2_SCORE_DISTANCE = 15.0
@@ -409,6 +410,24 @@ async def _find_many(
     )
 
 
+def _cycle_projection() -> dict[str, int]:
+    return {
+        "_id": 1, "lead_id": 1, "assignment_cycle_id": 1,
+        "assigned_to_user_id": 1, "assigned_to_display_name": 1,
+        "assigned_at": 1, "sla_started_at": 1, "hot_started_at": 1,
+        "sla_breached_at": 1, "sla_expired_at": 1, "deadline_at": 1,
+        "sla_deadline_at": 1, "temperature_at_assignment": 1,
+        "cycle_status": 1, "unassigned_at": 1,
+        "schema_version": 1, "sla_policy_version": 1, "policy_version": 1,
+        "reason": 1, "cycle_origin": 1, "cycle_version": 1,
+        "first_valid_management_at": 1, "first_contact_attempt_at": 1,
+        "reassignment_protection_at": 1,
+        "automatic_reassignment_number": 1, "assignment_number": 1,
+        "previous_owner_user_ids": 1, "reassignment_decision_id": 1,
+        "reassignment_state": 1,
+    }
+
+
 async def scan_sla_reassignment_candidates(
     db: Any = None,
     *,
@@ -427,19 +446,7 @@ async def scan_sla_reassignment_candidates(
         raise RuntimeError("current policy cutover unavailable")
     base_query = _candidate_query_superset(policy_since)
     query = _page_filter(base_query, page_token)
-    projection = {
-        "_id": 1, "lead_id": 1, "assignment_cycle_id": 1,
-        "assigned_to_user_id": 1, "assigned_to_display_name": 1,
-        "assigned_at": 1, "sla_started_at": 1, "hot_started_at": 1,
-        "sla_breached_at": 1, "sla_expired_at": 1, "deadline_at": 1, "sla_deadline_at": 1,
-        "temperature_at_assignment": 1, "cycle_status": 1, "unassigned_at": 1,
-        "schema_version": 1, "sla_policy_version": 1, "policy_version": 1,
-        "reason": 1, "cycle_origin": 1, "cycle_version": 1,
-        "first_valid_management_at": 1, "first_contact_attempt_at": 1,
-        "reassignment_protection_at": 1, "automatic_reassignment_number": 1,
-        "assignment_number": 1, "previous_owner_user_ids": 1,
-        "reassignment_decision_id": 1, "reassignment_state": 1,
-    }
+    projection = _cycle_projection()
     cycles = await _find_many(
         db["crm_assignment_cycles"], query, projection,
         limit=size,
@@ -465,6 +472,73 @@ async def scan_sla_reassignment_candidates(
         "query": query,
         "candidate_query_superset": base_query,
         "current_policy_since": policy_since.isoformat(),
+        "next_page_token": next_token,
+    }
+
+
+async def scan_sla_reassignment_fast_path_candidates(
+    db: Any = None,
+    *,
+    batch_size: int | None = None,
+    now: Any = None,
+    current_policy_since: Any = None,
+    page_token: Mapping[str, Any] | None = None,
+    read_instrumentation: ReadInstrumentation | None = None,
+) -> dict[str, Any]:
+    """Read likely-expired active cycles before the full maintenance page.
+
+    This is only a query accelerator.  ``canonical_expiration_recheck`` still
+    decides expiry using the production SLA calculator, so persisted deadline
+    hints can never create an eligibility decision by themselves.
+    """
+    if db is None:
+        from .storage import get_async_db
+        db = get_async_db()
+    size = _validated_batch_size(batch_size)
+    policy_since = _utc(current_policy_since) or _utc(INSTRUMENTATION_CUTOVER)
+    as_of = _utc(now) or utc_now()
+    if not policy_since:
+        raise RuntimeError("current policy cutover unavailable")
+    recent_since = as_of - timedelta(hours=FAST_PATH_LOOKBACK_HOURS)
+    base_query = _candidate_query_superset(policy_since)
+    urgent_hint = [
+        {field: {"$lte": as_of}}
+        for field in ("sla_breached_at", "sla_expired_at", "deadline_at", "sla_deadline_at")
+    ]
+    recent_start = [
+        {field: {"$gte": recent_since, "$lte": as_of}}
+        for field in ("assigned_at", "sla_started_at")
+    ]
+    fast_query = {"$and": [base_query, {"$or": [*urgent_hint, *recent_start]}]}
+    query = _page_filter(fast_query, page_token)
+    cycles = await _find_many(
+        db["crm_assignment_cycles"], query, _cycle_projection(),
+        limit=size,
+        sort=[("assigned_at", 1), ("lead_id", 1), ("assignment_cycle_id", 1)],
+        instrumentation=read_instrumentation,
+        query_name="worker.scanner.fast_path_cycles",
+    )
+    next_token = None
+    if cycles:
+        last = cycles[-1]
+        next_token = {
+            "assigned_at": _iso(last.get("assigned_at")),
+            "lead_id": _text(last.get("lead_id")),
+            "lead_id_type": type(last.get("lead_id")).__name__,
+            "assignment_cycle_id": _text(last.get("assignment_cycle_id")),
+            "_scan_mode": "fast_path",
+        }
+    return {
+        "status": "scanned_fast_path",
+        "scan_mode": "fast_path",
+        "cycles": cycles,
+        "scanned": len(cycles),
+        "documents_examined": len(cycles),
+        "batch_size": size,
+        "query": query,
+        "candidate_query_superset": base_query,
+        "current_policy_since": policy_since.isoformat(),
+        "fast_path_lookback_hours": FAST_PATH_LOOKBACK_HOURS,
         "next_page_token": next_token,
     }
 
@@ -541,11 +615,19 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
         if not occurred or (assigned_at and occurred < assigned_at):
             continue
         ev = event_evidence(event)
-        raw_type = _text(event.get("type")).upper()
-        if ev.get("management"):
+        raw_type = _text(event.get("type") or event.get("event_type")).upper()
+        is_human = _human_actor(
+            event.get("actor_user_id") or event.get("actor"),
+            event.get("actor_type") or (event.get("meta") or {}).get("actor_type"),
+        )
+        if is_human and ev.get("management"):
             stop_times.append(occurred)
             evidence_types.append(f"event:{raw_type or 'management'}")
-        if _human_actor(event.get("actor"), event.get("actor_type") or (event.get("meta") or {}).get("actor_type")) and raw_type in {"CALL_COMPLETED_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD"}:
+        if is_human and raw_type in {
+            "CALL_COMPLETED_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+            "WHATSAPP_SENT_LEAD", "EMAIL_SENT_LEAD", "HUMAN_NOTE",
+            "GESTION_LOG", "MANUAL_ENTRY",
+        }:
             human_times.append(occurred)
             evidence_types.append(f"human:{raw_type}")
     for result in results:
@@ -560,21 +642,24 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
             human_times.append(occurred)
             evidence_types.append(f"result:{normalized or 'UNKNOWN'}")
     persisted = [
-        _utc(cycle.get("first_valid_management_at")),
-        _utc(cycle.get("first_contact_attempt_at")),
-        _utc(cycle.get("reassignment_protection_at")),
-        _utc(((lead or {}).get("lifecycle") or {}).get("first_valid_management_at")),
+        ("cycle.first_valid_management_at", _utc(cycle.get("first_valid_management_at"))),
+        ("cycle.first_contact_attempt_at", _utc(cycle.get("first_contact_attempt_at"))),
+        ("cycle.reassignment_protection_at", _utc(cycle.get("reassignment_protection_at"))),
+        ("lifecycle.first_valid_management_at", _utc(((lead or {}).get("lifecycle") or {}).get("first_valid_management_at"))),
     ]
-    persisted = [value for value in persisted if value and (not assigned_at or value >= assigned_at)]
-    stop_times.extend(persisted)
-    if persisted:
-        evidence_types.append("persisted_protection_field")
+    for field, value in persisted:
+        if value and (not assigned_at or value >= assigned_at):
+            stop_times.append(value)
+            human_times.append(value)
+            evidence_types.append(f"persisted:{field}")
     first_human = min(human_times) if human_times else None
     current_stop = min(stop_times) if stop_times else None
-    human_before = bool(first_human and breach_at and first_human <= breach_at)
-    human_after = bool(first_human and breach_at and first_human > breach_at)
+    human_before = bool(breach_at and any(value <= breach_at for value in human_times))
+    human_after = bool(breach_at and any(value > breach_at for value in human_times))
     return ManagementProtection(
-        protected=bool(human_times or persisted),
+        # A late human action remains audit evidence, but cannot retroactively
+        # protect a deadline that the worker was already entitled to enforce.
+        protected=human_before if breach_at else bool(human_times),
         human_evidence_count=len(human_times),
         current_stop_at=current_stop,
         first_human_at=first_human,
@@ -1412,11 +1497,33 @@ async def run_sla_reassignment_worker_iteration(
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     try:
         size = _validated_batch_size(batch_size)
+        scan_mode = "provided" if scan_result is not None else "maintenance"
+        maintenance_page_token = page_token
         if scan_result is None:
-            scan_result = await scan_sla_reassignment_candidates(
-                db, batch_size=size, page_token=page_token,
+            fast_page_token = (
+                page_token if page_token and page_token.get("_scan_mode") == "fast_path"
+                else None
+            )
+            if fast_page_token:
+                maintenance_page_token = fast_page_token.get("_maintenance_page_token")
+            fast_result = await scan_sla_reassignment_fast_path_candidates(
+                db, batch_size=size, now=as_of, page_token=fast_page_token,
                 read_instrumentation=read_instrumentation,
             )
+            if fast_result.get("cycles"):
+                scan_result = dict(fast_result)
+                scan_mode = "fast_path"
+                fast_next = scan_result.get("next_page_token")
+                if fast_next:
+                    fast_next = dict(fast_next)
+                    fast_next["_maintenance_page_token"] = maintenance_page_token
+                    scan_result["next_page_token"] = fast_next
+            else:
+                scan_result = await scan_sla_reassignment_candidates(
+                    db, batch_size=size, page_token=maintenance_page_token,
+                    read_instrumentation=read_instrumentation,
+                )
+                scan_mode = "maintenance"
         cycles = [dict(row) for row in scan_result.get("cycles", [])]
         result.scanned = len(cycles)
         cycle_only_pre_cutover: dict[str, CanonicalExpiration] = {}
@@ -1650,6 +1757,7 @@ async def run_sla_reassignment_worker_iteration(
             return {
                 "status": result.status, "iteration": result.to_dict(), "evaluations": evaluations, "decisions": decisions,
                 "next_page_token": scan_result.get("next_page_token"), "batch_size": size,
+                "scan_mode": scan_mode,
                 "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
                 "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
                 "query_documents_examined": scan_result.get("documents_examined", 0),
@@ -1697,6 +1805,7 @@ async def run_sla_reassignment_worker_iteration(
         return {
             "status": result.status, "iteration": result.to_dict(), "evaluations": evaluations, "decisions": decisions,
             "next_page_token": scan_result.get("next_page_token"), "batch_size": size,
+            "scan_mode": scan_mode,
             "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
             "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
             "query_documents_examined": scan_result.get("documents_examined", 0),

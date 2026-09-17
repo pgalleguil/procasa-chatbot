@@ -2735,8 +2735,67 @@ async def view_crm_detail(request: Request, phone: str, codigo: str = Query(None
     return response
 
 
+def _sla_cycle_link_locked_response(status_code: int):
+    from chatbot.crm_lead_access import LEAD_REASSIGNED_SLA_LOCKED, LOCKED_LEAD_MESSAGE
+
+    return HTMLResponse(
+        "<main><h1>Lead no disponible</h1><p>"
+        + LOCKED_LEAD_MESSAGE
+        + "</p></main>",
+        status_code=status_code,
+        headers={
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+            "X-CRM-Access-State": LEAD_REASSIGNED_SLA_LOCKED,
+        },
+    )
+
+
+@app.get("/crm/sla-cycle/{signed_token}", response_class=HTMLResponse)
+async def view_crm_detail_by_sla_cycle(request: Request, signed_token: str):
+    """Open a CRM detail link bound to one recipient and active cycle."""
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    from chatbot.crm_sla_cycle_links import (
+        SlaCycleLinkConfigurationError,
+        SlaCycleLinkError,
+        validate_sla_cycle_link,
+    )
+    from chatbot.storage import get_db as _sync_db
+
+    try:
+        resolution = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: validate_sla_cycle_link(
+                _sync_db(), signed_token,
+                authenticated_user_id=str(user.get("_id") or ""),
+            ),
+        )
+    except SlaCycleLinkConfigurationError:
+        raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
+    except SlaCycleLinkError as exc:
+        return _sla_cycle_link_locked_response(exc.status_code)
+
+    resolved_lead_id = str(resolution.lead.get("_id") or "")
+    target = (
+        f"/crm/lead-id/{quote(resolved_lead_id, safe='')}"
+        f"?sla_cycle_token={quote(signed_token, safe='')}"
+    )
+    response = RedirectResponse(url=target, status_code=302)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.get("/crm/lead-id/{lead_id}", response_class=HTMLResponse)
-async def view_crm_detail_by_id(request: Request, lead_id: str, followup_token: str | None = Query(None)):
+async def view_crm_detail_by_id(
+    request: Request,
+    lead_id: str,
+    followup_token: str | None = Query(None),
+    sla_cycle_token: str | None = Query(None),
+):
     """Secure lead detail by ObjectId. No phone in URL. No query-string data trusted."""
     from bson import ObjectId as BsonObjectId
     from bson.errors import InvalidId
@@ -2744,6 +2803,31 @@ async def view_crm_detail_by_id(request: Request, lead_id: str, followup_token: 
     user = await get_current_user_doc(request)
     if not user:
         raise HTTPException(status_code=401, detail="No autenticado")
+
+    sla_link_resolution = None
+    if sla_cycle_token:
+        from chatbot.crm_sla_cycle_links import (
+            SlaCycleLinkConfigurationError,
+            SlaCycleLinkError,
+            validate_sla_cycle_link,
+        )
+        from chatbot.storage import get_db as _sync_db
+
+        try:
+            sla_link_resolution = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: validate_sla_cycle_link(
+                    _sync_db(), sla_cycle_token,
+                    authenticated_user_id=str(user.get("_id") or ""),
+                ),
+            )
+        except SlaCycleLinkConfigurationError:
+            raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
+        except SlaCycleLinkError as exc:
+            return _sla_cycle_link_locked_response(exc.status_code)
+        if str(sla_link_resolution.lead.get("_id") or "") != str(lead_id):
+            return _sla_cycle_link_locked_response(409)
+
     try:
         oid = BsonObjectId(lead_id)
     except InvalidId:
@@ -2755,7 +2839,11 @@ async def view_crm_detail_by_id(request: Request, lead_id: str, followup_token: 
         return _sync_db()["leads"].find_one({"_id": oid})
 
     loop = asyncio.get_running_loop()
-    lead = await loop.run_in_executor(_WEB_THREAD_POOL, _resolve_lead)
+    lead = (
+        sla_link_resolution.lead
+        if sla_link_resolution is not None
+        else await loop.run_in_executor(_WEB_THREAD_POOL, _resolve_lead)
+    )
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     access_context = None

@@ -408,6 +408,13 @@ def test_post_commit_creates_independent_away_and_to_notifications_and_delivers_
     messages = [row["payload"]["message"] for row in notifications]
     assert all(decision_id not in message for message in messages)
     assert all(source_cycle_id not in message and destination_cycle_id not in message for message in messages)
+    new_owner_message = next(
+        row["payload"]["message"]
+        for row in notifications
+        if row["notification_type"] == SLA_REASSIGNED_TO
+    )
+    assert "/crm/sla-cycle/" in new_owner_message
+    assert "/crm/lead-id/" not in new_owner_message
 
     calls = []
 

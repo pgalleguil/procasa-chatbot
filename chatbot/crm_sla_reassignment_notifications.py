@@ -26,6 +26,7 @@ from .crm_notifications import (
 )
 from .crm_metrics import utc_now
 from .mongo_identity import mongo_id_variants
+from .crm_sla_cycle_links import build_sla_cycle_url
 
 
 logger = logging.getLogger(__name__)
@@ -91,11 +92,14 @@ def _notification_context(db: Any, lead_id: str, destination_cycle_id: str) -> d
     priority = priority.upper()
     if priority not in {"HOT", "NORMAL", "COLD"}:
         priority = "NORMAL"
-    try:
-        from .lead_router import build_secure_crm_url
-        secure_url = build_secure_crm_url(lead, code) if lead else "/crm"
-    except Exception:
-        secure_url = "/crm"
+    secure_url = ""
+    destination_owner_id = str(cycle.get("assigned_to_user_id") or "").strip()
+    if lead and destination_owner_id and destination_cycle_id:
+        secure_url = build_sla_cycle_url(
+            lead_id=lead.get("_id") or lead_id,
+            recipient_user_id=destination_owner_id,
+            assignment_cycle_id=destination_cycle_id,
+        )
     return {
         "client": client,
         "code": code,

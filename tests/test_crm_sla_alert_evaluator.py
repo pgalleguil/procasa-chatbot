@@ -137,13 +137,11 @@ class TestUniformText:
                                   client_first_name="A", property_code="P",
                                   elapsed_minutes=185, deadline_display="y",
                                   lead_url="http://x")
-            w_paras = w.split("\n\n")
-            b_paras = b.split("\n\n")
-            # p[2] is the explanation paragraph â€” must match between warning and breached
             if state == "none":
-                assert b_paras[2] == "A\u00fan no existe una gesti\u00f3n v\u00e1lida registrada."
+                assert "A\u00fan no existe una gesti\u00f3n v\u00e1lida registrada." in b
             else:
-                assert w_paras[2] == b_paras[2], f"explain differs for state={state}"
+                assert EXPLAIN[state] in w, f"explain missing in warning for state={state}"
+                assert EXPLAIN[state] in b, f"explain missing in breached for state={state}"
 
     def test_warning_and_breached_same_action(self):
         for state in ACTION:
@@ -157,9 +155,30 @@ class TestUniformText:
                                   client_first_name="A", property_code="P",
                                   elapsed_minutes=185, deadline_display="y",
                                   lead_url="http://x")
-            w_paras = w.split("\n\n")
-            b_paras = b.split("\n\n")
-            assert w_paras[4] == b_paras[4], f"action differs for state={state}"
+            assert ACTION[state] in w, f"action missing in warning for state={state}"
+            assert ACTION[state] in b, f"action missing in breached for state={state}"
+
+    @pytest.mark.parametrize("hot", [False, True])
+    @pytest.mark.parametrize("state", list(EXPLAIN))
+    def test_all_breach_variants_have_race_safe_copy(self, hot, state):
+        text = _msg(hot=hot, breached=True, outreach_state=state)
+        assert "Si el lead contin\u00faa asignado a ti, registra el resultado inmediatamente." in text
+        assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
+        assert "Tiempo transcurrido:" in text
+        assert "SLA utilizado" not in text
+        assert "Registrar resultado" not in text
+        assert "Registrar gesti\u00f3n" not in text
+        assert "assignment_cycle" not in text
+        assert "decision_id" not in text
+
+    @pytest.mark.parametrize("hot", [False, True])
+    @pytest.mark.parametrize("state", list(EXPLAIN))
+    def test_near_breach_variants_also_use_unified_footer(self, hot, state):
+        text = _msg(hot=hot, breached=False, outreach_state=state)
+        assert "Si el lead contin\u00faa asignado a ti, registra el resultado inmediatamente." in text
+        assert "Si ya fue reasignado, el CRM bloquear\u00e1 autom\u00e1ticamente su gesti\u00f3n." in text
+        assert "Tiempo transcurrido:" in text
+        assert "SLA utilizado" not in text
 
     def test_explain_none_exact(self):
         assert EXPLAIN["none"] == (

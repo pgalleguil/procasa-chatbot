@@ -10,6 +10,7 @@ from chatbot.crm_sla_reassignment_notifications import (
     enqueue_sla_reassignment_notification,
     process_one_sla_reassignment,
     process_one_sla_reassignment_sync,
+    record_sla_reassignment_delivery_status,
 )
 from chatbot.crm_sla_reassignment_integration import execute_sla_reassignment_with_notification
 from chatbot.crm_sla_global_rescue import RescueParameters
@@ -150,7 +151,20 @@ def test_reassignment_commit_to_notification_delivery_end_to_end(monkeypatch):
     assert len(calls) == 1
     assert stored["provider_message_id"] == "provider-e2e"
     assert stored["state"] == "sent"
-    assert stored["actually_delivered"] is True
+    assert stored["actually_delivered"] is False
+    destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": pending["assignment_cycle_id"]})
+    assert destination["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+    assert destination.get("owner_notified_at") is None
+    assert destination.get("sla_started_at") is None
+
+    confirmed = record_sla_reassignment_delivery_status(
+        db,
+        provider_message_id="provider-e2e",
+        delivery_status="delivered",
+        delivered_at="2026-09-17T16:05:00Z",
+    )
+    assert confirmed["status"] == "delivered"
+    assert confirmed["activation"]["status"] == "activated"
     destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": pending["assignment_cycle_id"]})
     assert destination["reassignment_state"] == "active"
     assert destination["owner_notified_at"] is not None
@@ -176,7 +190,9 @@ def test_notification_delivery_uses_thread_safe_sync_path_and_new_owner_phone():
     assert "vencimiento de SLA" in calls[0][1]
     notification = db["crm_notifications_v1"].find_one({"delivery_id": delivered["delivery_id"]})
     assert notification["state"] == "sent"
-    assert notification["actually_delivered"] is True
+    assert notification["actually_delivered"] is False
+    cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": notification["assignment_cycle_id"]})
+    assert cycle.get("sla_started_at") is None
 
 
 def test_reassignment_notifications_continue_after_two_reassignments():

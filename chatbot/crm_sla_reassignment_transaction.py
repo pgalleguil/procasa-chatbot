@@ -312,14 +312,20 @@ def build_current_cycle_owner_mirror_repair(
     lifecycle = lead.get("lifecycle") or {}
     if not cycle_id or str(lifecycle.get("current_assignment_cycle_id") or "") != cycle_id:
         return None
-    if str(cycle.get("reassignment_state") or "").upper() == "AWAITING_OWNER_NOTIFICATION":
-        # A mirror repair must not start an SLA clock as a side effect.
-        return None
+    awaiting_owner_notification = (
+        str(cycle.get("reassignment_state") or "").upper()
+        == "AWAITING_OWNER_NOTIFICATION"
+    )
     owner_id = str(cycle.get("assigned_to_user_id") or "")
     owner_name = str(cycle.get("assigned_to_display_name") or "")
     assigned_at = cycle.get("assigned_at")
     sla_started_at = cycle.get("sla_started_at") or assigned_at
-    if not owner_id or not owner_name or not isinstance(assigned_at, datetime) or not isinstance(sla_started_at, datetime):
+    if (
+        not owner_id
+        or not owner_name
+        or not isinstance(assigned_at, datetime)
+        or (not awaiting_owner_notification and not isinstance(sla_started_at, datetime))
+    ):
         return None
 
     # These are the explicit canonical-owner fields when present.  Derived
@@ -338,7 +344,9 @@ def build_current_cycle_owner_mirror_repair(
         target_display_name=owner_name,
         new_cycle_id=cycle_id,
         reassigned_at=assigned_at,
-        effective_sla_started_at=sla_started_at,
+        # A mirror repair is never allowed to start a waiting destination
+        # clock.  The delivery callback is the only authority that may do so.
+        effective_sla_started_at=None if awaiting_owner_notification else sla_started_at,
     )
     update["$set"]["last_crm_update"] = _aware(repaired_at, "repaired_at")
     return update

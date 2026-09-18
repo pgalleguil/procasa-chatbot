@@ -380,9 +380,32 @@ def test_executor_applies_with_explicit_concerns_and_replays_idempotently(monkey
     assert source["cycle_version"] == 4
     assert destination["cycle_status"] == "active"
     assert destination["automatic_reassignment_number"] == 1
-    assert destination["sla_started_at"] == NOW
+    assert destination["sla_started_at"] is None
+    assert destination["owner_notified_at"] is None
+    assert destination["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
     assert lead["lifecycle"]["current_assignment_cycle_id"] == destination_id
+    assert lead["lifecycle"].get("sla_started_at") is None
     assert len(db["crm_sla_reassignment_audit_v1"].rows) == 1
+
+
+def test_counter_two_can_reassign_again_and_increments_to_three(monkeypatch):
+    enable_flags(monkeypatch)
+    db, decision = make_fixture()
+    source = db["crm_assignment_cycles"].rows["mongo-cycle-1"]
+    source["automatic_reassignment_number"] = 2
+    source["previous_owner_user_ids"] = ["old-user", "prior-user"]
+    decision["automatic_reassignment_number"] = 2
+    decision["assignment_number"] = 2
+    decision["previous_owner_user_ids"] = ["old-user", "prior-user"]
+    result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
+
+    assert result.outcome == SLAReassignmentErrorCode.APPLIED.value
+    destination = db["crm_assignment_cycles"].find_one(
+        {"assignment_cycle_id": result.destination_cycle_id}
+    )
+    assert destination["automatic_reassignment_number"] == 3
+    assert destination["previous_owner_user_ids"] == ["old-user", "prior-user"]
+    assert destination["sla_started_at"] is None
 
 
 def test_executor_bridges_string_decision_ids_to_live_object_ids(monkeypatch):
@@ -480,6 +503,29 @@ def test_human_protection_is_not_click_or_bot_and_gate_blocks_reassignment(monke
     assert claimed.status == CycleGateStatus.CLAIMED.value
     result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
     assert result.outcome == SLAReassignmentErrorCode.ABORT_MANAGEMENT_DETECTED.value
+    assert not db["crm_sla_reassignment_audit_v1"].rows
+
+
+def test_postdeadline_management_before_commit_aborts_without_rewriting_breach(monkeypatch):
+    enable_flags(monkeypatch)
+    db, decision = make_fixture()
+    db["conversation_events"].insert_one({
+        "_id": "late-human-outreach",
+        "lead_id": "lead-1",
+        "actor_type": "human_agent",
+        "event_type": "human_message_sent",
+        "timestamp": datetime(2026, 9, 9, 16, 30, tzinfo=timezone.utc),
+    })
+
+    result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
+
+    assert result.outcome == SLAReassignmentErrorCode.ATTENDED_AFTER_BREACH.value
+    source = db["crm_assignment_cycles"].find_one({"_id": "mongo-cycle-1"})
+    lead = db["leads"].find_one({"_id": "lead-1"})
+    assert source["cycle_status"] == "active"
+    assert source.get("reassignment_decision_id") is None
+    assert lead["ejecutivo_asignado"] == "Ejecutivo A"
+    assert lead["lifecycle"]["current_assignment_cycle_id"] == "cycle-1"
     assert not db["crm_sla_reassignment_audit_v1"].rows
 
 

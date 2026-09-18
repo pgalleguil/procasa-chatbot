@@ -687,7 +687,9 @@ def build_decision(
     tier1_last_assignment_at: str = "",
     balance_reason: str = "",
 ) -> SLAReassignmentDecision:
-    review = assignment_number >= 2 if requires_supervisor_review is None else bool(requires_supervisor_review)
+    # Assignment count is historical state.  Supervisor review is requested
+    # only by the selector when the fresh eligible pool is exhausted.
+    review = bool(requires_supervisor_review) if requires_supervisor_review is not None else False
     reason = review_reason or (SUPERVISOR_REVIEW_REQUIRED if review else "")
     version = str(policy_version or "")
     breach_value = source_cycle_sla_breached_at or sla_breached_at or ""
@@ -775,10 +777,11 @@ def simulate_anti_ping_pong(
     return {"owners": owners, "path": path, "excluded_previous_sla_owners": excluded, "no_a_to_b_to_a": len(path) >= 2 and path[1] == owners[0], "policy_branch": policy_branch}
 
 
-def reassignment_limit_status(automatic_reassignment_count: int, *, max_automatic_sla_reassignments: int = 2) -> dict[str, Any]:
+def reassignment_limit_status(automatic_reassignment_count: int) -> dict[str, Any]:
+    """Validate the counter without treating it as a routing ceiling."""
     count = int(automatic_reassignment_count)
-    if count >= max_automatic_sla_reassignments:
-        return {"status": SUPERVISOR_REVIEW_REQUIRED, "requires_supervisor_review": True, "review_reason": "MAX_AUTOMATIC_SLA_REASSIGNMENTS_REACHED", "automatic_reassignment_count": count}
+    if count < 0:
+        return {"status": SUPERVISOR_REVIEW_REQUIRED, "requires_supervisor_review": True, "review_reason": "INVALID_AUTOMATIC_REASSIGNMENT_COUNT", "automatic_reassignment_count": count}
     return {"status": "AUTO_ELIGIBLE", "requires_supervisor_review": False, "review_reason": "", "automatic_reassignment_count": count}
 
 
@@ -836,7 +839,7 @@ def pretransaction_revalidation_status(
         return ABORT_SELECTED_USER_INACTIVE
     if current.get("selected_user_eligible") is not True:
         return ABORT_SELECTED_USER_INELIGIBLE
-    if int(_number(current.get("automatic_reassignment_number"))) >= 2:
+    if int(_number(current.get("automatic_reassignment_number"))) < 0:
         return ABORT_ASSIGNMENT_LIMIT_REACHED
     if decision_id_used:
         return ABORT_DECISION_ALREADY_USED

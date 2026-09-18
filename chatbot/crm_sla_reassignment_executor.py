@@ -30,7 +30,7 @@ from pymongo.write_concern import WriteConcern
 from config import Config
 
 from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
-from .crm_metrics import calculate_sla, commercial_sla_start_at, coerce_utc_datetime, utc_now
+from .crm_metrics import calculate_sla, coerce_utc_datetime, utc_now
 from .crm_sla_hybrid_stabilization import generate_decision_id
 from .crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
@@ -163,7 +163,7 @@ def _result(
         committed=bool(committed),
         idempotent_replay=bool(idempotent_replay),
         policy_version=str(decision.get("policy_version") or ""),
-        automatic_reassignment_number=(source_count + 1 if source_count in (0, 1) else source_count),
+        automatic_reassignment_number=(source_count + 1 if source_count is not None else None),
         transaction_attempts=int(attempts),
         committed_at=committed_at,
         abort_reason=abort_reason,
@@ -268,10 +268,10 @@ def _prevalidate_decision(decision: Mapping[str, Any]) -> None:
             "selected_user_not_in_decision_candidates",
         )
     count = _source_assignment_number(decision)
-    if not 0 <= count < 2:
+    if count < 0:
         raise _KnownAbort(
             SLAReassignmentErrorCode.ABORT_ASSIGNMENT_LIMIT_REACHED,
-            "assignment_limit_reached",
+            "assignment_number_invalid",
         )
     if bool(decision.get("requires_supervisor_review")):
         raise _KnownAbort(
@@ -391,7 +391,8 @@ def _cycle_field_protection(
 
 def _human_evidence_in_collections(
     db: Any, *, lead_id: str, cycle_id: str, assigned_at: Any,
-    breach_at: datetime | None, session: Any
+    breach_at: datetime | None, session: Any,
+    after_breach_at: datetime | None = None,
 ) -> tuple[str, Any] | None:
     # Decisions arrive from the worker as text, while canonical management
     # results/events use the BSON ObjectId from leads._id.  Query both forms
@@ -407,7 +408,13 @@ def _human_evidence_in_collections(
                 management.get("result_type") or management.get("result")
             )
             occurred = management.get("occurred_at")
-            if protection and _predeadline_evidence(occurred, breach_at=breach_at):
+            parsed = coerce_utc_datetime(occurred)
+            in_window = (
+                _predeadline_evidence(occurred, breach_at=breach_at)
+                if after_breach_at is None
+                else parsed is not None and parsed > after_breach_at
+            )
+            if protection and in_window:
                 return protection, management.get("occurred_at")
 
     for lead_key in mongo_id_variants(lead_id):
@@ -422,7 +429,13 @@ def _human_evidence_in_collections(
         for event in events:
             protection = classify_human_protection(event)
             occurred = event.get("timestamp") or event.get("occurred_at")
-            if protection and _predeadline_evidence(occurred, breach_at=breach_at):
+            parsed = coerce_utc_datetime(occurred)
+            in_window = (
+                _predeadline_evidence(occurred, breach_at=breach_at)
+                if after_breach_at is None
+                else parsed is not None and parsed > after_breach_at
+            )
+            if protection and in_window:
                 return protection, occurred
 
     # Human WhatsApp messages are recorded in the separate append-only
@@ -443,9 +456,91 @@ def _human_evidence_in_collections(
     )
     for conversation_event in conversation_events:
         occurred = conversation_event.get("timestamp")
-        if _predeadline_evidence(occurred, breach_at=breach_at):
+        parsed = coerce_utc_datetime(occurred)
+        in_window = (
+            _predeadline_evidence(occurred, breach_at=breach_at)
+            if after_breach_at is None
+            else parsed is not None and parsed > after_breach_at
+        )
+        if in_window:
             return "WHATSAPP", occurred
     return None
+
+
+def _postdeadline_cycle_protection(
+    cycle: Mapping[str, Any], lead: Mapping[str, Any], *, breach_at: datetime | None
+) -> tuple[str, Any] | None:
+    """Return cycle/lifecycle human evidence that appeared after breach."""
+    if breach_at is None:
+        return None
+    for field in PROTECTED_CYCLE_FIELDS:
+        value = cycle.get(field)
+        parsed = coerce_utc_datetime(value)
+        if value not in (None, "") and (parsed is None or parsed > breach_at):
+            return field, value
+    lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
+    for field in ("first_contact_attempt_at", "first_valid_management_at"):
+        value = lifecycle.get(field)
+        parsed = coerce_utc_datetime(value)
+        if value not in (None, "") and (parsed is None or parsed > breach_at):
+            return f"lifecycle.{field}", value
+    return None
+
+
+def _revalidate_management_before_commit(
+    db: Any,
+    *,
+    decision: Mapping[str, Any],
+    source: Mapping[str, Any],
+    lead: Mapping[str, Any],
+    session: Any,
+) -> None:
+    """Recheck management at the last safe point before applying the plan.
+
+    A post-deadline action is not allowed to repair the historical SLA breach,
+    but it must stop a transaction that has not committed yet.  This closes
+    the small gap between the normal revalidation and the first write.
+    """
+    breach_at = canonical_sla_breached_at(source, lead=lead)
+    field = _cycle_field_protection(source, lead, breach_at=breach_at)
+    if field:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_MANAGEMENT_DETECTED,
+            f"human_protection:{field[0]}",
+        )
+    late_field = _postdeadline_cycle_protection(source, lead, breach_at=breach_at)
+    if late_field:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ATTENDED_AFTER_BREACH,
+            f"human_activity_after_breach:{late_field[0]}",
+        )
+    collection_field = _human_evidence_in_collections(
+        db,
+        lead_id=_id(decision, "lead_id"),
+        cycle_id=_id(decision, "current_assignment_cycle_id"),
+        assigned_at=source.get("assigned_at"),
+        breach_at=breach_at,
+        session=session,
+    )
+    if collection_field:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_MANAGEMENT_DETECTED,
+            f"human_protection:{collection_field[0]}",
+        )
+    late_collection = _human_evidence_in_collections(
+        db,
+        lead_id=_id(decision, "lead_id"),
+        cycle_id=_id(decision, "current_assignment_cycle_id"),
+        assigned_at=source.get("assigned_at"),
+        breach_at=None,
+        after_breach_at=breach_at,
+        session=session,
+    )
+    if late_collection:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ATTENDED_AFTER_BREACH,
+            f"human_activity_after_breach:{late_collection[0]}",
+        )
 
 
 def _revalidate(
@@ -476,6 +571,11 @@ def _revalidate(
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "source_cycle_lead_changed")
     if source.get("cycle_status") != "active" or source.get("unassigned_at") is not None:
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CLOSED, "source_cycle_not_active")
+    if str(source.get("reassignment_state") or "").upper() == "AWAITING_OWNER_NOTIFICATION":
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED,
+            "owner_notification_not_delivered",
+        )
     if str(source.get("assigned_to_user_id")) != str(decision.get("previous_owner_user_id")):
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_OWNER_CHANGED, "source_owner_changed")
     if not _open_lead(lead):
@@ -522,8 +622,6 @@ def _revalidate(
     actual_count = source.get("automatic_reassignment_number")
     if actual_count is not None and int(actual_count) != source_count:
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "assignment_number_changed")
-    if actual_count is not None and int(actual_count) >= 2:
-        raise _KnownAbort(SLAReassignmentErrorCode.ABORT_ASSIGNMENT_LIMIT_REACHED, "assignment_limit_reached")
     if source.get("reassignment_decision_id"):
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "source_already_reassigned")
 
@@ -862,22 +960,26 @@ def execute_sla_reassignment_transaction(
                         session=session,
                         evaluated_at=started_at,
                     )
-                    new_sla_started_at = commercial_sla_start_at(started_at)
-                    if not new_sla_started_at:
-                        raise _KnownAbort(
-                            SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED,
-                            "new_sla_start_unavailable",
-                        )
                     plan = build_transaction_plan(
                         decision=decision_map,
                         source_cycle=source,
                         lead=lead,
                         target_user=target,
                         reassigned_at=started_at,
-                        effective_sla_started_at=new_sla_started_at,
+                        # The destination SLA clock starts only after the
+                        # committed SLA_REASSIGNED_TO notification is
+                        # actually delivered by the provider.
+                        effective_sla_started_at=None,
                         expected_sla_policy_version=str(
                             source.get("sla_policy_version") or ""
                         ),
+                    )
+                    _revalidate_management_before_commit(
+                        db,
+                        decision=decision_map,
+                        source=source,
+                        lead=lead,
+                        session=session,
                     )
                     _apply_plan(db, plan, session=session, test_hooks=test_hooks)
                     try:

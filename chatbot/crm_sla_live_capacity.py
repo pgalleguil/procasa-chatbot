@@ -42,6 +42,7 @@ def _live_cycle_query(policy_since: datetime) -> dict[str, Any]:
     return {
         "cycle_status": "active",
         "unassigned_at": None,
+        "reassignment_state": {"$nin": ["AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification"]},
         "assignment_cycle_id": {"$exists": True, "$ne": None},
         "lead_id": {"$exists": True, "$ne": None},
         "assigned_at": {"$exists": True, "$ne": None, "$gte": policy_since},
@@ -108,6 +109,7 @@ def _cycle_projection() -> dict[str, Any]:
         "hot_started_at": 1,
         "temperature_at_assignment": 1,
         "schema_version": 1,
+        "reassignment_state": 1,
         "lead_found": {"$gt": [{"$size": "$lead_doc"}, 0]},
         "lead": {"$arrayElemAt": ["$lead_doc", 0]},
         "management_results": 1,
@@ -138,6 +140,7 @@ def _base_pipeline(policy_since: datetime, *, grouped: bool) -> list[dict[str, A
                     "hot_started_at": "$hot_started_at",
                     "temperature_at_assignment": "$temperature_at_assignment",
                     "schema_version": "$schema_version",
+                    "reassignment_state": "$reassignment_state",
                     "lead_found": "$lead_found",
                     "lead": "$lead",
                     "management_results": "$management_results",

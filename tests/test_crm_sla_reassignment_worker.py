@@ -21,7 +21,9 @@ from chatbot.crm_sla_reassignment_worker import (
     R2_HISTORY_WINDOW,
     SLAReassignmentShadowEvaluation,
     _batch_context,
+    _awaiting_owner_notification,
     _lead_lookup_variants,
+    _management_protection,
     _resolve_lead_from_context,
     canonical_expiration_recheck,
     crm_sla_reassignment_worker_loop,
@@ -395,12 +397,140 @@ def test_production_facts_are_explicit_acceptance_fixtures_without_pii():
 
 
 
-def test_max_two_requires_supervisor_without_selector():
+def _acceptance_reassignment_fixture(
+    property_code: str,
+    cycle_id: str,
+    *,
+    number: int,
+    delivered: bool = True,
+    previous: list[str] | None = None,
+    temperature: str = "NORMAL",
+) -> tuple[dict, dict]:
+    """Build a synthetic acceptance fixture without client PII."""
+    started_at = datetime(2026, 9, 10, 9, 0, tzinfo=UTC)
+    lead_id = f"acceptance-lead-{property_code}"
+    row = cycle(900, assigned_at=started_at, temperature=temperature, number=number, previous=previous)
+    row.update({
+        "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id,
+        "property_code": property_code,
+        "assigned_by": "sla_reassignment",
+        "reassignment_state": "active" if delivered else "AWAITING_OWNER_NOTIFICATION",
+        "owner_notified_at": started_at if delivered else None,
+        "sla_started_at": started_at if delivered else None,
+    })
+    fixture_lead = lead(900)
+    fixture_lead.update({
+        "_id": lead_id,
+        "property_code": property_code,
+        "lead_temperature_effective": temperature,
+        "lifecycle": {
+            "current_assignment_cycle_id": cycle_id,
+            "assigned_to_user_id": "owner",
+            "sla_started_at": started_at if delivered else None,
+        },
+    })
+    return row, fixture_lead
+
+
+def test_elizabeth_6496_delivered_then_attended_is_not_reassignable():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "6496", "fixture-cycle-elizabeth-6496", number=1, previous=["previous-owner"],
+    )
+    management = {
+        "lead_id": row["lead_id"], "type": "CALL_COMPLETED_LEAD",
+        "actor": "owner", "actor_type": "human",
+        "timestamp": datetime(2026, 9, 10, 9, 17, tzinfo=UTC),
+    }
+    kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+    kwargs["context"] = context([row], [fixture_lead], events={row["lead_id"]: [management]})
+    result = run(**kwargs)
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["evaluations"][0]["exclusion_reason"] == "PROTECTED_BY_MANAGEMENT"
+
+
+def test_frice_6414_delivered_without_management_can_reassign_again():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "6414",
+        "sla-reassignment:48d4993f908a978fa85dbd9f8c4333e28861d4f2d9812004d7b82975c2392273",
+        number=2,
+        previous=["first-owner", "second-owner"],
+    )
+    result = run(**base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 1
+    assert result["evaluations"][0]["assignment_number"] == 2
+    assert result["decisions"][0]["automatic_reassignment_number"] == 2
+
+
+def test_6414_maria_without_delivery_is_awaiting_notification_not_sla_active():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "6414",
+        "sla-reassignment:2b6d721a01dd17305818bfb91fff403b01b8348aef7e5512b24ddbf1e503dc68",
+        number=2,
+        delivered=False,
+        previous=["first-owner", "second-owner"],
+    )
+    assert _awaiting_owner_notification(row) is True
+    expiration = canonical_expiration_recheck(row, fixture_lead, now=NOW)
+    assert expiration.started_at is None
+    assert expiration.expired is False
+    result = run(**base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["evaluations"][0]["exclusion_reason"] == "NOT_ACTUALLY_EXPIRED"
+
+
+def test_71c2_late_management_is_attendance_evidence_not_retroactive_protection():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "71c2", "fixture-cycle-71c2", number=1, previous=["previous-owner"],
+    )
+    expiration = canonical_expiration_recheck(row, fixture_lead, now=NOW)
+    late_management = {
+        "lead_id": row["lead_id"], "type": "SEND_WA_LEAD",
+        "actor": "owner", "actor_type": "human",
+        "timestamp": expiration.breach_at + timedelta(minutes=17),
+    }
+    protection = _management_protection(
+        row, fixture_lead, [late_management], [], breach_at=expiration.breach_at,
+    )
+    assert expiration.expired is True
+    assert protection.human_after_breach is True
+    assert protection.human_evidence_count == 1
+    assert protection.protected is False
+
+
+def test_counter_two_does_not_require_supervisor_by_itself():
     row = cycle(1, number=2, previous=["a", "b"])
     result = run(**base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
-    assert result["iteration"]["max2_skipped"] == 1
-    assert result["evaluations"][0]["exclusion_reason"] == "SUPERVISOR_REVIEW_REQUIRED"
+    assert result["iteration"]["max2_skipped"] == 0
+    assert result["iteration"]["would_reassign"] == 1
+    assert len(result["decisions"]) == 1
+
+
+def test_previous_owner_pool_exhaustion_requires_supervisor_review():
+    row = cycle(2, number=4, previous=["a", "b", "maria", "hernan"])
+    result = run(**base_kwargs([row], [lead(2)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    evaluation = result["evaluations"][0]
+    assert result["iteration"]["would_reassign"] == 0
+    assert evaluation["exclusion_reason"] == "SUPERVISOR_REVIEW_REQUIRED"
     assert not result["decisions"]
+
+
+def test_awaiting_owner_notification_has_no_sla_clock_or_expiration():
+    row = cycle(3, assigned_at=datetime(2026, 9, 9, 12, tzinfo=UTC))
+    row.update({
+        "assigned_by": "sla_reassignment",
+        "reassignment_state": "AWAITING_OWNER_NOTIFICATION",
+        "owner_notified_at": None,
+        "sla_started_at": None,
+    })
+    result = canonical_expiration_recheck(
+        row,
+        lead(3),
+        now=NOW,
+    )
+    assert result.started_at is None
+    assert result.breach_at is None
+    assert result.expired is False
 
 
 def test_owner_and_previous_owner_are_excluded():

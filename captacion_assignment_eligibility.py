@@ -126,7 +126,10 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
     ds_status = str(cls.get("deepseek_status") or "").upper()
     trace = cls.get("trace") or {}
     manual_approved = bool(cls.get("manual_review_approved") or trace.get("manual_review_approved"))
-    deterministic = source in {"structural_rules", "rules_json", "html_validation", "profile_correlation", "rules", "rules_fallback"}
+    deterministic = source in {
+        "structural_rules", "rules_json", "html_validation", "profile_correlation",
+        "rules", "rules_fallback", "toctoc_id_type", "portal_structure",
+    }
     deepseek_persisted = source == "deepseek" and ds_status == "VALID" and bool(trace.get("deepseek_raw") or cls.get("deepseek_raw"))
     # Yapo's v5 pipeline persists a complete deterministic evidence result for
     # some INCIERTO documents without a populated ``decision_source``.  That
@@ -348,6 +351,8 @@ def can_assign_property(
         reasons.add("out_of_scope_new_development")
     if classification.get("hard_broker_veto") or classification.get("hard_veto") == "PROFESSIONAL":
         reasons.add("hard_broker_veto")
+    if classification.get("classification_conflict") or str(classification.get("conflict_state") or "").upper() == "IDENTITY_CONFLICT":
+        reasons.add("classification_conflict")
 
     registry_match = context.get("broker_identity_match") or {}
     if registry_match.get("conflict"):

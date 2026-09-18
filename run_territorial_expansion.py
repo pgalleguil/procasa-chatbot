@@ -23,6 +23,7 @@ from discovery import discover_listing_urls
 from classifier_rules import (
     classify_structural_broker, classify_structural_owner, classify_obvious_broker,
     should_invoke_deepseek, build_rule_context, detect_explicit_owner,
+    is_strong_broker_rule,
 )
 from ai_cost_guard import AICostGuard, budget_from_config
 from classification_cache import ClassificationCache
@@ -228,10 +229,7 @@ try:
                 cache=run_cache,
                 budget=run_budget,
                 classification_hint=rule_result,
-                strong_text_broker=bool(
-                    rule_result and str(rule_result.get("state") or "").upper()
-                    in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"}
-                ),
+                strong_text_broker=is_strong_broker_rule(rule_result),
                 allow_real_ai=False,
             )
             classification = central_result["classification"]

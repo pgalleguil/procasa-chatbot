@@ -105,6 +105,51 @@ def detect_out_of_scope_new_development(document: dict[str, Any]) -> dict[str, A
     }
 
 
+def detect_toctoc_id_type_signal(document: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the structured Toctoc seller signal, without invoking AI."""
+    portal = str(
+        document.get("portal")
+        or document.get("source_portal")
+        or document.get("origen")
+        or ""
+    ).strip().upper()
+    if portal and portal not in {"TOCTOC", "TOCTOC.COM"}:
+        return None
+    raw = str(
+        document.get("seller_id_type_raw")
+        or document.get("seller_id_type")
+        or ""
+    ).strip()
+    if raw == "1":
+        return {
+            "kind": "OWNER",
+            "raw": raw,
+            "evidence": ["client.idType=1"],
+            "evidence_type": "EXPLICIT_OWNER_STRUCTURAL",
+            "evidence_strength": "EXPLICIT_OWNER_STRUCTURAL",
+            "evidence_source": "detail_next_data.client.idType",
+        }
+    if raw == "2":
+        return {
+            "kind": "BROKER",
+            "raw": raw,
+            "evidence": ["client.idType=2"],
+            "evidence_type": "STRUCTURAL_BROKER",
+            "evidence_strength": "HARD",
+            "evidence_source": "detail_next_data.client.idType",
+        }
+    if raw == "3":
+        return {
+            "kind": "NEW_DEVELOPMENT",
+            "raw": raw,
+            "evidence": ["client.idType=3"],
+            "evidence_type": "OUT_OF_SCOPE_SCOPE",
+            "evidence_strength": "HARD",
+            "evidence_source": "detail_next_data.client.idType",
+        }
+    return None
+
+
 def _health_is_healthy(health: dict[str, Any] | None) -> bool:
     return bool(health and health.get("healthy") is True and not health.get("degraded"))
 
@@ -147,6 +192,8 @@ def _classification_with_canonical(
     result["pipeline_complete"] = bool(pipeline_complete)
     result["assignment_ready"] = bool(
         pipeline_complete
+        and not result.get("classification_conflict")
+        and str(result.get("conflict_state") or "").upper() != "IDENTITY_CONFLICT"
         and final not in {
             "BROKER_CONFIRMED", "BROKER_PROBABLE", "OUT_OF_SCOPE_NEW_DEVELOPMENT",
             "INVALID", "REMOVED", "EXPIRED",
@@ -238,7 +285,16 @@ def classify_capture(
     budget = budget or AICostGuard(budget=budget_from_config(config))
     cache = cache or ClassificationCache()
     scope_signal = detect_out_of_scope_new_development(document)
+    id_type_signal = detect_toctoc_id_type_signal(document)
     structural = None if scope_signal else detect_hard_broker_signal(document, extracted=document)
+    if id_type_signal and id_type_signal["kind"] == "BROKER" and not structural:
+        structural = {
+            "reason_code": "TOCTOC_IDTYPE_2_BROKER",
+            "evidence": "client.idType=2",
+            "evidence_type": "STRUCTURAL_BROKER",
+            "evidence_strength": "HARD",
+            "evidence_source": "detail_next_data.client.idType",
+        }
     registry_match = document.get("broker_identity_match") or {}
     if db is not None and not scope_signal:
         registry_match = resolve_broker_identity(db, document)
@@ -247,8 +303,19 @@ def classify_capture(
         human_broker_match
         or str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED"
     )
+    hint = classification_hint or {}
+    hint_strength = str(
+        hint.get("evidence_strength")
+        or rule_context.get("evidence_strength")
+        or ""
+    ).upper()
+    hint_state = str(hint.get("state") or hint.get("final_state") or "").upper()
     strong_text_broker = bool(
-        strong_text_broker or rule_context.get("strong_text_broker")
+        (strong_text_broker or rule_context.get("strong_text_broker"))
+        and (
+            hint_strength in {"HARD", "STRONG"}
+            or (hint_strength == "" and hint_state == "CORREDOR_SEGURO")
+        )
     )
     fingerprint = classification_fingerprint(document)
     base_result = {
@@ -299,6 +366,52 @@ def classify_capture(
         base_result.update({"classification": classification, "reason": "out_of_scope_new_development", "metrics": budget.report()})
         return base_result
 
+    owner_structural = bool(id_type_signal and id_type_signal["kind"] == "OWNER")
+    owner_broker_evidence = bool(
+        structural
+        or registry_match.get("matched")
+        or registry_match.get("conflict")
+        or human_broker_match
+        or cross_portal_match
+        or strong_text_broker
+        or str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED"
+    )
+    if owner_structural and owner_broker_evidence:
+        budget.skipped_identity += 1
+        conflict_evidence = list(id_type_signal.get("evidence") or [])
+        if structural:
+            conflict_evidence.append(structural.get("evidence") or structural.get("reason_code"))
+        if registry_match.get("matched") or registry_match.get("conflict"):
+            conflict_evidence.extend(registry_match.get("evidence") or [])
+        classification = _classification_with_canonical(
+            document,
+            {
+                "state": "INCIERTO",
+                "source": "evidence_precedence",
+                "reason": "IDENTITY_CONFLICT",
+                "evidence": conflict_evidence,
+                "classification_conflict": True,
+                "conflict_state": "IDENTITY_CONFLICT",
+                "evidence_type": "IDENTITY_CONFLICT",
+                "evidence_strength": "CONFLICT",
+                "evidence_source": "owner_structural_vs_broker_evidence",
+            },
+            registry_match=registry_match,
+            human_broker_match=human_broker_match,
+            cross_portal_match=cross_portal_match,
+            strong_text_broker=False,
+            reason="IDENTITY_CONFLICT",
+            evidence=conflict_evidence,
+            pipeline_complete=True,
+        )
+        classification["classification_conflict"] = True
+        classification["conflict_state"] = "IDENTITY_CONFLICT"
+        classification["assignment_ready"] = False
+        classification["exclude_from_assignment"] = True
+        classification["assignment_block_reasons"] = ["IDENTITY_CONFLICT"]
+        base_result.update({"classification": classification, "reason": "identity_conflict", "metrics": budget.report()})
+        return base_result
+
     if structural:
         budget.skipped_structural += 1
         classification = _classification_with_canonical(
@@ -342,6 +455,36 @@ def classify_capture(
         base_result.update({"classification": classification, "reason": "identity_match", "metrics": budget.report()})
         return base_result
 
+    if owner_structural:
+        budget.skipped_structural += 1
+        classification = _classification_with_canonical(
+            document,
+            {
+                "state": "DUEÑO_PROBABLE",
+                "source": "toctoc_id_type",
+                "reason": "TOCTOC_IDTYPE_1_OWNER_CANDIDATE",
+                "evidence": list(id_type_signal.get("evidence") or []),
+                "evidence_type": id_type_signal["evidence_type"],
+                "evidence_strength": id_type_signal["evidence_strength"],
+                "evidence_source": id_type_signal["evidence_source"],
+                # The shared assignment gate reserves >=0.90 for the
+                # DUEÑO_SEGURO state.  idType=1 is strong owner evidence, but
+                # remains DUEÑO_PROBABLE until the portal supplies a stronger
+                # ownership confirmation.
+                "owner_probability": 0.89,
+            },
+            registry_match=registry_match,
+            human_broker_match=human_broker_match,
+            cross_portal_match=cross_portal_match,
+            strong_text_broker=False,
+            reason="TOCTOC_IDTYPE_1_OWNER_CANDIDATE",
+            evidence=list(id_type_signal.get("evidence") or []),
+            pipeline_complete=True,
+        )
+        classification["ai_eligible"] = False
+        base_result.update({"classification": classification, "reason": "toctoc_idtype_owner", "metrics": budget.report()})
+        return base_result
+
     if strong_text_broker:
         budget.skipped_text_rule += 1
         classification = _classification_with_canonical(
@@ -379,7 +522,15 @@ def classify_capture(
         classification_hint.get("status") or ""
     ).upper() not in {"PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED"}:
         hinted_state = str(classification_hint.get("state") or classification_hint.get("final_state") or "").upper()
-        if hinted_state and hinted_state not in {"INCIERTO", "INCONCLUSIVE", "PENDIENTE"}:
+        hinted_probable_is_weak = (
+            hinted_state == "CORREDOR_PROBABLE"
+            and hint_strength not in {"HARD", "STRONG"}
+        )
+        if (
+            hinted_state
+            and hinted_state not in {"INCIERTO", "INCONCLUSIVE", "PENDIENTE"}
+            and not hinted_probable_is_weak
+        ):
             classification = _classification_with_canonical(
                 document,
                 classification_hint,

@@ -337,13 +337,22 @@ def resolve_broker_identity_batch(
                 {"available": True, "matched": False, "match_type": None, "evidence": []}
                 for _ in rows
             ]
-        query = {
-            "$or": [
-                {"key_type": key_type, "key_value": key_value}
-                for key_type, key_value in sorted(unique_keys)
-            ]
-        }
-        key_rows = [dict(row) for row in key_collection.find(query)]
+        values_by_type: dict[str, list[str]] = {}
+        for key_type, key_value in sorted(unique_keys):
+            values_by_type.setdefault(key_type, []).append(key_value)
+        key_rows: list[dict[str, Any]] = []
+        # Keep each query bounded.  This is still a batch lookup (at most a
+        # handful of exact, indexable queries), unlike the former per-property
+        # find_one loop, and avoids an oversized $or as the registry grows.
+        for key_type, values in sorted(values_by_type.items()):
+            for offset in range(0, len(values), 500):
+                key_rows.extend(
+                    dict(row)
+                    for row in key_collection.find({
+                        "key_type": key_type,
+                        "key_value": {"$in": values[offset:offset + 500]},
+                    })
+                )
         rows_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for row in key_rows:
             key = (str(row.get("key_type") or ""), str(row.get("key_value") or ""))

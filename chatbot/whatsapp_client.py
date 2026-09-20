@@ -104,6 +104,15 @@ WHATSAPP_STATUS_LABELS = {
     5: "played",
 }
 
+PROVIDER_AUTH_ERROR = "PROVIDER_AUTH_ERROR"
+
+
+def provider_error_code(http_status: int | None) -> str | None:
+    """Classify provider responses that cannot succeed by retrying the call."""
+    if http_status in {401, 403}:
+        return PROVIDER_AUTH_ERROR
+    return None
+
 
 def normalize_provider_status(value) -> str:
     if isinstance(value, str) and value.isdigit():
@@ -221,6 +230,7 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
             retry_after = max(int(response.headers.get("Retry-After", "60")), 1)
         except (TypeError, ValueError):
             retry_after = 60
+    error_code = provider_error_code(response.status_code)
     logger.warning(
         "[WHATSAPP_SEND] recipient=%s status=failed http_status=%s",
         masked,
@@ -228,10 +238,11 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
     )
     return {
         "success": False,
-        "delivery_status": "failed",
+        "delivery_status": "provider_auth_error" if error_code else "failed",
         "provider_message_id": None,
         "http_status": response.status_code,
         "retry_after": retry_after,
+        "provider_error_code": error_code,
     }
 
 
@@ -296,7 +307,10 @@ def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
             retry_after = max(int(response.headers.get("Retry-After", "60")), 1)
         except (TypeError, ValueError):
             retry_after = 60
+    error_code = provider_error_code(response.status_code)
     logger.warning("[WHATSAPP_SEND_SYNC] recipient=%s status=failed http_status=%s",
                    masked, response.status_code)
-    return {"success": False, "delivery_status": "failed",
-            "provider_message_id": None, "http_status": response.status_code, "retry_after": retry_after}
+    return {"success": False,
+            "delivery_status": "provider_auth_error" if error_code else "failed",
+            "provider_message_id": None, "http_status": response.status_code,
+            "retry_after": retry_after, "provider_error_code": error_code}

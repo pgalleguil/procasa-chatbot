@@ -318,6 +318,11 @@ def _delivery_state(receipt: Mapping[str, Any]) -> tuple[str, str | None]:
         # Do not automatically retry an accepted-but-unknown provider call.
         return "quarantined", "delivery_unknown"
     http_status = receipt.get("http_status")
+    if receipt.get("provider_error_code") == "PROVIDER_AUTH_ERROR" or http_status in {401, 403}:
+        # Credentials/authorization cannot be repaired by replaying the same
+        # request.  Keep the notification terminal and require an explicit,
+        # idempotent rearm after the production credential is restored.
+        return "failed_final", "PROVIDER_AUTH_ERROR"
     if http_status == 422:
         return "failed_validation", "provider_rejected_payload"
     if http_status == 429:
@@ -618,8 +623,14 @@ def rearm_stale_new_owner_notification(
     recoverable_states = {
         "stale_not_sent", "failed_retryable", "failed_recipient", "failed_validation",
     }
-    if notification.get("state") not in recoverable_states:
+    auth_failure = (
+        notification.get("state") == "failed_final"
+        and notification.get("delivery_error_code") == "PROVIDER_AUTH_ERROR"
+    )
+    if notification.get("state") not in recoverable_states and not auth_failure:
         return {"status": "not_recoverable", "state": notification.get("state"), "notification_id": notification.get("_id")}
+
+    allowed_states = sorted(recoverable_states)
 
     valid, reason = _validate_pending_notification(db, notification)
     if not valid:
@@ -633,7 +644,10 @@ def rearm_stale_new_owner_notification(
         {
             "_id": notification.get("_id"),
             "individual_identity": identity,
-            "state": {"$in": sorted(recoverable_states)},
+            "$or": [
+                {"state": {"$in": allowed_states}},
+                {"state": "failed_final", "delivery_error_code": "PROVIDER_AUTH_ERROR"},
+            ],
             "provider_message_id": {"$in": [None]},
             "actually_delivered": {"$ne": True},
         },
@@ -645,12 +659,16 @@ def rearm_stale_new_owner_notification(
                 "repair_reason": (
                     "STALE_NEW_OWNER_NOTIFICATION_RECOVERY"
                     if previous_state == "stale_not_sent"
+                    else "PROVIDER_AUTH_ERROR_REARM"
+                    if auth_failure
                     else "NEW_OWNER_NOTIFICATION_RECOVERY"
                 ),
                 "updated_at": recovered_at,
             },
             "$unset": {
                 "error": "",
+                "delivery_error_code": "",
+                "provider_auth_failure_at": "",
                 "lease_owner": "",
                 "lease_expires_at": "",
                 "delivery_token": "",
@@ -1066,6 +1084,19 @@ def process_one_sla_reassignment_sync(
         error=error,
         now=current,
     )
+    if state == "failed_final" and error == "PROVIDER_AUTH_ERROR":
+        # Keep auth failures visible and terminal.  The document remains
+        # explicitly rearmable by an operator after credentials are restored,
+        # but it is excluded from the automatic claim query.
+        db[COLLECTION].update_one(
+            {"_id": notification["_id"], "state": "failed_final"},
+            {"$set": {
+                "delivery_status": "provider_auth_error",
+                "delivery_error_code": "PROVIDER_AUTH_ERROR",
+                "actually_delivered": False,
+                "provider_auth_failure_at": current,
+            }},
+        )
     if state == "failed_retryable":
         retry_after = 60
         if receipt.get("http_status") == 429:
@@ -1108,6 +1139,7 @@ def process_one_sla_reassignment_sync(
     return {
         "status": state,
         "provider_message_id": provider_id,
+        "error": error,
         "delivery_id": notification.get("delivery_id"),
         "cycle_activation": delivery_activation if state == "sent" and notification.get("notification_type") == SLA_REASSIGNED_TO else None,
     }

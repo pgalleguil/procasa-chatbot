@@ -7,6 +7,7 @@ from chatbot.crm_notifications import COLLECTION, individual_identity
 from chatbot.crm_sla_reassignment_notifications import (
     SLA_REASSIGNED_TO,
     COLLECTION as SLA_COLLECTION,
+    _delivery_state,
     mark_new_owner_notification_delivered,
     migrate_legacy_sla_reassignment_to_waiting,
     process_one_sla_reassignment_sync,
@@ -249,6 +250,98 @@ def test_provider_accepted_stays_sent_and_waiting_until_delivery_callback():
     assert stored["actually_delivered"] is False
     assert cycle["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
     assert cycle.get("sla_started_at") is None
+
+
+@pytest.mark.parametrize("http_status", [401, 403])
+def test_provider_auth_failures_are_terminal_and_never_automatically_retried(http_status):
+    db = mongomock.MongoClient()["test"]
+    lead_id = "lead-auth"
+    cycle_id = "cycle-auth"
+    recipient_id = "user-auth"
+    db["leads"].insert_one({
+        "_id": lead_id,
+        "assignment_mirror_owner_user_id": recipient_id,
+        "lifecycle": {
+            "current_assignment_cycle_id": cycle_id,
+            "assigned_to_user_id": recipient_id,
+        },
+    })
+    db["crm_assignment_cycles"].insert_one({
+        "_id": cycle_id,
+        "assignment_cycle_id": cycle_id,
+        "lead_id": lead_id,
+        "assigned_to_user_id": recipient_id,
+        "cycle_status": "active",
+        "reassignment_state": "AWAITING_OWNER_NOTIFICATION",
+        "owner_notified_at": None,
+        "sla_started_at": None,
+    })
+    identity = individual_identity(
+        lead_id=lead_id,
+        assignment_cycle_id=cycle_id,
+        notification_type=SLA_REASSIGNED_TO,
+        recipient_user_id=recipient_id,
+    )
+    db["usuarios"].insert_one({"_id": recipient_id, "telefono": "+56911111111", "is_active": True})
+    db[SLA_COLLECTION].insert_one({
+        "_id": "notification-auth",
+        "individual_identity": identity,
+        "notification_type": SLA_REASSIGNED_TO,
+        "notification_role": "new_owner",
+        "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id,
+        "recipient_user_id": recipient_id,
+        "state": "pending",
+        "payload": {"message": "test"},
+        "provider_message_id": None,
+        "actually_delivered": False,
+        "message_domain": "commercial_notification",
+    })
+    calls = []
+
+    result = process_one_sla_reassignment_sync(
+        db,
+        worker_id="auth-worker",
+        sender=lambda *_: calls.append(http_status) or {
+            "success": False,
+            "http_status": http_status,
+            "provider_message_id": None,
+        },
+    )
+    stored = db[SLA_COLLECTION].find_one({"_id": "notification-auth"})
+    assert result["status"] == "failed_final"
+    assert result["error"] == "PROVIDER_AUTH_ERROR"
+    assert stored["state"] == "failed_final"
+    assert stored["delivery_error_code"] == "PROVIDER_AUTH_ERROR"
+    assert stored["delivery_status"] == "provider_auth_error"
+    assert "next_attempt_at" not in stored
+    assert db["crm_assignment_cycles"].find_one({"_id": cycle_id})["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+
+    second = process_one_sla_reassignment_sync(
+        db,
+        worker_id="auth-worker",
+        sender=lambda *_: calls.append("unexpected") or {"success": True, "provider_message_id": "duplicate"},
+    )
+    assert second["status"] == "idle"
+    assert calls == [http_status]
+
+    rearmed = rearm_stale_new_owner_notification(
+        db,
+        lead_id=lead_id,
+        assignment_cycle_id=cycle_id,
+        recipient_user_id=recipient_id,
+    )
+    assert rearmed["status"] == "rearmed"
+    assert db[SLA_COLLECTION].find_one({"_id": "notification-auth"})["state"] == "pending"
+
+
+def test_delivery_state_marks_http_auth_failures_as_provider_auth_error():
+    assert _delivery_state({"success": False, "http_status": 401}) == (
+        "failed_final", "PROVIDER_AUTH_ERROR"
+    )
+    assert _delivery_state({"success": False, "http_status": 403}) == (
+        "failed_final", "PROVIDER_AUTH_ERROR"
+    )
 
 
 def test_delivery_callback_uses_event_timestamp_and_read_activates_once():

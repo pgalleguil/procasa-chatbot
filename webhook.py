@@ -209,6 +209,17 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 # Global state for background tasks monitoring
 background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
+    "sla_notifications": {
+        "status": "disabled" if not (
+            Config.CRM_SLA_REASSIGNMENT_ENABLED
+            and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+        ) else "starting",
+        "health": "DISABLED" if not (
+            Config.CRM_SLA_REASSIGNMENT_ENABLED
+            and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
+        ) else "STARTING",
+        "last_heartbeat": None,
+    },
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
     "captacion_reminder": {"status": "starting", "last_heartbeat": None},
@@ -4039,6 +4050,11 @@ async def health_check():
             "error_type": type(exc).__name__,
         }
         degraded_reasons.append("process_service_metrics_unavailable")
+    sla_notifications = background_tasks_status.get("sla_notifications") or {}
+    if sla_notifications.get("health") == "PROVIDER_AUTH_ERROR":
+        degraded_reasons.append("sla_provider_auth_error")
+    elif sla_notifications.get("health") == "DELIVERY_UNKNOWN":
+        degraded_reasons.append("sla_delivery_unknown")
     return {
         "status": "degraded" if degraded_reasons else "healthy",
         "service_status": "DEGRADED" if degraded_reasons else "HEALTHY",
@@ -6227,6 +6243,8 @@ async def process_pending_leads_loop():
         try:
             background_tasks_status["notifications_loop"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             background_tasks_status["notifications_loop"]["status"] = "running"
+            sla_notification_status = background_tasks_status["sla_notifications"]
+            sla_notification_status["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
 
             # SLA reassignment notifications are durable post-commit work.
             # They must be consumed independently of the legacy business-hours
@@ -6234,6 +6252,8 @@ async def process_pending_leads_loop():
             # because that queue has a different schedule.
             if (Config.CRM_SLA_REASSIGNMENT_ENABLED
                     and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED):
+                if sla_notification_status.get("health") not in {"PROVIDER_AUTH_ERROR", "DELIVERY_UNKNOWN"}:
+                    sla_notification_status.update({"status": "running", "health": "RUNNING"})
                 from chatbot.crm_sla_reassignment_notifications import process_one_sla_reassignment_sync
                 from chatbot.storage import get_db as _get_sync_db
                 loop = asyncio.get_running_loop()
@@ -6251,8 +6271,25 @@ async def process_pending_leads_loop():
                     sla_result = await loop.run_in_executor(_WORKER_THREAD_POOL, sla_fn)
                     if sla_result and sla_result.get("status") not in ("idle", "disabled"):
                         logger.info("[SLA_REASSIGNMENT_NOTIFICATION] Resultado: %s", sla_result)
+                        sla_notification_status["last_result"] = sla_result.get("status")
+                        if sla_result.get("status") == "failed_final" and sla_result.get("error") == "PROVIDER_AUTH_ERROR":
+                            sla_notification_status.update({
+                                "status": "degraded",
+                                "health": "PROVIDER_AUTH_ERROR",
+                                "last_error": "PROVIDER_AUTH_ERROR",
+                            })
+                        elif sla_result.get("status") == "quarantined":
+                            sla_notification_status.update({
+                                "status": "degraded",
+                                "health": "DELIVERY_UNKNOWN",
+                                "last_error": "delivery_unknown",
+                            })
+                        elif sla_result.get("status") == "sent":
+                            sla_notification_status.update({"status": "running", "health": "RUNNING"})
                     if not sla_result or sla_result.get("status") in {"idle", "disabled", "already_reserved"}:
                         break
+            else:
+                sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
 
             if should_send_now():
                 # Canonical Hot worker. Fully sync — runs in threadpool.

@@ -375,6 +375,8 @@ def get_contact_identity_evidence(db_or_collection, property_doc: dict[str, Any]
 def get_contact_identity_evidence_batch(
     db_or_collection,
     property_docs: list[dict[str, Any]],
+    *,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any] | None]:
     """Resolve phone identities for a workload snapshot with one read.
 
@@ -385,6 +387,10 @@ def get_contact_identity_evidence_batch(
     while reducing that N+1 pattern to one indexed ``$in`` query.
     """
     documents = list(property_docs or [])
+    if profile is not None:
+        profile.setdefault("unique_contact_keys", 0)
+        profile.setdefault("contact_query_count", 0)
+        profile.setdefault("contact_docs_returned", 0)
     if not phone_learning_global_lookup_enabled():
         return [None for _ in documents]
 
@@ -397,6 +403,9 @@ def get_contact_identity_evidence_batch(
             phones.add(phone)
     if not phones:
         return [None for _ in documents]
+    if profile is not None:
+        profile["unique_contact_keys"] = len(phones)
+        profile["contact_query_count"] = 1
 
     try:
         get_collection = getattr(db_or_collection, "get_collection", None)
@@ -411,6 +420,8 @@ def get_contact_identity_evidence_batch(
             for row in collection.find({"phone_normalized": {"$in": sorted(phones)}})
             if row.get("phone_normalized")
         }
+        if profile is not None:
+            profile["contact_docs_returned"] = len(rows_by_phone)
         return [
             rows_by_phone.get(phones_by_position.get(position, ""))
             for position in range(len(documents))

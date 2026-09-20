@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 import unicodedata
 import uuid
 from datetime import datetime, timezone
@@ -305,6 +306,7 @@ def resolve_broker_identity_batch(
     documents: Iterable[dict[str, Any]],
     *,
     include_alias: bool = True,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Resolve exact broker identities for a batch without N+1 queries.
 
@@ -315,12 +317,22 @@ def resolve_broker_identity_batch(
     assigned property separately can exhaust the Mongo socket timeout.
     """
     rows = list(documents or [])
+    if profile is not None:
+        profile.setdefault("registry_key_query_count", 0)
+        profile.setdefault("registry_identity_query_count", 0)
+        profile.setdefault("registry_lookup_keys_count", 0)
+        profile.setdefault("registry_key_docs_returned", 0)
+        profile.setdefault("registry_identity_docs_returned", 0)
+        profile.setdefault("broker_identity_keys_query_ms", 0.0)
+        profile.setdefault("broker_identities_query_ms", 0.0)
     key_sets = [exact_identity_keys(document, include_alias=include_alias) for document in rows]
     unique_keys = {
         (key["key_type"], key["key_value"])
         for keys in key_sets
         for key in keys
     }
+    if profile is not None:
+        profile["registry_lookup_keys_count"] = len(unique_keys)
     if not unique_keys:
         return [
             {"available": True, "matched": False, "match_type": None, "evidence": []}
@@ -332,7 +344,12 @@ def resolve_broker_identity_batch(
         # The live registry may legitimately be empty.  Avoid constructing a
         # large unindexed OR query in that case; an empty registry cannot
         # produce a match.
+        key_started = time.perf_counter()
+        if profile is not None:
+            profile["registry_key_query_count"] += 1
         if key_collection.find_one({}, {"_id": 1}) is None:
+            if profile is not None:
+                profile["broker_identity_keys_query_ms"] += (time.perf_counter() - key_started) * 1000
             return [
                 {"available": True, "matched": False, "match_type": None, "evidence": []}
                 for _ in rows
@@ -346,6 +363,8 @@ def resolve_broker_identity_batch(
         # find_one loop, and avoids an oversized $or as the registry grows.
         for key_type, values in sorted(values_by_type.items()):
             for offset in range(0, len(values), 500):
+                if profile is not None:
+                    profile["registry_key_query_count"] += 1
                 key_rows.extend(
                     dict(row)
                     for row in key_collection.find({
@@ -353,6 +372,9 @@ def resolve_broker_identity_batch(
                         "key_value": {"$in": values[offset:offset + 500]},
                     })
                 )
+        if profile is not None:
+            profile["broker_identity_keys_query_ms"] += (time.perf_counter() - key_started) * 1000
+            profile["registry_key_docs_returned"] = len(key_rows)
         rows_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for row in key_rows:
             key = (str(row.get("key_type") or ""), str(row.get("key_value") or ""))
@@ -363,6 +385,9 @@ def resolve_broker_identity_batch(
             for row in key_rows
             if row.get("identity_id")
         }
+        identity_started = time.perf_counter()
+        if identity_ids and profile is not None:
+            profile["registry_identity_query_count"] += 1
         identities = {
             str(identity.get("_id")): dict(identity)
             for identity in db[BROKER_IDENTITIES_COLLECTION].find(
@@ -370,6 +395,9 @@ def resolve_broker_identity_batch(
             )
             if identity.get("_id") is not None
         }
+        if profile is not None:
+            profile["broker_identities_query_ms"] += (time.perf_counter() - identity_started) * 1000
+            profile["registry_identity_docs_returned"] = len(identities)
         priority = {
             "PORTAL_PROFILE_ID": "EXACT_PROFILE_ID",
             "PORTAL_CLIENT_ID": "EXACT_CLIENT_ID",

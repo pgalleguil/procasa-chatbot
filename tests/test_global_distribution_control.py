@@ -313,13 +313,23 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
     monkeypatch.setattr(api_captacion, "get_db", lambda: db)
     monkeypatch.setattr(api_captacion, "_record_distribution_metrics", lambda _db, value: metrics.append(value))
     monkeypatch.setattr(Config, "PHONE_LEARNING_ENABLED", False)
+    snapshot_calls = []
+    original_snapshot = api_captacion.active_workable_backlogs
+
+    def counted_snapshot(*args, **kwargs):
+        snapshot_calls.append(1)
+        return original_snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(api_captacion, "active_workable_backlogs", counted_snapshot)
 
     preview = api_captacion.distribute_sourced_leads(trigger_source="test-dry-run", dry_run=True)
     assert preview["batch_selected"] == 14
     assert len(preview["selected_preview"]) == 14
     assert coll.count_documents({"gestion.ejecutivo_id": {"$ne": None}}) == 0
+    assert len(snapshot_calls) == 1
 
     assert api_captacion.distribute_sourced_leads(trigger_source="test") == 14
+    assert len(snapshot_calls) == 2
     assigned = list(coll.find({"gestion.ejecutivo_id": {"$ne": None}}))
     assert len(assigned) == 14
     per_agent = {}

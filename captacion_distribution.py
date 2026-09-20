@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import socket
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -389,14 +390,23 @@ def open_workloads(db: Any, agent_ids: list[str]) -> dict[str, int]:
     return {str(row.get("_id")): int(row.get("count") or 0) for row in rows}
 
 
-def _management_event_keys(events_coll: Any) -> set[tuple[str, str]]:
+def _management_event_keys(
+    events_coll: Any,
+    *,
+    profile: dict[str, Any] | None = None,
+) -> set[tuple[str, str]]:
     """Load credited human-management references once for a workload snapshot."""
     keys: set[tuple[str, str]] = set()
+    if profile is not None:
+        profile.setdefault("management_event_docs_returned", 0)
+        profile.setdefault("management_event_keys_returned", 0)
     rows = events_coll.find(
         {"event_type": {"$in": list(HUMAN_MANAGEMENT_EVENT_TYPES)}, "credited": True},
         {"property_id": 1, "listing_id": 1, "url": 1},
     )
     for event in rows:
+        if profile is not None:
+            profile["management_event_docs_returned"] += 1
         for event_field, document_field in (
             ("property_id", "_id"),
             ("listing_id", "listing_id"),
@@ -405,6 +415,8 @@ def _management_event_keys(events_coll: Any) -> set[tuple[str, str]]:
             value = event.get(event_field)
             if value not in (None, ""):
                 keys.add((document_field, str(value)))
+    if profile is not None:
+        profile["management_event_keys_returned"] = len(keys)
     return keys
 
 
@@ -442,6 +454,7 @@ def active_workable_backlogs(
     agent_ids: list[str],
     *,
     events_coll: Any | None = None,
+    profiling: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     """Count still-workable assignments for each active executive.
 
@@ -452,11 +465,37 @@ def active_workable_backlogs(
     """
     if not agent_ids:
         return {}
+    profile = profiling if isinstance(profiling, dict) else None
+    if profile is not None:
+        profile.update({
+            "active_assignments_query_ms": 0.0,
+            "management_events_query_ms": 0.0,
+            "contact_identity_query_ms": 0.0,
+            "broker_identity_keys_query_ms": 0.0,
+            "broker_identities_query_ms": 0.0,
+            "python_merge_ms": 0.0,
+            "other_ms": 0.0,
+            "active_assignments_query_count": 0,
+            "management_events_query_count": 0,
+            "contact_query_count": 0,
+            "broker_identity_keys_query_count": 0,
+            "broker_identities_query_count": 0,
+            "mongo_queries_total": 0,
+            "mongo_round_trips_total": 0,
+            "property_docs_returned": 0,
+            "management_event_docs_returned": 0,
+        })
+    total_started = time.perf_counter()
     from captacion_assignment_eligibility import calculate_assignment_eligibility
 
     collection = db[Config.CAPTACION_COLLECTION_NAME]
     events = events_coll if events_coll is not None else db["captacion_management_events"]
-    event_keys = _management_event_keys(events)
+    events_started = time.perf_counter()
+    if profile is not None:
+        profile["management_events_query_count"] = 1
+    event_keys = _management_event_keys(events, profile=profile)
+    if profile is not None:
+        profile["management_events_query_ms"] = (time.perf_counter() - events_started) * 1000
     workloads = {str(agent_id): 0 for agent_id in agent_ids}
     # Legacy management markers are an exclusion criterion.  Compute that
     # boolean after the indexed executive match so Mongo does not scan an
@@ -535,14 +574,45 @@ def active_workable_backlogs(
         # already a management/terminal signal and do not belong in this
         # prioritization metric.
         "gestion.estado": {"$in": list(AVAILABLE_STATES)},
+        # These are necessary conditions of the central gate.  Applying them
+        # in Mongo avoids transferring the large legacy backlog only to reject
+        # it again in Python: can_assign_property() requires an assignable
+        # classification state and an explicitly completed pipeline.  The
+        # full gate still runs below, so commercial behaviour is unchanged.
+        "$and": [
+            {
+                "$or": [
+                    {"classification.state": {"$in": [
+                        "INCIERTO", "DUEÑO_PROBABLE", "DUEÑO_SEGURO",
+                        "DUENO_PROBABLE", "DUENO_SEGURO",
+                    ]}},
+                    {"classification.final_state": {"$in": [
+                        "INCIERTO", "DUEÑO_PROBABLE", "DUEÑO_SEGURO",
+                        "DUENO_PROBABLE", "DUENO_SEGURO",
+                    ]}},
+                ]
+            },
+            {
+                "$or": [
+                    {"pipeline_complete": True},
+                    {"classification.pipeline_complete": True},
+                ]
+            },
+        ],
     }
     if managed_object_ids:
         candidate_match["_id"] = {"$nin": managed_object_ids}
+    assignments_started = time.perf_counter()
+    if profile is not None:
+        profile["active_assignments_query_count"] = 1
     cursor = collection.aggregate([
         {"$match": candidate_match},
         {"$project": backlog_projection},
     ], allowDiskUse=False).batch_size(50)
     property_docs = list(cursor)
+    if profile is not None:
+        profile["active_assignments_query_ms"] = (time.perf_counter() - assignments_started) * 1000
+        profile["property_docs_returned"] = len(property_docs)
     missing_title_ids = [
         doc.get("_id")
         for doc in property_docs
@@ -550,6 +620,7 @@ def active_workable_backlogs(
         and not str(doc.get("title") or doc.get("titulo") or "").strip()
     ]
     if missing_title_ids:
+        supplemental_started = time.perf_counter()
         descriptions = {
             row.get("_id"): row
             for row in collection.find(
@@ -563,8 +634,33 @@ def active_workable_backlogs(
                 for field in ("description", "descripcion"):
                     if field in extra:
                         doc[field] = extra[field]
-    identity_matches = get_contact_identity_evidence_batch(db, property_docs)
-    broker_matches = resolve_broker_identity_batch(db, property_docs)
+        if profile is not None:
+            profile["supplemental_text_query_ms"] = (time.perf_counter() - supplemental_started) * 1000
+            profile["supplemental_text_query_count"] = 1
+    elif profile is not None:
+        profile["supplemental_text_query_ms"] = 0.0
+        profile["supplemental_text_query_count"] = 0
+    contact_profile = {}
+    contact_started = time.perf_counter()
+    identity_matches = get_contact_identity_evidence_batch(db, property_docs, profile=contact_profile)
+    if profile is not None:
+        profile["contact_identity_query_ms"] = (time.perf_counter() - contact_started) * 1000
+        profile["contact_query_count"] = int(contact_profile.get("contact_query_count", 0))
+        profile["unique_contact_keys"] = int(contact_profile.get("unique_contact_keys", 0))
+        profile["contact_docs_returned"] = int(contact_profile.get("contact_docs_returned", 0))
+    registry_profile = {}
+    registry_started = time.perf_counter()
+    broker_matches = resolve_broker_identity_batch(db, property_docs, profile=registry_profile)
+    if profile is not None:
+        profile["broker_identity_keys_query_ms"] = float(registry_profile.get("broker_identity_keys_query_ms", 0.0))
+        profile["broker_identities_query_ms"] = float(registry_profile.get("broker_identities_query_ms", 0.0))
+        profile["broker_identity_keys_query_count"] = int(registry_profile.get("registry_key_query_count", 0))
+        profile["broker_identities_query_count"] = int(registry_profile.get("registry_identity_query_count", 0))
+        profile["registry_lookup_keys_count"] = int(registry_profile.get("registry_lookup_keys_count", 0))
+        profile["registry_key_docs_returned"] = int(registry_profile.get("registry_key_docs_returned", 0))
+        profile["registry_identity_docs_returned"] = int(registry_profile.get("registry_identity_docs_returned", 0))
+        profile["registry_batch_wall_ms"] = (time.perf_counter() - registry_started) * 1000
+    merge_started = time.perf_counter()
     for property_doc, identity, broker_match in zip(property_docs, identity_matches, broker_matches):
         gestion = property_doc.get("gestion") or {}
         agent_id = str(gestion.get("ejecutivo_id") or "")
@@ -584,6 +680,26 @@ def active_workable_backlogs(
         if not decision.get("assignment_ready") or has_broker_identity(property_doc):
             continue
         workloads[agent_id] += 1
+    if profile is not None:
+        profile["python_merge_ms"] = (time.perf_counter() - merge_started) * 1000
+        profile["mongo_queries_total"] = (
+            int(profile.get("active_assignments_query_count", 0))
+            + int(profile.get("management_events_query_count", 0))
+            + int(profile.get("contact_query_count", 0))
+            + int(profile.get("broker_identity_keys_query_count", 0))
+            + int(profile.get("broker_identities_query_count", 0))
+            + int(profile.get("supplemental_text_query_count", 0))
+        )
+        profile["mongo_round_trips_total"] = profile["mongo_queries_total"]
+        elapsed_ms = (time.perf_counter() - total_started) * 1000
+        named_ms = sum(float(profile.get(key, 0.0)) for key in (
+            "active_assignments_query_ms", "management_events_query_ms",
+            "contact_identity_query_ms", "broker_identity_keys_query_ms",
+            "broker_identities_query_ms", "python_merge_ms",
+            "supplemental_text_query_ms",
+        ))
+        profile["total_ms"] = elapsed_ms
+        profile["other_ms"] = max(0.0, elapsed_ms - named_ms)
     return workloads
 
 

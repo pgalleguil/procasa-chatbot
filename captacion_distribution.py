@@ -22,14 +22,16 @@ from chatbot.constants import CHILE_TZ
 from captacion_assignment_eligibility import calculate_assignment_eligibility, can_assign_property
 from captacion_contact_identity import (
     get_contact_identity_evidence,
+    get_contact_identity_evidence_batch,
     phone_learning_global_lookup_enabled,
 )
 from captacion_kpis import (
+    AVAILABLE_STATES,
     CAPTACION_TERMINAL_STATES,
     is_terminal_captacion_state,
 )
 from captacion_management import new_assignment_cycle
-from broker_registry import resolve_broker_identity
+from broker_registry import resolve_broker_identity, resolve_broker_identity_batch
 from comuna_utils import normalize_commune_canonical
 from config import Config
 
@@ -67,6 +69,105 @@ DISTRIBUTION_CAPTURE_DATE_FIELDS = (
 )
 STALE_FOR_AUTO_DISTRIBUTION = "STALE_FOR_AUTO_DISTRIBUTION"
 CAPTURE_DATE_UNAVAILABLE = "CAPTURE_DATE_UNAVAILABLE"
+
+# Workload prioritization only needs the fields used by the central gate and
+# exact identity resolvers.  Do not fetch raw HTML, images, audit payloads, or
+# other large listing fields for every assigned property.
+ACTIVE_WORKABLE_BACKLOG_PROJECTION = {
+    "_id": 1,
+    "listing_id": 1,
+    "url": 1,
+    "source_url": 1,
+    "origen": 1,
+    "source_portal": 1,
+    "portal": 1,
+    "title": 1,
+    "titulo": 1,
+    "comuna": 1,
+    "comuna_slug": 1,
+    "scrape_stage": 1,
+    "html_validation_status": 1,
+    "block_reason": 1,
+    "pipeline_state": 1,
+    "pipeline_complete": 1,
+    "first_seen": 1,
+    "first_seen_at": 1,
+    "created_at": 1,
+    "fecha_captura": 1,
+    "processed_at": 1,
+    "scraped_at": 1,
+    "seller_profile_id": 1,
+    "profile_id": 1,
+    "seller_client_id": 1,
+    "client_id": 1,
+    "phone_normalized": 1,
+    "telefono_normalizado": 1,
+    "phone": 1,
+    "telefono": 1,
+    "phone_original_value": 1,
+    "contact_phone": 1,
+    "whatsapp_phone": 1,
+    "details.phone_normalized": 1,
+    "details.telefono_normalizado": 1,
+    "details.contact_phone": 1,
+    "details.telefono": 1,
+    "details.whatsapp_phone": 1,
+    "public_visible_contact.phones": 1,
+    "email": 1,
+    "email_contact": 1,
+    "contact_email": 1,
+    "domain": 1,
+    "seller_domain": 1,
+    "website": 1,
+    "seller_website": 1,
+    "seller_profile_url": 1,
+    "profile_url": 1,
+    "seller_url": 1,
+    "contact_name": 1,
+    "publicador_visible": 1,
+    "publisher": 1,
+    "seller_name": 1,
+    "company_name": 1,
+    "broker_brand": 1,
+    "contact_logo_alt": 1,
+    "contact_badges_text": 1,
+    "listing_advertiser": 1,
+    "seller_jsonld_name": 1,
+    "seller_type": 1,
+    "seller_type_evidence": 1,
+    "seller_type_source": 1,
+    "operation_label_raw": 1,
+    "seller_profile_logo": 1,
+    "publisher_profile_context": 1,
+    "structural_signals": 1,
+    "gestion.ejecutivo_id": 1,
+    "gestion.estado": 1,
+    "gestion.semantic_review_hold": 1,
+    "gestion.exclude_from_assignment": 1,
+    "classification.state": 1,
+    "classification.final": 1,
+    "classification.final_state": 1,
+    "classification.canonical_final": 1,
+    "classification.assignment_ready": 1,
+    "classification.manual_review_required": 1,
+    "classification.manual_review_approved": 1,
+    "classification.exclude_from_assignment": 1,
+    "classification.owner_probability": 1,
+    "classification.owner_probability_source": 1,
+    "classification.owner_probability_completeness": 1,
+    "classification.source": 1,
+    "classification.decision_source": 1,
+    "classification.deepseek_status": 1,
+    "classification.version": 1,
+    "classification.reason": 1,
+    "classification.publisher_profile_context": 1,
+    "classification.hard_broker_veto": 1,
+    "classification.hard_veto": 1,
+    "classification.classification_conflict": 1,
+    "classification.conflict_state": 1,
+    "classification.pipeline_state": 1,
+    "classification.pipeline_complete": 1,
+}
 
 BROKER_GUARD_TERMS = (
     "re max", "re/max", "remax", "fuenzalida", "procasa", "houm", "assetplan",
@@ -324,6 +425,8 @@ def has_valid_human_management_event(
 
 def has_unverified_management_signal(property_doc: dict[str, Any]) -> bool:
     """Protect legacy work markers lacking a ledger event from recycling."""
+    if "_active_workable_has_unverified_management_signal" in property_doc:
+        return bool(property_doc.get("_active_workable_has_unverified_management_signal"))
     gestion = property_doc.get("gestion") or {}
     state = str(gestion.get("estado") or "").strip()
     return bool(
@@ -355,9 +458,114 @@ def active_workable_backlogs(
     events = events_coll if events_coll is not None else db["captacion_management_events"]
     event_keys = _management_event_keys(events)
     workloads = {str(agent_id): 0 for agent_id in agent_ids}
-    for property_doc in collection.find({
+    # Legacy management markers are an exclusion criterion.  Compute that
+    # boolean after the indexed executive match so Mongo does not scan an
+    # unindexed notes/activities predicate across the whole collection.
+    state_expr = {"$ifNull": ["$gestion.estado", ""]}
+    nonempty_expr = lambda field: {
+        "$and": [
+            {"$ne": [{"$ifNull": [field, None]}, None]},
+            {"$ne": [{"$ifNull": [field, None]}, ""]},
+            {"$ne": [{"$ifNull": [field, None]}, []]},
+        ]
+    }
+    management_marker_expr = {
+        "$or": [
+            {
+                "$and": [
+                    {"$ne": [state_expr, ""]},
+                    {"$not": [{"$in": [state_expr, ["NUEVO", "DETECTADO"]]}]},
+                ]
+            },
+            {"$ne": [{"$ifNull": ["$gestion.fecha_ultima_gestion", None]}, None]},
+            nonempty_expr("$gestion.notas"),
+            nonempty_expr("$gestion.actividades"),
+        ]
+    }
+    classification_source_expr = {
+        "$ifNull": ["$classification.decision_source", "$classification.source"]
+    }
+    classification_evidence_expr = {
+        "$or": [
+            nonempty_expr("$classification.reason"),
+            nonempty_expr("$classification.evidence"),
+        ]
+    }
+    auditable_marker_expr = {
+        "$or": [
+            {"$eq": [{"$ifNull": ["$classification.manual_review_approved", False]}, True]},
+            {"$in": [classification_source_expr, [
+                "structural_rules", "rules_json", "html_validation", "profile_correlation",
+                "rules", "rules_fallback", "toctoc_id_type", "portal_structure",
+            ]]},
+            {
+                "$and": [
+                    {"$eq": [classification_source_expr, "deepseek"]},
+                    {"$eq": [{"$ifNull": ["$classification.deepseek_status", ""]}, "VALID"]},
+                    {"$ne": [{"$ifNull": ["$classification.trace.deepseek_raw", None]}, None]},
+                ]
+            },
+            {
+                "$and": [
+                    {"$eq": [{"$ifNull": ["$classification.state", ""]}, "INCIERTO"]},
+                    {"$eq": [classification_source_expr, "deterministic_evidence_engine"]},
+                    {"$eq": [{"$ifNull": ["$classification.owner_probability_completeness.complete", False]}, True]},
+                    {"$ne": [{"$ifNull": ["$classification.owner_probability", None]}, None]},
+                ]
+            },
+            {
+                "$and": [
+                    {"$eq": [{"$ifNull": ["$classification.state", ""]}, "INCIERTO"]},
+                    {"$eq": [{"$ifNull": ["$classification.version", ""]}, "v5-rule-based"]},
+                    classification_evidence_expr,
+                ]
+            },
+        ]
+    }
+    backlog_projection = dict(ACTIVE_WORKABLE_BACKLOG_PROJECTION)
+    backlog_projection["_active_workable_has_unverified_management_signal"] = management_marker_expr
+    backlog_projection["_active_workable_auditable_final_decision"] = auditable_marker_expr
+    managed_object_ids = []
+    for field, value in event_keys:
+        if field == "_id" and ObjectId.is_valid(str(value)):
+            managed_object_ids.append(ObjectId(str(value)))
+    candidate_match = {
         "gestion.ejecutivo_id": {"$in": [str(agent_id) for agent_id in agent_ids]},
-    }):
+        # These are the only states that can be unworked. Other states are
+        # already a management/terminal signal and do not belong in this
+        # prioritization metric.
+        "gestion.estado": {"$in": list(AVAILABLE_STATES)},
+    }
+    if managed_object_ids:
+        candidate_match["_id"] = {"$nin": managed_object_ids}
+    cursor = collection.aggregate([
+        {"$match": candidate_match},
+        {"$project": backlog_projection},
+    ], allowDiskUse=False).batch_size(50)
+    property_docs = list(cursor)
+    missing_title_ids = [
+        doc.get("_id")
+        for doc in property_docs
+        if doc.get("_id") is not None
+        and not str(doc.get("title") or doc.get("titulo") or "").strip()
+    ]
+    if missing_title_ids:
+        descriptions = {
+            row.get("_id"): row
+            for row in collection.find(
+                {"_id": {"$in": missing_title_ids}},
+                {"_id": 1, "description": 1, "descripcion": 1},
+            )
+        }
+        for doc in property_docs:
+            extra = descriptions.get(doc.get("_id"))
+            if extra:
+                for field in ("description", "descripcion"):
+                    if field in extra:
+                        doc[field] = extra[field]
+    identity_matches = get_contact_identity_evidence_batch(db, property_docs)
+    broker_matches = resolve_broker_identity_batch(db, property_docs)
+    for property_doc, identity, broker_match in zip(property_docs, identity_matches, broker_matches):
         gestion = property_doc.get("gestion") or {}
         agent_id = str(gestion.get("ejecutivo_id") or "")
         if agent_id not in workloads or is_terminal_state(gestion.get("estado")):
@@ -366,16 +574,11 @@ def active_workable_backlogs(
             continue
         if has_unverified_management_signal(property_doc):
             continue
-        identity = (
-            get_contact_identity_evidence(db, property_doc)
-            if phone_learning_global_lookup_enabled()
-            else None
-        )
         decision = can_assign_property(
             property_doc,
             {
                 "contact_identity": identity,
-                "broker_identity_match": resolve_broker_identity(db, property_doc),
+                "broker_identity_match": broker_match,
             },
         )
         if not decision.get("assignment_ready") or has_broker_identity(property_doc):

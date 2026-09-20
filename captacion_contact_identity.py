@@ -372,6 +372,58 @@ def get_contact_identity_evidence(db_or_collection, property_doc: dict[str, Any]
         return None
 
 
+def get_contact_identity_evidence_batch(
+    db_or_collection,
+    property_docs: list[dict[str, Any]],
+) -> list[dict[str, Any] | None]:
+    """Resolve phone identities for a workload snapshot with one read.
+
+    The single-document helper remains the source of truth for assignment
+    gates.  Workload prioritization used to call it once per assigned property,
+    which turned a 200-property snapshot into dozens of remote Mongo round
+    trips.  This batch helper preserves the same exact phone lookup semantics
+    while reducing that N+1 pattern to one indexed ``$in`` query.
+    """
+    documents = list(property_docs or [])
+    if not phone_learning_global_lookup_enabled():
+        return [None for _ in documents]
+
+    phones_by_position: dict[int, str] = {}
+    phones: set[str] = set()
+    for position, property_doc in enumerate(documents):
+        phone = _phone_from_document(property_doc)
+        if phone:
+            phones_by_position[position] = phone
+            phones.add(phone)
+    if not phones:
+        return [None for _ in documents]
+
+    try:
+        get_collection = getattr(db_or_collection, "get_collection", None)
+        if callable(get_collection):
+            collection = get_collection(COLLECTION)
+        elif hasattr(db_or_collection, "__getitem__") and not callable(getattr(db_or_collection, "find_one", None)):
+            collection = db_or_collection[COLLECTION]
+        else:
+            collection = db_or_collection
+        rows_by_phone = {
+            str(row.get("phone_normalized")): dict(row)
+            for row in collection.find({"phone_normalized": {"$in": sorted(phones)}})
+            if row.get("phone_normalized")
+        }
+        return [
+            rows_by_phone.get(phones_by_position.get(position, ""))
+            for position in range(len(documents))
+        ]
+    except Exception as exc:
+        logger.warning(
+            "[CP_CONTACT_IDENTITY] batch_lookup=unavailable phones=%s error=%s",
+            len(phones),
+            type(exc).__name__,
+        )
+        return [None for _ in documents]
+
+
 def _append_unique(items: list[Any], value: Any, *, limit: int = 1000) -> list[Any]:
     values = list(items or [])
     if value and value not in values:

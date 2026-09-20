@@ -190,6 +190,46 @@ def test_capacity_counts_only_non_terminal_open_work():
     assert coll.find_one({"_id": candidate["_id"]})["gestion"]["ejecutivo_id"] is None
 
 
+def test_resume_replay_does_not_create_second_assignment_cycle():
+    db = mongomock.MongoClient()["test"]
+    coll = db["propiedades_captacion"]
+    agent_id = str(ObjectId())
+    db["usuarios"].insert_one({
+        "_id": ObjectId(agent_id),
+        "rol": "agente",
+        "is_active": True,
+    })
+    candidate = {
+        "_id": ObjectId(),
+        "origen": "toctoc",
+        "listing_id": "resume-cycle-1",
+        "created_at": datetime.now(timezone.utc),
+        "title": "Casa en venta",
+        "description": "Descripción suficiente",
+        "comuna_slug": "santiago",
+        "classification": {"state": "INCIERTO", "source": "rules"},
+        "pipeline_complete": True,
+        "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
+    }
+    coll.insert_one(candidate)
+    agent = {"id": agent_id, "name": "Agent", "comunas_interes_norm": ["santiago"]}
+    first = assign_captacion_candidate_atomically(
+        db, coll, db["captacion_management_events"], candidate, agent, max_per_agent=2
+    )
+    stored_after_first = coll.find_one({"_id": candidate["_id"]})
+    cycle_id = stored_after_first["gestion"]["assignment_cycle_id"]
+    history_count = len(stored_after_first["gestion"].get("historial_asignaciones") or [])
+    second = assign_captacion_candidate_atomically(
+        db, coll, db["captacion_management_events"], candidate, agent, max_per_agent=2
+    )
+    stored_after_second = coll.find_one({"_id": candidate["_id"]})
+
+    assert first == "assigned"
+    assert second == "race_condition"
+    assert stored_after_second["gestion"]["assignment_cycle_id"] == cycle_id
+    assert len(stored_after_second["gestion"].get("historial_asignaciones") or []) == history_count == 1
+
+
 def test_phone_race_is_revalidated_before_atomic_write(monkeypatch):
     import captacion_distribution as distribution
     from config import Config

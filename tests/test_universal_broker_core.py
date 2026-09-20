@@ -9,6 +9,7 @@ from broker_registry import (
     learn_broker_identity,
     learn_broker_identity_from_management,
     resolve_broker_identity,
+    resolve_broker_identity_batch,
 )
 from canonical_classification import canonicalize_classification
 from captacion_assignment_eligibility import can_assign_property
@@ -258,6 +259,23 @@ def test_exact_registry_keys_match_cross_portal_without_fuzzy_matching():
     match = resolve_broker_identity(db, other_portal)
     assert match["matched"] is True
     assert match["match_type"] in {"EXACT_PHONE", "EXACT_EMAIL", "EXACT_DOMAIN", "EXACT_CONFIRMED_ALIAS"}
+
+
+def test_batch_registry_resolution_matches_single_document_resolution():
+    db = FakeDB()
+    source = broker_listing()
+    learn_broker_identity(
+        db,
+        document=source,
+        source="PORTAL_STRUCTURE",
+        evidence_type="STRUCTURAL_BROKER",
+    )
+    candidate = {**source, "_id": "batch-known"}
+    single = resolve_broker_identity(db, candidate)
+    batch = resolve_broker_identity_batch(db, [candidate])[0]
+    assert batch["matched"] is True
+    assert batch["broker_identity_id"] == single["broker_identity_id"]
+    assert batch["match_type"] == single["match_type"]
 
 
 def test_profile_and_client_ids_are_exact_and_portal_scoped():

@@ -300,6 +300,139 @@ def resolve_broker_identity(
         }
 
 
+def resolve_broker_identity_batch(
+    db: Any,
+    documents: Iterable[dict[str, Any]],
+    *,
+    include_alias: bool = True,
+) -> list[dict[str, Any]]:
+    """Resolve exact broker identities for a batch without N+1 queries.
+
+    This is intentionally equivalent to :func:`resolve_broker_identity`:
+    portal profile/client IDs, phone, email, domain and confirmed aliases are
+    still exact keys, conflicts are still reported, and fuzzy matching is not
+    introduced.  It is used by workload snapshots, where resolving each
+    assigned property separately can exhaust the Mongo socket timeout.
+    """
+    rows = list(documents or [])
+    key_sets = [exact_identity_keys(document, include_alias=include_alias) for document in rows]
+    unique_keys = {
+        (key["key_type"], key["key_value"])
+        for keys in key_sets
+        for key in keys
+    }
+    if not unique_keys:
+        return [
+            {"available": True, "matched": False, "match_type": None, "evidence": []}
+            for _ in rows
+        ]
+
+    try:
+        key_collection = db[BROKER_IDENTITY_KEYS_COLLECTION]
+        # The live registry may legitimately be empty.  Avoid constructing a
+        # large unindexed OR query in that case; an empty registry cannot
+        # produce a match.
+        if key_collection.find_one({}, {"_id": 1}) is None:
+            return [
+                {"available": True, "matched": False, "match_type": None, "evidence": []}
+                for _ in rows
+            ]
+        query = {
+            "$or": [
+                {"key_type": key_type, "key_value": key_value}
+                for key_type, key_value in sorted(unique_keys)
+            ]
+        }
+        key_rows = [dict(row) for row in key_collection.find(query)]
+        rows_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for row in key_rows:
+            key = (str(row.get("key_type") or ""), str(row.get("key_value") or ""))
+            rows_by_key.setdefault(key, []).append(row)
+
+        identity_ids = {
+            str(row.get("identity_id"))
+            for row in key_rows
+            if row.get("identity_id")
+        }
+        identities = {
+            str(identity.get("_id")): dict(identity)
+            for identity in db[BROKER_IDENTITIES_COLLECTION].find(
+                {"_id": {"$in": sorted(identity_ids)}}
+            )
+            if identity.get("_id") is not None
+        }
+        priority = {
+            "PORTAL_PROFILE_ID": "EXACT_PROFILE_ID",
+            "PORTAL_CLIENT_ID": "EXACT_CLIENT_ID",
+            "PHONE": "EXACT_PHONE",
+            "EMAIL": "EXACT_EMAIL",
+            "DOMAIN": "EXACT_DOMAIN",
+            "CONFIRMED_ALIAS": "EXACT_CONFIRMED_ALIAS",
+        }
+        resolved: list[dict[str, Any]] = []
+        for keys in key_sets:
+            evidence = [
+                row
+                for key in keys
+                for row in rows_by_key.get((key["key_type"], key["key_value"]), [])
+            ]
+            matched_identity_ids = {
+                str(row.get("identity_id"))
+                for row in evidence
+                if row.get("identity_id")
+            }
+            if not matched_identity_ids:
+                resolved.append({"available": True, "matched": False, "match_type": None, "evidence": []})
+                continue
+            if len(matched_identity_ids) > 1:
+                resolved.append({
+                    "available": True,
+                    "matched": False,
+                    "conflict": True,
+                    "match_type": "IDENTITY_CONFLICT",
+                    "identity_ids": sorted(matched_identity_ids),
+                    "evidence": evidence,
+                })
+                continue
+            identity_id = next(iter(matched_identity_ids))
+            matched_types = {str(row.get("key_type") or "") for row in evidence}
+            match_type = next(
+                (
+                    priority[key_type]
+                    for key_type in (
+                        "PORTAL_PROFILE_ID",
+                        "PORTAL_CLIENT_ID",
+                        "PHONE",
+                        "EMAIL",
+                        "DOMAIN",
+                        "CONFIRMED_ALIAS",
+                    )
+                    if key_type in matched_types
+                ),
+                "HUMAN_CONFIRMED",
+            )
+            resolved.append({
+                "available": True,
+                "matched": True,
+                "broker_identity_id": identity_id,
+                "match_type": match_type,
+                "identity": identities.get(identity_id, {}),
+                "evidence": evidence,
+            })
+        return resolved
+    except Exception as exc:
+        return [
+            {
+                "available": False,
+                "matched": False,
+                "match_type": "REGISTRY_UNAVAILABLE",
+                "error_type": type(exc).__name__,
+                "evidence": [],
+            }
+            for _ in rows
+        ]
+
+
 def learn_broker_identity(
     db: Any,
     *,

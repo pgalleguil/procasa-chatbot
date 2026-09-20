@@ -131,6 +131,17 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         "rules", "rules_fallback", "toctoc_id_type", "portal_structure",
     }
     deepseek_persisted = source == "deepseek" and ds_status == "VALID" and bool(trace.get("deepseek_raw") or cls.get("deepseek_raw"))
+    projected_auditable = doc.get("_active_workable_auditable_final_decision")
+    if projected_auditable is True:
+        auditable_final_decision = True
+    elif projected_auditable is False:
+        auditable_final_decision = False
+    else:
+        auditable_final_decision = bool(
+            manual_approved
+            or deterministic
+            or deepseek_persisted
+        )
     # Yapo's v5 pipeline persists a complete deterministic evidence result for
     # some INCIERTO documents without a populated ``decision_source``.  That
     # is still an auditable final decision: the evidence engine, completeness
@@ -148,7 +159,7 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         and str(cls.get("version") or "").lower() == "v5-rule-based"
         and bool(cls.get("reason") or cls.get("evidence"))
     )
-    if not (manual_approved or deterministic or deepseek_persisted or evidence_engine_complete or v5_rule_decision):
+    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision):
         reasons.append("no_auditable_final_decision")
     return not reasons, sorted(set(reasons))
 

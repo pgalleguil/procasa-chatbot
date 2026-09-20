@@ -188,6 +188,14 @@ def _classification_with_canonical(
     if final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"} and result.get("owner_probability") is None:
         result["owner_probability"] = result.get("confidence", result.get("canonical_confidence"))
         result["owner_probability_source"] = "canonical_classifier_confidence"
+    if final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"} and result.get("owner_probability") is not None:
+        # The canonical Mongo schema validates confidence against the
+        # persisted owner probability.  Keep both fields aligned when the
+        # structured owner signal supplies the probability directly.
+        if result.get("confidence") is None:
+            result["confidence"] = result["owner_probability"]
+        if result.get("canonical_confidence") is None:
+            result["canonical_confidence"] = result["owner_probability"]
     result["pipeline_state"] = "CLASSIFIED" if pipeline_complete else "UNCERTAIN_PENDING_AI"
     result["pipeline_complete"] = bool(pipeline_complete)
     result["assignment_ready"] = bool(

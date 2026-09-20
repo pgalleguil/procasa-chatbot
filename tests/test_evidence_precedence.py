@@ -66,6 +66,7 @@ def test_idtype1_agenda_visit_is_owner_and_assignable():
     decision = _gate(doc, classification)
     assert classification["final"] == "OWNER_PROBABLE"
     assert classification["evidence_type"] == "EXPLICIT_OWNER_STRUCTURAL"
+    assert classification["confidence"] == classification["owner_probability"]
     assert decision["assignment_ready"] is True
 
 

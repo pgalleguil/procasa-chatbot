@@ -328,9 +328,10 @@ def test_breach_warning_is_race_safe_and_uses_no_technical_ids():
     )
 
     assert "⚠️ Lead con SLA vencido" in message
-    assert "Aún no existe una gestión válida registrada." in message
-    assert "Si el lead continúa asignado a ti" in message
-    assert "Si ya fue reasignado" in message
+    assert "El plazo de gestión terminó y este lead será reasignado automáticamente." in message
+    assert "Ya no corresponde registrar una nueva gestión sobre este lead." in message
+    assert "Gestionar lead" not in message
+    assert "/crm/lead-id/opaque" not in message
     assert "Ciclo:" not in message
     assert "assignment_cycle" not in message
 

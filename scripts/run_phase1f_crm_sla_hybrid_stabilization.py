@@ -443,10 +443,10 @@ def contract_rows() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     add("combined_pre_persist_race", decision_pre_persist_status(snapshot, management_current), ABORT_MANAGEMENT_DETECTED, "management abort has precedence")
     add("anti_ping_pong_rm", "PASS" if generic_anti["path"] == ["user-b", "user-c"] else "FAIL", "user-a_to_user-b_to_user-c", json_cell(generic_anti["path"]))
     add("anti_ping_pong_jpc", "PASS" if jpc_anti["path"] == ["hernan", NO_ELIGIBLE_JPC_RESCUER] else "FAIL", "hernan_then_no_eligible_jpc", json_cell(jpc_anti["path"]))
-    for count in (0, 1, 2):
+    for count in (0, 1, 2, 3):
         result = reassignment_limit_status(count)
-        expected = "AUTO_ELIGIBLE" if count < 2 else SUPERVISOR_REVIEW_REQUIRED
-        add(f"max_automatic_reassignments_{count}", "PASS" if result["status"] == expected else "FAIL", expected, result["review_reason"], assignment_number=count)
+        expected = "AUTO_ELIGIBLE"
+        add(f"continuous_reassignments_{count}", "PASS" if result["status"] == expected else "FAIL", expected, result["review_reason"], assignment_number=count)
     add("contract_fields", "PASS" if len(fields) >= 18 else "FAIL", "all_required_fields", json_cell(fields), first)
     return rows, {"fields": fields, "decision": first, "management_race": management_race_status(snapshot, management_current), "cycle_race": cycle_race_status(snapshot, cycle_current), "anti_rm": generic_anti, "anti_jpc": jpc_anti}
 
@@ -675,7 +675,7 @@ def main() -> None:
         "undefined_without_winner": "PASS" if not simulated_ids.intersection(undefined_ids) else "FAIL",
         "review_without_winner": "PASS" if not simulated_ids.intersection(review_ids) else "FAIL",
         "anti_ping_pong": "PASS" if contract["anti_rm"]["path"] == ["user-b", "user-c"] and contract["anti_jpc"]["path"][1] == NO_ELIGIBLE_JPC_RESCUER else "FAIL",
-        "max_reassignments": "PASS" if reassignment_limit_status(2)["status"] == SUPERVISOR_REVIEW_REQUIRED else "FAIL",
+        "continuous_reassignments": "PASS" if all(reassignment_limit_status(count)["status"] == "AUTO_ELIGIBLE" for count in (0, 1, 2, 3)) else "FAIL",
         "decision_id_deterministic": "PASS" if generate_decision_id("lead", "cycle", "v1") == generate_decision_id("lead", "cycle", "v1") and generate_decision_id("lead", "cycle", "v1") != generate_decision_id("lead", "cycle-2", "v1") else "FAIL",
         "management_race": "PASS" if contract["management_race"] == ABORT_MANAGEMENT_DETECTED else "FAIL",
         "cycle_race": "PASS" if contract["cycle_race"] == ABORT_CYCLE_CHANGED else "FAIL",

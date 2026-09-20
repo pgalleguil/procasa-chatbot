@@ -76,7 +76,6 @@ JPC_LONG_RUN_SIZES = (30, 100, 250)
 COMBINED_SIZES = (100, 250, 500)
 BOOTSTRAP_REPLICATES = 100
 BOOTSTRAP_SEED = 20260910
-MAX_AUTOMATIC_REASSIGNMENTS = 2
 RM_TIER1_IDENTITIES = frozenset({MARIA_NAME, HERNAN_NAME})
 # Pablo is the CRM administrator/owner of the operational account.  His
 # historical usuarios row is still marked ``agente``; keep the SLA selector
@@ -427,7 +426,14 @@ def _rm_selection(
         winner["effective_selection_score"] = winner.get("dynamic_rescue_score")
         result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=winner, reason=balance_reason or (POLICY_VERSION if scenario == R0_NO_GUARDRAIL and low_policy == L1_LOW_NEEDS_PLUS_5 else "rm_guardrail_or_low_policy_adjusted"), guardrail_reason=applied_reason, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason, selection_rule=selection_rule, tier1_recent_count_before=int(_number(winner.get("tier1_recent_count_before"))) if tier1_present else None, tier1_last_assignment_at=str(winner.get("tier1_last_assignment_at") or "") if tier1_present else "", balance_reason=balance_reason)
     else:
-        result = _decision_row(lead, queue="RM", step=0, scored=scored, excluded=exclusions, winner=None, reason=NO_ELIGIBLE_RESCUER, best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason, selection_rule=selection_rule, balance_reason=balance_reason)
+        result = _decision_row(
+            lead, queue="RM", step=0, scored=scored, excluded=exclusions,
+            winner=None, reason=SUPERVISOR_REVIEW_REQUIRED,
+            supervisor_review=True,
+            review_reason="NO_ELIGIBLE_FRESH_COMMERCIAL_RESCUER",
+            best_pool=selection_pool, tier_fallback_reason=tier_fallback_reason,
+            selection_rule=selection_rule, balance_reason=balance_reason,
+        )
     result["selection_pool"] = selection_pool
     return result
 
@@ -477,8 +483,13 @@ def _jpc_selection(
         feasible_ranked.sort(key=lambda row: (-row[1], -row[2], row[3]))
         winner = feasible_ranked[0][4]
         winner["effective_selection_score"] = winner.get("global_rescue_score")
-    reason = "j3_target_deviation_with_score_tiebreak" if winner else NO_ELIGIBLE_JPC_RESCUER
-    return _decision_row(lead, queue="JPC", step=0, scored=scored, excluded=excluded, winner=winner, reason=reason, jpc_target_share=targets)
+    reason = "j3_target_deviation_with_score_tiebreak" if winner else SUPERVISOR_REVIEW_REQUIRED
+    return _decision_row(
+        lead, queue="JPC", step=0, scored=scored, excluded=excluded,
+        winner=winner, reason=reason, jpc_target_share=targets,
+        supervisor_review=not bool(winner),
+        review_reason="NO_ELIGIBLE_FRESH_COMMERCIAL_RESCUER" if not winner else "",
+    )
 
 
 def simulate_combined(
@@ -496,22 +507,6 @@ def simulate_combined(
     total_jpc = sum(1 for lead in source if lead.get("policy_category") == REGION_JPC_MARIA_HERNAN)
     decisions: list[dict[str, Any]] = []
     for step, lead in enumerate(source, start=1):
-        assignment_number = int(_number(lead.get("automatic_reassignment_number", lead.get("assignment_number", 0))))
-        if assignment_number >= MAX_AUTOMATIC_REASSIGNMENTS:
-            row = _decision_row(
-                lead,
-                queue="RM" if lead.get("policy_category") == RM_GLOBAL_RESCUE else "JPC",
-                step=step,
-                scored=[],
-                excluded=[],
-                winner=None,
-                reason=SUPERVISOR_REVIEW_REQUIRED,
-                supervisor_review=True,
-                review_reason="MAX_AUTOMATIC_SLA_REASSIGNMENTS_REACHED",
-                jpc_target_share=jpc_targets if lead.get("policy_category") == REGION_JPC_MARIA_HERNAN else None,
-            )
-            decisions.append(row)
-            continue
         if lead.get("policy_category") == RM_GLOBAL_RESCUE:
             row = _rm_selection(lead, state, rm_history, scenario=rm_policy, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
         elif lead.get("policy_category") == REGION_JPC_MARIA_HERNAN:
@@ -960,7 +955,7 @@ def contract_validation() -> dict[str, Any]:
         "no_management": ({**base, "human_management_detected": True}, ABORT_MANAGEMENT_DETECTED),
         "selected_active": ({**base, "selected_user_active": False}, ABORT_SELECTED_USER_INACTIVE),
         "selected_eligible": ({**base, "selected_user_eligible": False}, ABORT_SELECTED_USER_INELIGIBLE),
-        "assignment_limit": ({**base, "automatic_reassignment_number": 2}, ABORT_ASSIGNMENT_LIMIT_REACHED),
+        "assignment_number_invalid": ({**base, "automatic_reassignment_number": -1}, ABORT_ASSIGNMENT_LIMIT_REACHED),
         "decision_unused": (base, OK_TO_PERSIST),
         "decision_used": (base, ABORT_DECISION_ALREADY_USED),
         "policy_version": ({**base, "policy_version": "other"}, ABORT_POLICY_VERSION_CHANGED),
@@ -978,7 +973,7 @@ def contract_validation() -> dict[str, Any]:
         "combined_race": decision_pre_persist_status(snapshot, current_management),
         "preconditions": statuses,
         "preconditions_pass": all(statuses.values()),
-        "max2": reassignment_limit_status(2)["status"] == SUPERVISOR_REVIEW_REQUIRED,
+        "automatic_reassignment_counter": reassignment_limit_status(2)["status"] == "AUTO_ELIGIBLE",
     }
 
 
@@ -1000,7 +995,7 @@ def policy_parameters(rm_policy: str | None, rm_status: str) -> list[dict[str, A
         {"policy_version": POLICY_VERSION, "parameter": "rm_guardrail", "value": guardrail, "locked": "candidate_only"},
         {"policy_version": POLICY_VERSION, "parameter": "jpc_policy", "value": "J3_PERFORMANCE_WEIGHTED_SHARE;derived_target;min_share=0.30;max_share=0.70", "locked": "yes"},
         {"policy_version": POLICY_VERSION, "parameter": "anti_ping_pong", "value": "previous_sla_owners_excluded", "locked": "yes"},
-        {"policy_version": POLICY_VERSION, "parameter": "max_automatic_sla_reassignments", "value": "2", "locked": "yes"},
+        {"policy_version": POLICY_VERSION, "parameter": "automatic_reassignment_limit", "value": "unbounded_until_previous_owner_pool_exhausted_then_supervisor_review", "locked": "yes"},
         {"policy_version": POLICY_VERSION, "parameter": "regional_policy", "value": "undefined_regional_no_winner;territory_review_no_winner", "locked": "yes"},
     ]
 
@@ -1016,7 +1011,7 @@ def transaction_preconditions() -> list[dict[str, Any]]:
         (7, "no_human_management", "ABORT_MANAGEMENT_DETECTED"),
         (8, "selected_user_active", "ABORT_SELECTED_USER_INACTIVE"),
         (9, "selected_user_eligible", "ABORT_SELECTED_USER_INELIGIBLE"),
-        (10, "automatic_reassignment_number<2", "ABORT_ASSIGNMENT_LIMIT_REACHED"),
+        (10, "automatic_reassignment_number>=0", "ABORT_ASSIGNMENT_LIMIT_REACHED"),
         (11, "decision_id_not_used", "ABORT_DECISION_ALREADY_USED"),
         (12, "policy_version_matches", "ABORT_POLICY_VERSION_CHANGED"),
     ]

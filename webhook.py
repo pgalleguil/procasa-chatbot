@@ -3767,11 +3767,24 @@ async def webhook(
         logger.info("[WHATSAPP_EVENT_IGNORED] event=%s reason=non_inbound_send_event", event_name)
         return JSONResponse({"status": "non_inbound_event_ignored"}, status_code=200)
 
-    if event_name == "messages.update":
-        updated = await asyncio.get_running_loop().run_in_executor(
-            _WEB_THREAD_POOL, lambda: record_delivery_status_webhook(data)
+    if event_name in {"messages.update", "message.update", "messages.status", "message.status"}:
+        def _record_delivery_updates():
+            weekly_updated = record_delivery_status_webhook(data)
+            from chatbot.crm_sla_reassignment_notifications import (
+                record_sla_reassignment_delivery_status_webhook,
+            )
+            sla_result = record_sla_reassignment_delivery_status_webhook(data)
+            return weekly_updated, sla_result
+
+        weekly_updated, sla_result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, _record_delivery_updates
         )
-        return JSONResponse({"status": "delivery_updated" if updated else "delivery_not_tracked"}, status_code=200)
+        sla_tracked = str((sla_result or {}).get("status") or "") not in {
+            "ignored", "unmatched",
+        }
+        return JSONResponse({
+            "status": "delivery_updated" if weekly_updated or sla_tracked else "delivery_not_tracked",
+        }, status_code=200)
 
     # Wasender emits ``message.sent`` for outbound provider activity. It is
     # delivery/observability input only; it must never be interpreted as a

@@ -10,6 +10,7 @@ from chatbot.crm_sla_reassignment_notifications import (
     enqueue_sla_reassignment_notification,
     process_one_sla_reassignment,
     process_one_sla_reassignment_sync,
+    record_sla_reassignment_delivery_status,
 )
 from chatbot.crm_sla_reassignment_integration import execute_sla_reassignment_with_notification
 from chatbot.crm_sla_global_rescue import RescueParameters
@@ -131,6 +132,10 @@ def test_reassignment_commit_to_notification_delivery_end_to_end(monkeypatch):
     assert execution.result.committed is True
     assert pending is not None
     assert pending.get("provider_message_id") in (None, "")
+    destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": pending["assignment_cycle_id"]})
+    assert destination["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+    assert destination.get("owner_notified_at") is None
+    assert destination.get("sla_started_at") is None
 
     calls = []
     delivered = process_one_sla_reassignment_sync(
@@ -146,6 +151,24 @@ def test_reassignment_commit_to_notification_delivery_end_to_end(monkeypatch):
     assert len(calls) == 1
     assert stored["provider_message_id"] == "provider-e2e"
     assert stored["state"] == "sent"
+    assert stored["actually_delivered"] is False
+    destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": pending["assignment_cycle_id"]})
+    assert destination["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+    assert destination.get("owner_notified_at") is None
+    assert destination.get("sla_started_at") is None
+
+    confirmed = record_sla_reassignment_delivery_status(
+        db,
+        provider_message_id="provider-e2e",
+        delivery_status="delivered",
+        delivered_at="2026-09-17T16:05:00Z",
+    )
+    assert confirmed["status"] == "delivered"
+    assert confirmed["activation"]["status"] == "activated"
+    destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": pending["assignment_cycle_id"]})
+    assert destination["reassignment_state"] == "active"
+    assert destination["owner_notified_at"] is not None
+    assert destination["sla_started_at"] == destination["owner_notified_at"]
 
 
 def test_notification_delivery_uses_thread_safe_sync_path_and_new_owner_phone():
@@ -167,10 +190,12 @@ def test_notification_delivery_uses_thread_safe_sync_path_and_new_owner_phone():
     assert "vencimiento de SLA" in calls[0][1]
     notification = db["crm_notifications_v1"].find_one({"delivery_id": delivered["delivery_id"]})
     assert notification["state"] == "sent"
-    assert notification["actually_delivered"] is True
+    assert notification["actually_delivered"] is False
+    cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": notification["assignment_cycle_id"]})
+    assert cycle.get("sla_started_at") is None
 
 
-def test_two_reassignments_create_two_notifications_but_max_two_blocks_third():
+def test_reassignment_notifications_continue_after_two_reassignments():
     db, decision = notification_db()
     db["usuarios"].update_one({"_id": "new-user"}, {"$set": {"telefono": "+56911111111"}})
     first = _result()
@@ -190,8 +215,11 @@ def test_two_reassignments_create_two_notifications_but_max_two_blocks_third():
 
     assert enqueue_sla_reassignment_notification(db, decision=decision, result=first)
     assert enqueue_sla_reassignment_notification(db, decision=second_decision, result=second)
-    assert enqueue_sla_reassignment_notification(db, decision=second_decision, result=third) is None
-    assert len(db["crm_notifications_v1"].rows) == 2
+    third_decision = dict(second_decision)
+    third_decision["decision_id"] = "decision-3"
+    third_decision["selected_user_id"] = "new-user"
+    assert enqueue_sla_reassignment_notification(db, decision=third_decision, result=third)
+    assert len(db["crm_notifications_v1"].rows) == 3
 
 
 def test_post_commit_notification_failure_does_not_change_committed_result(monkeypatch):

@@ -380,11 +380,12 @@ async def build_historical_performance_snapshot(
         "assigned_to_display_name": 1, "assigned_at": 1, "sla_started_at": 1,
         "temperature_at_assignment": 1, "hot_started_at": 1, "cycle_status": 1,
         "unassigned_at": 1, "schema_version": 1, "reason": 1, "cycle_origin": 1,
+        "reassignment_state": 1,
         "first_valid_management_at": 1, "updated_at": 1,
     }
     cycles = await _find_many(
         db["crm_assignment_cycles"],
-        {"assigned_at": {"$gte": window_start, "$lte": as_of}, "assignment_cycle_id": {"$exists": True, "$ne": None}, "lead_id": {"$exists": True, "$ne": None}},
+        {"assigned_at": {"$gte": window_start, "$lte": as_of}, "assignment_cycle_id": {"$exists": True, "$ne": None}, "lead_id": {"$exists": True, "$ne": None}, "reassignment_state": {"$nin": ["AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification"]}},
         cycle_projection, instrumentation=instrumentation, query_name="historical.cycles",
     )
     lead_ids = []
@@ -508,6 +509,7 @@ async def build_live_capacity_snapshot(
         "assigned_at": 1, "sla_started_at": 1, "hot_started_at": 1,
         "temperature_at_assignment": 1, "cycle_status": 1, "unassigned_at": 1,
         "schema_version": 1, "reason": 1, "cycle_origin": 1,
+        "reassignment_state": 1,
     }
     # This reproduces the current-policy gate used by the productive audit:
     # assignment must be post instrumentation cutover, and the effective SLA
@@ -515,6 +517,7 @@ async def build_live_capacity_snapshot(
     # assigned_at as the same production fallback, without projecting PII.
     query = {
         "cycle_status": "active", "unassigned_at": None,
+        "reassignment_state": {"$nin": ["AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification"]},
         "assignment_cycle_id": {"$exists": True, "$ne": None},
         "lead_id": {"$exists": True, "$ne": None},
         "assigned_at": {"$exists": True, "$ne": None, "$gte": policy_since},

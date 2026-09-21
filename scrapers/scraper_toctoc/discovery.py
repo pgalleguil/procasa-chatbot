@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 try:
     from .config import AppConfig
@@ -19,6 +19,10 @@ except ImportError:  # pragma: no cover
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"
 
 
+class DiscoveryDegradedError(RuntimeError):
+    """Raised before processing when Toctoc discovery is not trustworthy."""
+
+
 def _utcnow(): return datetime.now(timezone.utc).isoformat()
 
 
@@ -27,9 +31,30 @@ def _normalize_url(url: str) -> str:
     return urlunparse(parsed._replace(fragment=""))
 
 
-def build_ssr_search_url(config, operacion="venta", tipo="departamento", region="metropolitana", comuna="la-florida"):
+def build_ssr_search_url(
+    config,
+    operacion="venta",
+    tipo="departamento",
+    region="metropolitana",
+    comuna="la-florida",
+    pagina=1,
+    estado=None,
+    publicador=None,
+    precio_desde=None,
+    precio_hasta=None,
+):
     route_commune = "santiago" if comuna == "santiago-centro" else comuna
-    return config.search_ssr_template.format(operacion=operacion, tipo=tipo, region=region, comuna=route_commune)
+    url = config.search_ssr_template.format(operacion=operacion, tipo=tipo, region=region, comuna=route_commune)
+    query = {"pagina": str(pagina)}
+    if estado is not None:
+        query["estado"] = str(estado)
+    if publicador is not None:
+        query["publicador"] = str(publicador)
+    if precio_desde is not None:
+        query["precioDesde"] = str(precio_desde)
+    if precio_hasta is not None:
+        query["precioHasta"] = str(precio_hasta)
+    return f"{url}?{urlencode(query)}"
 
 
 def _search_route_commune(comuna: str) -> str:
@@ -115,11 +140,18 @@ def is_listing_detail_url(url: str) -> bool:
     low = url.lower()
     if "/resultados/" in low or "/santander/" in low:
         return False
-    valid_prefixes = ("/propiedades/", "/propiedad/")
+    if any(key == "o" and value == "menu" for key, value in parse_qsl(urlparse(url).query)):
+        return False
+    valid_prefixes = ("/propiedades/", "/propiedad/", "/venta/", "/arriendo/")
     if not any(p in low for p in valid_prefixes):
         return False
     path = urlparse(url).path.rstrip("/")
-    return bool(re.search(r"/\d+$", path) or re.search(r"-\d+$", path) or re.search(r"/[a-f0-9]{40}$", path))
+    return bool(
+        re.search(r"/\d+$", path)
+        or re.search(r"-\d+$", path)
+        or re.search(r"/[a-z]_[a-f0-9]{20,}$", path)
+        or re.search(r"/[a-f0-9]{20,}$", path)
+    )
 
 
 def listing_id_from_url(url: str) -> tuple[str, str]:
@@ -127,9 +159,11 @@ def listing_id_from_url(url: str) -> tuple[str, str]:
     if m: return m.group(1), "url_numeric_id"
     m = re.search(r"-(\d+)$", url)
     if m: return m.group(1), "url_numeric_id"
-    m = re.search(r"/([a-f0-9]{40})$", url)
+    m = re.search(r"/[a-z]_([a-f0-9]{20,})$", url, re.I)
     if m: return m.group(1), "url_hash"
-    m = re.search(r"/([a-f0-9]{20,})$", url)
+    m = re.search(r"/([a-f0-9]{40})$", url, re.I)
+    if m: return m.group(1), "url_hash"
+    m = re.search(r"/([a-f0-9]{20,})$", url, re.I)
     if m: return m.group(1), "url_hash"
     return "", "not_found"
 
@@ -154,6 +188,8 @@ def classify_url_format(url: str) -> str:
         return "propiedades_otro"
     if "/propiedad/" in url:
         return "propiedad_usado"
+    if re.search(r"/(?:venta|arriendo)/[^/]+/[^/]+/[^/]+/[a-z]_[a-f0-9]{20,}$", url, re.I):
+        return "public_route"
     return "desconocido"
 
 
@@ -235,6 +271,10 @@ def _extract_commune_slug(url: str) -> str:
                     "san-miguel", "conchali", "renca", "recoleta", "quilicura", "el-bosque"]:
             if com in slug_part:
                 return com
+    # Current Toctoc public route: /venta/<tipo>/<region>/<comuna>/<r|b>_<hash>
+    m = re.search(r"/(?:venta|arriendo)/[^/]+/[^/]+/([^/]+)/[a-z]_[a-f0-9]{20,}$", low, re.I)
+    if m:
+        return m.group(1).strip("/")
     return ""
 
 
@@ -294,6 +334,223 @@ def _extract_next_data(html: str):
         return None
 
 
+def _extract_embedded_json(html: str, script_id: str):
+    """Parse a JSON script block without requiring a particular frontend."""
+    pattern = rf'<script[^>]*id=["\']{re.escape(script_id)}["\'][^>]*>(.*?)</script>'
+    match = re.search(pattern, html, re.I | re.S)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1).strip())
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _embedded_script_present(html: str, script_id: str) -> bool:
+    return bool(re.search(rf'<script[^>]*id=["\']{re.escape(script_id)}["\'][^>]*>', html, re.I))
+
+
+def _extract_react_engine_props(html: str):
+    """Read the current Toctoc SSR payload (react-engine-props)."""
+    return _extract_embedded_json(html, "react-engine-props")
+
+
+def _iter_dicts(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _iter_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_dicts(child)
+
+
+def _first_value(record: dict, *keys: str):
+    for key in keys:
+        value = record.get(key)
+        if value not in (None, "", []):
+            return value
+    return ""
+
+
+def _record_from_embedded_object(prop: dict, base_url: str, source: str) -> dict | None:
+    url_value = _first_value(
+        prop,
+        "urlFicha", "url_ficha", "canonical_url", "canonicalUrl", "listing_url",
+        "listingUrl", "property_url", "propertyUrl", "detail_url", "detailUrl",
+        "href", "link", "url",
+    )
+    if not isinstance(url_value, str):
+        return None
+    url = urljoin(base_url, url_value.strip())
+    if not is_listing_detail_url(url):
+        return None
+
+    listing_id = _first_value(prop, "idProperty", "id_property", "propertyId", "listing_id", "listingId")
+    listing_id = str(listing_id) if listing_id not in (None, "", 0, "0") else ""
+    parsed_id, id_source = listing_id_from_url(url)
+    if not listing_id:
+        listing_id, id_source = parsed_id or listing_id_from_url_fallback(url), (id_source if parsed_id else "normalized_url_hash")
+
+    precios = prop.get("precios") or prop.get("prices") or []
+    price_uf = ""
+    price_clp = ""
+    if isinstance(precios, list):
+        for price in precios:
+            if not isinstance(price, dict):
+                continue
+            prefix = str(price.get("prefix", price.get("currency", "")))
+            value = price.get("value", price.get("amount", ""))
+            if str(prefix).upper() == "UF":
+                price_uf = f"UF {value}"
+            elif value not in (None, ""):
+                price_clp = f"$ {value}"
+
+    operation = str(_first_value(prop, "tipoOperacion", "tipo_operacion", "operation", "operation_label"))
+    return {
+        "url": url,
+        "listing_id": listing_id,
+        "listing_id_source": id_source,
+        "url_format": classify_url_format(url),
+        "title": str(_first_value(prop, "titulo", "title", "name")),
+        "comuna": str(_first_value(prop, "comuna", "commune", "municipality")),
+        "region": str(_first_value(prop, "region", "región")),
+        "operacion": "venta" if "venta" in operation.lower() else ("arriendo" if "arriendo" in operation.lower() else ""),
+        "tipo_propiedad": str(_first_value(prop, "tipoPropiedad", "tipo_propiedad", "propertyType")).lower(),
+        "tipo_operacion": operation,
+        "price_uf": price_uf,
+        "price_clp": price_clp,
+        "dormitorios": None,
+        "banos": None,
+        "superficie": None,
+        "publicador": str(_first_value(prop, "publicador", "publisher", "seller", "clientName")),
+        "client_id": str(_first_value(prop, "clientId", "client_id", "seller_client_id")),
+        "discovery_source": source,
+    }
+
+
+def extract_metadata_from_embedded_payload(payload: Any, base_url: str, source: str) -> list[dict]:
+    """Extract listing metadata from either NextData or react-engine-props.
+
+    The traversal is deliberately schema-tolerant: Toctoc has changed the
+    nesting around its result arrays more than once. Only objects containing a
+    valid property-detail URL are accepted, so navigation/config URLs cannot
+    become discovery candidates.
+    """
+    records: list[dict] = []
+    seen: set[str] = set()
+    for item in _iter_dicts(payload):
+        record = _record_from_embedded_object(item, base_url, source)
+        if not record or record["url"] in seen:
+            continue
+        seen.add(record["url"])
+        records.append(record)
+    return records
+
+
+def _extract_detail_urls_from_html(html: str, base_url: str) -> list[str]:
+    """Last-resort extraction of real detail URLs from server-rendered HTML."""
+    candidates = re.findall(
+        r'(?:https?://[^"\'<>\s]+|/(?:propiedad|propiedades|venta|arriendo)/[^"\'<>\s]+)',
+        html,
+        re.I,
+    )
+    urls = []
+    seen = set()
+    for candidate in candidates:
+        url = urljoin(base_url, candidate.rstrip(".,);"))
+        if is_listing_detail_url(url) and url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def _extract_page_records(html: str, base_url: str) -> tuple[list[dict], dict]:
+    """Run the discovery adapters in order and return records plus diagnostics."""
+    next_data = _extract_next_data(html)
+    react_props = _extract_react_engine_props(html)
+    diagnostics = {
+        "next_data_present": _embedded_script_present(html, "__NEXT_DATA__"),
+        "react_engine_props_present": _embedded_script_present(html, "react-engine-props"),
+        "react_engine_props_parseable": react_props is not None,
+        "listing_ids_present": False,
+        "listing_urls_present": False,
+        "pagination_present": bool(re.search(r"(?:pagina|page|pagination|siguiente|next)", html, re.I)),
+        "expected_results": None,
+        "method": "none",
+    }
+
+    records: list[dict] = []
+    if next_data is not None:
+        records = extract_metadata_from_embedded_payload(next_data, base_url, "next_data")
+        diagnostics["method"] = "next_data"
+    if not records and react_props is not None:
+        records = extract_metadata_from_embedded_payload(react_props, base_url, "react_engine_props")
+        diagnostics["method"] = "react_engine_props"
+    if not records:
+        dom_urls = _extract_detail_urls_from_html(html, base_url)
+        records = [_record_from_embedded_object({"url": url}, base_url, "html_detail_url") for url in dom_urls]
+        records = [record for record in records if record]
+        if records:
+            diagnostics["method"] = "html_detail_url"
+
+    diagnostics["listing_urls_present"] = bool(records)
+    diagnostics["listing_ids_present"] = any(r.get("listing_id") for r in records)
+
+    # Known result-count fields in both the legacy Next payload and the newer
+    # server props. Do not infer a positive count from unrelated config data.
+    for payload in (next_data, react_props):
+        for item in _iter_dicts(payload):
+            for key in ("total", "totalResults", "total_results", "totalPropiedades", "resultCount", "result_count"):
+                value = item.get(key) if isinstance(item, dict) else None
+                if isinstance(value, int) and value > 0:
+                    diagnostics["expected_results"] = value
+                    break
+            if diagnostics["expected_results"]:
+                break
+        if diagnostics["expected_results"]:
+            break
+    return records, diagnostics
+
+
+def _set_page_param(url: str, page: int) -> str:
+    parsed = urlparse(url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "pagina"]
+    query.append(("pagina", str(page)))
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _matches_requested_state(record: dict, estado) -> bool:
+    """Apply the used/new scope locally when the SEO route ignores query filters."""
+    if estado in (None, "", 0, "0"):
+        return True
+    operation = str(record.get("tipo_operacion", "")).lower()
+    if str(estado) == "2":
+        return not operation or "usado" in operation
+    if str(estado) == "1":
+        return not operation or "nuevo" in operation
+    return True
+
+
+def evaluate_discovery_health(http_status: int | None, expected_results: int | None, discovered_urls: int) -> dict:
+    """Fail closed when a successful response hides an expected result set."""
+    degraded = bool(http_status == 200 and expected_results and expected_results > 0 and discovered_urls == 0)
+    return {
+        "discovery_degraded": degraded,
+        "run_aborted": degraded,
+        "abort_reason": "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS" if degraded else "",
+    }
+
+
+def _payload_without_listings_is_degraded(diagnostics: dict, records: list[dict]) -> bool:
+    """Treat a loaded search payload with no discoverable listings as unsafe."""
+    if records:
+        return False
+    if diagnostics.get("expected_results") and diagnostics["expected_results"] > 0:
+        return True
+    return bool(diagnostics.get("react_engine_props_present") and diagnostics.get("expected_results") is None)
+
+
 def extract_metadata_from_next_data(next_data) -> list[dict]:
     props = next_data.get("props", {}).get("pageProps", {})
     propiedades = props.get("propiedades", {})
@@ -343,10 +600,17 @@ def extract_metadata_from_next_data(next_data) -> list[dict]:
 
 
 def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                     requested_commune=None):
+                     requested_commune=None, estado=None, report=None):
     if max_urls is not None and max_urls <= 0:
         return discovered
     config = AppConfig()
+    report = report if report is not None else {}
+    report.setdefault("method", "ssr_embedded_payload")
+    report.setdefault("pages", [])
+    report.setdefault("expected_results", None)
+    report.setdefault("duplicates", 0)
+    report.setdefault("invalid_urls", 0)
+    report.setdefault("scope_removed", 0)
     for start_url in start_urls:
         current_url = _normalize_url(start_url)
         pages_visited = 0
@@ -365,22 +629,31 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                 html = resp.text
             except Exception as e:
                 print(f"  SSR download failed: {e}")
+                report["run_aborted"] = True
+                report["abort_reason"] = "HTTP_OR_NETWORK_FAILURE"
                 break
-            nd = _extract_next_data(html)
-            if nd:
-                props_hash = hash(json.dumps(nd.get("props", {}).get("pageProps", {}).get("propiedades", {}).get("results", []), sort_keys=True))
-                if prev_hash is not None and props_hash == prev_hash:
-                    print("  SSR page repeated, stopping.")
-                    break
-                prev_hash = props_hash
-                total = nd.get("props", {}).get("pageProps", {}).get("propiedades", {}).get("total", 0)
-                print(f"  SSR page {pages_visited+1}: total={total}")
-            records = extract_metadata_from_next_data(nd) if nd else []
+            records, diagnostics = _extract_page_records(html, current_url)
+            expected = diagnostics.get("expected_results")
+            if expected:
+                report["expected_results"] = expected
+            props_hash = hash(json.dumps([r.get("url") for r in records], sort_keys=True))
+            if prev_hash is not None and props_hash == prev_hash:
+                print("  SSR page repeated, stopping.")
+                report["pagination_working"] = report.get("pagination_working", False)
+                break
+            prev_hash = props_hash
             new_on_page = 0
+            scope_removed = 0
+            duplicates = 0
             for rec in records:
                 if requested_commune and not matches_requested_commune(rec.get("url", ""), requested_commune):
+                    scope_removed += 1
+                    continue
+                if not _matches_requested_state(rec, estado):
+                    scope_removed += 1
                     continue
                 if rec["url"] in seen_urls or (rec["listing_id"] and rec["listing_id"] in seen_ids):
+                    duplicates += 1
                     continue
                 seen_urls.add(rec["url"])
                 if rec["listing_id"]:
@@ -396,17 +669,49 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                 new_on_page += 1
                 if len(discovered) >= max_urls:
                     print(f"  Page {pages_visited+1}: {new_on_page} new")
+                    report["duplicates"] += duplicates
+                    report["scope_removed"] += scope_removed
+                    report["pages"].append({"page": pages_visited + 1, "raw_records": len(records), "new_unique_urls": new_on_page,
+                                             "duplicates": duplicates, "scope_removed": scope_removed, **diagnostics})
                     return discovered
-            print(f"  Page {pages_visited+1}: {new_on_page} new")
+            report["pages"].append({"page": pages_visited + 1, "raw_records": len(records), "new_unique_urls": new_on_page,
+                                    "duplicates": duplicates, "scope_removed": scope_removed, **diagnostics})
+            if pages_visited > 0 and new_on_page > 0:
+                report["pagination_working"] = True
+            report["duplicates"] += duplicates
+            report["scope_removed"] += scope_removed
+            report["invalid_urls"] += diagnostics.get("invalid_urls", 0)
+            print(f"  SSR page {pages_visited+1}: raw={len(records)} new={new_on_page} dup={duplicates} scope_removed={scope_removed}")
+            health = evaluate_discovery_health(200, expected, len(records))
+            if _payload_without_listings_is_degraded(diagnostics, records):
+                health = {
+                    "discovery_degraded": True,
+                    "run_aborted": True,
+                    "abort_reason": (
+                        "HTTP_200_REACT_PROPS_WITHOUT_DISCOVERABLE_LISTINGS"
+                        if diagnostics.get("react_engine_props_present") and not expected
+                        else "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS"
+                    ),
+                }
+            if health["discovery_degraded"]:
+                report.update(health)
+                break
             if new_on_page == 0:
                 break
             pages_visited += 1
-            break
+            if max_pages is not None and pages_visited >= max_pages:
+                break
+            current_url = _set_page_param(start_url, pages_visited + 1)
+            # This becomes true only after a later page contributes at least
+            # one new URL; merely changing the query string is not proof that
+            # pagination works.
+            report["pagination_working"] = report.get("pagination_working", False)
     return discovered
 
 
 def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                             proxy_manager=None, block_resources=True, requested_commune=None):
+                             proxy_manager=None, block_resources=True, requested_commune=None,
+                             estado=None, report=None):
     if max_urls is not None and max_urls <= 0:
         return discovered
     try:
@@ -414,7 +719,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
     except ImportError:
         print("Playwright not installed. Falling back to SSR.")
         return discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                                requested_commune=requested_commune)
+                                requested_commune=requested_commune, estado=estado, report=report)
 
     config = AppConfig()
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -559,9 +864,11 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                         stop_reason = "BLOCKED"
                         break
 
+                embedded_records, diagnostics = _extract_page_records(raw_html, current_url)
                 hrefs = _scroll_and_extract(page, current_url)
                 cards_count = len(hrefs)
-                records = _extract_records_from_hrefs(hrefs, current_url)
+                records = embedded_records or _extract_records_from_hrefs(hrefs, current_url)
+                records = [record for record in records if _matches_requested_state(record, estado)]
                 page_ids = [r["listing_id"] for r in records if r.get("listing_id")]
                 signature = _page_signature(page_ids) if page_ids else _page_signature([r["url"] for r in records])
 
@@ -606,6 +913,8 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     "first_listing_id": page_ids[0] if page_ids else "",
                     "last_listing_id": page_ids[-1] if page_ids else "",
                     "page_signature": signature,
+                    "discovery_method": diagnostics.get("method", "dom") if embedded_records else "dom",
+                    "scope_filtered": diagnostics.get("expected_results"),
                 })
 
                 print(f"  PW page {pages_visited+1}: cards={cards_count} extracted={len(records)} new={new_on_page} dup={dup_on_page} total={len(discovered)}")
@@ -678,7 +987,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     next_btn.click()
                     page.wait_for_timeout(2000)
                     try:
-                        page.wait_for_selector('a[href*="/propiedad/"], a[href*="/propiedades/"]', timeout=8000)
+                        page.wait_for_selector('a[href*="/propiedad/"], a[href*="/propiedades/"], a[href*="/venta/"], a[href*="/arriendo/"]', timeout=8000)
                     except PwTimeout:
                         pass
                     page.wait_for_timeout(1000)
@@ -761,13 +1070,24 @@ def _save_checkpoint(path, batch_id, search_url, last_page, total_urls, stop_rea
 def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=None, use_playwright=False,
                           operacion="venta", tipo="departamento", region="metropolitana", comuna="la-florida",
                           estado=None, publicador=None, precio_desde=None, precio_hasta=None,
-                          proxy_manager=None, block_resources=True):
+                          proxy_manager=None, block_resources=True, return_report=False):
     config = AppConfig()
     config.ensure_layout()
     batch_id = batch_id or config.generate_batch_id()
     discovered: list[dict] = []
     seen_urls: set[str] = set()
     seen_ids: set[str] = set()
+    report = {
+        "method": "playwright" if use_playwright else "ssr_embedded_payload",
+        "pages": [],
+        "expected_results": None,
+        "duplicates": 0,
+        "invalid_urls": 0,
+        "scope_removed": 0,
+        "discovery_degraded": False,
+        "run_aborted": False,
+        "pagination_working": False,
+    }
 
     if max_urls is not None and max_urls <= 0:
         return discovered
@@ -782,17 +1102,26 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
             if builder["warnings"]:
                 for w in builder["warnings"]:
                     print(f"  WARNING: {w}")
-            start_urls = [builder["url"]]
+            # The SPA shell does not expose its result payload reliably. The
+            # SSR/SEO route remains the primary source for discovery and is
+            # parsed with the same frontend-agnostic adapters below.
+            start_urls = [build_ssr_search_url(config, operacion=operacion, tipo=tipo, region=region,
+                                               comuna=route_commune, pagina=1, estado=estado,
+                                               publicador=publicador, precio_desde=precio_desde,
+                                               precio_hasta=precio_hasta)]
         else:
-            start_urls = [build_ssr_search_url(config, operacion=operacion, tipo=tipo, region=region, comuna=route_commune)]
+            start_urls = [build_ssr_search_url(config, operacion=operacion, tipo=tipo, region=region,
+                                               comuna=route_commune, pagina=1, estado=estado,
+                                               publicador=publicador, precio_desde=precio_desde,
+                                               precio_hasta=precio_hasta)]
 
     if use_playwright:
         result = discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
                                          proxy_manager=proxy_manager, block_resources=block_resources,
-                                         requested_commune=comuna)
+                                         requested_commune=comuna, estado=estado, report=report)
     else:
         result = discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                                  requested_commune=comuna)
+                                  requested_commune=comuna, estado=estado, report=report)
 
     # Defensa obligatoria: Toctoc puede devolver resultados fuera de la zona
     # pedida cuando la SPA pierde parte de los parámetros de búsqueda.
@@ -801,6 +1130,24 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
     rejected = before - len(result)
     if rejected:
         print(f"  Commune guard: rechazadas {rejected} URLs fuera de {comuna}; aceptadas {len(result)}")
+    report["urls_found"] = len(result)
+    report["unique_urls"] = len({r.get("url") for r in result})
+    report["valid_urls"] = sum(1 for r in result if is_listing_detail_url(r.get("url", "")))
+    report["duplicates"] += len(result) - report["unique_urls"]
+    if not result and any(page.get("react_engine_props_present") for page in report.get("pages", [])):
+        report.update({
+            "discovery_degraded": True,
+            "run_aborted": True,
+            "abort_reason": "HTTP_200_REACT_PROPS_URLS_OUTSIDE_REQUESTED_SCOPE",
+        })
+    if not report.get("discovery_degraded"):
+        report.update(evaluate_discovery_health(200, report.get("expected_results"), len(result)))
+    if return_report:
+        return {"records": result, "report": report}
+    if report.get("discovery_degraded"):
+        raise DiscoveryDegradedError(
+            f"DISCOVERY_DEGRADED=true; RUN_ABORTED=true; reason={report.get('abort_reason', 'unknown')}"
+        )
     return result
 
 

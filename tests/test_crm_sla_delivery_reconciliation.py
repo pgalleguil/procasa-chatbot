@@ -1,5 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import mongomock
 
@@ -15,6 +17,7 @@ from chatbot.crm_sla_reassignment_notifications import (
     recover_sla_reassignment_delivery_from_evidence,
     record_sla_reassignment_delivery_status,
     process_one_sla_reassignment_sync,
+    HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
 )
 
 
@@ -185,6 +188,106 @@ def test_delivered_then_sent_cannot_regress_delivery_or_clock():
     assert notification["provider_status_regression_observed"] is True
     assert notification["effective_delivery_at"] == first_at.replace(tzinfo=None)
     assert cycle["sla_started_at"] == first_at.replace(tzinfo=None)
+
+
+def test_concurrent_delivered_and_sent_keeps_confirmed_delivery():
+    db = _fixture()
+    barrier = Barrier(2)
+
+    def invoke(status):
+        barrier.wait()
+        return record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id="provider-1",
+            delivery_status=status,
+            delivered_at=datetime(2026, 9, 20, 12, 14, tzinfo=UTC)
+            if status == "delivered" else None,
+        )
+
+    # The barrier is deliberately used only to make both callers overlap;
+    # Mongo CAS, not test ordering, decides the winner.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(invoke, ("delivered", "sent")))
+    notification = db[COLLECTION].find_one({"_id": "notification-1"})
+    assert notification["actually_delivered"] is True
+    assert notification["delivery_status"] == "delivered"
+    assert notification["effective_delivery_at"] is not None
+    assert any(result["provider_status"] == "delivered" for result in results)
+
+
+def test_concurrent_delivered_and_failed_keeps_confirmed_delivery():
+    db = _fixture()
+    barrier = Barrier(2)
+
+    def invoke(status):
+        barrier.wait()
+        return record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id="provider-1",
+            delivery_status=status,
+            delivered_at=datetime(2026, 9, 20, 12, 14, tzinfo=UTC)
+            if status == "delivered" else None,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(invoke, ("delivered", "failed")))
+    notification = db[COLLECTION].find_one({"_id": "notification-1"})
+    assert notification["actually_delivered"] is True
+    assert notification["delivery_status"] == "delivered"
+    assert notification["effective_delivery_at"] is not None
+    assert any(result["provider_status"] == "delivered" for result in results)
+
+
+def test_concurrent_read_and_sent_keeps_confirmed_delivery():
+    db = _fixture()
+    barrier = Barrier(2)
+
+    def invoke(status):
+        barrier.wait()
+        return record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id="provider-1",
+            delivery_status=status,
+            delivered_at=datetime(2026, 9, 20, 12, 15, tzinfo=UTC)
+            if status == "read" else None,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(invoke, ("read", "sent")))
+    notification = db[COLLECTION].find_one({"_id": "notification-1"})
+    assert notification["actually_delivered"] is True
+    assert notification["delivery_status"] == "read"
+    assert notification["effective_delivery_at"] is not None
+    assert any(result["provider_status"] == "read" for result in results)
+
+
+def test_concurrent_delivered_observers_share_one_immutable_effective_clock():
+    db = _fixture()
+    barrier = Barrier(2)
+    first_at = datetime(2026, 9, 20, 12, 16, tzinfo=UTC)
+    second_at = first_at + timedelta(seconds=1)
+
+    def invoke(observed_at):
+        barrier.wait()
+        return record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id="provider-1",
+            delivery_status="delivered",
+            delivery_confirmed_observed_at=observed_at,
+            authenticated_provider_confirmation=True,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(invoke, (first_at, second_at)))
+    notification = db[COLLECTION].find_one({"_id": "notification-1"})
+    assert notification["effective_delivery_at"] in {
+        first_at.replace(tzinfo=None), second_at.replace(tzinfo=None)
+    }
+    assert notification["delivery_confirmed_observed_at"] == notification["effective_delivery_at"]
+    assert all(
+        result["effective_delivery_at"].replace(tzinfo=None) == notification["effective_delivery_at"]
+        for result in results
+    )
 
 
 def test_read_then_delivered_preserves_higher_status_and_clock():
@@ -451,16 +554,18 @@ def test_historical_delivery_recovery_is_idempotent_and_activates_existing_cycle
         notification_id="notification-1",
         provider_message_id="provider-1",
         first_confirmed_observed_at=observed_at,
-        evidence_source="RENDER_LOG",
+        evidence_source=HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
         evidence_reference="render-event-123",
+        now=observed_at + timedelta(seconds=1),
     )
     second = recover_sla_reassignment_delivery_from_evidence(
         db,
         notification_id="notification-1",
         provider_message_id="provider-1",
         first_confirmed_observed_at=observed_at + timedelta(seconds=1),
-        evidence_source="RENDER_LOG",
+        evidence_source=HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
         evidence_reference="render-event-123",
+        now=observed_at + timedelta(seconds=2),
     )
     notification = db[COLLECTION].find_one({"_id": "notification-1"})
     cycle = db["crm_assignment_cycles"].find_one({"_id": "cycle-1"})
@@ -471,6 +576,53 @@ def test_historical_delivery_recovery_is_idempotent_and_activates_existing_cycle
     assert notification["delivery_evidence_reference"] == "render-event-123"
     assert "delivered_at" not in notification
     assert cycle["sla_started_at"] == observed_at.replace(tzinfo=None)
+
+
+def test_historical_recovery_rejects_non_authenticated_source():
+    db = _fixture()
+    observed_at = datetime(2026, 9, 21, 2, 4, 29, tzinfo=UTC)
+    result = recover_sla_reassignment_delivery_from_evidence(
+        db,
+        notification_id="notification-1",
+        provider_message_id="provider-1",
+        first_confirmed_observed_at=observed_at,
+        evidence_source="RENDER_LOG",
+        evidence_reference="render-event-123",
+        now=observed_at + timedelta(seconds=1),
+    )
+    assert result == {"status": "blocked", "reason": "unsupported_evidence_source"}
+
+
+def test_historical_recovery_rejects_observation_before_send():
+    db = _fixture()
+    observed_at = datetime(2026, 9, 20, 11, 59, tzinfo=UTC)
+    result = recover_sla_reassignment_delivery_from_evidence(
+        db,
+        notification_id="notification-1",
+        provider_message_id="provider-1",
+        first_confirmed_observed_at=observed_at,
+        evidence_source=HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
+        evidence_reference="render-event-123",
+        now=observed_at + timedelta(seconds=1),
+    )
+    assert result["status"] == "blocked"
+    assert result["reason"] == "evidence_before_send"
+
+
+def test_historical_recovery_rejects_future_observation():
+    db = _fixture()
+    now = datetime(2026, 9, 21, 2, 4, 29, tzinfo=UTC)
+    result = recover_sla_reassignment_delivery_from_evidence(
+        db,
+        notification_id="notification-1",
+        provider_message_id="provider-1",
+        first_confirmed_observed_at=now + timedelta(seconds=61),
+        evidence_source=HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
+        evidence_reference="render-event-123",
+        now=now,
+    )
+    assert result["status"] == "blocked"
+    assert result["reason"] == "evidence_in_future"
 
 
 def test_business_clock_from_sunday_observation_starts_monday():

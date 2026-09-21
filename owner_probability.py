@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from broker_identity import detect_hard_broker_signal
+from canonical_classification import canonicalize_classification
 
 
 OWNER_PROBABILITY_VERSION = "owner-probability-evidence-v1"
@@ -505,7 +506,9 @@ def calculate_owner_probability(
 
 
 def apply_owner_probability_to_document(
-    doc: dict[str, Any], *, extracted: dict[str, Any] | None = None
+    doc: dict[str, Any], *, extracted: dict[str, Any] | None = None,
+    registry_match: dict[str, Any] | None = None,
+    human_broker_match: bool = False,
 ) -> dict[str, Any]:
     """Persist the single owner probability and derive the public state.
 
@@ -515,9 +518,11 @@ def apply_owner_probability_to_document(
     """
     classification = dict(doc.get("classification") or {})
     hard_broker_signal = detect_hard_broker_signal(doc, extracted=extracted or doc)
+    registry_broker_match = bool((registry_match or {}).get("matched"))
+    identity_broker_match = registry_broker_match or bool(human_broker_match)
     if classification.get("status") in {
         "PENDING_LLM", "PENDING_SEMANTIC_REVIEW", "SEMANTIC_CLASSIFICATION_FAILED",
-    } and not hard_broker_signal:
+    } and not hard_broker_signal and not identity_broker_match:
         # Processing states are not classification decisions and must not be
         # converted into an artificial INCIERTO document.
         doc["classification"] = classification
@@ -565,6 +570,8 @@ def apply_owner_probability_to_document(
         final_state = "AD_REMOVED"
     elif hard_veto == "PROFESSIONAL":
         final_state = "CORREDOR_SEGURO"
+    elif identity_broker_match:
+        final_state = "CORREDOR_SEGURO"
     elif probability is None:
         final_state = previous_state if broker_confirmed else "PENDIENTE"
     else:
@@ -601,9 +608,36 @@ def apply_owner_probability_to_document(
     classification["assignment_block_reasons"] = (
         [] if classification["assignment_ready"]
         else ["PROFESSIONAL_HARD_VETO"] if hard_veto == "PROFESSIONAL"
+        else ["BROKER_IDENTITY_MATCH"] if identity_broker_match
         else ["NON_OWNER_STATE_NOT_ASSIGNABLE"] if final_state not in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
         else ["BROKER_CONFIRMED"] if broker_confirmed
         else completeness.get("reasons", []) or ["OWNER_PROBABILITY_BELOW_50"]
     )
+    broker_terminal = bool(
+        hard_veto == "PROFESSIONAL"
+        or identity_broker_match
+        or broker_confirmed
+    )
+    classification["pipeline_state"] = (
+        "CLASSIFIED"
+        if broker_terminal
+        else "UNCERTAIN_PENDING_AI"
+        if final_state == "PENDIENTE" or any(
+            str(reason).startswith("DEEPSEEK_REQUIRED_")
+            for reason in completeness.get("reasons", [])
+        )
+        else "CLASSIFIED"
+    )
+    classification["pipeline_complete"] = classification["pipeline_state"] == "CLASSIFIED"
+    # Re-apply the canonical result after legacy state/probability fields are
+    # finalized so no later score/schema write can undo a hard veto.
+    canonical_input = dict(classification)
+    canonical_input["final"] = final_state
+    classification.update(canonicalize_classification(
+        {**doc, "classification": canonical_input},
+        registry_match=registry_match,
+        human_broker_match=human_broker_match,
+        evidence=classification.get("evidence") or [],
+    ))
     doc["classification"] = classification
     return doc

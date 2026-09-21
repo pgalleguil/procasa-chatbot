@@ -149,6 +149,9 @@ def classify_structural_broker(extracted: dict[str, Any]) -> dict[str, Any] | No
             "hard_broker_signal_reason": hard_publisher["reason_code"],
             "hard_broker_signal_evidence": [hard_publisher["evidence"]],
             "strong_signal_found": True,
+            "evidence_type": "STRUCTURAL_BROKER",
+            "evidence_strength": "HARD",
+            "evidence_source": "portal_structure",
         }
     signals = {}
     evidence: list[str] = []
@@ -214,19 +217,28 @@ def classify_structural_broker(extracted: dict[str, Any]) -> dict[str, Any] | No
                 "decision_pattern": "explicit_inmobiliaria" if is_structural else "strong_professional_signal",
                 "signals": signals,
                 "strong_signal_found": has_strong,
+                "evidence_type": "STRUCTURAL_BROKER" if is_structural else "STRONG_TEXT_BROKER",
+                "evidence_strength": "HARD" if is_structural else "STRONG",
+                "evidence_source": "portal_structure" if is_structural else "text_rules",
             }
-        
-        # Weak or project signals -> CORREDOR_PROBABLE
+
+        # Weak/project language is evidence for review only.  It must not be
+        # promoted to CORREDOR_PROBABLE because phrases such as
+        # "entrega inmediata" and "agenda tu visita" are also common in
+        # genuine owner listings.
         if has_project:
             level = "weak_professional" if has_weak else "project_language"
             return {
-                "state": "CORREDOR_PROBABLE",
-                "confidence": 0.85 if has_weak else 0.7,
-                "reason": "El contenido sugiere actividad profesional o de proyecto inmobiliario.",
+                "state": "INCONCLUSIVE",
+                "confidence": 0.35,
+                "reason": "Señales textuales débiles/proyecto; no constituyen veto de corredor.",
                 "evidence": evidence[:10],
                 "source": "structural_rules",
                 "decision_pattern": level,
                 "signals": signals,
+                "evidence_type": "WEAK_TEXT_SIGNAL",
+                "evidence_strength": "WEAK",
+                "evidence_source": "text_rules",
             }
     return None
 
@@ -461,6 +473,9 @@ def classify_structural_owner(extracted: dict[str, Any]) -> dict[str, Any] | Non
         "reason": "La descripcion declara explicitamente que la propiedad es vendida directamente por su dueno y el anunciante esta identificado como particular.",
         "decision_pattern": "explicit_owner_direct_sale",
         "decision_source": "structural_rules",
+        "evidence_type": "EXPLICIT_OWNER_STRUCTURAL",
+        "evidence_strength": "EXPLICIT_OWNER_STRUCTURAL",
+        "evidence_source": "owner_rules",
     }
 
 
@@ -542,12 +557,87 @@ def build_semantic_check(
     }
 
 
+def classify_toctoc_id_type(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    """Map Toctoc's structured seller discriminator without using AI."""
+    portal = str(
+        extracted.get("portal")
+        or extracted.get("source_portal")
+        or extracted.get("origen")
+        or ""
+    ).strip().lower()
+    if portal and portal not in {"toctoc", "toctoc.com"}:
+        return None
+    raw = str(
+        extracted.get("seller_id_type_raw")
+        or extracted.get("seller_id_type")
+        or ""
+    ).strip()
+    if raw == "1":
+        return {
+            "state": "DUEÑO_PROBABLE",
+            "confidence": 0.89,
+            "reason": "TOCTOC client.idType=1: anunciante particular.",
+            "evidence": ["client.idType=1"],
+            "source": "toctoc_id_type",
+            "decision_source": "portal_structure",
+            "evidence_type": "EXPLICIT_OWNER_STRUCTURAL",
+            "evidence_strength": "EXPLICIT_OWNER_STRUCTURAL",
+            "evidence_source": "detail_next_data.client.idType",
+            "owner_structural_evidence": True,
+        }
+    if raw == "2":
+        return {
+            "state": "CORREDOR_SEGURO",
+            "confidence": 1.0,
+            "reason": "TOCTOC client.idType=2: anunciante corredor.",
+            "evidence": ["client.idType=2"],
+            "source": "toctoc_id_type",
+            "decision_source": "portal_structure",
+            "hard_veto": "PROFESSIONAL",
+            "hard_broker_signal": True,
+            "evidence_type": "STRUCTURAL_BROKER",
+            "evidence_strength": "HARD",
+            "evidence_source": "detail_next_data.client.idType",
+        }
+    if raw == "3":
+        return {
+            "state": "OUT_OF_SCOPE_NEW_DEVELOPMENT",
+            "confidence": 1.0,
+            "reason": "TOCTOC client.idType=3: venta nueva/proyecto inmobiliario.",
+            "evidence": ["client.idType=3"],
+            "source": "toctoc_id_type",
+            "decision_source": "portal_structure",
+            "evidence_type": "OUT_OF_SCOPE_SCOPE",
+            "evidence_strength": "HARD",
+            "evidence_source": "detail_next_data.client.idType",
+            "out_of_scope": True,
+        }
+    return None
+
+
+def is_strong_broker_rule(result: dict[str, Any] | None) -> bool:
+    """Only HARD/STRONG evidence may enter the strong-text gate."""
+    if not result:
+        return False
+    state = str(result.get("state") or "").upper()
+    strength = str(result.get("evidence_strength") or "").upper()
+    if strength in {"HARD", "STRONG"}:
+        return state.startswith("CORREDOR")
+    # Preserve legacy hard-safe results that predate evidence_strength, but
+    # never infer strength from CORREDOR_PROBABLE alone.
+    return state == "CORREDOR_SEGURO" and not strength
+
+
 def classify_with_rules(extracted: dict[str, Any]) -> dict[str, Any]:
     structural_broker = classify_structural_broker(extracted)
-    if structural_broker: return structural_broker
+    if structural_broker and is_strong_broker_rule(structural_broker):
+        return structural_broker
     structural_owner = classify_structural_owner(extracted)
     if structural_owner: return structural_owner
+    if structural_broker: return structural_broker
     obvious = classify_obvious_broker(extracted)
     if obvious: return obvious
+    id_type = classify_toctoc_id_type(extracted)
+    if id_type: return id_type
     company = company_shape_in_publisher_fields(extracted)
-    return {"state": "INCONCLUSIVE", "confidence": 0.35 if company["company_like_suspected"] else 0.2, "reason": "No se encontraron senales suficientes de corredor ni de propietario.", "evidence": company["company_like_evidence"], "source": "rules_json", **company, "owner_signal_evidence": detect_owner_signals(extracted), "weak_broker_evidence": []}
+    return {"state": "INCONCLUSIVE", "confidence": 0.35 if company["company_like_suspected"] else 0.2, "reason": "No se encontraron senales suficientes de corredor ni de propietario.", "evidence": company["company_like_evidence"], "source": "rules_json", **company, "owner_signal_evidence": detect_owner_signals(extracted), "weak_broker_evidence": [], "evidence_type": "WEAK_TEXT_SIGNAL" if company["company_like_suspected"] else "NONE", "evidence_strength": "WEAK" if company["company_like_suspected"] else "NONE", "evidence_source": "text_rules"}

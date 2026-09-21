@@ -23,10 +23,19 @@ from discovery import discover_listing_urls
 from classifier_rules import (
     classify_structural_broker, classify_structural_owner, classify_obvious_broker,
     should_invoke_deepseek, build_rule_context, detect_explicit_owner,
+    is_strong_broker_rule,
 )
+from ai_cost_guard import AICostGuard, budget_from_config
+from classification_cache import ClassificationCache
+from classification_service import classify_capture
 from pymongo import MongoClient
 
 config = AppConfig()
+run_cache = ClassificationCache(
+    path=getattr(config, "classification_cache_path", "")
+    or str(config.data_dir / "classification_cache.json")
+) if getattr(config, "classification_cache_enabled", True) else ClassificationCache()
+run_budget = AICostGuard(budget=budget_from_config(config))
 MONGO_URI = os.getenv("MONGO_URI")
 DB = os.getenv("MONGO_DB","yapo")
 COL_NAME = os.getenv("CAPTACION_COLLECTION_NAME") or os.getenv("MONGO_COLLECTION","propiedades_captacion")
@@ -204,46 +213,26 @@ try:
             
             enriched = _enrich_property_fields(extracted, clean_url, config.uf_valor_clp, config.uf_fecha)
             
-            # Classify
-            classification = None
-            br = classify_structural_broker(enriched)
-            if br: classification = br
-            if not classification:
-                ow = classify_structural_owner(enriched)
-                if ow: classification = ow
-            if not classification:
-                ob = classify_obvious_broker(enriched)
-                if ob: classification = ob
-            
-            if not classification and len(desc) >= 20:
-                should_ds, _ = should_invoke_deepseek(
-                    "INCONCLUSIVE", desc, len(desc), False, seller_type,
-                    has_strong_broker_rule=False, has_explicit_owner_rule=False
-                )
-                if should_ds and config.deepseek_enabled:
-                    try:
-                        from deepseek_classifier import classify_with_deepseek
-                        rctx = build_rule_context(enriched)
-                        ds = classify_with_deepseek(enriched, rctx, config)
-                        stats["ds_calls"] += 1
-                        if ds and ds.status == "VALID":
-                            classification = {
-                                "state": ds.state, "confidence": ds.confidence,
-                                "reason": ds.reason, "evidence": ds.evidence,
-                                "source": "deepseek", "deepseek_raw": ds.raw,
-                                "deepseek_status": ds.status, "rule_state": "INCONCLUSIVE", "signals": {},
-                            }
-                            if ds.state == "DUEÑO_SEGURO" and not detect_explicit_owner(enriched):
-                                classification.update(state="INCIERTO", confidence=0.6,
-                                    reason="third-person", source="rules_fallback")
-                    except Exception:
-                        pass
-            
-            if not classification:
-                classification = {
-                    "state": "INCIERTO", "confidence": 0.55, "reason": "no rules",
-                    "evidence": [], "source": "rules_fallback", "rule_state": "INCONCLUSIVE", "signals": {},
-                }
+            # This script is a legacy territorial runner. It now uses the
+            # central service and fails closed for residual AI until it is
+            # invoked by the batch orchestrator with a complete health gate.
+            rule_result = (
+                classify_structural_broker(enriched)
+                or classify_structural_owner(enriched)
+                or classify_obvious_broker(enriched)
+            )
+            central_result = classify_capture(
+                enriched,
+                rule_context=build_rule_context(enriched),
+                config=config,
+                health={"healthy": False, "degraded": True, "reason": "BATCH_HEALTH_NOT_AVAILABLE"},
+                cache=run_cache,
+                budget=run_budget,
+                classification_hint=rule_result,
+                strong_text_broker=is_strong_broker_rule(rule_result),
+                allow_real_ai=False,
+            )
+            classification = central_result["classification"]
             
             state = classification.get("state", "INCIERTO")
             try: cf = float(classification.get("confidence", 0) or 0)

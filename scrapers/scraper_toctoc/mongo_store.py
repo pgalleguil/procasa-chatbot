@@ -7,6 +7,13 @@ from typing import Any
 from config import AppConfig
 from crm_schema import build_crm_document
 try:
+    from broker_registry import learn_broker_identity, resolve_broker_identity
+except ImportError:  # ejecución directa desde scrapers/scraper_toctoc/
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from broker_registry import learn_broker_identity, resolve_broker_identity
+try:
     from owner_probability import apply_owner_probability_to_document
     from owner_probability import expected_state_for_probability
 except ImportError:  # direct execution from scraper_toctoc/
@@ -197,12 +204,34 @@ class MongoStore:
 
     def upsert_listing(self, record: dict[str, Any]) -> dict[str, Any]:
         collection = self.collection()
+        db = self.connect()[self.config.mongo_db]
         crm_doc = build_crm_document(
             record,
             uf_valor_clp=self.config.uf_valor_clp,
             uf_fecha=self.config.uf_fecha,
         )
-        apply_owner_probability_to_document(crm_doc)
+        # Resolve the persistent universal registry before owner probability.
+        # A known broker must be terminal for classification and must never be
+        # allowed to become an owner merely because the local score is high.
+        registry_match = resolve_broker_identity(db, crm_doc)
+        human_broker_match = False
+        try:
+            from captacion_contact_identity import get_contact_identity_evidence
+
+            identity_evidence = get_contact_identity_evidence(db, crm_doc) or {}
+            human_broker_match = (
+                str(identity_evidence.get("status") or "").upper()
+                == "CORREDOR_CONFIRMED"
+            )
+        except Exception:
+            # Phone Learning remains an optional enrichment for the local
+            # scraper; registry and structural vetoes still work without it.
+            human_broker_match = False
+        apply_owner_probability_to_document(
+            crm_doc,
+            registry_match=registry_match,
+            human_broker_match=human_broker_match,
+        )
 
         # Guard canonico de insercion
         validation_errors = validate_property_for_canonical_insert(crm_doc)
@@ -217,18 +246,46 @@ class MongoStore:
             raise ValueError(f"origen ({crm_doc.get('origen')}) != source_portal ({crm_doc.get('source_portal')})")
         query = {"origen": origen, "listing_id": listing_id}
         result = collection.update_one(query, {"$set": crm_doc}, upsert=True)
+        classification = crm_doc.get("classification") or {}
+        if (
+            classification.get("hard_broker_signal")
+            or classification.get("hard_veto") == "PROFESSIONAL"
+            or classification.get("final") == "BROKER_CONFIRMED"
+        ):
+            learn_broker_identity(
+                db,
+                document=crm_doc,
+                source="PORTAL_STRUCTURE" if classification.get("hard_broker_signal") else "CLASSIFIER",
+                evidence_type="STRUCTURAL_BROKER" if classification.get("hard_broker_signal") else "BROKER_CONFIRMED",
+                include_alias=True,
+            )
         # A local scrape can reclassify a property that still has a legacy
         # active cycle.  Keep the cycle ledger consistent with the hard broker
         # veto so future CRM views cannot resurrect that assignment.
-        classification = crm_doc.get("classification") or {}
-        if classification.get("hard_broker_signal") or classification.get("hard_veto") == "PROFESSIONAL":
+        if (
+            classification.get("hard_broker_signal")
+            or classification.get("hard_veto") == "PROFESSIONAL"
+            or classification.get("final") == "BROKER_CONFIRMED"
+        ):
             stored = collection.find_one(query, {"_id": 1})
             if stored:
-                _close_active_assignment_cycles_for_broker(
-                    self.connect()[self.config.mongo_db],
-                    stored.get("_id"),
-                    reason="hard_broker_veto_reprocessed",
-                )
+                try:
+                    from captacion_management import reconcile_broker_assignment
+
+                    reconcile_broker_assignment(
+                        db,
+                        stored,
+                        reason="hard_broker_veto_reprocessed",
+                    )
+                except Exception:
+                    # The local scraper remains usable if the optional CRM
+                    # reconciliation module is unavailable; cycle closure is
+                    # still fail-safe and retriable.
+                    _close_active_assignment_cycles_for_broker(
+                        db,
+                        stored.get("_id"),
+                        reason="hard_broker_veto_reprocessed",
+                    )
         return {
             "matched_count": result.matched_count,
             "modified_count": result.modified_count,

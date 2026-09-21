@@ -135,15 +135,32 @@ _INDEXES_READY = False
 
 
 def _record_contact_identity_feedback(db, property_doc: dict, event: dict, commercial_result: str | None) -> None:
-    """Persist human broker/owner feedback globally without rewriting listings."""
+    """Persist human feedback and learn broker identity without rewriting listings."""
     portal = str(property_doc.get("origen") or property_doc.get("source_portal") or "").strip().lower()
-    if portal not in {"chilepropiedades", "chilepropiedades.cl"} and not phone_learning_enabled():
-        return
     classification = {
         "broker_identified": "CORREDOR",
         "captured": "OWNER",
     }.get(str(commercial_result or ""))
     if not classification:
+        return
+    if classification == "CORREDOR":
+        try:
+            from broker_registry import learn_broker_identity_from_management
+
+            learn_broker_identity_from_management(
+                db,
+                property_doc=property_doc,
+                event=event,
+            )
+        except Exception:
+            # Registry learning is retriable and must not roll back a valid
+            # management event. The ledger remains the source evidence.
+            import logging
+            logging.getLogger(__name__).exception("No se pudo actualizar broker_identities")
+
+    # The legacy phone identity remains supported for the existing Phone
+    # Learning rollout. Universal registry learning above is portal-agnostic.
+    if portal not in {"chilepropiedades", "chilepropiedades.cl"} and not phone_learning_enabled():
         return
     try:
         record_human_feedback(
@@ -431,6 +448,85 @@ def close_active_assignment_cycles_for_broker(
         }},
     )
     return int(getattr(result, "modified_count", 0) or 0)
+
+
+def reconcile_broker_assignment(
+    db,
+    property_doc: dict,
+    *,
+    reason: str = "broker_veto",
+    occurred_at=None,
+) -> dict:
+    """Idempotently remove an assignment made invalid by broker evidence."""
+    property_id = property_doc.get("_id")
+    if property_id in (None, ""):
+        return {"status": "missing_property_id", "assigned_removed": False, "cycles_closed": 0}
+    occurred_at = occurred_at or datetime.now(timezone.utc)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=timezone.utc)
+    collection = Config.get_captacion_collection(db)
+    current = collection.find_one({"_id": property_id}) or property_doc
+    gestion = current.get("gestion") or {}
+    previous_assignment = (
+        gestion.get("ejecutivo_id")
+        or gestion.get("ejecutivo_asignado")
+        or gestion.get("ejecutivo_nombre")
+    )
+    already_reconciled = (
+        not previous_assignment
+        and str(gestion.get("estado") or "").strip().casefold() == "corredor"
+        and str(gestion.get("estado_captacion") or "").strip().casefold() == "corredor"
+        and not gestion.get("assignment_cycle_id")
+    )
+    if already_reconciled:
+        return {
+            "status": "already_reconciled",
+            "assigned_removed": False,
+            "cycles_closed": close_active_assignment_cycles_for_broker(
+                db,
+                property_id,
+                occurred_at=occurred_at,
+                reason=reason,
+            ),
+            "modified_count": 0,
+        }
+    history = {
+        "timestamp": occurred_at.astimezone(timezone.utc),
+        "from_state": gestion.get("estado") or gestion.get("estado_captacion") or "",
+        "to_state": "Corredor",
+        "source": "canonical_broker_reconciliation",
+        "reason": str(reason),
+        "previous_assignment": str(previous_assignment or ""),
+    }
+    result = collection.update_one(
+        {"_id": property_id},
+        {
+            "$set": {
+                "gestion.ejecutivo_id": None,
+                "gestion.ejecutivo_asignado": None,
+                "gestion.ejecutivo_nombre": None,
+                "gestion.ejecutivo_email": None,
+                "gestion.assignment_cycle_id": None,
+                "gestion.estado": "Corredor",
+                "gestion.estado_captacion": "Corredor",
+                "gestion.assignment_reconciled_at": occurred_at.astimezone(timezone.utc),
+                "gestion.assignment_reconciled_reason": str(reason),
+            },
+            "$push": {"gestion.status_history": history},
+        },
+    )
+    cycles_closed = close_active_assignment_cycles_for_broker(
+        db,
+        property_id,
+        occurred_at=occurred_at,
+        reason=reason,
+    )
+    return {
+        "status": "reconciled" if getattr(result, "modified_count", 0) else "already_reconciled",
+        "assigned_removed": bool(previous_assignment),
+        "cycles_closed": cycles_closed,
+        "modified_count": int(getattr(result, "modified_count", 0) or 0),
+    }
 
 
 def record_known_broker_auto_match(

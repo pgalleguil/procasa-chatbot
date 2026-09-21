@@ -82,7 +82,10 @@ try:
 except Exception:
     BeautifulSoup = None
 
-from discovery import _extract_next_data, extract_metadata_from_next_data
+try:
+    from .discovery import _extract_next_data, extract_metadata_from_next_data
+except ImportError:  # pragma: no cover - direct local-script compatibility
+    from discovery import _extract_next_data, extract_metadata_from_next_data
 
 
 def _strip_html(text: str) -> str:
@@ -309,8 +312,29 @@ def _extract_from_next_data(next_data: dict[str, Any], source_url: str) -> dict[
                 fields["listing_advertiser"] = str(client["name"])
             if client.get("name"):
                 fields["listing_advertiser"] = str(client["name"])
-            if client.get("id") not in (None, ""):
-                fields["seller_profile_id"] = str(client["id"])
+            explicit_profile_id = (
+                client.get("profileId")
+                or client.get("profile_id")
+                or client.get("idProfile")
+            )
+            client_id = client.get("clientId") or client.get("client_id") or client.get("id")
+            client_id_type = client.get("idType") or client.get("id_type")
+            if client_id_type not in (None, ""):
+                fields["seller_id_type"] = str(client_id_type)
+                fields["seller_id_type_raw"] = str(client_id_type)
+                fields["seller_id_type_source"] = "detail_next_data.client.idType"
+            if explicit_profile_id not in (None, ""):
+                fields["seller_profile_id"] = str(explicit_profile_id)
+                fields["seller_profile_id_source"] = "detail_next_data.client.profile_id"
+            if client_id not in (None, ""):
+                fields["seller_client_id"] = str(client_id)
+                fields["seller_client_id_source"] = "detail_next_data.client.id"
+                # Preserve the historical field for compatibility when the
+                # portal exposes only client.id, without losing its semantic
+                # identity in the new dedicated field.
+                if not fields.get("seller_profile_id"):
+                    fields["seller_profile_id"] = str(client_id)
+                    fields["seller_profile_id_source"] = "legacy_client_id_compat"
             client_logo = str(client.get("logo") or "")
             if client_logo:
                 fields["seller_profile_logo"] = client_logo
@@ -322,16 +346,65 @@ def _extract_from_next_data(next_data: dict[str, Any], source_url: str) -> dict[
             operation_label = str(operation.get("operation") or "")
             if operation_label:
                 fields["operation_label_raw"] = operation_label
-            if "/corredora/" in client_logo.lower() or re.search(
-                r"\bcorredor(?:a|es)?\b", operation_label, re.IGNORECASE
-            ):
+                fields["operation"] = operation_label
+
+            # ``idType`` is the portal's structured seller discriminator.  It
+            # must be retained even when the contact card is rendered only by
+            # the browser and is therefore absent from the downloaded HTML.
+            # Values observed in the current Toctoc payload are:
+            #   1 = particular, 2 = corredor, 3 = empresa/inmobiliaria.
+            # Keep the raw value as evidence; the mapping is deliberately
+            # additive and never replaces stronger profile/operation signals.
+            id_type = str(client_id_type or "").strip()
+            if id_type == "1" and not fields.get("seller_type"):
+                fields["seller_type"] = "PARTICULAR"
+                fields["seller_type_source"] = "detail_next_data.client.idType"
+                fields["seller_type_evidence"] = "idType=1"
+            elif id_type == "2" and not fields.get("seller_type"):
+                fields["seller_type"] = "CORREDOR"
+                fields["seller_type_source"] = "detail_next_data.client.idType"
+                fields["seller_type_evidence"] = "idType=2"
+            elif id_type == "3" and not fields.get("seller_type"):
                 fields["seller_type"] = "EMPRESA"
-                fields["seller_type_source"] = "detail_next_data.client_operation"
+                fields["seller_type_source"] = "detail_next_data.client.idType"
+                fields["seller_type_evidence"] = "idType=3"
+
+            profile_url = str(fields.get("seller_profile_url") or "")
+            profile_logo = client_logo
+            profile_path_signal = any(
+                marker in value.lower()
+                for value in (profile_url, profile_logo)
+                for marker in ("/corredora/", "/corredoras/", "/inmobiliarias/")
+            )
+            operation_broker_signal = bool(re.search(
+                r"\b(?:venta|arriendo)\s+(?:usado|nuevo)\s+corred(?:or|ora|ores|oras)\b",
+                operation_label,
+                re.IGNORECASE,
+            ))
+            if profile_path_signal or operation_broker_signal:
+                fields["seller_type"] = "EMPRESA"
+                fields["seller_type_source"] = (
+                    "detail_next_data.client_profile"
+                    if profile_path_signal
+                    else "detail_next_data.client_operation"
+                )
                 fields["seller_type_evidence"] = (
                     f"client={client.get('name') or ''}; "
-                    f"client_id={client.get('id') or ''}; "
+                    f"client_id={client_id or ''}; "
                     f"logo={client_logo}; operation={operation_label}"
                 )
+            fields["structural_signals"] = {
+                "profile_path": profile_url,
+                "profile_path_signal": profile_path_signal,
+                "profile_logo": client_logo,
+                "profile_id": str(fields.get("seller_profile_id") or ""),
+                "client_id": str(fields.get("seller_client_id") or ""),
+                "id_type": id_type,
+                "operation_label": operation_label,
+                "operation_broker_signal": operation_broker_signal,
+                "seller_type": fields.get("seller_type") or "",
+                "seller_type_evidence": fields.get("seller_type_evidence") or "",
+            }
     except Exception:
         # Detail enrichment is additive; a malformed optional payload must not
         # discard the fields already extracted from the page.
@@ -610,8 +683,13 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
         "seller_jsonld_name": seller_jsonld_name,
         "seller_type": seller_type_val, "seller_type_source": seller_type_source, "seller_type_evidence": seller_type_evidence,
         "seller_profile_url": next_fields.get("seller_profile_url") or seller_info.get("seller_profile_url", ""),
+        "seller_profile_id": next_fields.get("seller_profile_id", ""),
+        "seller_client_id": next_fields.get("seller_client_id", ""),
+        "seller_profile_logo": next_fields.get("seller_profile_logo", ""),
         "operation_label_raw": next_fields.get("operation_label_raw", ""),
+        "operation": next_fields.get("operation") or operacion or "",
         "listing_advertiser": next_fields.get("listing_advertiser", ""),
+        "structural_signals": next_fields.get("structural_signals", {}),
         "dormitorios": dorm_lo, "dormitorios_min": dorm_lo, "dormitorios_max": dorm_hi, "dormitorios_raw": dorm_raw,
         "banos": ban_lo, "banos_min": ban_lo, "banos_max": ban_hi, "banos_raw": ban_raw,
         "superficie_total": sup_raw, "superficie_util": sup_util_raw,

@@ -113,13 +113,14 @@ def test_stale_new_assignment_is_blocked_without_mutating_classification():
         "title": "Casa en venta",
         "description": "Descripción suficiente",
         "seller_name": "Particular",
-        "classification": {
-            "state": "INCIERTO",
-            "owner_probability": 0.41,
-            "source": "rules",
-            "assignment_ready": True,
-            "exclude_from_assignment": False,
-        },
+            "classification": {
+                "state": "INCIERTO",
+                "owner_probability": 0.41,
+                "source": "rules",
+                "assignment_ready": True,
+                "exclude_from_assignment": False,
+            },
+            "pipeline_complete": True,
         "comuna_slug": "santiago",
         "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
     }
@@ -187,6 +188,46 @@ def test_capacity_counts_only_non_terminal_open_work():
 
     assert status == "capacity"
     assert coll.find_one({"_id": candidate["_id"]})["gestion"]["ejecutivo_id"] is None
+
+
+def test_resume_replay_does_not_create_second_assignment_cycle():
+    db = mongomock.MongoClient()["test"]
+    coll = db["propiedades_captacion"]
+    agent_id = str(ObjectId())
+    db["usuarios"].insert_one({
+        "_id": ObjectId(agent_id),
+        "rol": "agente",
+        "is_active": True,
+    })
+    candidate = {
+        "_id": ObjectId(),
+        "origen": "toctoc",
+        "listing_id": "resume-cycle-1",
+        "created_at": datetime.now(timezone.utc),
+        "title": "Casa en venta",
+        "description": "Descripción suficiente",
+        "comuna_slug": "santiago",
+        "classification": {"state": "INCIERTO", "source": "rules"},
+        "pipeline_complete": True,
+        "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
+    }
+    coll.insert_one(candidate)
+    agent = {"id": agent_id, "name": "Agent", "comunas_interes_norm": ["santiago"]}
+    first = assign_captacion_candidate_atomically(
+        db, coll, db["captacion_management_events"], candidate, agent, max_per_agent=2
+    )
+    stored_after_first = coll.find_one({"_id": candidate["_id"]})
+    cycle_id = stored_after_first["gestion"]["assignment_cycle_id"]
+    history_count = len(stored_after_first["gestion"].get("historial_asignaciones") or [])
+    second = assign_captacion_candidate_atomically(
+        db, coll, db["captacion_management_events"], candidate, agent, max_per_agent=2
+    )
+    stored_after_second = coll.find_one({"_id": candidate["_id"]})
+
+    assert first == "assigned"
+    assert second == "race_condition"
+    assert stored_after_second["gestion"]["assignment_cycle_id"] == cycle_id
+    assert len(stored_after_second["gestion"].get("historial_asignaciones") or []) == history_count == 1
 
 
 def test_phone_race_is_revalidated_before_atomic_write(monkeypatch):
@@ -262,22 +303,33 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
             "title": "Casa en venta",
             "description": "Descripción suficiente",
             "comuna_slug": "santiago",
-            "created_at": datetime.now(timezone.utc),
-            "classification": {"state": "INCIERTO", "source": "rules"},
-            "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
+                "created_at": datetime.now(timezone.utc),
+                "classification": {"state": "INCIERTO", "source": "rules"},
+                "pipeline_complete": True,
+                "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
         })
 
     metrics = []
     monkeypatch.setattr(api_captacion, "get_db", lambda: db)
     monkeypatch.setattr(api_captacion, "_record_distribution_metrics", lambda _db, value: metrics.append(value))
     monkeypatch.setattr(Config, "PHONE_LEARNING_ENABLED", False)
+    snapshot_calls = []
+    original_snapshot = api_captacion.active_workable_backlogs
+
+    def counted_snapshot(*args, **kwargs):
+        snapshot_calls.append(1)
+        return original_snapshot(*args, **kwargs)
+
+    monkeypatch.setattr(api_captacion, "active_workable_backlogs", counted_snapshot)
 
     preview = api_captacion.distribute_sourced_leads(trigger_source="test-dry-run", dry_run=True)
     assert preview["batch_selected"] == 14
     assert len(preview["selected_preview"]) == 14
     assert coll.count_documents({"gestion.ejecutivo_id": {"$ne": None}}) == 0
+    assert len(snapshot_calls) == 1
 
     assert api_captacion.distribute_sourced_leads(trigger_source="test") == 14
+    assert len(snapshot_calls) == 2
     assigned = list(coll.find({"gestion.ejecutivo_id": {"$ne": None}}))
     assert len(assigned) == 14
     per_agent = {}

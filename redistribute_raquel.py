@@ -60,13 +60,22 @@ def is_abierta(g):
 def is_eligible(p, db=None):
     """True si la propiedad es apta para captacion (clasificacion + assignment_ready)."""
     if db is not None:
-        from captacion_assignment_eligibility import calculate_assignment_eligibility
+        from captacion_assignment_eligibility import can_assign_property
         from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
-        if phone_learning_global_lookup_enabled():
-            identity = get_contact_identity_evidence(db, p)
-            # The central gate is authoritative for every portal. Historical
-            # assignment_ready flags must not veto a newly global INCIERTO.
-            return bool(calculate_assignment_eligibility(p, contact_identity=identity)["assignment_ready"])
+        from broker_registry import resolve_broker_identity
+        identity = (
+            get_contact_identity_evidence(db, p)
+            if phone_learning_global_lookup_enabled() else None
+        )
+        # The central gate is authoritative for every portal. Historical
+        # assignment_ready flags must not veto a newly global INCIERTO.
+        return bool(can_assign_property(
+            p,
+            {
+                "contact_identity": identity,
+                "broker_identity_match": resolve_broker_identity(db, p),
+            },
+        )["assignment_ready"])
     c = p.get("classification") or {}
     state = c.get("state", "")
     if state not in VISIBLE_CLASSIFICATION_STATES:

@@ -171,6 +171,16 @@ class Config:
     CRM_SLA_REASSIGNMENT_SHADOW_ENABLED = os.getenv(
         "CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", "false"
     ).strip().lower() == "true"
+    # Explicit, one-shot recovery for authenticated historical delivery
+    # evidence.  Disabled by default and intentionally separate from the
+    # reassignment engine so it cannot create cycles, send messages, or move
+    # owners when enabled for a controlled startup.
+    CRM_SLA_HISTORICAL_RECOVERY_ENABLED = os.getenv(
+        "CRM_SLA_HISTORICAL_RECOVERY_ENABLED", "false"
+    ).strip().lower() == "true"
+    CRM_SLA_HISTORICAL_RECOVERY_PAYLOAD = os.getenv(
+        "CRM_SLA_HISTORICAL_RECOVERY_PAYLOAD", ""
+    ).strip()
     CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS = int(os.getenv(
         "CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS", "60"
     ))

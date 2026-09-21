@@ -148,11 +148,19 @@ def _confidence(cohort_quality: str, commercial: Mapping[str, Any], *, red: bool
         return CONFIDENCE_LOW
     if cohort_quality != "HIGH":
         return CONFIDENCE_LOW
-    values = (
+    signals = (
+        _text(commercial.get("signal_30d", commercial.get("demand_signal_30d"))),
+        _text(commercial.get("signal_90d", commercial.get("demand_signal_90d"))),
+    )
+    confidences = (
         _text(commercial.get("confidence_30d", commercial.get("demand_confidence_30d"))),
         _text(commercial.get("confidence_90d", commercial.get("demand_confidence_90d"))),
     )
-    return CONFIDENCE_HIGH if values and all(value == "HIGH" for value in values) else CONFIDENCE_MEDIUM
+    reliable_signals = {"OBSERVED_POSITIVE", "OBSERVED_ZERO_COMPLETE"}
+    reliable_confidences = {"MEDIUM", "HIGH"}
+    if all(signal in reliable_signals and confidence in reliable_confidences for signal, confidence in zip(signals, confidences)):
+        return CONFIDENCE_HIGH
+    return CONFIDENCE_MEDIUM
 
 
 def _cooldown_active(page_as_of: Any, last_price_change_at: Any) -> tuple[bool, bool]:
@@ -324,6 +332,24 @@ def evaluate_engine_v1(
         warnings.append("STRONG_RECENT_DEMAND_NO_AUTOMATIC_REDUCTION")
     if confidence_30d in {"LOW", "UNKNOWN", "PARTIAL", ""} or confidence_90d in {"LOW", "UNKNOWN", "PARTIAL", ""}:
         warnings.append("COMMERCIAL_CONFIDENCE_LIMITED")
+
+    if quality != "HIGH":
+        reasons.append("COHORT_QUALITY_REQUIRES_EXECUTIVE_REVIEW")
+        if robustness_warning:
+            reasons.append("COHORT_ROBUSTNESS_WARNING_REQUIRES_EXECUTIVE_REVIEW")
+        return EngineV1Decision(
+            status="READY",
+            recommendation=RECOMMENDATION_EXECUTIVE_REVIEW,
+            eligibility=ELIGIBILITY_AMBER,
+            confidence=CONFIDENCE_LOW,
+            market_position=position,
+            gap_to_p75_pct=gap,
+            gradual_price_uf=None,
+            competitive_reference_uf=None,
+            owner_action=OWNER_DISCUSS_WITH_EXECUTIVE,
+            reasons=tuple(dict.fromkeys(reasons)),
+            warnings=tuple(dict.fromkeys(warnings)),
+        )
 
     if gap is None or gap < TRIVIAL_GAP_PCT:
         reasons.append("TRIVIAL_OR_NON_POSITIVE_GAP")

@@ -147,12 +147,33 @@ def test_gap_bands_control_recommendation_and_action(gap, recommendation, action
     assert decision.gradual_price_uf is None if recommendation == "MAINTAIN" else decision.gradual_price_uf <= current
 
 
-@pytest.mark.parametrize("n", [8, 19, 20])
-def test_cohort_sizes_8_to_20_can_analyze_but_only_high_quality_is_green(n):
+@pytest.mark.parametrize("n", [8, 19])
+def test_moderate_cohort_sizes_do_not_generate_numeric_targets(n):
     decision = evaluate(current=5000, n=n, p60=4000, p75=4500, p90=7000, confidence_30d="high", confidence_90d="high")
+    assert decision.recommendation == "EXECUTIVE_REVIEW"
+    assert decision.eligibility == "AMBER"
+    assert decision.confidence == "LOW"
+    assert decision.gradual_price_uf is None
+    assert decision.competitive_reference_uf is None
+    assert decision.owner_action == "DISCUSS_WITH_EXECUTIVE"
+
+
+def test_n20_high_quality_cohort_can_generate_numeric_target():
+    decision = evaluate(
+        current=5000,
+        n=20,
+        p60=4000,
+        p75=4500,
+        p90=7000,
+        signal_30d="OBSERVED_POSITIVE",
+        signal_90d="OBSERVED_POSITIVE",
+        confidence_30d="medium",
+        confidence_90d="medium",
+    )
     assert decision.recommendation == "MARKET_REPOSITIONING"
+    assert decision.eligibility == "GREEN"
+    assert decision.confidence == "HIGH"
     assert decision.gradual_price_uf is not None
-    assert decision.eligibility == ("GREEN" if n == 20 else "AMBER")
 
 
 def test_n20_green_case_can_request_but_does_not_mutate_price():
@@ -181,10 +202,49 @@ def test_robustness_warning_lowers_eligibility_and_requestability():
         confidence_30d="high",
         confidence_90d="high",
     )
-    assert decision.recommendation == "MARKET_REPOSITIONING"
+    assert decision.recommendation == "EXECUTIVE_REVIEW"
     assert decision.eligibility == "AMBER"
+    assert decision.gradual_price_uf is None
+    assert decision.competitive_reference_uf is None
     assert decision.owner_action == "DISCUSS_WITH_EXECUTIVE"
     assert decision.confidence == "LOW"
+
+
+def test_high_confidence_is_reachable_with_observed_reliable_evidence():
+    decision = evaluate(
+        signal_30d="OBSERVED_POSITIVE",
+        signal_90d="OBSERVED_ZERO_COMPLETE",
+        confidence_30d="medium",
+        confidence_90d="high",
+    )
+    assert decision.confidence == "HIGH"
+
+
+def test_unknown_demand_can_remain_medium_on_high_quality_cohort():
+    decision = evaluate(
+        signal_30d="ZERO_UNCERTAIN",
+        signal_90d="ZERO_UNCERTAIN",
+        confidence_30d="unknown",
+        confidence_90d="unknown",
+    )
+    assert decision.confidence == "MEDIUM"
+
+
+def test_amber_never_becomes_requestable():
+    decision = evaluate(
+        current=7000,
+        n=20,
+        p60=5600,
+        p75=6050,
+        p90=9793.82,
+        signal_30d="OBSERVED_POSITIVE",
+        signal_90d="OBSERVED_POSITIVE",
+        confidence_30d="medium",
+        confidence_90d="medium",
+    )
+    assert decision.eligibility == "AMBER"
+    assert decision.owner_action == "DISCUSS_WITH_EXECUTIVE"
+    assert decision.owner_action != "CAN_REQUEST_PRICE_CHANGE"
 
 
 def test_partial_and_low_exposure_are_conservative():

@@ -236,10 +236,6 @@ def run_audit(
         view = next((view for item_code, view in records if item_code == code), None)
         controls[code] = _control_summary(code, view)
 
-    expected_numeric = 46
-    expected_requestable = 5
-    numeric_delta = numeric_count - expected_numeric
-    requestable_delta = requestable_count - expected_requestable
     return {
         "as_of": as_of.isoformat(),
         "total_sale": len(records),
@@ -252,17 +248,16 @@ def run_audit(
         "requestable": {"count": requestable_count, "pct": round(requestable_count / len(records) * 100, 2) if records else 0.0},
         "controls": controls,
         "invariants": invariants,
-        "portfolio_drift_vs_2d3": {
-            "expected_numeric_approximately": expected_numeric,
-            "actual_numeric": numeric_count,
-            "numeric_delta": numeric_delta,
-            "expected_requestable_approximately": expected_requestable,
-            "actual_requestable": requestable_count,
-            "requestable_delta": requestable_delta,
-            "material": abs(numeric_delta) > 5 or abs(requestable_delta) > round(len(records) * 0.02),
-        },
         "mongo_writes": 0,
         "audit_pass": not missing and all(invariants.values()),
+        "portfolio_drift_vs_2d3": {
+            "historical_aggregates_are_not_contract": True,
+            "historical_numeric_approx": 46,
+            "historical_requestable_approx": 5,
+            "actual_numeric": numeric_count,
+            "actual_requestable": requestable_count,
+            "informational_only": True,
+        },
     }
 
 

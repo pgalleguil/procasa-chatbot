@@ -214,6 +214,12 @@ background_tasks_status = {
         "status": "starting" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "disabled",
         "health": "STARTING" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "DISABLED",
         "last_heartbeat": None,
+        "sent_awaiting_delivery_count": 0,
+        "oldest_sent_awaiting_delivery_age": None,
+        "status_reconciliation_last_at": None,
+        "status_reconciliation_last_result": None,
+        "provider_auth_error": False,
+        "delivered_timestamp_missing": 0,
     },
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
     "task_monitor": {"status": "starting", "last_heartbeat": None},
@@ -4055,6 +4061,8 @@ async def health_check():
         degraded_reasons.append("sla_provider_auth_error")
     elif sla_notifications.get("health") == "DELIVERY_UNKNOWN":
         degraded_reasons.append("sla_delivery_unknown")
+    elif sla_notifications.get("health") == "DELIVERY_TIMESTAMP_MISSING":
+        degraded_reasons.append("sla_delivery_timestamp_missing")
     return {
         "status": "degraded" if degraded_reasons else "healthy",
         "service_status": "DEGRADED" if degraded_reasons else "HEALTHY",
@@ -6251,7 +6259,11 @@ async def process_pending_leads_loop():
             # queue so a committed reassignment cannot remain pending merely
             # because that queue has a different schedule.
             if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED:
-                if sla_notification_status.get("health") not in {"PROVIDER_AUTH_ERROR", "DELIVERY_UNKNOWN"}:
+                if sla_notification_status.get("health") not in {
+                    "PROVIDER_AUTH_ERROR",
+                    "DELIVERY_UNKNOWN",
+                    "DELIVERY_TIMESTAMP_MISSING",
+                }:
                     sla_notification_status.update({"status": "running", "health": "RUNNING"})
                 from chatbot.crm_sla_reassignment_notifications import process_one_sla_reassignment_sync
                 from chatbot.storage import get_db as _get_sync_db
@@ -6287,6 +6299,74 @@ async def process_pending_leads_loop():
                             sla_notification_status.update({"status": "running", "health": "RUNNING"})
                     if not sla_result or sla_result.get("status") in {"idle", "disabled", "already_reserved"}:
                         break
+
+                # Accepted provider messages are reconciled through GET only.
+                # This path never calls the send endpoint and converges on the
+                # same persistence/activation routine as the webhook bridge.
+                from chatbot.crm_sla_reassignment_notifications import (
+                    get_sla_delivery_reconciliation_snapshot,
+                    reconcile_one_sla_reassignment_delivery_sync,
+                )
+                reconciliation_fn = functools.partial(
+                    reconcile_one_sla_reassignment_delivery_sync,
+                    sync_db,
+                    worker_id=f"sla-delivery-reconciler:render:{os.getpid()}",
+                )
+                for _ in range(10):
+                    reconciliation_result = await loop.run_in_executor(
+                        _WORKER_THREAD_POOL, reconciliation_fn
+                    )
+                    if reconciliation_result and reconciliation_result.get("status") != "idle":
+                        logger.info(
+                            "[SLA_DELIVERY_RECONCILIATION] Resultado: %s",
+                            reconciliation_result,
+                        )
+                        sla_notification_status.update({
+                            "status_reconciliation_last_at": datetime.now(CHILE_TZ).isoformat(),
+                            "status_reconciliation_last_result": reconciliation_result.get("status"),
+                        })
+                        if reconciliation_result.get("status") == "provider_auth_error":
+                            sla_notification_status.update({
+                                "status": "degraded",
+                                "health": "PROVIDER_AUTH_ERROR",
+                                "provider_auth_error": True,
+                                "last_error": "PROVIDER_AUTH_ERROR",
+                            })
+                        elif reconciliation_result.get("status") == "delivered_timestamp_missing":
+                            sla_notification_status.update({
+                                "status": "degraded",
+                                "health": "DELIVERY_TIMESTAMP_MISSING",
+                                "delivered_timestamp_missing": 1,
+                            })
+                    if not reconciliation_result or reconciliation_result.get("status") == "idle":
+                        break
+
+                snapshot = await loop.run_in_executor(
+                    _WORKER_THREAD_POOL,
+                    functools.partial(
+                        get_sla_delivery_reconciliation_snapshot,
+                        sync_db,
+                    ),
+                )
+                sla_notification_status.update(snapshot)
+                if sla_notification_status.get("health") not in {
+                    "PROVIDER_AUTH_ERROR", "DELIVERY_TIMESTAMP_MISSING"
+                }:
+                    if snapshot.get("delivered_timestamp_missing", 0):
+                        sla_notification_status.update({
+                            "status": "degraded",
+                            "health": "DELIVERY_TIMESTAMP_MISSING",
+                        })
+                    elif snapshot.get("sent_awaiting_delivery_count", 0):
+                        sla_notification_status.update({
+                            "status": "running",
+                            "health": "WAITING_DELIVERY",
+                        })
+                    else:
+                        sla_notification_status.update({
+                            "status": "running",
+                            "health": "RUNNING",
+                        })
             else:
                 sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
 

@@ -50,6 +50,10 @@ jobs:
             tests: >-
               tests/test_crm_sla_alert_evaluator.py
               tests/test_crm_sla_policy_freeze.py
+          - suite: SLA notification delivery
+            tests: >-
+              tests/test_crm_sla_reassignment_notifications.py
+              tests/test_crm_sla_delivery_reconciliation.py
           - suite: SLA shadow and reassignment guards
             tests: >-
               tests/test_crm_sla_shadow_infrastructure.py

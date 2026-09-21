@@ -413,6 +413,7 @@ def _acceptance_reassignment_fixture(
     row.update({
         "lead_id": lead_id,
         "assignment_cycle_id": cycle_id,
+        "reassignment_decision_id": cycle_id.split(":", 1)[-1],
         "property_code": property_code,
         "assigned_by": "sla_reassignment",
         "reassignment_state": "active" if delivered else "AWAITING_OWNER_NOTIFICATION",
@@ -431,6 +432,81 @@ def _acceptance_reassignment_fixture(
         },
     })
     return row, fixture_lead
+
+
+def test_scanner_includes_active_destination_cycle_with_reassignment_decision_id():
+    db = mongomock.MongoClient()["test"]
+    row = cycle(901, assigned_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC), number=1)
+    row.update({
+        "assignment_cycle_id": "sla-reassignment:destination-901",
+        "reassignment_decision_id": "destination-901",
+        "reassignment_state": "active",
+        "sla_started_at": datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+    })
+    db["crm_assignment_cycles"].insert_one(row)
+
+    result = asyncio.run(scan_sla_reassignment_candidates(
+        db, batch_size=10, current_policy_since=datetime(2026, 9, 1, tzinfo=UTC),
+    ))
+
+    assert result["scanned"] == 1
+    query = result["candidate_query_superset"]
+    assert "reassignment_decision_id" not in repr(query)
+
+
+def test_scanner_excludes_reassigned_source_cycle():
+    db = mongomock.MongoClient()["test"]
+    source = cycle(902, assigned_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC))
+    source.update({
+        "cycle_status": "reassigned",
+        "reassignment_state": "reassigned",
+        "reassignment_decision_id": "source-902",
+    })
+    destination = cycle(903, assigned_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC), number=1)
+    destination.update({
+        "assignment_cycle_id": "sla-reassignment:destination-903",
+        "reassignment_decision_id": "destination-903",
+        "reassignment_state": "active",
+        "sla_started_at": datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+    })
+    db["crm_assignment_cycles"].insert_many([source, destination])
+
+    result = asyncio.run(scan_sla_reassignment_candidates(
+        db, batch_size=10, current_policy_since=datetime(2026, 9, 1, tzinfo=UTC),
+    ))
+
+    assert [row["assignment_cycle_id"] for row in result["cycles"]] == [
+        "sla-reassignment:destination-903"
+    ]
+
+
+def test_active_destination_with_reassignment_decision_and_fresh_sla_is_not_reassigned():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "destination-fresh", "sla-reassignment:destination-fresh", number=1,
+    )
+    row["sla_started_at"] = NOW
+    fixture_lead["lifecycle"]["sla_started_at"] = NOW
+    result = run(**base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+
+    assert result["iteration"]["not_actually_expired"] == 1
+    assert result["iteration"]["would_reassign"] == 0
+
+
+def test_active_destination_with_reassignment_decision_and_management_is_protected():
+    row, fixture_lead = _acceptance_reassignment_fixture(
+        "destination-managed", "sla-reassignment:destination-managed", number=1,
+    )
+    management = {
+        "lead_id": row["lead_id"], "type": "CALL_COMPLETED_LEAD",
+        "actor": "owner", "actor_type": "human",
+        "timestamp": datetime(2026, 9, 10, 9, 17, tzinfo=UTC),
+    }
+    kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+    kwargs["context"] = context([row], [fixture_lead], events={row["lead_id"]: [management]})
+    result = run(**kwargs)
+
+    assert result["iteration"]["protected_skipped"] == 1
+    assert result["iteration"]["would_reassign"] == 0
 
 
 def test_elizabeth_6496_delivered_then_attended_is_not_reassignable():

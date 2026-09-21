@@ -209,15 +209,10 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 # Global state for background tasks monitoring
 background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
+    "sla_reassignment_engine": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
     "sla_notifications": {
-        "status": "disabled" if not (
-            Config.CRM_SLA_REASSIGNMENT_ENABLED
-            and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
-        ) else "starting",
-        "health": "DISABLED" if not (
-            Config.CRM_SLA_REASSIGNMENT_ENABLED
-            and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED
-        ) else "STARTING",
+        "status": "starting" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "disabled",
+        "health": "STARTING" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "DISABLED",
         "last_heartbeat": None,
     },
     "sla_monitor": {"status": "starting", "last_heartbeat": None},
@@ -229,6 +224,9 @@ background_tasks_status = {
     "lead_processing": {"status": "starting", "last_heartbeat": None},
     "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
 }
+# Keep the historical health key as an alias while exposing the explicit
+# engine/consumer split to operators and health probes.
+background_tasks_status["crm_sla_reassignment_shadow"] = background_tasks_status["sla_reassignment_engine"]
 _OAUTH_HTTP_CLIENT = None
 
 
@@ -1000,6 +998,7 @@ async def lifespan(app: FastAPI):
         "lead_cold_digest": Config.LEAD_COLD_DIGEST_ENABLED,
         "sla_shadow": Config.CRM_SLA_SHADOW_ENABLED,
         "sla_alerts": Config.CRM_SLA_ALERTS_ENABLED,
+        "sla_notification_consumer": Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED,
         "weekly_generation": Config.CRM_WEEKLY_REPORT_GENERATION_ENABLED,
         "weekly_send": Config.CRM_WEEKLY_REPORT_SEND_ENABLED,
         "legacy_daily_report": Config.CRM_LEGACY_DAILY_REPORT_ENABLED,
@@ -6250,8 +6249,7 @@ async def process_pending_leads_loop():
             # They must be consumed independently of the legacy business-hours
             # queue so a committed reassignment cannot remain pending merely
             # because that queue has a different schedule.
-            if (Config.CRM_SLA_REASSIGNMENT_ENABLED
-                    and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED):
+            if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED:
                 if sla_notification_status.get("health") not in {"PROVIDER_AUTH_ERROR", "DELIVERY_UNKNOWN"}:
                     sla_notification_status.update({"status": "running", "health": "RUNNING"})
                 from chatbot.crm_sla_reassignment_notifications import process_one_sla_reassignment_sync

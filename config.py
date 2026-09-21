@@ -133,6 +133,12 @@ class Config:
     CRM_SLA_REASSIGNMENT_ENABLED = os.getenv(
         "CRM_SLA_REASSIGNMENT_ENABLED", "false"
     ).strip().lower() == "true"
+    # Durable post-commit SLA notification delivery is independently gated
+    # from evaluation and ownership reassignment.  Keep it fail-closed until
+    # the production channel and consumer rollout are explicitly enabled.
+    CRM_SLA_NOTIFICATION_CONSUMER_ENABLED = os.getenv(
+        "CRM_SLA_NOTIFICATION_CONSUMER_ENABLED", "false"
+    ).strip().lower() == "true"
     # Shared one-document human-management protection gate.  Keep separate so
     # the gate can be tested before the reassignment executor is enabled.
     CRM_SLA_TRANSACTION_GATE_ENABLED = os.getenv(

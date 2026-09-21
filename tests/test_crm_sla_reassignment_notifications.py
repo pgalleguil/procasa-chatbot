@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 import mongomock
 import pytest
@@ -249,7 +250,22 @@ def test_provider_accepted_stays_sent_and_waiting_until_delivery_callback():
     assert stored["state"] == "sent"
     assert stored["actually_delivered"] is False
     assert cycle["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+    assert cycle["assigned_to_user_id"] == "user-new"
+    assert db["leads"].find_one({"_id": "lead-accepted"})["assignment_mirror_owner_user_id"] == "user-new"
     assert cycle.get("sla_started_at") is None
+
+
+def test_notification_consumer_is_separate_from_engine_and_scheduled_at_startup():
+    root = Path(__file__).resolve().parents[1]
+    config_source = (root / "config.py").read_text(encoding="utf-8")
+    webhook_source = (root / "webhook.py").read_text(encoding="utf-8")
+
+    assert 'CRM_SLA_NOTIFICATION_CONSUMER_ENABLED", "false"' in config_source
+    assert '"sla_reassignment_engine"' in webhook_source
+    assert '"sla_notifications"' in webhook_source
+    assert "n_task = asyncio.create_task(process_pending_leads_loop())" in webhook_source
+    assert "if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED:" in webhook_source
+    assert "and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED):" not in webhook_source[webhook_source.index("async def process_pending_leads_loop") :]
 
 
 @pytest.mark.parametrize("http_status", [401, 403])

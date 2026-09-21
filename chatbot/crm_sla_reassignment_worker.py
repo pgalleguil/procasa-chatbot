@@ -344,12 +344,6 @@ def _candidate_query_superset(current_policy_since: datetime) -> dict[str, Any]:
             },
             {
                 "$or": [
-                    {"reassignment_decision_id": {"$exists": False}},
-                    {"reassignment_decision_id": None},
-                ]
-            },
-            {
-                "$or": [
                     {"reassignment_state": {"$exists": False}},
                     {"reassignment_state": {"$nin": [
                         "completed", "reassigned",

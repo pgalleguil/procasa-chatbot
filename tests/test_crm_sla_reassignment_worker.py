@@ -716,6 +716,39 @@ def test_batch_context_resolves_string_objectid_mismatch_without_fuzzy_lookup():
     assert len(_lead_lookup_variants(row["lead_id"])) == 2
 
 
+def test_batch_context_bounds_events_to_human_management_window(monkeypatch):
+    import chatbot.crm_sla_reassignment_worker as worker_module
+
+    captured = []
+
+    async def fake_find_many(collection, query, projection=None, **kwargs):
+        captured.append((getattr(collection, "name", None), query))
+        return []
+
+    monkeypatch.setattr(worker_module, "_find_many", fake_find_many)
+    row = {
+        "lead_id": "lead-1",
+        "assignment_cycle_id": "cycle-1",
+        "assigned_at": datetime(2026, 9, 20, 12, 0, tzinfo=UTC),
+    }
+
+    db = mongomock.MongoClient().db
+    asyncio.run(worker_module._batch_context(db, [row]))
+
+    events_query = next(query for name, query in captured if name == "crm_events")
+    assert set(events_query["type"]["$in"]) == {
+        "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT", "MANUAL_ENTRY",
+        "CALL_COMPLETED_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+        "WHATSAPP_SENT_LEAD", "EMAIL_SENT_LEAD",
+        "gestion_log", "human_note", "contact_result", "manual_entry",
+        "call_completed_lead", "send_wa_lead", "send_email_lead",
+        "whatsapp_sent_lead", "email_sent_lead",
+    }
+    assert events_query["$or"][0]["timestamp"]["$gte"] == datetime(
+        2026, 9, 20, 12, 0, tzinfo=UTC
+    )
+
+
 def test_malformed_lead_id_fails_closed_before_any_canonical_lookup():
     resolved, status = _resolve_lead_from_context({"leads_by_id": {}}, {"$where": "unsafe"})
     assert resolved is None

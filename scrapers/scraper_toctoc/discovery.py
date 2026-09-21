@@ -520,6 +520,39 @@ def _set_page_param(url: str, page: int) -> str:
     return urlunparse(parsed._replace(query=urlencode(query)))
 
 
+def _playwright_scope_url(config, start_url: str, estado=None) -> str:
+    """Build the browser search shell used by the current Toctoc SPA.
+
+    The old SEO route still provides useful SSR data, but it does not expose
+    the live paginator.  The browser must enter the SPA search view so that
+    Toctoc itself resolves the commune and polygon context before pagination.
+    """
+    parsed = urlparse(start_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    operation = "compra"
+    property_type = "departamento"
+    if parts and parts[0].lower() == "arriendo":
+        operation = "arriendo"
+    if len(parts) >= 2 and parts[1]:
+        property_type = parts[1]
+    query = {"moneda": "2", "pagina": "1"}
+    source_query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key in ("estado", "publicador", "precioDesde", "precioHasta", "temporalidad"):
+        if source_query.get(key) not in (None, ""):
+            query[key] = source_query[key]
+    return urlunparse(parsed._replace(
+        path=f"/resultados/lista/{operation}/{property_type}/",
+        query=urlencode(query),
+        fragment="",
+    ))
+
+
+def _playwright_commune_label(commune: str) -> str:
+    if _normalize_slug(commune) == "santiago centro":
+        return "Santiago"
+    return " ".join(part.capitalize() for part in commune.replace("_", "-").split("-"))
+
+
 def _matches_requested_state(record: dict, estado) -> bool:
     """Apply the used/new scope locally when the SEO route ignores query filters."""
     if estado in (None, "", 0, "0"):
@@ -667,7 +700,7 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                 })
                 discovered.append(rec)
                 new_on_page += 1
-                if len(discovered) >= max_urls:
+                if max_urls is not None and len(discovered) >= max_urls:
                     print(f"  Page {pages_visited+1}: {new_on_page} new")
                     report["duplicates"] += duplicates
                     report["scope_removed"] += scope_removed
@@ -754,7 +787,12 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         for _ in range(10):
             current_hrefs = set()
             try:
-                links = pg.query_selector_all('a[href*="/propiedad/"], a[href*="/propiedades/"]')
+                # The live SPA renders legacy /propiedades/ links while the
+                # public SEO route renders /venta/.../b_<hash> links.
+                links = pg.query_selector_all(
+                    'a[href*="/propiedad/"], a[href*="/propiedades/"], '
+                    'a[href*="/venta/"], a[href*="/arriendo/"]'
+                )
                 for link in links:
                     href = link.get_attribute("href")
                     if href:
@@ -769,10 +807,56 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
             all_hrefs = current_hrefs
             try:
                 pg.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                pg.wait_for_timeout(1000)
+                pg.wait_for_timeout(600)
             except Exception:
                 break
         return list(all_hrefs)
+
+    def _prepare_live_scope(pg, seo_url):
+        """Navigate through the real SPA location selector.
+
+        Directly opening the old SEO route gives a page-one SSR payload, but
+        the live paginator is only mounted by the SPA search view.  Selecting
+        the commune in the browser also lets Toctoc create the current
+        polygon/context parameters legitimately, without replaying protected
+        API calls ourselves.
+        """
+        scope_url = _playwright_scope_url(config, seo_url, estado=estado)
+        pg.goto(scope_url, wait_until="domcontentloaded", timeout=30000)
+        pg.wait_for_timeout(3500)
+        display = _playwright_commune_label(requested_commune or "")
+        try:
+            pg.wait_for_selector('input[placeholder*="barrio"]', timeout=12000)
+        except Exception:
+            pass
+        location_input = pg.locator('input[placeholder*="barrio"]').first
+        if not location_input.count() and pg.locator("input").count():
+            # Keep a compatibility fallback for regionalized copies of the
+            # SPA where the placeholder text differs.
+            location_input = pg.locator("input").first
+        if not location_input.count():
+            return False, "SPA_LOCATION_INPUT_NOT_FOUND"
+        try:
+            location_input.click()
+            location_input.press("Control+A")
+            location_input.type(display, delay=30)
+            pg.wait_for_timeout(1000)
+            suggestions = pg.get_by_text(display, exact=True)
+            if not suggestions.count():
+                return False, "SPA_COMMUNE_SUGGESTION_NOT_FOUND"
+            # The first exact match is the location suggestion (the other
+            # match, when present, is usually the rendered result card).
+            suggestions.first.click()
+            pg.wait_for_timeout(2500)
+        except Exception as exc:
+            return False, f"SPA_COMMUNE_SELECTION_FAILED:{type(exc).__name__}"
+        current = pg.url.lower()
+        expected_slug = _normalize_slug(requested_commune or "").replace(" ", "-")
+        if expected_slug == "santiago-centro":
+            expected_slug = "santiago"
+        if f"/{expected_slug}/" not in current:
+            return False, "SPA_COMMUNE_SELECTION_OUT_OF_SCOPE"
+        return True, ""
 
     def _extract_records_from_hrefs(hrefs, base):
         records = []
@@ -810,6 +894,21 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         browser = pw.chromium.launch(headless=True, proxy=pw_proxy)
         context = browser.new_context(user_agent=config.user_agent, viewport={"width": 1920, "height": 1080}, locale="es-CL")
         page = context.new_page()
+        network_events = []
+
+        def _capture_response(response):
+            low_url = response.url.lower()
+            if "/gw-lista-seo/properties" not in low_url:
+                return
+            event = {"status": response.status, "url": response.url}
+            try:
+                body = response.text()
+                event["recaptcha_required"] = "recaptcha_required" in body.lower()
+            except Exception:
+                event["recaptcha_required"] = False
+            network_events.append(event)
+
+        page.on("response", _capture_response)
 
         # Block image/media/font resources during discovery (configurable)
         if block_resources:
@@ -819,7 +918,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
 
         for start_url in start_urls:
             # Check limit before starting a new search
-            if len(discovered) >= max_urls:
+            if max_urls is not None and len(discovered) >= max_urls:
                 stop_reason = "MAX_UNIQUE_URLS_REACHED"
                 break
 
@@ -828,29 +927,46 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
             next_failures = 0
             blocked_pages = 0
             page_reports = []
+            previous_page_ids = set()
 
             # Check limit before network request
-            if len(discovered) >= max_urls:
+            if max_urls is not None and len(discovered) >= max_urls:
                 stop_reason = "MAX_UNIQUE_URLS_REACHED"
                 break
 
             try:
-                page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(3000)
+                prepared, prepare_reason = _prepare_live_scope(page, current_url)
+                if not prepared:
+                    stop_reason = prepare_reason
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": prepare_reason,
+                    })
+                    break
                 try:
-                    page.wait_for_selector('a[href*="/propiedad/"], a[href*="/propiedades/"]', timeout=10000)
+                    page.wait_for_selector(
+                        'a[href*="/propiedad/"], a[href*="/propiedades/"], '
+                        'a[href*="/venta/"], a[href*="/arriendo/"]',
+                        timeout=10000,
+                    )
                 except PwTimeout:
                     pass
             except Exception as e:
                 print(f"  Playwright goto failed: {e}")
                 stop_reason = "PLAYWRIGHT_ERROR"
+                report.update({
+                    "discovery_degraded": True,
+                    "run_aborted": True,
+                    "abort_reason": "PLAYWRIGHT_ERROR",
+                })
                 break
 
             while True:
                 if max_pages is not None and pages_visited >= max_pages:
                     stop_reason = "MAX_PAGES_REACHED"
                     break
-                if len(discovered) >= max_urls:
+                if max_urls is not None and len(discovered) >= max_urls:
                     stop_reason = "MAX_UNIQUE_URLS_REACHED"
                     break
 
@@ -867,10 +983,23 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 embedded_records, diagnostics = _extract_page_records(raw_html, current_url)
                 hrefs = _scroll_and_extract(page, current_url)
                 cards_count = len(hrefs)
-                records = embedded_records or _extract_records_from_hrefs(hrefs, current_url)
+                # In the live SPA, react-engine-props can retain a broader
+                # bootstrap/search payload while the visible DOM represents
+                # the actual current paginator page. Prefer those rendered
+                # card links whenever they exist; use embedded data only as
+                # the fallback for SSR/legacy pages without DOM cards.
+                records = _extract_records_from_hrefs(hrefs, current_url) if hrefs else embedded_records
                 records = [record for record in records if _matches_requested_state(record, estado)]
                 page_ids = [r["listing_id"] for r in records if r.get("listing_id")]
                 signature = _page_signature(page_ids) if page_ids else _page_signature([r["url"] for r in records])
+
+                if not records:
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS",
+                    })
+                    stop_reason = "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS"
 
                 new_on_page = 0
                 dup_on_page = 0
@@ -878,7 +1007,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     if requested_commune and not matches_requested_commune(rec.get("url", ""), requested_commune):
                         continue
                     # Check limit before each URL addition
-                    if len(discovered) >= max_urls:
+                    if max_urls is not None and len(discovered) >= max_urls:
                         break
                     if rec["url"] in seen_urls or (rec["listing_id"] and rec["listing_id"] in seen_ids):
                         dup_on_page += 1
@@ -901,7 +1030,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     discovered.append(rec)
                     new_on_page += 1
                     # Check limit immediately after addition
-                    if len(discovered) >= max_urls:
+                    if max_urls is not None and len(discovered) >= max_urls:
                         break
 
                 page_reports.append({
@@ -913,34 +1042,54 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     "first_listing_id": page_ids[0] if page_ids else "",
                     "last_listing_id": page_ids[-1] if page_ids else "",
                     "page_signature": signature,
-                    "discovery_method": diagnostics.get("method", "dom") if embedded_records else "dom",
+                    "overlap_with_previous": len(set(page_ids) & previous_page_ids),
+                    "discovery_method": "dom_pagination" if hrefs else diagnostics.get("method", "embedded_payload"),
                     "scope_filtered": diagnostics.get("expected_results"),
+                    "network_responses": list(network_events),
                 })
+                previous_page_ids = set(page_ids)
+                if pages_visited > 0 and new_on_page > 0:
+                    report["pagination_working"] = True
 
                 print(f"  PW page {pages_visited+1}: cards={cards_count} extracted={len(records)} new={new_on_page} dup={dup_on_page} total={len(discovered)}")
                 _save_atomic(discovered)
                 _save_checkpoint(checkpoint_path, batch_id, start_url, pages_visited+1, len(discovered), stop_reason)
 
-                if len(discovered) >= max_urls:
+                if report.get("discovery_degraded"):
+                    break
+
+                if max_urls is not None and len(discovered) >= max_urls:
                     stop_reason = "MAX_UNIQUE_URLS_REACHED"
                     break
 
-                if new_on_page == 0 and dup_on_page > 0:
-                    stop_reason = "NO_NEW_URLS"
+                if pages_visited > 0 and new_on_page == 0:
+                    stop_reason = "PAGINATION_DEGRADED_NO_NEW_UNIQUE_LISTINGS"
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": stop_reason,
+                    })
                     break
 
                 if signature in page_signatures:
                     stop_reason = "REPEATED_PAGE"
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": "PAGINATION_DEGRADED_REPEATED_PAGE",
+                    })
                     break
                 page_signatures.add(signature)
 
                 pages_visited += 1
                 # Check limit before next network request
-                if len(discovered) >= max_urls:
+                if max_urls is not None and len(discovered) >= max_urls:
                     stop_reason = "MAX_UNIQUE_URLS_REACHED"
                     break
 
-                next_btn = page.query_selector('a.page-link[aria-label="Next"], a.page-link[aria-label="Siguiente"]')
+                next_btn = page.query_selector('ul.pagination a.page-link[aria-label="Next"]')
+                if not next_btn:
+                    next_btn = page.query_selector('ul.pagination a.page-link[aria-label="Siguiente"]')
                 if not next_btn:
                     # --- MUI Pagination fallback (current Toctoc SPA) ---
                     # Find pagination container, current page, and click target_page button
@@ -979,22 +1128,53 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                         pass
 
                 ids_before = set(page_ids)
+                previous_signature = signature
+                response_count_before = len(network_events)
                 # Check limit before click (which triggers network)
-                if len(discovered) >= max_urls:
+                if max_urls is not None and len(discovered) >= max_urls:
                     stop_reason = "MAX_UNIQUE_URLS_REACHED"
                     break
                 try:
                     next_btn.click()
-                    page.wait_for_timeout(2000)
-                    try:
-                        page.wait_for_selector('a[href*="/propiedad/"], a[href*="/propiedades/"], a[href*="/venta/"], a[href*="/arriendo/"]', timeout=8000)
-                    except PwTimeout:
-                        pass
-                    page.wait_for_timeout(1000)
+                    # The current SPA can paginate from its already-loaded
+                    # result state and update only the DOM/URL fragment.  In
+                    # other deployments it emits a protected properties
+                    # response; both paths are observed here.
+                    changed = False
+                    for _ in range(20):
+                        page.wait_for_timeout(500)
+                        new_hrefs = _scroll_and_extract(page, page.url)
+                        candidate_ids = {listing_id_from_url(h)[0] for h in new_hrefs}
+                        candidate_ids.discard("")
+                        if candidate_ids and candidate_ids != ids_before:
+                            changed = True
+                            break
+                        if len(network_events) > response_count_before and any(
+                            event.get("status", 0) >= 400 or event.get("recaptcha_required")
+                            for event in network_events[response_count_before:]
+                        ):
+                            break
+                    if not changed:
+                        recent = network_events[response_count_before:]
+                        if any(event.get("status", 0) >= 400 or event.get("recaptcha_required") for event in recent):
+                            stop_reason = "RECAPTCHA_BLOCKING_BROWSER_FLOW"
+                        else:
+                            stop_reason = "PAGINATION_DEGRADED_PAGE_DID_NOT_CHANGE"
+                        report.update({
+                            "discovery_degraded": True,
+                            "run_aborted": True,
+                            "abort_reason": stop_reason,
+                        })
+                        break
                 except Exception as e:
                     next_failures += 1
                     if next_failures >= 2:
                         stop_reason = "PLAYWRIGHT_ERROR"
+                        report.update({
+                            "discovery_degraded": True,
+                            "run_aborted": True,
+                            "abort_reason": "PLAYWRIGHT_ERROR",
+                        })
                         break
                     continue
 
@@ -1005,16 +1185,49 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     lid, _ = listing_id_from_url(h)
                     if lid: new_ids.add(lid)
                 if new_ids == ids_before:
-                    stop_reason = "PAGE_DID_NOT_CHANGE"
+                    stop_reason = "PAGINATION_DEGRADED_PAGE_DID_NOT_CHANGE"
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": stop_reason,
+                    })
                     break
 
         browser.close()
 
     stop_reason = stop_reason or "COMPLETED"
     print(f"\n  Discovery finished: {stop_reason}")
-    print(f"  Pages: {pages_visited+1}, Total unique URLs: {len(discovered)}")
+    print(f"  Pages: {len(page_reports)}, Total unique URLs: {len(discovered)}")
 
-    _save_checkpoint(checkpoint_path, batch_id, start_url if 'start_url' in dir() else "", pages_visited+1, len(discovered), stop_reason, page_reports)
+    report["pages"] = page_reports
+    report["total_pages_discovered"] = len(page_reports)
+    report["total_raw_listings"] = sum(p.get("urls_extracted", 0) for p in page_reports)
+    report["total_unique_listings"] = len(discovered)
+    report["duplicates_removed"] = report.get("duplicates", 0)
+    report["network_response_captured"] = bool(network_events)
+    report["network_responses"] = list(network_events)
+    report["playwright_pagination"] = len(page_reports) > 1 and not report.get("discovery_degraded")
+    report["recaptcha_blocking_browser_flow"] = stop_reason == "RECAPTCHA_BLOCKING_BROWSER_FLOW"
+    if page_reports:
+        report["first_page_unique"] = page_reports[0].get("new_unique_urls", 0)
+        report["last_page_unique"] = page_reports[-1].get("new_unique_urls", 0)
+        report["middle_pages_unique"] = sum(p.get("new_unique_urls", 0) for p in page_reports[1:-1])
+        report["first_page_only_percent"] = round(
+            100 * report["first_page_unique"] / max(1, len(discovered)), 2
+        )
+        report["first_5_pages_validated"] = (
+            len(page_reports) >= 5
+            and not report.get("discovery_degraded")
+            and all(p.get("new_unique_urls", 0) > 0 for p in page_reports[:5])
+            and all(p.get("overlap_with_previous", 0) == 0 for p in page_reports[1:5])
+        )
+    report["full_scope_discovery_working"] = bool(
+        report.get("first_5_pages_validated")
+        and not report.get("discovery_degraded")
+        and stop_reason in {"LAST_PAGE_REACHED", "NEXT_NOT_FOUND", "NEXT_DISABLED", "COMPLETED"}
+    )
+
+    _save_checkpoint(checkpoint_path, batch_id, start_url if 'start_url' in dir() else "", len(page_reports), len(discovered), stop_reason, page_reports)
     if progress_path.exists():
         try: progress_path.unlink()
         except: pass

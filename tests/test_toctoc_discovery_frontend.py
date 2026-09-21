@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scrapers.scraper_toctoc.discovery import (  # noqa: E402
     _extract_page_records,
+    _playwright_commune_label,
+    _playwright_scope_url,
     _set_page_param,
     evaluate_discovery_health,
     extract_metadata_from_embedded_payload,
@@ -99,3 +101,19 @@ def test_pagination_parameter_replaces_previous_value():
 def test_invalid_url_is_not_accepted_as_listing():
     assert not is_listing_detail_url("https://www.toctoc.com/venta/departamento/metropolitana/la-florida")
     assert not is_listing_detail_url("https://www.toctoc.com/propiedades/venta/itau/1384492?o=menu")
+
+
+def test_playwright_scope_uses_current_spa_search_shell_and_preserves_used_filter():
+    class Config:
+        base_url = "https://www.toctoc.com"
+
+    start = "https://www.toctoc.com/venta/departamento/metropolitana/la-florida?estado=2"
+    scope = _playwright_scope_url(Config(), start, estado=2)
+    assert scope.startswith("https://www.toctoc.com/resultados/lista/compra/departamento/")
+    assert "estado=2" in scope
+    assert "pagina=1" in scope
+
+
+def test_playwright_commune_label_handles_crm_santiago_alias():
+    assert _playwright_commune_label("santiago-centro") == "Santiago"
+    assert _playwright_commune_label("la-florida") == "La Florida"

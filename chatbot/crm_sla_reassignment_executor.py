@@ -622,9 +622,6 @@ def _revalidate(
     actual_count = source.get("automatic_reassignment_number")
     if actual_count is not None and int(actual_count) != source_count:
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "assignment_number_changed")
-    if source.get("reassignment_decision_id"):
-        raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "source_already_reassigned")
-
     field_protection = _cycle_field_protection(source, lead, breach_at=canonical_breach)
     if field_protection:
         raise _KnownAbort(

@@ -18,7 +18,7 @@ from chatbot.crm_sla_reassignment_executor import (
     FROZEN_POLICY_VERSION,
     execute_sla_reassignment_transaction,
 )
-from chatbot.crm_sla_reassignment_cutover import CUTOVER_POLICY_VERSION
+from chatbot.crm_sla_reassignment_cutover import CUTOVER_POLICY_VERSION, canonical_sla_breached_at
 from chatbot.crm_sla_reassignment_models import SLAReassignmentErrorCode
 from scripts.prepare_crm_sla_reassignment_indexes import build_index_migration_plan
 from chatbot.crm_management import record_management_result
@@ -406,6 +406,78 @@ def test_counter_two_can_reassign_again_and_increments_to_three(monkeypatch):
     assert destination["automatic_reassignment_number"] == 3
     assert destination["previous_owner_user_ids"] == ["old-user", "prior-user"]
     assert destination["sla_started_at"] is None
+
+
+def test_destination_cycle_with_prior_decision_can_become_source_and_increment_to_two(monkeypatch):
+    enable_flags(monkeypatch)
+    db, first_decision = make_fixture()
+    first = execute_sla_reassignment_transaction(db, first_decision, evaluated_at=NOW)
+    assert first.outcome == SLAReassignmentErrorCode.APPLIED.value
+
+    db["usuarios"].insert_one({"_id": "third-user", "nombre": "Ejecutivo C", "is_active": True})
+    source = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": first.destination_cycle_id})
+    source.update({
+        "reassignment_state": "active",
+        "owner_notified_at": datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
+        "sla_started_at": datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
+        "reassignment_decision_id": first_decision["decision_id"],
+        "previous_owner_user_ids": ["old-user", "new-user"],
+        "cycle_version": 1,
+    })
+    lead = db["leads"].find_one({"_id": "lead-1"})
+    lead["ejecutivo_asignado"] = "Ejecutivo B"
+    lead["prospecto"]["ejecutivo"] = "Ejecutivo B"
+    db["crm_assignment_cycles"].update_one(
+        {"_id": source["_id"]}, {"$set": {key: value for key, value in source.items() if key != "_id"}}
+    )
+    db["leads"].update_one(
+        {"_id": "lead-1"},
+        {"$set": {
+            "ejecutivo_asignado": lead["ejecutivo_asignado"],
+            "prospecto.ejecutivo": lead["prospecto"]["ejecutivo"],
+        }},
+    )
+
+    second_decision = dict(first_decision)
+    second_decision.update({
+        "current_assignment_cycle_id": first.destination_cycle_id,
+        "previous_owner_user_id": "new-user",
+        "previous_owner_user_ids": ["old-user", "new-user"],
+        "selected_user_id": "third-user",
+        "selected_user_display_name": "Ejecutivo C",
+        "candidate_user_ids": ["third-user"],
+        "assignment_number": 1,
+        "automatic_reassignment_number": 1,
+    })
+    second_breach = canonical_sla_breached_at(source, lead=lead)
+    second_decision["sla_breached_at"] = second_breach.isoformat()
+    second_decision["source_cycle_sla_breached_at"] = second_breach.isoformat()
+    second_decision["decision_id"] = generate_decision_id(
+        second_decision["lead_id"], second_decision["current_assignment_cycle_id"], FROZEN_POLICY_VERSION
+    )
+
+    result = execute_sla_reassignment_transaction(
+        db, second_decision, evaluated_at=datetime(2026, 9, 10, 18, 0, tzinfo=timezone.utc)
+    )
+
+    assert result.outcome == SLAReassignmentErrorCode.APPLIED.value, (
+        result.outcome,
+        result.abort_reason,
+        result.error_code,
+    )
+    assert result.automatic_reassignment_number == 2
+    assert source["assignment_cycle_id"] == first.destination_cycle_id
+    closed_source = db["crm_assignment_cycles"].find_one({"_id": source["_id"]})
+    destination = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": result.destination_cycle_id})
+    assert closed_source["cycle_status"] == "reassigned"
+    assert destination["cycle_status"] == "active"
+    assert destination["reassignment_state"] == "AWAITING_OWNER_NOTIFICATION"
+    assert destination["automatic_reassignment_number"] == 2
+    assert len(db["crm_sla_reassignment_audit_v1"].rows) == 2
+
+    replay = execute_sla_reassignment_transaction(db, second_decision, evaluated_at=NOW)
+    assert replay.outcome == SLAReassignmentErrorCode.ALREADY_APPLIED.value
+    assert len(db["crm_sla_reassignment_audit_v1"].rows) == 2
 
 
 def test_executor_bridges_string_decision_ids_to_live_object_ids(monkeypatch):

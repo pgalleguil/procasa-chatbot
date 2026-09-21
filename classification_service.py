@@ -16,7 +16,11 @@ from ai_cost_guard import AICostGuard, budget_from_config, estimate_tokens
 from ai_entrypoint import classification_service_token
 from broker_identity import detect_hard_broker_signal
 from broker_registry import resolve_broker_identity
-from canonical_classification import canonicalize_classification, legacy_to_canonical
+from canonical_classification import (
+    legacy_to_canonical,
+    listing_status_for_document,
+    serialize_canonical_classification,
+)
 from classification_cache import (
     CLASSIFICATION_SERVICE_VERSION,
     ClassificationCache,
@@ -53,7 +57,9 @@ def _is_removed_or_invalid(document: dict[str, Any]) -> str | None:
     ).upper()
     if state in {"AD_REMOVED", "REMOVED"} or html_status in {"LISTING_REMOVED", "REMOVED"}:
         return "REMOVED"
-    if state in {"INVALID", "BLOCKED"} or html_status in {"INVALID", "BLOCKED", "ERROR"}:
+    if state in {"INVALID", "BLOCKED"} or html_status in {
+        "INVALID", "BLOCKED", "ERROR", "HTTP_ERROR", "HTML_CHANGED", "DOWNLOAD_FAILED",
+    }:
         return "INVALID"
     if state in {"EXPIRED", "PUBLICACION_EXPIRADA"}:
         return "EXPIRED"
@@ -169,7 +175,7 @@ def _classification_with_canonical(
     pipeline_complete: bool = True,
 ) -> dict[str, Any]:
     result = dict(classification)
-    canonical = canonicalize_classification(
+    canonical = serialize_canonical_classification(
         {**document, "classification": result},
         registry_match=registry_match,
         human_broker_match=human_broker_match,
@@ -205,8 +211,11 @@ def _classification_with_canonical(
         or ""
     ).strip().lower()
     uncertain_not_assignable = portal in {"toctoc", "toctoc.com"} and final == "UNCERTAIN"
+    listing_status = listing_status_for_document({**document, "classification": result})
+    result["listing_status"] = listing_status
     result["assignment_ready"] = bool(
         pipeline_complete
+        and listing_status == "ACTIVE"
         and not result.get("classification_conflict")
         and str(result.get("conflict_state") or "").upper() != "IDENTITY_CONFLICT"
         and not uncertain_not_assignable

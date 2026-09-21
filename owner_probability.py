@@ -13,7 +13,10 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from broker_identity import detect_hard_broker_signal
-from canonical_classification import canonicalize_classification
+from canonical_classification import (
+    listing_status_for_document,
+    serialize_canonical_classification,
+)
 
 
 OWNER_PROBABILITY_VERSION = "owner-probability-evidence-v1"
@@ -517,6 +520,7 @@ def apply_owner_probability_to_document(
     canonical ``classification.confidence`` is derived from owner_probability.
     """
     classification = dict(doc.get("classification") or {})
+    original_owner_probability = classification.get("owner_probability")
     hard_broker_signal = detect_hard_broker_signal(doc, extracted=extracted or doc)
     registry_broker_match = bool((registry_match or {}).get("matched"))
     identity_broker_match = registry_broker_match or bool(human_broker_match)
@@ -566,8 +570,16 @@ def apply_owner_probability_to_document(
     probability = result["owner_probability"]
     completeness = result["owner_probability_completeness"]
 
+    listing_status = listing_status_for_document({**doc, "classification": classification})
     if "REMOVED_LISTING" in completeness.get("reasons", []):
-        final_state = "AD_REMOVED"
+        # A removed/expired listing is an operational lifecycle fact.  Keep
+        # the identity classification intact (OWNER/BROKER/INCIERTO) and
+        # block assignment through listing_status instead of replacing the
+        # identity with AD_REMOVED.
+        final_state = previous_state if previous_state in {
+            "CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE",
+            "DUEÑO_SEGURO", "INCIERTO",
+        } else "INCIERTO"
     elif hard_veto == "PROFESSIONAL":
         final_state = "CORREDOR_SEGURO"
     elif identity_broker_match:
@@ -598,15 +610,38 @@ def apply_owner_probability_to_document(
         else "classification.owner_probability_band"
     )
     classification["classification_rule_version"] = OWNER_PROBABILITY_VERSION
+    classification["listing_status"] = listing_status
+    # Preserve the explicit Toctoc idType=1 probability supplied by the
+    # classification service.  The generic owner-probability estimator must
+    # not downgrade that structural owner evidence merely because the CRM
+    # document has fewer text signals than the extractor input.
+    if (
+        str(doc.get("seller_id_type_raw") or doc.get("seller_id_type") or "").strip() == "1"
+        and hard_veto != "PROFESSIONAL"
+        and not identity_broker_match
+        and original_owner_probability is not None
+    ):
+        try:
+            explicit_probability = float(original_owner_probability)
+            if explicit_probability > 1:
+                explicit_probability /= 100.0
+            classification["owner_probability"] = explicit_probability
+            classification["canonical_confidence"] = explicit_probability
+            classification["confidence"] = explicit_probability
+            probability = explicit_probability
+        except (TypeError, ValueError):
+            pass
     classification["assignment_ready"] = bool(
         final_state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
         and probability is not None and probability >= 0.50
+        and listing_status == "ACTIVE"
         and not classification.get("manual_review_required")
         and hard_veto != "PROFESSIONAL"
     )
     classification["exclude_from_assignment"] = not classification["assignment_ready"]
     classification["assignment_block_reasons"] = (
         [] if classification["assignment_ready"]
+        else [f"LISTING_{listing_status}"] if listing_status != "ACTIVE"
         else ["PROFESSIONAL_HARD_VETO"] if hard_veto == "PROFESSIONAL"
         else ["BROKER_IDENTITY_MATCH"] if identity_broker_match
         else ["NON_OWNER_STATE_NOT_ASSIGNABLE"] if final_state not in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
@@ -633,11 +668,12 @@ def apply_owner_probability_to_document(
     # finalized so no later score/schema write can undo a hard veto.
     canonical_input = dict(classification)
     canonical_input["final"] = final_state
-    classification.update(canonicalize_classification(
+    classification.update(serialize_canonical_classification(
         {**doc, "classification": canonical_input},
         registry_match=registry_match,
         human_broker_match=human_broker_match,
         evidence=classification.get("evidence") or [],
     ))
     doc["classification"] = classification
+    doc["listing_status"] = classification.get("listing_status") or listing_status
     return doc

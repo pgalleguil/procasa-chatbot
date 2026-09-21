@@ -75,8 +75,12 @@ def validate_listing_content(html: str, url: str) -> dict[str, Any]:
     return {"signals": signals, "positive_count": positive_count, "is_valid_listing": positive_count >= 2}
 
 
-def validate_html(html: str, url: str = "") -> dict[str, Any]:
+def validate_html(html: str, url: str = "", status_code: int | None = None) -> dict[str, Any]:
     raw = re.sub(r"\s+", " ", html or "").strip().lower()
+    if status_code is not None and int(status_code) >= 400:
+        return {"status": "HTTP_ERROR", "reason": f"http_status_{int(status_code)}"}
+    if re.search(r"<title>\s*403\s+forbidden\s*</title>|<h1>\s*403\s+forbidden\s*</h1>", raw, re.I):
+        return {"status": "HTTP_ERROR", "reason": "http_status_403"}
     if len(raw) < 200:
         return {"status": "INVALID", "reason": "too_short"}
     body = re.sub(r"<script\b.*?</script>", " ", raw, flags=re.I | re.S)
@@ -91,7 +95,10 @@ def validate_html(html: str, url: str = "") -> dict[str, Any]:
         return {"status": "INVALID", "reason": "body_too_short"}
     content_check = validate_listing_content(html, url)
     if not content_check["is_valid_listing"]:
-        return {"status": "LISTING_REMOVED", "reason": "listing_incomplete_or_empty_detail",
+        # Absence of the old detail markers is not proof that the listing was
+        # removed. Keep it as an extractor/HTML anomaly so the run can fail
+        # closed without corrupting identity classification.
+        return {"status": "HTML_CHANGED", "reason": "listing_content_missing_or_changed",
                 "content_signals": content_check["signals"], "content_positive_count": content_check["positive_count"]}
     return {"status": "OK", "reason": "valid_html", "content_signals": content_check["signals"]}
 
@@ -168,7 +175,7 @@ def download_html(
             decompressed = len(html_bytes)
             resp.close()
             html_path.write_text(html, encoding="utf-8")
-            validation = validate_html(html)
+            validation = validate_html(html, url, status_code=resp.status_code)
             return DownloadResult(url=url, html=html, status_code=resp.status_code,
                 fetch_source="requests_proxy" if proxy_used else "requests", html_path=html_path,
                 validation_status=validation["status"], validation_reason=validation["reason"],
@@ -185,7 +192,7 @@ def download_html(
             response.raise_for_status()
             html = response.text
             html_path.write_text(html, encoding="utf-8")
-            validation = validate_html(html)
+            validation = validate_html(html, url, status_code=response.status_code)
             return DownloadResult(url=url, html=html, status_code=response.status_code,
                 fetch_source="requests_proxy" if proxy_used else "requests", html_path=html_path,
                 validation_status=validation["status"], validation_reason=validation["reason"],
@@ -201,7 +208,7 @@ def download_html(
                 html = response.read().decode("utf-8", errors="replace")
                 status_code = getattr(response, "status", None)
             html_path.write_text(html, encoding="utf-8")
-            validation = validate_html(html)
+            validation = validate_html(html, url, status_code=status_code)
             return DownloadResult(url=url, html=html, status_code=status_code, fetch_source="urllib",
                 html_path=html_path, validation_status=validation["status"], validation_reason=validation["reason"],
                 blocked=validation["status"] == "BLOCKED")

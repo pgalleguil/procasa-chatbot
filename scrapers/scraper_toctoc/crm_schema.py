@@ -180,6 +180,7 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "canonical_confidence": confidence, "owner_probability": owner_probability,
         "rule_confidence": rule_confidence,
         "status": raw.get("status", ""),
+        "source": str(raw.get("source") or decision_source),
         "rule_state": rule_state, "signals": raw.get("signals", {}),
         "evidence": evidence, "reason": str(raw.get("reason", "")),
         "decision_source": decision_source, "decision_pattern": raw.get("decision_pattern", ""),
@@ -261,7 +262,15 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
     listing_id = str(raw.get("listing_id") or "").strip()
     url = str(raw.get("url") or raw.get("source_url") or "")
     title = str(raw.get("title") or raw.get("titulo") or "")
-    operacion = str(raw.get("operacion") or "").lower()
+    # ``operation`` is the extractor's authoritative field.  Normalize it
+    # here as well as in the runner so every persistence path receives the
+    # canonical CRM field and cannot fail with MISSING_OPERACION.
+    operacion = str(
+        raw.get("operacion")
+        or raw.get("operation")
+        or raw.get("operation_label_raw")
+        or ""
+    ).lower()
     tipo_prop = str(raw.get("tipo_propiedad") or "").lower()
     comuna = str(raw.get("comuna") or "")
     region = str(raw.get("region") or "")
@@ -440,6 +449,7 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "seller_text": seller_text, "seller_avatar_alt": seller_avatar,
         "seller_profile_id": str(raw.get("seller_profile_id") or ""),
         "seller_client_id": str(raw.get("seller_client_id") or raw.get("client_id") or ""),
+        "seller_id_type_raw": str(raw.get("seller_id_type_raw") or raw.get("seller_id_type") or ""),
         "seller_profile_logo": str(raw.get("seller_profile_logo") or ""),
         "seller_profile_url": str(raw.get("seller_profile_url") or ""),
         "company_name": str(raw.get("company_name") or ""),
@@ -448,6 +458,11 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "seller_type": seller_type,
         "seller_type_source": str(raw.get("seller_type_source") or ""),
         "seller_type_evidence": str(raw.get("seller_type_evidence") or ""),
+        "listing_status": str(
+            raw.get("listing_status")
+            or (raw.get("classification") or {}).get("listing_status")
+            or ""
+        ).upper(),
         "operation_label_raw": str(raw.get("operation_label_raw") or ""),
         "operation": str(raw.get("operation") or raw.get("operation_label_raw") or operacion),
         "phone_original_value": phone_original_value,

@@ -45,7 +45,17 @@ def _latest_discovery_file(config):
 
 def _save_json(path, payload):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default),
+        encoding="utf-8",
+    )
+
+
+def _json_default(value):
+    """Serialize runtime values present in audit traces without losing them."""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def _load_json(path): return json.loads(path.read_text(encoding="utf-8"))
@@ -85,6 +95,8 @@ def _build_parser():
     pr.add_argument("--force-download", action="store_true", help="Force re-download even if HTML exists")
     pr.add_argument("--reprocess-html-only", action="store_true", help="Process only local HTML, no network")
     pr.add_argument("--reprocess-existing", action="store_true", help="Allow reprocessing of existing MongoDB docs")
+    pr.add_argument("--include-professional", action="store_true",
+                    help="Include professional URL formats for representative/audit runs")
     pr.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
     pr.add_argument("--min-price-clp", type=int, default=0,
                     help="Minimum normalized published price in CLP; unknown prices are skipped")
@@ -113,6 +125,8 @@ def _build_parser():
     rf.add_argument("--force-download", action="store_true", help="Force re-download even if HTML exists")
     rf.add_argument("--reprocess-html-only", action="store_true", help="Process only local HTML, no network")
     rf.add_argument("--reprocess-existing", action="store_true", help="Allow reprocessing of existing MongoDB docs")
+    rf.add_argument("--include-professional", action="store_true",
+                    help="Include professional URL formats for representative/audit runs")
     rf.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
     rf.add_argument("--min-price-clp", type=int, default=0,
                     help="Minimum normalized published price in CLP; unknown prices are skipped")
@@ -206,7 +220,7 @@ def cmd_process(args, config):
         decision = classify_discovery_candidate(url_format)
         item["discovery_decision"] = decision
         item["discovery_decision_reason"] = f"url_format={url_format}"
-        if decision == SKIP_PROFESSIONAL:
+        if decision == SKIP_PROFESSIONAL and not getattr(args, "include_professional", False):
             pre_filter_results["skipped"] += 1
             # Still add to processed as skipped (no download)
             processed.append({**item,
@@ -399,7 +413,7 @@ def cmd_process(args, config):
                                 current_session["reason"] = "blocked"
                                 p_url, session = _open_block()
                                 continue
-                            if dl.validation_status == "INVALID":
+                            if dl.validation_status in {"INVALID", "HTTP_ERROR", "HTML_CHANGED"}:
                                 proxy_bytes["retry"] += dl.wire_bytes
                         break
                     except Exception as e:
@@ -495,7 +509,9 @@ def cmd_process(args, config):
                     p_url = select_proxy_from_pool(proxy_pool, attempt - 2) if proxy_mode == "auto" else None
                     try: dl = download_html(url, config, batch_id=batch_id, attempt=1 if p_url else 0, proxy=p_url)
                     except: continue
-                if dl and dl.validation_status in ("INVALID", "BLOCKED") and dl.fetch_source != "playwright_error":
+                if dl and dl.validation_status in (
+                    "INVALID", "BLOCKED", "HTTP_ERROR", "HTML_CHANGED",
+                ) and dl.fetch_source != "playwright_error":
                     continue
                 break
             if dl and dl.html: bytes_downloaded += len(dl.html)
@@ -546,11 +562,15 @@ def cmd_process(args, config):
         url = item.get("url", "")
         print(f"[{i+1}/{len(all_dls)}] {url[:80]}...")
 
-        if dl.validation_status in ("INVALID", "BLOCKED") or not dl.html:
+        if dl.validation_status in (
+            "INVALID", "BLOCKED", "HTTP_ERROR", "HTML_CHANGED", "LISTING_REMOVED",
+        ) or not dl.html:
             print(f"  HTML no disponible ({dl.validation_status}), guardando registro basico.")
             raw_record = {**item, "html_validation_status": dl.validation_status,
                          "html_validation_reason": dl.validation_reason, "fetch_source": dl.fetch_source,
+                         "http_status": dl.status_code,
                          "processing_status": "AD_REMOVED" if dl.validation_status == "LISTING_REMOVED" else "DOWNLOAD_FAILED",
+                         "listing_status": "REMOVED" if dl.validation_status == "LISTING_REMOVED" else "INVALID",
                          "processed_at": _utcnow(), "batch_id": batch_id, "source": "owner_hunt",
                          "origen": "toctoc", "source_portal": "toctoc", "schema_version": "crm_v1"}
             if dl.validation_status == "LISTING_REMOVED":
@@ -673,6 +693,16 @@ def cmd_process(args, config):
             "html_path": html_dump_path, "html_sha256": html_sha256,
             "description_length": description_length,
             "description_is_truncated": description_is_truncated}
+        # The extractor's authoritative detail field is ``operation`` while
+        # the canonical CRM schema requires ``operacion``. Preserve the
+        # extracted value explicitly; leave it empty when unavailable so the
+        # Mongo validator can fail closed instead of inventing a value.
+        if not raw_record.get("operacion"):
+            raw_record["operacion"] = (
+                raw_record.get("operation")
+                or raw_record.get("operation_label_raw")
+                or ""
+            )
         processed.append(raw_record)
 
         if args.write_db and mongo and not args.dry_run:

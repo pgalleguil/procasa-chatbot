@@ -198,11 +198,14 @@ def get_whatsapp_message_status_sync(provider_message_id: str) -> dict:
         response = requests.get(url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
         data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
+        response_provider_id = _provider_message_id(data) or _provider_message_id(body)
+        confirmed_provider_id = str(response_provider_id or provider_message_id)
         status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
         provider_event_timestamp, timestamp_source = _extract_provider_event_timestamp(data)
         return {
             "delivery_status": status,
-            "provider_message_id": str(provider_message_id),
+            "provider_message_id": confirmed_provider_id,
+            "provider_message_id_matches": confirmed_provider_id == str(provider_message_id),
             "http_status": response.status_code,
             "provider_error_code": provider_error_code(response.status_code),
             "provider_event_timestamp": provider_event_timestamp,

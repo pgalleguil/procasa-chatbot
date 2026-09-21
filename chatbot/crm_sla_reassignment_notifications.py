@@ -43,6 +43,17 @@ DELIVERY_RECONCILIATION_GRACE_SECONDS = 30
 DELIVERY_RECONCILIATION_MAX_INTERVAL_SECONDS = 15 * 60
 DELIVERY_RECONCILIATION_LEASE_SECONDS = 120
 COMMITTED_STATUSES = frozenset({"APPLIED", "ALREADY_APPLIED"})
+DELIVERY_STATUS_RANK = {
+    "unknown": -1,
+    "pending": 0,
+    "failed": 0,
+    "accepted": 1,
+    "sent": 1,
+    "delivered": 2,
+    "read": 3,
+    "played": 4,
+}
+DELIVERY_CONFIRMED_STATUSES = frozenset({"delivered", "read", "played"})
 
 # This is intentionally a closed migration allow-list, not a history scanner.
 # It protects the one legacy destination whose delivery evidence was lost
@@ -376,6 +387,22 @@ def _provider_event_timestamp(payload: Mapping[str, Any], fallback: Any = None) 
     return None
 
 
+def _delivery_status_rank(status: Any) -> int:
+    return DELIVERY_STATUS_RANK.get(normalize_provider_status(status), -1)
+
+
+def _delivery_status_transition(
+    current_status: Any,
+    incoming_status: Any,
+) -> tuple[str, bool]:
+    """Return the monotonic canonical status and whether a downgrade occurred."""
+    current = normalize_provider_status(current_status)
+    incoming = normalize_provider_status(incoming_status)
+    if _delivery_status_rank(incoming) < _delivery_status_rank(current):
+        return current, True
+    return incoming, False
+
+
 def record_sla_reassignment_delivery_status(
     db: Any,
     *,
@@ -384,15 +411,16 @@ def record_sla_reassignment_delivery_status(
     delivered_at: Any = None,
     status_code: int | None = None,
     provider_timestamp_source: str | None = None,
+    delivery_confirmed_observed_at: Any = None,
+    authenticated_provider_confirmation: bool = False,
 ) -> dict[str, Any]:
     """Consume one canonical provider status for an SLA notification.
 
     Provider acceptance remains ``state=sent`` and never starts a destination
-    SLA clock.  Only ``delivered`` or ``read`` marks the notification as
-    actually delivered and delegates activation to
-    :func:`mark_new_owner_notification_delivered`, which revalidates the lead,
-    cycle and recipient identity.  The operation is idempotent by provider
-    message ID and preserves the first delivery timestamp.
+    SLA clock.  Only ``delivered``/``read``/``played`` marks the notification
+    as actually delivered.  A provider event timestamp wins; otherwise the
+    caller must provide an authenticated first-observation timestamp.  The
+    effective clock is written with a compare-and-set guard and is immutable.
     """
     provider_id = str(provider_message_id or "").strip()
     status = normalize_provider_status(delivery_status)
@@ -406,61 +434,74 @@ def record_sla_reassignment_delivery_status(
         return {"status": "unmatched", "provider_message_id": provider_id}
 
     provider_event_at = coerce_utc_datetime(delivered_at)
-    event_at = provider_event_at or utc_now()
-    if status in {"delivered", "read", "played"}:
-        if provider_event_at is None:
-            db[COLLECTION].update_one(
-                {
-                    "_id": notification.get("_id"),
-                    "provider_message_id": provider_id,
-                },
-                {"$set": {
-                    "delivery_mode": "live",
-                    "delivery_status": status,
-                    "actually_delivered": True,
-                    "delivery_timestamp_missing": True,
-                    "provider_status_code": status_code,
-                    "updated_at": utc_now(),
-                }},
-            )
-            return {
-                "status": "delivered_timestamp_missing",
-                "provider_status": status,
-                "provider_message_id": provider_id,
-                "notification_id": notification.get("_id"),
-                "activation": {
-                    "status": "blocked",
-                    "reason": "DELIVERY_CONFIRMED_TIMESTAMP_MISSING",
-                },
-            }
-        first_delivered_at = coerce_utc_datetime(notification.get("delivered_at"))
-        effective_delivered_at = first_delivered_at or provider_event_at
-        if notification.get("actually_delivered") is not True:
-            db[COLLECTION].update_one(
-                {
-                    "_id": notification.get("_id"),
-                    "provider_message_id": provider_id,
-                    "actually_delivered": {"$ne": True},
-                },
-                {"$set": {
-                    "delivery_mode": "live",
-                    "delivery_status": status,
-                    "actually_delivered": True,
-                    "delivered_at": effective_delivered_at,
-                    "delivery_timestamp_missing": False,
-                    "provider_status_code": status_code,
-                    "updated_at": effective_delivered_at,
-                    **({"provider_timestamp_source": provider_timestamp_source}
-                       if provider_timestamp_source else {}),
-                }},
-            )
+    observed_at = (
+        coerce_utc_datetime(delivery_confirmed_observed_at)
+        if authenticated_provider_confirmation else None
+    )
+    event_at = utc_now()
+    current_status = normalize_provider_status(
+        notification.get("delivery_status") or notification.get("provider_status")
+    )
+    canonical_status, regression = _delivery_status_transition(current_status, status)
+
+    if status in DELIVERY_CONFIRMED_STATUSES:
+        effective_candidate = provider_event_at or observed_at
+        effective_source = (
+            "PROVIDER_EVENT_TIMESTAMP"
+            if provider_event_at is not None
+            else "PROVIDER_STATUS_FIRST_OBSERVED_AT"
+            if observed_at is not None
+            else None
+        )
+        current_effective = coerce_utc_datetime(notification.get("effective_delivery_at"))
+        set_fields: dict[str, Any] = {
+            "delivery_mode": "live",
+            "delivery_status": canonical_status,
+            "provider_status_last_observed": status,
+            "actually_delivered": True,
+            "delivery_timestamp_missing": current_effective is None and effective_candidate is None,
+            "provider_status_code": status_code,
+            "updated_at": event_at,
+        }
+        if regression:
+            set_fields.update({
+                "provider_status_regression_observed": True,
+                "provider_status_regression_last": status,
+                "provider_status_regression_observed_at": event_at,
+            })
+        if current_effective is None and effective_candidate is not None:
+            set_fields.update({
+                "effective_delivery_at": effective_candidate,
+                "delivery_time_source": effective_source,
+                "delivery_timestamp_missing": False,
+            })
+        if provider_event_at is not None and not coerce_utc_datetime(notification.get("provider_delivered_at")):
+            set_fields["provider_delivered_at"] = provider_event_at
+            if not coerce_utc_datetime(notification.get("delivered_at")):
+                set_fields["delivered_at"] = provider_event_at
+            if provider_timestamp_source:
+                set_fields["provider_timestamp_source"] = provider_timestamp_source
+        if observed_at is not None and not coerce_utc_datetime(notification.get("delivery_confirmed_observed_at")):
+            set_fields["delivery_confirmed_observed_at"] = observed_at
+        update_filter = {
+            "_id": notification.get("_id"),
+            "provider_message_id": provider_id,
+        }
+        if current_effective is None:
+            update_filter["$or"] = [
+                {"effective_delivery_at": {"$exists": False}},
+                {"effective_delivery_at": None},
+                {"effective_delivery_at": ""},
+            ]
+        db[COLLECTION].update_one(update_filter, {"$set": set_fields})
         refreshed = db[COLLECTION].find_one({"_id": notification.get("_id")}) or notification
+        effective_delivered_at = coerce_utc_datetime(refreshed.get("effective_delivery_at"))
         if refreshed.get("notification_type") == SLA_REASSIGNED_TO:
             activation = mark_new_owner_notification_delivered(
                 db,
                 notification_id=refreshed.get("_id"),
                 provider_message_id=provider_id,
-                delivered_at=coerce_utc_datetime(refreshed.get("delivered_at")) or effective_delivered_at,
+                delivered_at=effective_delivered_at,
             )
             if activation.get("status") == "blocked" and activation.get("reason") == "destination_identity_changed":
                 return {
@@ -471,47 +512,79 @@ def record_sla_reassignment_delivery_status(
                 }
         else:
             activation = None
+        if effective_delivered_at is None:
+            return {
+                "status": "delivered_timestamp_missing",
+                "provider_status": canonical_status,
+                "provider_message_id": provider_id,
+                "notification_id": refreshed.get("_id"),
+                "activation": {
+                    "status": "blocked",
+                    "reason": "DELIVERY_CONFIRMED_TIMESTAMP_MISSING",
+                },
+            }
         return {
             "status": "delivered",
-            "provider_status": status,
+            "provider_status": canonical_status,
             "provider_message_id": provider_id,
             "notification_id": refreshed.get("_id"),
+            "delivery_time_source": refreshed.get("delivery_time_source"),
             "activation": activation,
         }
 
     if status in {"accepted", "sent", "pending"}:
+        set_fields = {
+            "delivery_status": canonical_status,
+            "provider_status_last_observed": status,
+            "provider_status_code": status_code,
+            "updated_at": event_at,
+        }
+        if notification.get("actually_delivered") is not True:
+            set_fields["actually_delivered"] = False
+        if regression:
+            set_fields.update({
+                "provider_status_regression_observed": True,
+                "provider_status_regression_last": status,
+                "provider_status_regression_observed_at": event_at,
+            })
         db[COLLECTION].update_one(
-            {"_id": notification.get("_id"), "provider_message_id": provider_id,
-             "actually_delivered": {"$ne": True}},
-            {"$set": {
-                "delivery_status": status,
-                "actually_delivered": False,
-                "provider_status_code": status_code,
-                "updated_at": event_at,
-            }},
+            {"_id": notification.get("_id"), "provider_message_id": provider_id},
+            {"$set": set_fields},
         )
         return {
             "status": "sent",
-            "provider_status": status,
+            "provider_status": canonical_status,
             "provider_message_id": provider_id,
             "notification_id": notification.get("_id"),
             "activation": None,
         }
 
     if status == "failed":
-        db[COLLECTION].update_one(
-            {"_id": notification.get("_id"), "provider_message_id": provider_id,
-             "actually_delivered": {"$ne": True}},
-            {"$set": {
-                "delivery_status": "failed",
+        set_fields = {
+            "delivery_status": canonical_status,
+            "provider_status_last_observed": status,
+            "provider_status_code": status_code,
+            "updated_at": event_at,
+        }
+        if _delivery_status_rank(current_status) >= _delivery_status_rank("delivered"):
+            set_fields.update({
+                "actually_delivered": True,
+                "provider_status_regression_observed": True,
+                "provider_status_regression_last": status,
+                "provider_status_regression_observed_at": event_at,
+            })
+        else:
+            set_fields.update({
                 "actually_delivered": False,
-                "provider_status_code": status_code,
                 "delivery_failed_at": event_at,
-                "updated_at": event_at,
-            }},
+            })
+        db[COLLECTION].update_one(
+            {"_id": notification.get("_id"), "provider_message_id": provider_id},
+            {"$set": set_fields},
         )
         return {
-            "status": "failed",
+            "status": canonical_status if canonical_status in DELIVERY_CONFIRMED_STATUSES else "failed",
+            "provider_status": canonical_status,
             "provider_message_id": provider_id,
             "notification_id": notification.get("_id"),
             "activation": None,
@@ -729,8 +802,11 @@ def mark_new_owner_notification_delivered(
 
     ``provider_message_id`` is evidence for the notification record, but the
     cycle clock is advanced only by this routine after it has validated the
-    complete current lead/cycle/recipient identity.  Repeating the call is
-    idempotent and never creates another notification or reassignment.
+    complete current lead/cycle/recipient identity.  ``delivered_at`` is the
+    already-resolved ``effective_delivery_at`` and may represent either the
+    provider event timestamp or the first authenticated provider observation.
+    Repeating the call is idempotent and never creates another notification or
+    reassignment.
     """
     provider_id = str(provider_message_id or "").strip()
     if not provider_id:
@@ -751,7 +827,9 @@ def mark_new_owner_notification_delivered(
         return {"status": "blocked", "reason": "provider_message_id_mismatch", "notification_id": notification_id}
     if notification.get("actually_delivered") is not True:
         return {"status": "blocked", "reason": "notification_delivery_not_confirmed", "notification_id": notification_id}
-    delivered = coerce_utc_datetime(delivered_at)
+    delivered = coerce_utc_datetime(delivered_at) or coerce_utc_datetime(
+        notification.get("effective_delivery_at")
+    )
     if delivered is None:
         return {
             "status": "blocked",
@@ -833,6 +911,109 @@ def mark_new_owner_notification_delivered(
         "owner_notified_at": delivered,
         "sla_started_at": delivered,
         "notification_id": notification_id,
+    }
+
+
+def recover_sla_reassignment_delivery_from_evidence(
+    db: Any,
+    *,
+    notification_id: Any,
+    provider_message_id: Any,
+    first_confirmed_observed_at: Any,
+    evidence_source: str,
+    evidence_reference: str,
+) -> dict[str, Any]:
+    """Recover one existing delivery using verified first-observation evidence.
+
+    This primitive is deliberately narrow and idempotent.  It never creates a
+    notification/cycle, changes ownership, or sends a provider message.  The
+    supplied observation is operationally conservative: delivery occurred no
+    later than the first authenticated observation.
+    """
+    provider_id = str(provider_message_id or "").strip()
+    source = str(evidence_source or "").strip()
+    reference = str(evidence_reference or "").strip()
+    observed_at = coerce_utc_datetime(first_confirmed_observed_at)
+    if not provider_id or not observed_at or not source or not reference:
+        return {"status": "blocked", "reason": "historical_evidence_incomplete"}
+    notification = db[COLLECTION].find_one({"_id": notification_id})
+    if not notification:
+        return {"status": "not_found", "notification_id": notification_id}
+    if notification.get("provider_message_id") != provider_id:
+        return {"status": "blocked", "reason": "provider_message_id_mismatch"}
+    if notification.get("notification_type") not in {SLA_REASSIGNED_TO, SLA_REASSIGNED_AWAY}:
+        return {"status": "blocked", "reason": "unsupported_notification_type"}
+    existing_effective = coerce_utc_datetime(notification.get("effective_delivery_at"))
+    if existing_effective is not None:
+        return {
+            "status": "already_recovered",
+            "notification_id": notification_id,
+            "effective_delivery_at": existing_effective,
+        }
+
+    valid, reason = _validate_pending_notification(db, notification)
+    if not valid:
+        return {"status": "blocked", "reason": reason, "notification_id": notification_id}
+
+    current_status = normalize_provider_status(
+        notification.get("delivery_status") or notification.get("provider_status")
+    )
+    canonical_status, regression = _delivery_status_transition(current_status, "delivered")
+    update = db[COLLECTION].update_one(
+        {
+            "_id": notification_id,
+            "provider_message_id": provider_id,
+            "$or": [
+                {"effective_delivery_at": {"$exists": False}},
+                {"effective_delivery_at": None},
+                {"effective_delivery_at": ""},
+            ],
+        },
+        {"$set": {
+            "delivery_mode": "historical_recovery",
+            "delivery_status": canonical_status,
+            "provider_status_last_observed": "delivered",
+            "actually_delivered": True,
+            "delivery_timestamp_missing": False,
+            "delivery_confirmed_observed_at": observed_at,
+            "effective_delivery_at": observed_at,
+            "delivery_time_source": "PROVIDER_STATUS_FIRST_OBSERVED_AT",
+            "delivery_evidence_source": source,
+            "delivery_evidence_reference": reference,
+            "delivery_recovered_at": utc_now(),
+            "updated_at": utc_now(),
+            **({
+                "provider_status_regression_observed": True,
+                "provider_status_regression_last": current_status,
+                "provider_status_regression_observed_at": utc_now(),
+            } if regression else {}),
+        }},
+    )
+    refreshed = db[COLLECTION].find_one({"_id": notification_id}) or notification
+    effective = coerce_utc_datetime(refreshed.get("effective_delivery_at"))
+    if effective is None:
+        return {"status": "race_lost", "notification_id": notification_id}
+    if int(getattr(update, "modified_count", 0) or 0) == 0:
+        return {
+            "status": "already_recovered",
+            "notification_id": notification_id,
+            "effective_delivery_at": effective,
+        }
+    activation = None
+    if refreshed.get("notification_type") == SLA_REASSIGNED_TO:
+        activation = mark_new_owner_notification_delivered(
+            db,
+            notification_id=notification_id,
+            provider_message_id=provider_id,
+            delivered_at=effective,
+        )
+    return {
+        "status": "recovered",
+        "notification_id": notification_id,
+        "provider_message_id": provider_id,
+        "effective_delivery_at": effective,
+        "delivery_time_source": "PROVIDER_STATUS_FIRST_OBSERVED_AT",
+        "activation": activation,
     }
 
 
@@ -1373,10 +1554,44 @@ def reconcile_one_sla_reassignment_delivery_sync(
         return {"status": "provider_auth_error", "error": "PROVIDER_AUTH_ERROR"}
 
     if status in {"delivered", "read", "played"}:
+        returned_provider_id = str(provider_result.get("provider_message_id") or "").strip()
+        if http_status != 200 or returned_provider_id != provider_id:
+            _finish_delivery_reconciliation(
+                db,
+                notification_id=notification.get("_id"),
+                worker_id=worker_id,
+                now=current,
+                set_fields={
+                    "status_reconciliation_last_result": "provider_confirmation_invalid",
+                    "next_status_check_at": current + timedelta(
+                        seconds=_reconciliation_backoff_seconds(attempts)
+                    ),
+                },
+            )
+            return {"status": "provider_confirmation_invalid", "provider_message_id": provider_id}
+        valid_identity, identity_reason = _validate_pending_notification(db, notification)
+        if not valid_identity:
+            _finish_delivery_reconciliation(
+                db,
+                notification_id=notification.get("_id"),
+                worker_id=worker_id,
+                now=current,
+                set_fields={
+                    "status_reconciliation_last_result": identity_reason,
+                    "status_reconciliation_blocked": True,
+                    "next_status_check_at": None,
+                },
+            )
+            return {
+                "status": "stale",
+                "reason": identity_reason,
+                "provider_message_id": provider_id,
+            }
         provider_timestamp = coerce_utc_datetime(
             provider_result.get("provider_event_timestamp")
             or provider_result.get("delivered_at")
         )
+        observed_at = None if provider_timestamp is not None else current
         delivery_result = record_sla_reassignment_delivery_status(
             db,
             provider_message_id=provider_id,
@@ -1384,6 +1599,8 @@ def reconcile_one_sla_reassignment_delivery_sync(
             delivered_at=provider_timestamp,
             status_code=status_code,
             provider_timestamp_source=provider_result.get("provider_event_timestamp_source"),
+            delivery_confirmed_observed_at=observed_at,
+            authenticated_provider_confirmation=True,
         )
         missing_timestamp = delivery_result.get("status") == "delivered_timestamp_missing"
         _finish_delivery_reconciliation(
@@ -1402,37 +1619,52 @@ def reconcile_one_sla_reassignment_delivery_sync(
         return delivery_result
 
     if status in {"pending", "sent", "accepted"}:
+        delivery_result = record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id=provider_id,
+            delivery_status=status,
+            status_code=status_code,
+        )
         _finish_delivery_reconciliation(
             db,
             notification_id=notification.get("_id"),
             worker_id=worker_id,
             now=current,
             set_fields={
-                "delivery_status": status,
-                "actually_delivered": False,
-                "status_reconciliation_last_result": "waiting_delivery",
+                "status_reconciliation_last_result": delivery_result.get("status"),
                 "next_status_check_at": current + timedelta(
                     seconds=_reconciliation_backoff_seconds(attempts)
                 ),
             },
         )
-        return {"status": "waiting_delivery", "provider_status": status}
+        return {"status": "waiting_delivery", "provider_status": delivery_result.get("provider_status")}
 
     if status == "failed":
+        delivery_result = record_sla_reassignment_delivery_status(
+            db,
+            provider_message_id=provider_id,
+            delivery_status=status,
+            status_code=status_code,
+        )
         _finish_delivery_reconciliation(
             db,
             notification_id=notification.get("_id"),
             worker_id=worker_id,
             now=current,
             set_fields={
-                "delivery_status": "failed",
-                "delivery_error_code": "PROVIDER_CONFIRMED_FAILED",
-                "status_reconciliation_last_result": "PROVIDER_CONFIRMED_FAILED",
-                "status_reconciliation_blocked": True,
+                "status_reconciliation_last_result": delivery_result.get("status"),
+                **({"delivery_error_code": "PROVIDER_CONFIRMED_FAILED"}
+                   if delivery_result.get("status") == "failed" else {}),
+                "status_reconciliation_blocked": delivery_result.get("status") == "failed",
                 "next_status_check_at": None,
             },
         )
-        return {"status": "provider_confirmed_failed"}
+        return {
+            "status": "provider_confirmed_failed"
+            if delivery_result.get("status") == "failed"
+            else delivery_result.get("status"),
+            "provider_status": delivery_result.get("provider_status"),
+        }
 
     _finish_delivery_reconciliation(
         db,

@@ -85,6 +85,16 @@ class ShadowWriteGuardDB:
         return getattr(self._db, name)
 
 
+def _database_for_execution_mode(raw_db: Any, *, execution_mode: str) -> Any:
+    """Guard shadow reads while leaving live orphan repair on the canonical DB.
+
+    Live mode may close a provably orphan assignment cycle through the
+    fail-closed data-repair path.  Wrapping live mode in the shadow adapter
+    incorrectly turned that allowed repair into a fatal iteration error.
+    """
+    return ShadowWriteGuardDB(raw_db) if execution_mode == "shadow" else raw_db
+
+
 def _utc(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         parsed = value
@@ -261,7 +271,7 @@ async def run_crm_sla_shadow_worker(
         logger.error("[SLA_SHADOW_START] status=SNAPSHOT_UNAVAILABLE error_type=%s", type(exc).__name__)
         return
 
-    guarded_db = ShadowWriteGuardDB(raw_db)
+    guarded_db = _database_for_execution_mode(raw_db, execution_mode="shadow")
     metrics = ShadowRuntimeMetrics()
     instance_config = {
         "holder_id": holder_id,
@@ -403,7 +413,7 @@ async def run_crm_sla_live_worker(
 
     from .crm_sla_reassignment_integration import execute_sla_reassignment_with_notification
 
-    guarded_db = ShadowWriteGuardDB(raw_db)
+    runtime_db = _database_for_execution_mode(raw_db, execution_mode="live")
     runtime_metrics = {
         "iterations": 0,
         "executor_calls": 0,
@@ -449,7 +459,7 @@ async def run_crm_sla_live_worker(
             batch_id = f"{holder_id}:{runtime_metrics['iterations'] + 1}"
             try:
                 result = await run_sla_reassignment_iteration_with_leader_lease(
-                    guarded_db,
+                    runtime_db,
                     holder_id=holder_id,
                     lease_write_enabled=True,
                     lease_settings=settings,
@@ -465,7 +475,7 @@ async def run_crm_sla_live_worker(
                 if lease.get("status") == "ACQUIRED" and heartbeat_task is None:
                     heartbeat_task = asyncio.create_task(
                         _lease_heartbeat(
-                            guarded_db,
+                            runtime_db,
                             holder_id=holder_id,
                             settings=settings,
                             stop_event=heartbeat_stop,

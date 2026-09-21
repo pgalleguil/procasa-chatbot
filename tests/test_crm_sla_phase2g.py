@@ -4,7 +4,12 @@ from datetime import datetime, timezone
 
 import pytest
 
-from chatbot.crm_sla_reassignment_runtime import ShadowWriteGuardDB, ShadowWriteGuardViolation, _health_for_duration
+from chatbot.crm_sla_reassignment_runtime import (
+    ShadowWriteGuardDB,
+    ShadowWriteGuardViolation,
+    _database_for_execution_mode,
+    _health_for_duration,
+)
 from chatbot.crm_sla_reassignment_shadow import (
     InMemoryShadowStore,
     SHADOW_POLICY_VERSION,
@@ -73,6 +78,15 @@ def test_shadow_and_lease_writes_remain_allowed():
     # Attribute access must reach the allowed collection unchanged.
     assert callable(ShadowWriteGuardDB(DB())["crm_sla_reassignment_shadow_v1"].bulk_write)
     assert callable(ShadowWriteGuardDB(DB())["crm_worker_leases"].bulk_write)
+
+
+def test_live_runtime_uses_canonical_db_for_orphan_repair():
+    raw_db = object()
+    assert _database_for_execution_mode(raw_db, execution_mode="live") is raw_db
+    assert isinstance(
+        _database_for_execution_mode(raw_db, execution_mode="shadow"),
+        ShadowWriteGuardDB,
+    )
 
 
 def test_shadow_configuration_requires_explicit_shadow_cutover_and_empty_prod_cutover():

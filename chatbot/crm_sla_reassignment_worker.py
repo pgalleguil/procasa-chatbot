@@ -893,8 +893,36 @@ async def _batch_context(
         instrumentation=read_instrumentation,
         query_name="worker.context.management_results",
     ) if cycle_ids else []
+    # Only fetch event types that _management_protection can actually treat as
+    # human evidence.  The previous unbounded lead_id-only query pulled the
+    # entire event history for every active cycle into each live iteration;
+    # on production-sized batches that could exhaust the Mongo socket timeout
+    # before a single cycle reached canonical expiration evaluation.
+    management_event_types = (
+        "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT", "MANUAL_ENTRY",
+        "CALL_COMPLETED_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
+        "WHATSAPP_SENT_LEAD", "EMAIL_SENT_LEAD",
+        "gestion_log", "human_note", "contact_result", "manual_entry",
+        "call_completed_lead", "send_wa_lead", "send_email_lead",
+        "whatsapp_sent_lead", "email_sent_lead",
+    )
+    assigned_floor = [
+        _utc(cycle.get("assigned_at"))
+        for cycle in cycles
+        if _utc(cycle.get("assigned_at")) is not None
+    ]
+    event_query: dict[str, Any] = {
+        "lead_id": {"$in": lead_values},
+        "type": {"$in": list(management_event_types)},
+    }
+    if assigned_floor:
+        event_since = min(assigned_floor)
+        event_query["$or"] = [
+            {"timestamp": {"$gte": event_since}},
+            {"timestamp": {"$exists": False}, "occurred_at": {"$gte": event_since}},
+        ]
     events = await _find_many(
-        db["crm_events"], {"lead_id": {"$in": lead_values}},
+        db["crm_events"], event_query,
         {"lead_id": 1, "assignment_cycle_id": 1, "type": 1, "actor": 1, "actor_type": 1, "confirmed": 1, "result": 1, "meta": 1, "timestamp": 1, "occurred_at": 1},
         instrumentation=read_instrumentation,
         query_name="worker.context.events",

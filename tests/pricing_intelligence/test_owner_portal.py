@@ -262,7 +262,7 @@ def test_updated_date_uses_verified_master_field(monkeypatch):
 def test_market_below_minimum_hides_representative_median_and_range():
     db = make_db(master_doc("S1"), captures=[{"listing_id": "S1", "image_urls": ["https://img/s.jpg"]}])
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), ["https://img/s.jpg"])
-    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    market = service._market_context(db, prop, datetime.now(timezone.utc))
     assert market["minimum_comparables"] == 5
     assert market["comparables_count"] == 0
     assert market["median_price_uf"] is None
@@ -274,7 +274,7 @@ def test_market_at_minimum_exposes_descriptive_median():
     for index in range(5):
         db["propiedades_captacion"].insert_one({"listing_id": f"cmp-{index}", "comuna": "Santiago", "tipo_propiedad": "Departamento", "operacion": "venta", "precio_uf": 3000 + index * 100, "superficie": 60 + index})
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), ["https://img/s.jpg"])
-    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    market = service._market_context(db, prop, datetime.now(timezone.utc))
     assert market["comparables_count"] == 5
     assert market["median_price_uf"] == 3200
     assert market["range_price_uf"] == [3000, 3400]
@@ -375,7 +375,7 @@ def test_market_requires_same_commune_type_and_operation():
         ]
     )
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), [])
-    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    market = service._market_context(db, prop, datetime.now(timezone.utc))
     assert market["comparables_count"] == 1
 
 
@@ -398,7 +398,7 @@ def test_market_normalizes_labels_and_uses_verified_surface_fallbacks():
             "m2_construidos": 60 + index,
         })
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "V1"}), [])
-    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    market = service._market_context(db, prop, datetime.now(timezone.utc))
     assert market["comparables_count"] == 5
     assert market["median_price_uf"] == 3200
     assert market["median_uf_m2"] == 51.61
@@ -418,6 +418,7 @@ def test_market_indicator_contract_is_dated_and_source_backed():
     assert set(indicator) == {
         "indicator_id", "scope", "geography", "value", "unit", "period",
         "source_name", "source_url", "retrieved_at", "valid_until",
+        "source_as_of", "source_age_days", "is_stale",
     }
     assert indicator["period"] == "10/08/2026"
     assert indicator["source_url"] == "https://mindicador.cl/"
@@ -445,7 +446,7 @@ def test_invalid_prices_and_surfaces_are_excluded_from_market():
         ]
     )
     prop = service._safe_property(db["universo_cartera_prop360"].find_one({"codigo": "S1"}), [])
-    market = service._market_context(db, prop, datetime.now(timezone.utc) + timedelta(days=1))
+    market = service._market_context(db, prop, datetime.now(timezone.utc))
     assert market["comparables_count"] == 1
     assert market["median_price_uf"] is None
 
@@ -673,6 +674,98 @@ def test_local_market_semantics_and_cutoff_are_explicit(monkeypatch):
         "Publicaciones activas observadas en el corte; no equivale a propiedades únicas."
     )
     assert view.local_context.effective_uf_m2_semantics is not None
+
+
+def test_phase_2d5_6464_current_and_historical_windows_are_reproducible():
+    current_as_of = datetime(2026, 9, 20, 23, 0, tzinfo=timezone.utc)
+    historical_as_of = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
+    event_times = [
+        datetime(2026, 6, 20, 2, 42, 47, tzinfo=timezone.utc),
+        datetime(2026, 6, 25, 14, 24, 7, tzinfo=timezone.utc),
+        datetime(2026, 6, 25, 14, 46, 32, tzinfo=timezone.utc),
+        datetime(2026, 7, 3, 13, 21, 42, tzinfo=timezone.utc),
+        datetime(2026, 7, 7, 18, 34, 11, tzinfo=timezone.utc),
+        datetime(2026, 8, 5, 14, 38, 37, tzinfo=timezone.utc),
+        datetime(2026, 8, 10, 13, 0, 25, tzinfo=timezone.utc),
+        datetime(2026, 8, 10, 15, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 8, 17, 13, 0, 22, tzinfo=timezone.utc),
+        datetime(2026, 8, 17, 13, 0, 36, tzinfo=timezone.utc),
+        datetime(2026, 8, 17, 13, 0, 43, tzinfo=timezone.utc),
+    ]
+    db = make_db(
+        master_doc("6464", photo_code="6464"),
+        leads=[
+            {"_id": f"phase2d5-{index}", "created_at": value.isoformat(), "prospecto": {"codigo": "6464"}}
+            for index, value in enumerate(event_times)
+        ],
+    )
+    before_counts = {name: db[name].count_documents({}) for name in ("universo_cartera_prop360", "leads")}
+
+    current = service.get_owner_portal_property_view(db, "6464", current_as_of)
+    historical = service.get_owner_portal_property_view(db, "6464", historical_as_of)
+
+    assert current is not None and historical is not None
+    assert (current.inquiries_previous_30d, current.inquiries_previous_90d) == (0, 10)
+    assert (historical.inquiries_previous_30d, historical.inquiries_previous_90d) == (3, 11)
+    assert current.page_as_of == current.as_of
+    assert current.engine_v1.status == "NOT_IMPLEMENTED"
+    assert current.engine_v1.recommendation is None
+    assert current.engine_v1.gradual_price_uf is None
+    assert current.engine_v1.competitive_reference_uf is None
+    assert {name: db[name].count_documents({}) for name in before_counts} == before_counts
+
+
+def test_phase_2d5_market_ecdf_is_dynamic_and_fingerprint_repeats():
+    as_of = datetime(2026, 9, 20, 23, 0, tzinfo=timezone.utc)
+    prop = {
+        "price_uf": 7000,
+        "operation": "venta",
+        "built_area_m2": 65,
+        "bedrooms": 2,
+        "bathrooms": 2,
+    }
+    rows = [
+        {
+            "listing_id": f"cmp-{index}",
+            "price_uf": 1000 + index * 1000,
+            "surface_m2": 65,
+            "bedrooms": 2,
+            "bathrooms": 2,
+            "portal": "yapo",
+            "when": as_of - timedelta(days=index + 1),
+            "date_basis": "fecha de publicación",
+        }
+        for index in range(8)
+    ]
+    market = {"valid_rows": rows}
+    first = service._select_comparable_cohort(prop, market, as_of)
+    second = service._select_comparable_cohort(prop, market, as_of)
+    assert first is not None and second is not None
+    assert first.cohort_fingerprint == second.cohort_fingerprint
+    positioning = service._positioning(7000, first)
+    assert positioning is not None
+    assert positioning.market_ecdf == 87.5
+    assert positioning.market_ecdf_equal_or_below == 7
+    assert "7 de cada 10" not in positioning.market_position_owner_text
+    assert positioning.market_position_owner_text == (
+        "Aproximadamente 9 de cada 10 publicaciones comparables tienen un precio igual o inferior al publicado."
+    )
+
+
+def test_phase_2d5_snapshot_source_age_is_independent_from_page_as_of():
+    page_as_of = datetime(2026, 9, 20, 23, 0, tzinfo=timezone.utc)
+    assert service._source_temporal_metadata("28/04/2026", page_as_of) == ("28/04/2026", 145, True)
+    assert service._source_temporal_metadata("10/08/2026", page_as_of) == ("10/08/2026", 41, True)
+
+
+def test_phase_2d5_future_as_of_is_rejected():
+    db = make_db(master_doc("FUTURE"))
+    with pytest.raises(ValueError, match="future"):
+        service.get_owner_portal_property_view(
+            db,
+            "FUTURE",
+            datetime.now(timezone.utc) + timedelta(days=1),
+        )
 
 
 def test_comparable_examples_are_bounded_and_anonymous(monkeypatch):

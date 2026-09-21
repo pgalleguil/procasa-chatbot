@@ -11,7 +11,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 from analytics.pricing_intelligence.lead_linkage import LeadLinkageService
+from analytics.pricing_intelligence.lead_origin import resolve_lead_origin
 from analytics.pricing_intelligence.models import LinkageStatus
+from analytics.pricing_intelligence.cohort_reproducibility import (
+    COHORT_RULE_VERSION,
+    cohort_fingerprint,
+)
+from analytics.pricing_intelligence.observability import (
+    SOURCE_FULL,
+    WINDOW_UNKNOWN,
+    build_observation_evidence,
+    demand_observation,
+    derive_lead_source_coverage,
+)
 from analytics.pricing_intelligence.property_identity import (
     build_property_identity_resolver,
     normalize_identifier,
@@ -22,6 +34,7 @@ from analytics.pricing_intelligence.time_utils import BUSINESS_TZ, is_in_previou
 from .schemas import (
     MarketIntelligenceSnapshotV1,
     OwnerPortalDataQualityV1,
+    OwnerPortalEngineV1Contract,
     OwnerPortalActivityPointV1,
     OwnerPortalComparableCohortV1,
     OwnerPortalComparableExampleV1,
@@ -31,6 +44,7 @@ from .schemas import (
     OwnerPortalPositioningV1,
     OwnerPortalPropertyViewV1,
     OwnerPortalTimelineEventV1,
+    OwnerPortalProvenanceV1,
     MarketIndicatorV1,
 )
 from .semantics import (
@@ -883,6 +897,29 @@ def _format_date(value: Any) -> str | None:
     return parsed.astimezone(BUSINESS_TZ).strftime("%d/%m/%Y")
 
 
+def _source_temporal_metadata(
+    source_as_of: Any,
+    page_as_of: datetime,
+) -> tuple[str | None, int | None, bool | None]:
+    """Return source date, age and stale flag without changing source data."""
+
+    parsed = _parse_date(source_as_of)
+    if parsed is None and isinstance(source_as_of, str):
+        text = source_as_of.strip()
+        for pattern in ("%Y-%m", "%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                parsed = datetime.strptime(text, pattern).replace(tzinfo=BUSINESS_TZ)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return (_format_date(source_as_of) or (str(source_as_of) if source_as_of else None), None, None)
+    source_date = parsed.astimezone(BUSINESS_TZ).date()
+    page_date = page_as_of.astimezone(BUSINESS_TZ).date()
+    age_days = (page_date - source_date).days
+    return (_format_date(parsed) or parsed.isoformat(), age_days, age_days > 0)
+
+
 def _format_as_of(as_of: datetime) -> str:
     return as_of.astimezone(timezone.utc).isoformat()
 
@@ -891,6 +928,10 @@ def _as_of_or_now(as_of: datetime | None) -> datetime:
     value = as_of if as_of is not None else datetime.now(BUSINESS_TZ) + timedelta(microseconds=1)
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("as_of must be timezone-aware")
+    # Permit only a small clock-skew tolerance for callers constructing an
+    # as_of immediately after an event; meaningful future cutoffs are invalid.
+    if value > datetime.now(BUSINESS_TZ) + timedelta(seconds=5):
+        raise ValueError("as_of cannot be in the future")
     return value
 
 
@@ -1183,18 +1224,49 @@ def _cohort_statistics(
     bathroom_rule: str,
     date_rule: str,
     counts: Mapping[str, int],
+    as_of: datetime | None = None,
+    current_price_uf: float | None = None,
 ) -> OwnerPortalComparableCohortV1 | None:
     if len(rows) < 8:
         return None
     prices = [float(row["price_uf"]) for row in rows]
     p10 = _percentile(prices, .10)
     p25 = _percentile(prices, .25)
+    p60 = _percentile(prices, .60)
     median = _percentile(prices, .50)
     p75 = _percentile(prices, .75)
     p90 = _percentile(prices, .90)
-    if None in {p10, p25, median, p75, p90}:
+    if None in {p10, p25, p60, median, p75, p90}:
         return None
     uf_m2 = [float(row["price_uf"]) / float(row["surface_m2"]) for row in rows]
+    cohort_as_of = _format_as_of(as_of) if as_of is not None else None
+    cohort_cutoff = (
+        as_of.astimezone(timezone.utc) - timedelta(days=365)
+        if as_of is not None
+        else None
+    )
+    fingerprint = (
+        cohort_fingerprint(
+            rows,
+            operation=operation,
+            cohort_level=level,
+            rule_version=COHORT_RULE_VERSION,
+            as_of=as_of,
+            cutoff=cohort_cutoff,
+        )
+        if as_of is not None and cohort_cutoff is not None
+        else None
+    )
+    ecdf_equal_or_below = (
+        sum(price <= current_price_uf for price in prices)
+        if current_price_uf is not None
+        else None
+    )
+    market_ecdf = (
+        round(ecdf_equal_or_below / len(prices) * 100, 2)
+        if ecdf_equal_or_below is not None and prices
+        else None
+    )
     return OwnerPortalComparableCohortV1(
         operation=operation,
         level=level,
@@ -1214,12 +1286,18 @@ def _cohort_statistics(
         similar_count=int(counts["similar"]),
         high_similarity_count=int(counts["high_similarity"]),
         examples=_comparable_examples(rows, median_uf=median),
+        p60_uf=p60,
+        market_ecdf=market_ecdf,
+        market_ecdf_equal_or_below=ecdf_equal_or_below,
+        cohort_as_of=cohort_as_of,
+        cohort_fingerprint=fingerprint,
     )
 
 
 def _select_comparable_cohort(
     prop: Mapping[str, Any],
     market: Mapping[str, Any],
+    as_of: datetime | None = None,
 ) -> OwnerPortalComparableCohortV1 | None:
     """Select the most similar cohort with the explicit N>=8 guard."""
 
@@ -1266,6 +1344,8 @@ def _select_comparable_cohort(
             bathroom_rule="baños iguales o ±1",
             date_rule="fecha reciente válida",
             counts=counts,
+            as_of=as_of,
+            current_price_uf=_number(prop.get("price_uf")),
         )
         or _cohort_statistics(
             similar,
@@ -1277,6 +1357,8 @@ def _select_comparable_cohort(
             bathroom_rule="sin filtro adicional",
             date_rule=common_date_rule,
             counts=counts,
+            as_of=as_of,
+            current_price_uf=_number(prop.get("price_uf")),
         )
         or _cohort_statistics(
             broad,
@@ -1288,6 +1370,8 @@ def _select_comparable_cohort(
             bathroom_rule="sin filtro adicional",
             date_rule=common_date_rule,
             counts=counts,
+            as_of=as_of,
+            current_price_uf=_number(prop.get("price_uf")),
         )
     )
     return selected
@@ -1296,6 +1380,7 @@ def _select_comparable_cohort(
 def _market_context_dto(
     prop: Mapping[str, Any],
     market: Mapping[str, Any],
+    page_as_of: datetime | None = None,
 ) -> OwnerPortalMarketContextV1 | None:
     """Build the small, source-labelled local snapshot used by the template."""
 
@@ -1311,6 +1396,10 @@ def _market_context_dto(
         filename = _text(source.get("filename"))
         report_date = _format_date(source.get("report_date") or source.get("fecha_reporte"))
         source_ref = " · ".join(item for item in (filename, f"corte {report_date}" if report_date else None) if item)
+    source_as_of, source_age_days, is_stale = _source_temporal_metadata(
+        market.get("market_as_of"),
+        page_as_of or datetime.now(BUSINESS_TZ),
+    )
     return OwnerPortalMarketContextV1(
         scope="comuna",
         geography=_text(prop.get("commune")) or "",
@@ -1343,6 +1432,9 @@ def _market_context_dto(
             or market.get("aggregate_updated_at")
             or market.get("market_as_of")
         ),
+        source_as_of=source_as_of,
+        source_age_days=source_age_days,
+        is_stale=is_stale,
     )
 
 
@@ -1365,6 +1457,24 @@ def _positioning(
         label = "Sobre el tramo central observado"
     else:
         label = "Dentro del tramo central observado"
+    state = "UNAVAILABLE"
+    if cohort.p60_uf is not None and current_price_uf <= cohort.p60_uf:
+        state = "ALIGNED"
+    elif current_price_uf <= cohort.p75_uf:
+        state = "SLIGHTLY_HIGH"
+    elif current_price_uf <= cohort.p90_uf:
+        state = "HIGH"
+    else:
+        state = "VERY_HIGH"
+    ecdf_equal_or_below = cohort.market_ecdf_equal_or_below
+    market_ecdf = cohort.market_ecdf
+    owner_text = None
+    if market_ecdf is not None and ecdf_equal_or_below is not None:
+        approximate_decile = max(1, min(9, round(market_ecdf / 10)))
+        owner_text = (
+            f"Aproximadamente {approximate_decile} de cada 10 publicaciones comparables "
+            "tienen un precio igual o inferior al publicado."
+        )
     return OwnerPortalPositioningV1(
         price_uf=round(current_price_uf, 2),
         p10_uf=p10,
@@ -1376,10 +1486,14 @@ def _positioning(
         label=label,
         comparable_count=cohort.count,
         cohort_label=cohort.label,
+        market_position_state=state,
+        market_ecdf=market_ecdf,
+        market_ecdf_equal_or_below=ecdf_equal_or_below,
+        market_position_owner_text=owner_text,
     )
 
 
-def _stored_national_indicators(db: Any) -> list[MarketIndicatorV1]:
+def _stored_national_indicators(db: Any, page_as_of: datetime) -> list[MarketIndicatorV1]:
     """Read valid upstream snapshots only; the portal never ingests them."""
 
     try:
@@ -1410,6 +1524,10 @@ def _stored_national_indicators(db: Any) -> list[MarketIndicatorV1]:
         value = row.get("value")
         if _number(value) is None:
             continue
+        source_as_of, source_age_days, is_stale = _source_temporal_metadata(
+            row.get("reference_period"),
+            page_as_of,
+        )
         result.append(
             MarketIndicatorV1(
                 indicator_id=_text(row.get("indicator_id")) or "",
@@ -1422,6 +1540,9 @@ def _stored_national_indicators(db: Any) -> list[MarketIndicatorV1]:
                 source_url=_text(row.get("source_reference")),
                 retrieved_at=_text(row.get("retrieved_at_utc")) or "",
                 valid_until=None,
+                source_as_of=source_as_of,
+                source_age_days=source_age_days,
+                is_stale=is_stale,
             )
         )
     return result
@@ -1437,7 +1558,7 @@ def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, .
     if cached is not None and cached[1] is market_client and now - cached[0] < _NATIONAL_INDICATORS_CACHE_TTL_SECONDS:
         return cached[2]
 
-    result = _stored_national_indicators(db)
+    result = _stored_national_indicators(db, as_of)
 
     row = db["uf_cache"].find_one(
         {},
@@ -1449,6 +1570,10 @@ def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, .
         if value is not None and value > 0:
             period = _format_date(row.get("fecha")) or _text(row.get("fecha")) or ""
             retrieved_at = _format_timestamp(row.get("actualizado_at")) or _format_as_of(as_of)
+            source_as_of, source_age_days, is_stale = _source_temporal_metadata(
+                row.get("fecha"),
+                as_of,
+            )
             result.insert(
                 0,
                 MarketIndicatorV1(
@@ -1462,6 +1587,9 @@ def _national_indicators(db: Any, as_of: datetime) -> tuple[MarketIndicatorV1, .
                     source_url="https://mindicador.cl/",
                     retrieved_at=retrieved_at,
                     valid_until=_format_date(row.get("valid_until")),
+                    source_as_of=source_as_of,
+                    source_age_days=source_age_days,
+                    is_stale=is_stale,
                 ),
             )
     unique: list[MarketIndicatorV1] = []
@@ -1510,6 +1638,9 @@ def _market_intelligence_snapshot(
         source_name="UF · snapshot interno",
         retrieved_at=indicators[0].retrieved_at,
         valid_until=indicators[0].valid_until,
+        source_as_of=indicators[0].source_as_of,
+        source_age_days=indicators[0].source_age_days,
+        is_stale=indicators[0].is_stale,
     )
 
 
@@ -1551,17 +1682,90 @@ def _lead_metrics_for_property(
     resolver = build_property_identity_resolver(properties, enable_contextual_aliases=True)
     linkage = LeadLinkageService(resolver)
     records = linkage.link_leads(leads)
-    linked = [
-        record
-        for record in records
+    linked_pairs = [
+        (lead, record)
+        for lead, record in zip(leads, records)
         if record.status in {LinkageStatus.EXACT_CANONICAL, LinkageStatus.EXACT_ALIAS}
         and record.property_code == property_code
     ]
+    linked = [record for _lead, record in linked_pairs]
     cutoff = as_of.astimezone(timezone.utc)
     exact_lead_dates = tuple(
         record.created_at.astimezone(timezone.utc)
         for record in linked
         if record.created_at is not None
+    )
+    publication_captures = _captacion_by_ids(db, _publication_listing_ids(property_doc))
+    safe_publication_property = _safe_property(property_doc, [], publication_captures)
+    active_publication_portals = tuple(
+        publication.portal_id
+        for publication in safe_publication_property["publications"]
+    )
+    publication_dates = {}
+    for publication in safe_publication_property["publications"]:
+        published_at = _parse_date(publication.published_at)
+        if published_at is not None:
+            publication_dates[publication.portal_id] = (published_at, "propiedades_captacion.fecha_publicacion")
+
+    origins_by_record: list[tuple[str | None, Any]] = []
+    source_observable_from: dict[str, datetime] = {}
+    crm_capable_portals: set[str] = set()
+    for lead, record in linked_pairs:
+        origin = resolve_lead_origin(lead).get("canonical_origin")
+        origins_by_record.append((origin, record))
+        if origin:
+            crm_capable_portals.add(origin)
+            if record.created_at is not None:
+                previous = source_observable_from.get(origin)
+                if previous is None or record.created_at < previous:
+                    source_observable_from[origin] = record.created_at
+    evidence = build_observation_evidence(
+        property_code=property_code,
+        operation=property_doc.get("tipo_operacion", {}).get("tipo") if isinstance(property_doc.get("tipo_operacion"), Mapping) else None,
+        as_of=as_of,
+        active_publication_portals=active_publication_portals,
+        publication_dates=publication_dates,
+        crm_lead_capable_portals=tuple(sorted(crm_capable_portals)),
+        source_observable_from=source_observable_from,
+        provenance={"source": "universo_cartera_prop360 + leads + propiedades_captacion"},
+    )
+    covered_30 = {
+        origin
+        for origin, record in origins_by_record
+        if origin
+        and record.created_at is not None
+        and is_in_previous_window(record.created_at, cutoff, 30)
+    }
+    covered_90 = {
+        origin
+        for origin, record in origins_by_record
+        if origin
+        and record.created_at is not None
+        and is_in_previous_window(record.created_at, cutoff, 90)
+    }
+    coverage_30 = derive_lead_source_coverage(
+        property_code=property_code,
+        window=evidence.window_30d,
+        active_publication_portals=active_publication_portals,
+        crm_lead_capable_portals=tuple(sorted(crm_capable_portals)),
+        covered_portals=tuple(sorted(covered_30)),
+    )
+    coverage_90 = derive_lead_source_coverage(
+        property_code=property_code,
+        window=evidence.window_90d,
+        active_publication_portals=active_publication_portals,
+        crm_lead_capable_portals=tuple(sorted(crm_capable_portals)),
+        covered_portals=tuple(sorted(covered_90)),
+    )
+    demand_30 = demand_observation(
+        count=sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
+        window=evidence.window_30d,
+        source_coverage=coverage_30.status,
+    )
+    demand_90 = demand_observation(
+        count=sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 90) for record in linked),
+        window=evidence.window_90d,
+        source_coverage=coverage_90.status,
     )
     return {
         "total_linked_sucre": len(linked),
@@ -1571,6 +1775,14 @@ def _lead_metrics_for_property(
         "property_previous_7d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 7) for record in linked),
         "property_previous_30d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 30) for record in linked),
         "property_previous_90d": sum(record.created_at is not None and is_in_previous_window(record.created_at, cutoff, 90) for record in linked),
+        "demand_signal_30d": demand_30["demand_signal"],
+        "demand_signal_90d": demand_90["demand_signal"],
+        "demand_confidence_30d": demand_30["demand_confidence"],
+        "demand_confidence_90d": demand_90["demand_confidence"],
+        "demand_source_coverage_30d": coverage_30.status,
+        "demand_source_coverage_90d": coverage_90.status,
+        "observation_window_30d": evidence.window_30d,
+        "observation_window_90d": evidence.window_90d,
         "exact_lead_dates": exact_lead_dates,
         "exact_canonical": sum(record.status is LinkageStatus.EXACT_CANONICAL for record in linked),
         "exact_alias": sum(record.status is LinkageStatus.EXACT_ALIAS for record in linked),
@@ -1591,6 +1803,11 @@ def _lead_metrics(db: Any, property_code: str, as_of: datetime) -> dict[str, Any
             "previous_30d": 0,
             "property_previous_7d": 0,
             "property_previous_30d": 0,
+            "property_previous_90d": 0,
+            "demand_signal_30d": "ZERO_UNCERTAIN",
+            "demand_signal_90d": "ZERO_UNCERTAIN",
+            "demand_confidence_30d": "unknown",
+            "demand_confidence_90d": "unknown",
             "exact_canonical": 0,
             "exact_alias": 0,
             "excluded_other_office_linked": 0,
@@ -1733,7 +1950,7 @@ def _timeline(
 def get_owner_portal_property_view(
     db: Any,
     property_code: str,
-    as_of: datetime,
+    as_of: datetime | None = None,
     operation: str | None = None,
 ) -> OwnerPortalPropertyViewV1 | None:
     """Build one explicit, read-only, PII-free owner portal DTO."""
@@ -1769,7 +1986,7 @@ def get_owner_portal_property_view(
     last_price_change_at = _format_timestamp(snapshot.get("last_price_change_at")) if snapshot else None
     price_history_available = previous_price is not None and last_price_change_at is not None
     current_price = OwnerPortalPriceV1(uf=prop["price_uf"], clp=prop["price_clp"])
-    cohort = _select_comparable_cohort(prop, market)
+    cohort = _select_comparable_cohort(prop, market, cutoff)
     selected_market = dict(market)
     if cohort is None:
         selected_market.update(
@@ -1789,7 +2006,7 @@ def get_owner_portal_property_view(
                 "range_price_uf": [cohort.p10_uf, cohort.p90_uf],
             }
         )
-    local_context = _market_context_dto(prop, selected_market)
+    local_context = _market_context_dto(prop, selected_market, cutoff)
     positioning = _positioning(prop["price_uf"], cohort)
     activity_series = _activity_series(leads.get("exact_lead_dates", ()), cutoff)
     timeline = _timeline(
@@ -1811,6 +2028,33 @@ def get_owner_portal_property_view(
         market_data_available=market_available,
         price_history_available=price_history_available,
         lead_linkage_available=True,
+    )
+    page_as_of = _format_as_of(cutoff)
+    market_position_state = positioning.market_position_state if positioning else "UNAVAILABLE"
+    market_ecdf = positioning.market_ecdf if positioning else None
+    market_ecdf_equal_or_below = positioning.market_ecdf_equal_or_below if positioning else None
+    market_position_owner_text = positioning.market_position_owner_text if positioning else None
+    uf_indicator = next(
+        (indicator for indicator in national_indicators if indicator.indicator_id == "uf_reference"),
+        None,
+    )
+    provenance = OwnerPortalProvenanceV1(
+        page_as_of=page_as_of,
+        property_source=f"{MASTER_COLLECTION} · código {code}",
+        lead_source="leads · LeadLinkageService · exact canonical/alias linkage",
+        cohort_source=f"{CAPTACION_COLLECTION} · {COHORT_RULE_VERSION}",
+        cohort_as_of=cohort.cohort_as_of if cohort else None,
+        cohort_fingerprint=cohort.cohort_fingerprint if cohort else None,
+        market_context_source_as_of=local_context.source_as_of if local_context else None,
+        market_context_source_age_days=local_context.source_age_days if local_context else None,
+        market_context_is_stale=local_context.is_stale if local_context else None,
+        uf_source_as_of=uf_indicator.source_as_of if uf_indicator else None,
+        uf_source_age_days=uf_indicator.source_age_days if uf_indicator else None,
+        uf_is_stale=uf_indicator.is_stale if uf_indicator else None,
+    )
+    engine_v1 = OwnerPortalEngineV1Contract(
+        status="NOT_IMPLEMENTED",
+        market_position=market_position_state if positioning else None,
     )
     return OwnerPortalPropertyViewV1(
         property_code=code,
@@ -1846,7 +2090,7 @@ def get_owner_portal_property_view(
         current_price=current_price,
         previous_price=previous_price,
         last_price_change_at=last_price_change_at,
-        as_of=_format_as_of(cutoff),
+        as_of=page_as_of,
         data_updated_at=_format_date(cutoff) or "",
         property_updated_at=prop.get("updated_at_label"),
         data_quality=data_quality,
@@ -1858,6 +2102,17 @@ def get_owner_portal_property_view(
         positioning=positioning,
         comparable_cohort=cohort,
         market_intelligence_snapshot=market_intelligence_snapshot,
+        demand_signal_30d=leads.get("demand_signal_30d", "ZERO_UNCERTAIN"),
+        demand_signal_90d=leads.get("demand_signal_90d", "ZERO_UNCERTAIN"),
+        demand_confidence_30d=leads.get("demand_confidence_30d", "unknown"),
+        demand_confidence_90d=leads.get("demand_confidence_90d", "unknown"),
+        page_as_of=page_as_of,
+        market_position_state=market_position_state,
+        market_ecdf=market_ecdf,
+        market_ecdf_equal_or_below=market_ecdf_equal_or_below,
+        market_position_owner_text=market_position_owner_text,
+        engine_v1=engine_v1,
+        provenance=provenance,
     )
 
 

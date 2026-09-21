@@ -28,6 +28,10 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "inquiries_previous_7d",
         "inquiries_previous_30d",
         "inquiries_previous_90d",
+        "demand_signal_30d",
+        "demand_signal_90d",
+        "demand_confidence_30d",
+        "demand_confidence_90d",
         "activity_series",
         "timeline",
         "publications",
@@ -38,6 +42,11 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "market_uf_m2",
         "market_data_available",
         "market_as_of",
+        "page_as_of",
+        "market_position_state",
+        "market_ecdf",
+        "market_ecdf_equal_or_below",
+        "market_position_owner_text",
         "current_price",
         "previous_price",
         "last_price_change_at",
@@ -53,6 +62,8 @@ OWNER_PORTAL_VIEW_ALLOWLIST = frozenset(
         "positioning",
         "comparable_cohort",
         "market_intelligence_snapshot",
+        "engine_v1",
+        "provenance",
     }
 )
 
@@ -181,6 +192,9 @@ class MarketIndicatorV1:
     source_url: str | None
     retrieved_at: str
     valid_until: str | None
+    source_as_of: str | None = None
+    source_age_days: int | None = None
+    is_stale: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -194,6 +208,9 @@ class MarketIndicatorV1:
             "source_url": self.source_url,
             "retrieved_at": self.retrieved_at,
             "valid_until": self.valid_until,
+            "source_as_of": self.source_as_of,
+            "source_age_days": self.source_age_days,
+            "is_stale": self.is_stale,
         }
 
 
@@ -222,6 +239,9 @@ class OwnerPortalMarketContextV1:
     source_name: str | None
     source_reference: str | None
     retrieved_at: str | None
+    source_as_of: str | None = None
+    source_age_days: int | None = None
+    is_stale: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -246,6 +266,9 @@ class OwnerPortalMarketContextV1:
             "source_name": self.source_name,
             "source_reference": self.source_reference,
             "retrieved_at": self.retrieved_at,
+            "source_as_of": self.source_as_of,
+            "source_age_days": self.source_age_days,
+            "is_stale": self.is_stale,
         }
 
 
@@ -263,6 +286,10 @@ class OwnerPortalPositioningV1:
     label: str
     comparable_count: int
     cohort_label: str
+    market_position_state: str = "UNAVAILABLE"
+    market_ecdf: float | None = None
+    market_ecdf_equal_or_below: int | None = None
+    market_position_owner_text: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -276,6 +303,10 @@ class OwnerPortalPositioningV1:
             "label": self.label,
             "comparable_count": self.comparable_count,
             "cohort_label": self.cohort_label,
+            "market_position_state": self.market_position_state,
+            "market_ecdf": self.market_ecdf,
+            "market_ecdf_equal_or_below": self.market_ecdf_equal_or_below,
+            "market_position_owner_text": self.market_position_owner_text,
         }
 
 
@@ -329,6 +360,11 @@ class OwnerPortalComparableCohortV1:
     similar_count: int
     high_similarity_count: int
     examples: tuple[OwnerPortalComparableExampleV1, ...] = ()
+    p60_uf: float | None = None
+    market_ecdf: float | None = None
+    market_ecdf_equal_or_below: int | None = None
+    cohort_as_of: str | None = None
+    cohort_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -350,6 +386,11 @@ class OwnerPortalComparableCohortV1:
             "similar_count": self.similar_count,
             "high_similarity_count": self.high_similarity_count,
             "examples": [item.to_dict() for item in self.examples],
+            "p60_uf": self.p60_uf,
+            "market_ecdf": self.market_ecdf,
+            "market_ecdf_equal_or_below": self.market_ecdf_equal_or_below,
+            "cohort_as_of": self.cohort_as_of,
+            "cohort_fingerprint": self.cohort_fingerprint,
         }
 
 
@@ -364,6 +405,9 @@ class MarketIntelligenceSnapshotV1:
     source_name: str
     retrieved_at: str
     valid_until: str | None
+    source_as_of: str | None = None
+    source_age_days: int | None = None
+    is_stale: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -374,6 +418,77 @@ class MarketIntelligenceSnapshotV1:
             "source_name": self.source_name,
             "retrieved_at": self.retrieved_at,
             "valid_until": self.valid_until,
+            "source_as_of": self.source_as_of,
+            "source_age_days": self.source_age_days,
+            "is_stale": self.is_stale,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalEngineV1Contract:
+    """Typed, non-operative contract reserved for Engine V1."""
+
+    status: str = "NOT_IMPLEMENTED"
+    recommendation: str | None = None
+    eligibility: str | None = None
+    confidence: str | None = None
+    market_position: str | None = None
+    gap_to_p75_pct: float | None = None
+    gradual_price_uf: float | None = None
+    competitive_reference_uf: float | None = None
+    owner_action: str | None = None
+    reasons: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    methodology_version: str = "engine-v1-contract-only"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "recommendation": self.recommendation,
+            "eligibility": self.eligibility,
+            "confidence": self.confidence,
+            "market_position": self.market_position,
+            "gap_to_p75_pct": self.gap_to_p75_pct,
+            "gradual_price_uf": self.gradual_price_uf,
+            "competitive_reference_uf": self.competitive_reference_uf,
+            "owner_action": self.owner_action,
+            "reasons": list(self.reasons),
+            "warnings": list(self.warnings),
+            "methodology_version": self.methodology_version,
+        }
+
+
+@dataclass(frozen=True)
+class OwnerPortalProvenanceV1:
+    """Source and temporal metadata for one owner-portal payload."""
+
+    page_as_of: str
+    property_source: str
+    lead_source: str
+    cohort_source: str
+    cohort_as_of: str | None
+    cohort_fingerprint: str | None
+    market_context_source_as_of: str | None
+    market_context_source_age_days: int | None
+    market_context_is_stale: bool | None
+    uf_source_as_of: str | None
+    uf_source_age_days: int | None
+    uf_is_stale: bool | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "page_as_of": self.page_as_of,
+            "property_source": self.property_source,
+            "lead_source": self.lead_source,
+            "cohort_source": self.cohort_source,
+            "cohort_as_of": self.cohort_as_of,
+            "cohort_fingerprint": self.cohort_fingerprint,
+            "market_context_source_as_of": self.market_context_source_as_of,
+            "market_context_source_age_days": self.market_context_source_age_days,
+            "market_context_is_stale": self.market_context_is_stale,
+            "uf_source_as_of": self.uf_source_as_of,
+            "uf_source_age_days": self.uf_source_age_days,
+            "uf_is_stale": self.uf_is_stale,
         }
 
 
@@ -453,6 +568,17 @@ class OwnerPortalPropertyViewV1:
     positioning: OwnerPortalPositioningV1 | None = None
     comparable_cohort: OwnerPortalComparableCohortV1 | None = None
     market_intelligence_snapshot: MarketIntelligenceSnapshotV1 | None = None
+    demand_signal_30d: str = "ZERO_UNCERTAIN"
+    demand_signal_90d: str = "ZERO_UNCERTAIN"
+    demand_confidence_30d: str = "unknown"
+    demand_confidence_90d: str = "unknown"
+    page_as_of: str | None = None
+    market_position_state: str = "UNAVAILABLE"
+    market_ecdf: float | None = None
+    market_ecdf_equal_or_below: int | None = None
+    market_position_owner_text: str | None = None
+    engine_v1: OwnerPortalEngineV1Contract = OwnerPortalEngineV1Contract()
+    provenance: OwnerPortalProvenanceV1 | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize only explicit allowlisted fields; never expose source docs."""
@@ -478,6 +604,10 @@ class OwnerPortalPropertyViewV1:
             "inquiries_previous_7d": self.inquiries_previous_7d,
             "inquiries_previous_30d": self.inquiries_previous_30d,
             "inquiries_previous_90d": self.inquiries_previous_90d,
+            "demand_signal_30d": self.demand_signal_30d,
+            "demand_signal_90d": self.demand_signal_90d,
+            "demand_confidence_30d": self.demand_confidence_30d,
+            "demand_confidence_90d": self.demand_confidence_90d,
             "activity_series": [item.to_dict() for item in self.activity_series],
             "timeline": [item.to_dict() for item in self.timeline],
             "publications": [item.to_dict() for item in self.publications],
@@ -488,6 +618,11 @@ class OwnerPortalPropertyViewV1:
             "market_uf_m2": self.market_uf_m2,
             "market_data_available": self.market_data_available,
             "market_as_of": self.market_as_of,
+            "page_as_of": self.page_as_of or self.as_of,
+            "market_position_state": self.market_position_state,
+            "market_ecdf": self.market_ecdf,
+            "market_ecdf_equal_or_below": self.market_ecdf_equal_or_below,
+            "market_position_owner_text": self.market_position_owner_text,
             "current_price": self.current_price.to_dict(),
             "previous_price": self.previous_price.to_dict() if self.previous_price else None,
             "last_price_change_at": self.last_price_change_at,
@@ -506,6 +641,8 @@ class OwnerPortalPropertyViewV1:
                 self.market_intelligence_snapshot.to_dict()
                 if self.market_intelligence_snapshot else None
             ),
+            "engine_v1": self.engine_v1.to_dict(),
+            "provenance": self.provenance.to_dict() if self.provenance else None,
         }
 
 
@@ -659,6 +796,7 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         expected = {
             "indicator_id", "scope", "geography", "value", "unit", "period",
             "source_name", "source_url", "retrieved_at", "valid_until",
+            "source_as_of", "source_age_days", "is_stale",
         }
         for indicator in indicators:
             if isinstance(indicator, Mapping):
@@ -697,7 +835,7 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
             "effective_uf_m2_semantics", "price_variation_12m_pct", "active_listings",
             "active_listings_semantics", "total_listings", "trend",
             "liquidity", "competition", "range_price_uf", "source_name",
-            "source_reference", "retrieved_at",
+            "source_reference", "retrieved_at", "source_as_of", "source_age_days", "is_stale",
         }
         extra = set(local_context) - expected
         if extra:
@@ -707,6 +845,8 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
         expected = {
             "price_uf", "p10_uf", "p25_uf", "median_uf", "p75_uf", "p90_uf",
             "marker_pct", "label", "comparable_count", "cohort_label",
+            "market_position_state", "market_ecdf", "market_ecdf_equal_or_below",
+            "market_position_owner_text",
         }
         extra = set(positioning) - expected
         if extra:
@@ -717,6 +857,7 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
             "operation", "level", "label", "count", "p10_uf", "p25_uf", "median_uf", "p75_uf",
             "p90_uf", "median_uf_m2", "surface_rule", "bedroom_rule", "bathroom_rule",
             "date_rule", "broad_count", "similar_count", "high_similarity_count", "examples",
+            "p60_uf", "market_ecdf", "market_ecdf_equal_or_below", "cohort_as_of", "cohort_fingerprint",
         }
         extra = set(cohort) - expected
         if extra:
@@ -734,7 +875,10 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
                         raise ValueError(f"Disallowed comparable example fields: {sorted(extra)}")
     snapshot = payload.get("market_intelligence_snapshot")
     if isinstance(snapshot, Mapping):
-        expected = {"snapshot_id", "scope", "geography", "indicators", "source_name", "retrieved_at", "valid_until"}
+        expected = {
+            "snapshot_id", "scope", "geography", "indicators", "source_name", "retrieved_at", "valid_until",
+            "source_as_of", "source_age_days", "is_stale",
+        }
         extra = set(snapshot) - expected
         if extra:
             raise ValueError(f"Disallowed market snapshot fields: {sorted(extra)}")
@@ -743,9 +887,30 @@ def assert_owner_portal_payload_allowlisted(payload: Mapping[str, Any]) -> None:
             expected_indicator = {
                 "indicator_id", "scope", "geography", "value", "unit", "period",
                 "source_name", "source_url", "retrieved_at", "valid_until",
+                "source_as_of", "source_age_days", "is_stale",
             }
             for indicator in snapshot_indicators:
                 if isinstance(indicator, Mapping):
                     extra = set(indicator) - expected_indicator
                     if extra:
                         raise ValueError(f"Disallowed snapshot indicator fields: {sorted(extra)}")
+    engine = payload.get("engine_v1")
+    if isinstance(engine, Mapping):
+        expected_engine = {
+            "status", "recommendation", "eligibility", "confidence", "market_position",
+            "gap_to_p75_pct", "gradual_price_uf", "competitive_reference_uf", "owner_action",
+            "reasons", "warnings", "methodology_version",
+        }
+        extra = set(engine) - expected_engine
+        if extra:
+            raise ValueError(f"Disallowed Engine V1 fields: {sorted(extra)}")
+    provenance = payload.get("provenance")
+    if isinstance(provenance, Mapping):
+        expected_provenance = {
+            "page_as_of", "property_source", "lead_source", "cohort_source", "cohort_as_of",
+            "cohort_fingerprint", "market_context_source_as_of", "market_context_source_age_days",
+            "market_context_is_stale", "uf_source_as_of", "uf_source_age_days", "uf_is_stale",
+        }
+        extra = set(provenance) - expected_provenance
+        if extra:
+            raise ValueError(f"Disallowed provenance fields: {sorted(extra)}")

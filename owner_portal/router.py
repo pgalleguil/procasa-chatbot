@@ -384,26 +384,13 @@ def _convergent_payload(view: dict) -> dict:
     )
 
     rank = payload.get("owner_position_rank")
-    if "Sobre" in label:
-        payload["position_translation"] = (
-            "Su precio publicado se encuentra por encima de aproximadamente 7 de cada 10 "
-            "propiedades similares observadas."
-        )
+    dynamic_owner_text = payload.get("market_position_owner_text")
+    if dynamic_owner_text:
+        payload["position_translation"] = dynamic_owner_text
+    elif "Sobre" in label:
+        payload["position_translation"] = "Su precio publicado se encuentra sobre el rango central de propiedades similares observadas."
     elif "Bajo" in label:
-        payload["position_translation"] = (
-            "Su precio publicado se encuentra por debajo de aproximadamente 3 de cada 10 "
-            "propiedades similares observadas."
-        )
-    elif rank is not None and rank >= 8:
-        payload["position_translation"] = (
-            f"Su precio publicado se encuentra por encima de aproximadamente {rank} de cada 10 "
-            "propiedades similares observadas."
-        )
-    elif rank is not None and rank <= 3:
-        payload["position_translation"] = (
-            f"Su precio publicado se encuentra por debajo de aproximadamente {10 - rank} de cada 10 "
-            "propiedades similares observadas."
-        )
+        payload["position_translation"] = "Su precio publicado se encuentra bajo el rango central de propiedades similares observadas."
     elif rank is not None:
         payload["position_translation"] = (
             "Su precio publicado se encuentra alrededor de la zona media de la muestra comparable."
@@ -490,9 +477,10 @@ async def _owner_portal_convergent(
     request: Request,
     property_code: str,
     operation: str | None = None,
+    page_as_of: datetime | None = None,
 ) -> HTMLResponse:
-    as_of = datetime.now(BUSINESS_TZ)
-    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, as_of, operation)
+    page_as_of = page_as_of or datetime.now(BUSINESS_TZ)
+    view = await run_in_threadpool(get_owner_portal_property_view, get_db(), property_code, page_as_of, operation)
     if view is None:
         raise HTTPException(status_code=404, detail="Property is not available in PROCASA SUCRE scope")
     return _templates.TemplateResponse(
@@ -512,7 +500,7 @@ async def owner_portal_convergent(
     code = await run_in_threadpool(select_owner_intelligence_property_code, db, as_of)
     if not code:
         raise HTTPException(status_code=404, detail="No eligible SUCRE property with recent verified activity")
-    return await _owner_portal_convergent(request, code)
+    return await _owner_portal_convergent(request, code, page_as_of=as_of)
 
 
 @router.get("/owner-portal-convergent/{property_code}", response_class=HTMLResponse, include_in_schema=False)

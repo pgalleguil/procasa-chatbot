@@ -577,8 +577,29 @@ def classify_capture(
         return base_result
 
     if not allow_real_ai or not bool(getattr(config, "deepseek_enabled", False)) or not getattr(config, "deepseek_api_key", ""):
-        classification = _pending_classification("DEEPSEEK_DISABLED_OR_NOT_AUTHORIZED")
-        base_result.update({"classification": classification, "reason": "deepseek_disabled", "metrics": budget.report()})
+        # A healthy, fully extracted residual with no deterministic broker
+        # evidence is a valid INCIERTO business candidate.  DeepSeek being
+        # disabled is an operating policy, not an extraction failure; keep
+        # the existing classification name and complete the local pipeline so
+        # the normal CRM flow can handle it.
+        classification = _classification_with_canonical(
+            document,
+            {
+                "state": "INCIERTO",
+                "source": "classification_service",
+                "reason": "INCONCLUSIVE",
+                "evidence": [],
+                "confidence": 0.5,
+            },
+            registry_match=registry_match,
+            human_broker_match=human_broker_match,
+            cross_portal_match=cross_portal_match,
+            strong_text_broker=False,
+            reason="INCONCLUSIVE",
+            evidence=[],
+            pipeline_complete=True,
+        )
+        base_result.update({"classification": classification, "reason": "deterministic_uncertain", "metrics": budget.report()})
         return base_result
 
     callable_ = deepseek_callable or _default_deepseek_callable()

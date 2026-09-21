@@ -46,6 +46,22 @@ def is_chilepropiedades_document(doc: dict[str, Any]) -> bool:
     return origen in CHILEPROPIEDADES_ORIGINS or portal in CHILEPROPIEDADES_ORIGINS
 
 
+def _toctoc_id_type(doc: dict[str, Any]) -> str:
+    portal = str(
+        doc.get("portal")
+        or doc.get("source_portal")
+        or doc.get("origen")
+        or ""
+    ).strip().lower()
+    if portal not in {"toctoc", "toctoc.com"}:
+        return ""
+    return str(
+        doc.get("seller_id_type_raw")
+        or doc.get("seller_id_type")
+        or ""
+    ).strip()
+
+
 def normalize_classification_state(value: Any) -> str:
     state = str(value or "").strip().upper()
     return state.replace("DUENO", "DUEÑO")
@@ -74,6 +90,11 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
     reasons: list[str] = []
     state = normalize_classification_state(cls.get("state") or cls.get("final_state"))
     hard_broker_signal = detect_hard_broker_signal(doc, extracted=doc)
+    toctoc_id_type = _toctoc_id_type(doc)
+    if toctoc_id_type == "2":
+        reasons.append("toctoc_id_type_broker")
+    elif toctoc_id_type == "3":
+        reasons.append("out_of_scope_new_development")
     if hard_broker_signal:
         reasons.append("hard_broker_publisher_veto")
     if state not in FINAL_STATES and state != "INCIERTO":
@@ -98,12 +119,24 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
             reasons.append("owner_probability_inconsistent_with_state")
     stage = str(doc.get("scrape_stage") or "").lower()
     html_status = str(doc.get("html_validation_status") or "").upper()
+    pipeline_state = str(
+        doc.get("pipeline_state")
+        or cls.get("pipeline_state")
+        or ""
+    ).strip().upper()
     if state == "AD_REMOVED" or stage in {"ad_removed", "needs_rescrape", "incomplete", "processing_blocked", "classified_from_listing"}:
         reasons.append("removed_or_incomplete")
+    if stage in {"needs_rescrape", "incomplete", "processing_blocked"}:
+        reasons.append("extraction_incomplete")
     if html_status in {"LISTING_REMOVED", "INVALID", "BLOCKED"}:
         reasons.append("invalid_source_document")
+        reasons.append("extraction_incomplete")
     if doc.get("block_reason") or stage == "processing_blocked":
         reasons.append("processing_blocked")
+    if pipeline_state in {"EXTRACTED_ONLY", "CLASSIFYING", "UNCERTAIN_PENDING_AI", "EXTRACTOR_DEGRADED"}:
+        reasons.append("pipeline_incomplete")
+    if str(doc.get("extractor_health") or cls.get("extractor_health") or "").upper() in {"DEGRADED", "FAILED", "UNAVAILABLE"}:
+        reasons.append("extraction_incomplete")
     source_cls = str(cls.get("source") or "").lower()
     if source_cls == "url_path_signal":
         reasons.append("classification_from_url_path_only")
@@ -159,7 +192,14 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         and str(cls.get("version") or "").lower() == "v5-rule-based"
         and bool(cls.get("reason") or cls.get("evidence"))
     )
-    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision):
+    clean_uncertain_with_complete_pipeline = (
+        state == "INCIERTO"
+        and pipeline_state == "CLASSIFIED"
+        and cls.get("pipeline_complete") is True
+        and "pipeline_incomplete" not in reasons
+        and "extraction_incomplete" not in reasons
+    )
+    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision or clean_uncertain_with_complete_pipeline):
         reasons.append("no_auditable_final_decision")
     return not reasons, sorted(set(reasons))
 
@@ -359,6 +399,11 @@ def can_assign_property(
     if final_state in BROKER_CANONICAL_STATES:
         reasons.add("canonical_broker_veto")
     if final_state == "OUT_OF_SCOPE_NEW_DEVELOPMENT":
+        reasons.add("out_of_scope_new_development")
+    toctoc_id_type = _toctoc_id_type(document)
+    if toctoc_id_type == "2":
+        reasons.add("toctoc_id_type_broker")
+    elif toctoc_id_type == "3":
         reasons.add("out_of_scope_new_development")
     if classification.get("hard_broker_veto") or classification.get("hard_veto") == "PROFESSIONAL":
         reasons.add("hard_broker_veto")

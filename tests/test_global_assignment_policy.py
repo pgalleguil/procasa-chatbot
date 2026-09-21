@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from captacion_assignment_eligibility import calculate_assignment_eligibility
+from captacion_assignment_eligibility import can_assign_property
 
 
 @pytest.fixture(autouse=True)
@@ -92,6 +93,70 @@ def test_same_name_with_different_or_unknown_phone_does_not_block(portal):
 
     assert decision["assignment_ready"] is True
     assert "contact_identity_broker_confirmed" not in decision["assignment_block_reasons"]
+
+
+def _complete_uncertain_document(**overrides):
+    document = _document("toctoc", "INCIERTO")
+    document["classification"].update({
+        "final": "UNCERTAIN",
+        "final_state": "INCIERTO",
+        "pipeline_state": "CLASSIFIED",
+        "pipeline_complete": True,
+        "source": "classification_service",
+        "reason": "INCONCLUSIVE",
+    })
+    document.update(overrides)
+    return document
+
+
+def test_clean_uncertain_uses_existing_state_and_can_pass_gate():
+    decision = can_assign_property(_complete_uncertain_document())
+
+    assert decision["assignment_ready"] is True
+    assert decision["canonical_final"] == "UNCERTAIN"
+    assert decision["assignment_block_reasons"] == []
+
+
+def test_uncertain_with_registry_match_is_blocked():
+    decision = can_assign_property(
+        _complete_uncertain_document(),
+        {"broker_identity_match": {"matched": True, "match_type": "EXACT_PROFILE_ID"}},
+    )
+
+    assert decision["assignment_ready"] is False
+    assert "universal_broker_identity" in decision["assignment_block_reasons"]
+
+
+def test_uncertain_with_hard_broker_evidence_is_blocked():
+    decision = can_assign_property(
+        _complete_uncertain_document(seller_type_evidence="/corredora/"),
+    )
+
+    assert decision["assignment_ready"] is False
+    assert "hard_broker_publisher_veto" in decision["assignment_block_reasons"] or "hard_broker_veto" in decision["assignment_block_reasons"]
+
+
+def test_uncertain_with_new_development_is_blocked():
+    decision = can_assign_property(
+        _complete_uncertain_document(seller_id_type_raw="3", operation_label_raw="Venta Nuevo"),
+    )
+
+    assert decision["assignment_ready"] is False
+    assert "out_of_scope_new_development" in decision["assignment_block_reasons"]
+
+
+def test_uncertain_with_incomplete_extraction_is_blocked():
+    decision = can_assign_property(
+        _complete_uncertain_document(
+            scrape_stage="incomplete",
+            extractor_health="DEGRADED",
+            pipeline_state="EXTRACTOR_DEGRADED",
+            pipeline_complete=False,
+        ),
+    )
+
+    assert decision["assignment_ready"] is False
+    assert "pipeline_incomplete" in decision["assignment_block_reasons"]
 
 
 def test_yapo_incierto_with_complete_deterministic_evidence_is_assignable():

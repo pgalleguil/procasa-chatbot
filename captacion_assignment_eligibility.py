@@ -81,9 +81,9 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
 
     Historical ``assignment_ready`` and owner-probability fields were written
     by portal-specific pipelines. They remain compatibility checks for owner
-    states, but cannot veto a valid ``INCIERTO`` classification: the global
-    policy explicitly makes that state assignable unless another independent
-    blocker applies.
+    states.  The shared policy still allows clean ``INCIERTO`` records for
+    portals that already use that behavior; TOCTOC applies its stricter rule
+    and requires deterministic owner evidence before assignment.
     """
     cls = doc.get("classification") or {}
     gestion = doc.get("gestion") or {}
@@ -95,6 +95,14 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         reasons.append("toctoc_id_type_broker")
     elif toctoc_id_type == "3":
         reasons.append("out_of_scope_new_development")
+    portal = str(
+        doc.get("portal")
+        or doc.get("source_portal")
+        or doc.get("origen")
+        or ""
+    ).strip().lower()
+    if portal in {"toctoc", "toctoc.com"} and state == "INCIERTO":
+        reasons.append("classification_not_assignable")
     if hard_broker_signal:
         reasons.append("hard_broker_publisher_veto")
     if state not in FINAL_STATES and state != "INCIERTO":
@@ -177,10 +185,8 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         )
     # Yapo's v5 pipeline persists a complete deterministic evidence result for
     # some INCIERTO documents without a populated ``decision_source``.  That
-    # is still an auditable final decision: the evidence engine, completeness
-    # marker, and probability are persisted.  The global policy makes INCIERTO
-    # assignable, so stale portal-specific ``NON_OWNER_STATE_NOT_ASSIGNABLE``
-    # flags must not turn this valid result into a quality veto.
+    # remains an auditable final decision for the portals where INCIERTO is
+    # operationally assignable.  TOCTOC is handled by its stricter rule above.
     evidence_engine_complete = (
         state == "INCIERTO"
         and str(cls.get("owner_probability_source") or "").lower() == "deterministic_evidence_engine"
@@ -192,14 +198,7 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         and str(cls.get("version") or "").lower() == "v5-rule-based"
         and bool(cls.get("reason") or cls.get("evidence"))
     )
-    clean_uncertain_with_complete_pipeline = (
-        state == "INCIERTO"
-        and pipeline_state == "CLASSIFIED"
-        and cls.get("pipeline_complete") is True
-        and "pipeline_incomplete" not in reasons
-        and "extraction_incomplete" not in reasons
-    )
-    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision or clean_uncertain_with_complete_pipeline):
+    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision):
         reasons.append("no_auditable_final_decision")
     return not reasons, sorted(set(reasons))
 
@@ -400,6 +399,14 @@ def can_assign_property(
         reasons.add("canonical_broker_veto")
     if final_state == "OUT_OF_SCOPE_NEW_DEVELOPMENT":
         reasons.add("out_of_scope_new_development")
+    portal = str(
+        document.get("portal")
+        or document.get("source_portal")
+        or document.get("origen")
+        or ""
+    ).strip().lower()
+    if portal in {"toctoc", "toctoc.com"} and final_state == "UNCERTAIN":
+        reasons.add("classification_not_assignable")
     toctoc_id_type = _toctoc_id_type(document)
     if toctoc_id_type == "2":
         reasons.add("toctoc_id_type_broker")

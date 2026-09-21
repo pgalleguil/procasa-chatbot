@@ -152,4 +152,4 @@ def test_weak_corredor_probable_hint_cannot_escalate_to_strong_broker():
     assert classification["final"] == "UNCERTAIN"
     assert classification["final"] != "BROKER_CONFIRMED"
     assert classification["pipeline_complete"] is True
-    assert classification["assignment_ready"] is True
+    assert classification["assignment_ready"] is False

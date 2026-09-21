@@ -34,7 +34,7 @@ def _document(portal: str, state: str, *, assignment_ready: bool = False, probab
     }
 
 
-@pytest.mark.parametrize("portal", ["chilepropiedades", "yapo", "toctoc"])
+@pytest.mark.parametrize("portal", ["chilepropiedades", "yapo"])
 def test_uncertain_without_known_phone_is_assignable_for_every_portal(portal):
     decision = calculate_assignment_eligibility(
         _document(portal, "INCIERTO"), contact_identity=None
@@ -42,6 +42,15 @@ def test_uncertain_without_known_phone_is_assignable_for_every_portal(portal):
 
     assert decision["assignment_ready"] is True
     assert decision["assignment_block_reasons"] == []
+
+
+def test_toctoc_uncertain_without_owner_evidence_is_blocked():
+    decision = calculate_assignment_eligibility(
+        _document("toctoc", "INCIERTO"), contact_identity=None
+    )
+
+    assert decision["assignment_ready"] is False
+    assert "classification_not_assignable" in decision["assignment_block_reasons"]
 
 
 @pytest.mark.parametrize("portal", ["chilepropiedades", "yapo", "toctoc"])
@@ -85,7 +94,7 @@ def test_owner_states_are_assignable_without_confirmed_phone(portal, state, prob
     assert decision["assignment_ready"] is True
 
 
-@pytest.mark.parametrize("portal", ["chilepropiedades", "yapo", "toctoc"])
+@pytest.mark.parametrize("portal", ["chilepropiedades", "yapo"])
 def test_same_name_with_different_or_unknown_phone_does_not_block(portal):
     decision = calculate_assignment_eligibility(
         _document(portal, "INCIERTO"), contact_identity=None
@@ -109,12 +118,12 @@ def _complete_uncertain_document(**overrides):
     return document
 
 
-def test_clean_uncertain_uses_existing_state_and_can_pass_gate():
+def test_clean_uncertain_uses_existing_state_but_is_blocked_for_toctoc():
     decision = can_assign_property(_complete_uncertain_document())
 
-    assert decision["assignment_ready"] is True
+    assert decision["assignment_ready"] is False
     assert decision["canonical_final"] == "UNCERTAIN"
-    assert decision["assignment_block_reasons"] == []
+    assert "classification_not_assignable" in decision["assignment_block_reasons"]
 
 
 def test_uncertain_with_registry_match_is_blocked():

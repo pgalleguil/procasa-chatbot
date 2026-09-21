@@ -14,7 +14,10 @@ from captacion_distribution import active_workable_backlogs, is_captacion_distri
 def _property(property_id: int, state: str = "INCIERTO", *, days_old: int = 0) -> dict:
     return {
         "_id": str(property_id),
-        "origen": "toctoc",
+        # Generic bounded-distribution fixtures use Yapo so an INCIERTO
+        # record exercises the pre-existing cross-portal policy.  TOCTOC
+        # INCIERTO is covered separately and is intentionally blocked.
+        "origen": "yapo",
         "listing_id": f"listing-{property_id}",
         "title": "Casa en venta",
         "description": "Descripción suficiente",

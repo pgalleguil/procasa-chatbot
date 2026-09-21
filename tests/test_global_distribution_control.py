@@ -113,9 +113,9 @@ def test_stale_new_assignment_is_blocked_without_mutating_classification():
         "title": "Casa en venta",
         "description": "Descripción suficiente",
         "seller_name": "Particular",
-            "classification": {
-                "state": "INCIERTO",
-                "owner_probability": 0.41,
+                "classification": {
+                    "state": "DUEÑO_PROBABLE",
+                    "owner_probability": 0.80,
                 "source": "rules",
                 "assignment_ready": True,
                 "exclude_from_assignment": False,
@@ -207,7 +207,12 @@ def test_resume_replay_does_not_create_second_assignment_cycle():
         "title": "Casa en venta",
         "description": "Descripción suficiente",
         "comuna_slug": "santiago",
-        "classification": {"state": "INCIERTO", "source": "rules"},
+        "classification": {
+            "state": "DUEÑO_PROBABLE",
+            "source": "rules",
+            "owner_probability": 0.80,
+            "assignment_ready": True,
+        },
         "pipeline_complete": True,
         "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
     }
@@ -304,7 +309,15 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
             "description": "Descripción suficiente",
             "comuna_slug": "santiago",
                 "created_at": datetime.now(timezone.utc),
-                "classification": {"state": "INCIERTO", "source": "rules"},
+                "classification": {
+                    "state": "DUEÑO_PROBABLE" if portal == "toctoc" else "INCIERTO",
+                    "source": "rules",
+                    "owner_probability": 0.80 if portal == "toctoc" else None,
+                    "assignment_ready": True if portal == "toctoc" else False,
+                    "version": "v5-rule-based",
+                    "reason": "fixture",
+                    "evidence": ["fixture"],
+                },
                 "pipeline_complete": True,
                 "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
         })
@@ -337,6 +350,9 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
         agent_id = row["gestion"]["ejecutivo_id"]
         per_agent[agent_id] = per_agent.get(agent_id, 0) + 1
     assert max(per_agent.values()) <= 2
-    assert {row["origen"] for row in assigned} == {"chilepropiedades", "yapo", "toctoc"}
+    # TOCTOC owner-probable candidates have priority over uncertain records
+    # from the other portals; the bounded batch is therefore intentionally
+    # consumed by TOCTOC first.
+    assert {row["origen"] for row in assigned} == {"toctoc"}
     assert metrics[-1]["lock_acquired"] is True
     assert metrics[-1]["assigned"] == 14

@@ -167,7 +167,6 @@ def build_source_cycle_filter(
         "unassigned_at": None,
         "sla_policy_version": policy_version,
         "reassignment_state": {"$in": [None, "eligible", "active"]},
-        "reassignment_decision_id": {"$exists": False},
         "$and": [
             _management_absent_filter("first_valid_management_at"),
             _management_absent_filter("first_contact_attempt_at"),

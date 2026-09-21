@@ -115,7 +115,24 @@ def test_source_filter_is_active_owner_and_management_cas():
     assert source_filter["_id"] == "mongo-cycle-001"
     assert source_filter["cycle_version"] == 3
     assert source_filter["$and"][0]["$or"]
-    assert source_filter["reassignment_decision_id"]["$exists"] is False
+
+
+def test_source_filter_allows_active_destination_with_prior_decision_id():
+    decision, source_cycle, _lead, _target = snapshots()
+    source_cycle.update({
+        "reassignment_decision_id": "previous-decision",
+        "automatic_reassignment_number": 1,
+        "reassignment_state": "active",
+        "cycle_version": 1,
+    })
+
+    source_filter = transaction.build_source_cycle_filter(
+        decision, source_cycle, expected_sla_policy_version="sla_visual_v1_20260723"
+    )
+
+    assert source_filter["cycle_status"] == "active"
+    assert source_filter["reassignment_state"]["$in"] == [None, "eligible", "active"]
+    assert "reassignment_decision_id" not in source_filter
 
 
 def test_new_cycle_preserves_existing_routing_contract_and_marks_reassignment():

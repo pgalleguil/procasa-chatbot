@@ -2,10 +2,10 @@
 
 Uso desde la raíz del proyecto:
 
-    python scripts/run_prop360_portfolio_sync.py
-    python scripts/run_prop360_portfolio_sync.py --office-id 7
-    python scripts/run_prop360_portfolio_sync.py --execute
-    python scripts/run_prop360_portfolio_sync.py --execute --office-id 7
+    python scraping_convecta/run_prop360_portfolio_sync.py
+    python scraping_convecta/run_prop360_portfolio_sync.py --office-id 7
+    python scraping_convecta/run_prop360_portfolio_sync.py --execute
+    python scraping_convecta/run_prop360_portfolio_sync.py --execute --office-id 7
 
 Sin ``--execute`` sólo se ejecuta un dry-run. Este archivo no inicia ningún
 scheduler y no ejecuta ``ficha_sync_loop``.

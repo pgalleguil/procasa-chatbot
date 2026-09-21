@@ -963,6 +963,36 @@ async def lifespan(app: FastAPI):
     finally:
         db_connect_ms = (time.perf_counter() - db_started) * 1000
 
+    # Controlled one-shot recovery for authenticated historical delivery
+    # evidence.  It runs after Mongo preconnect and before any background
+    # consumer/reconciler task is scheduled.  The runner is fail-closed and
+    # delegates all writes exclusively to the existing recovery primitive.
+    def _startup_sla_historical_recovery():
+        from chatbot.crm_sla_historical_recovery import run_sla_historical_recovery_once
+        from chatbot.storage import get_db
+
+        return run_sla_historical_recovery_once(
+            get_db(),
+            enabled=Config.CRM_SLA_HISTORICAL_RECOVERY_ENABLED,
+            payload_json=Config.CRM_SLA_HISTORICAL_RECOVERY_PAYLOAD,
+        )
+
+    try:
+        historical_recovery_result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            _startup_sla_historical_recovery,
+        )
+        logger.info(
+            "[SLA_HISTORICAL_RECOVERY_STARTUP] status=%s writes=%s recovery_count=%s",
+            historical_recovery_result.get("status"),
+            historical_recovery_result.get("writes", 0),
+            historical_recovery_result.get("recovery_count", 0),
+        )
+    except Exception:
+        # A startup recovery failure must not prevent the application from
+        # serving; the structured error remains visible for the rollout gate.
+        logger.exception("[SLA_HISTORICAL_RECOVERY_STARTUP] status=error")
+
     mandatory_init_ms = (time.perf_counter() - startup_started) * 1000
 
     # Los catálogos, KPI y metas se preparan fuera del camino crítico. Si hay

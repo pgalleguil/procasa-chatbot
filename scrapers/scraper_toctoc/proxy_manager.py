@@ -162,6 +162,17 @@ def load_proxies_from_env() -> list[str]:
     return proxies
 
 
+def select_proxy_from_pool(proxy_pool: list[str], index: int = 0) -> str | None:
+    """Select a proxy deterministically for a bounded download block.
+
+    The TOCTOC runner uses this helper to distribute retries/blocks across the
+    configured pool.  An empty pool intentionally means direct access.
+    """
+    if not proxy_pool:
+        return None
+    return proxy_pool[int(index) % len(proxy_pool)]
+
+
 def get_proxy_for_attempt(attempt: int) -> str | None:
     """Like Yapo: attempt 0 = direct (None), then proxies."""
     proxies = [None, *load_proxies_from_env()]

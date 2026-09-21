@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import socket
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,16 +20,19 @@ from pymongo.errors import DuplicateKeyError
 from pymongo import ReturnDocument
 from chatbot.constants import CHILE_TZ
 
-from captacion_assignment_eligibility import calculate_assignment_eligibility
+from captacion_assignment_eligibility import calculate_assignment_eligibility, can_assign_property
 from captacion_contact_identity import (
     get_contact_identity_evidence,
+    get_contact_identity_evidence_batch,
     phone_learning_global_lookup_enabled,
 )
 from captacion_kpis import (
+    AVAILABLE_STATES,
     CAPTACION_TERMINAL_STATES,
     is_terminal_captacion_state,
 )
 from captacion_management import new_assignment_cycle
+from broker_registry import resolve_broker_identity, resolve_broker_identity_batch
 from comuna_utils import normalize_commune_canonical
 from config import Config
 
@@ -66,6 +70,105 @@ DISTRIBUTION_CAPTURE_DATE_FIELDS = (
 )
 STALE_FOR_AUTO_DISTRIBUTION = "STALE_FOR_AUTO_DISTRIBUTION"
 CAPTURE_DATE_UNAVAILABLE = "CAPTURE_DATE_UNAVAILABLE"
+
+# Workload prioritization only needs the fields used by the central gate and
+# exact identity resolvers.  Do not fetch raw HTML, images, audit payloads, or
+# other large listing fields for every assigned property.
+ACTIVE_WORKABLE_BACKLOG_PROJECTION = {
+    "_id": 1,
+    "listing_id": 1,
+    "url": 1,
+    "source_url": 1,
+    "origen": 1,
+    "source_portal": 1,
+    "portal": 1,
+    "title": 1,
+    "titulo": 1,
+    "comuna": 1,
+    "comuna_slug": 1,
+    "scrape_stage": 1,
+    "html_validation_status": 1,
+    "block_reason": 1,
+    "pipeline_state": 1,
+    "pipeline_complete": 1,
+    "first_seen": 1,
+    "first_seen_at": 1,
+    "created_at": 1,
+    "fecha_captura": 1,
+    "processed_at": 1,
+    "scraped_at": 1,
+    "seller_profile_id": 1,
+    "profile_id": 1,
+    "seller_client_id": 1,
+    "client_id": 1,
+    "phone_normalized": 1,
+    "telefono_normalizado": 1,
+    "phone": 1,
+    "telefono": 1,
+    "phone_original_value": 1,
+    "contact_phone": 1,
+    "whatsapp_phone": 1,
+    "details.phone_normalized": 1,
+    "details.telefono_normalizado": 1,
+    "details.contact_phone": 1,
+    "details.telefono": 1,
+    "details.whatsapp_phone": 1,
+    "public_visible_contact.phones": 1,
+    "email": 1,
+    "email_contact": 1,
+    "contact_email": 1,
+    "domain": 1,
+    "seller_domain": 1,
+    "website": 1,
+    "seller_website": 1,
+    "seller_profile_url": 1,
+    "profile_url": 1,
+    "seller_url": 1,
+    "contact_name": 1,
+    "publicador_visible": 1,
+    "publisher": 1,
+    "seller_name": 1,
+    "company_name": 1,
+    "broker_brand": 1,
+    "contact_logo_alt": 1,
+    "contact_badges_text": 1,
+    "listing_advertiser": 1,
+    "seller_jsonld_name": 1,
+    "seller_type": 1,
+    "seller_type_evidence": 1,
+    "seller_type_source": 1,
+    "operation_label_raw": 1,
+    "seller_profile_logo": 1,
+    "publisher_profile_context": 1,
+    "structural_signals": 1,
+    "gestion.ejecutivo_id": 1,
+    "gestion.estado": 1,
+    "gestion.semantic_review_hold": 1,
+    "gestion.exclude_from_assignment": 1,
+    "classification.state": 1,
+    "classification.final": 1,
+    "classification.final_state": 1,
+    "classification.canonical_final": 1,
+    "classification.assignment_ready": 1,
+    "classification.manual_review_required": 1,
+    "classification.manual_review_approved": 1,
+    "classification.exclude_from_assignment": 1,
+    "classification.owner_probability": 1,
+    "classification.owner_probability_source": 1,
+    "classification.owner_probability_completeness": 1,
+    "classification.source": 1,
+    "classification.decision_source": 1,
+    "classification.deepseek_status": 1,
+    "classification.version": 1,
+    "classification.reason": 1,
+    "classification.publisher_profile_context": 1,
+    "classification.hard_broker_veto": 1,
+    "classification.hard_veto": 1,
+    "classification.classification_conflict": 1,
+    "classification.conflict_state": 1,
+    "classification.pipeline_state": 1,
+    "classification.pipeline_complete": 1,
+}
 
 BROKER_GUARD_TERMS = (
     "re max", "re/max", "remax", "fuenzalida", "procasa", "houm", "assetplan",
@@ -287,14 +390,23 @@ def open_workloads(db: Any, agent_ids: list[str]) -> dict[str, int]:
     return {str(row.get("_id")): int(row.get("count") or 0) for row in rows}
 
 
-def _management_event_keys(events_coll: Any) -> set[tuple[str, str]]:
+def _management_event_keys(
+    events_coll: Any,
+    *,
+    profile: dict[str, Any] | None = None,
+) -> set[tuple[str, str]]:
     """Load credited human-management references once for a workload snapshot."""
     keys: set[tuple[str, str]] = set()
+    if profile is not None:
+        profile.setdefault("management_event_docs_returned", 0)
+        profile.setdefault("management_event_keys_returned", 0)
     rows = events_coll.find(
         {"event_type": {"$in": list(HUMAN_MANAGEMENT_EVENT_TYPES)}, "credited": True},
         {"property_id": 1, "listing_id": 1, "url": 1},
     )
     for event in rows:
+        if profile is not None:
+            profile["management_event_docs_returned"] += 1
         for event_field, document_field in (
             ("property_id", "_id"),
             ("listing_id", "listing_id"),
@@ -303,6 +415,8 @@ def _management_event_keys(events_coll: Any) -> set[tuple[str, str]]:
             value = event.get(event_field)
             if value not in (None, ""):
                 keys.add((document_field, str(value)))
+    if profile is not None:
+        profile["management_event_keys_returned"] = len(keys)
     return keys
 
 
@@ -323,6 +437,8 @@ def has_valid_human_management_event(
 
 def has_unverified_management_signal(property_doc: dict[str, Any]) -> bool:
     """Protect legacy work markers lacking a ledger event from recycling."""
+    if "_active_workable_has_unverified_management_signal" in property_doc:
+        return bool(property_doc.get("_active_workable_has_unverified_management_signal"))
     gestion = property_doc.get("gestion") or {}
     state = str(gestion.get("estado") or "").strip()
     return bool(
@@ -338,6 +454,7 @@ def active_workable_backlogs(
     agent_ids: list[str],
     *,
     events_coll: Any | None = None,
+    profiling: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     """Count still-workable assignments for each active executive.
 
@@ -348,15 +465,203 @@ def active_workable_backlogs(
     """
     if not agent_ids:
         return {}
+    profile = profiling if isinstance(profiling, dict) else None
+    if profile is not None:
+        profile.update({
+            "active_assignments_query_ms": 0.0,
+            "management_events_query_ms": 0.0,
+            "contact_identity_query_ms": 0.0,
+            "broker_identity_keys_query_ms": 0.0,
+            "broker_identities_query_ms": 0.0,
+            "python_merge_ms": 0.0,
+            "other_ms": 0.0,
+            "active_assignments_query_count": 0,
+            "management_events_query_count": 0,
+            "contact_query_count": 0,
+            "broker_identity_keys_query_count": 0,
+            "broker_identities_query_count": 0,
+            "mongo_queries_total": 0,
+            "mongo_round_trips_total": 0,
+            "property_docs_returned": 0,
+            "management_event_docs_returned": 0,
+        })
+    total_started = time.perf_counter()
     from captacion_assignment_eligibility import calculate_assignment_eligibility
 
     collection = db[Config.CAPTACION_COLLECTION_NAME]
     events = events_coll if events_coll is not None else db["captacion_management_events"]
-    event_keys = _management_event_keys(events)
+    events_started = time.perf_counter()
+    if profile is not None:
+        profile["management_events_query_count"] = 1
+    event_keys = _management_event_keys(events, profile=profile)
+    if profile is not None:
+        profile["management_events_query_ms"] = (time.perf_counter() - events_started) * 1000
     workloads = {str(agent_id): 0 for agent_id in agent_ids}
-    for property_doc in collection.find({
+    # Legacy management markers are an exclusion criterion.  Compute that
+    # boolean after the indexed executive match so Mongo does not scan an
+    # unindexed notes/activities predicate across the whole collection.
+    state_expr = {"$ifNull": ["$gestion.estado", ""]}
+    nonempty_expr = lambda field: {
+        "$and": [
+            {"$ne": [{"$ifNull": [field, None]}, None]},
+            {"$ne": [{"$ifNull": [field, None]}, ""]},
+            {"$ne": [{"$ifNull": [field, None]}, []]},
+        ]
+    }
+    management_marker_expr = {
+        "$or": [
+            {
+                "$and": [
+                    {"$ne": [state_expr, ""]},
+                    {"$not": [{"$in": [state_expr, ["NUEVO", "DETECTADO"]]}]},
+                ]
+            },
+            {"$ne": [{"$ifNull": ["$gestion.fecha_ultima_gestion", None]}, None]},
+            nonempty_expr("$gestion.notas"),
+            nonempty_expr("$gestion.actividades"),
+        ]
+    }
+    classification_source_expr = {
+        "$ifNull": ["$classification.decision_source", "$classification.source"]
+    }
+    classification_evidence_expr = {
+        "$or": [
+            nonempty_expr("$classification.reason"),
+            nonempty_expr("$classification.evidence"),
+        ]
+    }
+    auditable_marker_expr = {
+        "$or": [
+            {"$eq": [{"$ifNull": ["$classification.manual_review_approved", False]}, True]},
+            {"$in": [classification_source_expr, [
+                "structural_rules", "rules_json", "html_validation", "profile_correlation",
+                "rules", "rules_fallback", "toctoc_id_type", "portal_structure",
+            ]]},
+            {
+                "$and": [
+                    {"$eq": [classification_source_expr, "deepseek"]},
+                    {"$eq": [{"$ifNull": ["$classification.deepseek_status", ""]}, "VALID"]},
+                    {"$ne": [{"$ifNull": ["$classification.trace.deepseek_raw", None]}, None]},
+                ]
+            },
+            {
+                "$and": [
+                    {"$eq": [{"$ifNull": ["$classification.state", ""]}, "INCIERTO"]},
+                    {"$eq": [classification_source_expr, "deterministic_evidence_engine"]},
+                    {"$eq": [{"$ifNull": ["$classification.owner_probability_completeness.complete", False]}, True]},
+                    {"$ne": [{"$ifNull": ["$classification.owner_probability", None]}, None]},
+                ]
+            },
+            {
+                "$and": [
+                    {"$eq": [{"$ifNull": ["$classification.state", ""]}, "INCIERTO"]},
+                    {"$eq": [{"$ifNull": ["$classification.version", ""]}, "v5-rule-based"]},
+                    classification_evidence_expr,
+                ]
+            },
+        ]
+    }
+    backlog_projection = dict(ACTIVE_WORKABLE_BACKLOG_PROJECTION)
+    backlog_projection["_active_workable_has_unverified_management_signal"] = management_marker_expr
+    backlog_projection["_active_workable_auditable_final_decision"] = auditable_marker_expr
+    managed_object_ids = []
+    for field, value in event_keys:
+        if field == "_id" and ObjectId.is_valid(str(value)):
+            managed_object_ids.append(ObjectId(str(value)))
+    candidate_match = {
         "gestion.ejecutivo_id": {"$in": [str(agent_id) for agent_id in agent_ids]},
-    }):
+        # These are the only states that can be unworked. Other states are
+        # already a management/terminal signal and do not belong in this
+        # prioritization metric.
+        "gestion.estado": {"$in": list(AVAILABLE_STATES)},
+        # These are necessary conditions of the central gate.  Applying them
+        # in Mongo avoids transferring the large legacy backlog only to reject
+        # it again in Python: can_assign_property() requires an assignable
+        # classification state and an explicitly completed pipeline.  The
+        # full gate still runs below, so commercial behaviour is unchanged.
+        "$and": [
+            {
+                "$or": [
+                    {"classification.state": {"$in": [
+                        "INCIERTO", "DUEÑO_PROBABLE", "DUEÑO_SEGURO",
+                        "DUENO_PROBABLE", "DUENO_SEGURO",
+                    ]}},
+                    {"classification.final_state": {"$in": [
+                        "INCIERTO", "DUEÑO_PROBABLE", "DUEÑO_SEGURO",
+                        "DUENO_PROBABLE", "DUENO_SEGURO",
+                    ]}},
+                ]
+            },
+            {
+                "$or": [
+                    {"pipeline_complete": True},
+                    {"classification.pipeline_complete": True},
+                ]
+            },
+        ],
+    }
+    if managed_object_ids:
+        candidate_match["_id"] = {"$nin": managed_object_ids}
+    assignments_started = time.perf_counter()
+    if profile is not None:
+        profile["active_assignments_query_count"] = 1
+    cursor = collection.aggregate([
+        {"$match": candidate_match},
+        {"$project": backlog_projection},
+    ], allowDiskUse=False).batch_size(50)
+    property_docs = list(cursor)
+    if profile is not None:
+        profile["active_assignments_query_ms"] = (time.perf_counter() - assignments_started) * 1000
+        profile["property_docs_returned"] = len(property_docs)
+    missing_title_ids = [
+        doc.get("_id")
+        for doc in property_docs
+        if doc.get("_id") is not None
+        and not str(doc.get("title") or doc.get("titulo") or "").strip()
+    ]
+    if missing_title_ids:
+        supplemental_started = time.perf_counter()
+        descriptions = {
+            row.get("_id"): row
+            for row in collection.find(
+                {"_id": {"$in": missing_title_ids}},
+                {"_id": 1, "description": 1, "descripcion": 1},
+            )
+        }
+        for doc in property_docs:
+            extra = descriptions.get(doc.get("_id"))
+            if extra:
+                for field in ("description", "descripcion"):
+                    if field in extra:
+                        doc[field] = extra[field]
+        if profile is not None:
+            profile["supplemental_text_query_ms"] = (time.perf_counter() - supplemental_started) * 1000
+            profile["supplemental_text_query_count"] = 1
+    elif profile is not None:
+        profile["supplemental_text_query_ms"] = 0.0
+        profile["supplemental_text_query_count"] = 0
+    contact_profile = {}
+    contact_started = time.perf_counter()
+    identity_matches = get_contact_identity_evidence_batch(db, property_docs, profile=contact_profile)
+    if profile is not None:
+        profile["contact_identity_query_ms"] = (time.perf_counter() - contact_started) * 1000
+        profile["contact_query_count"] = int(contact_profile.get("contact_query_count", 0))
+        profile["unique_contact_keys"] = int(contact_profile.get("unique_contact_keys", 0))
+        profile["contact_docs_returned"] = int(contact_profile.get("contact_docs_returned", 0))
+    registry_profile = {}
+    registry_started = time.perf_counter()
+    broker_matches = resolve_broker_identity_batch(db, property_docs, profile=registry_profile)
+    if profile is not None:
+        profile["broker_identity_keys_query_ms"] = float(registry_profile.get("broker_identity_keys_query_ms", 0.0))
+        profile["broker_identities_query_ms"] = float(registry_profile.get("broker_identities_query_ms", 0.0))
+        profile["broker_identity_keys_query_count"] = int(registry_profile.get("registry_key_query_count", 0))
+        profile["broker_identities_query_count"] = int(registry_profile.get("registry_identity_query_count", 0))
+        profile["registry_lookup_keys_count"] = int(registry_profile.get("registry_lookup_keys_count", 0))
+        profile["registry_key_docs_returned"] = int(registry_profile.get("registry_key_docs_returned", 0))
+        profile["registry_identity_docs_returned"] = int(registry_profile.get("registry_identity_docs_returned", 0))
+        profile["registry_batch_wall_ms"] = (time.perf_counter() - registry_started) * 1000
+    merge_started = time.perf_counter()
+    for property_doc, identity, broker_match in zip(property_docs, identity_matches, broker_matches):
         gestion = property_doc.get("gestion") or {}
         agent_id = str(gestion.get("ejecutivo_id") or "")
         if agent_id not in workloads or is_terminal_state(gestion.get("estado")):
@@ -365,15 +670,36 @@ def active_workable_backlogs(
             continue
         if has_unverified_management_signal(property_doc):
             continue
-        identity = (
-            get_contact_identity_evidence(db, property_doc)
-            if phone_learning_global_lookup_enabled()
-            else None
+        decision = can_assign_property(
+            property_doc,
+            {
+                "contact_identity": identity,
+                "broker_identity_match": broker_match,
+            },
         )
-        decision = calculate_assignment_eligibility(property_doc, contact_identity=identity)
         if not decision.get("assignment_ready") or has_broker_identity(property_doc):
             continue
         workloads[agent_id] += 1
+    if profile is not None:
+        profile["python_merge_ms"] = (time.perf_counter() - merge_started) * 1000
+        profile["mongo_queries_total"] = (
+            int(profile.get("active_assignments_query_count", 0))
+            + int(profile.get("management_events_query_count", 0))
+            + int(profile.get("contact_query_count", 0))
+            + int(profile.get("broker_identity_keys_query_count", 0))
+            + int(profile.get("broker_identities_query_count", 0))
+            + int(profile.get("supplemental_text_query_count", 0))
+        )
+        profile["mongo_round_trips_total"] = profile["mongo_queries_total"]
+        elapsed_ms = (time.perf_counter() - total_started) * 1000
+        named_ms = sum(float(profile.get(key, 0.0)) for key in (
+            "active_assignments_query_ms", "management_events_query_ms",
+            "contact_identity_query_ms", "broker_identity_keys_query_ms",
+            "broker_identities_query_ms", "python_merge_ms",
+            "supplemental_text_query_ms",
+        ))
+        profile["total_ms"] = elapsed_ms
+        profile["other_ms"] = max(0.0, elapsed_ms - named_ms)
     return workloads
 
 
@@ -533,7 +859,13 @@ def assign_captacion_candidate_atomically(
     if managed and not allow_management_evidence:
         return "managed"
     identity = get_contact_identity_evidence(db, fresh) if phone_learning_global_lookup_enabled() else None
-    decision = calculate_assignment_eligibility(fresh, contact_identity=identity)
+    decision = can_assign_property(
+        fresh,
+        {
+            "contact_identity": identity,
+            "broker_identity_match": resolve_broker_identity(db, fresh),
+        },
+    )
     if not decision.get("assignment_ready"):
         reasons = set(decision.get("assignment_block_reasons") or [])
         if "contact_identity_broker_confirmed" in reasons:
@@ -566,6 +898,10 @@ def assign_captacion_candidate_atomically(
     # classification/hold transition from being overwritten by the assignment.
     atomic_filter.update({
         "classification.state": {"$in": ["DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"]},
+        "classification.final": {"$nin": ["BROKER_CONFIRMED", "BROKER_PROBABLE"]},
+        "classification.hard_broker_veto": {"$ne": True},
+        "classification.hard_veto": {"$ne": "PROFESSIONAL"},
+        "pipeline_complete": True,
         "gestion.semantic_review_hold": {"$ne": True},
     })
     if mode == "new":

@@ -23,6 +23,14 @@ except ImportError:  # ejecución directa desde scrapers/scraper_toctoc/
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from broker_identity import detect_hard_broker_signal
 
+try:
+    from ai_entrypoint import is_authorized as _is_authorized_ai_entrypoint
+except ImportError:  # ejecución directa desde scrapers/scraper_toctoc/
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from ai_entrypoint import is_authorized as _is_authorized_ai_entrypoint
+
 
 class DeepSeekStatus(str, Enum):
     NOT_NEEDED = "NOT_NEEDED"
@@ -174,7 +182,26 @@ def _call_deepseek(body: dict, config: AppConfig, headers: dict):
     return DeepSeekStatus.VALID.value, data, content, finish_reason
 
 
-def classify_with_deepseek(extracted: dict[str, Any], rule_context: dict[str, Any], config: AppConfig, desc_bundle: dict[str, Any] | None = None) -> DeepSeekResult | None:
+def classify_with_deepseek(
+    extracted: dict[str, Any],
+    rule_context: dict[str, Any],
+    config: AppConfig,
+    desc_bundle: dict[str, Any] | None = None,
+    *,
+    authorization_token: object | None = None,
+) -> DeepSeekResult | None:
+    # This low-level function is deliberately fail-closed. Productive
+    # captacion calls must originate in classification_service, which supplies
+    # the private authorization token after cache, health and budget gates.
+    if not _is_authorized_ai_entrypoint(authorization_token):
+        return DeepSeekResult(
+            state="INCIERTO",
+            confidence=0.5,
+            reason="Unauthorized DeepSeek entry point; use classification_service.",
+            evidence=[],
+            raw={},
+            status=DeepSeekStatus.NOT_NEEDED.value,
+        )
     import time as _time
     hard_publisher = detect_hard_broker_signal(extracted=extracted)
     if hard_publisher:

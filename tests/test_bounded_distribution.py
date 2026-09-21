@@ -21,6 +21,7 @@ def _property(property_id: int, state: str = "INCIERTO", *, days_old: int = 0) -
         "comuna_slug": "santiago",
         "created_at": datetime.now(timezone.utc) - timedelta(days=days_old),
         "classification": {"state": state, "source": "rules"},
+        "pipeline_complete": True,
     }
 
 

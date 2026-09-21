@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 from config import Config
 from broker_identity import detect_hard_broker_signal
+from canonical_classification import BROKER_CANONICAL_STATES
 
 
 ASSIGNMENT_GATE_VERSION = "global-assignment-gate-v1-incierto-assignable"
@@ -125,8 +126,22 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
     ds_status = str(cls.get("deepseek_status") or "").upper()
     trace = cls.get("trace") or {}
     manual_approved = bool(cls.get("manual_review_approved") or trace.get("manual_review_approved"))
-    deterministic = source in {"structural_rules", "rules_json", "html_validation", "profile_correlation", "rules", "rules_fallback"}
+    deterministic = source in {
+        "structural_rules", "rules_json", "html_validation", "profile_correlation",
+        "rules", "rules_fallback", "toctoc_id_type", "portal_structure",
+    }
     deepseek_persisted = source == "deepseek" and ds_status == "VALID" and bool(trace.get("deepseek_raw") or cls.get("deepseek_raw"))
+    projected_auditable = doc.get("_active_workable_auditable_final_decision")
+    if projected_auditable is True:
+        auditable_final_decision = True
+    elif projected_auditable is False:
+        auditable_final_decision = False
+    else:
+        auditable_final_decision = bool(
+            manual_approved
+            or deterministic
+            or deepseek_persisted
+        )
     # Yapo's v5 pipeline persists a complete deterministic evidence result for
     # some INCIERTO documents without a populated ``decision_source``.  That
     # is still an auditable final decision: the evidence engine, completeness
@@ -144,7 +159,7 @@ def _legacy_assignment_eligibility(doc: dict[str, Any]) -> tuple[bool, list[str]
         and str(cls.get("version") or "").lower() == "v5-rule-based"
         and bool(cls.get("reason") or cls.get("evidence"))
     )
-    if not (manual_approved or deterministic or deepseek_persisted or evidence_engine_complete or v5_rule_decision):
+    if not (auditable_final_decision or evidence_engine_complete or v5_rule_decision):
         reasons.append("no_auditable_final_decision")
     return not reasons, sorted(set(reasons))
 
@@ -319,6 +334,84 @@ def assignment_eligibility(
     """Backward-compatible tuple API backed by the single central gate."""
     decision = calculate_assignment_eligibility(doc, contact_identity=contact_identity)
     return bool(decision["assignment_ready"]), list(decision["assignment_block_reasons"])
+
+
+def can_assign_property(
+    property_document: dict[str, Any],
+    context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Single public assignment contract.
+
+    ``calculate_assignment_eligibility`` remains the backwards-compatible
+    portal-policy evaluator.  This wrapper adds the canonical pipeline and
+    identity invariants that every writer must enforce before mutation.
+    """
+    context = context or {}
+    document = property_document or {}
+    classification = document.get("classification") or {}
+    reasons: set[str] = set()
+
+    final_state = str(
+        classification.get("final")
+        or classification.get("canonical_final")
+        or ""
+    ).strip().upper()
+    if final_state in BROKER_CANONICAL_STATES:
+        reasons.add("canonical_broker_veto")
+    if final_state == "OUT_OF_SCOPE_NEW_DEVELOPMENT":
+        reasons.add("out_of_scope_new_development")
+    if classification.get("hard_broker_veto") or classification.get("hard_veto") == "PROFESSIONAL":
+        reasons.add("hard_broker_veto")
+    if classification.get("classification_conflict") or str(classification.get("conflict_state") or "").upper() == "IDENTITY_CONFLICT":
+        reasons.add("classification_conflict")
+
+    registry_match = context.get("broker_identity_match") or {}
+    if registry_match.get("conflict"):
+        reasons.add("broker_identity_conflict")
+    elif registry_match.get("matched"):
+        reasons.add("universal_broker_identity")
+
+    contact_identity = context.get("contact_identity")
+    if contact_identity and str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED":
+        reasons.add("contact_identity_broker_confirmed")
+
+    pipeline_state = str(
+        document.get("pipeline_state")
+        or classification.get("pipeline_state")
+        or ""
+    ).strip().upper()
+    incomplete_states = {
+        "EXTRACTED_ONLY",
+        "CLASSIFYING",
+        "UNCERTAIN_PENDING_AI",
+        "EXTRACTOR_DEGRADED",
+        "INVALID",
+    }
+    pipeline_complete = document.get("pipeline_complete")
+    if pipeline_complete is None:
+        pipeline_complete = classification.get("pipeline_complete")
+    # The central writer contract is fail-closed: a document is assignable
+    # only after the pipeline explicitly marks it complete.  Legacy
+    # ``assignment_eligibility`` callers remain available for read-only
+    # compatibility, but all productive writers use this function.
+    if pipeline_complete is not True or pipeline_state in incomplete_states:
+        reasons.add("pipeline_incomplete")
+
+    if final_state in {"REMOVED", "EXPIRED", "INVALID"}:
+        reasons.add("canonical_operational_block")
+
+    decision = calculate_assignment_eligibility(
+        document,
+        contact_identity=contact_identity,
+    )
+    reasons.update(decision.get("assignment_block_reasons") or [])
+    decision = dict(decision)
+    decision["assignment_block_reasons"] = sorted(reasons)
+    decision["assignment_ready"] = not reasons
+    decision["exclude_from_assignment"] = bool(reasons)
+    decision["canonical_final"] = final_state or None
+    decision["pipeline_complete"] = pipeline_complete is True and pipeline_state not in incomplete_states
+    return decision
 
 
 def apply_assignment_eligibility_fields(

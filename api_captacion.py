@@ -35,7 +35,8 @@ from captacion_management import (
     start_management_attempt,
 )
 from captacion_materialized import build_captacion_materialized_fields
-from captacion_assignment_eligibility import assignment_classification_priority
+from captacion_assignment_eligibility import assignment_classification_priority, can_assign_property
+from broker_registry import resolve_broker_identity
 from captacion_distribution import (
     GLOBAL_PORTAL_ALIASES,
     MongoDistributionLock,
@@ -3090,8 +3091,13 @@ def distribute_sourced_leads(
                 metrics["skipped_terminal"] += 1
                 continue
             identity = get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None
-            from captacion_assignment_eligibility import calculate_assignment_eligibility
-            decision = calculate_assignment_eligibility(prop, contact_identity=identity)
+            decision = can_assign_property(
+                prop,
+                {
+                    "contact_identity": identity,
+                    "broker_identity_match": resolve_broker_identity(db, prop),
+                },
+            )
             if not decision["assignment_ready"]:
                 if "contact_identity_broker_confirmed" in decision["assignment_block_reasons"]:
                     metrics["skipped_by_phone"] += 1
@@ -3265,12 +3271,17 @@ def redistribute_inactive_agent_captaciones(
         "gestion.estado": "NUEVO",
         "gestion.ejecutivo_asignado": {"$in": inactive_names},
     }).sort("_id", 1))
-    from captacion_assignment_eligibility import calculate_assignment_eligibility
     properties = [
         prop for prop in properties
-        if calculate_assignment_eligibility(
+        if can_assign_property(
             prop,
-            contact_identity=(get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None),
+            {
+                "contact_identity": (
+                    get_contact_identity_evidence(db, prop)
+                    if phone_learning_global_lookup_enabled() else None
+                ),
+                "broker_identity_match": resolve_broker_identity(db, prop),
+            },
         )["assignment_ready"]
     ]
 

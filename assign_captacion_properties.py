@@ -104,13 +104,20 @@ def run_distribution(dry_run=True, *, batch_size=None, allow_large_batch=False):
     }
     
     all_targets = list(coll.find(target_query))
-    from captacion_assignment_eligibility import calculate_assignment_eligibility
+    from captacion_assignment_eligibility import can_assign_property
     from captacion_contact_identity import get_contact_identity_evidence, phone_learning_global_lookup_enabled
+    from broker_registry import resolve_broker_identity
     all_targets = [
         p for p in all_targets
-        if calculate_assignment_eligibility(
+        if can_assign_property(
             p,
-            contact_identity=(get_contact_identity_evidence(db, p) if phone_learning_global_lookup_enabled() else None),
+            {
+                "contact_identity": (
+                    get_contact_identity_evidence(db, p)
+                    if phone_learning_global_lookup_enabled() else None
+                ),
+                "broker_identity_match": resolve_broker_identity(db, p),
+            },
         )["assignment_ready"]
     ]
     logger.info(f"Propiedades objetivo: {len(all_targets)}")

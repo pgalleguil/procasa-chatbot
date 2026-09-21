@@ -13,7 +13,23 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-from config import Config
+try:
+    from config import Config
+except ImportError:
+    # Local scraper execution places scrapers/scraper_toctoc first on
+    # sys.path, where ``config`` is AppConfig-only. Load the CRM Config from
+    # the repository root without changing the scraper's module namespace.
+    import importlib.util
+    from pathlib import Path
+
+    _root_config_path = Path(__file__).resolve().with_name("config.py")
+    _root_config_spec = importlib.util.spec_from_file_location(
+        "_crm_root_config_for_identity", _root_config_path
+    )
+    _root_config_module = importlib.util.module_from_spec(_root_config_spec)
+    assert _root_config_spec.loader is not None
+    _root_config_spec.loader.exec_module(_root_config_module)
+    Config = _root_config_module.Config
 from chatbot.phone_utils import normalize_phone_strict
 
 
@@ -354,6 +370,69 @@ def get_contact_identity_evidence(db_or_collection, property_doc: dict[str, Any]
             type(exc).__name__,
         )
         return None
+
+
+def get_contact_identity_evidence_batch(
+    db_or_collection,
+    property_docs: list[dict[str, Any]],
+    *,
+    profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any] | None]:
+    """Resolve phone identities for a workload snapshot with one read.
+
+    The single-document helper remains the source of truth for assignment
+    gates.  Workload prioritization used to call it once per assigned property,
+    which turned a 200-property snapshot into dozens of remote Mongo round
+    trips.  This batch helper preserves the same exact phone lookup semantics
+    while reducing that N+1 pattern to one indexed ``$in`` query.
+    """
+    documents = list(property_docs or [])
+    if profile is not None:
+        profile.setdefault("unique_contact_keys", 0)
+        profile.setdefault("contact_query_count", 0)
+        profile.setdefault("contact_docs_returned", 0)
+    if not phone_learning_global_lookup_enabled():
+        return [None for _ in documents]
+
+    phones_by_position: dict[int, str] = {}
+    phones: set[str] = set()
+    for position, property_doc in enumerate(documents):
+        phone = _phone_from_document(property_doc)
+        if phone:
+            phones_by_position[position] = phone
+            phones.add(phone)
+    if not phones:
+        return [None for _ in documents]
+    if profile is not None:
+        profile["unique_contact_keys"] = len(phones)
+        profile["contact_query_count"] = 1
+
+    try:
+        get_collection = getattr(db_or_collection, "get_collection", None)
+        if callable(get_collection):
+            collection = get_collection(COLLECTION)
+        elif hasattr(db_or_collection, "__getitem__") and not callable(getattr(db_or_collection, "find_one", None)):
+            collection = db_or_collection[COLLECTION]
+        else:
+            collection = db_or_collection
+        rows_by_phone = {
+            str(row.get("phone_normalized")): dict(row)
+            for row in collection.find({"phone_normalized": {"$in": sorted(phones)}})
+            if row.get("phone_normalized")
+        }
+        if profile is not None:
+            profile["contact_docs_returned"] = len(rows_by_phone)
+        return [
+            rows_by_phone.get(phones_by_position.get(position, ""))
+            for position in range(len(documents))
+        ]
+    except Exception as exc:
+        logger.warning(
+            "[CP_CONTACT_IDENTITY] batch_lookup=unavailable phones=%s error=%s",
+            len(phones),
+            type(exc).__name__,
+        )
+        return [None for _ in documents]
 
 
 def _append_unique(items: list[Any], value: Any, *, limit: int = 1000) -> list[Any]:

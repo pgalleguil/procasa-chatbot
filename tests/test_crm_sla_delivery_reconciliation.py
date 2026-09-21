@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
 import mongomock
+from bson import ObjectId
 
 from chatbot import whatsapp_client
 from chatbot.constants import CHILE_TZ
@@ -576,6 +577,29 @@ def test_historical_delivery_recovery_is_idempotent_and_activates_existing_cycle
     assert notification["delivery_evidence_reference"] == "render-event-123"
     assert "delivered_at" not in notification
     assert cycle["sla_started_at"] == observed_at.replace(tzinfo=None)
+
+
+def test_historical_recovery_resolves_objectid_notification_from_string_payload():
+    db = _fixture()
+    notification = db[COLLECTION].find_one({"_id": "notification-1"})
+    db[COLLECTION].delete_one({"_id": "notification-1"})
+    notification["_id"] = ObjectId("6ab09046bed2c800b6c656cf")
+    db[COLLECTION].insert_one(notification)
+    observed_at = datetime(2026, 9, 21, 2, 4, 29, tzinfo=UTC)
+
+    result = recover_sla_reassignment_delivery_from_evidence(
+        db,
+        notification_id="6ab09046bed2c800b6c656cf",
+        provider_message_id="provider-1",
+        first_confirmed_observed_at=observed_at,
+        evidence_source=HISTORICAL_DELIVERY_EVIDENCE_SOURCE,
+        evidence_reference="render-objectid-123",
+        now=observed_at + timedelta(seconds=1),
+    )
+
+    assert result["status"] == "recovered"
+    assert result["activation"]["status"] == "activated"
+    assert db[COLLECTION].find_one({"_id": ObjectId("6ab09046bed2c800b6c656cf")})["actually_delivered"] is True
 
 
 def test_historical_recovery_rejects_non_authenticated_source():

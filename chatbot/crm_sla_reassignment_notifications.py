@@ -957,7 +957,7 @@ def mark_new_owner_notification_delivered(
     if not provider_id:
         return {"status": "blocked", "reason": "provider_message_id_required"}
     notification = db[COLLECTION].find_one({
-        "_id": notification_id,
+        "_id": {"$in": list(mongo_id_variants(notification_id))},
         "notification_type": SLA_REASSIGNED_TO,
         "notification_role": "new_owner",
     })
@@ -1084,7 +1084,8 @@ def recover_sla_reassignment_delivery_from_evidence(
         return {"status": "blocked", "reason": "unsupported_evidence_source"}
     if not provider_id or not observed_at or not reference:
         return {"status": "blocked", "reason": "historical_evidence_incomplete"}
-    notification = db[COLLECTION].find_one({"_id": notification_id})
+    notification_id_values = list(mongo_id_variants(notification_id))
+    notification = db[COLLECTION].find_one({"_id": {"$in": notification_id_values}})
     if not notification:
         return {"status": "not_found", "notification_id": notification_id}
     if notification.get("provider_message_id") != provider_id:
@@ -1121,7 +1122,7 @@ def recover_sla_reassignment_delivery_from_evidence(
     canonical_status, regression = _delivery_status_transition(current_status, "delivered")
     update = db[COLLECTION].update_one(
         {
-            "_id": notification_id,
+            "_id": {"$in": notification_id_values},
             "provider_message_id": provider_id,
             "$or": [
                 {"effective_delivery_at": {"$exists": False}},
@@ -1149,7 +1150,7 @@ def recover_sla_reassignment_delivery_from_evidence(
             } if regression else {}),
         }},
     )
-    refreshed = db[COLLECTION].find_one({"_id": notification_id}) or notification
+    refreshed = db[COLLECTION].find_one({"_id": {"$in": notification_id_values}}) or notification
     effective = coerce_utc_datetime(refreshed.get("effective_delivery_at"))
     if effective is None:
         return {"status": "race_lost", "notification_id": notification_id}

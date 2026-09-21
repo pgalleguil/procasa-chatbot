@@ -210,7 +210,7 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 background_tasks_status = {
     "notifications_loop": {"status": "starting", "last_heartbeat": None},
     "sla_reassignment_engine": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
-    "sla_notifications": {
+    "sla_notification_consumer": {
         "status": "starting" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "disabled",
         "health": "STARTING" if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED else "DISABLED",
         "last_heartbeat": None,
@@ -227,6 +227,7 @@ background_tasks_status = {
 # Keep the historical health key as an alias while exposing the explicit
 # engine/consumer split to operators and health probes.
 background_tasks_status["crm_sla_reassignment_shadow"] = background_tasks_status["sla_reassignment_engine"]
+background_tasks_status["sla_notifications"] = background_tasks_status["sla_notification_consumer"]
 _OAUTH_HTTP_CLIENT = None
 
 

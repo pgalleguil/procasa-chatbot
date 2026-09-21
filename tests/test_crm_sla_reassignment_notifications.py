@@ -262,7 +262,7 @@ def test_notification_consumer_is_separate_from_engine_and_scheduled_at_startup(
 
     assert 'CRM_SLA_NOTIFICATION_CONSUMER_ENABLED", "false"' in config_source
     assert '"sla_reassignment_engine"' in webhook_source
-    assert '"sla_notifications"' in webhook_source
+    assert '"sla_notification_consumer"' in webhook_source
     assert "n_task = asyncio.create_task(process_pending_leads_loop())" in webhook_source
     assert "if Config.CRM_SLA_NOTIFICATION_CONSUMER_ENABLED:" in webhook_source
     assert "and Config.CRM_SLA_REASSIGNMENT_WORKER_ENABLED):" not in webhook_source[webhook_source.index("async def process_pending_leads_loop") :]

@@ -426,7 +426,7 @@ class MarketIntelligenceSnapshotV1:
 
 @dataclass(frozen=True)
 class OwnerPortalEngineV1Contract:
-    """Typed, non-operative contract reserved for Engine V1."""
+    """Typed Engine V1 output embedded in the owner-portal DTO."""
 
     status: str = "NOT_IMPLEMENTED"
     recommendation: str | None = None
@@ -439,7 +439,7 @@ class OwnerPortalEngineV1Contract:
     owner_action: str | None = None
     reasons: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
-    methodology_version: str = "engine-v1-contract-only"
+    methodology_version: str = "engine_v1"
 
     def to_dict(self) -> dict[str, Any]:
         return {

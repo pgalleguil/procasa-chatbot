@@ -708,8 +708,8 @@ def test_phase_2d5_6464_current_and_historical_windows_are_reproducible():
     assert (current.inquiries_previous_30d, current.inquiries_previous_90d) == (0, 10)
     assert (historical.inquiries_previous_30d, historical.inquiries_previous_90d) == (3, 11)
     assert current.page_as_of == current.as_of
-    assert current.engine_v1.status == "NOT_IMPLEMENTED"
-    assert current.engine_v1.recommendation is None
+    assert current.engine_v1.status == "READY"
+    assert current.engine_v1.recommendation == "EXECUTIVE_REVIEW"
     assert current.engine_v1.gradual_price_uf is None
     assert current.engine_v1.competitive_reference_uf is None
     assert {name: db[name].count_documents({}) for name in before_counts} == before_counts

@@ -11,6 +11,7 @@ from .models import (
     PublicationState,
 )
 from .property_identity import PropertyIdentityResolver, build_property_identity_resolver
+from .engine_v1 import EngineV1Decision, evaluate_engine_v1
 from .time_utils import BUSINESS_TZ, UTC, HistoricalSnapshotNotSupported
 
 __all__ = [
@@ -27,4 +28,6 @@ __all__ = [
     "PublicationState",
     "UTC",
     "build_property_identity_resolver",
+    "EngineV1Decision",
+    "evaluate_engine_v1",
 ]

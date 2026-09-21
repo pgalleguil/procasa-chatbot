@@ -17,6 +17,7 @@ from analytics.pricing_intelligence.cohort_reproducibility import (
     COHORT_RULE_VERSION,
     cohort_fingerprint,
 )
+from analytics.pricing_intelligence.engine_v1 import evaluate_engine_v1
 from analytics.pricing_intelligence.observability import (
     SOURCE_FULL,
     WINDOW_UNKNOWN,
@@ -1947,6 +1948,17 @@ def _timeline(
     return tuple(item[1] for item in events[:12])
 
 
+def _engine_exposure_state(publications: Iterable[OwnerPortalPublicationV1]) -> str:
+    """Map verified active publication rows to the Engine V1 exposure enum."""
+
+    active_count = sum(1 for _publication in publications)
+    if active_count == 0:
+        return "LOW"
+    if active_count == 1:
+        return "PARTIAL"
+    return "ADEQUATE"
+
+
 def get_owner_portal_property_view(
     db: Any,
     property_code: str,
@@ -2052,9 +2064,64 @@ def get_owner_portal_property_view(
         uf_source_age_days=uf_indicator.source_age_days if uf_indicator else None,
         uf_is_stale=uf_indicator.is_stale if uf_indicator else None,
     )
+    active_portals = tuple(publication.portal_id for publication in prop["publications"])
+    cohort_input = {
+        "n": cohort.count,
+        "p25": cohort.p25_uf,
+        "p40": None,
+        "p50": cohort.median_uf,
+        "p60": cohort.p60_uf,
+        "p75": cohort.p75_uf,
+        "p90": cohort.p90_uf,
+        "ecdf": cohort.market_ecdf,
+        "deterministic": bool(cohort.cohort_fingerprint),
+        "fingerprint": cohort.cohort_fingerprint,
+        # Foundation has no independent robustness flag yet; do not infer one.
+        "robustness_warning": False,
+    } if cohort else None
+    engine_decision = evaluate_engine_v1(
+        operation=prop.get("operation"),
+        current_price_uf=prop.get("price_uf"),
+        cohort=cohort_input,
+        commercial_response={
+            "inquiries_30d": leads.get("property_previous_30d", 0),
+            "inquiries_90d": leads.get("property_previous_90d", 0),
+            "signal_30d": leads.get("demand_signal_30d", "ZERO_UNCERTAIN"),
+            "signal_90d": leads.get("demand_signal_90d", "ZERO_UNCERTAIN"),
+            "confidence_30d": leads.get("demand_confidence_30d", "unknown"),
+            "confidence_90d": leads.get("demand_confidence_90d", "unknown"),
+        },
+        exposure={
+            "state": _engine_exposure_state(prop["publications"]),
+            "active_portals": active_portals,
+        },
+        observation={
+            "window_quality_30d": leads.get("observation_window_30d", "UNKNOWN"),
+            "window_quality_90d": leads.get("observation_window_90d", "UNKNOWN"),
+            "source_coverage_30d": leads.get("demand_source_coverage_30d", "UNKNOWN"),
+            "source_coverage_90d": leads.get("demand_source_coverage_90d", "UNKNOWN"),
+        },
+        context={
+            "page_as_of": page_as_of,
+            "last_price_change_at": last_price_change_at,
+            "operation_ambiguity": selection_required,
+            "geography_valid": bool(prop.get("canonical_region") and prop.get("commune")),
+            "critical_conflict": bool(prop.get("operation_conflict")),
+        },
+    )
     engine_v1 = OwnerPortalEngineV1Contract(
-        status="NOT_IMPLEMENTED",
-        market_position=market_position_state if positioning else None,
+        status=engine_decision.status,
+        recommendation=engine_decision.recommendation,
+        eligibility=engine_decision.eligibility,
+        confidence=engine_decision.confidence,
+        market_position=engine_decision.market_position,
+        gap_to_p75_pct=engine_decision.gap_to_p75_pct,
+        gradual_price_uf=engine_decision.gradual_price_uf,
+        competitive_reference_uf=engine_decision.competitive_reference_uf,
+        owner_action=engine_decision.owner_action,
+        reasons=engine_decision.reasons,
+        warnings=engine_decision.warnings,
+        methodology_version=engine_decision.methodology_version,
     )
     return OwnerPortalPropertyViewV1(
         property_code=code,

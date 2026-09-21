@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 import logging
 import random
 import time
@@ -114,6 +115,70 @@ def provider_error_code(http_status: int | None) -> str | None:
     return None
 
 
+def _provider_timestamp(value: Any) -> datetime | None:
+    """Parse a timestamp supplied by Wasender without using the local clock."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        numeric = float(value)
+        if numeric > 10_000_000_000:
+            numeric /= 1000.0
+        try:
+            return datetime.fromtimestamp(numeric, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    if text.isdigit():
+        return _provider_timestamp(int(text))
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _extract_provider_event_timestamp(data: Any) -> tuple[datetime | None, str | None]:
+    """Return only a provider timestamp tied to delivery/status evidence.
+
+    ``messageTimestamp`` is the message creation timestamp in the provider
+    response, not a delivery event timestamp, so it is intentionally excluded
+    from this list.  A missing value must remain missing to prevent starting an
+    SLA clock with an invented local time.
+    """
+    if not isinstance(data, dict):
+        return None, None
+    update = data.get("update") if isinstance(data.get("update"), dict) else {}
+    candidates = (
+        ("delivered_at", update.get("delivered_at")),
+        ("deliveredAt", update.get("deliveredAt")),
+        ("delivery_timestamp", update.get("delivery_timestamp")),
+        ("deliveryTimestamp", update.get("deliveryTimestamp")),
+        ("status_timestamp", update.get("status_timestamp")),
+        ("statusTimestamp", update.get("statusTimestamp")),
+        ("event_timestamp", update.get("event_timestamp")),
+        ("eventTimestamp", update.get("eventTimestamp")),
+        ("updated_at", update.get("updated_at")),
+        ("updatedAt", update.get("updatedAt")),
+        ("delivered_at", data.get("delivered_at")),
+        ("deliveredAt", data.get("deliveredAt")),
+        ("delivery_timestamp", data.get("delivery_timestamp")),
+        ("deliveryTimestamp", data.get("deliveryTimestamp")),
+        ("status_timestamp", data.get("status_timestamp")),
+        ("statusTimestamp", data.get("statusTimestamp")),
+        ("event_timestamp", data.get("event_timestamp")),
+        ("eventTimestamp", data.get("eventTimestamp")),
+        ("updated_at", data.get("updated_at")),
+        ("updatedAt", data.get("updatedAt")),
+    )
+    for source, value in candidates:
+        parsed = _provider_timestamp(value)
+        if parsed is not None:
+            return parsed, source
+    return None, None
+
+
 def normalize_provider_status(value) -> str:
     if isinstance(value, str) and value.isdigit():
         value = int(value)
@@ -124,20 +189,24 @@ def normalize_provider_status(value) -> str:
     return aliases.get(text, text or "unknown")
 
 
-async def get_whatsapp_message_status(provider_message_id: str) -> dict:
+def get_whatsapp_message_status_sync(provider_message_id: str) -> dict:
     if not provider_message_id:
         return {"delivery_status": "unknown", "provider_message_id": None}
     url = f"{Config.WASENDER_BASE_URL}/messages/{provider_message_id}/info"
     headers = {"Authorization": f"Bearer {Config.WASENDER_TOKEN}"}
     try:
-        response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
         data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
         status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
+        provider_event_timestamp, timestamp_source = _extract_provider_event_timestamp(data)
         return {
             "delivery_status": status,
             "provider_message_id": str(provider_message_id),
             "http_status": response.status_code,
+            "provider_error_code": provider_error_code(response.status_code),
+            "provider_event_timestamp": provider_event_timestamp,
+            "provider_event_timestamp_source": timestamp_source,
         }
     except Exception as exc:
         logger.warning(
@@ -145,7 +214,19 @@ async def get_whatsapp_message_status(provider_message_id: str) -> dict:
             provider_message_id,
             type(exc).__name__,
         )
-        return {"delivery_status": "unknown", "provider_message_id": str(provider_message_id)}
+        return {
+            "delivery_status": "unknown",
+            "provider_status": "unknown",
+            "provider_message_id": str(provider_message_id),
+            "provider_error_code": None,
+            "provider_event_timestamp": None,
+            "provider_event_timestamp_source": None,
+        }
+
+
+async def get_whatsapp_message_status(provider_message_id: str) -> dict:
+    """Read provider status without sending or retrying a WhatsApp message."""
+    return await asyncio.to_thread(get_whatsapp_message_status_sync, provider_message_id)
 
 
 async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_seconds=30) -> dict:

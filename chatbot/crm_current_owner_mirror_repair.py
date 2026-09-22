@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any, Mapping
+
+from pymongo.errors import PyMongoError
 
 from .crm_lead_access import resolve_crm_lead_access_context
 from .crm_sla_reassignment_transaction import build_current_cycle_owner_mirror_repair
@@ -21,6 +24,17 @@ _DERIVED_FIELDS = (
     "prospecto.ejecutivo",
     "assignment_mirror_source",
 )
+_ACTIVE_CYCLE_PROJECTION = {
+    "assignment_cycle_id": 1,
+    "lead_id": 1,
+    "assigned_to_user_id": 1,
+    "assigned_to_display_name": 1,
+    "assigned_at": 1,
+    "sla_started_at": 1,
+    "cycle_status": 1,
+    "unassigned_at": 1,
+    "reassignment_state": 1,
+}
 
 
 def _text(value: Any) -> str:
@@ -73,10 +87,21 @@ def _active_cycles_for_lead(collection: Any, lead_id: Any) -> list[Mapping[str, 
 
 
 def _group_active_cycles(db: Any) -> tuple[list[Mapping[str, Any]], dict[str, list[Mapping[str, Any]]]]:
-    cycles = list(db["crm_assignment_cycles"].find({
-        "cycle_status": "active",
-        "unassigned_at": None,
-    }))
+    query = {"cycle_status": "active", "unassigned_at": None}
+    cycles: list[Mapping[str, Any]] = []
+    for attempt in range(3):
+        try:
+            cursor = db["crm_assignment_cycles"].find(query, _ACTIVE_CYCLE_PROJECTION)
+            try:
+                cursor = cursor.batch_size(100)
+            except AttributeError:
+                pass
+            cycles = list(cursor)
+            break
+        except PyMongoError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (attempt + 1))
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
     for cycle in cycles:
         key = _text(cycle.get("lead_id"))

@@ -999,16 +999,40 @@ async def lifespan(app: FastAPI):
     # performs a read-only access proof.  It runs before SLA workers are
     # scheduled and an individual failure must never prevent startup.
     def _startup_current_owner_mirror_repair():
-        from chatbot.crm_current_owner_mirror_repair import (
-            run_current_owner_mirror_repair_once,
-            validate_current_owner_access_integrity,
-        )
+        from chatbot.crm_current_owner_mirror_repair import run_current_owner_mirror_repair_once
         from chatbot.storage import get_db
 
-        db = get_db()
-        repair = run_current_owner_mirror_repair_once(db)
-        access = validate_current_owner_access_integrity(db)
-        return {"repair": repair, "access": access}
+        return run_current_owner_mirror_repair_once(get_db())
+
+    async def _background_current_owner_access_verify():
+        try:
+            def _verify():
+                from chatbot.crm_current_owner_mirror_repair import validate_current_owner_access_integrity
+                from chatbot.storage import get_db
+                return validate_current_owner_access_integrity(get_db())
+
+            access_result = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                _verify,
+            )
+            background_tasks_status["crm_current_owner_mirror_repair"].update({
+                "access": access_result,
+                "access_verified_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info(
+                "[CRM_OWNER_ACCESS_VERIFY] status=completed evaluated=%s allowed=%s denied=%s exceptions=%s denied_reasons=%s",
+                access_result.get("evaluated_current_owners", 0),
+                access_result.get("access_allowed", 0),
+                access_result.get("access_denied", 0),
+                access_result.get("exceptions", 0),
+                access_result.get("denied_reasons", {}),
+            )
+        except Exception:
+            background_tasks_status["crm_current_owner_mirror_repair"].update({
+                "access": {"status": "error"},
+                "access_verified_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.exception("[CRM_OWNER_ACCESS_VERIFY] status=error")
 
     if Config.CRM_CURRENT_OWNER_MIRROR_REPAIR_ENABLED:
         background_tasks_status["crm_current_owner_mirror_repair"].update({
@@ -1016,30 +1040,25 @@ async def lifespan(app: FastAPI):
             "last_heartbeat": datetime.now(timezone.utc).isoformat(),
         })
         try:
-            mirror_repair_result = await asyncio.get_running_loop().run_in_executor(
+            repair_result = await asyncio.get_running_loop().run_in_executor(
                 _WEB_THREAD_POOL,
                 _startup_current_owner_mirror_repair,
             )
-            repair_result = mirror_repair_result.get("repair", {})
-            access_result = mirror_repair_result.get("access", {})
             background_tasks_status["crm_current_owner_mirror_repair"].update({
                 "status": "completed",
                 "last_heartbeat": datetime.now(timezone.utc).isoformat(),
                 "repair": repair_result,
-                "access": access_result,
             })
             logger.info(
-                "[CRM_OWNER_MIRROR_REPAIR_STARTUP] status=completed scanned=%s conflicts=%s repaired=%s skipped_ambiguous=%s cas_lost=%s errors=%s access_evaluated=%s access_allowed=%s access_denied=%s",
+                "[CRM_OWNER_MIRROR_REPAIR_STARTUP] status=completed scanned=%s conflicts=%s repaired=%s skipped_ambiguous=%s cas_lost=%s errors=%s",
                 repair_result.get("active_cycles_scanned", 0),
                 repair_result.get("true_conflicts_before", 0),
                 repair_result.get("repaired", 0),
                 repair_result.get("skipped_ambiguous", 0),
                 repair_result.get("cas_lost", 0),
                 repair_result.get("errors", 0),
-                access_result.get("evaluated_current_owners", 0),
-                access_result.get("access_allowed", 0),
-                access_result.get("access_denied", 0),
             )
+            asyncio.create_task(_background_current_owner_access_verify())
         except Exception:
             background_tasks_status["crm_current_owner_mirror_repair"].update({
                 "status": "error",

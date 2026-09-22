@@ -110,6 +110,51 @@ def _group_active_cycles(db: Any) -> tuple[list[Mapping[str, Any]], dict[str, li
     return cycles, grouped
 
 
+def _load_leads_for_groups(db: Any, grouped: Mapping[str, list[Mapping[str, Any]]]) -> dict[str, Mapping[str, Any]]:
+    """Load the small lead projection used by repair/verification in one read."""
+    variants: list[Any] = []
+    for active_cycles in grouped.values():
+        for cycle in active_cycles:
+            for variant in mongo_id_variants(cycle.get("lead_id")):
+                if variant not in variants:
+                    variants.append(variant)
+    if not variants:
+        return {}
+    projection = {
+        "_id": 1,
+        "lifecycle": 1,
+        "reassignment_decision_id": 1,
+        "automatic_reassignment_number": 1,
+        "assigned_by": 1,
+        "reassigned_by_sla": 1,
+        "reassignment_source": 1,
+        "reassigned_from_owner_user_id": 1,
+        "reassignment_source_cycle_id": 1,
+        "owner_user_id": 1,
+        "assigned_to_user_id": 1,
+        "ejecutivo_asignado": 1,
+        "prospecto.ejecutivo": 1,
+    }
+    for attempt in range(3):
+        try:
+            cursor = db["leads"].find({"_id": {"$in": variants}}, projection)
+            try:
+                cursor = cursor.batch_size(100)
+            except AttributeError:
+                pass
+            return {_text(lead.get("_id")): lead for lead in cursor}
+        except PyMongoError:
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    return {}
+
+
+def _lead_for_cycle(lead_map: Mapping[str, Mapping[str, Any]], db: Any, cycle: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    lead_id = cycle.get("lead_id")
+    return lead_map.get(_text(lead_id)) or _find_one_by_variants(db["leads"], "_id", lead_id)
+
+
 def _canonical_owner_is_unambiguous(lead: Mapping[str, Any], cycle: Mapping[str, Any]) -> bool:
     owner_id = _text(cycle.get("assigned_to_user_id"))
     owner_name = _text(cycle.get("assigned_to_display_name"))
@@ -177,13 +222,14 @@ def inspect_current_owner_mirror_conflicts(db: Any) -> dict[str, Any]:
     result = _empty_result()
     cycles, grouped = _group_active_cycles(db)
     result["active_cycles_scanned"] = len(cycles)
+    lead_map = _load_leads_for_groups(db, grouped)
     conflict_lead_ids: list[str] = []
     for lead_key, active_cycles in grouped.items():
         if len(active_cycles) != 1:
             result["skipped_ambiguous"] += 1
             continue
         cycle = active_cycles[0]
-        lead = _find_one_by_variants(db["leads"], "_id", cycle.get("lead_id"))
+        lead = _lead_for_cycle(lead_map, db, cycle)
         if not lead or not _canonical_owner_is_unambiguous(lead, cycle):
             result["skipped_ambiguous"] += 1
             continue
@@ -199,12 +245,13 @@ def run_current_owner_mirror_repair_once(db: Any, *, now: datetime | None = None
     repaired_at = now or datetime.now(timezone.utc)
     cycles, grouped = _group_active_cycles(db)
     result["active_cycles_scanned"] = len(cycles)
+    lead_map = _load_leads_for_groups(db, grouped)
     for active_cycles in grouped.values():
         if len(active_cycles) != 1:
             result["skipped_ambiguous"] += 1
             continue
         cycle = active_cycles[0]
-        lead = _find_one_by_variants(db["leads"], "_id", cycle.get("lead_id"))
+        lead = _lead_for_cycle(lead_map, db, cycle)
         if not lead or not _canonical_owner_is_unambiguous(lead, cycle):
             result["skipped_ambiguous"] += 1
             continue
@@ -251,11 +298,12 @@ def validate_current_owner_access_integrity(db: Any) -> dict[str, Any]:
         "exceptions": 0,
     }
     _, grouped = _group_active_cycles(db)
+    lead_map = _load_leads_for_groups(db, grouped)
     for active_cycles in grouped.values():
         if len(active_cycles) != 1:
             continue
         cycle = active_cycles[0]
-        lead = _find_one_by_variants(db["leads"], "_id", cycle.get("lead_id"))
+        lead = _lead_for_cycle(lead_map, db, cycle)
         if not lead or not _canonical_owner_is_unambiguous(lead, cycle):
             continue
         user = _find_one_by_variants(db["usuarios"], "_id", cycle.get("assigned_to_user_id"))

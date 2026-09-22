@@ -14,11 +14,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
-    from config import Config
+    from config import Config as _ImportedConfig
 except ImportError:
-    # Local scraper execution places scrapers/scraper_toctoc first on
-    # sys.path, where ``config`` is AppConfig-only. Load the CRM Config from
-    # the repository root without changing the scraper's module namespace.
+    _ImportedConfig = None
+
+# The TOCTOC scraper also has a module named ``config`` that exports only
+# AppConfig.  During mixed CRM/scraper imports it can be present in
+# sys.modules even though ``from config import Config`` succeeds for a
+# different module elsewhere.  Phone Learning must always consult the CRM
+# feature flag, so resolve the root config by file when that contract is not
+# available instead of silently treating the feature as disabled.
+if _ImportedConfig is not None and hasattr(_ImportedConfig, "PHONE_LEARNING_ENABLED"):
+    Config = _ImportedConfig
+else:
     import importlib.util
     from pathlib import Path
 
@@ -26,8 +34,9 @@ except ImportError:
     _root_config_spec = importlib.util.spec_from_file_location(
         "_crm_root_config_for_identity", _root_config_path
     )
+    if _root_config_spec is None or _root_config_spec.loader is None:
+        raise ImportError("Unable to load CRM config for contact identity")
     _root_config_module = importlib.util.module_from_spec(_root_config_spec)
-    assert _root_config_spec.loader is not None
     _root_config_spec.loader.exec_module(_root_config_module)
     Config = _root_config_module.Config
 from chatbot.phone_utils import normalize_phone_strict
@@ -70,6 +79,15 @@ def _utc(value: Any = None) -> datetime:
 
 
 def phone_learning_enabled() -> bool:
+    # Prefer the currently active CRM Config when mixed test/runtime imports
+    # temporarily replace ``sys.modules['config']`` with the scraper's
+    # AppConfig module.  The fallback is the CRM Config loaded above for local
+    # scraper processes where only AppConfig is registered as ``config``.
+    import sys
+
+    active_config = getattr(sys.modules.get("config"), "Config", None)
+    if active_config is not None and hasattr(active_config, "PHONE_LEARNING_ENABLED"):
+        return bool(active_config.PHONE_LEARNING_ENABLED)
     return bool(getattr(Config, "PHONE_LEARNING_ENABLED", False))
 
 

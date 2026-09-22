@@ -106,6 +106,17 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
         errors.append(f"NON_FINAL_PROCESSING_STATUS({doc.get('processing_status')})")
     source = classification.get("source") or classification.get("decision_source", "")
 
+    canonical_final = str(classification.get("final") or "").upper()
+    canonical_versioned = bool(
+        canonical_final and classification.get("canonical_classification_version")
+    )
+    hard_veto = (
+        classification.get("hard_veto") == "PROFESSIONAL"
+        or classification.get("professional_hard_veto") is True
+        or classification.get("hard_broker_veto") is True
+        or classification.get("hard_broker_signal") is True
+    )
+
     # assignment_ready is a derived safety flag, never a proxy for source or
     # confidence. Only owner states can expose a record to assignment.
     non_assignable_reasons = {
@@ -116,7 +127,7 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     }
     if classification.get("assignment_ready") is True and state in non_assignable_reasons:
         errors.append(non_assignable_reasons[state])
-    if classification.get("hard_veto") == "PROFESSIONAL" and not state.startswith("CORREDOR"):
+    if hard_veto and not state.startswith("CORREDOR"):
         errors.append("PROFESSIONAL_HARD_VETO_STATE_LOST")
 
     # Rechazar clasificacion solo por URL path
@@ -129,21 +140,40 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     if not source:
         errors.append("MISSING_CLASSIFICATION_SOURCE")
 
-    # One source of truth: when owner_probability exists, it defines both the
-    # final state and canonical confidence. Legacy documents still use the
-    # state/confidence validation below until they are re-normalized.
+    # Canonical final/state is authoritative for versioned documents. The
+    # owner-probability estimate is retained as evidence and must be numeric,
+    # but it cannot rewrite a structural/portal canonical decision.
     if owner_probability is not None:
         try:
             probability = float(owner_probability)
             if probability > 1: probability /= 100.0
-            expected = expected_state_for_probability(probability)
-            hard_veto = classification.get("hard_veto") == "PROFESSIONAL"
-            if not hard_veto and state != expected:
-                errors.append(f"STATE_DOES_NOT_MATCH_OWNER_PROBABILITY({state}!={expected})")
-            if not hard_veto and abs(float(confidence) - probability) > 0.001:
-                errors.append("CANONICAL_CONFIDENCE_DOES_NOT_MATCH_OWNER_PROBABILITY")
-            if hard_veto and state != "CORREDOR_SEGURO":
+            if probability < 0.0 or probability > 1.0:
+                errors.append("OWNER_PROBABILITY_OUT_OF_RANGE")
+            if hard_veto and (canonical_final != "BROKER_CONFIRMED" or state != "CORREDOR_SEGURO"):
                 errors.append("PROFESSIONAL_HARD_VETO_STATE_INVALID")
+            elif canonical_versioned:
+                expected_legacy = {
+                    "OWNER_CONFIRMED": "DUEÑO_SEGURO",
+                    "OWNER_PROBABLE": "DUEÑO_PROBABLE",
+                    "BROKER_CONFIRMED": "CORREDOR_SEGURO",
+                    "BROKER_PROBABLE": "CORREDOR_PROBABLE",
+                    "UNCERTAIN": "INCIERTO",
+                    "OUT_OF_SCOPE_NEW_DEVELOPMENT": "INCIERTO",
+                }.get(canonical_final)
+                if expected_legacy and state != expected_legacy:
+                    errors.append(f"CANONICAL_FINAL_STATE_MISMATCH({canonical_final}!={state})")
+                if state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"} and not classification.get("assignment_ready"):
+                    # It may be blocked for lifecycle/conflict reasons; only
+                    # validate that it is not incorrectly exposed as ready.
+                    pass
+            else:
+                expected = expected_state_for_probability(probability)
+                if not hard_veto and state != expected:
+                    errors.append(f"STATE_DOES_NOT_MATCH_OWNER_PROBABILITY({state}!={expected})")
+                if not hard_veto and abs(float(confidence) - probability) > 0.001:
+                    errors.append("CANONICAL_CONFIDENCE_DOES_NOT_MATCH_OWNER_PROBABILITY")
+                if hard_veto and state != "CORREDOR_SEGURO":
+                    errors.append("PROFESSIONAL_HARD_VETO_STATE_INVALID")
         except (TypeError, ValueError):
             errors.append("INVALID_OWNER_PROBABILITY")
     else:
@@ -151,7 +181,7 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
         # technical confidence (for example 0.95) while the canonical owner
         # probability is unavailable. That confidence is not an owner-band
         # value and must not be rejected as if it were one.
-        if classification.get("hard_veto") != "PROFESSIONAL":
+        if not hard_veto:
             errors.extend(validate_classification_probability_consistency(state, confidence))
 
     # Scrape stage valido

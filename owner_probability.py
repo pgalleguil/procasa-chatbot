@@ -520,7 +520,17 @@ def apply_owner_probability_to_document(
     canonical ``classification.confidence`` is derived from owner_probability.
     """
     classification = dict(doc.get("classification") or {})
-    original_owner_probability = classification.get("owner_probability")
+    original_canonical_final = str(
+        classification.get("final") or classification.get("identity_classification") or ""
+    ).strip().upper()
+    if original_canonical_final == "":
+        original_canonical_final = ""
+    canonical_identity_states = {
+        "OWNER_CONFIRMED", "OWNER_PROBABLE", "BROKER_CONFIRMED", "BROKER_PROBABLE",
+        "UNCERTAIN", "OUT_OF_SCOPE_NEW_DEVELOPMENT",
+    }
+    has_canonical_decision = original_canonical_final in canonical_identity_states
+    original_canonical_confidence = classification.get("canonical_confidence")
     hard_broker_signal = detect_hard_broker_signal(doc, extracted=extracted or doc)
     registry_broker_match = bool((registry_match or {}).get("matched"))
     identity_broker_match = registry_broker_match or bool(human_broker_match)
@@ -584,6 +594,15 @@ def apply_owner_probability_to_document(
         final_state = "CORREDOR_SEGURO"
     elif identity_broker_match:
         final_state = "CORREDOR_SEGURO"
+    elif has_canonical_decision:
+        final_state = {
+            "OWNER_CONFIRMED": "DUEÑO_SEGURO",
+            "OWNER_PROBABLE": "DUEÑO_PROBABLE",
+            "BROKER_CONFIRMED": "CORREDOR_SEGURO",
+            "BROKER_PROBABLE": "CORREDOR_PROBABLE",
+            "UNCERTAIN": "INCIERTO",
+            "OUT_OF_SCOPE_NEW_DEVELOPMENT": "INCIERTO",
+        }[original_canonical_final]
     elif probability is None:
         final_state = previous_state if broker_confirmed else "PENDIENTE"
     else:
@@ -592,12 +611,20 @@ def apply_owner_probability_to_document(
     classification["previous_classification_state"] = previous_state
     if probability is not None:
         if technical_confidence is None:
-            classification["confidence"] = probability
-        classification["canonical_confidence"] = probability
+            classification["confidence"] = (
+                original_canonical_confidence
+                if has_canonical_decision and original_canonical_confidence is not None
+                else probability
+            )
+        if has_canonical_decision and original_canonical_confidence is not None:
+            classification["canonical_confidence"] = original_canonical_confidence
+        elif not has_canonical_decision:
+            classification["canonical_confidence"] = probability
         classification["state"] = final_state
         classification["final_state"] = final_state
         classification["classification_semantics"] = (
             "professional_hard_veto" if hard_veto == "PROFESSIONAL"
+            else "canonical_classification" if has_canonical_decision
             else "owner_probability_band"
         )
     else:
@@ -607,36 +634,20 @@ def apply_owner_probability_to_document(
     classification["state_source"] = (
         "classification.professional_hard_veto"
         if hard_veto == "PROFESSIONAL"
+        else "classification.canonical_final"
+        if has_canonical_decision
         else "classification.owner_probability_band"
     )
     classification["classification_rule_version"] = OWNER_PROBABILITY_VERSION
     classification["listing_status"] = listing_status
-    # Preserve the explicit Toctoc idType=1 probability supplied by the
-    # classification service.  The generic owner-probability estimator must
-    # not downgrade that structural owner evidence merely because the CRM
-    # document has fewer text signals than the extractor input.
-    if (
-        str(doc.get("seller_id_type_raw") or doc.get("seller_id_type") or "").strip() == "1"
-        and hard_veto != "PROFESSIONAL"
-        and not identity_broker_match
-        and original_owner_probability is not None
-    ):
-        try:
-            explicit_probability = float(original_owner_probability)
-            if explicit_probability > 1:
-                explicit_probability /= 100.0
-            classification["owner_probability"] = explicit_probability
-            classification["canonical_confidence"] = explicit_probability
-            classification["confidence"] = explicit_probability
-            probability = explicit_probability
-        except (TypeError, ValueError):
-            pass
     classification["assignment_ready"] = bool(
         final_state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
-        and probability is not None and probability >= 0.50
         and listing_status == "ACTIVE"
         and not classification.get("manual_review_required")
+        and not classification.get("classification_conflict")
+        and not classification.get("conflict_state")
         and hard_veto != "PROFESSIONAL"
+        and not identity_broker_match
     )
     classification["exclude_from_assignment"] = not classification["assignment_ready"]
     classification["assignment_block_reasons"] = (

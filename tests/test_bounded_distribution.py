@@ -6,7 +6,9 @@ from types import SimpleNamespace
 from api_captacion import (
     _atomic_assign_distribution_candidate,
     _build_bounded_distribution_plan,
+    _distribution_candidate_query,
     _has_broker_identity,
+    DISTRIBUTION_CANDIDATE_PROJECTION,
 )
 from captacion_distribution import active_workable_backlogs, is_captacion_distribution_executive
 
@@ -33,6 +35,41 @@ def _agents(*names: str) -> list[dict]:
         {"id": f"agent-{index}", "name": name, "comunas_interes_norm": ["santiago"]}
         for index, name in enumerate(names, start=1)
     ]
+
+
+def test_toctoc_targeted_candidate_query_uses_portal_listing_index_scope():
+    query = _distribution_candidate_query(
+        candidate_listing_ids=["4300001", "4300002", "4300001"],
+        candidate_portal="toctoc",
+    )
+
+    assert query["origen"] == "toctoc"
+    assert query["listing_id"] == {"$in": ["4300001", "4300002"]}
+    assert query["classification.state"]["$in"]
+    assert query["gestion.semantic_review_hold"] == {"$ne": True}
+    assert len(query["$or"]) == 3
+    assert all("gestion.ejecutivo_id" in clause for clause in query["$or"])
+
+
+def test_global_candidate_query_preserves_portal_and_unassigned_or_clauses():
+    query = _distribution_candidate_query()
+
+    assert len(query["$and"]) == 2
+    assert all("$or" in clause for clause in query["$and"])
+    portal_values = query["$and"][0]["$or"]
+    unassigned_values = query["$and"][1]["$or"]
+    assert any("origen" in clause for clause in portal_values)
+    assert any("source_portal" in clause for clause in portal_values)
+    assert all("gestion.ejecutivo_id" in clause for clause in unassigned_values)
+
+
+def test_distribution_candidate_projection_keeps_gate_evidence_without_raw_payloads():
+    assert DISTRIBUTION_CANDIDATE_PROJECTION["description"] == 1
+    assert DISTRIBUTION_CANDIDATE_PROJECTION["publicador_visible"] == 1
+    assert DISTRIBUTION_CANDIDATE_PROJECTION["seller_id_type_raw"] == 1
+    assert DISTRIBUTION_CANDIDATE_PROJECTION["classification.hard_broker_veto"] == 1
+    assert "raw_html" not in DISTRIBUTION_CANDIDATE_PROJECTION
+    assert "images" not in DISTRIBUTION_CANDIDATE_PROJECTION
 
 
 def test_batch_cap_limits_3000_eligible_properties_to_100():

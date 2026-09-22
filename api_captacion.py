@@ -36,7 +36,7 @@ from captacion_management import (
 )
 from captacion_materialized import build_captacion_materialized_fields
 from captacion_assignment_eligibility import assignment_classification_priority, can_assign_property
-from broker_registry import resolve_broker_identity
+from broker_registry import resolve_broker_identity, resolve_broker_identity_batch
 from captacion_distribution import (
     GLOBAL_PORTAL_ALIASES,
     MongoDistributionLock,
@@ -56,6 +56,7 @@ from captacion_distribution import (
 )
 from captacion_contact_identity import (
     get_contact_identity_evidence,
+    get_contact_identity_evidence_batch,
     normalize_phone,
     phone_learning_enabled,
     phone_learning_global_lookup_enabled,
@@ -2277,123 +2278,50 @@ def get_chile_now():
     return datetime.now(CHILE_TZ)
 
 def ensure_leads_indexes():
-    """Asegura índices de performance para propiedades_captacion."""
+    """Ensure required lead indexes, creating only indexes that are absent.
+
+    This function is called during module initialization for legacy reasons.
+    Unconditionally issuing createIndexes on every API import adds needless
+    Mongo round-trips (and can block a scraper before distribution starts).
+    """
     try:
         db = get_db()
         coll = get_captacion_collection(db)
-        
-        # 1. Índice único origen + listing_id
-        try:
-            coll.create_index(
-                [("origen", 1), ("listing_id", 1)],
-                unique=True,
-                name="idx_captacion_origen_listing_id"
-            )
-        except Exception:
-            pass
-        
-        # 2. Índice compuesto para asignación
-        try:
-            coll.create_index([
-                ("origen", 1),
-                ("classification.state", 1),
-                ("comuna_slug", 1),
-                ("gestion.ejecutivo_id", 1),
-                ("gestion.estado", 1)
-            ], name="idx_captacion_asignacion")
-        except Exception:
-            pass
-        
-        # 3. Índice para listado de agente
-        try:
-            coll.create_index([
-                ("gestion.ejecutivo_id", 1),
-                ("gestion.estado", 1),
-                ("comuna_slug", 1),
-                ("updated_at", -1)
-            ], name="idx_captacion_agente_listado")
-        except Exception:
-            pass
-        
-        # 4. Índice para clasificación
-        try:
-            coll.create_index([
-                ("origen", 1),
-                ("classification.state", 1),
-                ("comuna_slug", 1)
-            ], name="idx_captacion_clasificacion")
-        except Exception:
-            pass
-        
-        # 5. Índice para priorización global antes de paginar
-        try:
-            coll.create_index([
-                ("origen", 1),
-                ("classification.state", 1),
-                ("classification.owner_probability", -1),
-                ("_id", -1),
-            ], name="idx_captacion_owner_probability")
-        except Exception:
-            pass
-
-        # 6. Índice para orden por defecto (updated_at DESC) con filtros base
-        try:
-            coll.create_index([
-                ("origen", 1),
-                ("classification.state", 1),
-                ("updated_at", -1),
-                ("_id", -1),
-            ], name="idx_captacion_default_sort")
-        except Exception:
-            pass
-
-        # Índices para los campos derivados del listado. Se crean después del
-        # backfill en despliegue; mientras faltan campos, get_captacion_list
-        # conserva el mismo orden materializado para los documentos existentes.
-        materialized_indexes = (
-            ("idx_captacion_priority_materialized", [
-                ("origen", 1), ("classification.state", 1),
-                ("captacion_priority", 1), ("captacion_sort_date", -1), ("_id", -1),
-            ]),
-            ("idx_captacion_date_materialized", [
-                ("origen", 1), ("classification.state", 1),
-                ("captacion_sort_date", -1), ("_id", -1),
-            ]),
-            ("idx_captacion_price_materialized", [
-                ("origen", 1), ("classification.state", 1),
-                ("captacion_price_sort", 1), ("_id", -1),
-            ]),
-            ("idx_captacion_probability_materialized", [
-                ("origen", 1), ("classification.state", 1),
-                ("captacion_probability_sort", -1), ("_id", -1),
-            ]),
-            ("idx_captacion_comuna_materialized", [
-                ("origen", 1), ("classification.state", 1),
-                ("captacion_comuna_sort", 1), ("_id", -1),
-            ]),
-            ("idx_captacion_phone_normalized", [
-                ("telefono_normalizado", 1),
-            ]),
-            ("idx_captacion_price_uf_range", [
-                ("precio_uf_normalizado", 1), ("_id", -1),
-            ]),
-            ("idx_captacion_price_clp_range", [
-                ("precio_clp_normalizado", 1), ("_id", -1),
-            ]),
+        required_indexes = (
+            ("idx_captacion_origen_listing_id", [("origen", 1), ("listing_id", 1)], {"unique": True}),
+            ("idx_captacion_asignacion", [("origen", 1), ("classification.state", 1), ("comuna_slug", 1), ("gestion.ejecutivo_id", 1), ("gestion.estado", 1)], {}),
+            ("idx_captacion_agente_listado", [("gestion.ejecutivo_id", 1), ("gestion.estado", 1), ("comuna_slug", 1), ("updated_at", -1)], {}),
+            ("idx_captacion_clasificacion", [("origen", 1), ("classification.state", 1), ("comuna_slug", 1)], {}),
+            ("idx_captacion_owner_probability", [("origen", 1), ("classification.state", 1), ("classification.owner_probability", -1), ("_id", -1)], {}),
+            ("idx_captacion_default_sort", [("origen", 1), ("classification.state", 1), ("updated_at", -1), ("_id", -1)], {}),
+            ("idx_captacion_priority_materialized", [("origen", 1), ("classification.state", 1), ("captacion_priority", 1), ("captacion_sort_date", -1), ("_id", -1)], {}),
+            ("idx_captacion_date_materialized", [("origen", 1), ("classification.state", 1), ("captacion_sort_date", -1), ("_id", -1)], {}),
+            ("idx_captacion_price_materialized", [("origen", 1), ("classification.state", 1), ("captacion_price_sort", 1), ("_id", -1)], {}),
+            ("idx_captacion_probability_materialized", [("origen", 1), ("classification.state", 1), ("captacion_probability_sort", -1), ("_id", -1)], {}),
+            ("idx_captacion_comuna_materialized", [("origen", 1), ("classification.state", 1), ("captacion_comuna_sort", 1), ("_id", -1)], {}),
+            ("idx_captacion_phone_normalized", [("telefono_normalizado", 1)], {}),
+            ("idx_captacion_price_uf_range", [("precio_uf_normalizado", 1), ("_id", -1)], {}),
+            ("idx_captacion_price_clp_range", [("precio_clp_normalizado", 1), ("_id", -1)], {}),
         )
-        for index_name, index_spec in materialized_indexes:
+        existing = {item.get("name") for item in coll.list_indexes()}
+        for index_name, index_spec, options in required_indexes:
+            if index_name in existing:
+                continue
             try:
-                coll.create_index(index_spec, name=index_name)
+                coll.create_index(index_spec, name=index_name, **options)
+            except Exception:
+                # Preserve the historical best-effort behavior for deployments
+                # where an index is temporarily unavailable or incompatible.
+                pass
+
+        cache_indexes = {item.get("name") for item in db["system_cache"].list_indexes()}
+        if "expires_at_1" not in cache_indexes:
+            try:
+                db["system_cache"].create_index("expires_at", expireAfterSeconds=0)
             except Exception:
                 pass
 
-        # 6. Índice TTL para caché persistente
-        try:
-            db["system_cache"].create_index("expires_at", expireAfterSeconds=0)
-        except Exception:
-            pass
-        
-        logger.info("Índices de captación optimizados en propiedades_captacion.")
+        logger.info("Captación indexes verified; only missing indexes are created.")
     except Exception as e:
         logger.error(f"Error creando indices: {e}")
 
@@ -2841,6 +2769,57 @@ DISTRIBUTION_STATES = ("DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO")
 # Compatibility alias retained for callers/tests; the canonical source is
 # captacion_kpis.CAPTACION_TERMINAL_STATES.
 DISTRIBUTION_TERMINAL_STATES = set(CAPTACION_TERMINAL_STATES)
+DISTRIBUTION_CANDIDATE_PROJECTION = {
+    "_id": 1, "origen": 1, "source_portal": 1, "portal": 1,
+    "listing_id": 1, "url": 1, "source_url": 1,
+    "title": 1, "titulo": 1, "description": 1, "descripcion": 1,
+    "comuna": 1, "comuna_slug": 1,
+    "created_at": 1, "first_seen": 1, "first_seen_at": 1,
+    "fecha_captura": 1, "processed_at": 1, "scraped_at": 1,
+    "scrape_stage": 1, "html_validation_status": 1, "block_reason": 1,
+    "pipeline_state": 1, "pipeline_complete": 1, "extractor_health": 1,
+    "seller_id_type_raw": 1, "seller_id_type": 1,
+    "seller_profile_id": 1, "profile_id": 1,
+    "seller_client_id": 1, "client_id": 1,
+    "seller_profile_url": 1, "profile_url": 1, "seller_profile_logo": 1,
+    "seller_type": 1, "seller_type_evidence": 1, "seller_type_source": 1,
+    "publicador_visible": 1, "publisher": 1, "publisher_name": 1,
+    "seller_name": 1, "contact_name": 1, "listing_advertiser": 1,
+    "seller_jsonld_name": 1, "company_name": 1, "broker_brand": 1,
+    "contact_logo_alt": 1, "contact_badges_text": 1,
+    "phone_normalized": 1, "telefono_normalizado": 1,
+    "phone": 1, "telefono": 1, "phone_original_value": 1,
+    "contact_phone": 1, "whatsapp_phone": 1,
+    "details.phone_normalized": 1, "details.telefono_normalizado": 1,
+    "details.contact_phone": 1, "details.telefono": 1,
+    "details.whatsapp_phone": 1, "public_visible_contact.phones": 1,
+    "email": 1, "email_contact": 1, "contact_email": 1,
+    "domain": 1, "seller_domain": 1, "website": 1, "seller_website": 1,
+    "structural_signals": 1, "manual_review_required": 1,
+    "classification.state": 1, "classification.final": 1,
+    "classification.final_state": 1, "classification.canonical_final": 1,
+    "classification.assignment_ready": 1, "classification.exclude_from_assignment": 1,
+    "classification.hard_broker_veto": 1, "classification.hard_veto": 1,
+    "classification.hard_broker_signal": 1,
+    "classification.classification_conflict": 1, "classification.conflict_state": 1,
+    "classification.manual_review_required": 1,
+    "classification.manual_review_approved": 1,
+    "classification.owner_probability": 1,
+    "classification.owner_probability_source": 1,
+    "classification.owner_probability_completeness": 1,
+    "classification.source": 1, "classification.decision_source": 1,
+    "classification.deepseek_status": 1, "classification.deepseek_raw": 1,
+    "classification.trace.manual_review_approved": 1,
+    "classification.trace.deepseek_raw": 1,
+    "classification.version": 1, "classification.reason": 1,
+    "classification.evidence": 1,
+    "classification.publisher_profile_context": 1,
+    "classification.pipeline_state": 1, "classification.pipeline_complete": 1,
+    "gestion.ejecutivo_id": 1, "gestion.estado": 1,
+    "gestion.semantic_review_hold": 1, "gestion.exclude_from_assignment": 1,
+    "gestion.fecha_ultima_gestion": 1, "gestion.notas": 1,
+    "gestion.actividades": 1,
+}
 _DISTRIBUTION_RUN_LOCK = threading.Lock()
 
 
@@ -2857,6 +2836,41 @@ def _distribution_unassigned_clause() -> dict:
     normal pool. The atomic id guard is the source of truth for concurrency.
     """
     return distribution_unassigned_clause()
+
+
+def _distribution_candidate_query(candidate_listing_ids=None, candidate_portal=None) -> dict:
+    """Build a bounded candidate query without broadening a portal-scoped run."""
+    portal_scope = str(candidate_portal or "").strip().lower()
+    if portal_scope and portal_scope not in GLOBAL_PORTAL_ALIASES:
+        raise ValueError(f"Unsupported candidate_portal scope: {portal_scope}")
+    query = {
+        "gestion.semantic_review_hold": {"$ne": True},
+        "classification.state": {"$in": list(DISTRIBUTION_STATES)},
+    }
+    if portal_scope:
+        # TOCTOC's exact scope uses the leading fields of the existing unique
+        # (origen, listing_id) index; do not retain the global cross-portal $or.
+        query["origen"] = portal_scope
+        query.update(_distribution_unassigned_clause())
+    else:
+        # Both clauses use $or internally. Keep them under separate $and
+        # elements so the portal scope is not silently overwritten by the
+        # unassigned-state clause (or vice versa).
+        query["$and"] = [
+            {"$or": [
+                {"origen": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+                {"source_portal": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
+            ]},
+            _distribution_unassigned_clause(),
+        ]
+    scoped_listing_ids = sorted(set(
+        str(value).strip()
+        for value in (candidate_listing_ids or [])
+        if value not in (None, "") and str(value).strip()
+    ))
+    if scoped_listing_ids:
+        query["listing_id"] = {"$in": scoped_listing_ids}
+    return query
 
 
 def _distribution_sort_key(document: dict) -> tuple:
@@ -2978,8 +2992,16 @@ def distribute_sourced_leads(
     batch_size=None,
     distribution_lock=None,
     dry_run=False,
+    target_executive_id=None,
+    candidate_listing_ids=None,
+    candidate_portal=None,
 ):
-    """Distribute one bounded, balanced batch from the global portal pool."""
+    """Distribute one bounded batch, optionally scoped to a run and recipient.
+
+    The optional filters narrow the candidate/user reads only; every candidate
+    still passes the same quality, identity, territory, age, capacity, lock,
+    and atomic assignment gates as the global distribution.
+    """
     started_at = datetime.now(timezone.utc)
     run_id = str(uuid.uuid4())
     requested_batch = int(batch_size or Config.CAPTACION_DISTRIBUTION_BATCH_SIZE)
@@ -2989,7 +3011,7 @@ def distribute_sourced_leads(
         "started_at": started_at,
         "source": str(trigger_source),
         "dry_run": bool(dry_run),
-        "portal_scope": sorted(GLOBAL_PORTAL_ALIASES),
+        "portal_scope": [str(candidate_portal).strip().lower()] if candidate_portal else sorted(GLOBAL_PORTAL_ALIASES),
         "batch_requested": requested_batch,
         "batch_selected": 0,
         "evaluated": 0,
@@ -3018,8 +3040,17 @@ def distribute_sourced_leads(
         "skipped_stale_for_auto_distribution": 0,
         "skipped_capture_date_unavailable": 0,
         "errors": 0,
+        "target_executive_id": str(target_executive_id or ""),
+        "candidate_listing_ids": len(set(str(value) for value in (candidate_listing_ids or []) if value)),
+        "failure_stage": "",
+        "phase_ms": {},
     }
-    db = get_db()
+    try:
+        db = get_db()
+    except Exception:
+        metrics["failure_stage"] = "get_db"
+        logger.exception("[DISTRIBUCION] Mongo unavailable before distribution run=%s", run_id)
+        raise
     local_lock_acquired = False
     distributed_lock = distribution_lock
     owns_distributed_lock = False
@@ -3041,13 +3072,24 @@ def distribute_sourced_leads(
             _DISTRIBUTION_RUN_LOCK.release()
             return 0
         metrics["lock_acquired"] = True
+    distribution_stage = "get_collections"
     try:
         coll = get_captacion_collection(db)
         events_coll = db["captacion_management_events"]
-        agents_raw = list(db["usuarios"].find({
+        agents_query = {
             "is_active": True,
             "comunas_interes_norm": {"$exists": True, "$ne": []},
-        }))
+        }
+        if target_executive_id:
+            target_values = [target_executive_id]
+            target_text = str(target_executive_id)
+            if ObjectId.is_valid(target_text):
+                target_values.append(ObjectId(target_text))
+            agents_query["_id"] = {"$in": target_values}
+        distribution_stage = "active_executives_query"
+        phase_start = _perf_time.perf_counter()
+        agents_raw = list(db["usuarios"].find(agents_query))
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
         agents_raw = [raw for raw in agents_raw if is_captacion_distribution_executive(raw)]
         agents = []
         for raw in agents_raw:
@@ -3061,12 +3103,18 @@ def distribute_sourced_leads(
             return 0
 
         agent_by_id = {agent["id"]: agent for agent in agents}
+        distribution_stage = "open_workloads_query"
+        phase_start = _perf_time.perf_counter()
         open_workload = _distribution_open_workloads(db, list(agent_by_id))
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
+        distribution_stage = "active_workable_backlog_query"
+        phase_start = _perf_time.perf_counter()
         active_workable_backlog = active_workable_backlogs(
             db,
             list(agent_by_id),
             events_coll=events_coll,
         )
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
         metrics["active_agents"] = len(agents)
         metrics["open_workload_before"] = dict(open_workload)
         metrics["active_workable_backlog_before"] = dict(active_workable_backlog)
@@ -3074,28 +3122,52 @@ def distribute_sourced_leads(
         max_per_agent = int(Config.CAPTACION_DISTRIBUTION_MAX_PER_EXECUTIVE)
         batch_size = max(1, requested_batch)
 
-        eligible_query = {
-            "$or": [
-                {"origen": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
-                {"source_portal": {"$in": list(GLOBAL_PORTAL_ALIASES)}},
-            ],
-            "gestion.semantic_review_hold": {"$ne": True},
-            "classification.state": {"$in": list(DISTRIBUTION_STATES)},
-            **_distribution_unassigned_clause(),
-        }
-        raw_props = list(coll.find(eligible_query))
+        eligible_query = _distribution_candidate_query(
+            candidate_listing_ids=candidate_listing_ids,
+            candidate_portal=candidate_portal,
+        )
+        distribution_stage = "candidate_properties_query"
+        phase_start = _perf_time.perf_counter()
+        raw_props = list(coll.find(eligible_query, DISTRIBUTION_CANDIDATE_PROJECTION).batch_size(100))
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
         metrics["evaluated"] = len(raw_props)
+        distribution_stage = "batch_identity_lookups"
+        phase_start = _perf_time.perf_counter()
+        phone_matches = get_contact_identity_evidence_batch(db, raw_props)
+        registry_matches = resolve_broker_identity_batch(db, raw_props)
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
+        distribution_stage = "candidate_management_events_query"
+        phase_start = _perf_time.perf_counter()
+        event_clauses = []
+        property_ids = [str(prop.get("_id")) for prop in raw_props if prop.get("_id") is not None]
+        listing_ids = [str(prop.get("listing_id")) for prop in raw_props if prop.get("listing_id") not in (None, "")]
+        listing_urls = [str(prop.get("url")) for prop in raw_props if prop.get("url")]
+        if property_ids:
+            event_clauses.append({"property_id": {"$in": property_ids}})
+        if listing_ids:
+            event_clauses.append({"listing_id": {"$in": listing_ids}})
+        if listing_urls:
+            event_clauses.append({"url": {"$in": listing_urls}})
+        managed_event_keys = set()
+        if event_clauses:
+            for event in events_coll.find({"$or": event_clauses}, {"property_id": 1, "listing_id": 1, "url": 1}):
+                for field in ("property_id", "listing_id", "url"):
+                    value = event.get(field)
+                    if value not in (None, ""):
+                        managed_event_keys.add((field, str(value)))
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
+        distribution_stage = "candidate_gate_merge"
         props = []
-        for prop in raw_props:
+        from captacion_distribution import has_management_evidence
+        for prop, identity, broker_match in zip(raw_props, phone_matches, registry_matches):
             if is_terminal_state((prop.get("gestion") or {}).get("estado")):
                 metrics["skipped_terminal"] += 1
                 continue
-            identity = get_contact_identity_evidence(db, prop) if phone_learning_global_lookup_enabled() else None
             decision = can_assign_property(
                 prop,
                 {
                     "contact_identity": identity,
-                    "broker_identity_match": resolve_broker_identity(db, prop),
+                    "broker_identity_match": broker_match,
                 },
             )
             if not decision["assignment_ready"]:
@@ -3104,8 +3176,19 @@ def distribute_sourced_leads(
                 else:
                     metrics["skipped_by_quality"] += 1
                 continue
-            from captacion_distribution import has_management_evidence
-            has_ev, _ = has_management_evidence(prop, events_coll)
+            gestion = prop.get("gestion") or {}
+            legacy_managed = bool(
+                gestion.get("estado") not in {None, "", "NUEVO", "DETECTADO"}
+                or gestion.get("fecha_ultima_gestion") is not None
+                or gestion.get("notas")
+                or gestion.get("actividades")
+            )
+            has_event = any((field, str(value)) in managed_event_keys for field, value in (
+                ("property_id", prop.get("_id")),
+                ("listing_id", prop.get("listing_id")),
+                ("url", prop.get("url")),
+            ) if value not in (None, ""))
+            has_ev = legacy_managed or has_event
             if has_ev:
                 metrics["skipped_managed"] += 1
                 continue
@@ -3121,6 +3204,8 @@ def distribute_sourced_leads(
                 continue
             props.append(prop)
         metrics["eligible_found"] = len(props)
+        distribution_stage = "bounded_plan"
+        phase_start = _perf_time.perf_counter()
         plan, plan_stats = _build_bounded_distribution_plan(
             props,
             agents,
@@ -3133,6 +3218,7 @@ def distribute_sourced_leads(
         metrics["batch_selected"] = len(plan)
         metrics["skipped_no_coverage"] = plan_stats["no_coverage"]
         metrics["skipped_by_capacity"] = plan_stats["capacity"]
+        metrics["phase_ms"][distribution_stage] = round((_perf_time.perf_counter() - phase_start) * 1000, 1)
         now = datetime.now(timezone.utc)
         run_load = {}
 
@@ -3168,6 +3254,7 @@ def distribute_sourced_leads(
 
         for prop, best_id in plan:
             try:
+                distribution_stage = f"atomic_assignment:{prop.get('listing_id') or prop.get('_id')}"
                 status = _atomic_assign_distribution_candidate(
                     db,
                     coll,
@@ -3220,6 +3307,14 @@ def distribute_sourced_leads(
             metrics["skipped_by_capacity"],
         )
         return metrics["assigned"]
+    except Exception:
+        metrics["failure_stage"] = distribution_stage
+        logger.exception(
+            "[DISTRIBUCION] run=%s failed_stage=%s target_executive=%s scoped_candidates=%s",
+            run_id, distribution_stage, target_executive_id or "GLOBAL",
+            metrics.get("candidate_listing_ids", 0),
+        )
+        raise
     finally:
         metrics["finished_at"] = datetime.now(timezone.utc)
         metrics["duration_ms"] = round((metrics["finished_at"] - started_at).total_seconds() * 1000, 1)

@@ -287,6 +287,10 @@ def _extract_from_next_data(next_data: dict[str, Any], source_url: str) -> dict[
         if isinstance(detail, dict) and detail:
             detail_id = detail.get("idProperty")
             if detail_id not in (None, ""):
+                previous_listing_id = str(fields.get("listing_id") or "").strip()
+                if previous_listing_id and previous_listing_id != str(detail_id):
+                    fields["source_listing_id"] = previous_listing_id
+                    fields["source_listing_id_source"] = "discovery_url_or_search_payload"
                 fields["listing_id"] = str(detail_id)
                 fields["listing_id_source"] = "detail_next_data"
             if detail.get("title") and not fields.get("title"):

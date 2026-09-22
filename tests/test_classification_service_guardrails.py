@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ai_cost_guard import AIBudget, AICostGuard
 from captacion_assignment_eligibility import can_assign_property
-from classification_cache import ClassificationCache
+from classification_cache import ClassificationCache, classification_fingerprint
 from classification_service import classify_capture
 
 # The scraper's legacy modules use an unqualified ``config`` import while the
@@ -151,6 +151,105 @@ def test_structural_broker_never_calls_deepseek():
     )
     assert result["classification"]["final"] == "BROKER_CONFIRMED"
     assert calls == []
+
+
+def test_toctoc_corredorasr_url_is_hard_broker_before_detail_or_ai():
+    calls = []
+    result = classify_capture(
+        _doc(url="https://www.toctoc.com/propiedades/compracorredorasr/casa/maipu/test/123"),
+        config=_config(), health=HEALTHY,
+        deepseek_callable=lambda *a, **k: calls.append(1),
+    )
+    classification = result["classification"]
+    assert classification["final"] == "BROKER_CONFIRMED"
+    assert classification["state"] == "CORREDOR_SEGURO"
+    assert classification["assignment_ready"] is False
+    assert classification["hard_broker_signal"] is True
+    assert calls == []
+
+
+def test_toctoc_compranuevo_url_is_out_of_scope_before_detail_or_ai():
+    calls = []
+    result = classify_capture(
+        _doc(url="https://www.toctoc.com/propiedades/compranuevo/casa/maipu/proyecto/123"),
+        config=_config(), health=HEALTHY,
+        deepseek_callable=lambda *a, **k: calls.append(1),
+    )
+    classification = result["classification"]
+    assert classification["final"] == "OUT_OF_SCOPE_NEW_DEVELOPMENT"
+    assert classification["assignment_ready"] is False
+    assert calls == []
+
+
+def test_toctoc_compraparticularsr_url_is_only_owner_candidate_evidence():
+    calls = []
+    result = classify_capture(
+        _doc(url="https://www.toctoc.com/propiedades/compraparticularsr/casa/maipu/test/123"),
+        config=_config(), health=HEALTHY,
+        deepseek_callable=lambda *a, **k: calls.append(1),
+    )
+    classification = result["classification"]
+    assert classification["final"] == "UNCERTAIN"
+    assert classification["final"] != "BROKER_CONFIRMED"
+    assert classification["assignment_ready"] is False
+
+
+def test_idtype1_particular_metadata_does_not_short_circuit_legacy_ai_residual():
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append(1)
+        return _valid_owner_result()
+
+    result = classify_capture(
+        _doc(
+            seller_id_type_raw="1",
+            publicador_visible="Particular",
+            description="Casa usada, consultar por disponibilidad y coordinar visita.",
+        ),
+        config=_config(),
+        health=HEALTHY,
+        deepseek_callable=fake,
+    )
+    assert calls == [1]
+    assert result["ai_called"] is True
+    assert result["classification"]["final"] == "OWNER_PROBABLE"
+
+
+def test_stale_idtype1_owner_cache_is_ignored_and_sent_through_current_residual():
+    document = _doc(
+        seller_id_type_raw="1",
+        publicador_visible="Particular",
+        description="Casa usada, consultar por disponibilidad y coordinar visita.",
+    )
+    cache = ClassificationCache()
+    cache.put(
+        classification_fingerprint(document),
+        {
+            "final": "OWNER_PROBABLE",
+            "state": "DUEÑO_PROBABLE",
+            "source": "toctoc_id_type",
+            "reason": "TOCTOC_IDTYPE_1_OWNER_CANDIDATE",
+            "final_reason": "TOCTOC_IDTYPE_1_OWNER_CANDIDATE",
+        },
+        input_payload=document,
+    )
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append(1)
+        return _valid_owner_result()
+
+    result = classify_capture(
+        document,
+        config=_config(),
+        health=HEALTHY,
+        cache=cache,
+        deepseek_callable=fake,
+    )
+    assert result["cache_hit"] is False
+    assert result["ai_called"] is True
+    assert calls == [1]
 
 
 def test_extractor_degraded_makes_zero_calls():

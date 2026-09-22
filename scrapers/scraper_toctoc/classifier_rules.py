@@ -222,23 +222,19 @@ def classify_structural_broker(extracted: dict[str, Any]) -> dict[str, Any] | No
                 "evidence_source": "portal_structure" if is_structural else "text_rules",
             }
 
-        # Weak/project language is evidence for review only.  It must not be
-        # promoted to CORREDOR_PROBABLE because phrases such as
-        # "entrega inmediata" and "agenda tu visita" are also common in
-        # genuine owner listings.
+        # Preserve the pre-e2c838ea rule result. This is the historical
+        # CORREDOR_PROBABLE tier; it is not a hard veto and remains distinct
+        # from CORREDOR_SEGURO.
         if has_project:
             level = "weak_professional" if has_weak else "project_language"
             return {
-                "state": "INCONCLUSIVE",
-                "confidence": 0.35,
-                "reason": "Señales textuales débiles/proyecto; no constituyen veto de corredor.",
+                "state": "CORREDOR_PROBABLE",
+                "confidence": 0.85 if has_weak else 0.7,
+                "reason": "El contenido sugiere actividad profesional o de proyecto inmobiliario.",
                 "evidence": evidence[:10],
                 "source": "structural_rules",
                 "decision_pattern": level,
                 "signals": signals,
-                "evidence_type": "WEAK_TEXT_SIGNAL",
-                "evidence_strength": "WEAK",
-                "evidence_source": "text_rules",
             }
     return None
 
@@ -573,18 +569,9 @@ def classify_toctoc_id_type(extracted: dict[str, Any]) -> dict[str, Any] | None:
         or ""
     ).strip()
     if raw == "1":
-        return {
-            "state": "DUEÑO_PROBABLE",
-            "confidence": 0.89,
-            "reason": "TOCTOC client.idType=1: anunciante particular.",
-            "evidence": ["client.idType=1"],
-            "source": "toctoc_id_type",
-            "decision_source": "portal_structure",
-            "evidence_type": "EXPLICIT_OWNER_STRUCTURAL",
-            "evidence_strength": "EXPLICIT_OWNER_STRUCTURAL",
-            "evidence_source": "detail_next_data.client.idType",
-            "owner_structural_evidence": True,
-        }
+        # idType=1 identifies a portal account type ("particular"); before
+        # e2c838ea it was metadata, not an automatic owner classification.
+        return None
     if raw == "2":
         return {
             "state": "CORREDOR_SEGURO",
@@ -616,16 +603,11 @@ def classify_toctoc_id_type(extracted: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def is_strong_broker_rule(result: dict[str, Any] | None) -> bool:
-    """Only HARD/STRONG evidence may enter the strong-text gate."""
+    """Preserve the legacy deterministic broker tiers used by the runner."""
     if not result:
         return False
     state = str(result.get("state") or "").upper()
-    strength = str(result.get("evidence_strength") or "").upper()
-    if strength in {"HARD", "STRONG"}:
-        return state.startswith("CORREDOR")
-    # Preserve legacy hard-safe results that predate evidence_strength, but
-    # never infer strength from CORREDOR_PROBABLE alone.
-    return state == "CORREDOR_SEGURO" and not strength
+    return state in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"}
 
 
 def classify_with_rules(extracted: dict[str, Any]) -> dict[str, Any]:

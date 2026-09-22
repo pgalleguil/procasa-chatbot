@@ -243,7 +243,6 @@ def canonicalize_classification(
     registry_matched = bool((registry_match or {}).get("matched"))
     registry_conflict = bool((registry_match or {}).get("conflict"))
     id_type = _toctoc_id_type(document)
-    owner_structural = id_type == "1"
     broker_structural = id_type == "2"
     new_development_structural = id_type == "3"
     current = (
@@ -252,7 +251,34 @@ def canonicalize_classification(
         or classification.get("state")
         or classification.get("rule_state")
     )
+    prior_reason = str(
+        classification.get("final_reason")
+        or classification.get("reason")
+        or ""
+    ).strip().upper()
+    prior_source = str(classification.get("source") or "").strip().lower()
+    if (
+        id_type == "1"
+        and prior_reason == "TOCTOC_IDTYPE_1_OWNER_CANDIDATE"
+        and prior_source == "toctoc_id_type"
+    ):
+        # Do not preserve the automatic owner promotion introduced by
+        # e2c838ea when canonicalizing an older persisted result.
+        current = "INCIERTO"
+        for stale_key in (
+            "owner_probability",
+            "owner_probability_source",
+            "canonical_confidence",
+            "confidence",
+        ):
+            classification.pop(stale_key, None)
     evidence_strength = str(classification.get("evidence_strength") or "").upper()
+    declared_hard_veto = (
+        str(classification.get("hard_veto") or "").upper() == "PROFESSIONAL"
+        or classification.get("professional_hard_veto") is True
+        or classification.get("hard_broker_veto") is True
+        or classification.get("hard_broker_signal") is True
+    )
     declared_conflict = bool(
         classification.get("classification_conflict")
         or str(classification.get("conflict_state") or "").upper() == "IDENTITY_CONFLICT"
@@ -264,30 +290,27 @@ def canonicalize_classification(
             or (evidence_strength == "" and _state(current) == "CORREDOR_SEGURO")
         )
     )
-    broker_evidence_for_owner = bool(
-        structural
-        or broker_structural
-        or registry_matched
-        or registry_conflict
-        or human_broker_match
-        or cross_portal_match
-        or phone_human_broker
-        or effective_strong_text
-    )
-    if declared_conflict:
+    hard_broker_veto = bool(structural or declared_hard_veto)
+    # A deterministic hard broker veto is authoritative, including when the
+    # portal also labels the record as a particular.  Owner-probability and
+    # conflict metadata must not erase the explicit commercial evidence.
+    if hard_broker_veto:
+        final = "BROKER_CONFIRMED"
+        final_reason = (
+            structural.get("reason_code") if structural
+            else str(classification.get("hard_broker_signal_reason") or "STRUCTURAL_BROKER_VETO")
+        )
+        hard_evidence = (
+            structural.get("evidence") if structural
+            else classification.get("hard_broker_signal_evidence")
+            or classification.get("final_evidence")
+            or "PROFESSIONAL_HARD_VETO"
+        )
+        final_evidence = _as_evidence(hard_evidence)
+    elif declared_conflict:
         final = "UNCERTAIN"
         final_reason = reason or "IDENTITY_CONFLICT"
         final_evidence = list(evidence or classification.get("evidence") or [])
-    elif owner_structural and broker_evidence_for_owner:
-        final = "UNCERTAIN"
-        final_reason = "IDENTITY_CONFLICT"
-        final_evidence = ["client.idType=1"]
-        if structural:
-            final_evidence.append(structural.get("evidence") or structural.get("reason_code"))
-        if registry_matched or registry_conflict:
-            final_evidence.extend((registry_match or {}).get("evidence") or [])
-        if effective_strong_text:
-            final_evidence.extend(evidence or [])
     elif new_development_structural or _state(current) in {"OUT_OF_SCOPE_NEW_DEVELOPMENT", "FUERA_DE_ALCANCE"}:
         final = "OUT_OF_SCOPE_NEW_DEVELOPMENT"
         final_reason = reason or "OUT_OF_SCOPE_NEW_DEVELOPMENT"
@@ -313,10 +336,6 @@ def canonicalize_classification(
         final = "UNCERTAIN"
         final_reason = "BROKER_IDENTITY_CONFLICT"
         final_evidence = list((registry_match or {}).get("evidence") or [])
-    elif owner_structural:
-        final = "OWNER_PROBABLE"
-        final_reason = "TOCTOC_IDTYPE_1_OWNER_CANDIDATE"
-        final_evidence = ["client.idType=1"]
     elif effective_strong_text:
         final = "BROKER_CONFIRMED"
         final_reason = "STRONG_TEXT_BROKER"
@@ -341,10 +360,10 @@ def canonicalize_classification(
         "final_reason": final_reason,
         "final_evidence": final_evidence,
         "canonical_classification_version": CANONICAL_CLASSIFICATION_VERSION,
-        "hard_broker_veto": bool(structural),
+        "hard_broker_veto": hard_broker_veto,
         "broker_identity_match": registry_matched or human_broker_match or cross_portal_match or phone_human_broker,
     })
-    if declared_conflict or (owner_structural and broker_evidence_for_owner):
+    if not hard_broker_veto and declared_conflict:
         classification.update({
             "classification_conflict": True,
             "conflict_state": "IDENTITY_CONFLICT",
@@ -364,12 +383,6 @@ def canonicalize_classification(
             "evidence_strength": "HARD",
             "evidence_source": "detail_next_data.client.idType",
         })
-    elif owner_structural:
-        classification.update({
-            "evidence_type": "EXPLICIT_OWNER_STRUCTURAL",
-            "evidence_strength": "EXPLICIT_OWNER_STRUCTURAL",
-            "evidence_source": "detail_next_data.client.idType",
-        })
     elif effective_strong_text:
         classification.update({
             "evidence_type": "STRONG_TEXT_BROKER",
@@ -382,7 +395,7 @@ def canonicalize_classification(
             "evidence_strength": evidence_strength or "NONE",
             "evidence_source": classification.get("source") or "classifier",
         })
-    if structural:
+    if hard_broker_veto:
         classification["hard_veto"] = "PROFESSIONAL"
         classification["professional_hard_veto"] = True
     return classification

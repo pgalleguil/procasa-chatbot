@@ -1306,6 +1306,103 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 break
         return list(all_hrefs)
 
+    def _parse_card_price_text(text: str) -> dict:
+        """Parse only the price rendered inside one listing card.
+
+        This intentionally does not consult NextData or any other record.  A
+        card's href and price must come from the same rendered DOM node.
+        """
+        raw = re.sub(r"\s+", " ", str(text or "")).strip()
+        uf_match = re.search(r"\bUF\s*([0-9][0-9.\s]*(?:,[0-9]+)?)", raw, re.I)
+        clp_match = re.search(r"(?:^|[/| ])\$\s*([0-9][0-9.\s]*(?:,[0-9]+)?)", raw, re.I)
+        price_uf = _parse_numeric_amount(uf_match.group(1)) if uf_match else None
+        price_clp = _parse_numeric_amount(clp_match.group(1)) if clp_match else None
+        if price_clp is not None:
+            currency = "CLP"
+            status = "ABOVE_MIN_PRICE" if price_clp >= 100_000_000 else "BELOW_MIN_PRICE"
+        elif price_uf is not None and uf_valor_clp > 0:
+            price_clp = price_uf * uf_valor_clp
+            currency = "UF"
+            status = "ABOVE_MIN_PRICE" if price_clp >= 100_000_000 else "BELOW_MIN_PRICE"
+        elif price_uf is not None:
+            currency = "UF"
+            status = "PRICE_NOT_AVAILABLE"
+        else:
+            currency = ""
+            status = "PRICE_NOT_AVAILABLE"
+        return {
+            "card_price_raw": raw,
+            "card_currency": currency,
+            "card_price_uf": price_uf,
+            "card_price_clp": price_clp,
+            "card_price_status": status,
+            "price_source": "LISTING_CARD",
+        }
+
+    def _scroll_and_extract_cards(pg, base):
+        """Extract href and visible metadata from the same rendered card.
+
+        The browser DOM is the sole source here.  In particular, this does
+        not join a DOM href to an embedded/SSR result by position or ID.
+        """
+        latest: dict[str, dict] = {}
+        for _ in range(10):
+            try:
+                rows = pg.evaluate(
+                    """() => {
+                      const isListing = href => {
+                        try {
+                          const u = new URL(href, location.href);
+                          if (u.pathname.includes('/resultados/')) return false;
+                          return /\\/(propiedades|propiedad|venta|arriendo)\\//i.test(u.pathname)
+                            && /(\\/\\d+$|[-_]\\d+$|\\/[a-z]_[a-f0-9]{20,}$|\\/[a-f0-9]{20,}$)/i.test(u.pathname);
+                        } catch (_) { return false; }
+                      };
+                      const candidates = [];
+                      for (const a of document.querySelectorAll('a[href]')) {
+                        if (!isListing(a.href)) continue;
+                        let node = a;
+                        let card = null;
+                        for (let i = 0; i < 10 && node; i++, node = node.parentElement) {
+                          const cls = String(node.className || '');
+                          const testid = String(node.getAttribute('data-testid') || '');
+                          if (node.tagName === 'ARTICLE' || /card|contenedorCard-ds/i.test(cls + ' ' + testid)) {
+                            if ((node.innerText || '').trim()) { card = node; break; }
+                          }
+                        }
+                        if (!card) card = a.parentElement || a;
+                        candidates.push({
+                          href: a.href,
+                          card_text: String(card.innerText || a.innerText || '').trim(),
+                          card_class: String(card.className || ''),
+                          card_testid: String(card.getAttribute('data-testid') || '')
+                        });
+                      }
+                      return candidates;
+                    }"""
+                ) or []
+                for row in rows:
+                    href = urljoin(base, str(row.get("href") or "").strip())
+                    if not is_listing_detail_url(href):
+                        continue
+                    key = _path_key(href)
+                    previous = latest.get(key)
+                    if previous is None or len(row.get("card_text", "")) > len(previous.get("card_text", "")):
+                        latest[key] = {
+                            "url": href,
+                            **_parse_card_price_text(row.get("card_text", "")),
+                            "card_class": row.get("card_class", ""),
+                            "card_testid": row.get("card_testid", ""),
+                        }
+            except Exception:
+                pass
+            try:
+                pg.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                pg.wait_for_timeout(600)
+            except Exception:
+                break
+        return list(latest.values())
+
     def _prepare_live_scope(pg, seo_url):
         """Navigate through the real SPA location selector.
 
@@ -1648,7 +1745,10 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                         break
 
                 embedded_records, diagnostics = _extract_page_records(raw_html, current_url)
-                hrefs = _scroll_and_extract(page, current_url)
+                card_records = _scroll_and_extract_cards(page, current_url)
+                hrefs = [item["url"] for item in card_records if item.get("url")]
+                if not hrefs:
+                    hrefs = _scroll_and_extract(page, current_url)
                 visible_total = _reported_results_from_visible_text(visible_result_text)
                 if visible_total and not diagnostics.get("expected_results"):
                     diagnostics = dict(diagnostics)
@@ -1677,6 +1777,26 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     diagnostics["method"] = "browser_results_endpoint"
                 if hrefs and embedded_records:
                     records = _merge_embedded_metadata(records, embedded_records)
+                card_by_path = {
+                    _path_key(item.get("url", "")): item
+                    for item in card_records
+                    if item.get("url")
+                }
+                for record in records:
+                    card = card_by_path.get(_path_key(record.get("url", "")))
+                    if card:
+                        # Keep the card evidence separate from embedded data;
+                        # no position/ID join is used to obtain the price.
+                        record.update({
+                            "card_price_raw": card.get("card_price_raw", ""),
+                            "card_currency": card.get("card_currency", ""),
+                            "card_price_uf": card.get("card_price_uf"),
+                            "card_price_clp": card.get("card_price_clp"),
+                            "card_price_status": card.get("card_price_status", "PRICE_NOT_AVAILABLE"),
+                            "price_source": "LISTING_CARD",
+                            "card_class": card.get("card_class", ""),
+                            "card_testid": card.get("card_testid", ""),
+                        })
                 records = [record for record in records if _matches_requested_state(record, estado)]
                 page_ids = [r["listing_id"] for r in records if r.get("listing_id")]
                 signature = _page_signature(page_ids) if page_ids else _page_signature([r["url"] for r in records])

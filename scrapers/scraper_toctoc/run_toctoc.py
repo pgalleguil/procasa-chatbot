@@ -167,8 +167,10 @@ def cmd_discover(args, config):
         comuna=args.comuna,
         estado=getattr(args, "estado", None),
         publicador=getattr(args, "publicador", None),
-        precio_desde=getattr(args, "precio_desde", None),
-        precio_hasta=getattr(args, "precio_hasta", None),
+        # Discovery is intentionally price-agnostic. Price is authoritative
+        # only after the canonical detail fetch in cmd_process.
+        precio_desde=None,
+        precio_hasta=None,
         proxy_manager=proxy_manager,
     )
     print(f"Discovered {len(discovered)} URLs")
@@ -199,6 +201,12 @@ def cmd_process(args, config):
     batch = discovered[args.offset:args.offset + args.limit]
     print(f"Processing {len(batch)} records (offset={args.offset}, limit={args.limit})")
     mongo = MongoStore(config) if args.write_db else None
+    if mongo is not None and not args.dry_run:
+        # Verify the idempotent unique index once per batch, not once per item.
+        # Repeating listIndexes for every property caused avoidable Mongo
+        # round-trips immediately before persistence.
+        mongo.connect()
+        mongo.ensure_index()
     processed: list[dict] = []
     all_dls: list[tuple[dict, DownloadResult]] = []
     _pw = None
@@ -222,8 +230,26 @@ def cmd_process(args, config):
         item["discovery_decision_reason"] = f"url_format={url_format}"
         if decision == SKIP_PROFESSIONAL and not getattr(args, "include_professional", False):
             pre_filter_results["skipped"] += 1
-            # Still add to processed as skipped (no download)
+            # Persist the canonical deterministic decision without opening the
+            # detail page.  Exact Toctoc URL families are sufficient for the
+            # broker veto / new-development scope gate.
+            discovery_classification = classify_capture(
+                {
+                    **item,
+                    "url": item.get("url", ""),
+                    "canonical_url": item.get("canonical_url") or item.get("url", ""),
+                    "source_url": item.get("url", ""),
+                    "portal": "TOCTOC",
+                    "source_portal": "toctoc",
+                    "origen": "toctoc",
+                    "url_format": url_format,
+                },
+                config=config,
+                health={"healthy": True, "degraded": False, "sample_size": 0},
+                allow_real_ai=False,
+            )["classification"]
             processed.append({**item,
+                "classification": discovery_classification,
                 "processing_status": "SKIP_PROFESSIONAL",
                 "processed_at": _utcnow(), "batch_id": batch_id,
                 "source": "owner_hunt", "origen": "toctoc", "source_portal": "toctoc",
@@ -403,6 +429,7 @@ def cmd_process(args, config):
                     if traffic_limit_reached:
                         print(f"  Traffic limit reached, stopping.")
                         break
+                    dl = None
                     try:
                         dl = download_html(url, config, batch_id=batch_id, attempt=1, session=session, proxy=p_url)
                         if dl:
@@ -411,27 +438,48 @@ def cmd_process(args, config):
                             if dl.validation_status == "BLOCKED":
                                 proxy_bytes["retry"] += dl.wire_bytes
                                 current_session["reason"] = "blocked"
-                                p_url, session = _open_block()
+                                if attempt < 2:
+                                    p_url, session = _open_block()
+                                    continue
+                                pw_dl = _download_with_pw(url, html_path_for_url(url, config, batch_id=batch_id), p_url)
+                                if pw_dl and pw_dl.validation_status in {"OK", "LISTING_REMOVED"}:
+                                    dl = pw_dl
                                 continue
                             if dl.validation_status in {"INVALID", "HTTP_ERROR", "HTML_CHANGED"}:
                                 proxy_bytes["retry"] += dl.wire_bytes
+                                current_session["reason"] = "invalid_response"
+                                if attempt < 2:
+                                    p_url, session = _open_block()
+                                    continue
+                                # Use the existing real-browser fallback once
+                                # after bounded proxy/downloader retries. This
+                                # is ordinary navigation, not a challenge bypass.
+                                pw_dl = _download_with_pw(url, html_path_for_url(url, config, batch_id=batch_id), p_url)
+                                if pw_dl and pw_dl.validation_status in {"OK", "LISTING_REMOVED"}:
+                                    dl = pw_dl
                         break
                     except Exception as e:
                         err = str(e).lower()
                         if any(k in err for k in ["proxy", "connection", "timeout", "prematurely", "reset", "remote end", "403", "forbidden", "429"]):
                             proxy_bytes["retry"] += attempt_bytes or 100000
                             current_session["reason"] = "connection_error"
-                            p_url, session = _open_block()
-                            continue
+                            if attempt < 2:
+                                p_url, session = _open_block()
+                                continue
+                            dl = _download_with_pw(url, html_path_for_url(url, config, batch_id=batch_id), p_url)
+                            if dl and dl.html:
+                                proxy_bytes["playwright"] += len(dl.html)
+                            break
                         print(f"  Proxy error, trying Playwright...")
                         dl = _download_with_pw(url, html_path_for_url(url, config, batch_id=batch_id), p_url)
                         if dl and dl.html:
                             proxy_bytes["playwright"] += len(dl.html)
-                        if not dl or not dl.html:
+                        if not dl or dl.validation_status not in {"OK", "LISTING_REMOVED"}:
                             proxy_bytes["retry"] += attempt_bytes or 100000
                             current_session["reason"] = "playwright_failed"
-                            p_url, session = _open_block()
-                            continue
+                            if attempt < 2:
+                                p_url, session = _open_block()
+                                continue
                         break
 
             # Save HTML + metadata
@@ -685,6 +733,7 @@ def cmd_process(args, config):
         item_metadata = {
             k: v for k, v in item.items()
             if v not in (None, "", "N/A", "DESCONOCIDO")
+            and k not in {"price_source", "price_clp", "price_uf", "precio_clp", "precio_uf"}
             and not (k in {"listing_id", "listing_id_source", "comuna", "region"} and enriched.get(k))
         }
         raw_record = {**enriched, **item_metadata,
@@ -707,7 +756,6 @@ def cmd_process(args, config):
 
         if args.write_db and mongo and not args.dry_run:
             try:
-                mongo.ensure_index(); mongo.connect()
                 r = mongo.upsert_listing(raw_record)
                 action = "inserted" if r["upserted_id"] else "updated"
                 print(f"  MongoDB: {action} (matched={r['matched_count']}, modified={r['modified_count']})")
@@ -783,7 +831,9 @@ def _run_post_scrape_distribution():
     """Dispara la distribucion de captaciones nuevas tras persistir el lote."""
     import subprocess
     import sys as _sys
-    root = Path(__file__).resolve().parent.parent
+    # ``run_toctoc.py`` lives under ``scrapers/scraper_toctoc``; the shared
+    # launcher is at the repository root, not under ``scrapers/scripts``.
+    root = Path(__file__).resolve().parents[2]
     script = root / "scripts" / "run_distribution_after_scrape.py"
     if not script.exists():
         print(f"  [POST-SCRAPE] Script de distribucion no encontrado: {script}")
@@ -831,8 +881,10 @@ def cmd_run_full(args, config):
         comuna=args.comuna,
         estado=getattr(args, "estado", None),
         publicador=getattr(args, "publicador", None),
-        precio_desde=getattr(args, "precio_desde", None),
-        precio_hasta=getattr(args, "precio_hasta", None),
+        # Do not consume discovery results with card prices. The detail page
+        # is the sole source for the Hernan price gate.
+        precio_desde=None,
+        precio_hasta=None,
         proxy_manager=proxy_manager,
     )
     print(f"Discovered {len(discovered)} URLs")

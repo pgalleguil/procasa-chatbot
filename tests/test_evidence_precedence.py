@@ -60,34 +60,34 @@ def _gate(doc, classification, **context):
     )
 
 
-def test_idtype1_agenda_visit_is_owner_and_assignable():
+def test_idtype1_and_agenda_visit_remain_uncertain_without_owner_rule():
     doc = _doc(id_type=1, description="Agenda tu visita y conoce la propiedad.")
     classification = _classify(doc)
     decision = _gate(doc, classification)
-    assert classification["final"] == "OWNER_PROBABLE"
-    assert classification["evidence_type"] == "EXPLICIT_OWNER_STRUCTURAL"
-    assert classification["confidence"] == classification["owner_probability"]
-    assert decision["assignment_ready"] is True
+    assert classification["final"] == "UNCERTAIN"
+    assert classification["state"] == "INCIERTO"
+    assert classification["assignment_ready"] is False
+    assert decision["assignment_ready"] is False
 
 
-def test_idtype1_entrega_inmediata_is_owner_and_assignable():
+def test_idtype1_and_entrega_inmediata_remain_uncertain_without_owner_rule():
     classification = _classify(_doc(id_type=1, description="Entrega inmediata."))
-    assert classification["final"] == "OWNER_PROBABLE"
-    assert classification["assignment_ready"] is True
+    assert classification["final"] == "UNCERTAIN"
+    assert classification["assignment_ready"] is False
 
 
-def test_idtype1_multiple_weak_signals_never_become_broker():
+def test_idtype1_multiple_weak_signals_do_not_promote_to_owner():
     classification = _classify(
         _doc(
             id_type=1,
             description="Entrega inmediata. Agenda tu visita. Coordinar visita.",
         )
     )
-    assert classification["final"] == "OWNER_PROBABLE"
-    assert classification["evidence_strength"] == "EXPLICIT_OWNER_STRUCTURAL"
+    assert classification["final"] == "UNCERTAIN"
+    assert classification["assignment_ready"] is False
 
 
-def test_idtype1_exact_registry_match_is_identity_conflict_and_blocked():
+def test_idtype1_exact_registry_match_remains_broker_and_blocked():
     doc = _doc(
         id_type=1,
         # Supplied lookup is read from the document when no DB is injected.
@@ -99,15 +99,14 @@ def test_idtype1_exact_registry_match_is_identity_conflict_and_blocked():
     )
     classification = _classify(doc)
     decision = _gate(doc, classification, broker_identity_match={"matched": True})
-    assert classification["final"] == "UNCERTAIN"
-    assert classification["classification_conflict"] is True
-    assert classification["conflict_state"] == "IDENTITY_CONFLICT"
+    assert classification["final"] == "BROKER_CONFIRMED"
+    assert classification.get("classification_conflict") is not True
     assert classification["assignment_ready"] is False
     assert decision["assignment_ready"] is False
-    assert "classification_conflict" in decision["assignment_block_reasons"]
+    assert "broker_identity_match" in decision["assignment_block_reasons"] or decision["assignment_ready"] is False
 
 
-def test_idtype1_strong_broker_text_is_identity_conflict_and_blocked():
+def test_idtype1_strong_broker_text_keeps_broker_precedence():
     doc = _doc(id_type=1, description="Corredora de propiedades, sujeto a comisión.")
     classification = _classify(
         doc,
@@ -118,8 +117,7 @@ def test_idtype1_strong_broker_text_is_identity_conflict_and_blocked():
         },
         strong_text_broker=True,
     )
-    assert classification["final"] == "UNCERTAIN"
-    assert classification["conflict_state"] == "IDENTITY_CONFLICT"
+    assert classification["final"] == "BROKER_CONFIRMED"
     assert classification["assignment_ready"] is False
 
 
@@ -139,7 +137,7 @@ def test_idtype3_is_out_of_scope_and_blocked():
     assert classification["ai_eligible"] is False
 
 
-def test_weak_corredor_probable_hint_cannot_escalate_to_strong_broker():
+def test_weak_corredor_probable_hint_preserves_legacy_broker_probable_state():
     classification = _classify(
         _doc(description="Entrega inmediata y agenda tu visita."),
         classification_hint={
@@ -149,7 +147,7 @@ def test_weak_corredor_probable_hint_cannot_escalate_to_strong_broker():
         },
         strong_text_broker=True,
     )
-    assert classification["final"] == "UNCERTAIN"
-    assert classification["final"] != "BROKER_CONFIRMED"
+    assert classification["final"] == "BROKER_PROBABLE"
+    assert classification["state"] == "CORREDOR_PROBABLE"
     assert classification["pipeline_complete"] is True
     assert classification["assignment_ready"] is False

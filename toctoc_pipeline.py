@@ -197,6 +197,45 @@ class PipelineOptions:
     max_estimated_cost_per_run: float = 5.0
 
 
+@dataclass(slots=True)
+class ToctocRunConfig:
+    """Business scope for a reusable TOCTOC execution.
+
+    This is deliberately separate from :class:`PipelineOptions`: the former
+    describes *which* inventory is being run, while the latter controls safety
+    and side effects.  No executive, commune or price is embedded in the
+    scraper implementation.
+    """
+
+    executive_id: str | None = None
+    executive_name: str | None = None
+    communes: tuple[str, ...] = ()
+    operation: str = "venta"
+    property_types: tuple[str, ...] = ()
+    min_price_clp: int | None = None
+    max_price_clp: int | None = None
+    assignment_enabled: bool = False
+    proxy_mode: str = "proxy"
+    max_items: int | None = None
+
+
+def scope_config_payload(scope: ToctocRunConfig) -> dict[str, Any]:
+    """Return an auditable, serializable scope payload for run reports."""
+
+    return {
+        "executive_id": scope.executive_id,
+        "executive_name": scope.executive_name,
+        "communes": list(scope.communes),
+        "operation": scope.operation,
+        "property_types": list(scope.property_types),
+        "min_price_clp": scope.min_price_clp,
+        "max_price_clp": scope.max_price_clp,
+        "assignment_enabled": bool(scope.assignment_enabled),
+        "proxy_mode": scope.proxy_mode,
+        "max_items": scope.max_items,
+    }
+
+
 class PipelineLedger(Protocol):
     def start_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_run(self, run_id: str) -> dict[str, Any] | None: ...

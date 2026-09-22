@@ -103,7 +103,34 @@ def extract_price_clp(text: str) -> tuple[int | None, str]:
 DEEPSEEK_STATUS_LEGACY = "LEGACY_UNKNOWN"
 
 
-def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
+def normalize_classification(
+    raw: dict[str, Any],
+    *,
+    seller_id_type_raw: Any = "",
+) -> dict[str, Any]:
+    raw = dict(raw or {})
+    stale_idtype1_promotion = (
+        str(seller_id_type_raw or "").strip() == "1"
+        and str(raw.get("source") or "").strip().lower() == "toctoc_id_type"
+        and str(
+            raw.get("final_reason")
+            or raw.get("reason")
+            or ""
+        ).strip().upper() == "TOCTOC_IDTYPE_1_OWNER_CANDIDATE"
+    )
+    if stale_idtype1_promotion:
+        # Invalidate only the automatic owner promotion introduced by
+        # e2c838ea. idType=1 itself remains preserved as source metadata.
+        raw.update({
+            "state": "INCIERTO",
+            "final": "UNCERTAIN",
+            "confidence": 0.5,
+            "owner_probability": None,
+            "reason": "INCONCLUSIVE",
+            "assignment_ready": False,
+        })
+        raw.pop("canonical_confidence", None)
+        raw.pop("final_reason", None)
     raw_state = raw.get("state", "INCIERTO")
     state = raw_state
     owner_probability = raw.get("owner_probability")
@@ -115,13 +142,38 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         owner_probability = None
     decision_source = raw.get("decision_source") or raw.get("source", "rules")
-    hard_veto = str(raw.get("hard_veto") or raw.get("professional_hard_veto") or "").upper()
+    hard_veto_value = raw.get("hard_veto")
+    professional_veto = raw.get("professional_hard_veto") is True
+    hard_veto = (
+        "PROFESSIONAL"
+        if professional_veto or raw.get("hard_broker_veto") is True or raw.get("hard_broker_signal") is True
+        else str(hard_veto_value or "").upper()
+    )
     if not hard_veto and str(raw_state).upper() == "CORREDOR_SEGURO" and str(decision_source).lower() in {
         "structural_rules", "rules_json", "structural_professional_rule"
     } and raw.get("strong_signal_found", True) is not False:
         hard_veto = "PROFESSIONAL"
 
-    if owner_probability is not None and hard_veto != "PROFESSIONAL":
+    canonical_final = str(
+        raw.get("final") or raw.get("identity_classification") or ""
+    ).strip().upper()
+    canonical_final = canonical_final.replace("DUENO", "DUEÑO")
+    canonical_legacy_state = {
+        "OWNER_CONFIRMED": "DUEÑO_SEGURO",
+        "OWNER_PROBABLE": "DUEÑO_PROBABLE",
+        "BROKER_CONFIRMED": "CORREDOR_SEGURO",
+        "BROKER_PROBABLE": "CORREDOR_PROBABLE",
+        "UNCERTAIN": "INCIERTO",
+        "OUT_OF_SCOPE_NEW_DEVELOPMENT": "INCIERTO",
+    }.get(canonical_final)
+    # A previously serialized canonical decision outranks the heuristic owner
+    # probability.  That score remains available as evidence, not as a writer
+    # capable of replacing a hard veto or canonical state.
+    if hard_veto == "PROFESSIONAL":
+        state = "CORREDOR_SEGURO"
+    elif canonical_legacy_state:
+        state = canonical_legacy_state
+    elif owner_probability is not None:
         state = expected_state_for_probability(owner_probability)
     if state == "INCONCLUSIVE": state = "INCIERTO"
     if state not in ("CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO", "INCIERTO", "AD_REMOVED"):
@@ -185,6 +237,13 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "evidence": evidence, "reason": str(raw.get("reason", "")),
         "decision_source": decision_source, "decision_pattern": raw.get("decision_pattern", ""),
         "hard_veto": hard_veto,
+        "professional_hard_veto": hard_veto == "PROFESSIONAL",
+        "hard_broker_veto": bool(raw.get("hard_broker_veto") or raw.get("hard_broker_signal")) or hard_veto == "PROFESSIONAL",
+        "hard_broker_signal": bool(raw.get("hard_broker_signal")),
+        "classification_conflict": bool(raw.get("classification_conflict")),
+        "conflict_state": str(raw.get("conflict_state") or ""),
+        "identity_conflict": bool(raw.get("identity_conflict")),
+        "manual_review_required": bool(raw.get("manual_review_required")),
         "state_source": state_source,
         "deepseek_status": deepseek_status,
         "deepseek_state": "",
@@ -212,10 +271,11 @@ def normalize_classification(raw: dict[str, Any]) -> dict[str, Any]:
         "deepseek_raw": ds_raw,
         "trace": raw.get("trace") or {},
     }
-    normalized["final"] = (
-        "BROKER_CONFIRMED"
-        if hard_veto == "PROFESSIONAL"
-        else legacy_to_canonical(state)
+    normalized["final"] = "BROKER_CONFIRMED" if hard_veto == "PROFESSIONAL" else (
+        canonical_final if canonical_final in {
+            "OWNER_CONFIRMED", "OWNER_PROBABLE", "BROKER_CONFIRMED", "BROKER_PROBABLE",
+            "UNCERTAIN", "OUT_OF_SCOPE_NEW_DEVELOPMENT", "INVALID", "REMOVED", "EXPIRED",
+        } else legacy_to_canonical(state)
     )
     normalized["final_reason"] = (
         "STRUCTURAL_BROKER_VETO"
@@ -326,6 +386,15 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         price_uf_raw = f"UF {price_uf_val:,.2f}"
 
     price_display = f"{price_uf_raw} / {price_clp_raw}".strip(" / ").strip()
+    detail_price_clp_val = direct_clp if direct_clp is not None else parsed_clp
+    detail_price_uf_val = direct_uf if direct_uf is not None else parsed_uf
+    card_price_clp_val = _parse_int(raw.get("card_price_clp"))
+    card_price_uf_val = _parse_float(raw.get("card_price_uf"))
+    price_difference = (
+        detail_price_clp_val - card_price_clp_val
+        if detail_price_clp_val is not None and card_price_clp_val is not None
+        else None
+    )
 
     # --- DORM/BANOS: null for ranges ---
     def _parse_range(val_str, parse_fn):
@@ -379,7 +448,10 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "publisher_activity": raw.get("publisher_activity", {}),
         "classifier_original_signals": raw.get("classifier_original_signals", {}),
     }
-    normalized_classification = normalize_classification(raw.get("classification", {}))
+    normalized_classification = normalize_classification(
+        raw.get("classification", {}),
+        seller_id_type_raw=raw.get("seller_id_type_raw") or raw.get("seller_id_type"),
+    )
     identity_source = {
         **raw,
         "portal": origen,
@@ -430,6 +502,16 @@ def build_crm_document(raw: dict[str, Any], uf_valor_clp: float = 40844.79, uf_f
         "price": price_display, "precio_raw": price_raw or price_display,
         "precio_moneda_original": precio_moneda_original, "precio_original_num": precio_original_num,
         "precio_uf": price_uf_val, "precio_clp": price_clp_val,
+        "detail_price_raw": str(raw.get("detail_price_raw") or raw.get("price_raw") or price_raw or ""),
+        "detail_currency": str(raw.get("detail_currency") or ("UF" if direct_uf and not direct_clp else "CLP" if direct_clp and not direct_uf else "UF+CLP" if direct_uf and direct_clp else "UNKNOWN")),
+        "detail_price_uf": detail_price_uf_val,
+        "detail_price_clp": detail_price_clp_val,
+        "card_price_raw": str(raw.get("card_price_raw") or ""),
+        "card_currency": str(raw.get("card_currency") or ""),
+        "card_price_uf": card_price_uf_val,
+        "card_price_clp": card_price_clp_val,
+        "canonical_price_source": "DETAIL" if (detail_price_clp_val is not None or detail_price_uf_val is not None) else "UNKNOWN",
+        "price_difference": price_difference,
         "precio_uf_raw": price_uf_raw, "precio_clp_raw": price_clp_raw,
         "uf_valor_usado": uf_valor_clp, "uf_fecha": uf_fecha,
         "precio_conversion_source": (

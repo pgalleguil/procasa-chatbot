@@ -107,6 +107,9 @@ class AppConfig:
     deepseek_enabled: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_ENABLED", True))
     deepseek_timeout_seconds: int = field(default_factory=lambda: _env_int("DEEPSEEK_TIMEOUT_SECONDS", 12))
     deepseek_max_tokens: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_TOKENS", 500))
+    deepseek_max_attempts: int = field(
+        default_factory=lambda: max(1, _env_int("DEEPSEEK_MAX_ATTEMPTS", 2))
+    )
     deepseek_thinking: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_THINKING", False))
     deepseek_max_calls_per_session: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_CALLS_PER_SESSION", 500))
     deepseek_description_max_chars: int = field(default_factory=lambda: _env_int("DEEPSEEK_DESCRIPTION_MAX_CHARS", 6000))

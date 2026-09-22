@@ -120,7 +120,7 @@ def build_description_for_llm(text: str, max_chars: int = 6000, *, head_chars: i
 
 
 def _build_messages(extracted: dict[str, Any], rule_context: dict[str, Any], desc_bundle: dict[str, Any]) -> list[dict[str, str]]:
-    payload = {k: (extracted.get(k) if isinstance(extracted.get(k), (str, int, float, bool, list)) else str(extracted.get(k, ""))) for k in ("publicador_visible", "contact_name", "contact_logo_alt", "listing_advertiser", "seller_jsonld_name", "contact_badges_text", "company_name", "broker_brand", "seller_is_pro", "seller_profile_id", "seller_profile_url", "seller_profile_logo", "operation_label_raw")}
+    payload = {k: (extracted.get(k) if isinstance(extracted.get(k), (str, int, float, bool, list)) else str(extracted.get(k, ""))) for k in ("title", "publicador_visible", "contact_name", "contact_logo_alt", "listing_advertiser", "seller_jsonld_name", "contact_badges_text", "company_name", "broker_brand", "seller_is_pro", "seller_profile_id", "seller_profile_url", "seller_profile_logo", "operation_label_raw")}
     payload.update({k: rule_context.get(k) for k in ("company_like_suspected", "company_like_evidence", "known_brand_evidence", "hard_broker_evidence", "owner_signal_evidence", "weak_broker_evidence")})
     payload["seller_type"] = extracted.get("seller_type", "DESCONOCIDO")
     payload["seller_type_source"] = extracted.get("seller_type_source", "")
@@ -220,35 +220,7 @@ def classify_with_deepseek(
     if "pro" in config.deepseek_model.lower():
         raise RuntimeError("Modelo DeepSeek Pro no permitido.")
 
-    try:
-        from owner_evidence_deepseek import adjudicate_owner_evidence
-    except ImportError:
-        import sys
-        from pathlib import Path
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from owner_evidence_deepseek import adjudicate_owner_evidence
-    evidence_result = adjudicate_owner_evidence(
-        extracted,
-        api_key=config.deepseek_api_key,
-        base_url=config.deepseek_base_url,
-        model=config.deepseek_model,
-        timeout=config.deepseek_timeout_seconds,
-        max_tokens=max(config.deepseek_max_tokens, 900),
-        max_attempts=2,
-    )
-    return DeepSeekResult(
-        state="INCIERTO", confidence=0.0,
-        reason="DeepSeek extrajo evidencia estructurada; la decisión final es determinística.",
-        evidence=[item.get("quote", "") for item in evidence_result.evidence],
-        raw=evidence_result.raw, status=evidence_result.status,
-        payload=evidence_result.payload,
-        message_content=evidence_result.message_content,
-        reasoning_content=evidence_result.reasoning_content,
-        structured_evidence=evidence_result.evidence,
-        prompt_version=evidence_result.prompt_version,
-    )
-    
-    if desc_bundle is None:  # pragma: no cover - legacy implementation retained for rollback
+    if desc_bundle is None:
         desc_bundle = build_description_for_llm(
             extracted.get("descripcion", extracted.get("description", "")),
             max_chars=config.deepseek_description_max_chars)
@@ -265,54 +237,43 @@ def classify_with_deepseek(
     # Force JSON output mode
     body["response_format"] = {"type": "json_object"}
     
-    # First attempt
-    status, data, content, finish_reason = _call_deepseek(body, config, headers)
-    
-    if status != DeepSeekStatus.VALID.value:
-        # Timeout or API error on first call — retry once after 2s
-        _time.sleep(2)
+    max_attempts = max(1, int(getattr(config, "deepseek_max_attempts", 2) or 1))
+    status = DeepSeekStatus.API_ERROR.value
+    data = None
+    content = ""
+    finish_reason = ""
+    parsed = None
+    for attempt in range(max_attempts):
         status, data, content, finish_reason = _call_deepseek(body, config, headers)
         if status != DeepSeekStatus.VALID.value:
+            if attempt + 1 < max_attempts:
+                _time.sleep(2)
+                continue
             return DeepSeekResult(
-                state="INCIERTO", confidence=0.5, reason=f"DeepSeek {status.lower()} after retry",
+                state="INCIERTO", confidence=0.5,
+                reason=f"DeepSeek {status.lower()} after {attempt + 1} attempt(s)",
                 evidence=[], raw={}, status=status)
-    
-    # Empty content — retry once after 2s
-    if not content:
-        _time.sleep(2)
-        _, data2, content2, fr2 = _call_deepseek(body, config, headers)
-        if content2:
-            data, content, finish_reason = data2, content2, fr2
         if not content:
+            if attempt + 1 < max_attempts:
+                _time.sleep(2)
+                continue
             return DeepSeekResult(
-                state="INCIERTO", confidence=0.5, reason="DeepSeek returned empty content after retry",
-                evidence=[], raw=data, status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value)
-    
-    # Parse JSON
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        # One retry for truncated JSON (finish_reason=length) with higher max_tokens
-        if finish_reason == "length" and config.deepseek_max_tokens < 800:
+                state="INCIERTO", confidence=0.5,
+                reason="DeepSeek returned empty content",
+                evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value)
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            break
+        if attempt + 1 < max_attempts and finish_reason == "length" and config.deepseek_max_tokens < 800:
             body["max_tokens"] = 800
-            _, data2, content2, fr2 = _call_deepseek(body, config, headers)
-            if content2:
-                try:
-                    parsed = json.loads(content2)
-                    if isinstance(parsed, dict):
-                        raw_state = str(parsed.get("state", "")).strip()
-                        if raw_state in VALID_STATES or raw_state == "DUENO_SEGURO":
-                            data = data2
-                            content = content2
-                            finish_reason = fr2
-                            del parsed
-                except json.JSONDecodeError:
-                    pass
-        
-        if 'parsed' not in dir() or not isinstance(parsed, dict):
-            return DeepSeekResult(
-                state="INCIERTO", confidence=0.5, reason=f"DeepSeek invalid JSON: {content[:200]}",
-                evidence=[], raw=data, status=DeepSeekStatus.INVALID_JSON.value)
+            continue
+        return DeepSeekResult(
+            state="INCIERTO", confidence=0.5,
+            reason=f"DeepSeek invalid JSON: {content[:200]}",
+            evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_JSON.value)
     
     if not isinstance(parsed, dict):
         return DeepSeekResult(

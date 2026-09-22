@@ -26,6 +26,28 @@ from scrapers.scraper_toctoc.discovery import (  # noqa: E402
     _batch_checkpoints,
     _reported_results_from_visible_text,
 )
+from scrapers.scraper_toctoc.discovery import _merge_embedded_metadata  # noqa: E402
+
+
+def test_merge_embedded_metadata_falls_back_to_listing_id_for_price():
+    dom_records = [{
+        "url": "https://www.toctoc.com/propiedades/compracorredorasr/casa/maipu/example/4064618",
+        "listing_id": "4064618",
+        "price_clp": "",
+    }]
+    embedded_records = [{
+        "url": "https://www.toctoc.com/venta/casas/metropolitana/maipu/o_hash",
+        "listing_id": "4064618",
+        "price_clp": "$ 177.000.000",
+        "price_uf": "UF 4.319",
+        "tipo_operacion": "Venta Usado",
+    }]
+
+    merged = _merge_embedded_metadata(dom_records, embedded_records)
+
+    assert merged[0]["price_clp"] == "$ 177.000.000"
+    assert merged[0]["price_uf"] == "UF 4.319"
+    assert merged[0]["tipo_operacion"] == "Venta Usado"
 
 
 def _listing_url(token: str) -> str:

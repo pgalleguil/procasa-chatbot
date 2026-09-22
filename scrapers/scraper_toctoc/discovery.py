@@ -917,9 +917,22 @@ def _path_key(url: str) -> str:
 def _merge_embedded_metadata(records: list[dict], embedded_records: list[dict]) -> list[dict]:
     """Enrich rendered card URLs without replacing the browser page source."""
     by_path = {_path_key(item.get("url", "")): item for item in embedded_records if item.get("url")}
+    # The current SPA can render a legacy ``/propiedades/.../<numeric-id>``
+    # card href while the SSR/NextData payload exposes the same listing as a
+    # public ``/venta/.../<hash>`` URL. The path is not a stable join key;
+    # use the portal listing id as a safe fallback so price and operation
+    # metadata survive the DOM-first pagination path.
+    by_id = {}
+    for item in embedded_records:
+        item_id = str(item.get("listing_id") or "").strip()
+        if item_id:
+            by_id[item_id] = item
     merged = []
     for record in records:
         source = by_path.get(_path_key(record.get("url", "")), {})
+        if not source:
+            record_id = str(record.get("listing_id") or "").strip()
+            source = by_id.get(record_id, {})
         combined = dict(source)
         combined.update({key: value for key, value in record.items() if value not in (None, "")})
         merged.append(combined)

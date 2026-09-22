@@ -151,7 +151,11 @@ def test_repeated_reassignment_keeps_unique_active_cycle_and_is_idempotent():
                 "sla_started_at": now - timedelta(hours=4),
                 "owner_notified_at": now - timedelta(hours=4),
                 "reassignment_state": "active",
-                "sla_breached_at": now - timedelta(hours=1),
+                # Simulate a legacy persisted deadline that differs from the
+                # fresh evaluator reconstruction.  Both instants remain
+                # post-cutover; this must not block the repeated transition.
+                "sla_breached_at": now - timedelta(hours=2),
+                "sla_expired_at": now - timedelta(hours=2),
             }},
         )
         second = make_decision(

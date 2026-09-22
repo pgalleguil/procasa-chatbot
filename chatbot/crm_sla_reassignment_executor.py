@@ -617,9 +617,13 @@ def _revalidate(
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_POLICY_VERSION_CHANGED, "source_policy_changed")
 
     # Future-only cutover is revalidated from the canonical source-cycle
-    # breach timestamp inside the transaction.  The decision timestamp must
-    # match the source reconstruction; otherwise the source changed after
-    # eligibility evaluation.
+    # breach timestamp inside the transaction.  The evaluator and executor
+    # intentionally have different views of persisted deadline fields: the
+    # evaluator recalculates the production deadline, while this guard may
+    # prefer a legacy persisted deadline when reconstructing the cycle.  Both
+    # timestamps are still required to be post-cutover, but strict equality
+    # here would turn a valid active destination cycle into ABORT_CYCLE_CHANGED
+    # before the source CAS can protect the actual ownership transition.
     canonical_breach = canonical_sla_breached_at(source, lead=lead)
     current_cutover = evaluate_cutover(
         breached_at=canonical_breach,
@@ -642,9 +646,19 @@ def _revalidate(
             code = SLAReassignmentErrorCode.CUTOVER_CONFIGURATION_INVALID
         raise _KnownAbort(code, decision_cutover.reason or decision_cutover.outcome)
     if current_cutover.breached_at != decision_cutover.breached_at:
-        raise _KnownAbort(
-            SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED,
-            "source_cycle_sla_breached_at_changed",
+        current_breach = current_cutover.breached_at
+        decision_breach = decision_cutover.breached_at
+        delta_seconds = (
+            (current_breach - decision_breach).total_seconds()
+            if current_breach and decision_breach
+            else None
+        )
+        logger.warning(
+            "[CRM_SLA_REASSIGNMENT] source_breach_timestamp_reconciled "
+            "decision_breach=%s current_breach=%s delta_seconds=%s",
+            decision_breach.isoformat() if decision_breach else "",
+            current_breach.isoformat() if current_breach else "",
+            delta_seconds,
         )
 
     source_count = _source_assignment_number(decision)

@@ -155,15 +155,18 @@ def is_listing_detail_url(url: str) -> bool:
 
 
 def listing_id_from_url(url: str) -> tuple[str, str]:
-    m = re.search(r"/(\d+)$", url)
+    # Card URLs commonly carry ``utm_source`` and ``o=listaseo``.  IDs belong
+    # to the path, never to the query string.
+    path = urlparse(url).path
+    m = re.search(r"/(\d+)$", path)
     if m: return m.group(1), "url_numeric_id"
-    m = re.search(r"-(\d+)$", url)
+    m = re.search(r"-(\d+)$", path)
     if m: return m.group(1), "url_numeric_id"
-    m = re.search(r"/[a-z]_([a-f0-9]{20,})$", url, re.I)
+    m = re.search(r"/[a-z]_([a-f0-9]{20,})$", path, re.I)
     if m: return m.group(1), "url_hash"
-    m = re.search(r"/([a-f0-9]{40})$", url, re.I)
+    m = re.search(r"/([a-f0-9]{40})$", path, re.I)
     if m: return m.group(1), "url_hash"
-    m = re.search(r"/([a-f0-9]{20,})$", url, re.I)
+    m = re.search(r"/([a-f0-9]{20,})$", path, re.I)
     if m: return m.group(1), "url_hash"
     return "", "not_found"
 
@@ -199,7 +202,40 @@ KEEP_AMBIGUOUS = "KEEP_AMBIGUOUS"
 SKIP_WRONG_COMMUNE = "SKIP_WRONG_COMMUNE"
 SKIP_NON_TARGET_TYPE = "SKIP_NON_TARGET_TYPE"
 
+TOCTOC_PROPERTY_TYPES = (
+    {"slug": "departamento", "route_slug": "departamento", "label": "Departamento", "residential": True},
+    {"slug": "casa", "route_slug": "casa", "label": "Casa", "residential": True},
+    {"slug": "oficina", "route_slug": "oficina", "label": "Oficina", "residential": False},
+    {"slug": "local-comercial", "route_slug": "local-comercial", "label": "Local Comercial", "residential": False},
+    {"slug": "terreno", "route_slug": "terreno", "label": "Terreno", "residential": True},
+    {"slug": "parcela", "route_slug": "parcela", "label": "Parcela", "residential": True},
+    {"slug": "agricola", "route_slug": "campo-agricola", "label": "Agrícola", "residential": False},
+    {"slug": "industrial", "route_slug": "terreno-industrial", "label": "Industrial", "residential": False},
+    {"slug": "bodega", "route_slug": "bodega", "label": "Bodega", "residential": False},
+    {"slug": "estacionamiento", "route_slug": "estacionamiento", "label": "Estacionamiento", "residential": False},
+    {"slug": "vacacional", "route_slug": "lugar-vacacional", "label": "Vacacional", "residential": False},
+)
+
+# Kept for callers that still need the residential subset.  ``tipo=todos``
+# uses the complete UI catalog above and never silently falls back to these
+# two types.
 TARGET_PROPERTY_TYPES = frozenset({"casa", "departamento"})
+
+
+def property_type_catalog() -> list[dict[str, Any]]:
+    """Return the property types exposed by the current Toctoc filter UI."""
+    return [dict(item) for item in TOCTOC_PROPERTY_TYPES]
+
+
+def property_type_specs(tipo: str | None) -> list[dict[str, Any]]:
+    """Resolve a requested type, including the explicit ``TODOS`` scope."""
+    value = str(tipo or "").strip().lower()
+    if value in {"todos", "todo", "all", "*"}:
+        return property_type_catalog()
+    for item in TOCTOC_PROPERTY_TYPES:
+        if value in {item["slug"], item["route_slug"]}:
+            return [dict(item)]
+    return [{"slug": value, "route_slug": value, "label": value, "residential": value in TARGET_PROPERTY_TYPES}]
 
 # Property type slugs observed in Toctoc URLs (first token after format/comuna)
 NON_TARGET_PROPERTY_SLUGS = frozenset({
@@ -255,7 +291,10 @@ def _normalize_slug(slug: str) -> str:
 
 def _extract_commune_slug(url: str) -> str:
     """Extract the commune slug from a Toctoc property URL."""
-    low = url.lower()
+    # Query parameters such as ``utm_source`` and ``o=listaseo`` are common
+    # on current cards.  Scope matching must use the path only; otherwise a
+    # valid ``/venta/.../<commune>/b_<hash>?...`` card is rejected.
+    low = urlparse(url).path.lower()
     # Pattern 1: /propiedades/<format>/<tipo>/<comuna>/...
     m = re.search(r"/propiedades/[^/]+/[^/]+/([^/]+)/", low)
     if m:
@@ -520,6 +559,373 @@ def _set_page_param(url: str, page: int) -> str:
     return urlunparse(parsed._replace(query=urlencode(query)))
 
 
+def _remove_price_params(url: str) -> str:
+    parsed = urlparse(url)
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+             if key not in {"precioDesde", "precioHasta"}]
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _expected_page_count(expected_results: int | None, page_size: int | None = None) -> int | None:
+    """Calculate the expected number of UI pages without guessing a result set."""
+    if not expected_results or expected_results <= 0:
+        return None
+    size = page_size or 20
+    return (int(expected_results) + size - 1) // size
+
+
+def _pagination_page_size(dom_result_count: int, embedded_count: int) -> int:
+    """Use the visible page size, not Toctoc's internal preload batch."""
+    if 10 <= dom_result_count <= 50:
+        return dom_result_count
+    # The current frontend preloads up to 260 records, while its paginator
+    # advances in pages of 20.  Embedded record count is therefore not a
+    # valid page-size signal.
+    return 20
+
+
+def _summarize_network_contract(events: list[dict]) -> dict:
+    """Summarize the results request without retaining secrets or bodies."""
+    result_events = [
+        event for event in events
+        if "/properties" in str(event.get("path", "")).lower()
+    ]
+    recaptcha_events = [
+        event for event in events
+        if "/recaptcha/verify" in str(event.get("path", "")).lower()
+    ]
+    if not result_events:
+        return {
+            "results_endpoint": "",
+            "http_method": "",
+            "pagination_parameter": "page",
+            "page_size": 260,
+            "cursor_or_offset": "",
+            "total_results_field": "response.total / pageProps.propiedades.total",
+            "can_call_endpoint_directly": False,
+            "results_request_observed": False,
+            "recaptcha_required_observed": False,
+            "recaptcha_verification_observed": bool(recaptcha_events),
+        }
+    first = result_events[0]
+    params = first.get("params") or {}
+    statuses = [event.get("status") for event in result_events if event.get("event") == "response"]
+    recaptcha_required = any(
+        event.get("status") == 403 or event.get("recaptcha_required")
+        or event.get("body_marker") == "recaptcha_required"
+        for event in result_events
+    )
+    return {
+        "results_endpoint": first.get("path", ""),
+        "http_method": first.get("method", ""),
+        "pagination_parameter": "page" if "page" in params else "",
+        "page_size": params.get("limit", 260),
+        "cursor_or_offset": params.get("cursor", params.get("offset", "")),
+        "total_results_field": "response.total",
+        # A successful browser request is not proof that the URL is replayable
+        # directly: the current frontend first performs its reCAPTCHA verify
+        # flow.  Direct replay is therefore false whenever that flow was part
+        # of the same navigation.
+        "can_call_endpoint_directly": bool(
+            statuses
+            and all(status == 200 for status in statuses)
+            and not recaptcha_required
+            and not recaptcha_events
+        ),
+        "results_request_observed": True,
+        "recaptcha_required_observed": recaptcha_required,
+        "recaptcha_verification_observed": bool(recaptcha_events),
+    }
+
+
+_SAFE_REQUEST_HEADERS = {
+    "user-agent",
+    "referer",
+    "origin",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-fetch-user",
+}
+_TOKEN_HEADER_MARKERS = ("authorization", "cookie", "csrf", "token", "session", "x-api-key")
+_TOKEN_QUERY_MARKERS = ("token", "secret", "auth", "session", "cookie", "captcha")
+
+
+def _secret_fingerprint(value: Any) -> str:
+    import hashlib
+
+    return hashlib.sha256(str(value).encode("utf-8", errors="replace")).hexdigest()[:16]
+
+
+def _safe_query_params(query: str) -> dict[str, Any]:
+    """Return diagnostics-safe query parameters.
+
+    ``filtros`` contains a large search payload and may contain session-bound
+    values.  It is useful for comparing requests, but its contents must not be
+    emitted to reports.
+    """
+    safe: dict[str, Any] = {}
+    for key, value in parse_qsl(query, keep_blank_values=True):
+        key_lower = key.lower()
+        if key_lower == "filtros":
+            safe[key] = {
+                "redacted": True,
+                "length": len(value),
+                "sha256": _secret_fingerprint(value),
+            }
+        elif any(marker in key_lower for marker in _TOKEN_QUERY_MARKERS):
+            safe[key] = "<redacted>"
+        else:
+            safe[key] = value
+    return safe
+
+
+def _safe_request_context(request, context=None) -> dict[str, Any]:
+    """Capture browser-session evidence without persisting credentials/tokens."""
+    parsed = urlparse(request.url)
+    try:
+        headers = request.all_headers()
+    except Exception:
+        headers = dict(getattr(request, "headers", {}) or {})
+    normalized_headers = {str(key).lower(): str(value) for key, value in headers.items()}
+    safe_headers = {
+        key: normalized_headers[key]
+        for key in _SAFE_REQUEST_HEADERS
+        if key in normalized_headers
+    }
+    header_names = sorted(normalized_headers)
+    token_header_names = sorted(
+        key for key in header_names if any(marker in key for marker in _TOKEN_HEADER_MARKERS)
+    )
+    request_cookie_names: list[str] = []
+    cookie_header = normalized_headers.get("cookie", "")
+    if cookie_header:
+        request_cookie_names = sorted(
+            part.split("=", 1)[0].strip()
+            for part in cookie_header.split(";")
+            if "=" in part
+        )
+
+    context_cookies: list[dict[str, Any]] = []
+    if context is not None:
+        try:
+            for cookie in context.cookies():
+                value = cookie.get("value", "")
+                context_cookies.append({
+                    "name": cookie.get("name", ""),
+                    "domain": cookie.get("domain", ""),
+                    "path": cookie.get("path", ""),
+                    "secure": bool(cookie.get("secure")),
+                    "http_only": bool(cookie.get("httpOnly")),
+                    "same_site": cookie.get("sameSite", ""),
+                    "has_value": bool(value),
+                    "value_sha256": _secret_fingerprint(value) if value else "",
+                })
+        except Exception:
+            context_cookies = []
+
+    safe_url = urlunparse(parsed._replace(query=urlencode(_safe_query_params(parsed.query), doseq=True)))
+    return {
+        "method": request.method,
+        "url": safe_url,
+        "path": parsed.path,
+        "params": _safe_query_params(parsed.query),
+        "user_agent": safe_headers.get("user-agent", ""),
+        "safe_headers": safe_headers,
+        "header_names": header_names,
+        "token_header_names": token_header_names,
+        "request_cookie_names": request_cookie_names,
+        "context_cookies": context_cookies,
+        "resource_type": request.resource_type,
+    }
+
+
+def _compare_request_contexts(initial: dict | None, page2: dict | None) -> dict:
+    """Compare page 1 and page 2 contexts using names/presence only."""
+    if not initial or not page2:
+        return {
+            "status": "INSUFFICIENT_REQUESTS",
+            "initial_available": bool(initial),
+            "page2_available": bool(page2),
+        }
+    initial_headers = set(initial.get("header_names", []))
+    page2_headers = set(page2.get("header_names", []))
+    initial_cookies = {item.get("name") for item in initial.get("context_cookies", [])}
+    page2_cookies = {item.get("name") for item in page2.get("context_cookies", [])}
+    return {
+        "status": "COMPARED",
+        "missing_header_names_in_page2": sorted(initial_headers - page2_headers),
+        "missing_request_cookie_names_in_page2": sorted(
+            set(initial.get("request_cookie_names", [])) - set(page2.get("request_cookie_names", []))
+        ),
+        "missing_context_cookie_names_in_page2": sorted(initial_cookies - page2_cookies),
+        "safe_header_value_changes": {
+            key: {"initial": initial.get("safe_headers", {}).get(key, ""),
+                  "page2": page2.get("safe_headers", {}).get(key, "")}
+            for key in _SAFE_REQUEST_HEADERS
+            if initial.get("safe_headers", {}).get(key, "")
+            != page2.get("safe_headers", {}).get(key, "")
+        },
+        "token_header_names_initial": initial.get("token_header_names", []),
+        "token_header_names_page2": page2.get("token_header_names", []),
+        "page2_has_same_user_agent": initial.get("user_agent") == page2.get("user_agent"),
+        "possible_missing_session_requirement": bool(
+            initial_headers - page2_headers
+            or set(initial.get("request_cookie_names", [])) - set(page2.get("request_cookie_names", []))
+            or initial_cookies - page2_cookies
+        ),
+    }
+
+
+def _batch_number_for_page(page_number: int, ui_pages_per_batch: int = 13) -> int:
+    return ((max(1, int(page_number)) - 1) // ui_pages_per_batch) + 1
+
+
+def _batch_bounds(batch_number: int, ui_pages_per_batch: int = 13) -> tuple[int, int]:
+    first = (max(1, int(batch_number)) - 1) * ui_pages_per_batch + 1
+    return first, first + ui_pages_per_batch - 1
+
+
+def _build_batch_checkpoint(page_reports: list[dict], batch_number: int, *, status: str,
+                            request_status: Any = None, challenge_detected: bool = False,
+                            completed: bool = False) -> dict:
+    """Summarize one internal 260-result batch for a resumable checkpoint."""
+    first_page, last_page = _batch_bounds(batch_number)
+    completed_reports = [
+        item for item in page_reports
+        if item.get("batch_number") == batch_number and item.get("completed", True)
+    ]
+    ids = [
+        str(item.get("first_listing_id"))
+        for item in completed_reports
+        if item.get("first_listing_id")
+    ] + [
+        str(item.get("last_listing_id"))
+        for item in completed_reports
+        if item.get("last_listing_id")
+    ]
+    unique_ids: list[str] = []
+    for item in completed_reports:
+        unique_ids.extend(str(value) for value in item.get("listing_ids", []) if value)
+    unique_ids = sorted(set(unique_ids))
+    import hashlib
+    ids_hash = hashlib.sha256("|".join(unique_ids).encode()).hexdigest()[:16] if unique_ids else ""
+    return {
+        "batch_number": batch_number,
+        "portal_page_from": first_page,
+        "portal_page_to": last_page,
+        "first_listing_id": ids[0] if ids else "",
+        "last_listing_id": ids[-1] if ids else "",
+        "listing_ids_hash": ids_hash,
+        "unique_count": len(unique_ids),
+        "request_status": request_status,
+        "challenge_detected": bool(challenge_detected),
+        "completed": bool(completed),
+        "status": status,
+    }
+
+
+def _batch_checkpoints(page_reports: list[dict]) -> list[dict]:
+    """Build deterministic batch summaries from completed/attempted pages."""
+    batch_numbers = sorted({
+        int(item.get("batch_number", _batch_number_for_page(item.get("page", 1))))
+        for item in page_reports
+        if item.get("page")
+    })
+    summaries: list[dict] = []
+    for batch_number in batch_numbers:
+        batch_pages = [item for item in page_reports if item.get("batch_number") == batch_number]
+        completed_pages = [item for item in batch_pages if item.get("completed", True)]
+        expected_from, expected_to = _batch_bounds(batch_number)
+        has_full_batch = {
+            int(item.get("page")) for item in completed_pages if item.get("page")
+        } >= set(range(expected_from, expected_to + 1))
+        last_completed = max(
+            completed_pages,
+            key=lambda item: int(item.get("page", 0)),
+            default={},
+        )
+        # The final batch can be shorter than the nominal 13 UI pages.  A
+        # completed page with no enabled next control is a legitimate batch
+        # completion, not an incomplete batch.
+        if completed_pages and not last_completed.get("next_button_enabled", True):
+            has_full_batch = True
+        status = "COMPLETE" if has_full_batch else "IN_PROGRESS"
+        challenge = any(item.get("challenge_detected") for item in batch_pages)
+        if challenge:
+            status = "CHALLENGE_BLOCKED"
+        request_statuses = [
+            status_value for item in batch_pages
+            for status_value in item.get("result_statuses", [])
+            if status_value is not None
+        ]
+        summaries.append(_build_batch_checkpoint(
+            page_reports,
+            batch_number,
+            status=status,
+            request_status=(request_statuses[-1] if request_statuses else None),
+            challenge_detected=challenge,
+            completed=has_full_batch,
+        ))
+    return summaries
+
+
+def _is_disabled_pagination_control(element) -> bool:
+    if element is None:
+        return True
+    try:
+        return bool(element.get_attribute("disabled") or element.get_attribute("aria-disabled") == "true")
+    except Exception:
+        return False
+
+
+def _parse_numeric_amount(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().replace("$", "").replace("UF", "").replace("uf", "")
+    text = text.replace(" ", "")
+    if not text:
+        return None
+    # Chilean published prices use dots as thousands separators.  Keep a
+    # decimal only when there is no thousands separator.
+    if "," in text and "." not in text:
+        text = text.replace(",", ".")
+    else:
+        text = text.replace(",", "").replace(".", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def published_price_clp(record: dict, uf_valor_clp: float) -> float | None:
+    """Normalize only the published price represented in a discovery card."""
+    clp = _parse_numeric_amount(record.get("price_clp"))
+    if clp is not None:
+        return clp
+    uf = _parse_numeric_amount(record.get("price_uf"))
+    if uf is not None and uf_valor_clp > 0:
+        return uf * uf_valor_clp
+    return None
+
+
+def _path_key(url: str) -> str:
+    parsed = urlparse(url)
+    return parsed.path.rstrip("/").lower()
+
+
+def _merge_embedded_metadata(records: list[dict], embedded_records: list[dict]) -> list[dict]:
+    """Enrich rendered card URLs without replacing the browser page source."""
+    by_path = {_path_key(item.get("url", "")): item for item in embedded_records if item.get("url")}
+    merged = []
+    for record in records:
+        source = by_path.get(_path_key(record.get("url", "")), {})
+        combined = dict(source)
+        combined.update({key: value for key, value in record.items() if value not in (None, "")})
+        merged.append(combined)
+    return merged
+
+
 def _playwright_scope_url(config, start_url: str, estado=None) -> str:
     """Build the browser search shell used by the current Toctoc SPA.
 
@@ -584,6 +990,18 @@ def _payload_without_listings_is_degraded(diagnostics: dict, records: list[dict]
     return bool(diagnostics.get("react_engine_props_present") and diagnostics.get("expected_results") is None)
 
 
+def _reported_results_from_visible_text(text: str) -> int | None:
+    """Read the visible result count without treating arbitrary numbers as totals."""
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    match = re.search(r"\b(?:de|of)\s+([\d.]+)\s+resultados?\b", normalized, re.I)
+    if not match:
+        return None
+    try:
+        return int(match.group(1).replace(".", ""))
+    except ValueError:
+        return None
+
+
 def extract_metadata_from_next_data(next_data) -> list[dict]:
     props = next_data.get("props", {}).get("pageProps", {})
     propiedades = props.get("propiedades", {})
@@ -633,7 +1051,8 @@ def extract_metadata_from_next_data(next_data) -> list[dict]:
 
 
 def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                     requested_commune=None, estado=None, report=None):
+                     requested_commune=None, estado=None, min_price_clp=None,
+                     uf_valor_clp=0.0, report=None):
     if max_urls is not None and max_urls <= 0:
         return discovered
     config = AppConfig()
@@ -641,6 +1060,15 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
     report.setdefault("method", "ssr_embedded_payload")
     report.setdefault("pages", [])
     report.setdefault("expected_results", None)
+    report.setdefault("reported_results", None)
+    report.setdefault("pages_expected", None)
+    report.setdefault("pages_fetched", 0)
+    report.setdefault("raw_listings_found", 0)
+    report.setdefault("repeated_page", False)
+    report.setdefault("repeated_cursor", False)
+    report.setdefault("ssr_page_limit", False)
+    report.setdefault("canonical_url_duplicates", 0)
+    report.setdefault("route_errors", [])
     report.setdefault("duplicates", 0)
     report.setdefault("invalid_urls", 0)
     report.setdefault("scope_removed", 0)
@@ -658,10 +1086,17 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                     "Accept": "text/html",
                     "Accept-Language": "es-CL,es;q=0.9",
                 }, timeout=config.request_timeout_seconds)
+                if resp.status_code == 404:
+                    report["route_errors"].append({"url": current_url, "status": 404})
+                    report["discovery_degraded"] = True
+                    report["run_aborted"] = True
+                    report["abort_reason"] = "HTTP_404_ROUTE_NOT_FOUND"
+                    break
                 resp.raise_for_status()
                 html = resp.text
             except Exception as e:
                 print(f"  SSR download failed: {e}")
+                report.setdefault("fetch_errors", []).append({"url": current_url, "error": str(e)})
                 report["run_aborted"] = True
                 report["abort_reason"] = "HTTP_OR_NETWORK_FAILURE"
                 break
@@ -669,15 +1104,24 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
             expected = diagnostics.get("expected_results")
             if expected:
                 report["expected_results"] = expected
+                report["reported_results"] = expected
+                report["pages_expected"] = _expected_page_count(expected, 20)
             props_hash = hash(json.dumps([r.get("url") for r in records], sort_keys=True))
             if prev_hash is not None and props_hash == prev_hash:
                 print("  SSR page repeated, stopping.")
-                report["pagination_working"] = report.get("pagination_working", False)
+                report["repeated_page"] = True
+                report["ssr_page_limit"] = True
+                report["discovery_degraded"] = True
+                report["run_aborted"] = True
+                report["abort_reason"] = "PAGINATION_DEGRADED_REPEATED_SSR_PAGE"
                 break
             prev_hash = props_hash
             new_on_page = 0
             scope_removed = 0
             duplicates = 0
+            unique_before_price_on_page = 0
+            below_price_on_page = 0
+            invalid_price_on_page = 0
             for rec in records:
                 if requested_commune and not matches_requested_commune(rec.get("url", ""), requested_commune):
                     scope_removed += 1
@@ -691,6 +1135,15 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                 seen_urls.add(rec["url"])
                 if rec["listing_id"]:
                     seen_ids.add(rec["listing_id"])
+                unique_before_price_on_page += 1
+                if min_price_clp is not None:
+                    published_clp = published_price_clp(rec, uf_valor_clp)
+                    if published_clp is None:
+                        invalid_price_on_page += 1
+                        continue
+                    if published_clp < min_price_clp:
+                        below_price_on_page += 1
+                        continue
                 rec.update({
                     "source_search_url": start_url,
                     "source_page_url": current_url,
@@ -705,10 +1158,21 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
                     report["duplicates"] += duplicates
                     report["scope_removed"] += scope_removed
                     report["pages"].append({"page": pages_visited + 1, "raw_records": len(records), "new_unique_urls": new_on_page,
-                                             "duplicates": duplicates, "scope_removed": scope_removed, **diagnostics})
+                                             "duplicates": duplicates, "scope_removed": scope_removed,
+                                             "unique_before_price": unique_before_price_on_page,
+                                             "below_min_price_excluded": below_price_on_page,
+                                             "invalid_price_excluded": invalid_price_on_page, **diagnostics})
                     return discovered
             report["pages"].append({"page": pages_visited + 1, "raw_records": len(records), "new_unique_urls": new_on_page,
-                                    "duplicates": duplicates, "scope_removed": scope_removed, **diagnostics})
+                                    "duplicates": duplicates, "scope_removed": scope_removed,
+                                    "unique_before_price": unique_before_price_on_page,
+                                    "below_min_price_excluded": below_price_on_page,
+                                    "invalid_price_excluded": invalid_price_on_page, **diagnostics})
+            report["pages_fetched"] = len(report["pages"])
+            report["raw_listings_found"] += len(records)
+            report["unique_before_price"] = report.get("unique_before_price", 0) + unique_before_price_on_page
+            report["below_min_price_excluded"] = report.get("below_min_price_excluded", 0) + below_price_on_page
+            report["invalid_price_excluded"] = report.get("invalid_price_excluded", 0) + invalid_price_on_page
             if pages_visited > 0 and new_on_page > 0:
                 report["pagination_working"] = True
             report["duplicates"] += duplicates
@@ -744,15 +1208,22 @@ def discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen
 
 def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
                              proxy_manager=None, block_resources=True, requested_commune=None,
-                             estado=None, report=None):
+                             estado=None, min_price_clp=None, uf_valor_clp=0.0, report=None):
     if max_urls is not None and max_urls <= 0:
         return discovered
     try:
         from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
     except ImportError:
-        print("Playwright not installed. Falling back to SSR.")
-        return discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                                requested_commune=requested_commune, estado=estado, report=report)
+        # The protected browser path must fail closed. Falling back to direct
+        # HTTP here could turn a session challenge into an incomplete scope.
+        if report is not None:
+            report.update({
+                "discovery_degraded": True,
+                "run_aborted": True,
+                "abort_reason": "PLAYWRIGHT_REQUIRED_FOR_PROTECTED_DISCOVERY",
+            })
+        print("Playwright is required for protected Toctoc discovery; stopping safely.")
+        return discovered
 
     config = AppConfig()
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -770,6 +1241,16 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
 
     page_signatures: set[str] = set()
     stop_reason = None
+    all_page_reports: list[dict] = []
+    search_reports: list[dict] = []
+    if checkpoint_path.exists():
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            report["resume_checkpoint_loaded"] = True
+            report["resume_from_page"] = checkpoint.get("next_page")
+            report["resume_from_batch"] = checkpoint.get("batches", [])[-1] if checkpoint.get("batches") else {}
+        except Exception:
+            report["resume_checkpoint_loaded"] = False
 
     def _save_atomic(data):
         tmp = progress_path.with_suffix(".tmp")
@@ -826,10 +1307,19 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         pg.wait_for_timeout(3500)
         display = _playwright_commune_label(requested_commune or "")
         try:
-            pg.wait_for_selector('input[placeholder*="barrio"]', timeout=12000)
+            pg.wait_for_selector(
+                'input[placeholder*="barrio" i], '
+                'input[placeholder*="comuna" i], '
+                'input[placeholder*="ciudad" i]',
+                timeout=12000,
+            )
         except Exception:
             pass
-        location_input = pg.locator('input[placeholder*="barrio"]').first
+        location_input = pg.locator(
+            'input[placeholder*="barrio" i], '
+            'input[placeholder*="comuna" i], '
+            'input[placeholder*="ciudad" i]'
+        ).first
         if not location_input.count() and pg.locator("input").count():
             # Keep a compatibility fallback for regionalized copies of the
             # SPA where the placeholder text differs.
@@ -841,7 +1331,24 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
             location_input.press("Control+A")
             location_input.type(display, delay=30)
             pg.wait_for_timeout(1000)
-            suggestions = pg.get_by_text(display, exact=True)
+            suggestions = pg.locator('[role="option"]').filter(has_text=display)
+            if not suggestions.count():
+                suggestions = pg.get_by_text(display, exact=True)
+            if not suggestions.count():
+                # The current autocomplete renders location rows as plain
+                # spans with an ``ic-location`` icon, not ARIA options.  Pick
+                # only the exact normalized commune row; do not click a
+                # street or a result card that merely contains the text.
+                location_rows = pg.locator('span:has(i.ic-location)')
+                desired = _normalize_slug(display)
+                for index in range(location_rows.count()):
+                    try:
+                        row_text = _normalize_slug(location_rows.nth(index).inner_text())
+                    except Exception:
+                        continue
+                    if row_text == desired:
+                        suggestions = location_rows.nth(index)
+                        break
             if not suggestions.count():
                 return False, "SPA_COMMUNE_SUGGESTION_NOT_FOUND"
             # The first exact match is the location suggestion (the other
@@ -855,7 +1362,48 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         if expected_slug == "santiago-centro":
             expected_slug = "santiago"
         if f"/{expected_slug}/" not in current:
-            return False, "SPA_COMMUNE_SELECTION_OUT_OF_SCOPE"
+            # Some official communes have no SEO directory and therefore do
+            # not appear in the resulting URL.  The selection is still
+            # trustworthy when the browser's location control retained the
+            # exact chosen label; final listing-level scope checks remain
+            # mandatory below.
+            selected_value = ""
+            try:
+                selected_value = pg.locator(
+                    'input[placeholder*="barrio" i], '
+                    'input[placeholder*="comuna" i], '
+                    'input[placeholder*="ciudad" i]'
+                ).first.input_value()
+            except Exception:
+                pass
+            if _normalize_slug(selected_value) != _normalize_slug(display):
+                return False, "SPA_COMMUNE_SELECTION_OUT_OF_SCOPE"
+        return True, ""
+
+    def _prepare_ssr_scope(pg, seo_url):
+        """Open the SEO result page whose real MUI paginator is browser-driven.
+
+        Directly changing ``pagina`` with requests is not a valid pagination
+        operation on the current frontend: the server repeats the bootstrap
+        payload.  The rendered page, however, exposes a MUI paginator whose
+        click handler loads the next page in the legitimate browser session.
+        """
+        response = pg.goto(seo_url, wait_until="domcontentloaded", timeout=60000)
+        if response is not None and response.status == 404:
+            return False, "HTTP_404_ROUTE_NOT_FOUND"
+        pg.wait_for_timeout(3500)
+        try:
+            pg.wait_for_selector(
+                'nav[aria-label="pagination navigation"], '
+                'a[href*="/venta/"], a[href*="/arriendo/"]',
+                timeout=20000,
+            )
+        except Exception:
+            # A server-rendered bootstrap can be HTTP 200 while the current
+            # SPA shell never mounts its live paginator.  Falling back to the
+            # normal location-selection flow is safer than treating the SSR
+            # payload as a complete discovery result.
+            return False, "PAGINATION_CONTROL_NOT_MOUNTED"
         return True, ""
 
     def _extract_records_from_hrefs(hrefs, base):
@@ -896,19 +1444,94 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         page = context.new_page()
         network_events = []
 
+        def _relevant_network_url(value):
+            low_url = str(value or "").lower()
+            return (
+                "www.toctoc.com" in low_url
+                and (
+                    "/gw-lista-seo/" in low_url
+                    or "pagina=" in low_url
+                    or "/properties" in low_url
+                    or "/resultados/" in low_url
+                )
+            )
+
+        def _request_metadata(request, event_type):
+            parsed = urlparse(request.url)
+            post_data = request.post_data or ""
+            if "/recaptcha/verify" in parsed.path.lower():
+                # Never persist or print the ephemeral reCAPTCHA token.
+                post_data = "<redacted recaptcha token>"
+            metadata = {
+                "event": event_type,
+                "method": request.method,
+                "url": urlunparse(parsed._replace(query=urlencode(_safe_query_params(parsed.query), doseq=True))),
+                "path": parsed.path,
+                "params": _safe_query_params(parsed.query),
+                "post_data": post_data if post_data == "<redacted recaptcha token>" else {
+                    "present": bool(post_data),
+                    "length": len(post_data),
+                    "sha256": _secret_fingerprint(post_data) if post_data else "",
+                },
+                "resource_type": request.resource_type,
+            }
+            try:
+                metadata["request_context"] = _safe_request_context(request, context)
+            except Exception:
+                metadata["request_context"] = {"status": "unavailable"}
+            return metadata
+
+        def _capture_request(request):
+            if _relevant_network_url(request.url):
+                network_events.append(_request_metadata(request, "request"))
+
         def _capture_response(response):
             low_url = response.url.lower()
-            if "/gw-lista-seo/properties" not in low_url:
+            should_capture = (
+                "/gw-lista-seo/" in low_url
+                or "pagina=" in low_url
+                or "/properties" in low_url
+                or "/resultados/" in low_url
+            )
+            if not should_capture:
                 return
-            event = {"status": response.status, "url": response.url}
+            event = _request_metadata(response.request, "response")
+            event["status"] = response.status
             try:
                 body = response.text()
                 event["recaptcha_required"] = "recaptcha_required" in body.lower()
+                event["body_marker"] = next(
+                    (marker for marker in ("recaptcha_required", "forbidden", "captcha", "access denied")
+                     if marker in body.lower()),
+                    "",
+                )
+                if "/properties" in low_url and response.status == 200:
+                    try:
+                        api_payload = json.loads(body)
+                        api_records = extract_metadata_from_embedded_payload(
+                            api_payload, response.url, "browser_results_endpoint"
+                        )
+                        event["api_record_count"] = len(api_records)
+                        event["_api_records"] = api_records
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        event["api_record_count"] = 0
             except Exception:
                 event["recaptcha_required"] = False
+                event["body_marker"] = ""
             network_events.append(event)
 
+        def _capture_request_failed(request):
+            failure = request.failure
+            low_url = request.url.lower()
+            if failure and _relevant_network_url(low_url):
+                event = _request_metadata(request, "requestfailed")
+                event["status"] = None
+                event["request_failed"] = failure
+                network_events.append(event)
+
+        page.on("request", _capture_request)
         page.on("response", _capture_response)
+        page.on("requestfailed", _capture_request_failed)
 
         # Block image/media/font resources during discovery (configurable)
         if block_resources:
@@ -928,6 +1551,11 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
             blocked_pages = 0
             page_reports = []
             previous_page_ids = set()
+            network_cursor = 0
+            # A signature is scoped to one type/commune search.  Reusing it
+            # across separate start URLs would incorrectly mark a legitimate
+            # overlap between searches as a pagination failure.
+            page_signatures = set()
 
             # Check limit before network request
             if max_urls is not None and len(discovered) >= max_urls:
@@ -935,15 +1563,36 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 break
 
             try:
-                prepared, prepare_reason = _prepare_live_scope(page, current_url)
+                prepared, prepare_reason = _prepare_ssr_scope(page, current_url)
                 if not prepared:
-                    stop_reason = prepare_reason
-                    report.update({
-                        "discovery_degraded": True,
-                        "run_aborted": True,
-                        "abort_reason": prepare_reason,
-                    })
-                    break
+                    # A commune without an SEO directory (notably Pedro
+                    # Aguirre Cerda) can still be selected through the real
+                    # browser location widget.  Never fabricate a protected
+                    # request; use the SPA only after the public route says
+                    # it does not exist.
+                    if prepare_reason in {"HTTP_404_ROUTE_NOT_FOUND", "PAGINATION_CONTROL_NOT_MOUNTED"}:
+                        prepared, spa_reason = _prepare_live_scope(page, current_url)
+                        if prepared:
+                            report.setdefault("spa_scope_fallbacks", []).append({
+                                "search_url": start_url,
+                                "reason": prepare_reason,
+                            })
+                            prepare_reason = ""
+                        else:
+                            prepare_reason = spa_reason
+                    if not prepared:
+                        stop_reason = prepare_reason
+                        report.update({
+                            "discovery_degraded": True,
+                            "run_aborted": True,
+                            "abort_reason": prepare_reason,
+                        })
+                        report.setdefault("route_errors", []).append({
+                            "url": current_url,
+                            "status": 404 if prepare_reason == "HTTP_404_ROUTE_NOT_FOUND" else None,
+                            "reason": prepare_reason,
+                        })
+                        break
                 try:
                     page.wait_for_selector(
                         'a[href*="/propiedad/"], a[href*="/propiedades/"], '
@@ -971,6 +1620,11 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     break
 
                 raw_html = page.content()
+                visible_result_text = ""
+                try:
+                    visible_result_text = page.locator("body").inner_text(timeout=3000)
+                except Exception:
+                    pass
                 body_text = re.sub(r"<script\b.*?</script>", " ", raw_html, flags=re.I|re.S, count=50)
                 body_text = re.sub(r"<[^>]+>", " ", body_text)
                 body_text = re.sub(r"\s+", " ", body_text).strip().lower()
@@ -982,16 +1636,99 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
 
                 embedded_records, diagnostics = _extract_page_records(raw_html, current_url)
                 hrefs = _scroll_and_extract(page, current_url)
+                visible_total = _reported_results_from_visible_text(visible_result_text)
+                if visible_total and not diagnostics.get("expected_results"):
+                    diagnostics = dict(diagnostics)
+                    diagnostics["expected_results"] = visible_total
+                    diagnostics["reported_results_source"] = "visible_page_text"
                 cards_count = len(hrefs)
+                recent_network = network_events[network_cursor:]
+                api_records = []
+                for event in recent_network:
+                    api_records.extend(event.get("_api_records", []))
+                result_statuses = [
+                    event.get("status")
+                    for event in recent_network
+                    if event.get("event") == "response"
+                    and "/properties" in str(event.get("path", "")).lower()
+                ]
                 # In the live SPA, react-engine-props can retain a broader
                 # bootstrap/search payload while the visible DOM represents
                 # the actual current paginator page. Prefer those rendered
                 # card links whenever they exist; use embedded data only as
                 # the fallback for SSR/legacy pages without DOM cards.
                 records = _extract_records_from_hrefs(hrefs, current_url) if hrefs else embedded_records
+                if not records and api_records:
+                    records = api_records
+                    diagnostics = dict(diagnostics)
+                    diagnostics["method"] = "browser_results_endpoint"
+                if hrefs and embedded_records:
+                    records = _merge_embedded_metadata(records, embedded_records)
                 records = [record for record in records if _matches_requested_state(record, estado)]
                 page_ids = [r["listing_id"] for r in records if r.get("listing_id")]
                 signature = _page_signature(page_ids) if page_ids else _page_signature([r["url"] for r in records])
+
+                def _pagination_diagnostic():
+                    def _control_info(selector):
+                        control = page.query_selector(selector)
+                        if not control:
+                            return None
+                        try:
+                            disabled_attr = control.get_attribute("disabled")
+                            aria_disabled = control.get_attribute("aria-disabled")
+                            class_name = control.get_attribute("class") or ""
+                            disabled = bool(disabled_attr is not None or aria_disabled == "true" or "disabled" in class_name.lower())
+                            text = (control.inner_text() or "").strip()
+                            return {
+                                "selector": selector,
+                                "text": text,
+                                "disabled": disabled,
+                                "aria_disabled": aria_disabled,
+                                "state": "disabled" if disabled else "enabled",
+                            }
+                        except Exception:
+                            return {"selector": selector, "text": "", "disabled": False, "state": "unknown"}
+
+                    current_btn = page.query_selector(
+                        'nav[aria-label="pagination navigation"] button[aria-current="true"]'
+                    )
+                    current_page = ""
+                    if current_btn:
+                        try:
+                            current_page = (current_btn.inner_text() or "").strip()
+                        except Exception:
+                            current_page = ""
+                    try:
+                        current_page_number = int(current_page)
+                    except (TypeError, ValueError):
+                        current_page_number = pages_visited + 1
+                    next_info = _control_info(
+                        f'nav[aria-label="pagination navigation"] button[aria-label="Go to page {current_page_number + 1}"]'
+                    )
+                    if not next_info:
+                        next_info = _control_info('button[aria-label="Go to next page"]')
+                    if not next_info:
+                        next_info = _control_info('ul.pagination a.page-link[aria-label="Next"]')
+                    if not next_info:
+                        next_info = _control_info('ul.pagination a.page-link[aria-label="Siguiente"]')
+                    parsed = urlparse(page.url)
+                    params = {k: v for k, v in parse_qsl(parsed.query, keep_blank_values=True)}
+                    return {
+                        "page_number": pages_visited + 1,
+                        "current_url": page.url,
+                        "request_params": params,
+                        "cursor": params.get("cursor", ""),
+                        "offset": params.get("offset", params.get("skip", "")),
+                        "page_param": params.get("pagina", params.get("page", "")),
+                        "first_listing_id": page_ids[0] if page_ids else "",
+                        "last_listing_id": page_ids[-1] if page_ids else "",
+                        "listing_ids_hash": signature,
+                        "dom_result_count": cards_count,
+                        "next_button_enabled": bool(next_info and not next_info.get("disabled")),
+                        "next_button_text": next_info.get("text", "") if next_info else "",
+                        "next_button_state": next_info.get("state", "absent") if next_info else "absent",
+                        "next_button": next_info or {},
+                    }
 
                 if not records:
                     report.update({
@@ -1003,6 +1740,9 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
 
                 new_on_page = 0
                 dup_on_page = 0
+                unique_before_price_on_page = 0
+                below_price_on_page = 0
+                invalid_price_on_page = 0
                 for rec in records:
                     if requested_commune and not matches_requested_commune(rec.get("url", ""), requested_commune):
                         continue
@@ -1015,6 +1755,15 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     seen_urls.add(rec["url"])
                     if rec["listing_id"]:
                         seen_ids.add(rec["listing_id"])
+                    unique_before_price_on_page += 1
+                    if min_price_clp is not None:
+                        published_clp = published_price_clp(rec, uf_valor_clp)
+                        if published_clp is None:
+                            invalid_price_on_page += 1
+                            continue
+                        if published_clp < min_price_clp:
+                            below_price_on_page += 1
+                            continue
                     rec.update({
                         "origen": "toctoc",
                         "source_portal": "toctoc",
@@ -1035,25 +1784,67 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
 
                 page_reports.append({
                     "page": pages_visited + 1,
+                    "batch_number": _batch_number_for_page(pages_visited + 1),
+                    "batch_page_from": _batch_bounds(_batch_number_for_page(pages_visited + 1))[0],
+                    "batch_page_to": _batch_bounds(_batch_number_for_page(pages_visited + 1))[1],
+                    "completed": bool(records),
                     "cards_detected": cards_count,
                     "urls_extracted": len(records),
                     "new_unique_urls": new_on_page,
                     "duplicates": dup_on_page,
+                    "unique_before_price": unique_before_price_on_page,
+                    "below_min_price_excluded": below_price_on_page,
+                    "invalid_price_excluded": invalid_price_on_page,
                     "first_listing_id": page_ids[0] if page_ids else "",
-                    "last_listing_id": page_ids[-1] if page_ids else "",
+                     "last_listing_id": page_ids[-1] if page_ids else "",
+                     "listing_ids": list(page_ids),
+                     "result_statuses": result_statuses,
+                     "challenge_detected": any(
+                         event.get("recaptcha_required") or event.get("status") == 403
+                         for event in recent_network
+                     ),
                     "page_signature": signature,
                     "overlap_with_previous": len(set(page_ids) & previous_page_ids),
                     "discovery_method": "dom_pagination" if hrefs else diagnostics.get("method", "embedded_payload"),
                     "scope_filtered": diagnostics.get("expected_results"),
-                    "network_responses": list(network_events),
+                    "reported_results": diagnostics.get("expected_results"),
+                    "pages_expected": _expected_page_count(
+                        diagnostics.get("expected_results"),
+                        _pagination_page_size(cards_count, len(records)),
+                    ),
+                    "network_requests": [
+                        {
+                            key: value for key, value in event.items()
+                            if key != "_api_records"
+                        }
+                        for event in network_events[network_cursor:]
+                        if event.get("event") in {"request", "response", "requestfailed"}
+                    ],
                 })
+                page_reports[-1].update(_pagination_diagnostic())
+                network_cursor = len(network_events)
+                report["reported_results"] = report.get("reported_results") or diagnostics.get("expected_results")
+                report["expected_results"] = report.get("expected_results") or diagnostics.get("expected_results")
+                report["pages_expected"] = report.get("pages_expected") or _expected_page_count(
+                    report.get("expected_results"), _pagination_page_size(cards_count, len(records))
+                )
+                report["pages_fetched"] = len(page_reports)
+                report["raw_listings_found"] = report.get("raw_listings_found", 0) + len(records)
+                report["unique_before_price"] = report.get("unique_before_price", 0) + unique_before_price_on_page
+                report["below_min_price_excluded"] = report.get("below_min_price_excluded", 0) + below_price_on_page
+                report["invalid_price_excluded"] = report.get("invalid_price_excluded", 0) + invalid_price_on_page
+                report["duplicates"] = report.get("duplicates", 0) + dup_on_page
                 previous_page_ids = set(page_ids)
                 if pages_visited > 0 and new_on_page > 0:
                     report["pagination_working"] = True
 
                 print(f"  PW page {pages_visited+1}: cards={cards_count} extracted={len(records)} new={new_on_page} dup={dup_on_page} total={len(discovered)}")
                 _save_atomic(discovered)
-                _save_checkpoint(checkpoint_path, batch_id, start_url, pages_visited+1, len(discovered), stop_reason)
+                _save_checkpoint(
+                    checkpoint_path, batch_id, start_url, pages_visited + 1,
+                    len(discovered), stop_reason, page_reports=page_reports,
+                    batches=_batch_checkpoints(page_reports),
+                )
 
                 if report.get("discovery_degraded"):
                     break
@@ -1063,13 +1854,26 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     break
 
                 if pages_visited > 0 and new_on_page == 0:
-                    stop_reason = "PAGINATION_DEGRADED_NO_NEW_UNIQUE_LISTINGS"
-                    report.update({
-                        "discovery_degraded": True,
-                        "run_aborted": True,
-                        "abort_reason": stop_reason,
-                    })
-                    break
+                    if dup_on_page > 0:
+                        stop_reason = "PAGINATION_DEGRADED_REPEATED_PAGE"
+                        report.update({
+                            "repeated_page": True,
+                            "repeated_cursor": True,
+                            "discovery_degraded": True,
+                            "run_aborted": True,
+                            "abort_reason": stop_reason,
+                        })
+                        break
+                    # A page may legitimately contain only listings removed
+                    # by the local price gate.  It still advances pagination.
+                    if below_price_on_page + invalid_price_on_page < len(records):
+                        stop_reason = "PAGINATION_DEGRADED_NO_NEW_UNIQUE_LISTINGS"
+                        report.update({
+                            "discovery_degraded": True,
+                            "run_aborted": True,
+                            "abort_reason": stop_reason,
+                        })
+                        break
 
                 if signature in page_signatures:
                     stop_reason = "REPEATED_PAGE"
@@ -1127,6 +1931,10 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     except Exception:
                         pass
 
+                if _is_disabled_pagination_control(next_btn):
+                    stop_reason = "LAST_PAGE_REACHED"
+                    break
+
                 ids_before = set(page_ids)
                 previous_signature = signature
                 response_count_before = len(network_events)
@@ -1156,15 +1964,66 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                             break
                     if not changed:
                         recent = network_events[response_count_before:]
-                        if any(event.get("status", 0) >= 400 or event.get("recaptcha_required") for event in recent):
+                        challenge_detected = any(
+                            event.get("status", 0) == 403
+                            and (
+                                event.get("recaptcha_required")
+                                or event.get("body_marker") == "recaptcha_required"
+                            )
+                            or event.get("recaptcha_required")
+                            for event in recent
+                        )
+                        if challenge_detected:
                             stop_reason = "RECAPTCHA_BLOCKING_BROWSER_FLOW"
                         else:
                             stop_reason = "PAGINATION_DEGRADED_PAGE_DID_NOT_CHANGE"
+                        attempt_page = pages_visited + 1
+                        attempt_diagnostic = _pagination_diagnostic()
+                        attempt_diagnostic.update({
+                            "page": attempt_page,
+                            "batch_number": _batch_number_for_page(attempt_page),
+                            "batch_page_from": _batch_bounds(_batch_number_for_page(attempt_page))[0],
+                            "batch_page_to": _batch_bounds(_batch_number_for_page(attempt_page))[1],
+                            "completed": False,
+                            "cards_detected": 0,
+                            "urls_extracted": 0,
+                            "new_unique_urls": 0,
+                            "duplicates": 0,
+                            "unique_before_price": 0,
+                            "below_min_price_excluded": 0,
+                            "invalid_price_excluded": 0,
+                            "first_listing_id": "",
+                            "last_listing_id": "",
+                            "listing_ids": [],
+                            "page_signature": "",
+                            "overlap_with_previous": 0,
+                            "result_statuses": [
+                                event.get("status") for event in recent
+                                if event.get("event") == "response"
+                                and "/properties" in str(event.get("path", "")).lower()
+                            ],
+                            "challenge_detected": challenge_detected,
+                            "request_status": stop_reason,
+                            "network_requests": [
+                                {key: value for key, value in event.items() if key != "_api_records"}
+                                for event in recent
+                                if event.get("event") in {"request", "response", "requestfailed"}
+                            ],
+                        })
+                        page_reports.append(attempt_diagnostic)
                         report.update({
                             "discovery_degraded": True,
                             "run_aborted": True,
                             "abort_reason": stop_reason,
+                            "challenge_detected": challenge_detected,
                         })
+                        _save_atomic(discovered)
+                        _save_checkpoint(
+                            checkpoint_path, batch_id, start_url, pages_visited,
+                            len(discovered), stop_reason, page_reports=page_reports,
+                            batches=_batch_checkpoints(page_reports),
+                            next_page=attempt_page,
+                        )
                         break
                 except Exception as e:
                     next_failures += 1
@@ -1193,33 +2052,110 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     })
                     break
 
+            all_page_reports.extend(page_reports)
+            search_reports.append({
+                "search_url": start_url,
+                "pages_expected": _expected_page_count(
+                    page_reports[0].get("reported_results") if page_reports else None,
+                    _pagination_page_size(
+                        page_reports[0].get("dom_result_count", 0),
+                        page_reports[0].get("urls_extracted", 20),
+                    ) if page_reports else 20,
+                ),
+                "pages_fetched": sum(1 for item in page_reports if item.get("completed", True)),
+                "pages_attempted": len(page_reports),
+                "reported_results": page_reports[0].get("reported_results") if page_reports else None,
+                "raw_listings_found": sum(p.get("urls_extracted", 0) for p in page_reports),
+                "unique_before_price": sum(p.get("unique_before_price", 0) for p in page_reports),
+                "unique_listings": sum(p.get("new_unique_urls", 0) for p in page_reports),
+                "below_min_price_excluded": sum(p.get("below_min_price_excluded", 0) for p in page_reports),
+                "invalid_price_excluded": sum(p.get("invalid_price_excluded", 0) for p in page_reports),
+                "stop_reason": stop_reason,
+            })
+
         browser.close()
 
     stop_reason = stop_reason or "COMPLETED"
     print(f"\n  Discovery finished: {stop_reason}")
     print(f"  Pages: {len(page_reports)}, Total unique URLs: {len(discovered)}")
 
-    report["pages"] = page_reports
-    report["total_pages_discovered"] = len(page_reports)
-    report["total_raw_listings"] = sum(p.get("urls_extracted", 0) for p in page_reports)
+    report["pages"] = all_page_reports
+    report["searches"] = search_reports
+    report["total_pages_discovered"] = sum(
+        1 for item in all_page_reports if item.get("completed", True)
+    )
+    report["pages_fetched"] = report["total_pages_discovered"]
+    report["pages_attempted"] = len(all_page_reports)
+    report["total_raw_listings"] = sum(p.get("urls_extracted", 0) for p in all_page_reports)
+    report["raw_listings_found"] = report["total_raw_listings"]
     report["total_unique_listings"] = len(discovered)
     report["duplicates_removed"] = report.get("duplicates", 0)
     report["network_response_captured"] = bool(network_events)
     report["network_responses"] = list(network_events)
+    report.update(_summarize_network_contract(network_events))
+    result_request_events = [
+        event for event in network_events
+        if "/properties" in str(event.get("path", "")).lower()
+        and event.get("event") == "request"
+    ]
+    initial_request = next(
+        (event.get("request_context") for event in result_request_events
+         if str((event.get("params") or {}).get("page", "")) == "1"),
+        None,
+    )
+    page2_request = next(
+        (event.get("request_context") for event in result_request_events
+         if str((event.get("params") or {}).get("page", "")) == "2"),
+        None,
+    )
+    report["initial_request_context"] = initial_request or {}
+    report["page2_request_context"] = page2_request or {}
+    report["missing_session_requirement"] = _compare_request_contexts(initial_request, page2_request)
+    report["challenge_detected"] = bool(
+        report.get("challenge_detected")
+        or report.get("recaptcha_required_observed")
+        or stop_reason == "RECAPTCHA_BLOCKING_BROWSER_FLOW"
+    )
+    report["challenge_pause_resume"] = {
+        "safe_stop": bool(report.get("challenge_detected")),
+        "checkpoint_preserved": bool(report.get("challenge_detected") and checkpoint_path.exists()),
+        "resume_requires_new_valid_browser_session": bool(report.get("challenge_detected")),
+    }
+    report["batches"] = _batch_checkpoints(all_page_reports)
     report["playwright_pagination"] = len(page_reports) > 1 and not report.get("discovery_degraded")
     report["recaptcha_blocking_browser_flow"] = stop_reason == "RECAPTCHA_BLOCKING_BROWSER_FLOW"
-    if page_reports:
-        report["first_page_unique"] = page_reports[0].get("new_unique_urls", 0)
-        report["last_page_unique"] = page_reports[-1].get("new_unique_urls", 0)
-        report["middle_pages_unique"] = sum(p.get("new_unique_urls", 0) for p in page_reports[1:-1])
+    incomplete_searches = [
+        item for item in search_reports
+        if item.get("reported_results")
+        and item.get("pages_expected")
+        and item.get("pages_fetched", 0) < item.get("pages_expected", 0)
+    ]
+    if incomplete_searches:
+        if report.get("method") == "ssr_embedded_payload":
+            report["ssr_page_limit"] = True
+        else:
+            report["browser_batch_limit"] = True
+        report["pagination_complete"] = False
+        if not report.get("discovery_degraded"):
+            report.update({
+                "discovery_degraded": True,
+                "run_aborted": True,
+                "abort_reason": "PAGINATION_INCOMPLETE_EXPECTED_PAGE_COUNT_NOT_REACHED",
+            })
+    else:
+        report["pagination_complete"] = bool(search_reports) and not report.get("discovery_degraded")
+    if all_page_reports:
+        report["first_page_unique"] = all_page_reports[0].get("new_unique_urls", 0)
+        report["last_page_unique"] = all_page_reports[-1].get("new_unique_urls", 0)
+        report["middle_pages_unique"] = sum(p.get("new_unique_urls", 0) for p in all_page_reports[1:-1])
         report["first_page_only_percent"] = round(
             100 * report["first_page_unique"] / max(1, len(discovered)), 2
         )
         report["first_5_pages_validated"] = (
-            len(page_reports) >= 5
+            len(all_page_reports) >= 5
             and not report.get("discovery_degraded")
-            and all(p.get("new_unique_urls", 0) > 0 for p in page_reports[:5])
-            and all(p.get("overlap_with_previous", 0) == 0 for p in page_reports[1:5])
+            and all(p.get("new_unique_urls", 0) > 0 for p in all_page_reports[:5])
+            and all(p.get("overlap_with_previous", 0) == 0 for p in all_page_reports[1:5])
         )
     report["full_scope_discovery_working"] = bool(
         report.get("first_5_pages_validated")
@@ -1227,8 +2163,19 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         and stop_reason in {"LAST_PAGE_REACHED", "NEXT_NOT_FOUND", "NEXT_DISABLED", "COMPLETED"}
     )
 
-    _save_checkpoint(checkpoint_path, batch_id, start_url if 'start_url' in dir() else "", len(page_reports), len(discovered), stop_reason, page_reports)
-    if progress_path.exists():
+    _save_checkpoint(
+        checkpoint_path, batch_id, start_url if 'start_url' in dir() else "",
+        max((item.get("page", 0) for item in all_page_reports if item.get("completed", True)), default=0),
+        len(discovered), stop_reason, all_page_reports,
+        batches=report.get("batches", []),
+        next_page=(max((item.get("page", 0) for item in all_page_reports), default=0) + 1),
+        challenge_detected=bool(report.get("challenge_detected")),
+    )
+    # Keep the progress/checkpoint evidence whenever the run stopped because
+    # the browser encountered a challenge or another degraded state.  A later
+    # legitimate browser session can resume from the recorded batch without
+    # treating the failed batch as an empty end-of-results page.
+    if progress_path.exists() and not report.get("challenge_detected") and not report.get("discovery_degraded"):
         try: progress_path.unlink()
         except: pass
     return discovered
@@ -1267,12 +2214,17 @@ def _save_progress(path, data):
     tmp.replace(path)
 
 
-def _save_checkpoint(path, batch_id, search_url, last_page, total_urls, stop_reason, page_reports=None):
+def _save_checkpoint(path, batch_id, search_url, last_page, total_urls, stop_reason, page_reports=None,
+                     batches=None, next_page=None, challenge_detected=False):
     path.parent.mkdir(parents=True, exist_ok=True)
     cp = {
         "batch_id": batch_id, "search_url": search_url,
         "last_completed_page": last_page, "total_unique_urls": total_urls,
         "stop_reason": stop_reason, "page_reports": page_reports or [],
+        "batches": batches or _batch_checkpoints(page_reports or []),
+        "next_page": next_page if next_page is not None else last_page + 1,
+        "challenge_detected": bool(challenge_detected),
+        "resume_available": bool(challenge_detected),
         "updated_at": _utcnow(),
     }
     tmp = path.with_suffix(".tmp")
@@ -1300,6 +2252,10 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
         "discovery_degraded": False,
         "run_aborted": False,
         "pagination_working": False,
+        "property_types_requested": str(tipo or ""),
+        "property_types_available": [item["slug"] for item in property_type_catalog()],
+        "property_types_executed": [],
+        "route_errors": [],
     }
 
     if max_urls is not None and max_urls <= 0:
@@ -1307,34 +2263,43 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
 
     if not start_urls:
         route_commune = _search_route_commune(comuna)
+        start_urls = []
+        for spec in property_type_specs(tipo):
+            report["property_types_executed"].append(spec["slug"])
+            start_urls.append(build_ssr_search_url(
+                config,
+                operacion=operacion,
+                tipo=spec["route_slug"],
+                region=region,
+                comuna=route_commune,
+                pagina=1,
+                estado=estado,
+                publicador=publicador,
+                precio_desde=precio_desde,
+                precio_hasta=precio_hasta,
+            ))
         if use_playwright:
-            op = operacion if operacion != "venta" else "compra"
-            builder = build_search_url(config, operacion=op, tipo=tipo, region=region, comuna=route_commune,
-                                        pagina=1, estado=estado, publicador=publicador,
-                                        precio_desde=precio_desde, precio_hasta=precio_hasta)
-            if builder["warnings"]:
-                for w in builder["warnings"]:
-                    print(f"  WARNING: {w}")
-            # The SPA shell does not expose its result payload reliably. The
-            # SSR/SEO route remains the primary source for discovery and is
-            # parsed with the same frontend-agnostic adapters below.
-            start_urls = [build_ssr_search_url(config, operacion=operacion, tipo=tipo, region=region,
-                                               comuna=route_commune, pagina=1, estado=estado,
-                                               publicador=publicador, precio_desde=precio_desde,
-                                               precio_hasta=precio_hasta)]
-        else:
-            start_urls = [build_ssr_search_url(config, operacion=operacion, tipo=tipo, region=region,
-                                               comuna=route_commune, pagina=1, estado=estado,
-                                               publicador=publicador, precio_desde=precio_desde,
-                                               precio_hasta=precio_hasta)]
+            # The current browser paginator is protected when legacy price
+            # query parameters are replayed on every page.  Keep the approved
+            # price threshold as a local discovery gate and let the browser
+            # paginate the unmodified result page legitimately.
+            start_urls = [_remove_price_params(url) for url in start_urls]
+    else:
+        # Explicit URLs remain supported for callers that already built a
+        # controlled search set.  Do not infer or broaden their scope.
+        report["property_types_executed"] = [str(tipo or "")]
 
     if use_playwright:
         result = discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
                                          proxy_manager=proxy_manager, block_resources=block_resources,
-                                         requested_commune=comuna, estado=estado, report=report)
+                                         requested_commune=comuna, estado=estado,
+                                         min_price_clp=precio_desde, uf_valor_clp=config.uf_valor_clp,
+                                         report=report)
     else:
         result = discover_via_ssr(start_urls, max_pages, max_urls, batch_id, discovered, seen_urls, seen_ids,
-                                  requested_commune=comuna, estado=estado, report=report)
+                                  requested_commune=comuna, estado=estado,
+                                  min_price_clp=precio_desde, uf_valor_clp=config.uf_valor_clp,
+                                  report=report)
 
     # Defensa obligatoria: Toctoc puede devolver resultados fuera de la zona
     # pedida cuando la SPA pierde parte de los parámetros de búsqueda.
@@ -1347,6 +2312,10 @@ def discover_listing_urls(start_urls=None, max_pages=3, max_urls=500, batch_id=N
     report["unique_urls"] = len({r.get("url") for r in result})
     report["valid_urls"] = sum(1 for r in result if is_listing_detail_url(r.get("url", "")))
     report["duplicates"] += len(result) - report["unique_urls"]
+    report["canonical_url_duplicates"] = report.get("duplicates", 0)
+    report["raw_url_occurrences"] = report.get("raw_listings_found", report.get("total_raw_listings", len(result)))
+    report["unique_before_price"] = report.get("unique_before_price", report["unique_urls"])
+    report["unique_after_price"] = report["unique_urls"]
     if not result and any(page.get("react_engine_props_present") for page in report.get("pages", [])):
         report.update({
             "discovery_degraded": True,

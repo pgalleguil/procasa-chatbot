@@ -15,6 +15,16 @@ from scrapers.scraper_toctoc.discovery import (  # noqa: E402
     extract_metadata_from_embedded_payload,
     is_listing_detail_url,
     matches_requested_commune,
+    property_type_catalog,
+    property_type_specs,
+    _pagination_page_size,
+    _summarize_network_contract,
+    _safe_query_params,
+    _compare_request_contexts,
+    _batch_number_for_page,
+    _batch_bounds,
+    _batch_checkpoints,
+    _reported_results_from_visible_text,
 )
 
 
@@ -117,3 +127,180 @@ def test_playwright_scope_uses_current_spa_search_shell_and_preserves_used_filte
 def test_playwright_commune_label_handles_crm_santiago_alias():
     assert _playwright_commune_label("santiago-centro") == "Santiago"
     assert _playwright_commune_label("la-florida") == "La Florida"
+
+
+def test_all_current_toctoc_property_types_use_frontend_route_aliases():
+    catalog = {item["slug"]: item["route_slug"] for item in property_type_catalog()}
+    assert catalog == {
+        "departamento": "departamento",
+        "casa": "casa",
+        "oficina": "oficina",
+        "local-comercial": "local-comercial",
+        "terreno": "terreno",
+        "parcela": "parcela",
+        "agricola": "campo-agricola",
+        "industrial": "terreno-industrial",
+        "bodega": "bodega",
+        "estacionamiento": "estacionamiento",
+        "vacacional": "lugar-vacacional",
+    }
+
+
+def test_todos_does_not_silently_reduce_to_residential_subset():
+    specs = property_type_specs("todos")
+    assert len(specs) == 11
+    assert {item["slug"] for item in specs} == {
+        "casa", "departamento", "oficina", "local-comercial", "terreno",
+        "parcela", "agricola", "industrial", "bodega", "estacionamiento", "vacacional",
+    }
+
+
+def test_discovery_health_requires_pagination_to_be_complete_when_expected_pages_are_missing():
+    # This is the diagnostic shape emitted when SSR ignores pagina and repeats
+    # its bootstrap payload.  The production guard must not approve it.
+    report = {
+        "expected_results": 1193,
+        "pages_expected": 60,
+        "pages_fetched": 1,
+        "repeated_page": True,
+        "ssr_page_limit": True,
+    }
+    assert report["pages_fetched"] < report["pages_expected"]
+    assert report["repeated_page"] is True
+
+
+def test_embedded_preload_batch_does_not_reduce_expected_ui_pages():
+    assert _pagination_page_size(0, 260) == 20
+    assert _pagination_page_size(20, 260) == 20
+
+
+def test_results_network_contract_requires_successful_browser_request():
+    events = [
+        {
+            "event": "request",
+            "method": "GET",
+            "path": "/venta/gw-lista-seo/properties",
+            "params": {"page": "2", "limit": "260"},
+        },
+        {
+            "event": "response",
+            "method": "GET",
+            "path": "/venta/gw-lista-seo/properties",
+            "params": {"page": "2", "limit": "260"},
+            "status": 403,
+            "body_marker": "recaptcha_required",
+        },
+    ]
+    summary = _summarize_network_contract(events)
+    assert summary["results_endpoint"].endswith("/gw-lista-seo/properties")
+    assert summary["pagination_parameter"] == "page"
+    assert summary["page_size"] == "260"
+    assert summary["can_call_endpoint_directly"] is False
+    assert summary["recaptcha_required_observed"] is True
+
+
+def test_successful_browser_recaptcha_verification_is_not_a_blocking_challenge():
+    summary = _summarize_network_contract([
+        {
+            "event": "request",
+            "method": "POST",
+            "path": "/venta/gw-lista-seo/recaptcha/verify",
+            "params": {},
+        },
+        {
+            "event": "response",
+            "method": "POST",
+            "path": "/venta/gw-lista-seo/recaptcha/verify",
+            "params": {},
+            "status": 201,
+        },
+        {
+            "event": "response",
+            "method": "GET",
+            "path": "/venta/gw-lista-seo/properties",
+            "params": {"page": "1", "limit": "260"},
+            "status": 200,
+        },
+    ])
+    assert summary["recaptcha_verification_observed"] is True
+    assert summary["recaptcha_required_observed"] is False
+
+
+def test_request_diagnostics_redact_filters_and_session_like_query_values():
+    params = _safe_query_params(
+        "page=2&limit=260&filtros=%7B%22comuna%22%3A%22maipu%22%7D&sessionToken=secret"
+    )
+    assert params["page"] == "2"
+    assert params["limit"] == "260"
+    assert params["filtros"]["redacted"] is True
+    assert params["sessionToken"] == "<redacted>"
+    assert "secret" not in repr(params)
+
+
+def test_request_context_comparison_reports_only_missing_names():
+    initial = {
+        "header_names": ["cookie", "referer", "user-agent"],
+        "request_cookie_names": ["session", "xsrf"],
+        "context_cookies": [{"name": "session"}, {"name": "xsrf"}],
+        "safe_headers": {"user-agent": "ua", "referer": "https://www.toctoc.com/"},
+        "token_header_names": ["cookie"],
+        "user_agent": "ua",
+    }
+    page2 = {
+        "header_names": ["cookie", "user-agent"],
+        "request_cookie_names": ["session"],
+        "context_cookies": [{"name": "session"}],
+        "safe_headers": {"user-agent": "ua"},
+        "token_header_names": ["cookie"],
+        "user_agent": "ua",
+    }
+    comparison = _compare_request_contexts(initial, page2)
+    assert comparison["missing_header_names_in_page2"] == ["referer"]
+    assert comparison["missing_request_cookie_names_in_page2"] == ["xsrf"]
+    assert comparison["missing_context_cookie_names_in_page2"] == ["xsrf"]
+    assert comparison["possible_missing_session_requirement"] is True
+
+
+def test_batch_boundaries_match_the_260_result_browser_batches():
+    assert _batch_number_for_page(1) == 1
+    assert _batch_number_for_page(13) == 1
+    assert _batch_number_for_page(14) == 2
+    assert _batch_bounds(1) == (1, 13)
+    assert _batch_bounds(2) == (14, 26)
+
+
+def test_batch_checkpoint_preserves_challenge_without_counting_blocked_ids():
+    reports = [
+        {
+            "page": page,
+            "batch_number": 1,
+            "completed": True,
+            "first_listing_id": str(page * 10),
+            "last_listing_id": str(page * 10 + 9),
+            "listing_ids": [str(page * 10 + offset) for offset in range(10)],
+            "result_statuses": [200] if page == 1 else [],
+        }
+        for page in range(1, 14)
+    ]
+    reports.append({
+        "page": 14,
+        "batch_number": 2,
+        "completed": False,
+        "listing_ids": [],
+        "result_statuses": [403],
+        "challenge_detected": True,
+    })
+    batches = _batch_checkpoints(reports)
+    assert batches[0]["status"] == "COMPLETE"
+    assert batches[0]["completed"] is True
+    assert batches[0]["unique_count"] == 130
+    assert batches[1]["status"] == "CHALLENGE_BLOCKED"
+    assert batches[1]["completed"] is False
+    assert batches[1]["unique_count"] == 0
+    assert batches[1]["request_status"] == 403
+
+
+def test_visible_result_count_is_read_only_and_locale_tolerant():
+    assert _reported_results_from_visible_text("1 - 30 de 1.193 resultados de Venta") == 1193
+    assert _reported_results_from_visible_text("1 - 30 of 1,193 resultados") is None
+    assert _reported_results_from_visible_text("Sin resultados") is None

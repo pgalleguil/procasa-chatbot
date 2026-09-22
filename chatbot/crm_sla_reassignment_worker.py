@@ -1564,6 +1564,15 @@ async def load_jpc_distribution_state(
     if not cutover:
         raise RuntimeError("reassignment cutover unavailable")
     committed = _post_cutover_committed(await _load_committed_events(db, events=events, read_instrumentation=read_instrumentation), cutover, REGION_JPC_MARIA_HERNAN)
+    tier1_ids = {_text(value) for value in (maria_user_id, hernan_user_id) if _text(value)}
+    # Tier 2 fallback assignments must not seed the Maria/Hernan 30/70
+    # distribution state. Older events do not carry candidate_tier, so the
+    # target identity remains the backwards-compatible discriminator.
+    if tier1_ids:
+        committed = [
+            event for event in committed
+            if _text(event.get("target_owner_user_id") or event.get("selected_user_id")) in tier1_ids
+        ]
     counts = Counter(_text(event.get("target_owner_user_id") or event.get("selected_user_id")) for event in committed)
     counts.pop("", None)
     total = sum(counts.values())
@@ -1749,8 +1758,9 @@ def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, bra
     if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return _rm_selection(lead_row, state, rm_history, scenario=R2_ROLLING_SHARE, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
     if branch == REGION_JPC_MARIA_HERNAN:
-        result = _jpc_selection(lead_row, state, jpc_counts, jpc_total, jpc_targets, team=team, params=params)
-        result["jpc_target_share"] = dict(jpc_targets)
+        result = _jpc_selection(lead_row, state, jpc_counts, jpc_total, jpc_targets, team=team, params=params, rm_history=rm_history)
+        if result.get("candidate_tier") != 2:
+            result["jpc_target_share"] = dict(jpc_targets)
         return result
     return {"winner": None, "scored": [], "hard_excluded": [], "selection_reason": branch}
 
@@ -2090,7 +2100,7 @@ async def run_sla_reassignment_worker_iteration(
                     result.evaluated += 1
                     result.would_reassign += 1
                     if not already_counted:
-                        if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
+                        if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} or selection.get("candidate_tier") == 2:
                             rm_history.append(selected_id)
                         else:
                             jpc_counts[selected_id] += 1

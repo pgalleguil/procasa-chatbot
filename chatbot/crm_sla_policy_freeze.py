@@ -83,6 +83,7 @@ RM_TIER1_IDENTITIES = frozenset({MARIA_NAME, HERNAN_NAME})
 RM_ADMIN_EXCLUDED_USER_IDS = frozenset({"69796bc4bbebf240378eb739"})
 TIER1_BALANCED_SELECTION = "TIER1_BALANCED"
 TIER1_BALANCE_WINDOW_SIZE = 20
+TIER2_FALLBACK_REASON = "TIER1_EXHAUSTED_OR_INELIGIBLE"
 
 
 def _uid(row: Mapping[str, Any]) -> str:
@@ -447,8 +448,16 @@ def _jpc_selection(
     *,
     team: Mapping[str, Any],
     params: Any,
+    rm_history: list[str] | None = None,
 ) -> dict[str, Any]:
-    scored, excluded = _score_shared(
+    """Select JPC rescues with a strict Tier 1 then global Tier 2 policy.
+
+    The worker prepares ``jpc_candidates`` as the preferred Maria/Hernan
+    pool and keeps the complete commercial pool in ``rm_candidates``. Tier 2
+    is opened only after the preferred pool has no performance-valid
+    candidate; its selection reuses the existing RM global selector.
+    """
+    tier1_scored, tier1_excluded = _score_shared(
         lead,
         lead.get("jpc_candidates", []),
         state,
@@ -459,9 +468,46 @@ def _jpc_selection(
         params=params,
         dynamic=False,
     )
-    available = [row for row in scored if row.get("performance_data_valid")]
+    for row in tier1_scored:
+        row["candidate_tier"] = 1
+    for row in tier1_excluded:
+        row["candidate_tier"] = 1
+
+    admin_excluded: list[dict[str, Any]] = []
+    available = []
+    for row in tier1_scored:
+        if _uid(row) in RM_ADMIN_EXCLUDED_USER_IDS:
+            denied = dict(row)
+            denied["excluded_reason"] = "admin_excluded"
+            admin_excluded.append(denied)
+            continue
+        if row.get("performance_data_valid"):
+            available.append(row)
+
+    excluded = list(tier1_excluded) + admin_excluded
+    global_candidates = [
+        dict(row)
+        for row in (lead.get("rm_candidates") or [])
+        if _rm_candidate_tier(row) == 2
+    ]
     winner: dict[str, Any] | None = None
     if available:
+        tier2_scored, tier2_excluded = _score_shared(
+            lead,
+            global_candidates,
+            state,
+            team_sla_rate=team["sla_compliance_rate"],
+            team_attention_rate=team["attention_rate"],
+            team_p50_average=team["team_p50_average"],
+            team_p90_average=team["team_p90_average"],
+            params=params,
+            dynamic=False,
+        )
+        for row in tier2_scored + tier2_excluded:
+            row["candidate_tier"] = 2
+            row["tier_exclusion_reason"] = "TIER2_DEFERRED_TIER1_AVAILABLE"
+        excluded.extend(tier2_scored)
+        excluded.extend(tier2_excluded)
         total_before = sum(jpc_counts.values())
         minimum = int(ceil(total_jpc * 0.30)) if total_jpc else 0
         maximum = int(total_jpc * 0.70) if total_jpc else 0
@@ -483,13 +529,34 @@ def _jpc_selection(
         feasible_ranked.sort(key=lambda row: (-row[1], -row[2], row[3]))
         winner = feasible_ranked[0][4]
         winner["effective_selection_score"] = winner.get("global_rescue_score")
-    reason = "j3_target_deviation_with_score_tiebreak" if winner else SUPERVISOR_REVIEW_REQUIRED
-    return _decision_row(
-        lead, queue="JPC", step=0, scored=scored, excluded=excluded,
-        winner=winner, reason=reason, jpc_target_share=targets,
-        supervisor_review=not bool(winner),
-        review_reason="NO_ELIGIBLE_FRESH_COMMERCIAL_RESCUER" if not winner else "",
+        return _decision_row(
+            lead, queue="JPC", step=0, scored=tier1_scored, excluded=excluded,
+            winner=winner, reason="j3_target_deviation_with_score_tiebreak",
+            jpc_target_share=targets, best_pool=available,
+            selection_rule="JPC_TIER1_BALANCED",
+            tier_fallback_reason="",
+        )
+
+    # Tier 1 is exhausted or ineligible. Build Tier 2 from the complete
+    # commercial snapshot, never from a hardcoded name list. The RM selector
+    # remains the single global scoring/guardrail implementation.
+    fallback_lead = dict(lead)
+    fallback_lead["rm_candidates"] = global_candidates
+    fallback = _rm_selection(
+        fallback_lead,
+        state,
+        list(rm_history or []),
+        scenario=R2_ROLLING_SHARE,
+        low_policy=L1_LOW_NEEDS_PLUS_5,
+        team=team,
+        params=params,
     )
+    fallback["queue"] = "JPC"
+    fallback["winner_category"] = WINNER_CATEGORY if fallback.get("winner") else NO_ELIGIBLE_JPC_RESCUER
+    fallback["jpc_target_share"] = {}
+    fallback["tier_fallback_reason"] = TIER2_FALLBACK_REASON
+    fallback["selection_rule"] = fallback.get("selection_rule") or "RM_R2"
+    return fallback
 
 
 def simulate_combined(
@@ -510,7 +577,7 @@ def simulate_combined(
         if lead.get("policy_category") == RM_GLOBAL_RESCUE:
             row = _rm_selection(lead, state, rm_history, scenario=rm_policy, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
         elif lead.get("policy_category") == REGION_JPC_MARIA_HERNAN:
-            row = _jpc_selection(lead, state, jpc_counts, total_jpc, jpc_targets, team=team, params=params)
+            row = _jpc_selection(lead, state, jpc_counts, total_jpc, jpc_targets, team=team, params=params, rm_history=rm_history)
         else:
             continue
         row["step"] = step
@@ -518,7 +585,7 @@ def simulate_combined(
         winner = row.get("winner")
         if winner:
             _update_state(state, winner)
-            if row["queue"] == "RM":
+            if row["queue"] == "RM" or row.get("candidate_tier") == 2:
                 rm_history.append(_uid(winner))
             else:
                 jpc_counts[_uid(winner)] += 1

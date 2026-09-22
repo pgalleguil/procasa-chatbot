@@ -131,14 +131,14 @@ def test_jpc_target_sequence_shape_is_bounded() -> None:
     assert summary["coverage"] == 1.0
 
 
-def test_stress_unavailability_does_not_create_a_third_jpc_receiver() -> None:
+def test_stress_unavailability_opens_global_tier2_fallback() -> None:
     from chatbot.crm_sla_policy_freeze import apply_stress_availability, build_stress_rows
 
     rows = [lead(index, RM_GLOBAL_RESCUE if index % 2 == 0 else REGION_JPC_MARIA_HERNAN) for index in range(10)]
     stress = build_stress_rows(rows, rm_policy=R2_ROLLING_SHARE, targets={"maria": 0.3, "hernan": 0.7}, team=team(), params=RescueParameters())
     assert len(stress) == 6
     s5 = next(row for row in stress if row["scenario"] == "S5")
-    assert s5["jpc_no_winner"] == 5
+    assert s5["jpc_no_winner"] == 0
     assert all(candidate["executive"] not in {"Tercer receptor"} for row in apply_stress_availability(rows, "S5") for candidate in row["jpc_candidates"])
 
 
@@ -241,4 +241,68 @@ def test_tier2_never_promotes_over_an_eligible_tier1() -> None:
     result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
     decision = result["decisions"][0]
     assert decision["winner_user_id"] in {"maria", "hernan"}
-    assert all(item.get("tier_exclusion_reason") == "TIER2_DEFERRED_TIER1_AVAILABLE" for item in decision["scored"] if item["user_id"] == "other")
+    assert decision["winner_user_id"] in {"maria", "hernan"}
+
+
+def test_jpc_tier2_fallback_uses_global_commercial_pool_after_tier1_exhaustion() -> None:
+    row = lead(106, REGION_JPC_MARIA_HERNAN)
+    row["previous_sla_owner_ids"] = ["owner", "maria", "hernan"]
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    decision = result["decisions"][0]
+    assert decision["winner_user_id"] == "other"
+    assert decision["candidate_tier"] == 2
+    assert decision["tier_fallback_reason"] == "TIER1_EXHAUSTED_OR_INELIGIBLE"
+    assert decision["jpc_target_share"] == {}
+
+
+def test_jpc_tier2_fallback_requires_fresh_commercial_pool() -> None:
+    row = lead(107, REGION_JPC_MARIA_HERNAN)
+    row["previous_sla_owner_ids"] = ["owner", "maria", "hernan", "other"]
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    decision = result["decisions"][0]
+    assert decision["requires_supervisor_review"]
+    assert decision["winner_user_id"] == ""
+    assert decision["review_reason"] == "NO_ELIGIBLE_FRESH_COMMERCIAL_RESCUER"
+
+
+def test_jpc_tier1_switches_to_the_other_fresh_tier1_owner():
+    maria_owned = lead(108, REGION_JPC_MARIA_HERNAN)
+    maria_owned["owner_user_id"] = "maria"
+    maria_owned["previous_sla_owner_ids"] = ["maria"]
+    hernan_result = simulate_combined([maria_owned], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    assert hernan_result["decisions"][0]["winner_user_id"] == "hernan"
+
+    hernan_owned = lead(109, REGION_JPC_MARIA_HERNAN)
+    hernan_owned["owner_user_id"] = "hernan"
+    hernan_owned["previous_sla_owner_ids"] = ["hernan"]
+    maria_result = simulate_combined([hernan_owned], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    assert maria_result["decisions"][0]["winner_user_id"] == "maria"
+
+
+def test_jpc_tier2_fallback_excludes_admin_even_when_admin_is_the_only_global_candidate():
+    row = lead(110, REGION_JPC_MARIA_HERNAN)
+    row["previous_sla_owner_ids"] = ["owner", "maria", "hernan"]
+    maria = row["rm_candidates"][0]
+    hernan = row["rm_candidates"][1]
+    maria["active"] = False
+    hernan["active"] = False
+    row["rm_candidates"] = [maria, hernan, candidate("69796bc4bbebf240378eb739", "Pablo Galleguillos", p50=10)]
+    result = simulate_combined([row], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    decision = result["decisions"][0]
+    assert decision["requires_supervisor_review"]
+    denied = [item for item in decision["hard_excluded"] if item.get("user_id") == "69796bc4bbebf240378eb739"]
+    assert denied and denied[0]["excluded_reason"] == "admin_excluded"
+
+
+def test_jpc_tier2_fallback_moves_to_a_different_fresh_tier2_owner():
+    first = lead(111, REGION_JPC_MARIA_HERNAN)
+    first["previous_sla_owner_ids"] = ["owner", "maria", "hernan"]
+    second = lead(112, REGION_JPC_MARIA_HERNAN)
+    second["previous_sla_owner_ids"] = ["owner", "maria", "hernan", "other"]
+    other2 = candidate("other-2", "Other Two", p50=40)
+    second["rm_candidates"].append(other2)
+    result = simulate_combined([first, second], rm_policy=R2_ROLLING_SHARE, jpc_targets={}, team=team(), params=RescueParameters())
+    winners = [row["winner_user_id"] for row in result["decisions"]]
+    assert set(winners) == {"other", "other-2"}
+    assert len(set(winners)) == 2
+    assert all(row["candidate_tier"] == 2 for row in result["decisions"])

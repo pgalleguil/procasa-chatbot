@@ -3,13 +3,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from config import Config
-from chatbot.crm_lead_access import (
-    ContactVisibility,
-    SLA_EXPIRED_PENDING_REASSIGNMENT,
-    resolve_crm_lead_access_context,
-)
+from chatbot.crm_lead_access import ContactVisibility, resolve_crm_lead_access_context
 from chatbot.crm_sla_cycle_links import (
-    SlaCycleLinkError,
     build_sla_cycle_url,
     validate_sla_cycle_link,
 )
@@ -99,7 +94,7 @@ def _fixture():
     return DB(lead, cycle), lead, cycle
 
 
-def test_cycle_bound_link_expires_at_canonical_deadline(monkeypatch):
+def test_cycle_bound_link_remains_valid_after_canonical_deadline(monkeypatch):
     db, lead, cycle = _fixture()
     expiration = canonical_expiration_recheck(
         cycle, lead, now=datetime(2026, 9, 17, 20, 0, tzinfo=UTC)
@@ -118,13 +113,12 @@ def test_cycle_bound_link_expires_at_canonical_deadline(monkeypatch):
     ).cycle["assignment_cycle_id"] == "cycle-1"
 
     monkeypatch.setattr("chatbot.crm_metrics.utc_now", lambda: expiration.breach_at)
-    with pytest.raises(SlaCycleLinkError) as exc:
-        validate_sla_cycle_link(db, token, authenticated_user_id="owner-1")
-    assert exc.value.code == SLA_EXPIRED_PENDING_REASSIGNMENT
-    assert exc.value.status_code == 409
+    assert validate_sla_cycle_link(
+        db, token, authenticated_user_id="owner-1"
+    ).cycle["assignment_cycle_id"] == "cycle-1"
 
 
-def test_expired_owner_access_is_redacted_and_non_operational(monkeypatch):
+def test_expired_current_owner_keeps_operational_access_until_cycle_closes(monkeypatch):
     db, lead, cycle = _fixture()
     expiration = canonical_expiration_recheck(
         cycle, lead, now=datetime(2026, 9, 17, 20, 0, tzinfo=UTC)
@@ -136,10 +130,12 @@ def test_expired_owner_access_is_redacted_and_non_operational(monkeypatch):
         lead=lead,
         security_enabled=True,
     )
-    assert context.lock_reason == SLA_EXPIRED_PENDING_REASSIGNMENT
-    assert context.access_allowed is False
-    assert context.contact_visibility == ContactVisibility.NONE
-    assert not any(context.action_permissions.values())
+    assert context.lock_reason is None
+    assert context.access_allowed is True
+    assert context.is_current_owner is True
+    assert context.contact_visibility == ContactVisibility.FULL
+    assert context.action_permissions["management_result"] is True
+    assert context.action_permissions["contact_whatsapp"] is True
 
 
 @pytest.mark.asyncio

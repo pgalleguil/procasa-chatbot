@@ -87,6 +87,27 @@ class _TransactionUnavailable(Exception):
     pass
 
 
+class _DuplicateKeyTransactionError(Exception):
+    """Duplicate-key failure annotated with its transaction operation."""
+
+    def __init__(self, original: DuplicateKeyError, *, operation: str):
+        super().__init__(operation)
+        self.original = original
+        self.operation = operation
+        details = getattr(original, "details", None) or {}
+        self.index_name = details.get("indexName") or details.get("index_name")
+
+
+def _duplicate_index_name(exc: BaseException) -> str | None:
+    details = getattr(exc, "details", None) or {}
+    if isinstance(details, Mapping):
+        value = details.get("indexName") or details.get("index_name")
+        if value:
+            return str(value)
+    value = getattr(exc, "index_name", None)
+    return str(value) if value else None
+
+
 def _decision_mapping(decision: Any) -> dict[str, Any]:
     if isinstance(decision, Mapping):
         return dict(decision)
@@ -137,6 +158,8 @@ def _result(
     committed_at: datetime | None = None,
     abort_reason: str | None = None,
     error_code: str | None = None,
+    exception_type: str | None = None,
+    duplicate_index_name: str | None = None,
 ) -> SLAReassignmentResult:
     source_count = None
     try:
@@ -168,6 +191,8 @@ def _result(
         committed_at=committed_at,
         abort_reason=abort_reason,
         error_code=error_code,
+        exception_type=exception_type,
+        duplicate_index_name=duplicate_index_name,
     )
 
 
@@ -181,7 +206,8 @@ def _log_result(
         "[CRM_SLA_REASSIGNMENT] decision_id=%s lead_id=%s source_cycle_id=%s "
         "destination_cycle_id=%s branch=%s previous_owner_user_id=%s "
         "selected_user_id=%s outcome=%s attempt=%s committed=%s "
-        "transaction_duration_ms=%.1f policy_version=%s",
+        "transaction_duration_ms=%.1f policy_version=%s abort_reason=%s "
+        "exception_type=%s duplicate_index_name=%s",
         result.decision_id,
         result.lead_id,
         result.source_cycle_id,
@@ -194,6 +220,9 @@ def _log_result(
         result.committed,
         float(transaction_duration_ms),
         result.policy_version,
+        result.abort_reason or "",
+        result.exception_type or "",
+        result.duplicate_index_name or "",
     )
 
 
@@ -588,9 +617,13 @@ def _revalidate(
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_POLICY_VERSION_CHANGED, "source_policy_changed")
 
     # Future-only cutover is revalidated from the canonical source-cycle
-    # breach timestamp inside the transaction.  The decision timestamp must
-    # match the source reconstruction; otherwise the source changed after
-    # eligibility evaluation.
+    # breach timestamp inside the transaction.  The evaluator and executor
+    # intentionally have different views of persisted deadline fields: the
+    # evaluator recalculates the production deadline, while this guard may
+    # prefer a legacy persisted deadline when reconstructing the cycle.  Both
+    # timestamps are still required to be post-cutover, but strict equality
+    # here would turn a valid active destination cycle into ABORT_CYCLE_CHANGED
+    # before the source CAS can protect the actual ownership transition.
     canonical_breach = canonical_sla_breached_at(source, lead=lead)
     current_cutover = evaluate_cutover(
         breached_at=canonical_breach,
@@ -613,9 +646,19 @@ def _revalidate(
             code = SLAReassignmentErrorCode.CUTOVER_CONFIGURATION_INVALID
         raise _KnownAbort(code, decision_cutover.reason or decision_cutover.outcome)
     if current_cutover.breached_at != decision_cutover.breached_at:
-        raise _KnownAbort(
-            SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED,
-            "source_cycle_sla_breached_at_changed",
+        current_breach = current_cutover.breached_at
+        decision_breach = decision_cutover.breached_at
+        delta_seconds = (
+            (current_breach - decision_breach).total_seconds()
+            if current_breach and decision_breach
+            else None
+        )
+        logger.warning(
+            "[CRM_SLA_REASSIGNMENT] source_breach_timestamp_reconciled "
+            "decision_breach=%s current_breach=%s delta_seconds=%s",
+            decision_breach.isoformat() if decision_breach else "",
+            current_breach.isoformat() if current_breach else "",
+            delta_seconds,
         )
 
     source_count = _source_assignment_number(decision)
@@ -709,11 +752,30 @@ def _apply_plan(db: Any, plan: Any, *, session: Any, test_hooks: Any = None) -> 
     for operation in plan.operations:
         collection = db[operation.collection]
         if operation.operation == "update_one":
-            response = collection.update_one(
-                operation.filter, operation.update, session=session
-            )
+            try:
+                response = collection.update_one(
+                    operation.filter, operation.update, session=session
+                )
+            except DuplicateKeyError as exc:
+                raise _DuplicateKeyTransactionError(
+                    exc, operation=operation.expected or operation.collection
+                ) from exc
             if int(getattr(response, "matched_count", 0)) != 1:
+                if operation.expected == "source_lead_id_restored":
+                    logger.warning(
+                        "[CRM_SLA_REASSIGNMENT] source_lead_id_restore_failed"
+                    )
+                    raise _KnownAbort(
+                        SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED,
+                        "source_lead_id_restore_failed",
+                    )
                 if operation.collection == "crm_assignment_cycles":
+                    logger.warning(
+                        "[CRM_SLA_REASSIGNMENT] source_cas_failed "
+                        "predicate_names=_id,lead_id,assignment_cycle_id,owner,active,"
+                        "unassigned_at,sla_policy_version,reassignment_state,"
+                        "cycle_version,management_fields"
+                    )
                     raise _KnownAbort(
                         SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED,
                         "source_cycle_cas_failed",
@@ -723,7 +785,12 @@ def _apply_plan(db: Any, plan: Any, *, session: Any, test_hooks: Any = None) -> 
                     "lead_cas_failed",
                 )
         elif operation.operation == "insert_one":
-            collection.insert_one(operation.document, session=session)
+            try:
+                collection.insert_one(operation.document, session=session)
+            except DuplicateKeyError as exc:
+                raise _DuplicateKeyTransactionError(
+                    exc, operation=operation.expected or operation.collection
+                ) from exc
         else:
             raise _KnownAbort(
                 SLAReassignmentErrorCode.TRANSIENT_ERROR,
@@ -733,9 +800,9 @@ def _apply_plan(db: Any, plan: Any, *, session: Any, test_hooks: Any = None) -> 
             _invoke_test_hook(test_hooks, "after_source_cycle_close")
         elif operation is plan.operations[1]:
             _invoke_test_hook(test_hooks, "after_destination_cycle_insert")
-        elif operation is plan.operations[2]:
-            _invoke_test_hook(test_hooks, "after_lead_update")
         elif operation is plan.operations[3]:
+            _invoke_test_hook(test_hooks, "after_lead_update")
+        elif operation is plan.operations[4]:
             _invoke_test_hook(test_hooks, "before_ledger_insert")
     _invoke_test_hook(test_hooks, "before_commit")
 
@@ -1031,7 +1098,7 @@ def execute_sla_reassignment_transaction(
                         error_code=exc.code.value,
                     )
                     break
-                except DuplicateKeyError:
+                except _DuplicateKeyTransactionError as exc:
                     _abort_transaction(session)
                     replay = db[REASSIGNMENT_AUDIT_COLLECTION].find_one(
                         {"_id": decision_map.get("decision_id")}
@@ -1045,8 +1112,30 @@ def execute_sla_reassignment_transaction(
                             outcome=SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED.value,
                             attempts=attempt,
                             committed=False,
-                            abort_reason="duplicate_key_race",
+                            abort_reason=f"duplicate_key:{exc.operation}",
                             error_code=SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED.value,
+                            exception_type=type(exc.original).__name__,
+                            duplicate_index_name=exc.index_name,
+                        )
+                    break
+                except DuplicateKeyError as exc:
+                    _abort_transaction(session)
+                    replay = db[REASSIGNMENT_AUDIT_COLLECTION].find_one(
+                        {"_id": decision_map.get("decision_id")}
+                    )
+                    if replay and _same_ledger_payload(replay, decision_map):
+                        final_result = _existing_result(decision_map, replay, attempts=attempt)
+                    else:
+                        final_result = _result(
+                            decision_map,
+                            status="ABORTED",
+                            outcome=SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED.value,
+                            attempts=attempt,
+                            committed=False,
+                            abort_reason="duplicate_key:unknown_operation",
+                            error_code=SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED.value,
+                            exception_type=type(exc).__name__,
+                            duplicate_index_name=_duplicate_index_name(exc),
                         )
                     break
                 except Exception as exc:

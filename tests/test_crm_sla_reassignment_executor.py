@@ -12,6 +12,7 @@ from chatbot.crm_assignment_cycle_gate import (
     claim_cycle_for_human_management,
     classify_human_protection,
 )
+from chatbot.crm_sla_alert_evaluator import add_business_minutes
 from chatbot.crm_sla_hybrid_rescue import RM_GLOBAL_RESCUE
 from chatbot.crm_sla_hybrid_stabilization import generate_decision_id
 from chatbot.crm_sla_reassignment_executor import (
@@ -480,6 +481,66 @@ def test_destination_cycle_with_prior_decision_can_become_source_and_increment_t
     assert len(db["crm_sla_reassignment_audit_v1"].rows) == 2
 
 
+def test_repeated_destination_with_stale_persisted_deadline_still_commits(monkeypatch):
+    """A stale persisted deadline must not defeat the live source CAS."""
+    enable_flags(monkeypatch)
+    db, first_decision = make_fixture()
+    first = execute_sla_reassignment_transaction(db, first_decision, evaluated_at=NOW)
+    assert first.outcome == SLAReassignmentErrorCode.APPLIED.value
+
+    db["usuarios"].insert_one({"_id": "third-user", "nombre": "Ejecutivo C", "is_active": True})
+    source = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": first.destination_cycle_id})
+    lead = db["leads"].find_one({"_id": "lead-1"})
+    source.update({
+        "reassignment_state": "active",
+        "owner_notified_at": datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
+        "sla_started_at": datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
+        "sla_expired_at": datetime(2026, 9, 10, 13, 0, tzinfo=timezone.utc),
+        "reassignment_decision_id": first_decision["decision_id"],
+        "previous_owner_user_ids": ["old-user", "new-user"],
+        "cycle_version": 1,
+    })
+    db["crm_assignment_cycles"].update_one(
+        {"_id": source["_id"]}, {"$set": {key: value for key, value in source.items() if key != "_id"}}
+    )
+    db["leads"].update_one(
+        {"_id": "lead-1"},
+        {"$set": {"ejecutivo_asignado": "Ejecutivo B", "prospecto.ejecutivo": "Ejecutivo B"}},
+    )
+
+    second_breach = add_business_minutes(source["sla_started_at"], 180)
+    second_decision = dict(first_decision)
+    second_decision.update({
+        "current_assignment_cycle_id": first.destination_cycle_id,
+        "previous_owner_user_id": "new-user",
+        "previous_owner_user_ids": ["old-user", "new-user"],
+        "selected_user_id": "third-user",
+        "selected_user_display_name": "Ejecutivo C",
+        "candidate_user_ids": ["third-user"],
+        "assignment_number": 1,
+        "automatic_reassignment_number": 1,
+        "sla_breached_at": second_breach.isoformat(),
+        "source_cycle_sla_breached_at": second_breach.isoformat(),
+    })
+    second_decision["decision_id"] = generate_decision_id(
+        second_decision["lead_id"], second_decision["current_assignment_cycle_id"], FROZEN_POLICY_VERSION
+    )
+
+    result = execute_sla_reassignment_transaction(
+        db,
+        second_decision,
+        evaluated_at=datetime(2026, 9, 10, 20, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.outcome == SLAReassignmentErrorCode.APPLIED.value, (
+        result.outcome,
+        result.abort_reason,
+        result.error_code,
+    )
+    assert result.automatic_reassignment_number == 2
+    assert len(db["crm_sla_reassignment_audit_v1"].rows) == 2
+
+
 def test_executor_bridges_string_decision_ids_to_live_object_ids(monkeypatch):
     enable_flags(monkeypatch)
     db, decision = make_fixture()
@@ -581,6 +642,15 @@ def test_human_protection_is_not_click_or_bot_and_gate_blocks_reassignment(monke
 def test_postdeadline_management_before_commit_aborts_without_rewriting_breach(monkeypatch):
     enable_flags(monkeypatch)
     db, decision = make_fixture()
+    claimed = claim_cycle_for_human_management(
+        db,
+        lead_id="lead-1",
+        assignment_cycle_id="cycle-1",
+        actor_user_id="old-user",
+        protection_type=HumanProtectionType.WHATSAPP.value,
+        occurred_at=datetime(2026, 9, 9, 16, 30, tzinfo=timezone.utc),
+    )
+    assert claimed.status == CycleGateStatus.CLAIMED.value
     db["conversation_events"].insert_one({
         "_id": "late-human-outreach",
         "lead_id": "lead-1",
@@ -696,17 +766,15 @@ def test_human_outbound_message_uses_gate_only_when_enabled(monkeypatch):
     db, _ = make_fixture()
     monkeypatch.setattr(crm_storage, "get_db", lambda: db)
     monkeypatch.setattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", True)
-    from chatbot.crm_management import SlaExpiredPendingReassignmentError
-    with pytest.raises(SlaExpiredPendingReassignmentError):
-        crm_storage.guardar_mensaje(
-            "synthetic-contact",
-            "assistant",
-            "mensaje humano",
-            {"actor_type": "human_agent", "actor_id": "old-user", "operation": "whatsapp"},
-            lead_id="lead-1",
-        )
+    crm_storage.guardar_mensaje(
+        "synthetic-contact",
+        "assistant",
+        "mensaje humano",
+        {"actor_type": "human_agent", "actor_id": "old-user", "operation": "whatsapp"},
+        lead_id="lead-1",
+    )
     source = db["crm_assignment_cycles"].find_one({"_id": "mongo-cycle-1"})
-    assert source.get("reassignment_protection_at") is None
+    assert source.get("reassignment_protection_at") is not None
 
 
 def test_index_migration_is_dry_run_and_does_not_create_indexes():

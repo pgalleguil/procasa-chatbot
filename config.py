@@ -178,6 +178,12 @@ class Config:
     CRM_SLA_HISTORICAL_RECOVERY_ENABLED = os.getenv(
         "CRM_SLA_HISTORICAL_RECOVERY_ENABLED", "false"
     ).strip().lower() == "true"
+    # Controlled one-shot repair of derived current-owner mirrors.  It is
+    # intentionally disabled by default and must be turned off again after
+    # the production startup has completed the repair and verification.
+    CRM_CURRENT_OWNER_MIRROR_REPAIR_ENABLED = os.getenv(
+        "CRM_CURRENT_OWNER_MIRROR_REPAIR_ENABLED", "false"
+    ).strip().lower() == "true"
     CRM_SLA_HISTORICAL_RECOVERY_PAYLOAD = os.getenv(
         "CRM_SLA_HISTORICAL_RECOVERY_PAYLOAD", ""
     ).strip()

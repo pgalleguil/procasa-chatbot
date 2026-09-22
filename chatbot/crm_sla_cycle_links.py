@@ -201,15 +201,10 @@ def validate_sla_cycle_link(
     if any(value not in (None, "") and str(value).strip() != recipient_id for value in owner_values):
         _fail(409)
 
-    # The canonical SLA deadline invalidates the link immediately.  This is
-    # intentionally checked before the reassignment transaction commits, so
-    # the old owner cannot continue operating during scan/transaction delay.
-    from .crm_sla_reassignment_worker import canonical_expiration_recheck
-    from .crm_metrics import utc_now
-    link_check_now = utc_now()
-    expiration = canonical_expiration_recheck(cycle, lead, now=link_check_now)
-    if expiration.breach_at and link_check_now >= expiration.breach_at:
-        raise SlaCycleLinkError(SLA_EXPIRED_PENDING_REASSIGNMENT, 409)
+    # A deadline is historical SLA/KPI state only.  The signed link remains
+    # valid until the cycle is atomically closed or the lead's current-cycle
+    # pointer/owner changes.  This keeps the access, link and management gate
+    # semantics aligned during the scanner/transaction race window.
 
     return SlaCycleLinkResolution(payload=payload, lead=lead, cycle=cycle)
 

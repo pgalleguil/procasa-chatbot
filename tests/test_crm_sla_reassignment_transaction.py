@@ -87,12 +87,13 @@ def make_plan(**overrides):
     return transaction.build_transaction_plan(**values)
 
 
-def test_plan_is_pure_four_write_contract_without_pii():
+def test_plan_is_pure_five_write_contract_without_pii():
     plan = make_plan().as_dict()
-    assert len(plan["operations"]) == 4
+    assert len(plan["operations"]) == 5
     assert [item["operation"] for item in plan["operations"]] == [
         "update_one",
         "insert_one",
+        "update_one",
         "update_one",
         "insert_one",
     ]
@@ -115,6 +116,19 @@ def test_source_filter_is_active_owner_and_management_cas():
     assert source_filter["_id"] == "mongo-cycle-001"
     assert source_filter["cycle_version"] == 3
     assert source_filter["$and"][0]["$or"]
+
+
+def test_source_close_temporarily_releases_unique_active_lead_key_and_restores_it():
+    plan = make_plan()
+    source_close = plan.operations[0].update["$set"]
+    restore = plan.operations[2]
+
+    assert source_close["lead_id"] == transaction.transition_lead_id_for_decision(
+        "decision-001"
+    )
+    assert restore.filter["lead_id"] == source_close["lead_id"]
+    assert restore.update == {"$set": {"lead_id": "lead-001"}}
+    assert plan.operations[1].document["lead_id"] == "lead-001"
 
 
 def test_source_filter_allows_active_destination_with_prior_decision_id():
@@ -154,7 +168,7 @@ def test_new_cycle_preserves_existing_routing_contract_and_marks_reassignment():
 
 def test_source_close_does_not_change_source_owner_and_lead_points_to_new_cycle():
     source_update = make_plan().operations[0].update["$set"]
-    lead_update = make_plan().operations[2].update["$set"]
+    lead_update = make_plan().operations[3].update["$set"]
     assert source_update["cycle_status"] == "reassigned"
     assert source_update["reassigned_to_user_id"] == "user-new"
     assert source_update["cycle_version"] == 4

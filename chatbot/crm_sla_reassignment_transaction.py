@@ -75,6 +75,12 @@ def decision_new_cycle_id(decision_id: str) -> str:
     return f"sla-reassignment:{decision_id}"
 
 
+def transition_lead_id_for_decision(decision_id: str) -> str:
+    """Return a non-PII temporary key used only inside one transaction."""
+
+    return f"__sla_reassignment_transition__:{str(_required(decision_id, 'decision_id'))}"
+
+
 def _previous_owner_ids(
     decision: Mapping[str, Any], source_cycle: Mapping[str, Any], current_owner: str
 ) -> tuple[str, ...]:
@@ -189,6 +195,7 @@ def build_source_cycle_close_update(
     previous_owner_user_ids: Sequence[str],
     assignment_number: int,
     source_cycle_version: Any = None,
+    transition_lead_id: Any = None,
 ) -> dict[str, Any]:
     """Build the source-cycle close update.  It never changes source owner."""
 
@@ -199,7 +206,7 @@ def build_source_cycle_close_update(
         # Existing cycles may not have a version.  The first transactional
         # mutation initializes it; no backfill is performed here.
         next_cycle_version = 1
-    return {
+    update = {
         "$set": {
             "cycle_status": "reassigned",
             "unassigned_at": reassigned_at,
@@ -216,6 +223,11 @@ def build_source_cycle_close_update(
             "updated_at": reassigned_at,
         }
     }
+    if transition_lead_id is not None:
+        # MongoDB may retain the unique active-cycle key until commit. The
+        # source lead_id is restored by a later operation in this transaction.
+        update["$set"]["lead_id"] = transition_lead_id
+    return update
 
 
 def build_lead_owner_filter(
@@ -609,11 +621,13 @@ def build_transaction_plan(
     expected_sla_policy_version: str,
     supervisor_review_status: str = "PENDING",
 ) -> ReassignmentTransactionPlan:
-    """Build the four writes required by the future atomic operation.
+    """Build the writes required by the future atomic operation.
 
-    The order is intentional: source-cycle CAS, new-cycle insert, lead mirror
-    CAS, immutable audit insert.  A MongoDB transaction must roll all four
-    back if any operation fails.  This function itself executes none of them.
+    The order is intentional: source-cycle CAS with a temporary lead key,
+    destination insert, source lead-key restore, lead mirror CAS, immutable
+    audit insert. MongoDB transactions can retain unique-index keys until
+    commit, so the temporary key preserves the one-active-cycle guarantee
+    without removing the production unique index.
     """
 
     if supervisor_review_status not in SUPERVISOR_REVIEW_STATUSES:
@@ -685,6 +699,7 @@ def build_transaction_plan(
         source_cycle,
         expected_sla_policy_version=expected_sla_policy_version,
     )
+    transition_lead_id = transition_lead_id_for_decision(decision_id)
     source_close = build_source_cycle_close_update(
         reassigned_at=reassigned_at,
         target_user_id=target_id,
@@ -693,7 +708,18 @@ def build_transaction_plan(
         previous_owner_user_ids=previous_owners,
         assignment_number=destination_assignment_number,
         source_cycle_version=source_cycle.get("cycle_version"),
+        transition_lead_id=transition_lead_id,
     )
+    source_restore_filter: dict[str, Any] = {
+        "assignment_cycle_id": source_cycle_id,
+        "lead_id": transition_lead_id,
+        "cycle_status": "reassigned",
+        "unassigned_at": {"$ne": None},
+        "reassignment_decision_id": decision_id,
+        "reassignment_new_cycle_id": new_cycle_id,
+    }
+    if source_cycle.get("_id") is not None:
+        source_restore_filter["_id"] = source_cycle["_id"]
     lead_filter = build_lead_owner_filter(lead=lead, source_cycle=source_cycle)
     lead_update = build_lead_owner_mirror_update(
         target_user_id=target_id,
@@ -768,7 +794,14 @@ def build_transaction_plan(
                 collection=ASSIGNMENT_CYCLES_COLLECTION,
                 operation="insert_one",
                 document=new_cycle,
-                expected="inserted_id == new_cycle_id",
+                expected="destination_cycle_inserted",
+            ),
+            TransactionOperation(
+                collection=ASSIGNMENT_CYCLES_COLLECTION,
+                operation="update_one",
+                filter=source_restore_filter,
+                update={"$set": {"lead_id": source_cycle["lead_id"]}},
+                expected="source_lead_id_restored",
             ),
             TransactionOperation(
                 collection=LEADS_COLLECTION,

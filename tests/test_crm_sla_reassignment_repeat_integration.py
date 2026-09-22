@@ -123,6 +123,7 @@ def test_repeated_reassignment_keeps_unique_active_cycle_and_is_idempotent():
             {"_id": "user-maria", "nombre": "María Paz Galleguillos", "is_active": True},
             {"_id": "user-hernan", "nombre": "Hernán Castro", "is_active": True},
             {"_id": "user-third", "nombre": "Ejecutivo Tercero", "is_active": True},
+            {"_id": "user-fourth", "nombre": "Ejecutivo Cuarto", "is_active": True},
         ])
         source_id = "source-paula"
         assigned = now - timedelta(days=1)
@@ -147,9 +148,9 @@ def test_repeated_reassignment_keeps_unique_active_cycle_and_is_idempotent():
         cycles.update_one(
             {"assignment_cycle_id": destination1},
             {"$set": {
-                "assigned_at": now - timedelta(hours=4),
-                "sla_started_at": now - timedelta(hours=4),
-                "owner_notified_at": now - timedelta(hours=4),
+                "assigned_at": now - timedelta(hours=8),
+                "sla_started_at": now - timedelta(hours=8),
+                "owner_notified_at": now - timedelta(hours=8),
                 "reassignment_state": "active",
                 # Simulate a legacy persisted deadline that differs from the
                 # fresh evaluator reconstruction.  Both instants remain
@@ -174,9 +175,9 @@ def test_repeated_reassignment_keeps_unique_active_cycle_and_is_idempotent():
         cycles.update_one(
             {"assignment_cycle_id": destination2},
             {"$set": {
-                "assigned_at": now - timedelta(hours=4),
-                "sla_started_at": now - timedelta(hours=4),
-                "owner_notified_at": now - timedelta(hours=4),
+                "assigned_at": now - timedelta(hours=8),
+                "sla_started_at": now - timedelta(hours=8),
+                "owner_notified_at": now - timedelta(hours=8),
                 "reassignment_state": "active",
                 "sla_breached_at": now - timedelta(minutes=30),
             }},
@@ -188,8 +189,30 @@ def test_repeated_reassignment_keeps_unique_active_cycle_and_is_idempotent():
         result3 = execute_sla_reassignment_transaction(db, third, evaluated_at=now)
         assert result3.outcome == "APPLIED"
         assert result3.automatic_reassignment_number == 3
+
+        destination3 = result3.destination_cycle_id
+        cycles.update_one(
+            {"assignment_cycle_id": destination3},
+            {"$set": {
+                "assigned_at": now - timedelta(hours=8),
+                "sla_started_at": now - timedelta(hours=8),
+                "owner_notified_at": now - timedelta(hours=8),
+                "reassignment_state": "active",
+                "sla_breached_at": now - timedelta(minutes=15),
+            }},
+        )
+        fourth = make_decision(
+            destination3, "user-third", "user-fourth", "Ejecutivo Cuarto", 3,
+            ["user-paula", "user-maria", "user-hernan", "user-third"], now - timedelta(minutes=15),
+        )
+        result4 = execute_sla_reassignment_transaction(db, fourth, evaluated_at=now)
+        assert result4.outcome == "APPLIED"
+        assert result4.automatic_reassignment_number == 4
+        replay4 = execute_sla_reassignment_transaction(db, fourth, evaluated_at=now)
+        assert replay4.outcome == "ALREADY_APPLIED"
+        assert replay4.idempotent_replay is True
         assert cycles.count_documents({"lead_id": lead_id, "cycle_status": "active"}) == 1
-        assert db["crm_sla_reassignment_audit_v1"].count_documents({"lead_id": lead_id}) == 3
+        assert db["crm_sla_reassignment_audit_v1"].count_documents({"lead_id": lead_id}) == 4
     finally:
         Config.CRM_SLA_REASSIGNMENT_ENABLED = old_flags["enabled"]
         Config.CRM_SLA_TRANSACTION_GATE_ENABLED = old_flags["gate"]

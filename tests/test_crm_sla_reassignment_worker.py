@@ -262,13 +262,35 @@ def test_undefined_and_review_branches_never_call_selector(branch, field):
     assert not result["decisions"]
 
 
-def test_jpc_uses_only_maria_and_hernan_pool():
+def test_jpc_prefers_tier1_maria_and_hernan_over_global_tier2_pool():
     row = cycle(1)
     result = run(**base_kwargs([row], [lead(1, branch=REGION_JPC_MARIA_HERNAN)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
     assert result["iteration"]["would_reassign"] == 1
     decision = result["decisions"][0]
-    assert decision["selection_rule"] == "JPC_J3"
+    assert decision["selection_rule"] == "JPC_TIER1_BALANCED"
     assert decision["selected_user_id"] in {"maria", "hernan"}
+    assert decision["candidate_tier"] == 1
+
+
+def test_jpc_opens_global_tier2_only_after_both_tier1_owners_are_excluded():
+    row = cycle(1, previous=["owner", "maria", "hernan"])
+    result = run(**base_kwargs([row], [lead(1, branch=REGION_JPC_MARIA_HERNAN)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 1
+    decision = result["decisions"][0]
+    assert decision["selected_user_id"] in {"a", "b"}
+    assert decision["candidate_tier"] == 2
+    assert decision["tier_fallback_reason"] == "TIER1_EXHAUSTED_OR_INELIGIBLE"
+    assert decision["selection_rule"] == "RM_R2"
+    assert decision["jpc_target_share"] in (None, {})
+
+
+def test_jpc_tier2_fallback_keeps_all_previous_owners_excluded():
+    row = cycle(1, previous=["owner", "maria", "hernan", "a"])
+    result = run(**base_kwargs([row], [lead(1, branch=REGION_JPC_MARIA_HERNAN)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    decision = result["decisions"][0]
+    assert decision["selected_user_id"] == "b"
+    assert all(candidate.get("user_id") != "a" for candidate in decision["candidate_scores_snapshot"])
+    assert "a" in decision["previous_owner_user_ids"]
 
 
 def test_cartagena_valparaiso_uses_regional_global_rescue_and_tier1():
@@ -691,12 +713,14 @@ def test_jpc_state_rebuilds_counts_and_observed_share():
         {"_id": "1", "decision_id": "1", "event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION, "policy_branch": REGION_JPC_MARIA_HERNAN, "source_cycle_sla_breached_at": "2026-09-10T16:00:00+00:00", "reassigned_at": "2026-09-10T17:00:00+00:00", "target_owner_user_id": "maria-id"},
         {"_id": "2", "decision_id": "2", "event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION, "policy_branch": REGION_JPC_MARIA_HERNAN, "source_cycle_sla_breached_at": "2026-09-10T16:01:00+00:00", "reassigned_at": "2026-09-10T17:01:00+00:00", "target_owner_user_id": "hernan-id"},
         {"_id": "3", "decision_id": "3", "event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION, "policy_branch": REGION_JPC_MARIA_HERNAN, "source_cycle_sla_breached_at": "2026-09-10T16:02:00+00:00", "reassigned_at": "2026-09-10T17:02:00+00:00", "target_owner_user_id": "maria-id"},
+        {"_id": "4", "decision_id": "4", "event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION, "policy_branch": REGION_JPC_MARIA_HERNAN, "source_cycle_sla_breached_at": "2026-09-10T16:03:00+00:00", "reassigned_at": "2026-09-10T17:03:00+00:00", "target_owner_user_id": "tier2-id", "candidate_tier": 2, "tier_fallback_reason": "TIER1_EXHAUSTED_OR_INELIGIBLE"},
     ]
     state = asyncio.run(load_jpc_distribution_state(events=events, cutover_at=CUTOVER, maria_user_id="maria-id", hernan_user_id="hernan-id"))
     assert state["maria_received"] == 2
     assert state["hernan_received"] == 1
     assert state["committed_total"] == 3
     assert state["observed_share"]["maria-id"] == pytest.approx(2 / 3)
+    assert "tier2-id" not in state["counts"]
 
 
 def test_jpc_restart_reconstructs_the_same_next_state():

@@ -51,6 +51,8 @@ class SLAReassignmentResult:
     committed_at: datetime | None = None
     abort_reason: str | None = None
     error_code: str | None = None
+    exception_type: str | None = None
+    duplicate_index_name: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return only the non-PII result contract."""

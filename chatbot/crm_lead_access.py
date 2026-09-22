@@ -298,25 +298,10 @@ def resolve_crm_lead_access_context(
         if not owner_id:
             return _context_invalid(lead_id=resolved_id, user=user, reassigned=True)
         is_owner = bool(user_id and user_id == owner_id)
-        if is_owner and not is_admin and _is_sla_expired(current_cycle, resolved_lead):
-            return CrmLeadAccessContext(
-                lead_id=_id_text(resolved_id) or None,
-                user_id=user_id,
-                user_role=role or None,
-                current_assignment_cycle_id=pointer,
-                current_owner_user_id=owner_id,
-                current_owner_display_name=_text(current_cycle.get("assigned_to_display_name")) or None,
-                is_current_owner=True,
-                is_admin=False,
-                access_mode=AccessMode.CANONICAL.value,
-                access_allowed=False,
-                contact_visibility=ContactVisibility.NONE,
-                action_permissions=_base_permissions(allowed=False, admin=False),
-                lock_reason=SLA_EXPIRED_PENDING_REASSIGNMENT,
-                assignment_number=_assignment_number(resolved_lead, current_cycle),
-                reassigned_by_sla=True,
-                http_status=409,
-            )
+        # Deadline expiry is a KPI/compliance fact, not an ownership change.
+        # The current owner keeps operational access while this exact active
+        # cycle remains current.  The executor closes the cycle atomically;
+        # only that committed state produces LEAD_REASSIGNED_SLA_LOCKED.
         allowed = bool(is_admin or is_owner)
         if not allowed and user_id:
             return CrmLeadAccessContext(
@@ -368,25 +353,8 @@ def resolve_crm_lead_access_context(
             current_cycle = matches[0]
     if current_cycle is None and len(cycles) == 1:
         current_cycle = cycles[0]
-    if security_enabled and is_owner and not is_admin and _is_sla_expired(current_cycle, resolved_lead):
-        return CrmLeadAccessContext(
-            lead_id=_id_text(resolved_id) or None,
-            user_id=user_id,
-            user_role=role or None,
-            current_assignment_cycle_id=_text((current_cycle or {}).get("assignment_cycle_id")) or pointer or None,
-            current_owner_user_id=_id_text((current_cycle or {}).get("assigned_to_user_id")) or user_id,
-            current_owner_display_name=_text((current_cycle or {}).get("assigned_to_display_name")) or None,
-            is_current_owner=True,
-            is_admin=False,
-            access_mode=AccessMode.LEGACY.value,
-            access_allowed=False,
-            contact_visibility=ContactVisibility.NONE,
-            action_permissions=_base_permissions(allowed=False, admin=False),
-            lock_reason=SLA_EXPIRED_PENDING_REASSIGNMENT,
-            assignment_number=_assignment_number(resolved_lead, current_cycle or {}),
-            reassigned_by_sla=False,
-            http_status=409,
-        )
+    # Legacy records follow the same temporal rule when they still resolve to
+    # the authenticated current owner.  Expiry alone never revokes access.
     return CrmLeadAccessContext(
         lead_id=_id_text(resolved_id) or None,
         user_id=user_id,

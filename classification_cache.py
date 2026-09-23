@@ -61,6 +61,8 @@ def classification_fingerprint(
     rules_version: str | None = None,
     broker_registry_version: str | None = None,
     classifier_version: str | None = None,
+    prompt_version: str | None = None,
+    model_version: str | None = None,
 ) -> str:
     """Hash all relevant identity/text/version inputs deterministically."""
     try:
@@ -81,6 +83,21 @@ def classification_fingerprint(
         ).casefold(),
         "seller_client_id": normalize_full_text(
             _first(document, "seller_client_id", "client_id") or identity.get("seller_client_id", "")
+        ).casefold(),
+        "seller_id_type_raw": normalize_full_text(
+            _first(document, "seller_id_type_raw", "seller_id_type", "idType")
+        ).casefold(),
+        "seller_type": normalize_full_text(
+            _first(document, "seller_type", "seller_type_raw")
+        ).casefold(),
+        "seller_type_evidence": normalize_full_text(
+            _first(document, "seller_type_evidence")
+        ).casefold(),
+        "seller_profile_url": normalize_full_text(
+            _first(document, "seller_profile_url", "profile_url")
+        ).casefold(),
+        "seller_profile_logo": normalize_full_text(
+            _first(document, "seller_profile_logo", "profile_logo")
         ).casefold(),
         "phone": normalize_full_text(
             _first(document, "phone_normalized", "telefono_normalizado", "phone", "telefono")
@@ -106,6 +123,8 @@ def classification_fingerprint(
         "rules_version": rules_version or _version(document, "rules_version", "rules-v1"),
         "broker_registry_version": broker_registry_version or BROKER_REGISTRY_VERSION,
         "classifier_version": classifier_version or _version(document, "classifier_version", CLASSIFICATION_SERVICE_VERSION),
+        "prompt_version": prompt_version or _version(document, "prompt_version", "toctoc-deepseek-owner-v2"),
+        "model_version": model_version or _version(document, "model_version", ""),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -351,6 +351,9 @@ def classify_capture(
     strong_text_broker: bool = False,
     deepseek_callable: Callable[..., Any] | None = None,
     allow_real_ai: bool = True,
+    run_id: str | None = None,
+    pipeline_item_id: str | None = None,
+    retry_failed_ai: bool = False,
 ) -> dict[str, Any]:
     """Classify one listing through the only authorized AI path."""
     document = dict(extracted or {})
@@ -389,7 +392,17 @@ def classify_capture(
         or str(contact_identity.get("status") or "").upper() == "CORREDOR_CONFIRMED"
     )
     strong_text_broker = bool(strong_text_broker or rule_context.get("strong_text_broker"))
-    fingerprint = classification_fingerprint(document)
+    prompt_version = str(
+        getattr(config, "deepseek_prompt_version", "")
+        or (document.get("classification") or {}).get("prompt_version")
+        or "toctoc-deepseek-owner-v2"
+    )
+    model_version = str(getattr(config, "deepseek_model", "") or "")
+    fingerprint = classification_fingerprint(
+        document,
+        prompt_version=prompt_version,
+        model_version=model_version,
+    )
     base_result = {
         "fingerprint": fingerprint,
         "health": health or {"healthy": True, "degraded": False, "implicit": True},
@@ -554,6 +567,82 @@ def classify_capture(
         base_result.update({"classification": classification, "reason": reason, "metrics": budget.report()})
         return base_result
 
+    call_ledger = None
+    previous_attempt = None
+    if db is not None:
+        try:
+            try:
+                from scrapers.scraper_toctoc.deepseek_call_ledger import DeepSeekCallLedger
+            except ImportError:  # direct execution from scraper_toctoc/
+                from deepseek_call_ledger import DeepSeekCallLedger
+            call_ledger = DeepSeekCallLedger(db)
+            call_ledger.ensure_indexes()
+            listing_id = str(
+                document.get("listing_id")
+                or document.get("publication_id")
+                or document.get("codigo")
+                or ""
+            )
+            if listing_id:
+                previous_attempt = call_ledger.latest_attempt(listing_id, fingerprint)
+        except Exception as exc:
+            classification = _pending_classification(
+                f"DEEPSEEK_LEDGER_UNAVAILABLE:{type(exc).__name__}"
+            )
+            base_result.update({"classification": classification, "reason": "deepseek_ledger_unavailable", "metrics": budget.report()})
+            return base_result
+
+    if previous_attempt:
+        previous_parser_status = str(previous_attempt.get("parser_status") or previous_attempt.get("status") or "")
+        if previous_parser_status == "VALID":
+            budget.cache_hits += 1
+            classification = _classification_with_canonical(
+                document,
+                {
+                    "state": previous_attempt.get("classification") or "INCIERTO",
+                    "confidence": previous_attempt.get("confidence", 0.5),
+                    "source": "deepseek",
+                    "reason": previous_attempt.get("reason") or "VALID_DEEPSEEK_LEDGER_RESULT",
+                    "evidence": previous_attempt.get("evidence") or [],
+                    "deepseek_status": "VALID",
+                },
+                registry_match=registry_match,
+                human_broker_match=human_broker_match,
+                cross_portal_match=cross_portal_match,
+                strong_text_broker=False,
+                ai_state=previous_attempt.get("classification") or "INCIERTO",
+                evidence=previous_attempt.get("evidence") or [],
+                pipeline_complete=True,
+            )
+            diagnostics = {
+                "source": "deepseek_call_ledger",
+                "attempt_number": previous_attempt.get("attempt_number"),
+                "model_returned": previous_attempt.get("model_returned"),
+                "finish_reason": previous_attempt.get("finish_reason"),
+                "input_tokens": previous_attempt.get("input_tokens"),
+                "output_tokens": previous_attempt.get("output_tokens"),
+            }
+            classification["deepseek_diagnostics"] = diagnostics
+            cache.put(fingerprint, classification, input_payload=document)
+            base_result.update({
+                "classification": classification,
+                "reason": "deepseek_ledger_cache_hit",
+                "cache_hit": True,
+                "deepseek_diagnostics": diagnostics,
+                "metrics": budget.report(),
+            })
+            return base_result
+        if previous_parser_status == "REQUEST_STARTED":
+            classification = _pending_classification("DEEPSEEK_ATTEMPT_OUTCOME_UNKNOWN")
+            base_result.update({"classification": classification, "reason": "deepseek_attempt_outcome_unknown", "metrics": budget.report()})
+            return base_result
+        if not retry_failed_ai:
+            classification = _pending_classification(
+                f"DEEPSEEK_PREVIOUS_ATTEMPT_FAILED:{previous_parser_status or 'UNKNOWN'}"
+            )
+            base_result.update({"classification": classification, "reason": "deepseek_previous_attempt_failed", "metrics": budget.report()})
+            return base_result
+
     description = str(document.get("description") or document.get("descripcion") or "")
     input_tokens = estimate_tokens(json.dumps({
         "publisher": document.get("publicador_visible") or document.get("seller_name"),
@@ -599,14 +688,46 @@ def classify_capture(
         return base_result
 
     callable_ = deepseek_callable or _default_deepseek_callable()
+    call_context: dict[str, Any] | None = None
+    if deepseek_callable is None:
+        # A real provider call is not allowed unless we can durably record the
+        # attempt before it leaves the process. Injected test callables remain
+        # side-effect free and do not require a production database.
+        if db is None:
+            classification = _pending_classification("DEEPSEEK_LEDGER_UNAVAILABLE")
+            base_result.update({"classification": classification, "reason": "deepseek_ledger_unavailable", "metrics": budget.report()})
+            return base_result
+        if call_ledger is None:
+            classification = _pending_classification("DEEPSEEK_LEDGER_UNAVAILABLE")
+            base_result.update({"classification": classification, "reason": "deepseek_ledger_unavailable", "metrics": budget.report()})
+            return base_result
+        call_context = {
+            "run_id": str(run_id or document.get("batch_id") or document.get("run_id") or ""),
+            "pipeline_item_id": str(pipeline_item_id or document.get("pipeline_item_id") or ""),
+            "property_id": str(document.get("_id") or document.get("property_id") or document.get("listing_id") or document.get("codigo") or ""),
+            "listing_id": str(document.get("listing_id") or document.get("publication_id") or document.get("codigo") or ""),
+            "url": str(document.get("url") or document.get("source_url") or document.get("canonical_url") or ""),
+            "classification_fingerprint": fingerprint,
+            "extractor_version": str(
+                document.get("extractor_version")
+                or (document.get("source_metadata") or {}).get("extractor_version")
+                or ""
+            ),
+            "rules_version": str(
+                document.get("rules_version")
+                or (document.get("classification") or {}).get("rules_version")
+                or ""
+            ),
+            "classifier_version": CLASSIFICATION_SERVICE_VERSION,
+            "prompt_version": prompt_version,
+            "model_version": model_version,
+        }
     budget.mark_executed(input_tokens, 0)
     try:
-        result = callable_(
-            document,
-            rule_context,
-            config,
-            authorization_token=classification_service_token(),
-        )
+        call_kwargs = {"authorization_token": classification_service_token()}
+        if call_ledger is not None:
+            call_kwargs.update({"call_ledger": call_ledger, "call_context": call_context})
+        result = callable_(document, rule_context, config, **call_kwargs)
         output_tokens = _deepseek_output_tokens(result, output_tokens)
         # Correct the provisional zero-output accounting without ever allowing
         # the result to exceed the budget silently.
@@ -619,7 +740,14 @@ def classify_capture(
             classification = _pending_classification(
                 f"DEEPSEEK_{status}", evidence=list(getattr(result, "evidence", []) or [])
             )
-            base_result.update({"classification": classification, "reason": "deepseek_error", "metrics": budget.report()})
+            base_result.update({
+                "classification": classification,
+                "reason": "deepseek_error",
+                "ai_called": True,
+                "deepseek_status": status,
+                "deepseek_diagnostics": dict(getattr(result, "diagnostics", {}) or {}),
+                "metrics": budget.report(),
+            })
             return base_result
         classification = _classification_with_canonical(
             document,
@@ -640,8 +768,18 @@ def classify_capture(
             evidence=list(getattr(result, "evidence", []) or []),
             pipeline_complete=True,
         )
+        if call_ledger is not None:
+            classification["deepseek_diagnostics"] = dict(
+                getattr(result, "diagnostics", {}) or {}
+            )
         cache.put(fingerprint, classification, input_payload=document)
-        base_result.update({"classification": classification, "reason": "deepseek_valid", "ai_called": True, "metrics": budget.report()})
+        base_result.update({
+            "classification": classification,
+            "reason": "deepseek_valid",
+            "ai_called": True,
+            "deepseek_diagnostics": dict(getattr(result, "diagnostics", {}) or {}),
+            "metrics": budget.report(),
+        })
         return base_result
     except Exception as exc:
         classification = _pending_classification(f"DEEPSEEK_ERROR:{type(exc).__name__}")

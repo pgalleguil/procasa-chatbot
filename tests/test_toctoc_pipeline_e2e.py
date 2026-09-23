@@ -273,6 +273,26 @@ def test_l_repeated_complete_run_does_not_persist_twice():
     assert calls == ["L"]
 
 
+def test_deepseek_failure_remains_retryable_in_durable_stage_state():
+    from toctoc_pipeline import InMemoryPipelineLedger
+
+    ledger = InMemoryPipelineLedger()
+    report = run_toctoc_pipeline(
+        [_record("ai-failed")],
+        options=_options(run_id="ai-failed-run"),
+        ledger=ledger,
+        deepseek_callable=lambda *args, **kwargs: SimpleNamespace(
+            status="INVALID_JSON", state="DUEÑO_SEGURO", confidence=0.9,
+            evidence=[], reason="bad json", raw={},
+        ),
+    )
+    item = ledger.get_item("ai-failed-run", "ai-failed")
+    assert report["assignable"] == 0
+    assert item["status"] == "AI_FAILED_RETRYABLE"
+    assert item["assignment_status"] == "BLOCKED"
+    assert item["classification"]["final"] == "UNCERTAIN"
+
+
 def test_m_max_new_items_is_enforced_before_ledger_writes():
     ledger = InMemoryPipelineLedger()
     records = [_record(str(index), classification_hint=_owner_hint()) for index in range(60)]

@@ -201,12 +201,14 @@ def cmd_process(args, config):
     batch = discovered[args.offset:args.offset + args.limit]
     print(f"Processing {len(batch)} records (offset={args.offset}, limit={args.limit})")
     mongo = MongoStore(config) if args.write_db else None
+    mongo_db = None
     if mongo is not None and not args.dry_run:
         # Verify the idempotent unique index once per batch, not once per item.
         # Repeating listIndexes for every property caused avoidable Mongo
         # round-trips immediately before persistence.
         mongo.connect()
         mongo.ensure_index()
+        mongo_db = mongo.client[config.mongo_db]
     processed: list[dict] = []
     all_dls: list[tuple[dict, DownloadResult]] = []
     _pw = None
@@ -602,7 +604,10 @@ def cmd_process(args, config):
         max_drop_ratio=getattr(config, "extractor_health_drop_ratio", 0.35),
     )
     cache_path = getattr(config, "classification_cache_path", "") or str(config.data_dir / "classification_cache.json")
-    run_cache = ClassificationCache(path=cache_path) if getattr(config, "classification_cache_enabled", True) else ClassificationCache()
+    run_cache = ClassificationCache(
+        db=mongo_db,
+        path=cache_path,
+    ) if getattr(config, "classification_cache_enabled", True) else ClassificationCache()
     run_budget = AICostGuard(budget=budget_from_config(config))
     print(f"  Extractor health: healthy={extractor_health.get('healthy')} degraded={extractor_health.get('degraded')} sample={extractor_health.get('sample_size')}")
 
@@ -676,12 +681,15 @@ def cmd_process(args, config):
             extracted,
             rule_context=rctx,
             config=config,
+            db=mongo_db,
             health=extractor_health,
             cache=run_cache,
             budget=run_budget,
             classification_hint=rule_result,
             strong_text_broker=is_strong_broker_rule(rule_result),
             allow_real_ai=not bool(args.no_llm),
+            run_id=batch_id,
+            pipeline_item_id=f"{batch_id}:{extracted.get('listing_id') or item.get('listing_id') or ''}",
         )
         classification = central_result["classification"]
         if central_result.get("reason") == "deepseek_error":
@@ -690,7 +698,9 @@ def cmd_process(args, config):
         classification["rule_state"] = rule_state
         classification["final_state"] = classification.get("state")
         classification["rules_version"] = "toctoc-owner-rules-v2"
-        classification["prompt_version"] = "toctoc-deepseek-owner-v2"
+        classification["prompt_version"] = str(
+            getattr(config, "deepseek_prompt_version", "") or "toctoc-deepseek-owner-v2"
+        )
         classification["analysis_at"] = _utcnow()
         classification["trace"] = {
             "rule_state": rule_state, "final_state": classification.get("state"),

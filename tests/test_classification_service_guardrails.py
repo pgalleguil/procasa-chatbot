@@ -132,6 +132,23 @@ def test_rules_version_change_is_cache_miss():
     assert len(calls) == 2
 
 
+def test_fingerprint_changes_with_prompt_model_and_seller_metadata():
+    document = _doc()
+    base = classification_fingerprint(
+        document, prompt_version="prompt-v1", model_version="model-v1"
+    )
+    assert classification_fingerprint(
+        document, prompt_version="prompt-v2", model_version="model-v1"
+    ) != base
+    assert classification_fingerprint(
+        document, prompt_version="prompt-v1", model_version="model-v2"
+    ) != base
+    assert classification_fingerprint(
+        {**document, "seller_type_evidence": "idType=1"},
+        prompt_version="prompt-v1", model_version="model-v1",
+    ) != base
+
+
 def test_registry_match_never_calls_deepseek():
     calls = []
     result = classify_capture(

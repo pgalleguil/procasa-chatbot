@@ -45,6 +45,7 @@ ITEM_STATUSES = frozenset({
     "CLASSIFIED_DETERMINISTIC",
     "CACHE_HIT",
     "PENDING_AI",
+    "AI_FAILED_RETRYABLE",
     "AI_CLASSIFIED",
     "PERSISTED",
     "ASSIGNABLE",
@@ -479,8 +480,8 @@ def run_toctoc_pipeline(
 ) -> dict[str, Any]:
     """Run the complete TOCTOC workflow through one official entry point."""
     options = options or PipelineOptions()
-    ledger = ledger or InMemoryPipelineLedger()
-    cache = cache or ClassificationCache()
+    ledger = ledger or (MongoPipelineLedger(db) if db is not None else InMemoryPipelineLedger())
+    cache = cache or ClassificationCache(db=db)
     config = config or _default_config(options)
     budget = budget or AICostGuard(budget=budget_from_config(config))
     run_id = options.run_id or f"toctoc-{uuid.uuid4().hex}"
@@ -496,6 +497,8 @@ def run_toctoc_pipeline(
             "invariants": {},
         }
 
+    if isinstance(ledger, MongoPipelineLedger):
+        ledger.ensure_indexes()
     ledger.start_run(run_id, {"pipeline_version": PIPELINE_VERSION, "status": "RUNNING", "dry_run": options.dry_run})
     if not ledger.acquire(run_id):
         return {
@@ -596,7 +599,10 @@ def run_toctoc_pipeline(
             item_key = _item_key(item)
             previous = ledger.get_item(run_id, item_key) or {}
             previous_status = previous.get("status")
-            resumable_statuses = CLASSIFICATION_STATUSES | {"ASSIGNABLE", "PERSISTED", "ASSIGNED"}
+            # Pending/failed AI is not a completed stage. On resume it must be
+            # reconsidered through the same deterministic/cache gates; valid
+            # prior AI results remain terminal for the unchanged fingerprint.
+            resumable_statuses = (CLASSIFICATION_STATUSES - {"PENDING_AI"}) | {"ASSIGNABLE", "PERSISTED", "ASSIGNED"}
             classification = previous.get("classification") if previous_status in resumable_statuses else None
             resumed_terminal = previous_status in {"PERSISTED", "ASSIGNED"}
             result: dict[str, Any]
@@ -620,6 +626,8 @@ def run_toctoc_pipeline(
                     strong_text_broker=bool(item.get("strong_text_broker")),
                     deepseek_callable=deepseek_callable,
                     allow_real_ai=bool(options.allow_real_ai or (options.test_mode and deepseek_callable is not None)),
+                    run_id=run_id,
+                    pipeline_item_id=f"{run_id}:{item_key}",
                 )
                 classification = result["classification"]
 
@@ -629,7 +637,11 @@ def run_toctoc_pipeline(
             if result.get("cache_hit"):
                 status = "CACHE_HIT"
             elif result.get("ai_called"):
-                status = "AI_CLASSIFIED"
+                status = (
+                    "AI_FAILED_RETRYABLE"
+                    if result.get("reason") in {"deepseek_error", "deepseek_exception"}
+                    else "AI_CLASSIFIED"
+                )
             elif classification.get("status") == "UNCERTAIN_PENDING_AI":
                 status = "PENDING_AI"
             elif classification.get("pipeline_complete") is True:
@@ -655,11 +667,18 @@ def run_toctoc_pipeline(
                     "CLASSIFICATION_CONFLICT" if conflict else "PIPELINE_FAIL_CLOSED"
                 )
             if not item["assignment_ready"]:
-                ledger.set_item(run_id, item_key, {"status": "BLOCKED", "classification": classification, "assignment_decision": gate, "record": item})
+                stage_status = status if status in {"PENDING_AI", "AI_FAILED_RETRYABLE"} else "BLOCKED"
+                ledger.set_item(run_id, item_key, {
+                    "status": stage_status,
+                    "assignment_status": "BLOCKED",
+                    "classification": classification,
+                    "assignment_decision": gate,
+                    "record": item,
+                })
                 processed_items.append(item)
                 continue
 
-            ledger.set_item(run_id, item_key, {"status": "ASSIGNABLE", "classification": classification, "assignment_decision": gate, "record": item})
+            ledger.set_item(run_id, item_key, {"status": "ASSIGNABLE", "assignment_status": "READY", "classification": classification, "assignment_decision": gate, "record": item})
             writes_enabled = options.allow_mongo_writes and (not options.dry_run or options.test_mode)
             if writes_enabled and persist_fn and not resumed_terminal:
                 try:

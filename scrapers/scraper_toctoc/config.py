@@ -104,6 +104,9 @@ class AppConfig:
     deepseek_base_url: str = field(default_factory=lambda: os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
     # Modelo único de producción: no permitir overrides heredados a Pro.
     deepseek_model: str = DEEPSEEK_FLASH_MODEL
+    deepseek_prompt_version: str = field(
+        default_factory=lambda: os.getenv("DEEPSEEK_PROMPT_VERSION", "toctoc-deepseek-owner-v2").strip()
+    )
     deepseek_enabled: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_ENABLED", True))
     deepseek_timeout_seconds: int = field(default_factory=lambda: _env_int("DEEPSEEK_TIMEOUT_SECONDS", 12))
     deepseek_max_tokens: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_TOKENS", 500))

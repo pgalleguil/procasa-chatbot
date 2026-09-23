@@ -71,6 +71,7 @@ from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
 from campanas.handler import handle_campana_respuesta
+from campanas.drive_check import handle_campaign_drive_check
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
@@ -4253,6 +4254,12 @@ async def campana_respuesta(
     mode: str = Query("live")
 ):
     return await handle_campana_respuesta(request, email, accion, codigos, campana, mode, token)
+
+
+@app.post("/internal/campaign-drive-check", include_in_schema=False)
+async def internal_campaign_drive_check(request: Request):
+    await _require_captacion_report_admin(request)
+    return await handle_campaign_drive_check()
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

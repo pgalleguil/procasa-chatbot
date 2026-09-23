@@ -27,6 +27,7 @@ from scrapers.scraper_toctoc.deepseek_call_ledger import (
 )
 from scrapers.scraper_toctoc.retry_failed_deepseek import (
     build_retry_records,
+    configure_retry_runtime,
     select_retryable_items,
 )
 
@@ -86,6 +87,29 @@ def test_deepseek_max_attempts_is_configurable_and_never_zero(monkeypatch):
     assert toctoc_config.AppConfig().deepseek_max_attempts == 1
     monkeypatch.setenv("DEEPSEEK_MAX_ATTEMPTS", "0")
     assert toctoc_config.AppConfig().deepseek_max_attempts == 1
+
+
+def test_retry_runtime_uses_observed_truncation_ceiling_without_extra_attempts():
+    config = SimpleNamespace(
+        deepseek_max_attempts=4,
+        deepseek_max_tokens=500,
+        max_ai_calls_per_run=74,
+    )
+    configured = configure_retry_runtime(config, max_items=40)
+    assert configured.deepseek_max_attempts == 1
+    assert configured.deepseek_max_tokens == 800
+    assert configured.max_ai_calls_per_run == 40
+
+
+def test_retry_runtime_preserves_explicitly_higher_token_ceiling():
+    config = SimpleNamespace(
+        deepseek_max_attempts=4,
+        deepseek_max_tokens=1200,
+        max_ai_calls_per_run=10,
+    )
+    configured = configure_retry_runtime(config, max_items=40)
+    assert configured.deepseek_max_tokens == 1200
+    assert configured.max_ai_calls_per_run == 10
 
 
 def test_single_attempt_uses_original_state_classifier_and_full_context(monkeypatch):

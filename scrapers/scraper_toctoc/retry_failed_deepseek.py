@@ -144,6 +144,26 @@ def build_retry_records(
     return records
 
 
+def configure_retry_runtime(config: Any, *, max_items: int) -> Any:
+    """Apply the bounded retry policy without changing prompt/model semantics.
+
+    Production evidence showed that the former 500-token ceiling truncated
+    many otherwise successful provider responses. 800 is the existing
+    classifier's technical truncation ceiling; keep one HTTP attempt per item
+    and preserve any explicitly configured higher ceiling.
+    """
+    config.deepseek_max_attempts = 1
+    config.deepseek_max_tokens = max(
+        800,
+        int(getattr(config, "deepseek_max_tokens", 500) or 500),
+    )
+    config.max_ai_calls_per_run = min(
+        int(getattr(config, "max_ai_calls_per_run", max_items)),
+        max_items,
+    )
+    return config
+
+
 def execute_retry(
     *,
     db: Any,
@@ -163,10 +183,9 @@ def execute_retry(
     retry_items = select_retryable_items(source_rows)
     records = build_retry_records(retry_items, extracted_records, max_items=max_items)
 
-    # One HTTP attempt per item. Never raise the pre-existing output-token
-    # ceiling automatically; the retry ledger will show whether length occurs.
-    config.deepseek_max_attempts = 1
-    config.max_ai_calls_per_run = min(int(getattr(config, "max_ai_calls_per_run", max_items)), max_items)
+    # One HTTP attempt per item. The 800-token ceiling is limited to this
+    # retry runtime and is based on observed finish_reason=length responses.
+    configure_retry_runtime(config, max_items=max_items)
     retry_run_id = retry_run_id or f"toctoc-deepseek-retry-{uuid.uuid4().hex}"
     pipeline_ledger = MongoPipelineLedger(db)
     if pipeline_ledger.get_run(retry_run_id):
@@ -243,4 +262,10 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["RETRYABLE_SOURCE_REASONS", "select_retryable_items", "build_retry_records", "execute_retry"]
+__all__ = [
+    "RETRYABLE_SOURCE_REASONS",
+    "select_retryable_items",
+    "build_retry_records",
+    "configure_retry_runtime",
+    "execute_retry",
+]

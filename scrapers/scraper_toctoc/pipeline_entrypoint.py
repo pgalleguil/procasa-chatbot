@@ -96,6 +96,11 @@ def _load_prior_recovery_search_cache(
             status = str(query.get("status") or "").upper()
             if status not in {"SUCCESS", "SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}:
                 continue
+            # Cache hits were already complete in the original run and are
+            # loaded from its own ledger; this import is only for searches
+            # that the preceding recovery actually executed.
+            if query.get("cache_hit"):
+                continue
             key = _discovery_query_key(
                 query.get("commune"), query.get("operation"), query.get("property_type")
             )

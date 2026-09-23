@@ -186,13 +186,24 @@ def test_prior_recovery_success_is_reused_without_reprocessing_its_ledger(tmp_pa
     }
     _write_json(
         reports / f"toctoc_failed_search_recovery_{prior_recovery}.json",
-        {"discovery_runs": [{"queries": [{
-            "commune": "providencia",
-            "operation": "venta",
-            "property_type": "departamento",
-            "status": "SUCCESS",
-            "discovered": 1,
-        }]}]},
+        {"discovery_runs": [{"queries": [
+            {
+                "commune": "providencia",
+                "operation": "venta",
+                "property_type": "departamento",
+                "status": "SUCCESS",
+                "discovered": 1,
+                "cache_hit": False,
+            },
+            {
+                "commune": "\u00d1u\u00f1oa",
+                "operation": "arriendo",
+                "property_type": "departamento",
+                "status": "SUCCESS",
+                "discovered": 0,
+                "cache_hit": True,
+            },
+        ]}]},
     )
     _write_json(reports / f"candidates_{prior_recovery}-process-1.json", [completed_record])
     _write_json(reports / f"processed_{prior_recovery}-process-1.json", [completed_record])

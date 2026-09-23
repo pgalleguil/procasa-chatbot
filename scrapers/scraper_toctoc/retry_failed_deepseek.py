@@ -118,6 +118,17 @@ def build_retry_records(
         if not title or not description:
             raise ValueError(f"complete title/description required for listing_id={listing_id}")
 
+        # The source report contains the prior failed classification. In
+        # particular, historical rows can carry the superseded idType=1
+        # candidate hint. Preserve its version stamps for fingerprinting, but
+        # never feed that old decision back as a fresh deterministic result.
+        previous_classification = record.get("classification")
+        if isinstance(previous_classification, dict):
+            for version_key in ("rules_version", "prompt_version", "classifier_version"):
+                if not record.get(version_key) and previous_classification.get(version_key):
+                    record[version_key] = previous_classification[version_key]
+        record.pop("classification", None)
+
         # Rebuild exactly the existing local rules/context before any AI call.
         rule_result = (
             classify_structural_broker(record)

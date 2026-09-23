@@ -549,7 +549,15 @@ def test_retry_utility_selects_only_approved_failed_residuals():
     records = build_retry_records(
         failed,
         [
-            {"listing_id": "empty", "title": "Casa a la venta", "description": "Descripción ambigua completa"},
+            {
+                "listing_id": "empty",
+                "title": "Casa a la venta",
+                "description": "Descripción ambigua completa",
+                "classification": {
+                    "final_reason": "TOCTOC_IDTYPE_1_OWNER_CANDIDATE",
+                    "rules_version": "historical-rules-v2",
+                },
+            },
             {"listing_id": "json", "title": "Departamento a la venta", "description": "Otra descripción ambigua"},
             {"listing_id": "valid", "title": "Ya válido", "description": "No debe entrar"},
         ],
@@ -557,6 +565,8 @@ def test_retry_utility_selects_only_approved_failed_residuals():
     )
     assert [row["listing_id"] for row in records] == ["empty", "json"]
     assert all(row["rule_context"] and "classification_hint" in row for row in records)
+    assert "classification" not in records[0]
+    assert records[0]["rules_version"] == "historical-rules-v2"
 
 
 def test_retry_utility_rejects_wrong_count_or_missing_original_detail():

@@ -162,6 +162,96 @@ def test_degraded_search_records_never_enter_property_processing():
     assert pipeline._discovery_query_passed({}, []) is False
 
 
+def test_prior_recovery_success_is_reused_without_reprocessing_its_ledger(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    previous = "old"
+    prior_recovery = "old-recovery-v1"
+    resolved = _resolved("A", ["Providencia"])
+    monkeypatch.setattr(pipeline, "resolve_scraping_config", lambda db, executive: resolved)
+
+    for index in (1, 2):
+        _write_json(
+            reports / f"discovery_checkpoint_{previous}-a-{index:04d}.json",
+            {"stop_reason": "PLAYWRIGHT_ERROR", "last_completed_page": 0},
+        )
+    _write_json(reports / f"discovered_{previous}-a.json", [])
+
+    completed_record = {
+        "listing_id": "previously-processed",
+        "url": "https://www.toctoc.com/venta/departamento/metropolitana/providencia/b_old",
+        "comuna_solicitada": "providencia",
+        "operation_requested": "venta",
+        "property_type_requested": "departamento",
+    }
+    _write_json(
+        reports / f"toctoc_failed_search_recovery_{prior_recovery}.json",
+        {"discovery_runs": [{"queries": [{
+            "commune": "providencia",
+            "operation": "venta",
+            "property_type": "departamento",
+            "status": "SUCCESS",
+            "discovered": 1,
+        }]}]},
+    )
+    _write_json(reports / f"candidates_{prior_recovery}-process-1.json", [completed_record])
+    _write_json(reports / f"processed_{prior_recovery}-process-1.json", [completed_record])
+
+    attempts = []
+
+    def fake_discover(resolved_row, *, query_cache, resume_from_batch_ids, **kwargs):
+        fresh = []
+        for operation in resolved_row["values"]["operations"]:
+            key = pipeline._discovery_query_key("Providencia", operation, "departamento")
+            if key in query_cache:
+                continue
+            assert key in resume_from_batch_ids
+            attempts.append(key)
+            record = {
+                "listing_id": "newly-recovered",
+                "url": "https://www.toctoc.com/arriendo/departamento/metropolitana/providencia/b_new",
+                "comuna_solicitada": "Providencia",
+                "operation_requested": operation,
+                "property_type_requested": "departamento",
+            }
+            query_cache[key] = {
+                "records": [record],
+                "report": {"discovery_degraded": False, "discovery_status": "SUCCESS_WITH_RESULTS"},
+            }
+            fresh.append(record)
+        return {"records": fresh, "queries": [], "errors": [], "unique_count": len(fresh)}
+
+    monkeypatch.setattr(pipeline, "discover_executive_scope", fake_discover)
+    processed = []
+
+    def fake_process(scope, *, candidates_path, **kwargs):
+        rows = pipeline._load_candidates(candidates_path)
+        processed.extend(row["listing_id"] for row in rows)
+        return {"run_status": "SUCCESS", "processed_count": len(rows), "records": []}
+
+    monkeypatch.setattr(pipeline, "run_configured_toctoc_pipeline", fake_process)
+
+    result = pipeline.recover_failed_toctoc_searches(
+        ["A"],
+        previous_run_id_prefix=previous,
+        recovery_run_id_prefix="recovery-v2-test",
+        prior_recovery_run_id_prefix=prior_recovery,
+        db=object(),
+        config=SimpleNamespace(reports_dir=str(reports)),
+        write_db=False,
+        allow_real_ai=False,
+        assignment_enabled=False,
+        expected_searches=2,
+    )
+
+    assert result["searches_retried"] == 1
+    assert result["previous_recovery_searches_reused"] == 1
+    assert result["prior_recovery_processed_ledger_rows"] == 1
+    assert len(attempts) == 1 and attempts[0][1] == "arriendo"
+    assert processed == ["newly-recovered"]
+    assert result["new_unique_listings"] == 1
+
+
 def test_resume_staging_preserves_original_evidence_and_rekeys_copy(tmp_path):
     reports = tmp_path / "reports"
     reports.mkdir()

@@ -62,6 +62,72 @@ def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_prior_recovery_search_cache(
+    reports_dir: Path, recovery_run_id_prefix: str | None
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Reuse completed searches from an earlier recovery of the same run."""
+    if not recovery_run_id_prefix:
+        return {}
+    report_path = reports_dir / f"toctoc_failed_search_recovery_{recovery_run_id_prefix}.json"
+    if not report_path.exists():
+        return {}
+    try:
+        report = _load_json(report_path)
+    except Exception:
+        return {}
+
+    records_by_key: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for artifact in reports_dir.glob(f"candidates_{recovery_run_id_prefix}-process-*.json"):
+        try:
+            rows = _load_candidates(artifact)
+        except Exception:
+            continue
+        for row in rows:
+            key = _discovery_query_key(
+                row.get("comuna_solicitada") or row.get("comuna"),
+                row.get("operation_requested"),
+                row.get("property_type_requested"),
+            )
+            records_by_key.setdefault(key, []).append(dict(row))
+
+    cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for run in report.get("discovery_runs") or []:
+        for query in run.get("queries") or []:
+            status = str(query.get("status") or "").upper()
+            if status not in {"SUCCESS", "SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}:
+                continue
+            key = _discovery_query_key(
+                query.get("commune"), query.get("operation"), query.get("property_type")
+            )
+            rows = records_by_key.get(key, [])
+            reported_count = int(query.get("discovered") or 0)
+            # Do not reuse a completed query if its non-empty output was not
+            # durably saved; retry it rather than silently losing listings.
+            if reported_count > 0 and not rows:
+                continue
+            if rows:
+                cache[key] = {
+                    "records": rows,
+                    "report": {
+                        "discovery_degraded": False,
+                        "discovery_status": "SUCCESS_WITH_RESULTS",
+                        "reused_from_recovery_run": recovery_run_id_prefix,
+                    },
+                }
+            else:
+                cache[key] = {
+                    "records": [],
+                    "report": {
+                        "discovery_degraded": False,
+                        "discovery_status": "SUCCESS_ZERO_RESULTS",
+                        "explicit_zero_results": False,
+                        "legacy_completed_checkpoint": True,
+                        "reused_from_recovery_run": recovery_run_id_prefix,
+                    },
+                }
+    return cache
+
+
 _DISCOVERY_COMPLETE_STOPS = {
     "LAST_PAGE_REACHED",
     "NEXT_NOT_FOUND",
@@ -761,6 +827,7 @@ def recover_failed_toctoc_searches(
     assignment_enabled: bool = True,
     proxy_mode: str = "auto",
     expected_searches: int | None = None,
+    prior_recovery_run_id_prefix: str | None = None,
     prevalidated_searches: dict[tuple[str, str, str], dict[str, Any]] | None = None,
     progress_callback: Any | None = None,
 ) -> dict[str, Any]:
@@ -918,6 +985,12 @@ def recover_failed_toctoc_searches(
                 if int(checkpoint.get("last_completed_page") or 0) > int(current_checkpoint.get("last_completed_page") or 0):
                     failed_retry_batch_by_key[key] = old_batch_id
 
+    prior_recovery_cache = _load_prior_recovery_search_cache(
+        reports_dir, prior_recovery_run_id_prefix
+    )
+    for key, cached_result in prior_recovery_cache.items():
+        success_by_key.setdefault(key, cached_result)
+
     # A completed duplicate query satisfies the shared config; don't request
     # it again merely because another executive's checkpoint was degraded.
     retry_batch_by_key = {
@@ -1021,6 +1094,7 @@ def recover_failed_toctoc_searches(
             "searches_previously_complete": len(completed_rows),
             "searches_previously_failed": len(failed_rows),
             "searches_retried": len(retry_batch_by_key),
+            "previous_recovery_searches_reused": len(prior_recovery_cache),
             "unique_search_configs": len({row[2] for row in checkpoint_rows}),
             "recovered_searches": len(recovered_keys),
             "still_failed": len(still_failed_keys),
@@ -1073,6 +1147,7 @@ def recover_failed_toctoc_searches(
     previously_discovered_ids: set[str] = set()
     previous_processed_rows = 0
     previous_discovered_rows = 0
+    prior_recovery_processed_rows = 0
     for resolved in resolved_rows:
         artifact = reports_dir / f"discovered_{previous_run_id_prefix}-{_executive_slug(resolved.get('executive'))}.json"
         if not artifact.exists():
@@ -1094,6 +1169,20 @@ def recover_failed_toctoc_searches(
             except Exception:
                 continue
             previous_processed_rows += len(rows)
+            previously_processed_ids.update(
+                str(row.get("listing_id") or "").strip()
+                for row in rows
+                if str(row.get("listing_id") or "").strip()
+            )
+    if prior_recovery_run_id_prefix:
+        for artifact in reports_dir.glob(
+            f"processed_{prior_recovery_run_id_prefix}-process-*.json"
+        ):
+            try:
+                rows = _load_candidates(artifact)
+            except Exception:
+                continue
+            prior_recovery_processed_rows += len(rows)
             previously_processed_ids.update(
                 str(row.get("listing_id") or "").strip()
                 for row in rows
@@ -1298,6 +1387,7 @@ def recover_failed_toctoc_searches(
         "searches_previously_complete": len(completed_rows),
         "searches_previously_failed": len(failed_rows),
         "searches_retried": len(retry_batch_by_key),
+        "previous_recovery_searches_reused": len(prior_recovery_cache),
         "searches_reused_between_executives": max(0, len(query_specs_by_old_id) - len({key for _, _, key, _ in checkpoint_rows})),
         "unique_search_configs": len({key for _, _, key, _ in checkpoint_rows}),
         "proxy_pool_size": proxy_pool_size,
@@ -1316,6 +1406,7 @@ def recover_failed_toctoc_searches(
         "previously_discovered_reused": previous_discovered_reused,
         "recovery_processed_reused_for_distribution": len(recovery_processed_ids & set(distribution_candidate_ids)),
         "previous_processed_ledger_rows": previous_processed_rows,
+        "prior_recovery_processed_ledger_rows": prior_recovery_processed_rows,
         "detail_scope_new": sum(int(run.get("candidate_count", 0)) for run in processing_runs),
         "processing_runs": processing_runs,
         "discovery_runs": [

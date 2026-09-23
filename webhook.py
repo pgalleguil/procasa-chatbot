@@ -1339,6 +1339,30 @@ async def lifespan(app: FastAPI):
     # Keep startup read-only and leave the existing Drive ACLs untouched.
     logger.info("STARTUP_DRIVE_PERMISSION_MUTATION=0")
 
+    # TEMPORARY: one-shot, read-only access check for the campaign Drive folders.
+    try:
+        from campanas._temporary_drive_folder_read import check_campaign_drive_folders
+
+        drive_folder_check = await asyncio.to_thread(check_campaign_drive_folders)
+        logger.info(
+            "[TEMP_CAMPAIGN_DRIVE_FOLDER_READ] gdrive_auth_ok=%s communal_folder_readable=%s "
+            "appraisals_folder_readable=%s communal_folder_empty=%s appraisals_folder_empty=%s "
+            "drive_error=%s",
+            drive_folder_check["gdrive_auth_ok"],
+            drive_folder_check["communal_folder_readable"],
+            drive_folder_check["appraisals_folder_readable"],
+            drive_folder_check["communal_folder_empty"],
+            drive_folder_check["appraisals_folder_empty"],
+            drive_folder_check["drive_error"] or "none",
+        )
+    except Exception as exc:
+        logger.warning(
+            "[TEMP_CAMPAIGN_DRIVE_FOLDER_READ] gdrive_auth_ok=None communal_folder_readable=False "
+            "appraisals_folder_readable=False communal_folder_empty=None appraisals_folder_empty=None "
+            "drive_error=CHECK_FAILED_%s",
+            type(exc).__name__,
+        )
+
     # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
     logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
     

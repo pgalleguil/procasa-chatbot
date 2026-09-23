@@ -28,7 +28,10 @@ from .crm_notifications import (
 )
 from .crm_metrics import coerce_utc_datetime, utc_now
 from .mongo_identity import mongo_id_variants
-from .crm_sla_cycle_links import build_sla_cycle_url
+from .crm_sla_cycle_links import (
+    build_sla_short_url,
+    ensure_sla_short_link,
+)
 from .whatsapp_client import normalize_provider_status
 
 
@@ -101,7 +104,13 @@ def _field(lead: Mapping[str, Any], *paths: str, default: str = "") -> str:
     return default
 
 
-def _notification_context(db: Any, lead_id: str, destination_cycle_id: str) -> dict[str, str]:
+def _notification_context(
+    db: Any,
+    lead_id: str,
+    destination_cycle_id: str,
+    *,
+    include_secure_url: bool = True,
+) -> dict[str, str]:
     lead = _lead_for_notification(db, lead_id)
     cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": destination_cycle_id}) or {}
     code = _field(
@@ -128,9 +137,16 @@ def _notification_context(db: Any, lead_id: str, destination_cycle_id: str) -> d
         priority = "NORMAL"
     secure_url = ""
     destination_owner_id = str(cycle.get("assigned_to_user_id") or "").strip()
-    if lead and destination_owner_id and destination_cycle_id:
-        secure_url = build_sla_cycle_url(
-            lead_id=lead.get("_id") or lead_id,
+    if include_secure_url and lead and destination_owner_id and destination_cycle_id:
+        resolved_lead_id = lead.get("_id") or lead_id
+        ensure_sla_short_link(
+            db,
+            lead_id=resolved_lead_id,
+            recipient_user_id=destination_owner_id,
+            assignment_cycle_id=destination_cycle_id,
+        )
+        secure_url = build_sla_short_url(
+            lead_id=resolved_lead_id,
             recipient_user_id=destination_owner_id,
             assignment_cycle_id=destination_cycle_id,
         )
@@ -300,7 +316,9 @@ def enqueue_sla_reassignment_away_notification(
         raise ValueError("sla reassignment away notification identity is incomplete")
     if reassignment_number is None or reassignment_number < 1:
         return None
-    context = _notification_context(db, lead_id, source_cycle_id)
+    context = _notification_context(
+        db, lead_id, source_cycle_id, include_secure_url=False,
+    )
     return _create_reassignment_notification(
         db,
         lead_id=lead_id,

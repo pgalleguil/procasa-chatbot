@@ -2922,12 +2922,51 @@ async def view_crm_detail_by_sla_cycle(request: Request, signed_token: str):
     return response
 
 
+@app.get("/crm/s/{short_id}", response_class=HTMLResponse)
+async def view_crm_detail_by_sla_short_link(request: Request, short_id: str):
+    """Open an opaque SLA link after canonical cycle authorization."""
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    from chatbot.crm_sla_cycle_links import (
+        SlaCycleLinkConfigurationError,
+        SlaCycleLinkError,
+        validate_sla_short_link,
+    )
+    from chatbot.storage import get_db as _sync_db
+
+    try:
+        resolution = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: validate_sla_short_link(
+                _sync_db(), short_id,
+                authenticated_user_id=str(user.get("_id") or ""),
+            ),
+        )
+    except SlaCycleLinkConfigurationError:
+        raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
+    except SlaCycleLinkError as exc:
+        return _sla_cycle_link_locked_response(exc.status_code, exc.code)
+
+    resolved_lead_id = str(resolution.lead.get("_id") or "")
+    target = (
+        f"/crm/lead-id/{quote(resolved_lead_id, safe='')}"
+        f"?sla_short_id={quote(str(short_id), safe='')}"
+    )
+    response = RedirectResponse(url=target, status_code=302)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.get("/crm/lead-id/{lead_id}", response_class=HTMLResponse)
 async def view_crm_detail_by_id(
     request: Request,
     lead_id: str,
     followup_token: str | None = Query(None),
     sla_cycle_token: str | None = Query(None),
+    sla_short_id: str | None = Query(None),
 ):
     """Secure lead detail by ObjectId. No phone in URL. No query-string data trusted."""
     from bson import ObjectId as BsonObjectId
@@ -2938,22 +2977,32 @@ async def view_crm_detail_by_id(
         raise HTTPException(status_code=401, detail="No autenticado")
 
     sla_link_resolution = None
-    if sla_cycle_token:
+    if sla_short_id or sla_cycle_token:
         from chatbot.crm_sla_cycle_links import (
             SlaCycleLinkConfigurationError,
             SlaCycleLinkError,
             validate_sla_cycle_link,
+            validate_sla_short_link,
         )
         from chatbot.storage import get_db as _sync_db
 
         try:
-            sla_link_resolution = await asyncio.get_running_loop().run_in_executor(
-                _WEB_THREAD_POOL,
-                lambda: validate_sla_cycle_link(
-                    _sync_db(), sla_cycle_token,
-                    authenticated_user_id=str(user.get("_id") or ""),
-                ),
-            )
+            if sla_short_id:
+                sla_link_resolution = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: validate_sla_short_link(
+                        _sync_db(), sla_short_id,
+                        authenticated_user_id=str(user.get("_id") or ""),
+                    ),
+                )
+            else:
+                sla_link_resolution = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: validate_sla_cycle_link(
+                        _sync_db(), sla_cycle_token,
+                        authenticated_user_id=str(user.get("_id") or ""),
+                    ),
+                )
         except SlaCycleLinkConfigurationError:
             raise HTTPException(status_code=503, detail="sla_cycle_link_configuration_invalid")
         except SlaCycleLinkError as exc:

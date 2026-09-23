@@ -118,15 +118,28 @@ def validate_property_for_canonical_insert(doc: dict[str, Any]) -> list[str]:
     )
 
     # assignment_ready is a derived safety flag, never a proxy for source or
-    # confidence. Only owner states can expose a record to assignment.
+    # confidence. A completed clean INCIERTO may be handed to an executive for
+    # human validation; pending/failed pipeline items cannot.
     non_assignable_reasons = {
-        "INCIERTO": "ASSIGNMENT_READY_INVALID_FOR_INCIERTO",
         "CORREDOR_SEGURO": "ASSIGNMENT_READY_INVALID_FOR_CORREDOR_SEGURO",
         "CORREDOR_PROBABLE": "ASSIGNMENT_READY_INVALID_FOR_CORREDOR_PROBABLE",
         "AD_REMOVED": "ASSIGNMENT_READY_INVALID_FOR_AD_REMOVED",
     }
     if classification.get("assignment_ready") is True and state in non_assignable_reasons:
         errors.append(non_assignable_reasons[state])
+    if classification.get("assignment_ready") is True and state == "INCIERTO":
+        pipeline_state = str(
+            classification.get("pipeline_state") or doc.get("pipeline_state") or ""
+        ).strip().upper()
+        pipeline_complete = (
+            classification.get("pipeline_complete") is True
+            or doc.get("pipeline_complete") is True
+        )
+        if not pipeline_complete or pipeline_state in {
+            "EXTRACTED_ONLY", "CLASSIFYING", "UNCERTAIN_PENDING_AI",
+            "AI_FAILED_RETRYABLE", "EXTRACTOR_DEGRADED", "INVALID",
+        }:
+            errors.append("ASSIGNMENT_READY_INVALID_FOR_INCOMPLETE_INCIERTO")
     if hard_veto and not state.startswith("CORREDOR"):
         errors.append("PROFESSIONAL_HARD_VETO_STATE_LOST")
 

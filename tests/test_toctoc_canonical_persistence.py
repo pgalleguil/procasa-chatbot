@@ -97,13 +97,34 @@ def test_structural_broker_uses_operation_fallback_and_serializes_canonically():
     assert document["classification"]["assignment_ready"] is False
 
 
-def test_id_type_one_alone_remains_uncertain_after_schema_and_probability_pass():
+def test_id_type_one_alone_remains_uncertain_but_can_be_human_validated_after_pipeline_completion():
     document, errors = _persistable(_raw("9999902"))
     assert errors == []
     assert document["classification"]["final"] == "UNCERTAIN"
     assert document["classification"]["state"] == "INCIERTO"
-    assert document["classification"]["assignment_ready"] is False
+    assert document["classification"]["assignment_ready"] is True
     assert document["listing_status"] == "ACTIVE"
+
+
+def test_uncertain_without_completed_pipeline_remains_not_assignable():
+    document, errors = _persistable(_raw(
+        "9999915",
+        pipeline_state="UNCERTAIN_PENDING_AI",
+        pipeline_complete=False,
+        classification={
+            "state": "INCIERTO",
+            "final": "UNCERTAIN",
+            "confidence": 0.5,
+            "source": "classification_service",
+            "reason": "AI_BUDGET_EXCEEDED",
+            "assignment_ready": False,
+            "pipeline_state": "UNCERTAIN_PENDING_AI",
+            "pipeline_complete": False,
+        },
+    ))
+    assert errors == []
+    assert document["classification"]["final"] == "UNCERTAIN"
+    assert document["classification"]["assignment_ready"] is False
 
 
 def test_stale_idtype_one_owner_promotion_is_not_preserved_by_canonicalization():
@@ -124,7 +145,7 @@ def test_stale_idtype_one_owner_promotion_is_not_preserved_by_canonicalization()
     assert errors == []
     assert document["classification"]["final"] == "UNCERTAIN"
     assert document["classification"]["state"] == "INCIERTO"
-    assert document["classification"]["assignment_ready"] is False
+    assert document["classification"]["assignment_ready"] is True
 
 
 def test_removed_listing_does_not_replace_owner_identity():

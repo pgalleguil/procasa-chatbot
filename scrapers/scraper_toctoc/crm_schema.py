@@ -284,11 +284,46 @@ def normalize_classification(
     )
     normalized["final_evidence"] = evidence
     normalized["canonical_classification_version"] = "canonical-classification-v1"
-    normalized["assignment_ready"] = (
-        state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
-        and not raw.get("manual_review_required")
-        and ((state_source in ("structural_rules", "rules_json") and rule_state != "INCONCLUSIVE")
-             or (state_source == "deepseek" and deepseek_status == "VALID" and bool(ds_raw)))
+    pipeline_state = str(raw.get("pipeline_state") or "").strip().upper()
+    pipeline_complete = raw.get("pipeline_complete") is True and pipeline_state not in {
+        "EXTRACTED_ONLY", "CLASSIFYING", "UNCERTAIN_PENDING_AI",
+        "AI_FAILED_RETRYABLE", "EXTRACTOR_DEGRADED", "INVALID",
+    }
+    conflict = bool(
+        raw.get("classification_conflict")
+        or str(raw.get("conflict_state") or "").upper() == "IDENTITY_CONFLICT"
+        or raw.get("identity_conflict")
+    )
+    hard_broker = bool(
+        hard_veto == "PROFESSIONAL"
+        or raw.get("hard_broker_veto")
+        or raw.get("hard_broker_signal")
+        or raw.get("broker_identity_match")
+    )
+    listing_status = str(raw.get("listing_status") or "ACTIVE").strip().upper()
+    canonical_owner = canonical_final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"}
+    complete_uncertain = (
+        state == "INCIERTO"
+        and canonical_final == "UNCERTAIN"
+        and pipeline_complete
+        and listing_status == "ACTIVE"
+        and not conflict
+        and not hard_broker
+        and str(seller_id_type_raw or "").strip() not in {"2", "3"}
+    )
+    owner_decision_auditable = (
+        (state_source in ("structural_rules", "rules_json") and rule_state != "INCONCLUSIVE")
+        or (state_source == "deepseek" and deepseek_status == "VALID" and bool(ds_raw))
+    )
+    normalized["assignment_ready"] = bool(
+        not raw.get("manual_review_required")
+        and not conflict
+        and not hard_broker
+        and listing_status == "ACTIVE"
+        and (
+            (canonical_owner and owner_decision_auditable)
+            or complete_uncertain
+        )
     )
     normalized["assignment_gate_version"] = "assignment-gate-v2"
     return normalized

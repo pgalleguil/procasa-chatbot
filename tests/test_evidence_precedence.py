@@ -66,14 +66,14 @@ def test_idtype1_and_agenda_visit_remain_uncertain_without_owner_rule():
     decision = _gate(doc, classification)
     assert classification["final"] == "UNCERTAIN"
     assert classification["state"] == "INCIERTO"
-    assert classification["assignment_ready"] is False
-    assert decision["assignment_ready"] is False
+    assert classification["assignment_ready"] is True
+    assert decision["assignment_ready"] is True
 
 
 def test_idtype1_and_entrega_inmediata_remain_uncertain_without_owner_rule():
     classification = _classify(_doc(id_type=1, description="Entrega inmediata."))
     assert classification["final"] == "UNCERTAIN"
-    assert classification["assignment_ready"] is False
+    assert classification["assignment_ready"] is True
 
 
 def test_idtype1_multiple_weak_signals_do_not_promote_to_owner():
@@ -84,7 +84,7 @@ def test_idtype1_multiple_weak_signals_do_not_promote_to_owner():
         )
     )
     assert classification["final"] == "UNCERTAIN"
-    assert classification["assignment_ready"] is False
+    assert classification["assignment_ready"] is True
 
 
 def test_idtype1_exact_registry_match_remains_broker_and_blocked():

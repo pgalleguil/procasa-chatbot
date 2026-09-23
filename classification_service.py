@@ -231,8 +231,15 @@ def _classification_with_canonical(
     pipeline_complete: bool = True,
 ) -> dict[str, Any]:
     result = dict(classification)
+    result["pipeline_state"] = "CLASSIFIED" if pipeline_complete else "UNCERTAIN_PENDING_AI"
+    result["pipeline_complete"] = bool(pipeline_complete)
     canonical = serialize_canonical_classification(
-        {**document, "classification": result},
+        {
+            **document,
+            "pipeline_state": result["pipeline_state"],
+            "pipeline_complete": result["pipeline_complete"],
+            "classification": result,
+        },
         registry_match=registry_match,
         human_broker_match=human_broker_match,
         cross_portal_match=cross_portal_match,
@@ -260,13 +267,6 @@ def _classification_with_canonical(
             result["canonical_confidence"] = result["owner_probability"]
     result["pipeline_state"] = "CLASSIFIED" if pipeline_complete else "UNCERTAIN_PENDING_AI"
     result["pipeline_complete"] = bool(pipeline_complete)
-    portal = str(
-        document.get("portal")
-        or document.get("source_portal")
-        or document.get("origen")
-        or ""
-    ).strip().lower()
-    uncertain_not_assignable = portal in {"toctoc", "toctoc.com"} and final == "UNCERTAIN"
     listing_status = listing_status_for_document({**document, "classification": result})
     result["listing_status"] = listing_status
     result["assignment_ready"] = bool(
@@ -274,7 +274,6 @@ def _classification_with_canonical(
         and listing_status == "ACTIVE"
         and not result.get("classification_conflict")
         and str(result.get("conflict_state") or "").upper() != "IDENTITY_CONFLICT"
-        and not uncertain_not_assignable
         and final not in {
             "BROKER_CONFIRMED", "BROKER_PROBABLE", "OUT_OF_SCOPE_NEW_DEVELOPMENT",
             "INVALID", "REMOVED", "EXPIRED",
@@ -285,7 +284,6 @@ def _classification_with_canonical(
         result["assignment_block_reasons"] = sorted(set(
             list(result.get("assignment_block_reasons") or [])
             + (["UNCERTAIN_PENDING_AI"] if not pipeline_complete else [])
-            + (["classification_not_assignable"] if uncertain_not_assignable else [])
             + (["OUT_OF_SCOPE_NEW_DEVELOPMENT"] if final == "OUT_OF_SCOPE_NEW_DEVELOPMENT" else [])
         ))
     result["classifier_version"] = CLASSIFICATION_SERVICE_VERSION

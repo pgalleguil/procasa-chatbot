@@ -196,15 +196,48 @@ def serialize_canonical_classification(
     classification["classification_serialization_version"] = "canonical-persistence-v1"
 
     broker_veto = str(classification.get("hard_veto") or "").upper() == "PROFESSIONAL"
+    pipeline_state = str(
+        classification.get("pipeline_state")
+        or document.get("pipeline_state")
+        or ""
+    ).strip().upper()
+    pipeline_complete = (
+        classification.get("pipeline_complete") is True
+        or document.get("pipeline_complete") is True
+    )
+    pipeline_incomplete = pipeline_state in {
+        "EXTRACTED_ONLY", "CLASSIFYING", "UNCERTAIN_PENDING_AI",
+        "AI_FAILED_RETRYABLE", "EXTRACTOR_DEGRADED", "INVALID",
+    }
     conflict = bool(
         classification.get("classification_conflict")
         or str(classification.get("conflict_state") or "").upper() == "IDENTITY_CONFLICT"
+        or (registry_match or {}).get("conflict")
+        or str((document.get("contact_identity") or {}).get("status") or "").upper() == "CONFLICT"
     )
-    classification["assignment_ready"] = bool(
-        final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"}
+    identity_match = bool(
+        classification.get("broker_identity_match")
+        or (registry_match or {}).get("matched")
+        or human_broker_match
+        or cross_portal_match
+        or str((document.get("contact_identity") or {}).get("status") or "").upper() == "CORREDOR_CONFIRMED"
+    )
+    clean_uncertain = bool(
+        final == "UNCERTAIN"
+        and pipeline_complete
+        and not pipeline_incomplete
         and listing_status == "ACTIVE"
         and not broker_veto
         and not conflict
+        and not identity_match
+        and not classification.get("manual_review_required")
+    )
+    classification["assignment_ready"] = bool(
+        (final in {"OWNER_CONFIRMED", "OWNER_PROBABLE"} or clean_uncertain)
+        and listing_status == "ACTIVE"
+        and not broker_veto
+        and not conflict
+        and not identity_match
         and not classification.get("manual_review_required")
     )
     classification["exclude_from_assignment"] = not classification["assignment_ready"]

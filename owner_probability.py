@@ -640,12 +640,54 @@ def apply_owner_probability_to_document(
     )
     classification["classification_rule_version"] = OWNER_PROBABILITY_VERSION
     classification["listing_status"] = listing_status
+    upstream_pipeline_complete = (
+        classification.get("pipeline_complete") is True
+        or doc.get("pipeline_complete") is True
+    )
+    upstream_pipeline_state = str(
+        classification.get("pipeline_state") or doc.get("pipeline_state") or ""
+    ).strip().upper()
+    broker_terminal = bool(
+        hard_veto == "PROFESSIONAL"
+        or identity_broker_match
+        or broker_confirmed
+    )
+    incomplete_pipeline_states = {
+        "EXTRACTED_ONLY", "CLASSIFYING", "UNCERTAIN_PENDING_AI",
+        "AI_FAILED_RETRYABLE", "EXTRACTOR_DEGRADED", "INVALID",
+    }
+    deepseek_still_required = any(
+        str(reason).startswith("DEEPSEEK_REQUIRED_")
+        for reason in completeness.get("reasons", [])
+    )
+    if broker_terminal:
+        pipeline_state = "CLASSIFIED"
+    elif upstream_pipeline_state in incomplete_pipeline_states:
+        pipeline_state = upstream_pipeline_state
+    elif final_state == "PENDIENTE" or (deepseek_still_required and not upstream_pipeline_complete):
+        pipeline_state = "UNCERTAIN_PENDING_AI"
+    elif upstream_pipeline_complete:
+        pipeline_state = "CLASSIFIED"
+    elif final_state == "INCIERTO" and str(doc.get("origen") or doc.get("portal") or "").lower() in {"toctoc", "toctoc.com"}:
+        # A TOCTOC uncertain result may be assigned for human validation only
+        # after extraction/classification explicitly completed successfully.
+        pipeline_state = "UNCERTAIN_PENDING_AI"
+    else:
+        pipeline_state = "CLASSIFIED"
+    classification["pipeline_state"] = pipeline_state
+    classification["pipeline_complete"] = pipeline_state == "CLASSIFIED"
+    owner_candidate = final_state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
+    uncertain_candidate = (
+        final_state == "INCIERTO"
+        and classification["pipeline_complete"]
+        and classification.get("pipeline_state") == "CLASSIFIED"
+    )
     classification["assignment_ready"] = bool(
-        final_state in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
+        (owner_candidate or uncertain_candidate)
         and listing_status == "ACTIVE"
         and not classification.get("manual_review_required")
         and not classification.get("classification_conflict")
-        and not classification.get("conflict_state")
+        and str(classification.get("conflict_state") or "").upper() != "IDENTITY_CONFLICT"
         and hard_veto != "PROFESSIONAL"
         and not identity_broker_match
     )
@@ -655,26 +697,9 @@ def apply_owner_probability_to_document(
         else [f"LISTING_{listing_status}"] if listing_status != "ACTIVE"
         else ["PROFESSIONAL_HARD_VETO"] if hard_veto == "PROFESSIONAL"
         else ["BROKER_IDENTITY_MATCH"] if identity_broker_match
-        else ["NON_OWNER_STATE_NOT_ASSIGNABLE"] if final_state not in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
-        else ["BROKER_CONFIRMED"] if broker_confirmed
-        else completeness.get("reasons", []) or ["OWNER_PROBABILITY_BELOW_50"]
+        else ["PIPELINE_INCOMPLETE"] if not classification["pipeline_complete"]
+        else completeness.get("reasons", []) or ["NON_OWNER_STATE_NOT_ASSIGNABLE"]
     )
-    broker_terminal = bool(
-        hard_veto == "PROFESSIONAL"
-        or identity_broker_match
-        or broker_confirmed
-    )
-    classification["pipeline_state"] = (
-        "CLASSIFIED"
-        if broker_terminal
-        else "UNCERTAIN_PENDING_AI"
-        if final_state == "PENDIENTE" or any(
-            str(reason).startswith("DEEPSEEK_REQUIRED_")
-            for reason in completeness.get("reasons", [])
-        )
-        else "CLASSIFIED"
-    )
-    classification["pipeline_complete"] = classification["pipeline_state"] == "CLASSIFIED"
     # Re-apply the canonical result after legacy state/probability fields are
     # finalized so no later score/schema write can undo a hard veto.
     canonical_input = dict(classification)

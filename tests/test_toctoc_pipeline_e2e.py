@@ -139,9 +139,9 @@ def test_e_cache_hit_avoids_second_ai_call():
     assert len(calls) == 1
 
 
-def test_f_ambiguous_residual_without_ai_remains_uncertain_and_blocked():
+def test_f_ambiguous_residual_without_ai_remains_uncertain_and_assignable_for_human_validation():
     report = run_toctoc_pipeline([_record("F")], options=PipelineOptions())
-    assert report["assignable"] == 0
+    assert report["assignable"] == 1
     assert report["qa_sample"]["UNCERTAIN"]
 
 

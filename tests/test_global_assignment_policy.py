@@ -44,13 +44,13 @@ def test_uncertain_without_known_phone_is_assignable_for_every_portal(portal):
     assert decision["assignment_block_reasons"] == []
 
 
-def test_toctoc_uncertain_without_owner_evidence_is_blocked():
+def test_toctoc_uncertain_without_broker_evidence_is_assignable_for_human_validation():
     decision = calculate_assignment_eligibility(
         _document("toctoc", "INCIERTO"), contact_identity=None
     )
 
-    assert decision["assignment_ready"] is False
-    assert "classification_not_assignable" in decision["assignment_block_reasons"]
+    assert decision["assignment_ready"] is True
+    assert decision["assignment_block_reasons"] == []
 
 
 @pytest.mark.parametrize("portal", ["chilepropiedades", "yapo", "toctoc"])
@@ -118,12 +118,22 @@ def _complete_uncertain_document(**overrides):
     return document
 
 
-def test_clean_uncertain_uses_existing_state_but_is_blocked_for_toctoc():
+def test_clean_uncertain_uses_existing_state_and_can_pass_toctoc_gate():
     decision = can_assign_property(_complete_uncertain_document())
 
-    assert decision["assignment_ready"] is False
+    assert decision["assignment_ready"] is True
     assert decision["canonical_final"] == "UNCERTAIN"
-    assert "classification_not_assignable" in decision["assignment_block_reasons"]
+    assert decision["assignment_block_reasons"] == []
+
+
+def test_uncertain_pending_ai_is_not_assignable():
+    decision = can_assign_property(_complete_uncertain_document(
+        pipeline_state="UNCERTAIN_PENDING_AI",
+        pipeline_complete=False,
+    ))
+
+    assert decision["assignment_ready"] is False
+    assert "pipeline_incomplete" in decision["assignment_block_reasons"]
 
 
 def test_uncertain_with_registry_match_is_blocked():

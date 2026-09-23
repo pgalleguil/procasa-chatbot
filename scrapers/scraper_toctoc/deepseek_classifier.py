@@ -14,7 +14,10 @@ except Exception:
     requests = None
 
 from classifier_rules import load_rule_sets, normalize_text
-from config import AppConfig
+try:
+    from config import AppConfig
+except ImportError:  # The core CRM config is already imported in an orchestrated run.
+    from scrapers.scraper_toctoc.config import AppConfig
 
 try:
     from broker_identity import detect_hard_broker_signal

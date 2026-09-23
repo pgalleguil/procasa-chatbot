@@ -8,6 +8,8 @@ the two approved parser failures and its original detail is present locally.
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.util
 import json
 import sys
 import uuid
@@ -17,16 +19,45 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[2]
 SCRAPER_DIR = Path(__file__).resolve().parent
 for _path in (str(ROOT), str(SCRAPER_DIR)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
+    while _path in sys.path:
+        sys.path.remove(_path)
+sys.path.insert(0, str(ROOT))
+sys.path.append(str(SCRAPER_DIR))
 
-from classifier_rules import (  # noqa: E402
-    build_rule_context,
-    classify_obvious_broker,
-    classify_structural_broker,
-    classify_structural_owner,
-    is_strong_broker_rule,
+# classifier_rules belongs to the local scraper config namespace, while the
+# orchestrator and assignment gate require the repository's shared config.
+# Load the scraper module under a unique name, then restore/import core config.
+_saved_config = sys.modules.get("config")
+_config_spec = importlib.util.spec_from_file_location(
+    "toctoc_retry_runtime_config", SCRAPER_DIR / "config.py"
 )
+if _config_spec is None or _config_spec.loader is None:
+    raise RuntimeError("unable to load TOCTOC scraper configuration module")
+_scraper_config_module = importlib.util.module_from_spec(_config_spec)
+sys.modules[_config_spec.name] = _scraper_config_module
+_config_spec.loader.exec_module(_scraper_config_module)
+sys.modules["config"] = _scraper_config_module
+_rules_spec = importlib.util.spec_from_file_location(
+    "scrapers.scraper_toctoc.classifier_rules", SCRAPER_DIR / "classifier_rules.py"
+)
+if _rules_spec is None or _rules_spec.loader is None:
+    raise RuntimeError("unable to load TOCTOC classifier rules")
+_rules_module = importlib.util.module_from_spec(_rules_spec)
+sys.modules[_rules_spec.name] = _rules_module
+_rules_spec.loader.exec_module(_rules_module)
+sys.modules.setdefault("classifier_rules", _rules_module)
+if _saved_config is not None:
+    sys.modules["config"] = _saved_config
+else:
+    sys.modules.pop("config", None)
+    importlib.import_module("config")
+
+build_rule_context = _rules_module.build_rule_context
+classify_obvious_broker = _rules_module.classify_obvious_broker
+classify_structural_broker = _rules_module.classify_structural_broker
+classify_structural_owner = _rules_module.classify_structural_owner
+is_strong_broker_rule = _rules_module.is_strong_broker_rule
+
 from pipeline_entrypoint import get_scraper_config  # noqa: E402
 from toctoc_pipeline import (  # noqa: E402
     MongoPipelineLedger,

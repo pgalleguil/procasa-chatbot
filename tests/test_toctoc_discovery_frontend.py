@@ -25,6 +25,9 @@ from scrapers.scraper_toctoc.discovery import (  # noqa: E402
     _batch_bounds,
     _batch_checkpoints,
     _reported_results_from_visible_text,
+    _explicit_zero_results,
+    _discovery_status,
+    _discovery_failure_category,
 )
 from scrapers.scraper_toctoc.discovery import _merge_embedded_metadata  # noqa: E402
 
@@ -123,6 +126,26 @@ def test_discovery_health_allows_real_zero_result_search():
     health = evaluate_discovery_health(200, 0, 0)
     assert health["discovery_degraded"] is False
     assert health["run_aborted"] is False
+
+
+def test_visible_result_counter_supports_current_toctoc_copy_and_true_zero():
+    assert _reported_results_from_visible_text("19 propiedades encontradas en Peñalolén.") == 19
+    assert _reported_results_from_visible_text("0 propiedades encontradas en Colina.") == 0
+    assert _reported_results_from_visible_text("No se encontraron propiedades.") == 0
+    assert _reported_results_from_visible_text("Hay novedades inmobiliarias") is None
+
+
+def test_zero_results_is_success_only_with_explicit_empty_state():
+    assert _explicit_zero_results("0 propiedades encontradas", 0, 0, 0) is True
+    assert _explicit_zero_results("", 0, 0, 0) is False
+    assert _explicit_zero_results("5 propiedades encontradas", 5, 0, 0) is False
+    assert _discovery_status({"explicit_zero_results": True}, 0) == "SUCCESS_ZERO_RESULTS"
+
+
+def test_discovery_failure_categories_separate_selector_pagination_and_challenge():
+    assert _discovery_failure_category("SPA_LOCATION_INPUT_NOT_FOUND") == "SELECTOR"
+    assert _discovery_failure_category("PAGINATION_DEGRADED_PAGE_DID_NOT_CHANGE") == "PAGINATION"
+    assert _discovery_failure_category("RECAPTCHA_BLOCKING_BROWSER_FLOW") == "CHALLENGE"
 
 
 def test_pagination_parameter_replaces_previous_value():

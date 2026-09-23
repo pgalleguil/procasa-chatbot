@@ -617,7 +617,30 @@ def classify_capture(
             classification = _pending_classification(
                 f"DEEPSEEK_{status}", evidence=list(getattr(result, "evidence", []) or [])
             )
-            base_result.update({"classification": classification, "reason": "deepseek_error", "metrics": budget.report()})
+            # Invalid/empty model output is still a billable API attempt and
+            # must remain auditable. Preserve the exact provider body (even
+            # when its content field is the empty string) and per-attempt
+            # transport/parser metadata in the normal classification ledger.
+            classification.update({
+                "deepseek_status": status,
+                "deepseek_raw": getattr(result, "raw", {}) or {},
+                "deepseek_attempts": list(getattr(result, "attempts", []) or []),
+                "deepseek_attempt_number": int(getattr(result, "attempt_number", 0) or 0),
+                "deepseek_http_status": getattr(result, "http_status", None),
+                "deepseek_model": str(getattr(result, "model", "") or getattr(config, "deepseek_model", "")),
+                "deepseek_max_tokens": int(getattr(result, "max_tokens", 0) or 0),
+                "deepseek_parser_status": str(getattr(result, "parser_status", "") or status),
+                "deepseek_message_content": str(getattr(result, "message_content", "") or ""),
+                "deepseek_reasoning_content": str(getattr(result, "reasoning_content", "") or ""),
+                "deepseek_raw_content": getattr(result, "raw_content", None),
+                "deepseek_raw_content_available": bool(getattr(result, "raw_content_available", False)),
+            })
+            base_result.update({
+                "classification": classification,
+                "reason": "deepseek_error",
+                "ai_called": True,
+                "metrics": budget.report(),
+            })
             return base_result
         classification = _classification_with_canonical(
             document,
@@ -629,6 +652,16 @@ def classify_capture(
                 "evidence": list(getattr(result, "evidence", []) or []),
                 "deepseek_status": getattr(result, "status", "VALID"),
                 "deepseek_raw": getattr(result, "raw", {}) or {},
+                "deepseek_attempts": list(getattr(result, "attempts", []) or []),
+                "deepseek_attempt_number": int(getattr(result, "attempt_number", 0) or 0),
+                "deepseek_http_status": getattr(result, "http_status", None),
+                "deepseek_model": str(getattr(result, "model", "") or getattr(config, "deepseek_model", "")),
+                "deepseek_max_tokens": int(getattr(result, "max_tokens", 0) or 0),
+                "deepseek_parser_status": str(getattr(result, "parser_status", "") or "VALID"),
+                "deepseek_message_content": str(getattr(result, "message_content", "") or ""),
+                "deepseek_reasoning_content": str(getattr(result, "reasoning_content", "") or ""),
+                "deepseek_raw_content": getattr(result, "raw_content", None),
+                "deepseek_raw_content_available": bool(getattr(result, "raw_content_available", False)),
             },
             registry_match=registry_match,
             human_broker_match=human_broker_match,

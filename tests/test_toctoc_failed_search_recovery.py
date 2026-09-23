@@ -152,6 +152,16 @@ def test_max_limited_checkpoint_is_not_treated_as_complete():
     assert pipeline._checkpoint_completed({"stop_reason": "NEXT_NOT_FOUND"}) is True
 
 
+def test_degraded_search_records_never_enter_property_processing():
+    partial = [{"listing_id": "partial-1", "url": "https://www.toctoc.com/venta/casa/region/comuna/b_" + "a" * 40}]
+    assert pipeline._discovery_query_passed({"discovery_degraded": True}, partial) is False
+    assert pipeline._discovery_query_passed({"discovery_status": "SUCCESS_WITH_RESULTS"}, partial) is True
+    assert pipeline._discovery_query_passed({"discovery_status": "SUCCESS_ZERO_RESULTS", "explicit_zero_results": True}, []) is True
+    assert pipeline._discovery_query_passed({"discovery_status": "RETRYABLE_FAILURE"}, partial) is False
+    assert pipeline._discovery_query_passed({"discovery_status": "SYSTEMIC_FAILURE"}, partial) is False
+    assert pipeline._discovery_query_passed({}, []) is False
+
+
 def test_resume_staging_preserves_original_evidence_and_rekeys_copy(tmp_path):
     reports = tmp_path / "reports"
     reports.mkdir()

@@ -59,6 +59,14 @@ class DeepSeekResult:
     reasoning_content: str = ""
     structured_evidence: list[dict[str, str]] = field(default_factory=list)
     prompt_version: str = ""
+    attempts: list[dict[str, Any]] = field(default_factory=list)
+    attempt_number: int = 0
+    http_status: int | None = None
+    model: str = ""
+    max_tokens: int = 0
+    parser_status: str = ""
+    raw_content: str | None = None
+    raw_content_available: bool = False
 
 
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}\b")
@@ -162,24 +170,27 @@ def _build_messages(extracted: dict[str, Any], rule_context: dict[str, Any], des
 
 def _call_deepseek(body: dict, config: AppConfig, headers: dict):
     """Make a single DeepSeek API call.
-    Returns (status, data, content, finish_reason) on both success and failure."""
-    import time as _time
+    Returns (status, data, content, finish_reason, http_status) on both outcomes."""
+    http_status = None
     try:
         resp = requests.post(
             f"{config.deepseek_base_url.rstrip('/')}/chat/completions",
             headers=headers, json=body, timeout=config.deepseek_timeout_seconds)
+        http_status = getattr(resp, "status_code", None)
         resp.raise_for_status()
     except requests.exceptions.Timeout:
-        return DeepSeekStatus.TIMEOUT.value, None, None, None
+        return DeepSeekStatus.TIMEOUT.value, None, None, None, http_status
     except requests.exceptions.RequestException as e:
-        return DeepSeekStatus.API_ERROR.value, None, None, None
+        http_status = getattr(getattr(e, "response", None), "status_code", http_status)
+        return DeepSeekStatus.API_ERROR.value, None, None, None, http_status
     try:
         data = resp.json()
     except Exception:
-        return DeepSeekStatus.API_ERROR.value, None, None, None
-    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        return DeepSeekStatus.API_ERROR.value, None, None, None, http_status
+    raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    content = raw_content.strip() if isinstance(raw_content, str) else ""
     finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
-    return DeepSeekStatus.VALID.value, data, content, finish_reason
+    return DeepSeekStatus.VALID.value, data, content, finish_reason, http_status
 
 
 def classify_with_deepseek(
@@ -242,51 +253,109 @@ def classify_with_deepseek(
     data = None
     content = ""
     finish_reason = ""
+    http_status = None
     parsed = None
+    attempt_records: list[dict[str, Any]] = []
     for attempt in range(max_attempts):
-        status, data, content, finish_reason = _call_deepseek(body, config, headers)
+        status, data, content, finish_reason, http_status = _call_deepseek(body, config, headers)
+        message = ((data or {}).get("choices") or [{}])[0].get("message") or {}
+        raw_content = message.get("content")
+        attempt_record = {
+            "attempt_number": attempt + 1,
+            "http_status": http_status,
+            "transport_status": status,
+            "finish_reason": finish_reason or "",
+            "model": (data or {}).get("model") or config.deepseek_model,
+            "max_tokens": int(body.get("max_tokens") or 0),
+            "raw_content": raw_content if isinstance(raw_content, str) else "",
+            "raw_content_available": isinstance(data, dict) and isinstance(raw_content, str),
+            "reasoning_content": str(message.get("reasoning_content") or ""),
+            "usage": dict((data or {}).get("usage") or {}),
+            "raw_response": data if isinstance(data, dict) else {},
+            "parser_status": "NOT_PARSED",
+        }
         if status != DeepSeekStatus.VALID.value:
+            attempt_record["parser_status"] = status
+            attempt_records.append(attempt_record)
             if attempt + 1 < max_attempts:
                 _time.sleep(2)
                 continue
             return DeepSeekResult(
                 state="INCIERTO", confidence=0.5,
                 reason=f"DeepSeek {status.lower()} after {attempt + 1} attempt(s)",
-                evidence=[], raw={}, status=status)
+                evidence=[], raw=data or {}, status=status,
+                attempts=attempt_records, attempt_number=attempt + 1,
+                http_status=http_status, model=config.deepseek_model,
+                max_tokens=int(body.get("max_tokens") or 0), parser_status=status,
+                message_content=content or "", reasoning_content=str(message.get("reasoning_content") or ""),
+                raw_content=raw_content if isinstance(raw_content, str) else None,
+                raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))
         if not content:
+            attempt_record["parser_status"] = DeepSeekStatus.INVALID_EMPTY_CONTENT.value
+            attempt_records.append(attempt_record)
             if attempt + 1 < max_attempts:
                 _time.sleep(2)
                 continue
             return DeepSeekResult(
                 state="INCIERTO", confidence=0.5,
                 reason="DeepSeek returned empty content",
-                evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value)
+                evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value,
+                attempts=attempt_records, attempt_number=attempt + 1,
+                http_status=http_status, model=(data or {}).get("model") or config.deepseek_model,
+                max_tokens=int(body.get("max_tokens") or 0), parser_status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value,
+                message_content="", reasoning_content=str(message.get("reasoning_content") or ""),
+                raw_content=raw_content if isinstance(raw_content, str) else None,
+                raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, dict):
+            attempt_record["parser_status"] = "JSON_OBJECT_PARSED"
+            attempt_records.append(attempt_record)
             break
+        attempt_record["parser_status"] = DeepSeekStatus.INVALID_JSON.value
+        attempt_records.append(attempt_record)
         if attempt + 1 < max_attempts and finish_reason == "length" and config.deepseek_max_tokens < 800:
             body["max_tokens"] = 800
             continue
         return DeepSeekResult(
             state="INCIERTO", confidence=0.5,
             reason=f"DeepSeek invalid JSON: {content[:200]}",
-            evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_JSON.value)
+            evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_JSON.value,
+            attempts=attempt_records, attempt_number=attempt + 1,
+            http_status=http_status, model=(data or {}).get("model") or config.deepseek_model,
+            max_tokens=int(body.get("max_tokens") or 0), parser_status=DeepSeekStatus.INVALID_JSON.value,
+            message_content=content, reasoning_content=str(message.get("reasoning_content") or ""),
+            raw_content=raw_content if isinstance(raw_content, str) else None,
+            raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))
     
     if not isinstance(parsed, dict):
         return DeepSeekResult(
             state="INCIERTO", confidence=0.5, reason="DeepSeek response not a dict",
-            evidence=[], raw=data, status=DeepSeekStatus.INVALID_JSON.value)
+            evidence=[], raw=data, status=DeepSeekStatus.INVALID_JSON.value,
+            attempts=attempt_records, attempt_number=len(attempt_records),
+            http_status=http_status, model=(data or {}).get("model") or config.deepseek_model,
+            max_tokens=int(body.get("max_tokens") or 0), parser_status=DeepSeekStatus.INVALID_JSON.value,
+            message_content=content, reasoning_content=str((data or {}).get("choices", [{}])[0].get("message", {}).get("reasoning_content") or ""),
+            raw_content=raw_content if isinstance(raw_content, str) else None,
+            raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))
     
     # Validate state
     raw_state = str(parsed.get("state", "")).strip()
     if raw_state not in VALID_STATES:
+        if attempt_records:
+            attempt_records[-1]["parser_status"] = DeepSeekStatus.INVALID_STATE.value
         return DeepSeekResult(
             state="INCIERTO", confidence=0.5,
             reason=f"DeepSeek invalid state: {raw_state}",
-            evidence=[], raw=data, status=DeepSeekStatus.INVALID_STATE.value)
+            evidence=[], raw=data, status=DeepSeekStatus.INVALID_STATE.value,
+            attempts=attempt_records, attempt_number=len(attempt_records),
+            http_status=http_status, model=(data or {}).get("model") or config.deepseek_model,
+            max_tokens=int(body.get("max_tokens") or 0), parser_status=DeepSeekStatus.INVALID_STATE.value,
+            message_content=content, reasoning_content=str((data or {}).get("choices", [{}])[0].get("message", {}).get("reasoning_content") or ""),
+            raw_content=raw_content if isinstance(raw_content, str) else None,
+            raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))
     
     # Normalize DUEÑO vs DUENO
     if raw_state == "DUENO_SEGURO":
@@ -301,9 +370,16 @@ def classify_with_deepseek(
     
     evidence = [str(e) for e in (parsed.get("evidence", []) or parsed.get("signals", [])) if str(e).strip()]
     
+    if attempt_records:
+        attempt_records[-1]["parser_status"] = DeepSeekStatus.VALID.value
     return DeepSeekResult(
         state=raw_state, confidence=confidence,
         reason=str(parsed.get("reason", "")), evidence=evidence,
         raw=data, status=DeepSeekStatus.VALID.value, payload=body,
         message_content=content,
-        reasoning_content=str((data or {}).get("choices", [{}])[0].get("message", {}).get("reasoning_content") or ""))
+        reasoning_content=str((data or {}).get("choices", [{}])[0].get("message", {}).get("reasoning_content") or ""),
+        attempts=attempt_records, attempt_number=len(attempt_records),
+        http_status=http_status, model=(data or {}).get("model") or config.deepseek_model,
+        max_tokens=int(body.get("max_tokens") or 0), parser_status=DeepSeekStatus.VALID.value,
+        raw_content=raw_content if isinstance(raw_content, str) else None,
+        raw_content_available=isinstance(data, dict) and isinstance(raw_content, str))

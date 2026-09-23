@@ -67,6 +67,7 @@ _DISCOVERY_COMPLETE_STOPS = {
     "NEXT_NOT_FOUND",
     "NEXT_DISABLED",
     "COMPLETED",
+    "SUCCESS_ZERO_RESULTS",
 }
 
 
@@ -89,6 +90,18 @@ def _checkpoint_completed(checkpoint: dict[str, Any]) -> bool:
         str(checkpoint.get("stop_reason") or "").upper() in _DISCOVERY_COMPLETE_STOPS
         and not checkpoint.get("challenge_detected")
     )
+
+
+def _discovery_query_passed(report: dict[str, Any], records: list[dict[str, Any]]) -> bool:
+    """Only complete/healthy discovery outputs may enter property processing."""
+    if report.get("discovery_degraded"):
+        return False
+    status = str(report.get("discovery_status") or "").upper()
+    if status:
+        return status in {"SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}
+    if records:
+        return True  # compatibility for pre-status successful fixtures/checkpoints
+    return bool(report.get("explicit_zero_results"))
 
 
 def _seed_resume_files(discovery_module: Any, previous_batch_id: str, current_batch_id: str) -> bool:
@@ -347,6 +360,12 @@ def discover_executive_scope(
                                 page_reports = current_checkpoint.get("page_reports") or []
                                 report = {
                                     "discovery_degraded": False,
+                                    "discovery_status": (
+                                        "SUCCESS_ZERO_RESULTS"
+                                        if str(current_checkpoint.get("stop_reason") or "").upper() == "SUCCESS_ZERO_RESULTS"
+                                        else "SUCCESS_WITH_RESULTS"
+                                    ),
+                                    "explicit_zero_results": str(current_checkpoint.get("stop_reason") or "").upper() == "SUCCESS_ZERO_RESULTS",
                                     "pagination_working": sum(
                                         1 for row in page_reports if row.get("completed")
                                     ) > 1,
@@ -394,8 +413,19 @@ def discover_executive_scope(
                     else:
                         records = cached["records"]
                         report = cached["report"]
+                    # Partial URLs from a failed/degraded search remain in its
+                    # recovery artifacts, but never enter the processing scope.
+                    # Only a query whose discovery health passed can supply items.
+                    discovery_status = str(report.get("discovery_status") or "").upper()
+                    if not discovery_status and not report.get("discovery_degraded"):
+                        if records:
+                            discovery_status = "SUCCESS_WITH_RESULTS"
+                        elif report.get("explicit_zero_results"):
+                            discovery_status = "SUCCESS_ZERO_RESULTS"
+                    query_healthy = _discovery_query_passed(report, records)
+                    records_for_scope = records if query_healthy else []
                     accepted = 0
-                    for raw in records:
+                    for raw in records_for_scope:
                         record = dict(raw)
                         record.setdefault("comuna_solicitada", str(commune))
                         record.setdefault("operation_requested", str(operation))
@@ -411,7 +441,7 @@ def discover_executive_scope(
                         "operation": str(operation),
                         "property_type": str(property_type),
                         "region": region_slug,
-                        "status": "SUCCESS" if not report.get("discovery_degraded") else "DEGRADED",
+                        "status": discovery_status if query_healthy else "DEGRADED",
                         "cache_hit": cached is not None,
                         "discovered": len(records),
                         "unique_added": accepted,
@@ -424,6 +454,7 @@ def discover_executive_scope(
                         errors.append({
                             "query_id": query_id,
                             "reason": str(report.get("abort_reason") or "DISCOVERY_DEGRADED"),
+                            "failure_category": str(report.get("failure_category") or "OTHER"),
                         })
                 except Exception as exc:
                     errors.append({
@@ -730,6 +761,7 @@ def recover_failed_toctoc_searches(
     assignment_enabled: bool = True,
     proxy_mode: str = "auto",
     expected_searches: int | None = None,
+    prevalidated_searches: dict[tuple[str, str, str], dict[str, Any]] | None = None,
     progress_callback: Any | None = None,
 ) -> dict[str, Any]:
     """Retry only incomplete persisted searches, then process only their URLs.
@@ -857,7 +889,12 @@ def recover_failed_toctoc_searches(
     success_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
     failed_retry_batch_by_key: dict[tuple[str, str, str], str] = {}
     for old_batch_id, spec, key, checkpoint in checkpoint_rows:
-        if _checkpoint_completed(checkpoint):
+        checkpoint_has_explicit_zero = (
+            str(checkpoint.get("stop_reason") or "").upper() == "SUCCESS_ZERO_RESULTS"
+            or any(bool(page.get("explicit_zero_results")) for page in checkpoint.get("page_reports") or [])
+        )
+        checkpoint_has_records = bool(records_by_key.get(key))
+        if _checkpoint_completed(checkpoint) and (checkpoint_has_records or checkpoint_has_explicit_zero):
             reports = checkpoint.get("page_reports") or []
             page_count = sum(1 for row in reports if row.get("completed"))
             expected_results = next((row.get("reported_results") for row in reports if row.get("reported_results") is not None), None)
@@ -865,6 +902,8 @@ def recover_failed_toctoc_searches(
                 "records": list(records_by_key.get(key, {}).values()),
                 "report": {
                     "discovery_degraded": False,
+                    "discovery_status": "SUCCESS_ZERO_RESULTS" if checkpoint_has_explicit_zero else "SUCCESS_WITH_RESULTS",
+                    "explicit_zero_results": checkpoint_has_explicit_zero,
                     "pagination_working": page_count > 1,
                     "expected_results": expected_results,
                     "reused_from_batch": old_batch_id,
@@ -886,6 +925,20 @@ def recover_failed_toctoc_searches(
         if key not in success_by_key
     }
     shared_cache = dict(success_by_key)
+    for raw_key, cached_result in (prevalidated_searches or {}).items():
+        key = _discovery_query_key(*raw_key)
+        if not isinstance(cached_result, dict):
+            continue
+        cached_report = dict(cached_result.get("report") or {})
+        cached_status = str(cached_report.get("discovery_status") or "").upper()
+        if (
+            not cached_report.get("discovery_degraded")
+            and cached_status in {"SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}
+        ):
+            shared_cache[key] = {
+                "records": [dict(row) for row in cached_result.get("records", []) if isinstance(row, dict)],
+                "report": cached_report,
+            }
     proxy_manager_override = None
     if proxy_mode in {"proxy", "auto"}:
         try:
@@ -942,6 +995,60 @@ def recover_failed_toctoc_searches(
             })
 
     retry_keys = set(retry_batch_by_key)
+    def _cached_search_passed(key: tuple[str, str, str]) -> bool:
+        cached_result = shared_cache.get(key) or {}
+        cached_report = cached_result.get("report") or {}
+        status = str(cached_report.get("discovery_status") or "").upper()
+        if cached_report.get("discovery_degraded"):
+            return False
+        if status:
+            return status in {"SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}
+        if cached_result.get("records"):
+            return True
+        return bool(cached_report.get("explicit_zero_results"))
+
+    recovered_keys = {key for key in retry_keys if _cached_search_passed(key)}
+    still_failed_keys = retry_keys - recovered_keys
+    if still_failed_keys:
+        # A partial recovery is useful evidence but is not safe input for
+        # classification/distribution. Keep its checkpoints and stop before
+        # any detail fetch, AI call, Mongo write, or assignment.
+        final_report = {
+            "run_id": recovery_run_id_prefix,
+            "previous_run_id_prefix": previous_run_id_prefix,
+            "run_status": "COMPLETED_WITH_ANOMALIES",
+            "searches_total": len(checkpoint_rows),
+            "searches_previously_complete": len(completed_rows),
+            "searches_previously_failed": len(failed_rows),
+            "searches_retried": len(retry_batch_by_key),
+            "unique_search_configs": len({row[2] for row in checkpoint_rows}),
+            "recovered_searches": len(recovered_keys),
+            "still_failed": len(still_failed_keys),
+            "failed_search_keys": [list(key) for key in sorted(still_failed_keys)],
+            "rediscovered_unique_listings": 0,
+            "detail_scope_new": 0,
+            "processing_skipped_due_to_discovery_failures": True,
+            "property_writes": 0,
+            "new_assignments": 0,
+            "deepseek_calls": 0,
+            "discovery_runs": [
+                {k: v for k, v in row.items() if k != "records"}
+                for row in discovery_runs
+            ],
+            "distribution": {"status": "SKIPPED", "reason": "DISCOVERY_FAILURES_REMAIN"},
+            "failed_query_categories": [
+                {
+                    "executive": row.get("executive"),
+                    "errors": row.get("errors", []),
+                }
+                for row in discovery_runs if row.get("errors")
+            ],
+        }
+        report_path = reports_dir / f"toctoc_failed_search_recovery_{recovery_run_id_prefix}.json"
+        report_path.write_text(json.dumps(final_report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        final_report["report_path"] = str(report_path)
+        return final_report
+
     recovered_records: list[dict[str, Any]] = []
     seen_listing_ids: set[str] = set()
     for run in discovery_runs:

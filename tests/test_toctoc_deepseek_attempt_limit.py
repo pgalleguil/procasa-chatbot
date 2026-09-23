@@ -120,3 +120,87 @@ def test_single_attempt_does_not_retry_provider_error(monkeypatch):
     assert calls == [1]
     assert result is not None
     assert result.state == "INCIERTO"
+
+
+def test_empty_http_200_response_is_preserved_in_classification_ledger(monkeypatch):
+    calls = []
+
+    class EmptyResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "model": "deepseek-v4-flash-effective",
+                "choices": [{
+                    "message": {"content": "", "reasoning_content": "reasoning retained"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 37, "completion_tokens": 0, "total_tokens": 37},
+            }
+
+    def fake_post(url, **kwargs):
+        calls.append(kwargs)
+        return EmptyResponse()
+
+    monkeypatch.setattr(deepseek_classifier.requests, "post", fake_post)
+    config = SimpleNamespace(
+        deepseek_enabled=True,
+        deepseek_api_key="test-key",
+        deepseek_model="deepseek-v4-flash",
+        deepseek_base_url="https://api.example.invalid",
+        deepseek_timeout_seconds=5,
+        deepseek_max_tokens=500,
+        deepseek_max_attempts=1,
+        deepseek_description_max_chars=6000,
+        deepseek_description_head_chars=2500,
+        deepseek_description_tail_chars=2500,
+        deepseek_description_snippet_radius=350,
+        max_ai_calls_per_run=2,
+        max_input_tokens_per_run=10000,
+        max_output_tokens_per_run=1000,
+        max_estimated_cost_per_run=5.0,
+        estimated_input_cost_per_million=0.14,
+        estimated_output_cost_per_million=0.28,
+    )
+    result = classify_capture(
+        {
+            "portal": "TOCTOC",
+            "listing_id": "empty-response-test",
+            "title": "Departamento disponible",
+            "description": "Departamento disponible en buen estado.",
+            "publicador_visible": "Andrea",
+            "seller_type": "DESCONOCIDO",
+        },
+        rule_context={},
+        config=config,
+        health={"healthy": True, "degraded": False, "sample_size": 1},
+        deepseek_callable=classify_with_deepseek,
+        allow_real_ai=True,
+    )
+
+    classification = result["classification"]
+    assert len(calls) == 1
+    assert result["ai_called"] is True
+    assert classification["deepseek_status"] == "INVALID_EMPTY_CONTENT"
+    assert classification["deepseek_http_status"] == 200
+    assert classification["deepseek_model"] == "deepseek-v4-flash-effective"
+    assert classification["deepseek_max_tokens"] == 500
+    assert classification["deepseek_attempt_number"] == 1
+    assert classification["deepseek_parser_status"] == "INVALID_EMPTY_CONTENT"
+    assert classification["deepseek_raw_content_available"] is True
+    assert classification["deepseek_raw_content"] == ""
+    assert classification["deepseek_reasoning_content"] == "reasoning retained"
+    assert classification["deepseek_raw"]["usage"]["prompt_tokens"] == 37
+    assert classification["deepseek_attempts"][0]["raw_content"] == ""
+    assert classification["deepseek_attempts"][0]["http_status"] == 200
+
+    from scrapers.scraper_toctoc.crm_schema import normalize_classification
+
+    persisted = normalize_classification(classification)
+    assert persisted["deepseek_raw_content"] == ""
+    assert persisted["deepseek_raw_content_available"] is True
+    assert persisted["deepseek_http_status"] == 200
+    assert persisted["deepseek_attempts"][0]["parser_status"] == "INVALID_EMPTY_CONTENT"

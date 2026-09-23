@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -986,7 +987,7 @@ def _matches_requested_state(record: dict, estado) -> bool:
 
 def evaluate_discovery_health(http_status: int | None, expected_results: int | None, discovered_urls: int) -> dict:
     """Fail closed when a successful response hides an expected result set."""
-    degraded = bool(http_status == 200 and expected_results and expected_results > 0 and discovered_urls == 0)
+    degraded = bool(http_status == 200 and expected_results is not None and expected_results > 0 and discovered_urls == 0)
     return {
         "discovery_degraded": degraded,
         "run_aborted": degraded,
@@ -1006,13 +1007,67 @@ def _payload_without_listings_is_degraded(diagnostics: dict, records: list[dict]
 def _reported_results_from_visible_text(text: str) -> int | None:
     """Read the visible result count without treating arbitrary numbers as totals."""
     normalized = re.sub(r"\s+", " ", str(text or "")).strip()
-    match = re.search(r"\b(?:de|of)\s+([\d.]+)\s+resultados?\b", normalized, re.I)
+    patterns = (
+        r"\b(?:de|of)\s+([\d.]+)\s+resultados?\b",
+        r"\b([\d.]+)\s+(?:propiedades|avisos|publicaciones)\s+encontrad[oa]s?\b",
+        r"\b([\d.]+)\s+resultados?\s+(?:encontrad[oa]s?|disponibles?)\b",
+    )
+    match = next((re.search(pattern, normalized, re.I) for pattern in patterns if re.search(pattern, normalized, re.I)), None)
     if not match:
+        if re.search(r"\bno\s+(?:se\s+)?encontraron\s+(?:propiedades|avisos|publicaciones|resultados)\b", normalized, re.I):
+            return 0
         return None
     try:
         return int(match.group(1).replace(".", ""))
     except ValueError:
         return None
+
+
+def _explicit_zero_results(text: str, expected_results: int | None, record_count: int, card_count: int) -> bool:
+    """A zero-result search is successful only when the page explicitly says so."""
+    return bool(
+        expected_results == 0
+        and record_count == 0
+        and card_count == 0
+        and str(text or "").strip()
+    )
+
+
+def _safe_diagnostic_url(value: str) -> str:
+    parsed = urlparse(str(value or ""))
+    return urlunparse(parsed._replace(query=urlencode(_safe_query_params(parsed.query), doseq=True), fragment=""))
+
+
+def _discovery_status(report: dict, record_count: int) -> str:
+    if not report.get("discovery_degraded"):
+        if record_count:
+            return "SUCCESS_WITH_RESULTS"
+        if report.get("explicit_zero_results"):
+            return "SUCCESS_ZERO_RESULTS"
+        return "RETRYABLE_FAILURE"
+    reason = str(report.get("abort_reason") or "").upper()
+    if reason in {"PLAYWRIGHT_REQUIRED_FOR_PROTECTED_DISCOVERY", "BROWSER_LAUNCH_FAILED", "PROXY_CONFIGURATION_INVALID"}:
+        return "SYSTEMIC_FAILURE"
+    return "RETRYABLE_FAILURE"
+
+
+def _discovery_failure_category(reason: Any, challenge_detected: bool = False) -> str:
+    value = str(reason or "").upper()
+    if challenge_detected or "RECAPTCHA" in value or "CHALLENGE" in value:
+        return "CHALLENGE"
+    if "404" in value or "ROUTE" in value or "SLUG" in value:
+        return "ROUTE_OR_SLUG"
+    if "PAGINATION_CONTROL_NOT_MOUNTED" in value or "SELECTOR" in value or "LOCATION_INPUT" in value or "SUGGESTION" in value:
+        return "SELECTOR"
+    if "PAGINATION" in value or "REPEATED_PAGE" in value or "NEXT_NOT_FOUND" in value:
+        return "PAGINATION"
+    if "TIMEOUT" in value:
+        return "TIMEOUT"
+    if "PLAYWRIGHT" in value or "NAVIGATION" in value or "RESUME_NAVIGATION" in value:
+        return "NAVIGATION"
+    if "ZERO_URL" in value or "EMPTY_PAGE" in value:
+        return "EMPTY_PAGE"
+    return "OTHER"
 
 
 def extract_metadata_from_next_data(next_data) -> list[dict]:
@@ -1536,30 +1591,80 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         return True, ""
 
     def _prepare_ssr_scope(pg, seo_url):
-        """Open the SEO result page whose real MUI paginator is browser-driven.
-
-        Directly changing ``pagina`` with requests is not a valid pagination
-        operation on the current frontend: the server repeats the bootstrap
-        payload.  The rendered page, however, exposes a MUI paginator whose
-        click handler loads the next page in the legitimate browser session.
-        """
+        """Accept a structurally valid SSR result state without requiring SPA UI."""
+        started = time.monotonic()
         response = pg.goto(seo_url, wait_until="domcontentloaded", timeout=60000)
         if response is not None and response.status == 404:
+            report.setdefault("page_readiness", []).append({
+                "requested_url": _safe_diagnostic_url(seo_url),
+                "final_url": _safe_diagnostic_url(pg.url),
+                "http_status": 404,
+                "readiness": "ROUTE_NOT_FOUND",
+                "elapsed_ms": round((time.monotonic() - started) * 1000),
+            })
             return False, "HTTP_404_ROUTE_NOT_FOUND"
-        pg.wait_for_timeout(3500)
         try:
-            pg.wait_for_selector(
-                'nav[aria-label="pagination navigation"], '
-                'a[href*="/venta/"], a[href*="/arriendo/"]',
+            pg.wait_for_function(
+                """() => {
+                  const listing = [...document.querySelectorAll('a[href]')].some(a => {
+                    try {
+                      const p = new URL(a.href, location.href).pathname;
+                      return /\\/(propiedades|propiedad|venta|arriendo)\\//i.test(p)
+                        && /(\\/\\d+$|[-_]\\d+$|\\/[a-z]_[a-f0-9]{20,}$|\\/[a-f0-9]{20,}$)/i.test(p);
+                    } catch (_) { return false; }
+                  });
+                  const embedded = !!document.querySelector('#__NEXT_DATA__, #react-engine-props');
+                  const pagination = !!document.querySelector('nav[aria-label*=pagination i], .MuiPagination-root, ul.pagination');
+                  const text = (document.body && document.body.innerText || '').replace(/\\s+/g, ' ');
+                  const zero = /\\b0\\s+(propiedades|avisos|publicaciones|resultados)\\s+encontrad[oa]s?\\b/i.test(text)
+                    || /\\bno\\s+(se\\s+)?encontraron\\s+(propiedades|avisos|publicaciones|resultados)\\b/i.test(text);
+                  return listing || embedded || pagination || zero;
+                }""",
                 timeout=20000,
             )
         except Exception:
-            # A server-rendered bootstrap can be HTTP 200 while the current
-            # SPA shell never mounts its live paginator.  Falling back to the
-            # normal location-selection flow is safer than treating the SSR
-            # payload as a complete discovery result.
-            return False, "PAGINATION_CONTROL_NOT_MOUNTED"
-        return True, ""
+            pass
+
+        raw_html = pg.content()
+        try:
+            visible_text = pg.locator("body").inner_text(timeout=2500)
+        except Exception:
+            visible_text = ""
+        embedded_records, embedded_diagnostics = _extract_page_records(raw_html, seo_url)
+        card_records = _scroll_and_extract_cards(pg, seo_url)
+        visible_total = _reported_results_from_visible_text(visible_text)
+        expected = embedded_diagnostics.get("expected_results")
+        if expected is None:
+            expected = visible_total
+        has_pagination = bool(pg.query_selector(
+            'nav[aria-label="pagination navigation"], .MuiPagination-root, ul.pagination'
+        ))
+        explicit_zero = _explicit_zero_results(
+            visible_text, expected, len(embedded_records) + len(card_records), len(card_records)
+        )
+        structurally_ready = bool(embedded_records or card_records or has_pagination or explicit_zero)
+        report.setdefault("page_readiness", []).append({
+            "requested_url": _safe_diagnostic_url(seo_url),
+            "final_url": _safe_diagnostic_url(pg.url),
+            "http_status": response.status if response is not None else None,
+            "title": (pg.title() or "")[:240],
+            "expected_results": expected,
+            "visible_result_count": visible_total,
+            "embedded_records": len(embedded_records),
+            "card_count": len(card_records),
+            "pagination_present": has_pagination,
+            "selector_strategy": "listing_href_or_embedded_payload_or_pagination_or_explicit_zero",
+            "readiness": "READY_ZERO_RESULTS" if explicit_zero else ("READY_RESULTS" if structurally_ready else "NOT_READY"),
+            "explicit_zero_results": explicit_zero,
+            "elapsed_ms": round((time.monotonic() - started) * 1000),
+            "body_excerpt": re.sub(r"\\s+", " ", visible_text)[:1200],
+        })
+        if explicit_zero:
+            report["explicit_zero_results"] = True
+        if structurally_ready:
+            report["expected_results"] = report.get("expected_results") if report.get("expected_results") is not None else expected
+            return True, ""
+        return False, "PAGINATION_CONTROL_NOT_MOUNTED"
 
     def _extract_records_from_hrefs(hrefs, base):
         records = []
@@ -1601,6 +1706,66 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         context = browser.new_context(user_agent=config.user_agent, viewport={"width": 1920, "height": 1080}, locale="es-CL")
         page = context.new_page()
         network_events = []
+        diagnostic_samples_saved = 0
+
+        def _capture_failure_diagnostic(requested_url, category, reason, http_status=None, last_good_page=0):
+            """Save a small local diagnostic without cookies, headers, or credentials."""
+            nonlocal diagnostic_samples_saved
+            if diagnostic_samples_saved >= 5:
+                return
+            diagnostic_samples_saved += 1
+            try:
+                body_text = page.locator("body").inner_text(timeout=1500)
+            except Exception:
+                body_text = ""
+            try:
+                dom_state = page.evaluate("""() => {
+                  const anchors = [...document.querySelectorAll('a[href]')].map(a => a.href);
+                  const listing = anchors.filter(h => {
+                    try {
+                      const p = new URL(h, location.href).pathname;
+                      return /\\/(propiedades|propiedad|venta|arriendo)\\//i.test(p)
+                        && /(\\/\\d+$|[-_]\\d+$|\\/[a-z]_[a-f0-9]{20,}$|\\/[a-f0-9]{20,}$)/i.test(p);
+                    } catch (_) { return false; }
+                  });
+                  return {
+                    listing_anchor_count: listing.length,
+                    first_listing_urls: listing.slice(0, 5),
+                    pagination_nodes: document.querySelectorAll('nav[aria-label*=pagination i], .MuiPagination-root, ul.pagination').length,
+                    input_count: document.querySelectorAll('input:not([type=hidden])').length,
+                    zero_state_text: /\\b0\\s+(propiedades|avisos|publicaciones|resultados)\\s+encontrad[oa]s?\\b|\\bno\\s+(se\\s+)?encontraron\\s+(propiedades|avisos|publicaciones|resultados)\\b/i.test((document.body && document.body.innerText) || '')
+                  };
+                }""") or {}
+            except Exception:
+                dom_state = {}
+            name = f"{batch_id}-{diagnostic_samples_saved:02d}.json"
+            diagnostic_dir = REPORTS_DIR / "discovery-diagnostics"
+            diagnostic_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "batch_id": batch_id,
+                "requested_url": _safe_diagnostic_url(requested_url),
+                "final_url": _safe_diagnostic_url(page.url),
+                "http_status": http_status,
+                "title": (page.title() or "")[:240],
+                "failure_category": category,
+                "failure_reason": str(reason or "")[:240],
+                "last_good_page": int(last_good_page or 0),
+                "expected_results": report.get("expected_results"),
+                "dom": dom_state,
+                "body_excerpt": re.sub(r"\\s+", " ", body_text)[:1600],
+                "challenge_detected": bool(report.get("challenge_detected")),
+                "elapsed_ms": report.get("elapsed_ms"),
+            }
+            screenshot_path = diagnostic_dir / f"{batch_id}-{diagnostic_samples_saved:02d}.png"
+            try:
+                page.screenshot(path=str(screenshot_path), full_page=True, timeout=4000)
+                payload["screenshot"] = str(screenshot_path)
+            except Exception:
+                payload["screenshot"] = ""
+            (diagnostic_dir / name).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            report.setdefault("failure_diagnostic_artifacts", []).append(str(diagnostic_dir / name))
 
         def _relevant_network_url(value):
             low_url = str(value or "").lower()
@@ -1703,6 +1868,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 stop_reason = "MAX_UNIQUE_URLS_REACHED"
                 break
 
+            stop_reason = None
             current_url = _normalize_url(start_url)
             pages_visited = 0
             next_failures = 0
@@ -1744,6 +1910,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                             "discovery_degraded": True,
                             "run_aborted": True,
                             "abort_reason": prepare_reason,
+                            "failure_category": _discovery_failure_category(prepare_reason),
                         })
                         report.setdefault("route_errors", []).append({
                             "url": current_url,
@@ -1760,13 +1927,18 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 except PwTimeout:
                     pass
             except Exception as e:
-                print(f"  Playwright goto failed: {e}")
-                stop_reason = "PLAYWRIGHT_ERROR"
+                error_name = type(e).__name__
+                failure_category = "TIMEOUT" if "timeout" in error_name.lower() else "NAVIGATION"
+                stop_reason = "NAVIGATION_TIMEOUT" if failure_category == "TIMEOUT" else "NAVIGATION_ERROR"
+                print(f"  Playwright navigation failed ({error_name}); diagnostic recorded without request secrets.")
                 report.update({
                     "discovery_degraded": True,
                     "run_aborted": True,
-                    "abort_reason": "PLAYWRIGHT_ERROR",
+                    "abort_reason": stop_reason,
+                    "failure_category": failure_category,
+                    "failure_detail": error_name,
                 })
+                _capture_failure_diagnostic(current_url, failure_category, error_name, last_good_page=pages_visited)
                 break
 
             # Resume a partial search by replaying only the real browser
@@ -1902,7 +2074,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 if not hrefs:
                     hrefs = _scroll_and_extract(page, current_url)
                 visible_total = _reported_results_from_visible_text(visible_result_text)
-                if visible_total and not diagnostics.get("expected_results"):
+                if visible_total is not None and diagnostics.get("expected_results") is None:
                     diagnostics = dict(diagnostics)
                     diagnostics["expected_results"] = visible_total
                     diagnostics["reported_results_source"] = "visible_page_text"
@@ -2015,11 +2187,22 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                         "next_button": next_info or {},
                     }
 
-                if not records:
+                explicit_zero = _explicit_zero_results(
+                    visible_result_text,
+                    diagnostics.get("expected_results"),
+                    len(embedded_records),
+                    cards_count,
+                )
+                if not records and explicit_zero:
+                    report["explicit_zero_results"] = True
+                    report["expected_results"] = 0
+                    stop_reason = "SUCCESS_ZERO_RESULTS"
+                elif not records:
                     report.update({
                         "discovery_degraded": True,
                         "run_aborted": True,
                         "abort_reason": "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS",
+                        "failure_category": "EMPTY_PAGE",
                     })
                     stop_reason = "HTTP_200_EXPECTED_RESULTS_BUT_ZERO_URLS"
 
@@ -2072,7 +2255,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     "batch_number": _batch_number_for_page(pages_visited + 1),
                     "batch_page_from": _batch_bounds(_batch_number_for_page(pages_visited + 1))[0],
                     "batch_page_to": _batch_bounds(_batch_number_for_page(pages_visited + 1))[1],
-                    "completed": bool(records),
+                    "completed": bool(records) or explicit_zero,
                     "cards_detected": cards_count,
                     "urls_extracted": len(records),
                     "new_unique_urls": new_on_page,
@@ -2132,6 +2315,9 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 )
 
                 if report.get("discovery_degraded"):
+                    break
+
+                if explicit_zero:
                     break
 
                 if max_urls is not None and len(discovered) >= max_urls:
@@ -2262,6 +2448,9 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                             stop_reason = "RECAPTCHA_BLOCKING_BROWSER_FLOW"
                         else:
                             stop_reason = "PAGINATION_DEGRADED_PAGE_DID_NOT_CHANGE"
+                        report["failure_category"] = _discovery_failure_category(
+                            stop_reason, challenge_detected=challenge_detected
+                        )
                         attempt_page = pages_visited + 1
                         attempt_diagnostic = _pagination_diagnostic()
                         attempt_diagnostic.update({
@@ -2313,11 +2502,15 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 except Exception as e:
                     next_failures += 1
                     if next_failures >= 2:
-                        stop_reason = "PLAYWRIGHT_ERROR"
+                        error_name = type(e).__name__
+                        failure_category = "TIMEOUT" if "timeout" in error_name.lower() else "NAVIGATION"
+                        stop_reason = "PAGINATION_TIMEOUT" if failure_category == "TIMEOUT" else "PAGINATION_ERROR"
                         report.update({
                             "discovery_degraded": True,
                             "run_aborted": True,
-                            "abort_reason": "PLAYWRIGHT_ERROR",
+                            "abort_reason": stop_reason,
+                            "failure_category": "TIMEOUT" if failure_category == "TIMEOUT" else "PAGINATION",
+                            "failure_detail": error_name,
                         })
                         break
                     continue
@@ -2356,7 +2549,30 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 "below_min_price_excluded": sum(p.get("below_min_price_excluded", 0) for p in page_reports),
                 "invalid_price_excluded": sum(p.get("invalid_price_excluded", 0) for p in page_reports),
                 "stop_reason": stop_reason,
+                "discovery_status": (
+                    "SUCCESS_ZERO_RESULTS" if stop_reason == "SUCCESS_ZERO_RESULTS"
+                    else "SUCCESS_WITH_RESULTS" if stop_reason in {"LAST_PAGE_REACHED", "NEXT_NOT_FOUND", "NEXT_DISABLED", "COMPLETED"}
+                    and any(p.get("urls_extracted", 0) for p in page_reports)
+                    else "RETRYABLE_FAILURE" if stop_reason not in {"LAST_PAGE_REACHED", "NEXT_NOT_FOUND", "NEXT_DISABLED", "COMPLETED"}
+                    else "SUCCESS_WITH_RESULTS"
+                ),
             })
+
+        if report.get("discovery_degraded"):
+            report.setdefault("failure_category", _discovery_failure_category(
+                report.get("abort_reason") or stop_reason,
+                challenge_detected=bool(report.get("challenge_detected")),
+            ))
+            _capture_failure_diagnostic(
+                start_url if "start_url" in locals() else "",
+                report.get("failure_category"),
+                report.get("abort_reason") or stop_reason,
+                http_status=(report.get("page_readiness") or [{}])[-1].get("http_status"),
+                last_good_page=max(
+                    (int(item.get("page") or 0) for item in page_reports if item.get("completed")),
+                    default=0,
+                ),
+            )
 
         browser.close()
 
@@ -2411,9 +2627,12 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
     report["recaptcha_blocking_browser_flow"] = stop_reason == "RECAPTCHA_BLOCKING_BROWSER_FLOW"
     incomplete_searches = [
         item for item in search_reports
-        if item.get("reported_results")
-        and item.get("pages_expected")
-        and item.get("pages_fetched", 0) < item.get("pages_expected", 0)
+        if item.get("discovery_status") not in {"SUCCESS_WITH_RESULTS", "SUCCESS_ZERO_RESULTS"}
+        or (
+            item.get("reported_results") is not None
+            and item.get("pages_expected")
+            and item.get("pages_fetched", 0) < item.get("pages_expected", 0)
+        )
     ]
     if incomplete_searches:
         if report.get("method") == "ssr_embedded_payload":
@@ -2447,6 +2666,12 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         and not report.get("discovery_degraded")
         and stop_reason in {"LAST_PAGE_REACHED", "NEXT_NOT_FOUND", "NEXT_DISABLED", "COMPLETED"}
     )
+    report["discovery_status"] = _discovery_status(report, len(discovered))
+    if report.get("discovery_degraded"):
+        report.setdefault("failure_category", _discovery_failure_category(
+            report.get("abort_reason") or stop_reason,
+            challenge_detected=bool(report.get("challenge_detected")),
+        ))
 
     _save_checkpoint(
         checkpoint_path, batch_id, start_url if 'start_url' in dir() else "",

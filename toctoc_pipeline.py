@@ -189,6 +189,7 @@ class PipelineOptions:
     allow_assignments: bool = False
     allow_distribution: bool = False
     allow_real_ai: bool = False
+    retry_failed_ai: bool = True
     qa_sample_size: int = 5
     health_min_sample: int = 20
     health_drop_ratio: float = 0.35
@@ -628,22 +629,30 @@ def run_toctoc_pipeline(
                     allow_real_ai=bool(options.allow_real_ai or (options.test_mode and deepseek_callable is not None)),
                     run_id=run_id,
                     pipeline_item_id=f"{run_id}:{item_key}",
+                    retry_failed_ai=bool(options.retry_failed_ai),
                 )
                 classification = result["classification"]
 
             item["classification"] = classification
             item["cache_hit"] = bool(result.get("cache_hit"))
-            item["ai_candidate"] = result.get("reason") in {"deepseek_disabled", "EXTRACTOR_HEALTH_UNAVAILABLE", "AI_BUDGET_EXCEEDED"} or classification.get("status") == "UNCERTAIN_PENDING_AI"
+            item["ai_candidate"] = (
+                result.get("reason") in {"deepseek_disabled", "EXTRACTOR_HEALTH_UNAVAILABLE", "AI_BUDGET_EXCEEDED"}
+                or result.get("retryable_failure")
+                or classification.get("status") in {"UNCERTAIN_PENDING_AI", "AI_FAILED_RETRYABLE"}
+            )
             if result.get("cache_hit"):
                 status = "CACHE_HIT"
             elif result.get("ai_called"):
                 status = (
                     "AI_FAILED_RETRYABLE"
-                    if result.get("reason") in {"deepseek_error", "deepseek_exception"}
+                    if result.get("retryable_failure")
+                    or result.get("reason") in {"deepseek_error", "deepseek_exception", "deepseek_retryable_failure"}
                     else "AI_CLASSIFIED"
                 )
             elif classification.get("status") == "UNCERTAIN_PENDING_AI":
                 status = "PENDING_AI"
+            elif classification.get("status") == "AI_FAILED_RETRYABLE":
+                status = "AI_FAILED_RETRYABLE"
             elif classification.get("pipeline_complete") is True:
                 status = "CLASSIFIED_DETERMINISTIC"
             else:

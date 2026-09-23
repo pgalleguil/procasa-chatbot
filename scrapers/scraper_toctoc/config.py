@@ -81,6 +81,22 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except ValueError:
         return default
+
+
+# Central DeepSeek retry policy. Legacy environment names remain supported,
+# while every TOCTOC caller reads the same bounded output/attempt settings.
+AI_OUTPUT_TOKEN_BUDGET_DEFAULT = max(
+    1,
+    _env_int("AI_OUTPUT_TOKEN_BUDGET_DEFAULT", _env_int("DEEPSEEK_MAX_TOKENS", 500)),
+)
+AI_OUTPUT_TOKEN_BUDGET_RETRY = max(
+    AI_OUTPUT_TOKEN_BUDGET_DEFAULT,
+    _env_int("AI_OUTPUT_TOKEN_BUDGET_RETRY", 800),
+)
+AI_MAX_ATTEMPTS_PER_FINGERPRINT = max(
+    1,
+    min(2, _env_int("AI_MAX_ATTEMPTS_PER_FINGERPRINT", _env_int("DEEPSEEK_MAX_ATTEMPTS", 2))),
+)
 @dataclass(slots=True)
 class AppConfig:
     root_dir: Path = ROOT_DIR
@@ -109,10 +125,21 @@ class AppConfig:
     )
     deepseek_enabled: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_ENABLED", True))
     deepseek_timeout_seconds: int = field(default_factory=lambda: _env_int("DEEPSEEK_TIMEOUT_SECONDS", 12))
-    deepseek_max_tokens: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_TOKENS", 500))
-    deepseek_max_attempts: int = field(
-        default_factory=lambda: max(1, _env_int("DEEPSEEK_MAX_ATTEMPTS", 2))
-    )
+    ai_output_token_budget_default: int = field(default_factory=lambda: max(
+        1, _env_int("AI_OUTPUT_TOKEN_BUDGET_DEFAULT", _env_int("DEEPSEEK_MAX_TOKENS", 500))
+    ))
+    ai_output_token_budget_retry: int = field(default_factory=lambda: max(
+        max(1, _env_int("AI_OUTPUT_TOKEN_BUDGET_DEFAULT", _env_int("DEEPSEEK_MAX_TOKENS", 500))),
+        _env_int("AI_OUTPUT_TOKEN_BUDGET_RETRY", 800),
+    ))
+    ai_max_attempts_per_fingerprint: int = field(default_factory=lambda: max(
+        1, min(2, _env_int("AI_MAX_ATTEMPTS_PER_FINGERPRINT", _env_int("DEEPSEEK_MAX_ATTEMPTS", 2)))
+    ))
+    # Compatibility aliases for existing call sites.
+    deepseek_max_tokens: int = field(default_factory=lambda: AI_OUTPUT_TOKEN_BUDGET_DEFAULT)
+    deepseek_max_attempts: int = field(default_factory=lambda: max(
+        1, min(2, _env_int("AI_MAX_ATTEMPTS_PER_FINGERPRINT", _env_int("DEEPSEEK_MAX_ATTEMPTS", 2)))
+    ))
     deepseek_thinking: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_THINKING", False))
     deepseek_max_calls_per_session: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_CALLS_PER_SESSION", 500))
     deepseek_description_max_chars: int = field(default_factory=lambda: _env_int("DEEPSEEK_DESCRIPTION_MAX_CHARS", 6000))

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import copy
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -293,7 +294,12 @@ def _classification_with_canonical(
     return result
 
 
-def _pending_classification(reason: str, *, evidence: list[Any] | None = None) -> dict[str, Any]:
+def _pending_classification(
+    reason: str,
+    *,
+    evidence: list[Any] | None = None,
+    status: str = "UNCERTAIN_PENDING_AI",
+) -> dict[str, Any]:
     pending_evidence = list(evidence or [])
     return {
         "state": "INCIERTO",
@@ -302,7 +308,7 @@ def _pending_classification(reason: str, *, evidence: list[Any] | None = None) -
         "final_reason": reason,
         "final_evidence": pending_evidence,
         "canonical_classification_version": "canonical-classification-v1",
-        "status": "UNCERTAIN_PENDING_AI",
+        "status": status,
         "source": "classification_service",
         "reason": reason,
         "evidence": pending_evidence,
@@ -313,6 +319,19 @@ def _pending_classification(reason: str, *, evidence: list[Any] | None = None) -
         "exclude_from_assignment": True,
         "assignment_block_reasons": ["UNCERTAIN_PENDING_AI"],
     }
+
+
+def is_retryable_ai_classification(classification: dict[str, Any] | None) -> bool:
+    """Whether a stored classification represents an unfinished AI failure."""
+    value = classification or {}
+    return bool(
+        str(value.get("status") or "").upper() == "AI_FAILED_RETRYABLE"
+        or str(value.get("failure_state") or "").upper() in {
+            "AI_TRUNCATED_RETRYABLE", "AI_TECHNICAL_RETRYABLE",
+        }
+        or str(value.get("deepseek_status") or "").upper() == "TRUNCATED"
+        or str(value.get("final_reason") or "").upper().startswith("DEEPSEEK_TRUNCATED")
+    )
 
 
 def _default_deepseek_callable():
@@ -393,7 +412,8 @@ def classify_capture(
     )
     strong_text_broker = bool(strong_text_broker or rule_context.get("strong_text_broker"))
     prompt_version = str(
-        getattr(config, "deepseek_prompt_version", "")
+        document.get("prompt_version")
+        or getattr(config, "deepseek_prompt_version", "")
         or (document.get("classification") or {}).get("prompt_version")
         or "toctoc-deepseek-owner-v2"
     )
@@ -561,6 +581,16 @@ def classify_capture(
             base_result.update({"classification": classification, "reason": "deterministic_hint", "metrics": budget.report()})
             return base_result
 
+    required_fingerprint = str(document.get("required_classification_fingerprint") or "").strip()
+    if required_fingerprint and required_fingerprint != fingerprint:
+        classification = _pending_classification("RETRY_FINGERPRINT_MISMATCH")
+        base_result.update({
+            "classification": classification,
+            "reason": "retry_fingerprint_mismatch",
+            "metrics": budget.report(),
+        })
+        return base_result
+
     if not _health_is_healthy(health):
         reason = "EXTRACTOR_DEGRADED" if health and health.get("degraded") else "EXTRACTOR_HEALTH_UNAVAILABLE"
         classification = _pending_classification(reason)
@@ -636,12 +666,48 @@ def classify_capture(
             classification = _pending_classification("DEEPSEEK_ATTEMPT_OUTCOME_UNKNOWN")
             base_result.update({"classification": classification, "reason": "deepseek_attempt_outcome_unknown", "metrics": budget.report()})
             return base_result
-        if not retry_failed_ai:
+        max_attempts_total = max(1, min(2, int(
+            getattr(config, "ai_max_attempts_per_fingerprint", getattr(config, "deepseek_max_attempts", 2)) or 1
+        )))
+        previous_attempt_number = int(previous_attempt.get("attempt_number") or 0)
+        if previous_parser_status != "TRUNCATED":
             classification = _pending_classification(
                 f"DEEPSEEK_PREVIOUS_ATTEMPT_FAILED:{previous_parser_status or 'UNKNOWN'}"
             )
             base_result.update({"classification": classification, "reason": "deepseek_previous_attempt_failed", "metrics": budget.report()})
             return base_result
+        if not retry_failed_ai or previous_attempt_number >= max_attempts_total:
+            classification = _pending_classification(
+                f"DEEPSEEK_TRUNCATED_ATTEMPT_{previous_attempt_number}_OF_{max_attempts_total}",
+                status="AI_FAILED_RETRYABLE",
+            )
+            classification["failure_state"] = "AI_TRUNCATED_RETRYABLE"
+            base_result.update({"classification": classification, "reason": "deepseek_retryable_failure", "retryable_failure": True, "metrics": budget.report()})
+            return base_result
+
+    # A retry after finish_reason=length starts directly at the centralized
+    # retry ceiling, while the attempt cap remains total-per-fingerprint.
+    call_config = config
+    max_attempts_total = max(1, min(2, int(
+        getattr(config, "ai_max_attempts_per_fingerprint", getattr(config, "deepseek_max_attempts", 2)) or 1
+    )))
+    if previous_attempt and str(previous_attempt.get("parser_status") or "") == "TRUNCATED":
+        call_config = copy.copy(config)
+        retry_output_budget = max(
+            int(getattr(config, "ai_output_token_budget_retry", 800) or 800),
+            int(getattr(config, "deepseek_max_tokens", 500) or 500),
+        )
+        remaining_attempts = max_attempts_total - int(previous_attempt.get("attempt_number") or 0)
+        for name, value in (
+            ("ai_output_token_budget_default", retry_output_budget),
+            ("deepseek_max_tokens", retry_output_budget),
+            ("ai_max_attempts_per_fingerprint", remaining_attempts),
+            ("deepseek_max_attempts", remaining_attempts),
+        ):
+            try:
+                setattr(call_config, name, value)
+            except (AttributeError, TypeError):
+                pass
 
     description = str(document.get("description") or document.get("descripcion") or "")
     input_tokens = estimate_tokens(json.dumps({
@@ -651,7 +717,11 @@ def classify_capture(
         "description": description,
         "rule_context": rule_context,
     }, ensure_ascii=False, default=str))
-    output_tokens = int(getattr(config, "deepseek_max_tokens", 500) or 500)
+    output_tokens = int(getattr(
+        call_config,
+        "ai_output_token_budget_default",
+        getattr(call_config, "deepseek_max_tokens", 500),
+    ) or 500)
     budget.mark_attempted()
     budget_decision = budget.check_budget(input_tokens, output_tokens)
     if not budget_decision["allowed"]:
@@ -721,29 +791,69 @@ def classify_capture(
             "classifier_version": CLASSIFICATION_SERVICE_VERSION,
             "prompt_version": prompt_version,
             "model_version": model_version,
+            "max_attempts_per_fingerprint": max_attempts_total,
         }
     budget.mark_executed(input_tokens, 0)
     try:
         call_kwargs = {"authorization_token": classification_service_token()}
         if call_ledger is not None:
             call_kwargs.update({"call_ledger": call_ledger, "call_context": call_context})
-        result = callable_(document, rule_context, config, **call_kwargs)
-        output_tokens = _deepseek_output_tokens(result, output_tokens)
-        # Correct the provisional zero-output accounting without ever allowing
-        # the result to exceed the budget silently.
-        budget.output_tokens += output_tokens
-        budget.estimated_cost = round(
-            budget.estimated_cost + budget.estimate_cost(0, output_tokens), 8
-        )
+        try:
+            real_classifier = _default_deepseek_callable()
+        except Exception:
+            real_classifier = None
+        supports_attempt_callbacks = callable_ is real_classifier
+        attempt_reservations = [input_tokens]
+
+        def on_additional_attempt(requested_output_tokens: int) -> bool:
+            budget.mark_attempted()
+            decision = budget.check_budget(input_tokens, requested_output_tokens)
+            if not decision["allowed"]:
+                return False
+            budget.mark_executed(input_tokens, 0)
+            attempt_reservations.append(input_tokens)
+            return True
+
+        def on_attempt_complete(summary: dict[str, Any]) -> None:
+            reserved_input = attempt_reservations.pop(0) if attempt_reservations else input_tokens
+            actual_input = summary.get("input_tokens")
+            actual_output = summary.get("output_tokens")
+            budget.reconcile_attempt_usage(
+                reserved_input_tokens=reserved_input,
+                actual_input_tokens=int(actual_input) if actual_input is not None else reserved_input,
+                actual_output_tokens=int(actual_output) if actual_output is not None
+                else int(summary.get("max_tokens") or output_tokens),
+            )
+
+        if supports_attempt_callbacks:
+            call_kwargs.update({
+                "on_additional_attempt": on_additional_attempt,
+                "on_attempt_complete": on_attempt_complete,
+            })
+        result = callable_(document, rule_context, call_config, **call_kwargs)
+        if not supports_attempt_callbacks:
+            measured_output_tokens = _deepseek_output_tokens(result, output_tokens)
+            budget.reconcile_attempt_usage(
+                reserved_input_tokens=input_tokens,
+                actual_input_tokens=input_tokens,
+                actual_output_tokens=measured_output_tokens,
+            )
         if result is None or str(getattr(result, "status", "")).upper() != "VALID":
             status = str(getattr(result, "status", "ERROR") or "ERROR")
+            truncated = status == "TRUNCATED"
+            budget_blocked = status == "AI_BUDGET_EXCEEDED"
             classification = _pending_classification(
-                f"DEEPSEEK_{status}", evidence=list(getattr(result, "evidence", []) or [])
+                f"DEEPSEEK_{status}",
+                evidence=list(getattr(result, "evidence", []) or []),
+                status="AI_FAILED_RETRYABLE" if truncated or budget_blocked else "UNCERTAIN_PENDING_AI",
             )
+            if truncated:
+                classification["failure_state"] = "AI_TRUNCATED_RETRYABLE"
             base_result.update({
                 "classification": classification,
-                "reason": "deepseek_error",
+                "reason": "deepseek_retryable_failure" if truncated or budget_blocked else "deepseek_error",
                 "ai_called": True,
+                "retryable_failure": bool(truncated or budget_blocked),
                 "deepseek_status": status,
                 "deepseek_diagnostics": dict(getattr(result, "diagnostics", {}) or {}),
                 "metrics": budget.report(),

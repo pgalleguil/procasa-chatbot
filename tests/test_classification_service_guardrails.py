@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ai_cost_guard import AIBudget, AICostGuard
 from captacion_assignment_eligibility import can_assign_property
 from classification_cache import ClassificationCache, classification_fingerprint
-from classification_service import classify_capture
+from classification_service import classify_capture, is_retryable_ai_classification
 
 # The scraper's legacy modules use an unqualified ``config`` import while the
 # CRM core has a different root-level module with the same name. Load the
@@ -30,6 +30,28 @@ if _root_config is not None:
 
 
 HEALTHY = {"healthy": True, "degraded": False, "sample_size": 100}
+
+
+def test_ai_truncation_is_recognized_as_retryable_for_normal_historical_dedup():
+    assert is_retryable_ai_classification({
+        "status": "AI_FAILED_RETRYABLE",
+        "failure_state": "AI_TRUNCATED_RETRYABLE",
+        "final": "UNCERTAIN",
+    }) is True
+    assert is_retryable_ai_classification({"status": "CLASSIFIED", "final": "UNCERTAIN"}) is False
+
+
+def test_retry_fingerprint_mismatch_never_starts_a_new_ai_attempt():
+    calls = []
+    result = classify_capture(
+        _doc(required_classification_fingerprint="not-the-current-input-fingerprint"),
+        config=_config(), health=HEALTHY,
+        deepseek_callable=lambda *args, **kwargs: calls.append((args, kwargs)),
+        allow_real_ai=True,
+    )
+    assert calls == []
+    assert result["reason"] == "retry_fingerprint_mismatch"
+    assert result["classification"]["final"] == "UNCERTAIN"
 
 
 def _config(**overrides):

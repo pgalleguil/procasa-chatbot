@@ -81,6 +81,10 @@ class DeepSeekCallLedger:
                 {"listing_id": listing_id, "classification_fingerprint": fingerprint},
                 sort=[("attempt_number", -1)],
             )
+            max_attempts = max(1, int(context.get("max_attempts_per_fingerprint") or 2))
+            latest_number = int((latest or {}).get("attempt_number") or 0)
+            if latest_number >= max_attempts:
+                raise DeepSeekLedgerError("maximum attempts reached for classification fingerprint")
             if latest and str(latest.get("parser_status") or latest.get("status") or "") in {
                 "REQUEST_STARTED", "NOT_PARSED", "VALID",
             }:
@@ -106,9 +110,14 @@ class DeepSeekCallLedger:
                 "model_returned": "",
                 "http_status": None,
                 "finish_reason": "",
+                "max_tokens_requested": request.get("max_tokens"),
                 "max_tokens_effective": request.get("max_tokens"),
                 "response_format_effective": request.get("response_format"),
                 "temperature_effective": request.get("temperature"),
+                "thinking_effective": request.get("thinking"),
+                # Reproducible payload; auth headers are deliberately absent.
+                "request_payload": dict(request),
+                "max_attempts_per_fingerprint": max_attempts,
                 "input_tokens": None,
                 "output_tokens": None,
                 "total_tokens": None,
@@ -136,9 +145,10 @@ class DeepSeekCallLedger:
 
     def finish_attempt(self, attempt: dict[str, Any], fields: dict[str, Any]) -> None:
         try:
+            completed_at = _now()
             result = self.collection.update_one(
                 {"_id": attempt["_id"]},
-                {"$set": {**fields, "finished_at": _now()}},
+                {"$set": {**fields, "finished_at": completed_at, "completed_at": completed_at}},
             )
         except Exception as exc:
             raise DeepSeekLedgerError("unable to persist DeepSeek response") from exc

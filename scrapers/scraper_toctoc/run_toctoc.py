@@ -26,7 +26,7 @@ from mongo_store import MongoStore
 from proxy_manager import ProxyManager
 from ai_cost_guard import AICostGuard, budget_from_config
 from classification_cache import ClassificationCache
-from classification_service import classify_capture
+from classification_service import classify_capture, is_retryable_ai_classification
 from extractor_health import evaluate_extractor_health, measure_extractor_health
 
 
@@ -285,9 +285,15 @@ def cmd_process(args, config):
                 continue
             existing = mongo.collection().find_one(
                 {"origen": "toctoc", "listing_id": lid},
-                {"_id": 1}
+                {"_id": 1, "classification": 1}
             )
             if existing:
+                if is_retryable_ai_classification(existing.get("classification")):
+                    # Ordinary runs resume a retryable technical residual
+                    # rather than treating its prior failed output as final.
+                    item["retry_existing_ai"] = True
+                    dedup_batch.append(item)
+                    continue
                 historical_duplicates += 1
                 processed.append({**item,
                     "processing_status": "HISTORICAL_DUPLICATE",
@@ -690,9 +696,10 @@ def cmd_process(args, config):
             allow_real_ai=not bool(args.no_llm),
             run_id=batch_id,
             pipeline_item_id=f"{batch_id}:{extracted.get('listing_id') or item.get('listing_id') or ''}",
+            retry_failed_ai=True,
         )
         classification = central_result["classification"]
-        if central_result.get("reason") == "deepseek_error":
+        if central_result.get("reason") in {"deepseek_error", "deepseek_retryable_failure"}:
             rule_state = "INCONCLUSIVE"
 
         classification["rule_state"] = rule_state

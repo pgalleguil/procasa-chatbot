@@ -6,7 +6,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 try:
     import requests
@@ -39,6 +39,8 @@ except ImportError:  # ejecución directa desde scrapers/scraper_toctoc/
 class DeepSeekStatus(str, Enum):
     NOT_NEEDED = "NOT_NEEDED"
     VALID = "VALID"
+    TRUNCATED = "TRUNCATED"
+    SCHEMA_ERROR = "SCHEMA_ERROR"
     INVALID_EMPTY_CONTENT = "INVALID_EMPTY_CONTENT"
     INVALID_JSON = "INVALID_JSON"
     INVALID_SCHEMA = "INVALID_SCHEMA"
@@ -458,6 +460,7 @@ def _persist_attempt_result(
         "model_returned": str(data.get("model") or ""),
         "http_status": call.http_status,
         "finish_reason": call.finish_reason,
+        "max_tokens_requested": body.get("max_tokens"),
         "max_tokens_effective": body.get("max_tokens"),
         "response_format_effective": body.get("response_format"),
         "temperature_effective": body.get("temperature"),
@@ -491,6 +494,8 @@ def classify_with_deepseek(
     authorization_token: object | None = None,
     call_ledger: Any | None = None,
     call_context: dict[str, Any] | None = None,
+    on_additional_attempt: Callable[[int], bool] | None = None,
+    on_attempt_complete: Callable[[dict[str, Any]], None] | None = None,
 ) -> DeepSeekResult | None:
     # This low-level function is deliberately fail-closed. Productive
     # captacion calls must originate in classification_service, which supplies
@@ -504,7 +509,6 @@ def classify_with_deepseek(
             raw={},
             status=DeepSeekStatus.NOT_NEEDED.value,
         )
-    import time as _time
     hard_publisher = detect_hard_broker_signal(extracted=extracted)
     if hard_publisher:
         return DeepSeekResult(
@@ -528,18 +532,33 @@ def classify_with_deepseek(
             max_chars=config.deepseek_description_max_chars)
     
     headers = {"Authorization": f"Bearer {config.deepseek_api_key}", "Content-Type": "application/json"}
+    default_tokens = max(1, int(getattr(
+        config,
+        "ai_output_token_budget_default",
+        getattr(config, "deepseek_max_tokens", 500),
+    ) or 500))
+    retry_tokens = max(default_tokens, int(getattr(
+        config,
+        "ai_output_token_budget_retry",
+        max(default_tokens, 800),
+    ) or default_tokens))
     body = {
         "model": config.deepseek_model,
         "messages": _build_messages(extracted, rule_context, desc_bundle),
-        "max_tokens": config.deepseek_max_tokens,
+        "max_tokens": default_tokens,
         "temperature": 0,
+        "response_format": {"type": "json_object"},
+        # This classifier uses raw HTTP requests (not the OpenAI SDK), so the
+        # provider parameter belongs at the top level, not under extra_body.
+        "thinking": {"type": "disabled"},
     }
-    # Disable thinking/reasoning to avoid empty content (DeepSeek V4 format)
-    body["extra_body"] = {"thinking": {"type": "disabled"}}
-    # Force JSON output mode
-    body["response_format"] = {"type": "json_object"}
-    
-    max_attempts = max(1, int(getattr(config, "deepseek_max_attempts", 2) or 1))
+
+    configured_attempts = int(getattr(
+        config,
+        "ai_max_attempts_per_fingerprint",
+        getattr(config, "deepseek_max_attempts", 2),
+    ) or 1)
+    max_attempts = max(1, min(2, configured_attempts))
     call = DeepSeekCall(DeepSeekStatus.API_ERROR.value, None, "", "")
     data = None
     content = ""
@@ -547,14 +566,36 @@ def classify_with_deepseek(
     parse_mode = ""
     last_error_kind = ""
     normalized: dict[str, Any] | None = None
+    attempt_summaries: list[dict[str, Any]] = []
+
+    def diagnostics_for(last_call: DeepSeekCall, last_body: dict[str, Any], attempt_number: int, mode: str = "") -> dict[str, Any]:
+        diagnostics = _response_diagnostics(last_call, last_body, attempt=attempt_number, parse_mode=mode)
+        diagnostics["attempts"] = list(attempt_summaries)
+        return diagnostics
+
     for attempt in range(max_attempts):
-        # The attempt row is durable before any request leaves this process.
+        if attempt:
+            body["max_tokens"] = retry_tokens
         attempt_row = (
             call_ledger.begin_attempt(dict(call_context or {}), body)
             if call_ledger is not None else None
         )
         call = _call_deepseek(body, config, headers)
         data, content = call.data, call.content
+        usage = data.get("usage") if isinstance(data, dict) and isinstance(data.get("usage"), dict) else {}
+        attempt_summary = {
+            "attempt_number": int((attempt_row or {}).get("attempt_number") or attempt + 1),
+            "http_status": call.http_status,
+            "finish_reason": call.finish_reason,
+            "max_tokens": body.get("max_tokens"),
+            "input_tokens": usage.get("prompt_tokens", usage.get("input_tokens")),
+            "output_tokens": usage.get("completion_tokens", usage.get("output_tokens")),
+            "total_tokens": usage.get("total_tokens"),
+            "model_returned": str((data or {}).get("model") or ""),
+            "max_tokens": body.get("max_tokens"),
+        }
+        attempt_summaries.append(attempt_summary)
+
         if call.status != DeepSeekStatus.VALID.value:
             _persist_attempt_result(
                 call_ledger, attempt_row, call, body,
@@ -562,59 +603,94 @@ def classify_with_deepseek(
                 parser_error=call.transport_error or call.status,
                 api_key=config.deepseek_api_key,
             )
+            if on_attempt_complete:
+                on_attempt_complete(attempt_summary)
+            return DeepSeekResult(
+                state="INCIERTO", confidence=0.5,
+                reason=f"DeepSeek {call.status.lower()}; retryable technical failure",
+                evidence=[], raw=data or {}, status=call.status,
+                diagnostics=diagnostics_for(
+                    call, body,
+                    int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                ),
+            )
+
+        # A provider length stop is always a technical truncation, even if the
+        # partial text happens to contain a parseable JSON prefix. It must not
+        # silently become a final classification.
+        if call.finish_reason == "length":
+            _persist_attempt_result(
+                call_ledger, attempt_row, call, body,
+                parser_status="TRUNCATED",
+                parser_error="finish_reason=length",
+                api_key=config.deepseek_api_key,
+            )
+            if on_attempt_complete:
+                on_attempt_complete(attempt_summary)
             if attempt + 1 < max_attempts:
-                _time.sleep(2)
+                if on_additional_attempt and not on_additional_attempt(retry_tokens):
+                    return DeepSeekResult(
+                        state="INCIERTO", confidence=0.5,
+                        reason="AI_BUDGET_EXCEEDED before truncation retry",
+                        evidence=[], raw=data or {}, status="AI_BUDGET_EXCEEDED",
+                        message_content=call.raw_content,
+                        reasoning_content=call.reasoning_content,
+                        diagnostics=diagnostics_for(
+                            call, body,
+                            int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                        ),
+                    )
                 continue
             return DeepSeekResult(
                 state="INCIERTO", confidence=0.5,
-                reason=f"DeepSeek {call.status.lower()} after {attempt + 1} attempt(s)",
-                evidence=[], raw=data or {}, status=call.status,
-                diagnostics=_response_diagnostics(
+                reason="DeepSeek response truncated after bounded retry; remains retryable",
+                evidence=[], raw=data or {}, status=DeepSeekStatus.TRUNCATED.value,
+                message_content=call.raw_content,
+                reasoning_content=call.reasoning_content,
+                diagnostics=diagnostics_for(
                     call, body,
-                    attempt=int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                    int((attempt_row or {}).get("attempt_number") or attempt + 1),
                 ),
             )
+
         if not content:
-            empty_status = "TRUNCATED" if call.finish_reason == "length" else "EMPTY"
             _persist_attempt_result(
                 call_ledger, attempt_row, call, body,
-                parser_status=empty_status,
+                parser_status="EMPTY",
                 parser_error="provider returned empty message content",
                 api_key=config.deepseek_api_key,
             )
-            if attempt + 1 < max_attempts:
-                _time.sleep(2)
-                continue
+            if on_attempt_complete:
+                on_attempt_complete(attempt_summary)
             return DeepSeekResult(
                 state="INCIERTO", confidence=0.5,
                 reason="DeepSeek returned empty content",
                 evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_EMPTY_CONTENT.value,
                 message_content=call.raw_content,
                 reasoning_content=call.reasoning_content,
-                diagnostics=_response_diagnostics(
+                diagnostics=diagnostics_for(
                     call, body,
-                    attempt=int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                    int((attempt_row or {}).get("attempt_number") or attempt + 1),
                 ),
             )
+
         parsed, parse_mode, last_error_kind = _extract_json_object(content)
         if not isinstance(parsed, dict):
-            invalid_status = (
-                "TRUNCATED" if call.finish_reason == "length" else
-                "SCHEMA_INVALID" if last_error_kind in {"schema", "ambiguous"} else
-                "INVALID_JSON"
+            parser_status = (
+                "SCHEMA_ERROR" if last_error_kind in {"schema", "ambiguous"}
+                else "INVALID_JSON"
             )
             _persist_attempt_result(
                 call_ledger, attempt_row, call, body,
-                parser_status=invalid_status,
+                parser_status=parser_status,
                 parser_error=f"{parse_mode}:{last_error_kind or 'invalid_json'}",
                 api_key=config.deepseek_api_key,
             )
-            if attempt + 1 < max_attempts and call.finish_reason == "length" and config.deepseek_max_tokens < 800:
-                body["max_tokens"] = 800
-                continue
+            if on_attempt_complete:
+                on_attempt_complete(attempt_summary)
             public_status = (
                 DeepSeekStatus.INVALID_SCHEMA.value
-                if last_error_kind in {"schema", "ambiguous"}
+                if parser_status == "SCHEMA_ERROR"
                 else DeepSeekStatus.INVALID_JSON.value
             )
             return DeepSeekResult(
@@ -623,12 +699,13 @@ def classify_with_deepseek(
                 evidence=[], raw=data or {}, status=public_status,
                 message_content=call.raw_content,
                 reasoning_content=call.reasoning_content,
-                diagnostics=_response_diagnostics(
+                diagnostics=diagnostics_for(
                     call, body,
-                    attempt=int((attempt_row or {}).get("attempt_number") or attempt + 1),
-                    parse_mode=parse_mode,
+                    int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                    parse_mode,
                 ),
             )
+
         normalized, schema_error = _normalize_response_object(parsed)
         if normalized is None:
             invalid_status = (
@@ -638,52 +715,55 @@ def classify_with_deepseek(
             )
             _persist_attempt_result(
                 call_ledger, attempt_row, call, body,
-                parser_status="SCHEMA_INVALID",
+                parser_status="SCHEMA_ERROR",
                 parser_error=schema_error,
                 api_key=config.deepseek_api_key,
             )
+            if on_attempt_complete:
+                on_attempt_complete(attempt_summary)
             return DeepSeekResult(
                 state="INCIERTO", confidence=0.5,
                 reason=f"DeepSeek invalid response schema: {schema_error}",
                 evidence=[], raw=data or {}, status=invalid_status,
                 message_content=call.raw_content,
                 reasoning_content=call.reasoning_content,
-                diagnostics=_response_diagnostics(
+                diagnostics=diagnostics_for(
                     call, body,
-                    attempt=int((attempt_row or {}).get("attempt_number") or attempt + 1),
-                    parse_mode=parse_mode,
+                    int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                    parse_mode,
                 ),
             )
+
         _persist_attempt_result(
             call_ledger, attempt_row, call, body,
             parser_status="VALID",
             normalized=normalized,
             api_key=config.deepseek_api_key,
         )
+        if on_attempt_complete:
+            on_attempt_complete(attempt_summary)
         break
-    
-    if not isinstance(parsed, dict):
+
+    if not isinstance(parsed, dict) or normalized is None:
         return DeepSeekResult(
-            state="INCIERTO", confidence=0.5, reason="DeepSeek response not a dict",
-            evidence=[], raw=data, status=DeepSeekStatus.INVALID_JSON.value)
-    
-    if normalized is None:
-        return DeepSeekResult(
-            state="INCIERTO", confidence=0.5, reason="DeepSeek response not normalized",
+            state="INCIERTO", confidence=0.5,
+            reason="DeepSeek response was not a valid structured object",
             evidence=[], raw=data or {}, status=DeepSeekStatus.INVALID_SCHEMA.value,
-            message_content=call.raw_content,
-            reasoning_content=call.reasoning_content,
-            diagnostics=_response_diagnostics(call, body, attempt=attempt + 1, parse_mode=parse_mode),
+            diagnostics=diagnostics_for(
+                call, body,
+                int((attempt_row or {}).get("attempt_number") or attempt + 1),
+                parse_mode,
+            ),
         )
     
     raw_state = normalized["state"]
     if raw_state == "DUENO_SEGURO":
         raw_state = "DUEÑO_SEGURO"
     evidence = [str(e) for e in normalized["signals"] if e.strip()]
-    diagnostics = _response_diagnostics(
+    diagnostics = diagnostics_for(
         call, body,
-        attempt=int((attempt_row or {}).get("attempt_number") or attempt + 1),
-        parse_mode=parse_mode,
+        int((attempt_row or {}).get("attempt_number") or attempt + 1),
+        parse_mode,
     )
     
     return DeepSeekResult(

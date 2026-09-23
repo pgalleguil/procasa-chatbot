@@ -78,9 +78,26 @@ class AICostGuard:
         self.calls_executed += 1
         self.input_tokens += max(0, int(input_tokens))
         self.output_tokens += max(0, int(output_tokens))
-        self.estimated_cost = round(
-            self.estimated_cost + self.estimate_cost(input_tokens, output_tokens), 8
-        )
+        self._recalculate_cost()
+
+    def reconcile_attempt_usage(self, *, reserved_input_tokens: int, actual_input_tokens: int, actual_output_tokens: int) -> None:
+        """Replace a preflight estimate with provider usage for one call."""
+        self.input_tokens = max(0, self.input_tokens - max(0, int(reserved_input_tokens)) + max(0, int(actual_input_tokens)))
+        self.output_tokens += max(0, int(actual_output_tokens))
+        self._recalculate_cost()
+        reasons = []
+        if self.budget.max_input_tokens >= 0 and self.input_tokens > self.budget.max_input_tokens:
+            reasons.append("MAX_INPUT_TOKENS_PER_RUN")
+        if self.budget.max_output_tokens >= 0 and self.output_tokens > self.budget.max_output_tokens:
+            reasons.append("MAX_OUTPUT_TOKENS_PER_RUN")
+        if self.budget.max_estimated_cost >= 0 and self.estimated_cost > self.budget.max_estimated_cost:
+            reasons.append("MAX_ESTIMATED_COST_PER_RUN")
+        if reasons:
+            self.budget_exceeded = True
+        self.events.append({"event": "provider_usage_recorded", "input_tokens": max(0, int(actual_input_tokens)), "output_tokens": max(0, int(actual_output_tokens)), "budget_exceeded": self.budget_exceeded, "reasons": reasons})
+
+    def _recalculate_cost(self) -> None:
+        self.estimated_cost = self.estimate_cost(self.input_tokens, self.output_tokens)
 
     def report(self) -> dict[str, Any]:
         return {

@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Mapping
 from urllib.parse import quote
 
@@ -23,6 +24,11 @@ from .mongo_identity import mongo_id_variants
 TOKEN_VERSION = 1
 TOKEN_KIND = "crm_sla_cycle"
 LINK_PATH = "/crm/sla-cycle/"
+SHORT_LINK_COLLECTION = "crm_sla_short_links_v1"
+SHORT_LINK_PATH = "/crm/s/"
+SHORT_LINK_VERSION = 1
+SHORT_ID_BYTES = 12
+SHORT_ID_LENGTH = 16
 INVALID_LINK_CODE = "LEAD_REASSIGNED_SLA_LOCKED"
 SLA_EXPIRED_PENDING_REASSIGNMENT = "SLA_EXPIRED_PENDING_REASSIGNMENT"
 
@@ -94,6 +100,76 @@ def issue_sla_cycle_link_token(
     }
     body = _encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
     return f"{body}.{_signature(body)}"
+
+
+def issue_sla_short_id(
+    *, lead_id: Any, recipient_user_id: Any, assignment_cycle_id: Any,
+) -> str:
+    """Return one opaque, deterministic reference for one cycle identity.
+
+    The HMAC keeps the reference non-reversible while determinism makes
+    notification retries reuse the same server-side permission record.
+    Twelve digest bytes provide 96 bits of entropy in a 16-character URL-safe
+    reference; no lead, user, or cycle identifier is encoded in it.
+    """
+    identity = "|".join((
+        str(SHORT_LINK_VERSION),
+        _required_text(lead_id, "lead_id"),
+        _required_text(recipient_user_id, "recipient_user_id"),
+        _required_text(assignment_cycle_id, "assignment_cycle_id"),
+    ))
+    digest = hmac.new(
+        _secret(),
+        f"crm-sla-short-link-v{SHORT_LINK_VERSION}|{identity}".encode("utf-8"),
+        hashlib.sha256,
+    ).digest()[:SHORT_ID_BYTES]
+    return _encode(digest)
+
+
+def build_sla_short_url(
+    *, lead_id: Any, recipient_user_id: Any, assignment_cycle_id: Any,
+    base_url: str | None = None,
+) -> str:
+    """Build the opaque URL used by new SLA reassignment messages."""
+    base = str(base_url or getattr(Config, "CRM_BASE_URL", "")).rstrip("/")
+    short_id = issue_sla_short_id(
+        lead_id=lead_id,
+        recipient_user_id=recipient_user_id,
+        assignment_cycle_id=assignment_cycle_id,
+    )
+    return f"{base}{SHORT_LINK_PATH}{quote(short_id, safe='')}"
+
+
+def ensure_sla_short_link(
+    db: Any,
+    *, lead_id: Any, recipient_user_id: Any, assignment_cycle_id: Any,
+    policy_version: str = "crm_sla_reassignment_v1",
+) -> str:
+    """Persist/reuse the short-link identity without granting access itself.
+
+    Mongo's unique ``_id`` is the idempotency key.  Authorization is never
+    decided from this document alone; validation below reconstructs the
+    canonical signed identity and runs the existing cycle/owner checks.
+    """
+    short_id = issue_sla_short_id(
+        lead_id=lead_id,
+        recipient_user_id=recipient_user_id,
+        assignment_cycle_id=assignment_cycle_id,
+    )
+    now = datetime.now(timezone.utc)
+    db[SHORT_LINK_COLLECTION].update_one(
+        {"_id": short_id},
+        {"$setOnInsert": {
+            "_id": short_id,
+            "lead_id": str(lead_id),
+            "recipient_user_id": str(recipient_user_id),
+            "assignment_cycle_id": str(assignment_cycle_id),
+            "created_at": now,
+            "policy_version": str(policy_version),
+        }},
+        upsert=True,
+    )
+    return short_id
 
 
 def verify_sla_cycle_link_token(token: str) -> dict[str, str]:
@@ -209,9 +285,45 @@ def validate_sla_cycle_link(
     return SlaCycleLinkResolution(payload=payload, lead=lead, cycle=cycle)
 
 
+def validate_sla_short_link(
+    db: Any,
+    short_id: str,
+    *,
+    authenticated_user_id: Any,
+) -> SlaCycleLinkResolution:
+    """Resolve an opaque reference and reuse canonical cycle authorization."""
+    raw_short_id = str(short_id or "").strip()
+    if len(raw_short_id) != SHORT_ID_LENGTH or any(
+        char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+        for char in raw_short_id
+    ):
+        _fail(403)
+
+    record = db[SHORT_LINK_COLLECTION].find_one({"_id": raw_short_id})
+    if not record:
+        _fail(403)
+
+    # The short record is only an opaque lookup.  Rebuild the canonical
+    # signed identity and run the existing Mongo-backed owner/cycle/pointer
+    # validation so the short path cannot become an authorization bypass.
+    token = issue_sla_cycle_link_token(
+        lead_id=record.get("lead_id"),
+        recipient_user_id=record.get("recipient_user_id"),
+        assignment_cycle_id=record.get("assignment_cycle_id"),
+    )
+    return validate_sla_cycle_link(
+        db,
+        token,
+        authenticated_user_id=authenticated_user_id,
+    )
+
+
 __all__ = [
-    "INVALID_LINK_CODE", "SLA_EXPIRED_PENDING_REASSIGNMENT", "LINK_PATH", "SlaCycleLinkConfigurationError",
+    "INVALID_LINK_CODE", "SLA_EXPIRED_PENDING_REASSIGNMENT", "LINK_PATH",
+    "SHORT_LINK_COLLECTION", "SHORT_LINK_PATH", "SHORT_LINK_VERSION",
+    "SHORT_ID_LENGTH", "SlaCycleLinkConfigurationError",
     "SlaCycleLinkError", "SlaCycleLinkResolution", "build_sla_cycle_url",
-    "issue_sla_cycle_link_token", "validate_sla_cycle_link",
+    "build_sla_short_url", "ensure_sla_short_link", "issue_sla_short_id",
+    "issue_sla_cycle_link_token", "validate_sla_cycle_link", "validate_sla_short_link",
     "verify_sla_cycle_link_token",
 ]

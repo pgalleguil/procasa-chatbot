@@ -100,6 +100,8 @@ def _build_parser():
     pr.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
     pr.add_argument("--min-price-clp", type=int, default=0,
                     help="Minimum normalized published price in CLP; unknown prices are skipped")
+    pr.add_argument("--max-price-clp", type=int, default=None,
+                    help="Maximum normalized published price in CLP; unknown prices are skipped when set")
 
     rf = s.add_parser("run-full", help="Discover + process in one step")
     rf.add_argument("--operacion", default="venta", choices=["venta", "arriendo"])
@@ -130,6 +132,8 @@ def _build_parser():
     rf.add_argument("--disable-post-distribution", action="store_true", help="Do not run CRM distribution after Mongo writes")
     rf.add_argument("--min-price-clp", type=int, default=0,
                     help="Minimum normalized published price in CLP; unknown prices are skipped")
+    rf.add_argument("--max-price-clp", type=int, default=None,
+                    help="Maximum normalized published price in CLP; unknown prices are skipped when set")
 
     return p
 
@@ -643,13 +647,20 @@ def cmd_process(args, config):
         # commercial floor at the normalized detail level instead: published
         # price only, converted with the configured UF, and never inferred.
         min_price_clp = int(getattr(args, "min_price_clp", 0) or 0)
-        if min_price_clp > 0:
+        max_price_clp = getattr(args, "max_price_clp", None)
+        if max_price_clp is not None:
+            max_price_clp = int(max_price_clp)
+        if min_price_clp > 0 or max_price_clp is not None:
             normalized_price = enriched.get("precio_clp")
             try:
                 normalized_price = int(round(float(normalized_price))) if normalized_price is not None else None
             except (TypeError, ValueError):
                 normalized_price = None
-            if normalized_price is None or normalized_price < min_price_clp:
+            below_floor = normalized_price is None or normalized_price < min_price_clp
+            above_ceiling = normalized_price is None or (
+                max_price_clp is not None and normalized_price > max_price_clp
+            )
+            if below_floor or above_ceiling:
                 processed.append({
                     **item,
                     **{k: v for k, v in enriched.items() if k in {
@@ -657,8 +668,13 @@ def cmd_process(args, config):
                         "precio_conversion_source", "precio_validacion",
                     }},
                     "processing_status": "SKIP_PRICE_GUARD",
-                    "skip_reason": "PRICE_BELOW_FLOOR_OR_UNKNOWN",
+                    "skip_reason": (
+                        "PRICE_UNKNOWN" if normalized_price is None else
+                        "PRICE_BELOW_FLOOR" if normalized_price < min_price_clp else
+                        "PRICE_ABOVE_CEILING"
+                    ),
                     "min_price_clp": min_price_clp,
+                    "max_price_clp": max_price_clp,
                     "processed_at": _utcnow(),
                     "batch_id": batch_id,
                     "source": "owner_hunt",
@@ -905,6 +921,7 @@ def cmd_run_full(args, config):
         reprocess_existing=getattr(args, "reprocess_existing", False),
         disable_post_distribution=getattr(args, "disable_post_distribution", False),
         min_price_clp=getattr(args, "min_price_clp", 0),
+        max_price_clp=getattr(args, "max_price_clp", None),
     )
     cmd_process(ca, config)
 

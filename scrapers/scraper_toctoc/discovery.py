@@ -1256,9 +1256,11 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
     stop_reason = None
     all_page_reports: list[dict] = []
     search_reports: list[dict] = []
+    resume_checkpoint = {}
     if checkpoint_path.exists():
         try:
             checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            resume_checkpoint = checkpoint if isinstance(checkpoint, dict) else {}
             report["resume_checkpoint_loaded"] = True
             report["resume_from_page"] = checkpoint.get("next_page")
             report["resume_from_batch"] = checkpoint.get("batches", [])[-1] if checkpoint.get("batches") else {}
@@ -1413,60 +1415,103 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
         API calls ourselves.
         """
         scope_url = _playwright_scope_url(config, seo_url, estado=estado)
-        pg.goto(scope_url, wait_until="domcontentloaded", timeout=30000)
-        pg.wait_for_timeout(3500)
         display = _playwright_commune_label(requested_commune or "")
-        try:
-            pg.wait_for_selector(
-                'input[placeholder*="barrio" i], '
-                'input[placeholder*="comuna" i], '
-                'input[placeholder*="ciudad" i]',
-                timeout=12000,
+        last_reason = "SPA_LOCATION_INPUT_NOT_FOUND"
+        for attempt in range(2):
+            pg.goto(scope_url, wait_until="domcontentloaded", timeout=30000)
+            pg.wait_for_timeout(2500 if attempt == 0 else 1800)
+            try:
+                pg.wait_for_selector(
+                    'input[placeholder*="barrio" i], input[placeholder*="comuna" i], '
+                    'input[placeholder*="ciudad" i], input[aria-label*="comuna" i], '
+                    'input[aria-label*="ubicación" i], [role="combobox"]',
+                    timeout=8000,
+                )
+            except Exception:
+                pass
+
+            location_input = None
+            location_selectors = (
+                'input[placeholder*="barrio" i], input[placeholder*="comuna" i], input[placeholder*="ciudad" i]',
+                'input[aria-label*="comuna" i], input[aria-label*="ubicación" i], input[aria-label*="ubicacion" i]',
+                'input[name*="comuna" i], input[name*="location" i], input[data-testid*="location" i]',
+                '[role="combobox"] input, input[role="combobox"]',
             )
-        except Exception:
-            pass
-        location_input = pg.locator(
-            'input[placeholder*="barrio" i], '
-            'input[placeholder*="comuna" i], '
-            'input[placeholder*="ciudad" i]'
-        ).first
-        if not location_input.count() and pg.locator("input").count():
-            # Keep a compatibility fallback for regionalized copies of the
-            # SPA where the placeholder text differs.
-            location_input = pg.locator("input").first
-        if not location_input.count():
-            return False, "SPA_LOCATION_INPUT_NOT_FOUND"
-        try:
-            location_input.click()
-            location_input.press("Control+A")
-            location_input.type(display, delay=30)
-            pg.wait_for_timeout(1000)
-            suggestions = pg.locator('[role="option"]').filter(has_text=display)
-            if not suggestions.count():
-                suggestions = pg.get_by_text(display, exact=True)
-            if not suggestions.count():
-                # The current autocomplete renders location rows as plain
-                # spans with an ``ic-location`` icon, not ARIA options.  Pick
-                # only the exact normalized commune row; do not click a
-                # street or a result card that merely contains the text.
-                location_rows = pg.locator('span:has(i.ic-location)')
-                desired = _normalize_slug(display)
-                for index in range(location_rows.count()):
+            for selector in location_selectors:
+                candidate = pg.locator(selector).first
+                try:
+                    if candidate.count() and candidate.is_visible():
+                        location_input = candidate
+                        break
+                except Exception:
+                    continue
+            if location_input is None:
+                # Regionalized SPA builds sometimes omit semantic attributes.
+                # Use a lone visible text/search input only; never guess among
+                # multiple unrelated filters.
+                visible_inputs = []
+                inputs = pg.locator('input:not([type="hidden"])')
+                for index in range(inputs.count()):
+                    candidate = inputs.nth(index)
                     try:
-                        row_text = _normalize_slug(location_rows.nth(index).inner_text())
+                        if candidate.is_visible():
+                            visible_inputs.append(candidate)
                     except Exception:
                         continue
-                    if row_text == desired:
-                        suggestions = location_rows.nth(index)
+                if len(visible_inputs) == 1:
+                    location_input = visible_inputs[0]
+            if location_input is None:
+                last_reason = "SPA_LOCATION_INPUT_NOT_FOUND"
+                continue
+
+            try:
+                location_input.click()
+                location_input.press("Control+A")
+                location_input.fill(display)
+                pg.wait_for_timeout(900)
+                desired = _normalize_slug(display)
+                suggestions = None
+                # Prefer explicit autocomplete rows, then exact text within
+                # location-like DOM nodes. Avoid clicking broad result cards.
+                for selector in (
+                    '[role="option"]', '[role="listbox"] [role="option"]',
+                    'span:has(i.ic-location)', '[data-testid*="location" i]',
+                    '[class*="location" i], [class*="commune" i]',
+                    'li, button',
+                ):
+                    rows = pg.locator(selector)
+                    for index in range(min(rows.count(), 80)):
+                        row = rows.nth(index)
+                        try:
+                            if not row.is_visible():
+                                continue
+                            row_text = _normalize_slug(row.inner_text(timeout=500))
+                        except Exception:
+                            continue
+                        if row_text == desired:
+                            suggestions = row
+                            break
+                    if suggestions is not None:
                         break
-            if not suggestions.count():
-                return False, "SPA_COMMUNE_SUGGESTION_NOT_FOUND"
-            # The first exact match is the location suggestion (the other
-            # match, when present, is usually the rendered result card).
-            suggestions.first.click()
-            pg.wait_for_timeout(2500)
-        except Exception as exc:
-            return False, f"SPA_COMMUNE_SELECTION_FAILED:{type(exc).__name__}"
+                if suggestions is None:
+                    exact = pg.get_by_text(display, exact=True).first
+                    try:
+                        if exact.count() and exact.is_visible():
+                            suggestions = exact
+                    except Exception:
+                        pass
+                if suggestions is None:
+                    last_reason = "SPA_COMMUNE_SUGGESTION_NOT_FOUND"
+                    continue
+                suggestions.click()
+                pg.wait_for_timeout(2200)
+                last_reason = ""
+                break
+            except Exception as exc:
+                last_reason = f"SPA_COMMUNE_SELECTION_FAILED:{type(exc).__name__}"
+                continue
+        if last_reason:
+            return False, last_reason
         current = pg.url.lower()
         expected_slug = _normalize_slug(requested_commune or "").replace(" ", "-")
         if expected_slug == "santiago-centro":
@@ -1544,7 +1589,10 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
             proxy_info["proxy_applied"] = True
             proxy_info["proxy_host"] = p.host_port
             proxy_info["session_id"] = batch_id[:16] if batch_id else "unknown"
-            print(f"  Playwright proxy: {p.safe_url}")
+            # Never print proxy usernames: providers often embed account or
+            # session credentials in that field. Host/port is sufficient for
+            # operational diagnostics.
+            print(f"  Playwright proxy: {p.host_port} (credentials redacted)")
     if not proxy_info["proxy_applied"]:
         print("  Playwright proxy: direct (proxy_applied=false)")
 
@@ -1720,6 +1768,110 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     "abort_reason": "PLAYWRIGHT_ERROR",
                 })
                 break
+
+            # Resume a partial search by replaying only the real browser
+            # pagination controls up to the first uncompleted page. The
+            # already captured records and page ledger were restored above;
+            # intermediate pages are navigated but not reparsed/reclassified.
+            checkpoint_url = _normalize_url(resume_checkpoint.get("search_url") or "")
+            resume_page = 1
+            progress_loaded = progress_path.exists()
+            if (
+                checkpoint_url == _normalize_url(start_url)
+                and progress_loaded
+                and not resume_checkpoint.get("challenge_detected")
+            ):
+                try:
+                    candidate_page = int(resume_checkpoint.get("next_page") or 1)
+                    if candidate_page > 1 and int(resume_checkpoint.get("last_completed_page") or 0) > 0:
+                        resume_page = candidate_page
+                except (TypeError, ValueError):
+                    resume_page = 1
+
+            if resume_page > 1:
+                previous_reports = [
+                    dict(item) for item in (resume_checkpoint.get("page_reports") or [])
+                    if item.get("completed") and int(item.get("page") or 0) < resume_page
+                ]
+                page_reports = previous_reports
+                pages_visited = resume_page - 1
+                page_signatures = {
+                    str(item.get("page_signature"))
+                    for item in previous_reports if item.get("page_signature")
+                }
+                if previous_reports:
+                    previous_page_ids = set(previous_reports[-1].get("listing_ids") or [])
+
+                def _visible_ids_for_resume():
+                    try:
+                        hrefs = page.locator(
+                            'a[href*="/propiedad/"], a[href*="/propiedades/"], '
+                            'a[href*="/venta/"], a[href*="/arriendo/"]'
+                        ).evaluate_all("els => els.map(el => el.href)") or []
+                    except Exception:
+                        hrefs = []
+                    ids = {listing_id_from_url(href)[0] for href in hrefs}
+                    ids.discard("")
+                    return ids
+
+                resume_ok = True
+                ids_before_resume = _visible_ids_for_resume()
+                for target_page in range(2, resume_page + 1):
+                    next_btn = None
+                    pagination = page.query_selector(
+                        'nav[aria-label="pagination navigation"].MuiPagination-root'
+                    )
+                    if pagination:
+                        next_btn = pagination.query_selector(
+                            f'button[aria-label="Go to page {target_page}"]'
+                        )
+                    if not next_btn:
+                        next_btn = page.query_selector('ul.pagination a.page-link[aria-label="Next"]')
+                    if not next_btn:
+                        next_btn = page.query_selector('ul.pagination a.page-link[aria-label="Siguiente"]')
+                    if not next_btn:
+                        next_btn = page.query_selector('button[aria-label="Go to next page"]')
+                    if not next_btn or _is_disabled_pagination_control(next_btn):
+                        resume_ok = False
+                        break
+                    try:
+                        next_btn.click()
+                    except Exception:
+                        resume_ok = False
+                        break
+                    changed = False
+                    for _ in range(20):
+                        page.wait_for_timeout(400)
+                        ids_now = _visible_ids_for_resume()
+                        if ids_now and ids_now != ids_before_resume:
+                            changed = True
+                            ids_before_resume = ids_now
+                            break
+                    if not changed:
+                        resume_ok = False
+                        break
+                if resume_ok:
+                    current_url = page.url
+                    network_cursor = len(network_events)
+                    report["resumed_from_checkpoint"] = True
+                    report["resume_from_page"] = resume_page
+                else:
+                    stop_reason = "RESUME_NAVIGATION_FAILED"
+                    report.update({
+                        "discovery_degraded": True,
+                        "run_aborted": True,
+                        "abort_reason": stop_reason,
+                        "resume_navigation_failed": True,
+                    })
+                    all_page_reports.extend(page_reports)
+                    search_reports.append({
+                        "search_url": start_url,
+                        "pages_fetched": len(page_reports),
+                        "pages_attempted": len(page_reports),
+                        "unique_listings": len(discovered),
+                        "stop_reason": stop_reason,
+                    })
+                    break
 
             while True:
                 if max_pages is not None and pages_visited >= max_pages:

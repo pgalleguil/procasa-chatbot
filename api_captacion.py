@@ -2993,6 +2993,7 @@ def distribute_sourced_leads(
     distribution_lock=None,
     dry_run=False,
     target_executive_id=None,
+    target_executive_ids=None,
     candidate_listing_ids=None,
     candidate_portal=None,
 ):
@@ -3041,6 +3042,7 @@ def distribute_sourced_leads(
         "skipped_capture_date_unavailable": 0,
         "errors": 0,
         "target_executive_id": str(target_executive_id or ""),
+        "target_executive_ids": [str(value) for value in (target_executive_ids or []) if value],
         "candidate_listing_ids": len(set(str(value) for value in (candidate_listing_ids or []) if value)),
         "failure_stage": "",
         "phase_ms": {},
@@ -3080,11 +3082,18 @@ def distribute_sourced_leads(
             "is_active": True,
             "comunas_interes_norm": {"$exists": True, "$ne": []},
         }
-        if target_executive_id:
-            target_values = [target_executive_id]
-            target_text = str(target_executive_id)
-            if ObjectId.is_valid(target_text):
-                target_values.append(ObjectId(target_text))
+        requested_targets = list(dict.fromkeys(
+            str(value).strip()
+            for value in ([target_executive_id] if target_executive_id else [])
+            + list(target_executive_ids or [])
+            if value is not None and str(value).strip()
+        ))
+        if requested_targets:
+            target_values = []
+            for target_text in requested_targets:
+                target_values.append(target_text)
+                if ObjectId.is_valid(target_text):
+                    target_values.append(ObjectId(target_text))
             agents_query["_id"] = {"$in": target_values}
         distribution_stage = "active_executives_query"
         phase_start = _perf_time.perf_counter()
@@ -3311,7 +3320,8 @@ def distribute_sourced_leads(
         metrics["failure_stage"] = distribution_stage
         logger.exception(
             "[DISTRIBUCION] run=%s failed_stage=%s target_executive=%s scoped_candidates=%s",
-            run_id, distribution_stage, target_executive_id or "GLOBAL",
+            run_id, distribution_stage,
+            target_executive_id or (f"{len(target_executive_ids)}_EXECUTIVES" if target_executive_ids else "GLOBAL"),
             metrics.get("candidate_listing_ids", 0),
         )
         raise

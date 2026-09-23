@@ -330,7 +330,7 @@ def normalize_classification(
 
 
 COMUNA_TO_REGION = {
-    "la florida": "Metropolitana", "santiago": "Metropolitana", "las condes": "Metropolitana",
+    "la florida": "Metropolitana", "santiago": "Metropolitana", "santiago centro": "Metropolitana", "las condes": "Metropolitana",
     "providencia": "Metropolitana", "nunoa": "Metropolitana", "vitacura": "Metropolitana",
     "lo barnechea": "Metropolitana", "lo-barnechea": "Metropolitana", "maipu": "Metropolitana",
     "puente alto": "Metropolitana", "la reina": "Metropolitana", "penalolen": "Metropolitana",
@@ -343,12 +343,20 @@ COMUNA_TO_REGION = {
     "san ramon": "Metropolitana", "talagante": "Metropolitana", "til til": "Metropolitana",
     "colina": "Metropolitana", "lampa": "Metropolitana", "calera de tango": "Metropolitana",
     "valparaiso": "Valparaiso", "vina del mar": "Valparaiso", "viña del mar": "Valparaiso",
-    "quilpue": "Valparaiso", "quilpué": "Valparaiso",
+    "quilpue": "Valparaiso", "quilpué": "Valparaiso", "concon": "Valparaiso",
+    "concón": "Valparaiso", "villa alemana": "Valparaiso",
     "coquimbo": "Coquimbo", "la serena": "Coquimbo",
     "antofagasta": "Antofagasta",
     "concepcion": "Biobio", "concepción": "Biobio",
     "temuco": "Araucania", "villarrica": "Araucania", "pucon": "Araucania", "pucón": "Araucania",
     "puerto varas": "Los Lagos", "puerto montt": "Los Lagos",
+    "talca": "Maule", "san clemente": "Maule", "linares": "Maule",
+    "maule": "Maule", "pelarco": "Maule", "rio claro": "Maule", "río claro": "Maule",
+    "san rafael": "Maule", "colbun": "Maule", "colbún": "Maule", "longavi": "Maule",
+    "longaví": "Maule", "san javier": "Maule", "villa alegre": "Maule",
+    "yerbas buenas": "Maule", "molina": "Maule", "curico": "Maule", "curicó": "Maule",
+    "chillan": "Nuble", "chillán": "Nuble", "chillan viejo": "Nuble",
+    "chillán viejo": "Nuble", "san carlos": "Nuble", "quillon": "Nuble", "quillón": "Nuble",
 }
 
 

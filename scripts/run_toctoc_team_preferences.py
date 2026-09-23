@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TOCTOC_RUNNER = ROOT / "scraper_toctoc" / "run_toctoc.py"
+TOCTOC_RUNNER = ROOT / "scrapers" / "scraper_toctoc" / "run_toctoc.py"
 
 
 def load_team_communes() -> list[str]:

@@ -356,3 +356,56 @@ def test_global_distributor_is_portal_agnostic_and_bounded(monkeypatch):
     assert {row["origen"] for row in assigned} == {"toctoc"}
     assert metrics[-1]["lock_acquired"] is True
     assert metrics[-1]["assigned"] == 14
+
+
+def test_distributor_can_be_scoped_to_an_explicit_executive_group(monkeypatch):
+    from config import Config
+    import chatbot.storage as storage
+
+    db = mongomock.MongoClient()["test"]
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    import api_captacion
+    monkeypatch.setattr(api_captacion, "get_db", lambda: db)
+    monkeypatch.setattr(api_captacion, "get_captacion_collection", lambda _db: db[Config.CAPTACION_COLLECTION_NAME])
+
+    target_ids = [ObjectId(), ObjectId()]
+    outside_id = ObjectId()
+    for index, user_id in enumerate([*target_ids, outside_id]):
+        db["usuarios"].insert_one({
+            "_id": user_id,
+            "nombre": f"Agent {index}",
+            "rol": "agente",
+            "is_active": True,
+            "comunas_interes_norm": ["santiago"],
+        })
+    db[Config.CAPTACION_COLLECTION_NAME].insert_one({
+        "_id": ObjectId(),
+        "origen": "toctoc",
+        "listing_id": "targeted-listing",
+        "title": "Departamento en venta",
+        "description": "Publicación de propietario con información suficiente.",
+        "comuna_slug": "santiago",
+        "created_at": datetime.now(timezone.utc),
+        "classification": {
+            "state": "DUEÑO_PROBABLE",
+            "source": "rules",
+            "owner_probability": 0.8,
+            "assignment_ready": True,
+            "exclude_from_assignment": False,
+        },
+        "pipeline_complete": True,
+        "gestion": {"estado": "NUEVO", "ejecutivo_id": None},
+    })
+    monkeypatch.setattr(Config, "PHONE_LEARNING_ENABLED", False)
+
+    preview = api_captacion.distribute_sourced_leads(
+        trigger_source="targeted-team-test",
+        candidate_listing_ids=["targeted-listing"],
+        candidate_portal="toctoc",
+        target_executive_ids=[str(value) for value in target_ids],
+        dry_run=True,
+    )
+
+    assert preview["active_agents"] == 2
+    assert preview["batch_selected"] == 1
+    assert preview["selected_preview"][0]["executive_id"] in {str(value) for value in target_ids}

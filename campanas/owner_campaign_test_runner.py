@@ -487,7 +487,7 @@ buttons.forEach(button=>button.addEventListener('click',async()=>{{
   buttons.forEach(item=>item.disabled=true); show('Procesando acción administrativa…'); previewNode.hidden=true;
   let criticalStop=false;
   try{{
-    const response=await fetch('/owner-campaign-e2e-runner',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','Accept':'application/json, text/html'}},body:JSON.stringify({{action}})}});
+    const response=await fetch('/captacion/test-runner',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','Accept':'application/json, text/html'}},body:JSON.stringify({{action}})}});
     const contentType=response.headers.get('content-type')||'';
     if(!response.ok){{const body=await response.text();criticalStop=true;show('ERROR HTTP '+response.status+'\n'+body);return;}}
     if(button.dataset.kind==='preview'){{

@@ -30,6 +30,10 @@ from scrapers.scraper_toctoc.discovery import (  # noqa: E402
     _discovery_failure_category,
 )
 from scrapers.scraper_toctoc.discovery import _merge_embedded_metadata  # noqa: E402
+from scrapers.scraper_toctoc.discovery import (  # noqa: E402
+    _requires_live_spa_pagination,
+    _should_switch_to_live_spa_pagination,
+)
 
 
 def test_merge_embedded_metadata_falls_back_to_listing_id_for_price():
@@ -217,6 +221,20 @@ def test_discovery_health_requires_pagination_to_be_complete_when_expected_pages
 def test_embedded_preload_batch_does_not_reduce_expected_ui_pages():
     assert _pagination_page_size(0, 260) == 20
     assert _pagination_page_size(20, 260) == 20
+
+
+def test_large_result_searches_must_use_live_spa_for_batches_beyond_260():
+    assert _requires_live_spa_pagination(260) is False
+    assert _requires_live_spa_pagination(261) is True
+    assert _requires_live_spa_pagination(2492) is True
+    assert _requires_live_spa_pagination(None) is False
+
+
+def test_large_scoped_ssr_search_keeps_its_real_paginator():
+    assert _should_switch_to_live_spa_pagination(750, True) is False
+    assert _should_switch_to_live_spa_pagination(750, False) is True
+    assert _should_switch_to_live_spa_pagination(260, False) is False
+    assert _should_switch_to_live_spa_pagination(None, False) is False
 
 
 def test_results_network_contract_requires_successful_browser_request():

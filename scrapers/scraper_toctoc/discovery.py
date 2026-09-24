@@ -585,6 +585,28 @@ def _pagination_page_size(dom_result_count: int, embedded_count: int) -> int:
     return 20
 
 
+def _requires_live_spa_pagination(expected_results: int | None) -> bool:
+    """The legacy SSR route only preloads the first 260-result browser batch."""
+    try:
+        return int(expected_results or 0) > 260
+    except (TypeError, ValueError):
+        return False
+
+
+def _should_switch_to_live_spa_pagination(
+    expected_results: int | None, ssr_pagination_present: bool
+) -> bool:
+    """Switch routes only when a large SSR result page lacks its own pager.
+
+    The SSR page can expose a real, scoped Playwright paginator even when its
+    embedded payload is capped. Forcing the SPA location picker in that case
+    re-applies a stale saved address and can broaden the search. Prefer the
+    scoped SSR page's visible controls; use the SPA fallback only if those
+    controls are absent.
+    """
+    return _requires_live_spa_pagination(expected_results) and not bool(ssr_pagination_present)
+
+
 def _summarize_network_contract(events: list[dict]) -> dict:
     """Summarize the results request without retaining secrets or bodies."""
     result_events = [
@@ -1887,6 +1909,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                 break
 
             try:
+                spa_scope_active = False
                 prepared, prepare_reason = _prepare_ssr_scope(page, current_url)
                 if not prepared:
                     # A commune without an SEO directory (notably Pedro
@@ -1897,6 +1920,7 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                     if prepare_reason in {"HTTP_404_ROUTE_NOT_FOUND", "PAGINATION_CONTROL_NOT_MOUNTED"}:
                         prepared, spa_reason = _prepare_live_scope(page, current_url)
                         if prepared:
+                            spa_scope_active = True
                             report.setdefault("spa_scope_fallbacks", []).append({
                                 "search_url": start_url,
                                 "reason": prepare_reason,
@@ -1917,7 +1941,77 @@ def discover_via_playwright(start_urls, max_pages, max_urls, batch_id, discovere
                             "status": 404 if prepare_reason == "HTTP_404_ROUTE_NOT_FOUND" else None,
                             "reason": prepare_reason,
                         })
+                        _capture_failure_diagnostic(
+                            current_url,
+                            report.get("failure_category"),
+                            prepare_reason,
+                            http_status=latest_readiness.get("http_status"),
+                            last_good_page=pages_visited,
+                        )
                         break
+                if prepared and not spa_scope_active:
+                    readiness_rows = report.get("page_readiness") or []
+                    current_readiness = readiness_rows[-1] if readiness_rows else {}
+                    expected_for_scope = current_readiness.get("expected_results")
+                    if _should_switch_to_live_spa_pagination(
+                        expected_for_scope,
+                        bool(current_readiness.get("pagination_present")),
+                    ):
+                        # Use the browser's live search view only if the scoped
+                        # SEO/SSR page has no visible paginator. When the SSR
+                        # route already provides one, keep that page and its
+                        # verified commune context instead of reapplying a
+                        # potentially stale saved location from the SPA form.
+                        spa_prepared, spa_reason = _prepare_live_scope(page, current_url)
+                        if spa_prepared:
+                            spa_scope_active = True
+                            report.setdefault("pagination_mode_switches", []).append({
+                                "search_url": _safe_diagnostic_url(start_url),
+                                "from": "seo_ssr_route",
+                                "to": "live_spa_route",
+                                "expected_results": expected_for_scope,
+                                "reason": "SSR_ROUTE_PAGINATOR_NOT_MOUNTED",
+                                "final_url": _safe_diagnostic_url(page.url),
+                            })
+                            try:
+                                page.wait_for_function(
+                                    """() => {
+                                      const listing = [...document.querySelectorAll('a[href]')].some(a => {
+                                        try {
+                                          const p = new URL(a.href, location.href).pathname;
+                                          return /\\/(propiedades|propiedad|venta|arriendo)\\//i.test(p)
+                                            && /(\\/\\d+$|[-_]\\d+$|\\/[a-z]_[a-f0-9]{20,}$|\\/[a-f0-9]{20,}$)/i.test(p);
+                                        } catch (_) { return false; }
+                                      });
+                                      const body = (document.body && document.body.innerText || '').replace(/\\s+/g, ' ');
+                                      const zero = /\\b0\\s+(propiedades|avisos|publicaciones|resultados)\\s+encontrad[oa]s?\\b/i.test(body)
+                                        || /\\bno\\s+(se\\s+)?encontraron\\s+(propiedades|avisos|publicaciones|resultados)\\b/i.test(body);
+                                      return listing || zero;
+                                    }""",
+                                    timeout=20000,
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            stop_reason = f"LARGE_RESULT_SET_SPA_SCOPE_FAILED:{spa_reason}"
+                            report.update({
+                                "discovery_degraded": True,
+                                "run_aborted": True,
+                                "abort_reason": stop_reason,
+                                "failure_category": _discovery_failure_category("SPA_SCOPE_FAILED"),
+                                "pagination_start_route": "seo_ssr_route",
+                                "pagination_spa_route_failed": spa_reason,
+                            })
+                            _capture_failure_diagnostic(
+                                current_url,
+                                report.get("failure_category"),
+                                stop_reason,
+                                http_status=current_readiness.get("http_status"),
+                                last_good_page=pages_visited,
+                            )
+                            break
+                if spa_scope_active:
+                    report["pagination_start_route"] = "live_spa_route"
                 try:
                     page.wait_for_selector(
                         'a[href*="/propiedad/"], a[href*="/propiedades/"], '

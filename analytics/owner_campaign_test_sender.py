@@ -184,6 +184,7 @@ def run_test_batch(
     dry_run: bool = False,
     db: Any = None,
     health_reader=delivery_unknown_count,
+    require_delivery_unknown_baseline: bool = False,
 ) -> dict[str, Any]:
     selected = parse_cases(cases) if isinstance(cases, str) else cases
     if selected not in ALLOWED_BATCHES:
@@ -201,6 +202,8 @@ def run_test_batch(
         delivery_before = health_reader()
     except TestCampaignCLIError as exc:
         delivery_before_error = str(exc)
+    if require_delivery_unknown_baseline and delivery_before != DELIVERY_UNKNOWN_BASELINE:
+        raise TestCampaignCLIError("delivery_unknown_baseline_not_confirmed")
     if delivery_before is not None and delivery_before > DELIVERY_UNKNOWN_BASELINE:
         raise TestCampaignCLIError("new_delivery_unknown_present_before_send")
 

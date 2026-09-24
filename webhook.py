@@ -5852,6 +5852,20 @@ async def _require_captacion_report_admin(request: Request):
     return user_doc
 
 
+@app.get("/admin/owner-campaign-test", response_class=HTMLResponse, include_in_schema=False)
+async def view_owner_campaign_test_admin(request: Request):
+    from campanas.owner_campaign_admin_panel import handle_panel_get
+
+    return await handle_panel_get(request, _require_captacion_report_admin)
+
+
+@app.post("/admin/owner-campaign-test/run", response_class=HTMLResponse, include_in_schema=False)
+async def run_owner_campaign_test_admin(request: Request):
+    from campanas.owner_campaign_admin_panel import handle_panel_run
+
+    return await handle_panel_run(request, _require_captacion_report_admin)
+
+
 @app.get("/captacion/reporte-semanal", response_class=HTMLResponse)
 async def view_captacion_weekly_report(request: Request, report_id: str = Query(None)):
     await _require_captacion_report_admin(request)

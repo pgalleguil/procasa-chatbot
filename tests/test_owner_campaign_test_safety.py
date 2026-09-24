@@ -305,7 +305,7 @@ def test_advisor_cta_writes_only_test_events_and_no_legacy_response_collections(
     result = actions.process_test_action(_action_token(action=actions.ADVISOR_ACTION), db=db)
     assert result["event"] == "advisor_review_requested"
     assert [event["event_type"] for event in db.docs[actions.EVENT_COLLECTION]] == [
-        "cta_clicked", "advisor_review_requested"
+        "advisor_review_requested"
     ]
     assert all(event["executive"] == "Ejecutivo PROCASA" for event in db.docs[actions.EVENT_COLLECTION])
     assert "contactos" not in db.requested

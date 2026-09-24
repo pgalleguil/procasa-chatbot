@@ -297,14 +297,18 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
     }:
         raise OwnerCampaignTestError("advisor_review_not_allowed")
 
-    clicked_id = _insert_test_event(
-        database,
-        event_type="cta_clicked",
-        property_code=code,
-        executive=executive,
-        token=token,
-    )
     event_type = "price_authorized" if action == ACCEPT_PRICE_ACTION else "advisor_review_requested"
+    event_ids = []
+    if action == ACCEPT_PRICE_ACTION:
+        event_ids.append(
+            _insert_test_event(
+                database,
+                event_type="cta_clicked",
+                property_code=code,
+                executive=executive,
+                token=token,
+            )
+        )
     outcome_id = _insert_test_event(
         database,
         event_type=event_type,
@@ -312,6 +316,7 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
         executive=executive,
         token=token,
     )
+    event_ids.append(outcome_id)
 
     if action == ACCEPT_PRICE_ACTION:
         operation_after, price_after = _live_price_snapshot(database, code)
@@ -321,7 +326,7 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
         "campaign_id": TEST_CAMPAIGN_ID,
         "property_code": code,
         "event": event_type,
-        "event_ids": [clicked_id, outcome_id],
+        "event_ids": event_ids,
         "test_mode": True,
         "live_price_before": price_before,
         "live_price_after": price_after,

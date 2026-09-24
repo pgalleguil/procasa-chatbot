@@ -17,6 +17,7 @@ from campanas import owner_campaign_test_actions as actions
 from campanas import owner_campaign_test_runtime as runtime
 from campanas import owner_campaign_test_sender as sender
 from campanas import owner_campaign_test_runner as runner
+from analytics import owner_campaign_test_sender as cli
 
 
 SECRET = "owner-campaign-e2e-secret-for-tests"
@@ -214,6 +215,60 @@ def test_live_builder_selects_only_requested_operation_price_block():
     assert runtime.operation_price_block(document, requested_operation="ARRIENDO")["precio_uf"] == 25
     sale_only = {"tipo_operacion": {"venta": True, "arriendo": False, "precio_venta": {"precio_uf": 5000}}}
     assert runtime.operation_price_block(sale_only, requested_operation="ARRIENDO") is None
+
+
+@pytest.mark.parametrize(("value", "expected"), [
+    ("A,B,D", ("A", "B", "D")),
+    ("C,E", ("C", "E")),
+])
+def test_independent_cli_accepts_only_the_two_explicit_batches(value, expected):
+    assert cli.parse_cases(value) == expected
+
+
+@pytest.mark.parametrize("value", ["A", "A,B", "A,B,C,D,E", "C,E,A", "A,,B,D", "5641,16521,16527"])
+def test_independent_cli_rejects_other_case_batches(value):
+    with pytest.raises(cli.TestCampaignCLIError, match="cases_must_be_A_B_D_or_C_E"):
+        cli.parse_cases(value)
+
+
+def test_independent_cli_phase_gate_requires_completed_initial_batch():
+    db = FakeDB()
+    cli._validate_phase(db, cli.INITIAL_CASES)
+    with pytest.raises(cli.TestCampaignCLIError, match="remaining_batch_requires_completed_A_B_D"):
+        cli._validate_phase(db, cli.REMAINING_CASES)
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [
+        {
+            "campaign_id": actions.TEST_CAMPAIGN_ID,
+            "property_code": code,
+            "test_mode": True,
+            "actual_recipient_email": actions.TEST_RECIPIENT,
+            "delivery_status": "test_sent",
+            "smtp_accepted": True,
+        }
+        for code in ("5641", "16521", "16527")
+    ]
+    cli._validate_phase(db, cli.REMAINING_CASES)
+
+
+def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
+    db = FakeDB()
+    cases = [_case(case_id) for case_id in cli.INITIAL_CASES]
+    prepared = [
+        sender.PreparedTestMessage(case, "[TEST PROCASA] test", "<html/>", "test", "report", "action")
+        for case in cases
+    ]
+    monkeypatch.setattr(cli, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(cli, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(cli, "build_owner_campaign_test_cases_live", lambda *_a, **_k: cases)
+    monkeypatch.setattr(cli, "prepare_test_messages", lambda _cases: prepared)
+    monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
+    result = cli.run_test_batch(cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6)
+    assert result["status"] == "preflight_passed_no_send"
+    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
+    assert result["preflight"]["owner_recipient_blocked"] is True
+    assert result["preflight"]["live_price_mutation_blocked"] is True
+    assert result["test_emails_sent"] == 0
+    assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
 
 
 def test_runner_uses_a_b_d_then_c_e_and_blocks_partial_batches():

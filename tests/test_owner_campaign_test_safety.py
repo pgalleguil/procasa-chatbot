@@ -231,6 +231,26 @@ def test_independent_cli_rejects_other_case_batches(value):
         cli.parse_cases(value)
 
 
+@pytest.mark.parametrize(("payload", "expected"), [
+    ({"cases": "A,B,D", "dry_run": True}, (("A", "B", "D"), True)),
+    ({"cases": "C,E", "dry_run": False}, (("C", "E"), False)),
+])
+def test_internal_trigger_accepts_only_fixed_case_batches(payload, expected):
+    assert cli.validate_trigger_payload(payload) == expected
+
+
+@pytest.mark.parametrize("payload", [
+    {"cases": "A,B,D", "dry_run": True, "recipient": OWNER_EMAIL},
+    {"cases": "A,B,D", "dry_run": True, "property_code": "5641"},
+    {"cases": "A,B,D", "dry_run": True, "campaign_id": "other"},
+    {"cases": "A,B,D", "dry_run": "false"},
+    {"cases": "A,,B,D", "dry_run": True},
+])
+def test_internal_trigger_rejects_editable_or_malformed_payload(payload):
+    with pytest.raises(cli.TestCampaignCLIError, match="trigger_payload_invalid|cases_must_be_A_B_D_or_C_E"):
+        cli.validate_trigger_payload(payload)
+
+
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)
@@ -341,17 +361,14 @@ def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
         assert f"{label}: PASS" in preview
 
 
-def test_runner_get_page_uses_same_admin_guard_and_has_no_send_side_effect():
+def test_captacion_runner_page_is_not_exposed():
     source = Path(__file__).parents[1] / "webhook.py"
     tree = ast.parse(source.read_text(encoding="utf-8-sig"))
-    route = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "view_owner_campaign_test_runner")
-    body = ast.unparse(route)
-    assert "_require_captacion_report_admin" in body
-    assert "render_admin_runner_ui" in body
-    assert "handle_admin_runner_request" not in body
-    assert "@app.get('/captacion/test-runner'" in body
-    detail_route = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "view_captacion_detail_route")
-    assert route.lineno < detail_route.lineno
+    assert not any(
+        isinstance(node, ast.AsyncFunctionDef) and node.name == "view_owner_campaign_test_runner"
+        for node in tree.body
+    )
+    assert "@app.get(\"/captacion/test-runner\"" not in source.read_text(encoding="utf-8-sig")
 
 
 def test_runner_refuses_campaign_ledger_rows_for_another_test_recipient():
@@ -853,7 +870,7 @@ def test_public_test_action_route_is_token_only_and_bypasses_legacy_handler():
     assert "_require_captacion_report_admin" not in body
 
 
-def test_internal_runner_route_uses_existing_admin_guard_only():
+def test_internal_runner_route_uses_existing_admin_guard_and_cli_runner():
     source = Path(__file__).parents[1] / "webhook.py"
     tree = ast.parse(source.read_text(encoding="utf-8-sig"))
     route = next(
@@ -862,5 +879,8 @@ def test_internal_runner_route_uses_existing_admin_guard_only():
     )
     body = ast.unparse(route)
     assert "/internal/owner-campaign-test-runner" in body
-    assert "handle_admin_runner_request" in body
+    assert "run_test_batch" in body
+    assert "validate_trigger_payload" in body
     assert "_require_captacion_report_admin" in body
+    assert "/captacion/test-runner" not in body
+    assert "from campanas.owner_campaign_test_runner" not in body

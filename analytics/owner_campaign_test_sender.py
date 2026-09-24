@@ -54,6 +54,15 @@ def parse_cases(value: str) -> tuple[str, ...]:
     return cases
 
 
+def validate_trigger_payload(payload: Any) -> tuple[tuple[str, ...], bool]:
+    """Accept only the minimal admin-trigger body; never caller-selected data."""
+    if not isinstance(payload, Mapping) or set(payload) != {"cases", "dry_run"}:
+        raise TestCampaignCLIError("trigger_payload_invalid")
+    if not isinstance(payload.get("cases"), str) or not isinstance(payload.get("dry_run"), bool):
+        raise TestCampaignCLIError("trigger_payload_invalid")
+    return parse_cases(payload["cases"]), payload["dry_run"]
+
+
 def mass_send_enabled() -> bool:
     return os.getenv(MASS_SEND_ENV, "false").strip().casefold() in {"true", "1", "yes", "on"}
 

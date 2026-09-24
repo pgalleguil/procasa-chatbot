@@ -5373,17 +5373,6 @@ async def open_followup_link(request: Request, signed_token: str):
             raise HTTPException(status_code=403, detail=code)
         raise HTTPException(status_code=410, detail=code)
 
-@app.get("/captacion/test-runner", response_class=HTMLResponse, include_in_schema=False)
-async def view_owner_campaign_test_runner(request: Request):
-    """ADMIN-only page for the fixed-recipient E2E test runner; GET has no side effects."""
-    from campanas.owner_campaign_test_runner import _mass_send_enabled, render_admin_runner_ui, test_mode_enabled
-
-    await _require_captacion_report_admin(request)
-    if not test_mode_enabled() or _mass_send_enabled():
-        raise HTTPException(status_code=404, detail="Runner no disponible")
-    return render_admin_runner_ui()
-
-
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(
     request: Request,
@@ -5830,12 +5819,30 @@ async def _require_captacion_report_admin(request: Request):
 
 
 @app.post("/internal/owner-campaign-test-runner", include_in_schema=False)
-@app.post("/captacion/test-runner", include_in_schema=False)
 async def api_owner_campaign_test_runner(request: Request):
-    """Existing-admin-session-only runner; request cannot choose recipients/codes."""
-    from campanas.owner_campaign_test_runner import handle_admin_runner_request
+    """Temporary admin-only trigger that delegates to the standalone runner."""
+    await _require_captacion_report_admin(request)
+    from analytics.owner_campaign_test_sender import (
+        TestCampaignCLIError,
+        run_test_batch,
+        validate_trigger_payload,
+    )
 
-    return await handle_admin_runner_request(request, _require_captacion_report_admin)
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="trigger_payload_invalid") from exc
+    try:
+        cases, dry_run = validate_trigger_payload(payload)
+        return await asyncio.to_thread(run_test_batch, cases, test_mode=True, dry_run=dry_run)
+    except TestCampaignCLIError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(
+            "[OWNER_CAMPAIGN_TEST_RUNNER] failed error_type=%s",
+            type(exc).__name__,
+        )
+        raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
 
 
 @app.get("/captacion/reporte-semanal", response_class=HTMLResponse)

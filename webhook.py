@@ -1687,6 +1687,40 @@ async def get_current_user_doc(request: Request):
 async def renew_session(user_name: str = Depends(get_current_user)):
     return {"status": "ok", "user": user_name}
 
+
+@app.post("/internal/owner-campaign-test-execute", include_in_schema=False)
+async def api_owner_campaign_test_execute(
+    request: Request,
+    trigger_secret: str | None = Header(default=None, alias="X-Owner-Campaign-Test-Secret"),
+):
+    """Narrow, independently authenticated trigger for the fixed-recipient test runner."""
+    from analytics.owner_campaign_test_sender import (
+        TestCampaignCLIError,
+        parse_trigger_request,
+        run_test_batch,
+        trigger_secret_matches,
+    )
+
+    if not trigger_secret_matches(trigger_secret):
+        raise HTTPException(status_code=403, detail="forbidden")
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="trigger_payload_invalid") from exc
+    try:
+        cases, dry_run = parse_trigger_request(payload)
+        result = await asyncio.to_thread(run_test_batch, cases, test_mode=True, dry_run=dry_run)
+        return JSONResponse(
+            jsonable_encoder(result),
+            headers={"Cache-Control": "private, no-store"},
+        )
+    except TestCampaignCLIError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("[OWNER_CAMPAIGN_TEST_EXECUTE] failed error_type=%s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
+
+
 # ========================= 3. LOGIN CON GOOGLE =========================
 
 def _safe_login_next(value: str | None) -> str | None:

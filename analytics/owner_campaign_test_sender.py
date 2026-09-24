@@ -14,6 +14,7 @@ are delegated to the isolated campaign test sender.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 from typing import Any, Mapping, Sequence
@@ -33,6 +34,7 @@ from campanas.owner_campaign_test_sender import (
 
 
 MASS_SEND_ENV = "OWNER_CAMPAIGN_MASS_SEND_ENABLED"
+TRIGGER_SECRET_ENV = "OWNER_CAMPAIGN_TEST_TRIGGER_SECRET"
 DELIVERY_UNKNOWN_BASELINE = 6
 INITIAL_CASES = ("A", "B", "D")
 REMAINING_CASES = ("C", "E")
@@ -52,6 +54,31 @@ def parse_cases(value: str) -> tuple[str, ...]:
     if cases not in ALLOWED_BATCHES:
         raise TestCampaignCLIError("cases_must_be_A_B_D_or_C_E")
     return cases
+
+
+def parse_trigger_request(payload: Any) -> tuple[tuple[str, ...], bool]:
+    """Parse the deliberately tiny HTTP trigger contract; reject all overrides."""
+    if not isinstance(payload, Mapping) or set(payload) != {"batch", "mode"}:
+        raise TestCampaignCLIError("trigger_payload_invalid")
+    batch = payload.get("batch")
+    mode = payload.get("mode")
+    batches = {"ABD": INITIAL_CASES, "CE": REMAINING_CASES}
+    if not isinstance(batch, str) or batch not in batches:
+        raise TestCampaignCLIError("trigger_batch_invalid")
+    if not isinstance(mode, str) or mode not in {"dry-run", "send"}:
+        raise TestCampaignCLIError("trigger_mode_invalid")
+    return batches[batch], mode == "dry-run"
+
+
+def trigger_secret_matches(provided: str | None, expected: str | None = None) -> bool:
+    """Fail closed unless the independent server-side trigger secret is present and matches."""
+    expected = os.getenv(TRIGGER_SECRET_ENV, "") if expected is None else expected
+    if not isinstance(provided, str) or not isinstance(expected, str) or len(expected) < 32:
+        return False
+    try:
+        return hmac.compare_digest(expected.encode("utf-8"), provided.encode("utf-8"))
+    except UnicodeError:
+        return False
 
 
 def mass_send_enabled() -> bool:
@@ -158,8 +185,13 @@ def run_test_batch(
 
     database = _database(db)
     _validate_phase(database, selected)
-    delivery_before = health_reader()
-    if delivery_before > DELIVERY_UNKNOWN_BASELINE:
+    delivery_before: int | None = None
+    delivery_before_error: str | None = None
+    try:
+        delivery_before = health_reader()
+    except TestCampaignCLIError as exc:
+        delivery_before_error = str(exc)
+    if delivery_before is not None and delivery_before > DELIVERY_UNKNOWN_BASELINE:
         raise TestCampaignCLIError("new_delivery_unknown_present_before_send")
 
     live_cases = build_owner_campaign_test_cases_live(database, case_ids=selected)
@@ -186,6 +218,7 @@ def run_test_batch(
         },
         "cases": _safe_prepared_summary(prepared),
         "delivery_unknown_before": delivery_before,
+        "delivery_monitor_error_before": delivery_before_error,
         "owner_emails_sent": 0,
         "live_property_price_changed": False,
     }
@@ -208,9 +241,15 @@ def run_test_batch(
         delivery_after = None
         monitor_error = str(exc)
     new_unknown = max(0, delivery_after - DELIVERY_UNKNOWN_BASELINE) if delivery_after is not None else None
+    if monitor_error is not None:
+        status = "sent_delivery_monitor_unavailable"
+    elif new_unknown:
+        status = "sent_delivery_monitor_review"
+    else:
+        status = "test_messages_sent"
     return {
         **common,
-        "status": "test_messages_sent" if monitor_error is None and not new_unknown else "sent_delivery_monitor_review",
+        "status": status,
         "test_emails_sent": len(results),
         "results": results,
         "delivery_unknown_after": delivery_after,
@@ -244,7 +283,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         }, ensure_ascii=False))
         return 2
     print(json.dumps(result, ensure_ascii=False, default=str))
-    return 0 if result.get("status") in {"preflight_passed_no_send", "test_messages_sent"} else 3
+    return 0 if result.get("status") in {
+        "preflight_passed_no_send", "test_messages_sent", "sent_delivery_monitor_unavailable"
+    } else 3
 
 
 if __name__ == "__main__":

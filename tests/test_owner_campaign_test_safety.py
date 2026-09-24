@@ -231,6 +231,40 @@ def test_independent_cli_rejects_other_case_batches(value):
         cli.parse_cases(value)
 
 
+@pytest.mark.parametrize(("payload", "expected"), [
+    ({"batch": "ABD", "mode": "dry-run"}, ("A", "B", "D")),
+    ({"batch": "ABD", "mode": "send"}, ("A", "B", "D")),
+    ({"batch": "CE", "mode": "dry-run"}, ("C", "E")),
+    ({"batch": "CE", "mode": "send"}, ("C", "E")),
+])
+def test_http_trigger_accepts_only_named_batches_and_modes(payload, expected):
+    cases, _dry_run = cli.parse_trigger_request(payload)
+    assert cases == expected
+
+
+@pytest.mark.parametrize("payload", [
+    {"batch": "ABD", "mode": "send", "recipient": OWNER_EMAIL},
+    {"batch": "ABD", "mode": "send", "property_code": "5641"},
+    {"batch": "ABD", "mode": "send", "campaign_id": "other"},
+    {"batch": "A", "mode": "send"},
+    {"batch": "ABD", "mode": "execute"},
+    {"batch": "ABD", "mode": []},
+    {"batch": "ABD", "mode": "dry-run", "email": OWNER_EMAIL},
+])
+def test_http_trigger_rejects_overrides_and_unsupported_actions(payload):
+    with pytest.raises(cli.TestCampaignCLIError):
+        cli.parse_trigger_request(payload)
+
+
+def test_http_trigger_secret_uses_constant_time_comparison_and_fails_closed(monkeypatch):
+    monkeypatch.setenv(cli.TRIGGER_SECRET_ENV, "a" * 64)
+    assert cli.trigger_secret_matches("a" * 64)
+    assert not cli.trigger_secret_matches("b" * 64)
+    assert not cli.trigger_secret_matches(None)
+    monkeypatch.delenv(cli.TRIGGER_SECRET_ENV)
+    assert not cli.trigger_secret_matches("a" * 64)
+
+
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)
@@ -269,6 +303,64 @@ def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
     assert result["preflight"]["live_price_mutation_blocked"] is True
     assert result["test_emails_sent"] == 0
     assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
+
+
+def test_independent_cli_dry_run_continues_when_delivery_unknown_metric_is_unavailable(monkeypatch):
+    db = FakeDB()
+    cases = [_case(case_id) for case_id in cli.INITIAL_CASES]
+    prepared = [
+        sender.PreparedTestMessage(case, "[TEST PROCASA] test", "<html/>", "test", "report", "action")
+        for case in cases
+    ]
+    monkeypatch.setattr(cli, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(cli, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(cli, "build_owner_campaign_test_cases_live", lambda *_a, **_k: cases)
+    monkeypatch.setattr(cli, "prepare_test_messages", lambda _cases: prepared)
+    monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
+
+    def unavailable_metric():
+        raise cli.TestCampaignCLIError("delivery_unknown_metric_not_unambiguous")
+
+    result = cli.run_test_batch(
+        cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=unavailable_metric,
+    )
+    assert result["status"] == "preflight_passed_no_send"
+    assert result["delivery_unknown_before"] is None
+    assert result["delivery_monitor_error_before"] == "delivery_unknown_metric_not_unambiguous"
+    assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
+
+
+def test_independent_cli_send_does_not_fail_after_smtp_when_delivery_metric_is_unavailable(monkeypatch):
+    db = FakeDB()
+    cases = [_case(case_id) for case_id in cli.INITIAL_CASES]
+    prepared = [
+        sender.PreparedTestMessage(case, "[TEST PROCASA] test", "<html/>", "test", "report", "action")
+        for case in cases
+    ]
+    monkeypatch.setattr(cli, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(cli, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(cli, "build_owner_campaign_test_cases_live", lambda *_a, **_k: cases)
+    monkeypatch.setattr(cli, "prepare_test_messages", lambda _cases: prepared)
+    monkeypatch.setattr(cli, "send_test_messages", lambda selected, **_k: [
+        {
+            "case_id": case.case_id,
+            "status": "sent_to_test_recipient",
+            "smtp_accepted": True,
+            "recipient": actions.TEST_RECIPIENT,
+        }
+        for case in selected
+    ])
+
+    def unavailable_metric():
+        raise cli.TestCampaignCLIError("delivery_unknown_metric_not_unambiguous")
+
+    result = cli.run_test_batch(
+        cli.INITIAL_CASES, test_mode=True, dry_run=False, db=db, health_reader=unavailable_metric,
+    )
+    assert result["status"] == "sent_delivery_monitor_unavailable"
+    assert result["test_emails_sent"] == 3
+    assert result["delivery_unknown_after"] is None
+    assert result["new_delivery_unknown"] is None
 
 
 def test_runner_uses_a_b_d_then_c_e_and_blocks_partial_batches():
@@ -850,10 +942,22 @@ def test_public_test_action_route_is_token_only_and_bypasses_legacy_handler():
     assert "_require_captacion_report_admin" not in body
 
 
-def test_campaign_sender_has_no_http_or_captacion_trigger():
+def test_http_campaign_runner_is_secret_gated_and_bypasses_crm():
     source = Path(__file__).parents[1] / "webhook.py"
-    body = source.read_text(encoding="utf-8-sig")
-    assert "/internal/owner-campaign-test-runner" not in body
-    assert "api_owner_campaign_test_runner" not in body
+    tree = ast.parse(source.read_text(encoding="utf-8-sig"))
+    route = next(
+        node for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "api_owner_campaign_test_execute"
+    )
+    body = ast.unparse(route)
+    assert "/internal/owner-campaign-test-execute" in body
+    assert "X-Owner-Campaign-Test-Secret" in body
+    assert "trigger_secret_matches" in body
+    assert "parse_trigger_request" in body
+    assert "run_test_batch" in body
+    assert "_require_captacion_report_admin" not in body
+    assert "get_current_user_doc" not in body
+    assert "payload.get('recipient')" not in body
+    full_source = source.read_text(encoding="utf-8-sig")
+    assert "/internal/owner-campaign-test-runner" not in full_source
     assert "/captacion/test-runner" not in body
-    assert "analytics.owner_campaign_test_sender" not in body

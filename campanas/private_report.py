@@ -459,6 +459,19 @@ def _fallback_response(identity: Mapping[str, str] | None, property_code: str) -
     )
 
 
+def _record_test_report_opened(property_code: str, token: str) -> None:
+    """Record only the authorized test report-open event in the existing event store."""
+    from .owner_campaign_test_actions import (
+        OwnerCampaignTestError,
+        record_test_report_opened,
+    )
+
+    try:
+        record_test_report_opened(property_code, token=token)
+    except OwnerCampaignTestError as exc:
+        raise CampaignReportError(403, "test_report_open_not_authorized") from exc
+
+
 def _serve_campaign_report(token: str) -> Response:
     claims = _decode_token_claims(
         token,
@@ -469,6 +482,7 @@ def _serve_campaign_report(token: str) -> Response:
 
     property_code = claims["property_code"]
     try:
+        _record_test_report_opened(property_code, token)
         identity = _load_property_identity(property_code)
         if identity is None and claims["document_type"] == "COMMUNAL_MARKET_REPORT":
             return _fallback_response(None, property_code)

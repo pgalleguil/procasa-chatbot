@@ -117,11 +117,14 @@ class _Downloader:
 
 
 def _patch_runtime(monkeypatch, service, identity=PROPERTY_IDENTITY):
+    report_open_calls = []
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
     monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=service))
     monkeypatch.setattr(private_report, "MediaIoBaseDownload", _Downloader)
     monkeypatch.setattr(private_report, "_load_property_identity", lambda code: identity)
+    monkeypatch.setattr(private_report, "_record_test_report_opened", lambda code, _token: report_open_calls.append(code))
+    return report_open_calls
 
 
 def _pdf(file_id, filename):
@@ -146,6 +149,17 @@ async def test_individual_appraisal_is_resolved_by_property_code_and_never_by_to
     assert service._files.media_calls == [{"fileId": "server-only-drive-id", "supportsAllDrives": True}]
     assert service._files.list_calls[0]["q"].startswith(f"'{private_report.APPRAISALS_FOLDER_ID}' in parents")
     assert "server-only-drive-id" not in str(response.headers)
+
+
+@pytest.mark.asyncio
+async def test_valid_report_link_records_only_the_test_report_open_hook(monkeypatch):
+    service = _Service({private_report.APPRAISALS_FOLDER_ID: []})
+    report_open_calls = _patch_runtime(monkeypatch, service)
+
+    response = await private_report.handle_campaign_report(_token())
+
+    assert response.status_code == 200
+    assert report_open_calls == [CODE]
 
 
 @pytest.mark.asyncio

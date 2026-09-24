@@ -72,6 +72,7 @@ from contextlib import asynccontextmanager
 # === TUS MÓDULOS PROPIOS ===
 from campanas.handler import handle_campana_respuesta
 from campanas.private_report import handle_campaign_report
+from campanas.owner_campaign_test_actions import handle_test_action
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
@@ -4229,6 +4230,13 @@ async def campana_informe(request: Request, token: str = Query(...)):
     if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
         raise HTTPException(status_code=400, detail="Parámetros de informe inválidos")
     return await handle_campaign_report(token)
+
+
+@app.get("/campana/test-accion", include_in_schema=False)
+async def campana_test_accion(request: Request, token: str = Query(...)):
+    if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
+        raise HTTPException(status_code=400, detail="Parámetros de acción inválidos")
+    return await asyncio.to_thread(handle_test_action, token)
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

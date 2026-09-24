@@ -251,6 +251,7 @@ def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
     assert "pgalleguillos@procasa.cl" in body
     assert "window.confirm('Enviar exclusivamente a pgalleguillos@procasa.cl')" in body
     assert "method:'POST'" in body
+    assert "fetch('/captacion/test-runner'" in body
     assert "GENERATE_PREVIEWS_ABD" in body and "SEND_TEST_EMAILS_ABD" in body
     assert "GENERATE_PREVIEWS_CE" in body and "SEND_TEST_EMAILS_CE" in body
     assert "VERIFY_TEST_EVENTS" in body
@@ -270,6 +271,7 @@ def test_runner_get_page_uses_same_admin_guard_and_has_no_send_side_effect():
     assert "_require_captacion_report_admin" in body
     assert "render_admin_runner_ui" in body
     assert "handle_admin_runner_request" not in body
+    assert "@app.get('/captacion/test-runner'" in body
 
 
 def test_runner_refuses_campaign_ledger_rows_for_another_test_recipient():

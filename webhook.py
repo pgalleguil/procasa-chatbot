@@ -5819,6 +5819,7 @@ async def _require_captacion_report_admin(request: Request):
 
 
 @app.get("/internal/owner-campaign-test-runner", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/captacion/test-runner", response_class=HTMLResponse, include_in_schema=False)
 async def view_owner_campaign_test_runner(request: Request):
     """ADMIN-only page for the fixed-recipient E2E test runner; GET has no side effects."""
     from campanas.owner_campaign_test_runner import _mass_send_enabled, render_admin_runner_ui, test_mode_enabled
@@ -5830,6 +5831,7 @@ async def view_owner_campaign_test_runner(request: Request):
 
 
 @app.post("/internal/owner-campaign-test-runner", include_in_schema=False)
+@app.post("/captacion/test-runner", include_in_schema=False)
 async def api_owner_campaign_test_runner(request: Request):
     """Existing-admin-session-only runner; request cannot choose recipients/codes."""
     from campanas.owner_campaign_test_runner import handle_admin_runner_request

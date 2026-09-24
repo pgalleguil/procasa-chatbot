@@ -251,13 +251,20 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
     matches = []
     for user in db["usuarios"].find({}, {
         "_id": 0, "nombre": 1, "telefono": 1, "celular": 1, "phone": 1, "movil": 1,
-        "email": 1, "correo": 1, "mail": 1,
+        "email": 1, "correo": 1, "mail": 1, "rol": 1, "is_active": 1,
     }):
         if _fold(user.get("nombre")) == wanted:
             matches.append(user)
-    if len(matches) != 1:
+    active_agents = [
+        user for user in matches
+        if user.get("is_active") is True and str(user.get("rol") or "").strip().casefold() == "agente"
+    ]
+    if len(active_agents) == 1:
+        user = active_agents[0]
+    elif len(active_agents) > 1 or len(matches) != 1:
         raise LiveTestCaseBuildError("executive_user_match_not_unique")
-    user = matches[0]
+    else:
+        user = matches[0]
     email = str(user.get("email") or user.get("correo") or user.get("mail") or "").strip().casefold()
     phone = str(user.get("telefono") or user.get("celular") or user.get("phone") or user.get("movil") or "").strip()
     if not EMAIL_RE.fullmatch(email) or len(re.sub(r"\D", "", phone)) < 8:

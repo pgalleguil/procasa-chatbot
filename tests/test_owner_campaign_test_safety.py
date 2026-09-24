@@ -282,6 +282,26 @@ def test_fixed_recipient_abd_cases_do_not_require_owner_email_but_portfolios_do(
         sender.validate_explicit_cases([wrapper])
 
 
+def test_executive_resolution_prefers_the_unique_active_agent_when_names_repeat():
+    class UserCollection:
+        def find(self, *_args, **_kwargs):
+            return [
+                {"nombre": "Ejecutivo Duplicado", "rol": "agente", "is_active": False,
+                 "email": "inactive@example.test", "telefono": "+56 9 1111 1111"},
+                {"nombre": "EJECUTIVO Duplicado", "rol": "agente", "is_active": True,
+                 "email": "active@example.test", "telefono": "+56 9 2222 2222"},
+            ]
+
+    class UserDB:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return UserCollection()
+
+    result = runtime._resolve_executive(UserDB(), {"estado": {"ejecutivo": "Ejecutivo Duplicado"}})
+    assert result["email"] == "active@example.test"
+    assert result["phone"] == "+56 9 2222 2222"
+
+
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)

@@ -231,26 +231,6 @@ def test_independent_cli_rejects_other_case_batches(value):
         cli.parse_cases(value)
 
 
-@pytest.mark.parametrize(("payload", "expected"), [
-    ({"cases": "A,B,D", "dry_run": True}, (("A", "B", "D"), True)),
-    ({"cases": "C,E", "dry_run": False}, (("C", "E"), False)),
-])
-def test_internal_trigger_accepts_only_fixed_case_batches(payload, expected):
-    assert cli.validate_trigger_payload(payload) == expected
-
-
-@pytest.mark.parametrize("payload", [
-    {"cases": "A,B,D", "dry_run": True, "recipient": OWNER_EMAIL},
-    {"cases": "A,B,D", "dry_run": True, "property_code": "5641"},
-    {"cases": "A,B,D", "dry_run": True, "campaign_id": "other"},
-    {"cases": "A,B,D", "dry_run": "false"},
-    {"cases": "A,,B,D", "dry_run": True},
-])
-def test_internal_trigger_rejects_editable_or_malformed_payload(payload):
-    with pytest.raises(cli.TestCampaignCLIError, match="trigger_payload_invalid|cases_must_be_A_B_D_or_C_E"):
-        cli.validate_trigger_payload(payload)
-
-
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)
@@ -870,17 +850,10 @@ def test_public_test_action_route_is_token_only_and_bypasses_legacy_handler():
     assert "_require_captacion_report_admin" not in body
 
 
-def test_internal_runner_route_uses_existing_admin_guard_and_cli_runner():
+def test_campaign_sender_has_no_http_or_captacion_trigger():
     source = Path(__file__).parents[1] / "webhook.py"
-    tree = ast.parse(source.read_text(encoding="utf-8-sig"))
-    route = next(
-        node for node in tree.body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "api_owner_campaign_test_runner"
-    )
-    body = ast.unparse(route)
-    assert "/internal/owner-campaign-test-runner" in body
-    assert "run_test_batch" in body
-    assert "validate_trigger_payload" in body
-    assert "_require_captacion_report_admin" in body
+    body = source.read_text(encoding="utf-8-sig")
+    assert "/internal/owner-campaign-test-runner" not in body
+    assert "api_owner_campaign_test_runner" not in body
     assert "/captacion/test-runner" not in body
-    assert "from campanas.owner_campaign_test_runner" not in body
+    assert "analytics.owner_campaign_test_sender" not in body

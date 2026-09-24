@@ -5818,33 +5818,6 @@ async def _require_captacion_report_admin(request: Request):
     return user_doc
 
 
-@app.post("/internal/owner-campaign-test-runner", include_in_schema=False)
-async def api_owner_campaign_test_runner(request: Request):
-    """Temporary admin-only trigger that delegates to the standalone runner."""
-    await _require_captacion_report_admin(request)
-    from analytics.owner_campaign_test_sender import (
-        TestCampaignCLIError,
-        run_test_batch,
-        validate_trigger_payload,
-    )
-
-    try:
-        payload = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="trigger_payload_invalid") from exc
-    try:
-        cases, dry_run = validate_trigger_payload(payload)
-        return await asyncio.to_thread(run_test_batch, cases, test_mode=True, dry_run=dry_run)
-    except TestCampaignCLIError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.error(
-            "[OWNER_CAMPAIGN_TEST_RUNNER] failed error_type=%s",
-            type(exc).__name__,
-        )
-        raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
-
-
 @app.get("/captacion/reporte-semanal", response_class=HTMLResponse)
 async def view_captacion_weekly_report(request: Request, report_id: str = Query(None)):
     await _require_captacion_report_admin(request)

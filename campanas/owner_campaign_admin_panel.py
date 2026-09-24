@@ -6,14 +6,14 @@ import asyncio
 import html
 import os
 import re
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Mapping
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 
 from campanas.owner_campaign_test_actions import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
-from analytics.owner_campaign_test_sender import ALL_CASES, mass_send_enabled
+from analytics.owner_campaign_test_sender import ALL_CASES, TEST_RUN_ID, mass_send_enabled
 from config import Config
 
 
@@ -37,6 +37,10 @@ def _mongo_db_and_ping() -> Any:
     database = get_db()
     database.client.admin.command("ping")
     return database
+
+
+def _test_run_registered(database: Any) -> bool:
+    return database["ajuste_precio"].find_one({"campaign_id": TEST_CAMPAIGN_ID}) is not None
 
 
 def _disable_preview_actions(document: str) -> str:
@@ -147,7 +151,8 @@ def _all_preview_checks(previews: tuple[Any, ...]) -> tuple[bool, dict[str, tupl
 def _render_panel(*, commit: str, secret_present: bool, mongo_ready: bool,
                   smtp_ready: bool, test_mode: bool, mass_send: bool,
                   delivery_unknown: int | None, previews: tuple[Any, ...] | None,
-                  preview_error: bool = False, send_result: Mapping[str, Any] | None = None) -> HTMLResponse:
+                  preview_error: bool = False, send_result: Mapping[str, Any] | None = None,
+                  run_already_registered: bool = False) -> HTMLResponse:
     checks: dict[str, tuple[dict[str, Any], str]] = {}
     if previews is not None:
         all_cases_pass, checks = _all_preview_checks(previews)
@@ -155,7 +160,10 @@ def _render_panel(*, commit: str, secret_present: bool, mongo_ready: bool,
         all_cases_pass = False
     runtime_ready = secret_present and mongo_ready and smtp_ready and test_mode and not mass_send
     delivery_ready = delivery_unknown == DELIVERY_UNKNOWN_BASELINE
-    can_send = bool(previews is not None and all_cases_pass and runtime_ready and delivery_ready and send_result is None)
+    can_send = bool(
+        previews is not None and all_cases_pass and runtime_ready and delivery_ready
+        and not run_already_registered and send_result is None
+    )
     case_map = {preview.case_id: preview for preview in previews or ()}
 
     case_rows = []
@@ -218,7 +226,7 @@ def _render_panel(*, commit: str, secret_present: bool, mongo_ready: bool,
         form = f"""<section class="confirm"><h2>Envío de pruebas</h2>
 <p>Se enviarán como máximo cinco mensajes, exclusivamente a <strong>{TEST_RECIPIENT}</strong>.
 No se enviará a propietarios y no se modificará ningún precio real.</p>
-<form method="post" action="/admin/owner-campaign-test/run">
+<form method="post" action="/owner-campaign-email-test/send">
 <label><input type="checkbox" name="confirmation" value="{CONFIRMATION_VALUE}" required>
 Enviar pruebas exclusivamente a {TEST_RECIPIENT}</label>
 <p><button type="submit">Confirmar y enviar A–E</button></p></form></section>"""
@@ -226,6 +234,7 @@ Enviar pruebas exclusivamente a {TEST_RECIPIENT}</label>
         reasons = []
         if not runtime_ready: reasons.append("modo de prueba, secreto, Mongo, SMTP o envío masivo no está en estado seguro")
         if not delivery_ready: reasons.append("delivery_unknown debe estar exactamente en 6")
+        if run_already_registered: reasons.append("el lote fijo ya está registrado en el ledger y no se repetirá")
         if not all_cases_pass: reasons.append("uno o más preflight A–E no pasó")
         form = '<section class="confirm"><h2>Envío deshabilitado</h2><p>' + html.escape("; ".join(reasons) or "Previews no disponibles.") + "</p></section>"
 
@@ -235,8 +244,9 @@ Enviar pruebas exclusivamente a {TEST_RECIPIENT}</label>
 section{{background:#fff;border:1px solid #dce2ef;border-radius:12px;padding:18px;margin:14px 0}}h1,h2{{margin-top:0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}}
 .stat{{background:#f7f8fc;padding:12px;border-radius:8px}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;padding:9px;border-bottom:1px solid #e5e7eb;vertical-align:top}}td{{font-size:13px}}iframe{{width:100%;height:920px;border:1px solid #d9deea;background:white}}details{{margin:12px 0}}summary{{cursor:pointer;font-weight:bold;padding:10px;background:#f7f8fc}}.muted{{color:#64748b}}.confirm{{border-color:#6d5ce7}}button{{background:#26177a;color:#fff;border:0;padding:12px 18px;border-radius:7px;font-weight:bold;cursor:pointer}}.result{{background:#eef2ff}}</style></head>
 <body><main><section><h1>QA temporal · campaña de propietarios</h1>
-<p>Acceso administrativo requerido · los links dentro de los previews son inertes.</p>
+<p>Herramienta temporal de QA de correo, independiente del CRM · los links dentro de los previews son inertes.</p>
 <div class="grid"><div class="stat">Commit desplegado<br><strong>{html.escape(commit)}</strong></div>
+<div class="stat">TEST_RUN_ID<br><strong>{TEST_RUN_ID}</strong></div>
 <div class="stat">TOKEN_SECRET_PRESENT<br><strong>{str(secret_present).lower()}</strong></div>
 <div class="stat">Mongo disponible<br><strong>{str(mongo_ready).upper()}</strong></div>
 <div class="stat">SMTP disponible<br><strong>{str(smtp_ready).upper()}</strong></div>
@@ -249,15 +259,13 @@ section{{background:#fff;border:1px solid #dce2ef;border-radius:12px;padding:18p
 {''.join(preview_sections)}{form}{status_block}
 <section class="muted"><strong>Seguridad:</strong> GET nunca envía. El POST acepta sólo confirmación literal; no recibe destinatario, precio, código ni campaign_id. La identidad del propietario se conserva sólo para auditoría. No hay envío productivo.</section>
 </main></body></html>"""
-    return HTMLResponse(document, status_code=200, headers={"Cache-Control": "private, no-store"})
+    return HTMLResponse(document, status_code=200, headers={
+        "Cache-Control": "private, no-store",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+    })
 
 
-async def _require_admin(request: Any, guard: Callable[[Any], Awaitable[Any]]) -> None:
-    await guard(request)
-
-
-async def handle_panel_get(request: Any, require_admin: Callable[[Any], Awaitable[Any]]) -> HTMLResponse:
-    await _require_admin(request, require_admin)
+async def handle_panel_get(request: Any) -> HTMLResponse:
     if request.query_params:
         raise HTTPException(status_code=400, detail="No se admiten parámetros en la URL")
     if not test_mode_enabled():
@@ -266,6 +274,7 @@ async def handle_panel_get(request: Any, require_admin: Callable[[Any], Awaitabl
     secret_present = _secret_present()
     smtp_ready = bool(Config.GMAIL_USER and Config.GMAIL_PASSWORD)
     mongo_ready = False
+    run_already_registered = False
     delivery_unknown: int | None = None
     previews = None
     preview_error = False
@@ -280,6 +289,7 @@ async def handle_panel_get(request: Any, require_admin: Callable[[Any], Awaitabl
 
             database = await asyncio.to_thread(_mongo_db_and_ping)
             mongo_ready = True
+            run_already_registered = await asyncio.to_thread(_test_run_registered, database)
             previews = await asyncio.to_thread(build_rendered_test_previews, database)
             preview_error = any(item.prepared is None for item in previews)
         except Exception:
@@ -294,6 +304,7 @@ async def handle_panel_get(request: Any, require_admin: Callable[[Any], Awaitabl
         commit=commit, secret_present=secret_present, mongo_ready=mongo_ready,
         smtp_ready=smtp_ready, test_mode=True, mass_send=mass_send_enabled(),
         delivery_unknown=delivery_unknown, previews=previews, preview_error=preview_error,
+        run_already_registered=run_already_registered,
     )
 
 
@@ -315,8 +326,7 @@ def _validate_same_origin_post(request: Any) -> None:
         raise HTTPException(status_code=403, detail="Origen no seguro")
 
 
-async def handle_panel_run(request: Any, require_admin: Callable[[Any], Awaitable[Any]]) -> HTMLResponse:
-    await _require_admin(request, require_admin)
+async def handle_panel_run(request: Any) -> HTMLResponse:
     if not test_mode_enabled():
         raise HTTPException(status_code=404, detail="Herramienta temporal no disponible")
     _validate_same_origin_post(request)
@@ -336,9 +346,11 @@ async def handle_panel_run(request: Any, require_admin: Callable[[Any], Awaitabl
 
     try:
         from analytics.owner_campaign_report_normalization import build_rendered_test_previews
-        from analytics.owner_campaign_test_sender import run_test_batch
+        from analytics.owner_campaign_test_sender import TestCampaignCLIError, run_test_batch
 
         database = await asyncio.to_thread(_mongo_db_and_ping)
+        if await asyncio.to_thread(_test_run_registered, database):
+            raise HTTPException(status_code=409, detail="El lote de prueba ya fue registrado; no se repetirá")
         previews = await asyncio.to_thread(build_rendered_test_previews, database)
         all_pass, _case_results = _all_preview_checks(previews)
         if not all_pass:
@@ -353,6 +365,8 @@ async def handle_panel_run(request: Any, require_admin: Callable[[Any], Awaitabl
             delivery_unknown=send_result.get("delivery_unknown_after"), previews=previews,
             send_result=send_result,
         )
+    except TestCampaignCLIError:
+        raise HTTPException(status_code=409, detail="Prueba ya ejecutada o precondición no satisfecha") from None
     except HTTPException:
         raise
     except Exception as exc:

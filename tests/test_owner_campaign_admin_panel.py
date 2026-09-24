@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from analytics import owner_campaign_test_sender as cli
 from campanas import owner_campaign_admin_panel as panel
+from campanas import owner_campaign_test_sender as campaign_sender
 
 
 class FakeRequest:
@@ -20,10 +21,23 @@ class FakeRequest:
         return self._body
 
 
-def _allow_admin(_request):
-    async def allowed():
-        return {"rol": "admin"}
-    return allowed()
+class FakeLedger:
+    def __init__(self, row=None):
+        self.row = row
+
+    def find_one(self, _query):
+        return self.row
+
+    def find(self, _query):
+        return [self.row] if self.row else []
+
+
+class FakeDB:
+    def __init__(self, row=None):
+        self.ledger = FakeLedger(row)
+
+    def __getitem__(self, _name):
+        return self.ledger
 
 
 def _headers():
@@ -34,45 +48,32 @@ def _headers():
     }
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_admin_panel_blocks_unauthenticated_and_non_admin_before_work(status, monkeypatch):
-    async def deny(_request):
-        raise HTTPException(status_code=status)
-
-    def should_not_run():
-        raise AssertionError("admin guard must run before any work")
-
-    monkeypatch.setattr(panel, "_mongo_db_and_ping", should_not_run)
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_panel_get(FakeRequest(), deny))
-    assert error.value.status_code == status
-
-
-def test_get_is_preview_only_and_never_invokes_sender(monkeypatch):
+def test_get_preview_requires_no_crm_session_and_never_sends(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "test-secret-present-only")
     monkeypatch.setenv("OWNER_CAMPAIGN_MASS_SEND_ENABLED", "false")
-    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: object())
+    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: FakeDB())
     monkeypatch.setattr(panel, "_read_delivery_unknown", lambda: 6)
     monkeypatch.setattr(panel, "_secret_present", lambda: True)
     monkeypatch.setattr(panel.Config, "GMAIL_USER", "smtp-user")
     monkeypatch.setattr(panel.Config, "GMAIL_PASSWORD", "smtp-pass")
-    monkeypatch.setattr(panel, "_render_panel", lambda **kwargs: SimpleNamespace(body=b"panel"))
-    monkeypatch.setattr(cli, "run_test_batch", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("GET sent")), raising=True)
+    monkeypatch.setattr(panel, "_render_panel", lambda **kwargs: SimpleNamespace(body=b"preview"))
+    monkeypatch.setattr(
+        cli, "run_test_batch",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("GET sent")), raising=True,
+    )
 
     from analytics import owner_campaign_report_normalization as normalization
     monkeypatch.setattr(normalization, "build_rendered_test_previews", lambda _db: ())
-    response = asyncio.run(panel.handle_panel_get(FakeRequest(), _allow_admin))
-    assert response.body == b"panel"
+    # No CRM cookie, username, or guard callback is supplied.
+    response = asyncio.run(panel.handle_panel_get(FakeRequest()))
+    assert response.body == b"preview"
 
 
-def test_get_rejects_query_overrides_and_secret_value_is_never_rendered(monkeypatch):
+def test_get_rejects_overrides_and_page_never_discloses_secret(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
-    async def unused_guard(_request):
-        return {"rol": "admin"}
-
     with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_panel_get(FakeRequest(query_params={"recipient": "owner@example.com"}), unused_guard))
+        asyncio.run(panel.handle_panel_get(FakeRequest(query_params={"recipient": "owner@example.com"})))
     assert error.value.status_code == 400
 
     secret = "never-display-this-secret-value"
@@ -83,7 +84,10 @@ def test_get_rejects_query_overrides_and_secret_value_is_never_rendered(monkeypa
     )
     body = response.body.decode()
     assert "TOKEN_SECRET_PRESENT" in body and "true" in body
+    assert "owner_campaign_email_AE_20260924_v1" in body
     assert secret not in body
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
 
 
 @pytest.mark.parametrize("status", [400, 403, 415])
@@ -92,17 +96,16 @@ def test_post_rejects_missing_or_unsafe_confirmation_without_runner(status, monk
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "test-secret-present-only")
     monkeypatch.setenv("OWNER_CAMPAIGN_MASS_SEND_ENABLED", "false")
     monkeypatch.setattr(panel.Config, "IS_PRODUCTION", False)
-    request_headers = _headers()
+    headers = _headers()
     body = b"confirmation=RUN_OWNER_CAMPAIGN_TEST"
     if status == 400:
         body = b"confirmation=wrong"
     elif status == 403:
-        request_headers["origin"] = "https://evil.example"
+        headers["origin"] = "https://evil.example"
     elif status == 415:
-        request_headers["content-type"] = "application/json"
-    request = FakeRequest(body, headers=request_headers)
+        headers["content-type"] = "application/json"
     with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_panel_run(request, _allow_admin))
+        asyncio.run(panel.handle_panel_run(FakeRequest(body, headers=headers)))
     assert error.value.status_code == status
 
 
@@ -114,7 +117,7 @@ def test_post_rejects_recipient_override_and_query_parameters(monkeypatch):
         headers=_headers(),
     )
     with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_panel_run(request, _allow_admin))
+        asyncio.run(panel.handle_panel_run(request))
     assert error.value.status_code == 400
 
     request = FakeRequest(
@@ -122,7 +125,7 @@ def test_post_rejects_recipient_override_and_query_parameters(monkeypatch):
         query_params={"recipient": "owner@example.com"},
     )
     with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_panel_run(request, _allow_admin))
+        asyncio.run(panel.handle_panel_run(request))
     assert error.value.status_code == 400
 
 
@@ -133,22 +136,25 @@ def test_post_missing_secret_fails_closed_before_database_or_smtp(monkeypatch):
     monkeypatch.setattr(panel.Config, "IS_PRODUCTION", False)
     monkeypatch.setattr(panel.Config, "GMAIL_USER", "smtp-user")
     monkeypatch.setattr(panel.Config, "GMAIL_PASSWORD", "smtp-pass")
-    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: (_ for _ in ()).throw(AssertionError("Mongo should not run")))
+    monkeypatch.setattr(
+        panel, "_mongo_db_and_ping",
+        lambda: (_ for _ in ()).throw(AssertionError("Mongo should not run")),
+    )
     with pytest.raises(HTTPException) as error:
         asyncio.run(panel.handle_panel_run(
-            FakeRequest(b"confirmation=RUN_OWNER_CAMPAIGN_TEST", headers=_headers()), _allow_admin
+            FakeRequest(b"confirmation=RUN_OWNER_CAMPAIGN_TEST", headers=_headers())
         ))
     assert error.value.status_code == 409
 
 
-def test_post_calls_only_fixed_all_case_runner_after_literal_confirmation(monkeypatch):
+def test_post_sends_only_fixed_all_case_batch_after_preview_and_confirmation(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "never-return-this-secret")
     monkeypatch.setenv("OWNER_CAMPAIGN_MASS_SEND_ENABLED", "false")
     monkeypatch.setattr(panel.Config, "IS_PRODUCTION", False)
     monkeypatch.setattr(panel.Config, "GMAIL_USER", "smtp-user")
     monkeypatch.setattr(panel.Config, "GMAIL_PASSWORD", "smtp-pass")
-    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: object())
+    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: FakeDB())
     called = {}
     from analytics import owner_campaign_report_normalization as normalization
     monkeypatch.setattr(normalization, "build_rendered_test_previews", lambda _db: ())
@@ -166,7 +172,7 @@ def test_post_calls_only_fixed_all_case_runner_after_literal_confirmation(monkey
     monkeypatch.setattr(cli, "run_test_batch", fake_run)
     monkeypatch.setattr(panel, "_render_panel", lambda **kwargs: SimpleNamespace(body=b"sent"))
     response = asyncio.run(panel.handle_panel_run(
-        FakeRequest(b"confirmation=RUN_OWNER_CAMPAIGN_TEST", headers=_headers()), _allow_admin
+        FakeRequest(b"confirmation=RUN_OWNER_CAMPAIGN_TEST", headers=_headers())
     ))
     assert response.body == b"sent"
     assert called["cases"] == ("A", "B", "C", "D", "E")
@@ -174,6 +180,74 @@ def test_post_calls_only_fixed_all_case_runner_after_literal_confirmation(monkey
     assert called["dry_run"] is False
     assert called["require_delivery_unknown_baseline"] is True
     assert "recipient" not in called
+
+
+def test_post_blocks_previously_registered_batch_before_build_or_smtp(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "test-secret-present-only")
+    monkeypatch.setenv("OWNER_CAMPAIGN_MASS_SEND_ENABLED", "false")
+    monkeypatch.setattr(panel.Config, "IS_PRODUCTION", False)
+    monkeypatch.setattr(panel.Config, "GMAIL_USER", "smtp-user")
+    monkeypatch.setattr(panel.Config, "GMAIL_PASSWORD", "smtp-pass")
+    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: FakeDB({"delivery_status": "test_sent"}))
+    from analytics import owner_campaign_report_normalization as normalization
+    monkeypatch.setattr(
+        normalization, "build_rendered_test_previews",
+        lambda _db: (_ for _ in ()).throw(AssertionError("registered run must not render/send")),
+    )
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(panel.handle_panel_run(
+            FakeRequest(b"confirmation=RUN_OWNER_CAMPAIGN_TEST", headers=_headers())
+        ))
+    assert error.value.status_code == 409
+
+
+def test_fixed_test_run_id_is_persisted_in_existing_campaign_ledger():
+    class RecordingLedger:
+        def __init__(self):
+            self.payloads = []
+
+        def find_one(self, _query):
+            return None
+
+        def update_one(self, query, update, *, upsert):
+            assert upsert is True
+            self.payloads.append({"_id": query["_id"], **update["$setOnInsert"]})
+            return SimpleNamespace(upserted_id=query["_id"])
+
+    ledger = RecordingLedger()
+    database = {"ajuste_precio": ledger}
+    case = SimpleNamespace(
+        case_id="A",
+        property_code="5641", intended_owner_email="owner@example.com", operation="VENTA",
+        current_price=3000, raw_recommended_price=2857, display_recommended_price=2857,
+        adjustment_pct=-4.77, evidence_segment="STRONG_PRICE_ADJUSTMENT",
+        cta_type="PRICE_AUTHORIZATION", evidence_version="v1", document_type="appraisal",
+        executive="Ejecutivo PROCASA",
+    )
+    campaign_sender._write_test_ledger_entries(
+        database, [SimpleNamespace(case=case, property_cases=None)]
+    )
+    assert len(ledger.payloads) == 1
+    assert ledger.payloads[0]["test_run_id"] == "owner_campaign_email_AE_20260924_v1"
+    assert ledger.payloads[0]["campaign_id"] == "owner_price_campaign_test_20260923"
+    assert ledger.payloads[0]["test_mode"] is True
+    assert ledger.payloads[0]["actual_recipient_email"] == "jpcaro@procasa.cl"
+
+
+def test_registered_test_run_is_rejected_before_any_delivery_check(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_MASS_SEND_ENABLED", "false")
+    database = FakeDB({
+        "campaign_id": "owner_price_campaign_test_20260923",
+        "test_run_id": "owner_campaign_email_AE_20260924_v1",
+        "test_mode": True,
+    })
+    with pytest.raises(cli.TestCampaignCLIError, match="test_run_already_registered"):
+        cli.run_test_batch(
+            cli.ALL_CASES, test_mode=True, dry_run=True, db=database,
+            health_reader=lambda: (_ for _ in ()).throw(AssertionError("must block first")),
+        )
 
 
 @pytest.mark.parametrize("count", [5, None])

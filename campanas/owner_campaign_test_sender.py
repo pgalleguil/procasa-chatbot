@@ -35,6 +35,7 @@ SERVICE_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
 MAX_TEST_EMAILS = 5
 TEST_CASE_IDS = frozenset({"A", "B", "C", "D", "E"})
 TEST_LEDGER_COLLECTION = "ajuste_precio"
+TEST_RUN_ID = "owner_campaign_email_AE_20260924_v1"
 PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
 REQUIRED_RENDER_CHECKS = frozenset(
     {
@@ -384,6 +385,7 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 raise TestSenderError("test_campaign_case_already_registered")
             entries.append((query, {
                 "campaign_id": TEST_CAMPAIGN_ID,
+                "test_run_id": TEST_RUN_ID,
                 "campaign_version": TEST_CAMPAIGN_VERSION,
                 "property_code": case.property_code,
                 "intended_owner_email": case.intended_owner_email.strip(),

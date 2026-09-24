@@ -30,6 +30,7 @@ from campanas.owner_campaign_test_runtime import (
 )
 from campanas.owner_campaign_test_sender import (
     SERVICE_BASE_URL,
+    TEST_RUN_ID,
     TEST_LEDGER_COLLECTION,
     OwnerCampaignTestCase,
     PreparedTestMessage,
@@ -136,6 +137,8 @@ def _database(db: Any = None) -> Any:
 
 def _validate_phase(db: Any, cases: tuple[str, ...]) -> None:
     rows = list(db[TEST_LEDGER_COLLECTION].find({"campaign_id": TEST_CAMPAIGN_ID}))
+    if any(row.get("test_run_id") == TEST_RUN_ID for row in rows):
+        raise TestCampaignCLIError("test_run_already_registered")
     if any(
         row.get("test_mode") is not True
         or str(row.get("actual_recipient_email") or "").strip().casefold() != TEST_RECIPIENT
@@ -219,6 +222,7 @@ def run_test_batch(
 
     common = {
         "campaign_id": TEST_CAMPAIGN_ID,
+        "test_run_id": TEST_RUN_ID,
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
         "cc": [],

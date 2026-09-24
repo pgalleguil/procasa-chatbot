@@ -13,7 +13,7 @@ import re
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -772,19 +772,28 @@ def _build_portfolio(db: Any, now: datetime) -> OwnerCampaignTestCase:
     raise LiveTestCaseBuildError("current_multi_property_owner_group_unavailable")
 
 
-def build_owner_campaign_test_cases_live(db: Any = None, *, now: datetime | None = None) -> list[OwnerCampaignTestCase]:
-    """Build only fixed A-D and one dynamically verified current owner group E."""
+def build_owner_campaign_test_cases_live(
+    db: Any = None,
+    *,
+    now: datetime | None = None,
+    case_ids: Sequence[str] | None = None,
+) -> list[OwnerCampaignTestCase]:
+    """Build a fixed subset of live E2E cases, defaulting to the complete A-E set."""
     if db is None:
         from chatbot.storage import get_db
 
         db = get_db()
+    requested = tuple(("A", "B", "C", "D", "E") if case_ids is None else case_ids)
+    if not requested or len(requested) != len(set(requested)) or set(requested) - {"A", "B", "C", "D", "E"}:
+        raise LiveTestCaseBuildError("requested_test_cases_invalid")
     current_time = now or datetime.now(timezone.utc)
-    docs = _load_code_docs(db, set(PROPERTY_CODES.values()))
-    cases = [
-        _build_case(db, docs[PROPERTY_CODES["A"]], "A", segment="STRONG_PRICE_ADJUSTMENT", raw_target=APPROVED_A_RAW_TARGET_UF, now=current_time),
-        _build_case(db, docs[PROPERTY_CODES["B"]], "B", segment="MIXED_EVIDENCE", now=current_time),
-        _build_case(db, docs[PROPERTY_CODES["C"]], "C", segment="INSUFFICIENT_EVIDENCE", now=current_time),
-        _build_case(db, docs[PROPERTY_CODES["D"]], "D", segment="TEST_ADVISOR_REVIEW", now=current_time),
-        _build_portfolio(db, current_time),
-    ]
-    return cases
+    fixed_ids = [case_id for case_id in requested if case_id != "E"]
+    docs = _load_code_docs(db, {PROPERTY_CODES[case_id] for case_id in fixed_ids}) if fixed_ids else {}
+    builders = {
+        "A": lambda: _build_case(db, docs[PROPERTY_CODES["A"]], "A", segment="STRONG_PRICE_ADJUSTMENT", raw_target=APPROVED_A_RAW_TARGET_UF, now=current_time),
+        "B": lambda: _build_case(db, docs[PROPERTY_CODES["B"]], "B", segment="MIXED_EVIDENCE", now=current_time),
+        "C": lambda: _build_case(db, docs[PROPERTY_CODES["C"]], "C", segment="INSUFFICIENT_EVIDENCE", now=current_time),
+        "D": lambda: _build_case(db, docs[PROPERTY_CODES["D"]], "D", segment="TEST_ADVISOR_REVIEW", now=current_time),
+        "E": lambda: _build_portfolio(db, current_time),
+    }
+    return [builders[case_id]() for case_id in requested]

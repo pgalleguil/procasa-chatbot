@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse
 from config import Config
 
 
-TEST_RECIPIENT = "jpcaro@procasa.cl"
+TEST_RECIPIENT = "pgalleguillos@procasa.cl"
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260924"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260924"
 REPORT_ACTION = "ver_informe"

@@ -38,6 +38,10 @@ from .owner_campaign_test_sender import (
 
 ALLOWED_ACTIONS = frozenset({"GENERATE_PREVIEWS", "SEND_TEST_EMAILS", "VERIFY_TEST_ACTIONS"})
 MASS_SEND_ENV = "OWNER_CAMPAIGN_MASS_SEND_ENABLED"
+INITIAL_CASE_IDS = ("A", "B", "D")
+REMAINING_CASE_IDS = ("C", "E")
+INITIAL_PROPERTY_CODES = frozenset({"5641", "16521", "16527"})
+CASE_C_PROPERTY_CODE = "16486"
 
 
 class TestRunnerError(ValueError):
@@ -74,7 +78,7 @@ def _safe_case_summary(case: Any) -> dict[str, Any]:
     }
 
 
-def _preview_page(prepared: list[Any]) -> str:
+def _preview_page(prepared: list[Any], *, phase: str) -> str:
     cards = []
     for item in prepared:
         summary = _safe_case_summary(item.case)
@@ -93,23 +97,62 @@ def _preview_page(prepared: list[Any]) -> str:
         "<title>Previews E2E PROCASA</title><style>body{font:14px Arial,sans-serif;margin:0;background:#f3f5f8;color:#172554}"
         ".wrap{max-width:980px;margin:auto;padding:20px}.case{background:white;padding:12px;margin:0 0 24px;border:1px solid #e5e6ef;border-radius:12px}"
         "iframe{width:100%;border:1px solid #e5e6ef;border-radius:8px;background:white}h1{font-size:22px}</style></head><body>"
-        "<main class='wrap'><h1>Previews de prueba · sin envío</h1><p>Las acciones y respaldos son enlaces firmados para el test restringido.</p>"
+        f"<main class='wrap'><h1>Previews de prueba · fase {html.escape(phase)}</h1><p>Destinatario fijo: {html.escape(TEST_RECIPIENT)} · sin envío</p>"
         + "".join(cards) + "</main></body></html>"
     )
+
+
+def _runner_db(db: Any = None) -> Any:
+    if db is not None:
+        return db
+    from chatbot.storage import get_db
+
+    return get_db()
+
+
+def _next_test_phase(db: Any) -> tuple[str, tuple[str, ...]]:
+    rows = list(db[TEST_LEDGER_COLLECTION].find({
+        "campaign_id": TEST_CAMPAIGN_ID,
+        "test_mode": True,
+    }))
+    if not rows:
+        return "INITIAL", INITIAL_CASE_IDS
+    if any(str(row.get("actual_recipient_email") or "").strip().casefold() != TEST_RECIPIENT for row in rows):
+        raise TestRunnerError("test_campaign_other_recipient_present")
+    if any(row.get("delivery_status") != "test_sent" for row in rows):
+        raise TestRunnerError("test_campaign_has_incomplete_prior_send")
+    codes = [str(row.get("property_code") or "") for row in rows]
+    if len(codes) != len(set(codes)):
+        raise TestRunnerError("test_campaign_ledger_has_duplicate_properties")
+    code_set = set(codes)
+    if code_set == INITIAL_PROPERTY_CODES:
+        return "REMAINING", REMAINING_CASE_IDS
+    if INITIAL_PROPERTY_CODES <= code_set and CASE_C_PROPERTY_CODE in code_set:
+        portfolio_codes = code_set - INITIAL_PROPERTY_CODES - {CASE_C_PROPERTY_CODE}
+        if len(portfolio_codes) >= 3:
+            raise TestRunnerError("test_campaign_all_batches_already_sent")
+        raise TestRunnerError("test_campaign_remaining_batch_incomplete")
+    raise TestRunnerError("test_campaign_phase_state_unexpected")
 
 
 def generate_previews(db: Any = None) -> tuple[str, dict[str, Any]]:
     if not test_mode_enabled() or _mass_send_enabled():
         raise TestRunnerError("unsafe_test_environment")
-    cases = build_owner_campaign_test_cases_live(db)
+    database = _runner_db(db)
+    phase, case_ids = _next_test_phase(database)
+    cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
     prepared = prepare_test_messages(cases)
-    if [item.case.case_id for item in prepared] != ["A", "B", "C", "D", "E"]:
-        raise TestRunnerError("all_five_live_previews_required")
-    return _preview_page(prepared), {
+    if tuple(item.case.case_id for item in prepared) != case_ids:
+        raise TestRunnerError("requested_live_previews_incomplete")
+    return _preview_page(prepared, phase=phase), {
         "status": "previews_pass",
+        "phase": phase,
+        "case_ids": list(case_ids),
         "campaign_id": TEST_CAMPAIGN_ID,
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
+        "cc": [],
+        "bcc": [],
         "owner_emails_sent": 0,
         "cases": [_safe_case_summary(item.case) for item in prepared],
     }
@@ -157,31 +200,36 @@ def _health_delivery_unknown() -> int:
 def send_tests(db: Any = None) -> dict[str, Any]:
     if not test_mode_enabled() or _mass_send_enabled():
         raise TestRunnerError("unsafe_test_environment")
+    database = _runner_db(db)
+    phase, case_ids = _next_test_phase(database)
     before = _health_delivery_unknown()
-    if before != 6:
-        raise TestRunnerError("delivery_unknown_baseline_changed")
-    cases = build_owner_campaign_test_cases_live(db)
-    # Re-render the complete A-E set before SMTP initialization; no partial test batch.
+    cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
+    # Fail closed for this fixed phase before SMTP; later phase cases cannot
+    # prevent the user from seeing A/B/D first.
     prepared = prepare_test_messages(cases)
-    if len(prepared) != 5:
-        raise TestRunnerError("all_five_live_previews_required")
-    results = send_test_messages(cases, db=db)
-    if len(results) != 5 or any(row.get("status") != "sent_to_test_recipient" for row in results):
+    if tuple(item.case.case_id for item in prepared) != case_ids:
+        raise TestRunnerError("requested_test_batch_incomplete")
+    results = send_test_messages(cases, db=database)
+    if len(results) != len(case_ids) or any(row.get("status") != "sent_to_test_recipient" for row in results):
         raise TestRunnerError("test_delivery_incomplete")
     after = _health_delivery_unknown()
-    if after != before:
-        raise TestRunnerError("delivery_unknown_count_changed_after_test_send")
+    if after > before:
+        raise TestRunnerError("new_delivery_unknown_after_test_send")
     return {
         "status": "test_messages_sent",
+        "phase": phase,
+        "case_ids": list(case_ids),
         "campaign_id": TEST_CAMPAIGN_ID,
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
+        "cc": [],
+        "bcc": [],
         "owner_emails_sent": 0,
         "test_emails_sent": len(results),
         "results": results,
         "delivery_unknown_before": before,
         "delivery_unknown_after": after,
-        "new_delivery_unknown": after - before,
+        "new_delivery_unknown": max(0, after - before),
         "mass_send_enabled": False,
     }
 
@@ -202,6 +250,7 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         from chatbot.storage import get_db
 
         db = get_db()
+    delivery_unknown_before = _health_delivery_unknown()
     ledger = db[TEST_LEDGER_COLLECTION]
     sent = list(ledger.find({"campaign_id": TEST_CAMPAIGN_ID, "test_mode": True, "actual_recipient_email": TEST_RECIPIENT}))
     by_code = {str(row.get("property_code") or ""): row for row in sent if row.get("delivery_status") == "test_sent"}
@@ -315,8 +364,8 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         raise TestRunnerError("invalid_or_cross_property_token_not_blocked")
     if not all(e_action_results) or not all(e_report_results):
         raise TestRunnerError("test_e_property_specific_links_failed")
-    if delivery_unknown != 6:
-        raise TestRunnerError("delivery_unknown_baseline_changed_after_actions")
+    if delivery_unknown > delivery_unknown_before:
+        raise TestRunnerError("new_delivery_unknown_after_test_actions")
     return {
         "status": "test_actions_verified",
         "campaign_id": TEST_CAMPAIGN_ID,
@@ -342,7 +391,9 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         "e_property_count": len(e_rows),
         "e_property_ctas_verified": sum(e_action_results),
         "e_property_reports_verified": sum(e_report_results),
+        "delivery_unknown_before": delivery_unknown_before,
         "delivery_unknown_after": delivery_unknown,
+        "new_delivery_unknown": max(0, delivery_unknown - delivery_unknown_before),
         "actual_recipient_email": TEST_RECIPIENT,
         "owner_emails_sent": 0,
     }

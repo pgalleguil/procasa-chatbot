@@ -14,7 +14,9 @@ from urllib.parse import quote
 import pytest
 
 from campanas import owner_campaign_test_actions as actions
+from campanas import owner_campaign_test_runtime as runtime
 from campanas import owner_campaign_test_sender as sender
+from campanas import owner_campaign_test_runner as runner
 
 
 SECRET = "owner-campaign-e2e-secret-for-tests"
@@ -32,6 +34,10 @@ class FakeCollection:
             if all(doc.get(key) == value for key, value in query.items()):
                 return dict(doc)
         return None
+
+    def find(self, query=None, projection=None):
+        query = query or {}
+        return [dict(doc) for doc in self.docs if all(doc.get(key) == value for key, value in query.items())]
 
     def insert_one(self, doc):
         self.docs.append(dict(doc))
@@ -152,6 +158,8 @@ def test_environment(monkeypatch):
 
 
 def test_recipient_policy_allows_only_fixed_test_mailbox():
+    assert actions.TEST_RECIPIENT == "pgalleguillos@procasa.cl"
+    assert sender.TEST_RECIPIENT == actions.TEST_RECIPIENT
     sender.validate_recipient_envelope(
         to=sender.TEST_RECIPIENT,
         cc=(),
@@ -160,7 +168,85 @@ def test_recipient_policy_allows_only_fixed_test_mailbox():
     )
 
 
-@pytest.mark.parametrize("address", [OWNER_EMAIL, "pgalleguillos@procasa.cl"])
+def test_corrected_test_recipient_is_the_only_test_address_in_harness_sources():
+    old_test_address = "jpcaro" + "@procasa.cl"
+    root = Path(__file__).parents[1]
+    for relative in (
+        "campanas/owner_campaign_test_actions.py",
+        "campanas/owner_campaign_test_sender.py",
+        "campanas/owner_campaign_test_runner.py",
+        "campanas/owner_campaign_test_runtime.py",
+        "campanas/private_report.py",
+        "tests/test_owner_campaign_test_safety.py",
+    ):
+        assert old_test_address not in (root / relative).read_text(encoding="utf-8")
+
+
+def test_live_case_builder_can_limit_first_phase_to_a_b_d(monkeypatch):
+    loaded = {}
+    monkeypatch.setattr(runtime, "_load_code_docs", lambda _db, codes: loaded.update(codes=codes) or {code: {"code": code} for code in codes})
+    monkeypatch.setattr(runtime, "_build_case", lambda _db, doc, case_id, **_kwargs: SimpleNamespace(case_id=case_id, doc=doc))
+    monkeypatch.setattr(runtime, "_build_portfolio", lambda *_args: pytest.fail("E must not block the first phase"))
+    cases = runtime.build_owner_campaign_test_cases_live(object(), case_ids=("A", "B", "D"))
+    assert [case.case_id for case in cases] == ["A", "B", "D"]
+    assert loaded["codes"] == {"5641", "16521", "16527"}
+
+
+def test_runner_uses_a_b_d_then_c_e_and_blocks_partial_batches():
+    db = FakeDB()
+    assert runner._next_test_phase(db) == ("INITIAL", ("A", "B", "D"))
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [
+        {
+            "campaign_id": actions.TEST_CAMPAIGN_ID,
+            "test_mode": True,
+            "actual_recipient_email": actions.TEST_RECIPIENT,
+            "property_code": code,
+            "delivery_status": "test_sent",
+        }
+        for code in ("5641", "16521", "16527")
+    ]
+    assert runner._next_test_phase(db) == ("REMAINING", ("C", "E"))
+    db.docs[sender.TEST_LEDGER_COLLECTION].pop()
+    with pytest.raises(runner.TestRunnerError, match="test_campaign_phase_state_unexpected"):
+        runner._next_test_phase(db)
+
+
+def test_runner_refuses_campaign_ledger_rows_for_another_test_recipient():
+    db = FakeDB()
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [{
+        "campaign_id": actions.TEST_CAMPAIGN_ID,
+        "test_mode": True,
+        "actual_recipient_email": "someone-else@procasa.cl",
+        "property_code": "5641",
+        "delivery_status": "test_sent",
+    }]
+    with pytest.raises(runner.TestRunnerError, match="test_campaign_other_recipient_present"):
+        runner._next_test_phase(db)
+
+
+def test_runner_does_not_block_on_historical_delivery_unknown_six(monkeypatch):
+    db = FakeDB()
+    monkeypatch.setattr(runner, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: list(case_ids))
+    monkeypatch.setattr(
+        runner,
+        "prepare_test_messages",
+        lambda cases: [SimpleNamespace(case=SimpleNamespace(case_id=case_id)) for case_id in cases],
+    )
+    monkeypatch.setattr(
+        runner,
+        "send_test_messages",
+        lambda cases, *, db: [{"case_id": case_id, "status": "sent_to_test_recipient"} for case_id in cases],
+    )
+    monkeypatch.setattr(runner, "_health_delivery_unknown", lambda: 6)
+    result = runner.send_tests(db)
+    assert result["phase"] == "INITIAL"
+    assert result["case_ids"] == ["A", "B", "D"]
+    assert result["test_emails_sent"] == 3
+    assert result["delivery_unknown_before"] == result["delivery_unknown_after"] == 6
+    assert result["new_delivery_unknown"] == 0
+
+
+@pytest.mark.parametrize("address", [OWNER_EMAIL, "alternate-test-recipient@procasa.cl"])
 def test_arbitrary_owner_or_internal_recipient_aborts(address):
     with pytest.raises(sender.TestSenderError):
         sender.validate_recipient_envelope(to=address, envelope_recipients=[address])
@@ -373,7 +459,12 @@ def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     result = sender.send_test_messages(
         [_case("A")], render_case=_render, db=db, smtp_factory=FakeSMTP
     )
-    assert result == [{"case_id": "A", "property_code": "5641", "property_codes": "5641", "status": "sent_to_test_recipient"}]
+    assert len(result) == 1
+    assert result[0]["case_id"] == "A"
+    assert result[0]["status"] == "sent_to_test_recipient"
+    assert result[0]["delivery_status"] == "accepted_by_smtp_relay"
+    assert result[0]["provider_message_id"] == "NOT_EXPOSED_BY_SMTP"
+    assert result[0]["message_id"].startswith("<")
     smtp = FakeSMTP.instances[0]
     assert len(smtp.sent) == 1
     _, recipients, raw_message = smtp.sent[0]

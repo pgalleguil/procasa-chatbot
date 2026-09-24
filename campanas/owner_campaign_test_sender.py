@@ -10,6 +10,7 @@ import math
 import re
 import smtplib
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from html.parser import HTMLParser
 from typing import Any, Callable, Mapping, Sequence
@@ -22,13 +23,13 @@ from .owner_campaign_test_actions import (
     ADVISOR_ACTION,
     REPORT_ACTION,
     TEST_CAMPAIGN_ID,
+    TEST_RECIPIENT,
     issue_test_link_token,
     test_mode_enabled,
     verify_test_link_token,
 )
 
 
-TEST_RECIPIENT = "jpcaro@procasa.cl"
 SERVICE_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
 MAX_TEST_EMAILS = 5
 TEST_CASE_IDS = frozenset({"A", "B", "C", "D", "E"})
@@ -412,6 +413,11 @@ def _build_email(item: PreparedTestMessage) -> EmailMessage:
     message["From"] = Config.GMAIL_USER or ""
     message["To"] = TEST_RECIPIENT
     message["Subject"] = item.subject
+    # SMTP does not expose Gmail's internal provider message id. Keep a
+    # standards-compliant Message-ID for correlation without mislabeling it.
+    from email.utils import make_msgid
+
+    message["Message-ID"] = make_msgid(domain="procasa.cl")
     message.set_content(item.text)
     message.add_alternative(item.html, subtype="html")
     validate_recipient_envelope(
@@ -454,7 +460,9 @@ def send_test_messages(
         server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
         for item in prepared:
             message = _build_email(item)
-            server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
+            refused = server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
+            if refused:
+                raise TestSenderError("test_recipient_refused_by_smtp")
             property_codes = []
             for property_case in item.property_cases or _property_cases(item.case):
                 database[TEST_LEDGER_COLLECTION].update_one(
@@ -464,7 +472,11 @@ def send_test_messages(
                         "test_mode": True,
                         "actual_recipient_email": TEST_RECIPIENT,
                     },
-                    {"$set": {"delivery_status": "test_sent"}},
+                    {"$set": {
+                        "delivery_status": "test_sent",
+                        "smtp_message_id": str(message["Message-ID"]),
+                        "smtp_accepted_at": datetime.now(timezone.utc),
+                    }},
                 )
                 property_codes.append(property_case.property_code)
             results.append({
@@ -472,6 +484,9 @@ def send_test_messages(
                 "property_code": item.case.property_code,
                 "property_codes": ",".join(property_codes),
                 "status": "sent_to_test_recipient",
+                "delivery_status": "accepted_by_smtp_relay",
+                "message_id": str(message["Message-ID"]),
+                "provider_message_id": "NOT_EXPOSED_BY_SMTP",
             })
     return results
 

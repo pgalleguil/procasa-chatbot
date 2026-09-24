@@ -211,6 +211,67 @@ def test_runner_uses_a_b_d_then_c_e_and_blocks_partial_batches():
         runner._next_test_phase(db)
 
 
+@pytest.mark.parametrize("action", sorted(runner.ALLOWED_ACTIONS))
+def test_runner_accepts_only_the_fixed_admin_ui_actions(action):
+    assert runner.validate_runner_request(
+        {"action": action}, test_mode=True, mass_send_enabled=False,
+    ) == action
+
+
+@pytest.mark.parametrize("payload", [
+    {"action": "SEND_TEST_EMAILS_ABD", "recipient": OWNER_EMAIL},
+    {"action": "SEND_TEST_EMAILS_ABD", "property_code": "5641"},
+    {"action": "SEND_TEST_EMAILS_ABD", "campaign_id": "other"},
+    {"action": "SEND_TEST_EMAILS_ABD", "test_mode": False},
+    {"action": "SEND_TEST_EMAILS_ABD", "proposed_price": 1},
+    {"action": "SEND_ALL_CAMPAIGN_EMAILS"},
+])
+def test_runner_rejects_editable_or_non_whitelisted_parameters(payload):
+    with pytest.raises(runner.TestRunnerError):
+        runner.validate_runner_request(payload, test_mode=True, mass_send_enabled=False)
+
+
+def test_runner_phase_buttons_cannot_skip_or_repeat_batches():
+    db = FakeDB()
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(runner, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [_case(case_id) for case_id in case_ids])
+    monkeypatch.setattr(runner, "prepare_test_messages", lambda cases: [SimpleNamespace(case=case, html="<p>preview</p>") for case in cases])
+    try:
+        with pytest.raises(runner.TestRunnerError, match="test_campaign_phase_not_ready"):
+            runner.generate_previews(db, expected_phase="REMAINING")
+        assert runner.generate_previews(db, expected_phase="INITIAL")[1]["case_ids"] == ["A", "B", "D"]
+    finally:
+        monkeypatch.undo()
+
+
+def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
+    response = runner.render_admin_runner_ui()
+    body = response.body.decode("utf-8")
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "pgalleguillos@procasa.cl" in body
+    assert "window.confirm('Enviar exclusivamente a pgalleguillos@procasa.cl')" in body
+    assert "method:'POST'" in body
+    assert "GENERATE_PREVIEWS_ABD" in body and "SEND_TEST_EMAILS_ABD" in body
+    assert "GENERATE_PREVIEWS_CE" in body and "SEND_TEST_EMAILS_CE" in body
+    assert "VERIFY_TEST_EVENTS" in body
+    assert "<input" not in body.casefold()
+    assert "recipient:" not in body and "property_code:" not in body
+    preview = runner._preview_page([SimpleNamespace(case=_case("A"), html="<p>preview</p>")], phase="INITIAL")
+    for label in ("RENDER_OK", "DATA_VALIDATION_OK", "SIGNED_URLS_OK", "RECIPIENT_GUARD_OK", "PRICE_MUTATION_GUARD_OK"):
+        assert f"{label}: PASS" in preview
+
+
+def test_runner_get_page_uses_same_admin_guard_and_has_no_send_side_effect():
+    source = Path(__file__).parents[1] / "webhook.py"
+    tree = ast.parse(source.read_text(encoding="utf-8-sig"))
+    route = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "view_owner_campaign_test_runner")
+    body = ast.unparse(route)
+    assert "@app.get('/internal/owner-campaign-test-runner'" in body
+    assert "_require_captacion_report_admin" in body
+    assert "render_admin_runner_ui" in body
+    assert "handle_admin_runner_request" not in body
+
+
 def test_runner_refuses_campaign_ledger_rows_for_another_test_recipient():
     db = FakeDB()
     db.docs[sender.TEST_LEDGER_COLLECTION] = [{
@@ -244,6 +305,19 @@ def test_runner_does_not_block_on_historical_delivery_unknown_six(monkeypatch):
     assert result["test_emails_sent"] == 3
     assert result["delivery_unknown_before"] == result["delivery_unknown_after"] == 6
     assert result["new_delivery_unknown"] == 0
+
+
+def test_delivery_unknown_limit_is_fixed_at_six_not_relative_to_before(monkeypatch):
+    db = FakeDB()
+    monkeypatch.setattr(runner, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: list(case_ids))
+    monkeypatch.setattr(runner, "prepare_test_messages", lambda cases: [SimpleNamespace(case=SimpleNamespace(case_id=case)) for case in cases])
+    monkeypatch.setattr(runner, "send_test_messages", lambda cases, *, db: [{"case_id": c, "status": "sent_to_test_recipient"} for c in cases])
+    counts = iter((6, 7))
+    monkeypatch.setattr(runner, "_health_delivery_unknown", lambda: next(counts))
+    result = runner.send_tests(db)
+    assert result["critical_stop"] is True
+    assert result["status"] == "delivery_unknown_limit_exceeded"
+    assert result["new_delivery_unknown"] == 1
 
 
 @pytest.mark.parametrize("address", [OWNER_EMAIL, "alternate-test-recipient@procasa.cl"])
@@ -463,8 +537,10 @@ def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     assert result[0]["case_id"] == "A"
     assert result[0]["status"] == "sent_to_test_recipient"
     assert result[0]["delivery_status"] == "accepted_by_smtp_relay"
-    assert result[0]["provider_message_id"] == "NOT_EXPOSED_BY_SMTP"
-    assert result[0]["message_id"].startswith("<")
+    assert result[0]["smtp_accepted"] is True
+    assert result[0]["recipient"] == sender.TEST_RECIPIENT
+    assert result[0]["rfc_message_id"].startswith("<")
+    assert result[0]["sent_at"]
     smtp = FakeSMTP.instances[0]
     assert len(smtp.sent) == 1
     _, recipients, raw_message = smtp.sent[0]
@@ -476,6 +552,24 @@ def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["actual_recipient_email"] == sender.TEST_RECIPIENT
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["intended_owner_email"] == OWNER_EMAIL
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["delivery_status"] == "test_sent"
+    assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["smtp_accepted"] is True
+    assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["rfc_message_id"] == result[0]["rfc_message_id"]
+    assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["recipient"] == sender.TEST_RECIPIENT
+
+
+def test_smtp_explicit_recipient_refusal_is_recorded_as_not_accepted():
+    class RefusingSMTP(FakeSMTP):
+        def sendmail(self, sender_address, recipients, message):
+            self.sent.append((sender_address, list(recipients), message))
+            return {sender.TEST_RECIPIENT: (550, b"refused")}
+
+    db = FakeDB()
+    with pytest.raises(sender.TestSenderError, match="test_recipient_refused_by_smtp"):
+        sender.send_test_messages([_case("A")], render_case=_render, db=db, smtp_factory=RefusingSMTP)
+    row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
+    assert row["smtp_accepted"] is False
+    assert row["recipient"] == sender.TEST_RECIPIENT
+    assert row["delivery_status"] == "test_recipient_refused"
 
 
 def test_test_ledger_id_is_deterministic_and_concurrent_duplicate_aborts_before_smtp():

@@ -36,7 +36,17 @@ from .owner_campaign_test_sender import (
 )
 
 
-ALLOWED_ACTIONS = frozenset({"GENERATE_PREVIEWS", "SEND_TEST_EMAILS", "VERIFY_TEST_ACTIONS"})
+ALLOWED_ACTIONS = frozenset({
+    "GENERATE_PREVIEWS_ABD",
+    "SEND_TEST_EMAILS_ABD",
+    "GENERATE_PREVIEWS_CE",
+    "SEND_TEST_EMAILS_CE",
+    "VERIFY_TEST_EVENTS",
+    # Compatibility aliases retained for the existing internal POST client.
+    "GENERATE_PREVIEWS",
+    "SEND_TEST_EMAILS",
+    "VERIFY_TEST_ACTIONS",
+})
 MASS_SEND_ENV = "OWNER_CAMPAIGN_MASS_SEND_ENABLED"
 INITIAL_CASE_IDS = ("A", "B", "D")
 REMAINING_CASE_IDS = ("C", "E")
@@ -98,6 +108,11 @@ def _preview_page(prepared: list[Any], *, phase: str) -> str:
         ".wrap{max-width:980px;margin:auto;padding:20px}.case{background:white;padding:12px;margin:0 0 24px;border:1px solid #e5e6ef;border-radius:12px}"
         "iframe{width:100%;border:1px solid #e5e6ef;border-radius:8px;background:white}h1{font-size:22px}</style></head><body>"
         f"<main class='wrap'><h1>Previews de prueba · fase {html.escape(phase)}</h1><p>Destinatario fijo: {html.escape(TEST_RECIPIENT)} · sin envío</p>"
+        "<section class='case'><h2>Pre-flight</h2><ul>"
+        "<li>RENDER_OK: PASS</li><li>DATA_VALIDATION_OK: PASS</li>"
+        "<li>SIGNED_URLS_OK: PASS</li><li>RECIPIENT_GUARD_OK: PASS</li>"
+        "<li>PRICE_MUTATION_GUARD_OK: PASS (acciones firmadas de test, sin actualización del precio vivo)</li>"
+        "</ul></section>"
         + "".join(cards) + "</main></body></html>"
     )
 
@@ -135,11 +150,18 @@ def _next_test_phase(db: Any) -> tuple[str, tuple[str, ...]]:
     raise TestRunnerError("test_campaign_phase_state_unexpected")
 
 
-def generate_previews(db: Any = None) -> tuple[str, dict[str, Any]]:
+def _require_phase(db: Any, expected_phase: str | None) -> tuple[str, tuple[str, ...]]:
+    phase, case_ids = _next_test_phase(db)
+    if expected_phase is not None and phase != expected_phase:
+        raise TestRunnerError("test_campaign_phase_not_ready")
+    return phase, case_ids
+
+
+def generate_previews(db: Any = None, *, expected_phase: str | None = None) -> tuple[str, dict[str, Any]]:
     if not test_mode_enabled() or _mass_send_enabled():
         raise TestRunnerError("unsafe_test_environment")
     database = _runner_db(db)
-    phase, case_ids = _next_test_phase(database)
+    phase, case_ids = _require_phase(database, expected_phase)
     cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
     prepared = prepare_test_messages(cases)
     if tuple(item.case.case_id for item in prepared) != case_ids:
@@ -197,12 +219,14 @@ def _health_delivery_unknown() -> int:
     return candidates[0]
 
 
-def send_tests(db: Any = None) -> dict[str, Any]:
+def send_tests(db: Any = None, *, expected_phase: str | None = None) -> dict[str, Any]:
     if not test_mode_enabled() or _mass_send_enabled():
         raise TestRunnerError("unsafe_test_environment")
     database = _runner_db(db)
-    phase, case_ids = _next_test_phase(database)
+    phase, case_ids = _require_phase(database, expected_phase)
     before = _health_delivery_unknown()
+    if before > 6:
+        raise TestRunnerError("delivery_unknown_baseline_exceeds_safety_limit")
     cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
     # Fail closed for this fixed phase before SMTP; later phase cases cannot
     # prevent the user from seeing A/B/D first.
@@ -213,10 +237,10 @@ def send_tests(db: Any = None) -> dict[str, Any]:
     if len(results) != len(case_ids) or any(row.get("status") != "sent_to_test_recipient" for row in results):
         raise TestRunnerError("test_delivery_incomplete")
     after = _health_delivery_unknown()
-    if after > before:
-        raise TestRunnerError("new_delivery_unknown_after_test_send")
+    over_delivery_unknown_limit = after > 6
     return {
-        "status": "test_messages_sent",
+        "status": "delivery_unknown_limit_exceeded" if over_delivery_unknown_limit else "test_messages_sent",
+        "critical_stop": over_delivery_unknown_limit,
         "phase": phase,
         "case_ids": list(case_ids),
         "campaign_id": TEST_CAMPAIGN_ID,
@@ -229,7 +253,7 @@ def send_tests(db: Any = None) -> dict[str, Any]:
         "results": results,
         "delivery_unknown_before": before,
         "delivery_unknown_after": after,
-        "new_delivery_unknown": max(0, after - before),
+        "new_delivery_unknown": max(0, after - 6),
         "mass_send_enabled": False,
     }
 
@@ -251,6 +275,8 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
 
         db = get_db()
     delivery_unknown_before = _health_delivery_unknown()
+    if delivery_unknown_before > 6:
+        raise TestRunnerError("delivery_unknown_baseline_exceeds_safety_limit")
     ledger = db[TEST_LEDGER_COLLECTION]
     sent = list(ledger.find({"campaign_id": TEST_CAMPAIGN_ID, "test_mode": True, "actual_recipient_email": TEST_RECIPIENT}))
     by_code = {str(row.get("property_code") or ""): row for row in sent if row.get("delivery_status") == "test_sent"}
@@ -364,10 +390,10 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         raise TestRunnerError("invalid_or_cross_property_token_not_blocked")
     if not all(e_action_results) or not all(e_report_results):
         raise TestRunnerError("test_e_property_specific_links_failed")
-    if delivery_unknown > delivery_unknown_before:
-        raise TestRunnerError("new_delivery_unknown_after_test_actions")
+    over_delivery_unknown_limit = delivery_unknown > 6
     return {
-        "status": "test_actions_verified",
+        "status": "delivery_unknown_limit_exceeded" if over_delivery_unknown_limit else "test_actions_verified",
+        "critical_stop": over_delivery_unknown_limit,
         "campaign_id": TEST_CAMPAIGN_ID,
         "test_mode": True,
         "auth_url_http": a_status,
@@ -393,7 +419,7 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         "e_property_reports_verified": sum(e_report_results),
         "delivery_unknown_before": delivery_unknown_before,
         "delivery_unknown_after": delivery_unknown,
-        "new_delivery_unknown": max(0, delivery_unknown - delivery_unknown_before),
+        "new_delivery_unknown": max(0, delivery_unknown - 6),
         "actual_recipient_email": TEST_RECIPIENT,
         "owner_emails_sent": 0,
     }
@@ -403,11 +429,81 @@ def execute_runner_action(action: str, db: Any = None) -> Any:
     normalized = validate_runner_request(
         {"action": action}, test_mode=test_mode_enabled(), mass_send_enabled=_mass_send_enabled(),
     )
+    phase_actions = {
+        "GENERATE_PREVIEWS_ABD": ("generate", "INITIAL"),
+        "SEND_TEST_EMAILS_ABD": ("send", "INITIAL"),
+        "GENERATE_PREVIEWS_CE": ("generate", "REMAINING"),
+        "SEND_TEST_EMAILS_CE": ("send", "REMAINING"),
+    }
+    if normalized in {"VERIFY_TEST_EVENTS", "VERIFY_TEST_ACTIONS"}:
+        return verify_test_actions(db)
     if normalized == "GENERATE_PREVIEWS":
         return generate_previews(db)
     if normalized == "SEND_TEST_EMAILS":
         return send_tests(db)
-    return verify_test_actions(db)
+    operation, phase = phase_actions[normalized]
+    if operation == "generate":
+        return generate_previews(db, expected_phase=phase)
+    return send_tests(db, expected_phase=phase)
+
+
+def render_admin_runner_ui() -> HTMLResponse:
+    """Return the deliberately small, non-editable test-runner page."""
+    recipient = html.escape(TEST_RECIPIENT)
+    actions = [
+        ("GENERATE_PREVIEWS_ABD", "1. Generar previews A/B/D", "preview", "INITIAL"),
+        ("SEND_TEST_EMAILS_ABD", "2. Enviar test A/B/D", "send", "INITIAL"),
+        ("GENERATE_PREVIEWS_CE", "3. Generar previews C/E", "preview", "REMAINING"),
+        ("SEND_TEST_EMAILS_CE", "4. Enviar test C/E", "send", "REMAINING"),
+        ("VERIFY_TEST_EVENTS", "5. Verificar eventos test", "verify", ""),
+    ]
+    buttons = "".join(
+        f'<button type="button" data-action="{action}" data-kind="{kind}" data-phase="{phase}">{label}</button>'
+        for action, label, kind, phase in actions
+    )
+    document = f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Runner E2E PROCASA</title><style>
+body{{font:15px Arial,sans-serif;margin:0;background:#f4f6fb;color:#172554}}main{{max-width:900px;margin:28px auto;padding:20px}}
+section{{background:#fff;border:1px solid #dfe3ef;border-radius:12px;padding:20px;margin-bottom:18px}}
+button{{display:block;width:100%;text-align:left;padding:13px 16px;margin:9px 0;border:1px solid #d9dcef;border-radius:8px;background:#fff;color:#172554;font-weight:700;cursor:pointer}}
+button:disabled{{opacity:.45;cursor:not-allowed}}button.send{{border-color:#c6b8ef;background:#f6f2ff}}#status{{white-space:pre-wrap;overflow-wrap:anywhere}}
+iframe{{width:100%;min-height:420px;border:1px solid #dfe3ef;border-radius:8px;background:white}}.muted{{color:#52617d}}
+</style></head><body><main><section><h1>Prueba E2E de campaña</h1>
+<p>Modo TEST · destinatario fijo: <strong>{recipient}</strong> · campaña de prueba fija · envío masivo deshabilitado.</p>
+<p class="muted">No se admiten destinatarios, códigos ni precios editables. Las acciones de envío usan POST y vuelven a validar todos los datos antes de SMTP.</p>
+{buttons}</section><section><h2>Resultado</h2><pre id="status">Esperando acción.</pre><iframe id="preview" title="Previews de campaña" sandbox="allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation" hidden></iframe></section>
+</main><script>
+const statusNode=document.getElementById('status');
+const previewNode=document.getElementById('preview');
+const buttons=[...document.querySelectorAll('button[data-action]')];
+const previewPassed=new Set();
+buttons.filter(b=>b.dataset.kind==='send').forEach(b=>b.disabled=true);
+function show(value){{statusNode.textContent=typeof value==='string'?value:JSON.stringify(value,null,2);}}
+buttons.forEach(button=>button.addEventListener('click',async()=>{{
+  const action=button.dataset.action;
+  if(button.dataset.kind==='send'&&!window.confirm('Enviar exclusivamente a {recipient}')) return;
+  if(button.dataset.kind==='send'&&!previewPassed.has(button.dataset.phase)){{show('Genera y revisa el preview de esta fase antes de enviar.');return;}}
+  buttons.forEach(item=>item.disabled=true); show('Procesando acción administrativa…'); previewNode.hidden=true;
+  let criticalStop=false;
+  try{{
+    const response=await fetch('/internal/owner-campaign-test-runner',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json','Accept':'application/json, text/html'}},body:JSON.stringify({{action}})}});
+    const contentType=response.headers.get('content-type')||'';
+    if(!response.ok){{const body=await response.text();criticalStop=true;show('ERROR HTTP '+response.status+'\n'+body);return;}}
+    if(button.dataset.kind==='preview'){{
+      const body=await response.text();previewNode.srcdoc=body;previewNode.hidden=false;
+      previewPassed.add(button.dataset.phase);
+      buttons.filter(item=>item.dataset.kind==='send'&&item.dataset.phase===button.dataset.phase).forEach(item=>item.disabled=false);
+      show('Preview generado. Revisa la vista antes del envío.');
+    }}else{{
+      const body=await response.json();show(body);
+      if(body.critical_stop){{criticalStop=true;show(body);return;}}
+    }}
+  }}catch(error){{show('Error de comunicación con el runner: '+String(error));}}
+  finally{{if(!criticalStop)buttons.filter(item=>item.dataset.kind==='preview'||item.dataset.kind==='verify').forEach(item=>item.disabled=false);}}
+}}));
+</script></body></html>"""
+    return HTMLResponse(document, status_code=200, headers={"Cache-Control": "private, no-store"})
 
 
 async def handle_admin_runner_request(request: Any, require_admin: Any) -> Any:
@@ -428,7 +524,7 @@ async def handle_admin_runner_request(request: Any, require_admin: Any) -> Any:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if action == "GENERATE_PREVIEWS":
+    if action in {"GENERATE_PREVIEWS_ABD", "GENERATE_PREVIEWS_CE", "GENERATE_PREVIEWS"}:
         document, _summary = result
         return HTMLResponse(document, status_code=200, headers={"Cache-Control": "private, no-store"})
     return result

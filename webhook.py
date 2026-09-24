@@ -5818,6 +5818,17 @@ async def _require_captacion_report_admin(request: Request):
     return user_doc
 
 
+@app.get("/internal/owner-campaign-test-runner", response_class=HTMLResponse, include_in_schema=False)
+async def view_owner_campaign_test_runner(request: Request):
+    """ADMIN-only page for the fixed-recipient E2E test runner; GET has no side effects."""
+    from campanas.owner_campaign_test_runner import _mass_send_enabled, render_admin_runner_ui, test_mode_enabled
+
+    await _require_captacion_report_admin(request)
+    if not test_mode_enabled() or _mass_send_enabled():
+        raise HTTPException(status_code=404, detail="Runner no disponible")
+    return render_admin_runner_ui()
+
+
 @app.post("/internal/owner-campaign-test-runner", include_in_schema=False)
 async def api_owner_campaign_test_runner(request: Request):
     """Existing-admin-session-only runner; request cannot choose recipients/codes."""

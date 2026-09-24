@@ -382,6 +382,7 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 "property_code": case.property_code,
                 "intended_owner_email": case.intended_owner_email.strip(),
                 "actual_recipient_email": TEST_RECIPIENT,
+                "recipient": TEST_RECIPIENT,
                 "operation": case.operation,
                 "current_price_at_send": case.current_price,
                 "raw_recommended_price": case.raw_recommended_price,
@@ -462,8 +463,26 @@ def send_test_messages(
             message = _build_email(item)
             refused = server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
             if refused:
+                refused_at = datetime.now(timezone.utc)
+                for property_case in item.property_cases or _property_cases(item.case):
+                    database[TEST_LEDGER_COLLECTION].update_one(
+                        {
+                            "campaign_id": TEST_CAMPAIGN_ID,
+                            "property_code": property_case.property_code,
+                            "test_mode": True,
+                            "actual_recipient_email": TEST_RECIPIENT,
+                        },
+                        {"$set": {
+                            "delivery_status": "test_recipient_refused",
+                            "smtp_accepted": False,
+                            "recipient": TEST_RECIPIENT,
+                            "smtp_attempted_at": refused_at,
+                        }},
+                    )
                 raise TestSenderError("test_recipient_refused_by_smtp")
             property_codes = []
+            sent_at = datetime.now(timezone.utc)
+            rfc_message_id = str(message["Message-ID"])
             for property_case in item.property_cases or _property_cases(item.case):
                 database[TEST_LEDGER_COLLECTION].update_one(
                     {
@@ -474,8 +493,10 @@ def send_test_messages(
                     },
                     {"$set": {
                         "delivery_status": "test_sent",
-                        "smtp_message_id": str(message["Message-ID"]),
-                        "smtp_accepted_at": datetime.now(timezone.utc),
+                        "smtp_accepted": True,
+                        "rfc_message_id": rfc_message_id,
+                        "sent_at": sent_at,
+                        "recipient": TEST_RECIPIENT,
                     }},
                 )
                 property_codes.append(property_case.property_code)
@@ -485,8 +506,10 @@ def send_test_messages(
                 "property_codes": ",".join(property_codes),
                 "status": "sent_to_test_recipient",
                 "delivery_status": "accepted_by_smtp_relay",
-                "message_id": str(message["Message-ID"]),
-                "provider_message_id": "NOT_EXPOSED_BY_SMTP",
+                "smtp_accepted": True,
+                "rfc_message_id": rfc_message_id,
+                "sent_at": sent_at.isoformat(),
+                "recipient": TEST_RECIPIENT,
             })
     return results
 

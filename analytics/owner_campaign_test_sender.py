@@ -22,7 +22,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from campanas.owner_campaign_test_actions import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
-from campanas.owner_campaign_test_runtime import build_owner_campaign_test_cases_live
+from campanas.owner_campaign_test_runtime import (
+    LiveTestCaseBuildError,
+    build_owner_campaign_test_cases_live,
+)
 from campanas.owner_campaign_test_sender import (
     SERVICE_BASE_URL,
     TEST_LEDGER_COLLECTION,
@@ -194,7 +197,10 @@ def run_test_batch(
     if delivery_before is not None and delivery_before > DELIVERY_UNKNOWN_BASELINE:
         raise TestCampaignCLIError("new_delivery_unknown_present_before_send")
 
-    live_cases = build_owner_campaign_test_cases_live(database, case_ids=selected)
+    try:
+        live_cases = build_owner_campaign_test_cases_live(database, case_ids=selected)
+    except LiveTestCaseBuildError as exc:
+        raise TestCampaignCLIError(f"live_case_build_failed:{exc}") from exc
     if tuple(case.case_id for case in live_cases) != selected:
         raise TestCampaignCLIError("live_case_batch_incomplete")
     prepared = prepare_test_messages(live_cases)

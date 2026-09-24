@@ -330,6 +330,21 @@ def test_independent_cli_dry_run_continues_when_delivery_unknown_metric_is_unava
     assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
 
 
+def test_independent_cli_reports_only_controlled_live_builder_error_codes(monkeypatch):
+    db = FakeDB()
+    monkeypatch.setattr(cli, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(cli, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(
+        cli, "build_owner_campaign_test_cases_live",
+        lambda *_a, **_k: (_ for _ in ()).throw(runtime.LiveTestCaseBuildError("property_image_unresolved")),
+    )
+    with pytest.raises(cli.TestCampaignCLIError, match="live_case_build_failed:property_image_unresolved"):
+        cli.run_test_batch(
+            cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6,
+        )
+    assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
+
+
 def test_independent_cli_send_does_not_fail_after_smtp_when_delivery_metric_is_unavailable(monkeypatch):
     db = FakeDB()
     cases = [_case(case_id) for case_id in cli.INITIAL_CASES]

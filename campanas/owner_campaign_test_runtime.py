@@ -175,7 +175,7 @@ def _variants(code: str) -> list[Any]:
     return [code, int(code)] if code.isdigit() else [code]
 
 
-def _email_from_property(master: Mapping[str, Any]) -> str:
+def _email_from_property(master: Mapping[str, Any], *, required: bool = True) -> str:
     for value in (
         master.get("email_propietario"), _path(master, "propietario.email"),
         _path(master, "owner.email"), _path(master, "contacto.email"),
@@ -189,7 +189,9 @@ def _email_from_property(master: Mapping[str, Any]) -> str:
             and localpart not in PLACEHOLDER_EMAIL_LOCALPARTS
         ):
             return email
-    raise LiveTestCaseBuildError("owner_email_unavailable")
+    if required:
+        raise LiveTestCaseBuildError("owner_email_unavailable")
+    return ""
 
 
 def _active_available(master: Mapping[str, Any]) -> bool:
@@ -654,7 +656,10 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
     code = str(master.get("codigo") or "").strip()
     if not code or not _active_available(master) or not _is_sucre(master):
         raise LiveTestCaseBuildError("property_not_current_active_available_sucre")
-    email = _email_from_property(master)
+    # A/B/D are sent only to the fixed test inbox; owner email is useful for
+    # attribution when present but is not needed to render or route test mail.
+    # Portfolio grouping (E) still requires a real owner email for identity.
+    email = _email_from_property(master, required=case_id == "E")
     executive = _resolve_executive(db, master)
     operation = resolve_property_operation(master)
     if case_id == "D" and operation == VENTA_ARRIENDO:

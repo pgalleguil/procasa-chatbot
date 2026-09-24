@@ -186,7 +186,11 @@ def validate_explicit_cases(cases: Sequence[OwnerCampaignTestCase]) -> list[Owne
     for case in cases:
         if case.case_id == "E":
             portfolio = _property_cases(case)
-            if len(portfolio) < 3 or len({item.intended_owner_email.strip().casefold() for item in portfolio}) != 1:
+            if (
+                len(portfolio) < 3
+                or any(not item.intended_owner_email.strip() for item in portfolio)
+                or len({item.intended_owner_email.strip().casefold() for item in portfolio}) != 1
+            ):
                 raise TestSenderError("test_case_e_portfolio_invalid")
             if any(item.case_id != "E" or item.cta_type not in {"PRICE_AUTHORIZATION", "ADVISOR_REVIEW"} for item in portfolio):
                 raise TestSenderError("test_case_e_property_cta_invalid")
@@ -231,7 +235,6 @@ def _reduction_pct(case: OwnerCampaignTestCase) -> float:
 def _validate_case_identity(case: OwnerCampaignTestCase) -> None:
     if (
         not PROPERTY_CODE_RE.fullmatch(str(case.property_code or ""))
-        or not str(case.intended_owner_email or "").strip()
         or not str(case.executive or "").strip()
         or not _finite_positive(case.current_price)
         or case.cta_type not in {"PRICE_AUTHORIZATION", "ADVISOR_REVIEW", "REPORT_ONLY"}
@@ -273,7 +276,11 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
         raise TestSenderError("test_render_quality_check_failed")
     property_cases = _property_cases(case)
     content = (subject + "\n" + html + "\n" + text).casefold()
-    if any(item.intended_owner_email.strip().casefold() in content for item in property_cases):
+    if any(
+        item.intended_owner_email.strip()
+        and item.intended_owner_email.strip().casefold() in content
+        for item in property_cases
+    ):
         raise TestSenderError("intended_owner_email_leaked")
 
     if case.case_id == "D":

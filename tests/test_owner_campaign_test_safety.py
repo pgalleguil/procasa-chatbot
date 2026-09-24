@@ -265,6 +265,23 @@ def test_http_trigger_secret_uses_constant_time_comparison_and_fails_closed(monk
     assert not cli.trigger_secret_matches("a" * 64)
 
 
+def test_fixed_recipient_abd_cases_do_not_require_owner_email_but_portfolios_do():
+    assert runtime._email_from_property({}, required=False) == ""
+    with pytest.raises(runtime.LiveTestCaseBuildError, match="owner_email_unavailable"):
+        runtime._email_from_property({})
+
+    prepared = sender.prepare_test_messages([_case("A", intended_owner_email="")], render_case=_render)
+    assert len(prepared) == 1
+
+    portfolio = tuple(
+        _case("E", property_code=code, intended_owner_email="")
+        for code in ("70001", "70002", "70003")
+    )
+    wrapper = replace(portfolio[0], case_id="E", portfolio_cases=portfolio)
+    with pytest.raises(sender.TestSenderError, match="test_case_e_portfolio_invalid"):
+        sender.validate_explicit_cases([wrapper])
+
+
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)

@@ -5818,6 +5818,14 @@ async def _require_captacion_report_admin(request: Request):
     return user_doc
 
 
+@app.post("/internal/owner-campaign-test-runner", include_in_schema=False)
+async def api_owner_campaign_test_runner(request: Request):
+    """Existing-admin-session-only runner; request cannot choose recipients/codes."""
+    from campanas.owner_campaign_test_runner import handle_admin_runner_request
+
+    return await handle_admin_runner_request(request, _require_captacion_report_admin)
+
+
 @app.get("/captacion/reporte-semanal", response_class=HTMLResponse)
 async def view_captacion_weekly_report(request: Request, report_id: str = Query(None)):
     await _require_captacion_report_admin(request)

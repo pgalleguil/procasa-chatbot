@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Informe comercial personalizado</title>
+    <style>
+      body { margin:0; padding:0; background:#F5F5F3; color:#17175F; font-family:Arial,Helvetica,sans-serif; }
+      table { border-collapse:collapse; }
+      img { border:0; display:block; }
+      a { text-decoration:none; }
+      .page { width:100%; padding:18px 10px; }
+      .shell { width:100%; max-width:660px; background:#ffffff; }
+      .shell-single { max-width:740px; }
+      .shell-single .header { padding:14px 25px 12px 28px; }
+      .header { padding:9px 24px 8px; border-bottom:1px solid #E5E6EF; }
+      .header-label { color:#62698A; font-size:9px; line-height:1.35; letter-spacing:.1em; text-transform:uppercase; }
+      .header-sub { color:#62698A; font-size:10px; line-height:1.35; }
+      .hero { padding:27px 28px 24px; background:#fbfaff; border-top:3px solid #8d87c7; }
+      .hero-copy { width:62%; padding-right:18px; vertical-align:middle; }
+      .hero-visual { width:38%; vertical-align:middle; }
+      .hero-visual img { width:100%; height:132px; object-fit:cover; border-radius:8px; opacity:.92; }
+      .eyebrow { color:#716b91; font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+      .hero h1 { margin:10px 0 12px; color:#282252; font-size:28px; line-height:1.13; letter-spacing:-.025em; font-weight:700; }
+      .hero p { max-width:510px; margin:0; color:#596579; font-size:14px; line-height:1.7; }
+      .context-strip { padding:10px 28px; color:#596579; background:#f3f1fc; font-size:11px; line-height:1.45; }
+      .context-icon { display:inline-block; width:24px; height:24px; margin-right:8px; color:#625b87; background:#e8e4fb; border-radius:6px; font-size:15px; line-height:24px; text-align:center; vertical-align:middle; }
+      .content { padding:14px 24px 15px; }
+      .multiple-intro { margin:0 0 22px; padding-bottom:18px; border-bottom:1px solid #efedf4; }
+      .section-title { margin:0 0 5px; color:#282252; font-size:19px; line-height:1.3; font-weight:700; }
+      .section-lead { margin:0; color:#70798a; font-size:12px; line-height:1.55; }
+      .property { margin:0 0 32px; padding:0 0 28px; border-bottom:1px solid #e9e7ef; }
+      .property:last-child { margin-bottom:0; padding-bottom:0; border-bottom:0; }
+      .property-summary { width:100%; background:#f8f8fb; border-radius:10px; }
+      .property-summary td { padding:18px 18px; vertical-align:top; }
+      .property-top { width:100%; }
+      .property-photo-cell { width:39%; padding:0 18px 0 0 !important; }
+      .property-photo { width:100%; height:136px; object-fit:cover; border-radius:8px; }
+      .property-detail-cell { padding:0 16px 0 0 !important; }
+      .property-price-cell { width:27%; padding:0 !important; border-left:1px solid #e9e7ef; }
+      .property-price-cell-inner { padding-left:18px; }
+      .property-heading { color:#6e6a86; font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+      .property-code { margin-top:7px; color:#282252; font-size:12px; line-height:1.3; font-weight:700; }
+      .property-price { color:#282252; font-size:27px; line-height:1.05; font-weight:700; white-space:nowrap; }
+      .property-price-label { margin-top:6px; color:#7d8492; font-size:10px; line-height:1.3; }
+      .property-operation { margin-top:13px; color:#687286; font-size:12px; line-height:1.4; }
+      .summary { width:100%; margin:18px 0 0; padding-top:15px; border-top:1px solid #e9e7ef; }
+      .summary-cell { width:33.333%; padding:0 16px 0 0; vertical-align:top; }
+      .summary-cell + .summary-cell { padding-left:16px; border-left:1px solid #e9e7ef; }
+      .metric-line { min-height:18px; }
+      .metric-icon { display:inline-block; width:20px; margin-right:6px; color:#625b87; font-size:17px; line-height:1; vertical-align:-2px; }
+      .label { color:#817d95; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+      .summary-value { margin-top:7px; color:#282252; font-size:16px; line-height:1.25; font-weight:700; }
+      .evidence { margin:22px 0 0; padding:21px 0 0; border-top:1px solid #eceaf2; }
+      .evidence-title { color:#282252; font-size:18px; line-height:1.3; font-weight:700; }
+      .evidence-note { margin-top:7px; color:#687286; font-size:12px; line-height:1.55; }
+      .evidence-badge { display:inline-block; margin-top:14px; padding:6px 10px; color:#625b87; background:#f1effa; border-radius:99px; font-size:10px; font-weight:700; letter-spacing:.03em; }
+      .review-note { margin-top:12px; padding:9px 11px; color:#756b52; background:#fff8e9; border-radius:7px; font-size:11px; line-height:1.45; }
+      .graph { width:100%; margin:24px 0 0; }
+      .graph-label { color:#858094; font-size:10px; line-height:1.3; }
+      .graph-track { height:12px; background:#eeeef4; }
+      .graph-track.active { background:#8d87c7; }
+      .graph-track:first-child { border-radius:7px 0 0 7px; }
+      .graph-track:last-child { border-radius:0 7px 7px 0; }
+      .graph-markers td { height:24px; padding-top:4px; text-align:center; vertical-align:top; }
+      .property-dot { color:#282252; font-size:17px; line-height:1; }
+      .reference-dot { color:#8d87c7; font-size:16px; line-height:1; }
+      .marker-legend { margin-top:3px; color:#7a8090; font-size:10px; line-height:1.4; text-align:center; }
+      .marker-legend span { margin:0 5px; }
+      .marker-legend .legend-property { color:#282252; }
+      .marker-legend .legend-reference { color:#8d87c7; }
+      .position-values { width:100%; margin:16px 0 0; padding:14px 0; border-top:1px solid #e9e7ef; border-bottom:1px solid #e9e7ef; }
+      .position-values td { width:50%; padding:0 16px 0 0; vertical-align:top; }
+      .position-values td + td { padding-left:16px; border-left:1px solid #e9e7ef; }
+      .position-values strong { display:block; margin-top:5px; color:#282252; font-size:18px; line-height:1.2; }
+      .interpretation { margin:18px 0 0; color:#3f4960; font-family:Georgia,serif; font-size:14px; line-height:1.55; }
+      .comparables-grid { width:100%; margin:16px 0 0; }
+      .comp-card { width:33.333%; padding:14px 12px; background:#fbfbfd; border:1px solid #eeeef4; border-radius:8px; vertical-align:top; }
+      .comp-card + .comp-card { border-left:0; }
+      .comparable-no { display:inline-block; width:22px; height:22px; margin-bottom:10px; color:#625b87; background:#efedfb; border-radius:50%; font-size:10px; font-weight:700; line-height:22px; text-align:center; }
+      .comparable-source { color:#282252; font-size:12px; font-weight:700; line-height:1.3; }
+      .comparable-main { color:#687286; font-size:12px; line-height:1.5; }
+      .comparable-price { margin-top:8px; color:#282252; font-size:15px; font-weight:700; line-height:1.35; }
+      .disclaimer { margin:17px 0 0; color:#9298a5; font-size:10px; line-height:1.5; }
+      .land-reference { margin:18px 0 0; padding:14px 15px; background:#f8f7fc; border-left:3px solid #b9b1df; }
+      .land-reference-title { color:#282252; font-size:13px; font-weight:700; }
+      .land-reference-note { margin:5px 0 0; color:#687286; font-size:11px; line-height:1.45; }
+      .valuation { margin:26px 0 0; padding:20px 0 0; border-top:1px solid #e9e7ef; }
+      .valuation-title { color:#282252; font-size:16px; line-height:1.3; font-weight:700; }
+      .valuation-copy { margin:7px 0 0; color:#687286; font-size:11px; line-height:1.5; }
+      .valuation-grid { width:100%; margin-top:14px; }
+      .valuation-grid td { width:33.333%; padding:0 12px 0 0; vertical-align:top; }
+      .valuation-grid td + td { padding-left:12px; border-left:1px solid #e9e7ef; }
+      .valuation-value { margin-top:5px; color:#282252; font-size:15px; font-weight:700; line-height:1.25; }
+      .valuation-strip { width:100%; margin:16px 0 0; background:#f8f8fb; border-radius:9px; }
+      .valuation-strip td { width:25%; padding:13px 12px; vertical-align:top; border-left:1px solid #e5e4ed; }
+      .valuation-strip td:first-child { border-left:0; }
+      .valuation-strip .strip-value { margin-top:6px; color:#282252; font-size:16px; line-height:1.15; font-weight:700; }
+      .valuation-strip .strip-note { margin-top:4px; color:#7c8492; font-size:9px; line-height:1.3; }
+      .property-compact { margin-bottom:18px; padding-bottom:18px; }
+      .compact-card { width:100%; background:#f8f8fb; border-radius:9px; }
+      .compact-card td { padding:12px 14px; vertical-align:middle; }
+      .compact-photo-cell { width:25%; padding-right:12px !important; }
+      .compact-photo { width:100%; height:88px; object-fit:cover; border-radius:7px; }
+      .compact-heading { color:#282252; font-size:14px; line-height:1.25; font-weight:700; }
+      .compact-meta { margin-top:4px; color:#687286; font-size:10px; line-height:1.35; }
+      .compact-price-cell { width:25%; padding-left:12px !important; border-left:1px solid #e9e7ef; text-align:right; }
+      .compact-price { color:#282252; font-size:19px; line-height:1.1; font-weight:700; white-space:nowrap; }
+      .compact-price-label { margin-top:4px; color:#7d8492; font-size:9px; line-height:1.3; }
+      .compact-valuation { margin-top:10px; }
+      .compact-valuation td { padding:10px 9px; }
+      .compact-valuation .strip-value { margin-top:4px; font-size:13px; }
+      .compact-valuation .strip-note { font-size:8px; }
+      .compact-market { width:100%; margin-top:10px; padding:10px 0; border-top:1px solid #e9e7ef; border-bottom:1px solid #e9e7ef; }
+      .compact-market td { width:50%; padding:0 10px 0 0; vertical-align:top; }
+      .compact-market td + td { padding-left:10px; border-left:1px solid #e9e7ef; }
+      .compact-market strong { display:block; margin-top:3px; color:#282252; font-size:14px; line-height:1.2; }
+      .compact-note { margin:9px 0 0; color:#687286; font-size:10px; line-height:1.4; }
+      .compact-review { margin-top:8px; padding:7px 9px; color:#756b52; background:#fff8e9; border-radius:6px; font-size:10px; line-height:1.35; }
+      .compact-actions { width:78%; margin:11px auto 0; }
+      .compact-actions .primary { padding:10px 12px; font-size:11px; }
+      .compact-actions .secondary { padding-top:7px; font-size:10px; }
+      .conclusion { margin:24px 0 0; padding:20px 0 0; border-top:1px solid #e9e7ef; }
+      .insights { width:100%; margin:22px 0 0; }
+      .insight-card { width:50%; padding:17px 16px; border-radius:8px; vertical-align:top; }
+      .insight-card + .insight-card { border-left:10px solid #ffffff; }
+      .insight-diagnostic { background:#f1f3fb; }
+      .insight-recommendation { background:#fff8ec; }
+      .diagnostic-copy { margin:8px 0 0; color:#3f4960; font-size:12px; line-height:1.5; }
+      .recommendation-label { color:#817d95; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+      .recommendation-title { margin-top:7px; color:#282252; font-size:18px; line-height:1.3; font-weight:700; }
+      .recommendation-copy { margin:8px 0 0; color:#687286; font-size:13px; line-height:1.6; }
+      .price-compare { width:100%; margin-top:18px; padding-top:14px; border-top:1px solid #e9e7ef; }
+      .price-compare td { width:50%; padding:0 16px 0 0; vertical-align:top; }
+      .price-compare td + td { padding-left:16px; border-left:1px solid #e9e7ef; }
+      .price-compare strong { display:block; margin-top:5px; color:#282252; font-size:18px; line-height:1.2; }
+      .document-line { display:table; width:100%; margin:18px 0 0; color:#687286; font-size:12px; line-height:1.5; }
+      .document-icon { display:table-cell; width:34px; color:#625b87; font-size:9px; font-weight:700; letter-spacing:.05em; vertical-align:middle; }
+      .document-copy { display:table-cell; vertical-align:middle; }
+      .document-copy strong { color:#282252; font-size:13px; }
+      .actions { width:72%; margin:22px auto 0; }
+      .primary { display:block; padding:15px 18px; background:#282252; border-radius:7px; color:#ffffff !important; font-size:13px; line-height:1.2; font-weight:700; text-align:center; }
+      .secondary { display:block; padding:11px 16px 0; color:#625b87 !important; font-size:11px; line-height:1.3; font-weight:700; text-align:center; }
+      .executive { padding:21px 28px 19px; border-top:1px solid #efedf4; text-align:center; }
+      .exec-avatar { display:inline-block; width:32px; height:32px; margin-bottom:9px; color:#625b87; background:#f1effa; border-radius:50%; font-size:11px; font-weight:700; line-height:32px; }
+      .exec-title { color:#282252; font-size:13px; font-weight:700; }
+      .exec-copy { margin-top:5px; color:#778091; font-size:11px; line-height:1.55; }
+      .exec-tagline { margin-top:9px; color:#625b87; font-family:Georgia,serif; font-size:14px; font-style:italic; }
+      .footer { padding:14px 28px 21px; color:#9a9eaa; font-size:9px; line-height:1.5; text-align:center; }
+      .footer img { width:48px; height:auto; margin:0 auto 8px; opacity:.8; }
+      .desktop-only { display:inline; }
+      .hero-single { padding:0; border-right:19px solid #ffffff; border-left:36px solid #ffffff; background-color:#F7F6FF; background-repeat:no-repeat; background-position:center, right center; background-size:100% 100%, 42% 100%; }
+      .hero-single-copy { width:69%; padding:21px 10px 19px 22px; vertical-align:middle; }
+      .hero-single-aside { width:31%; padding:10px 13px 12px 5px; color:#ffffff; font-family:Georgia,serif; font-size:13px; line-height:1.18; text-align:right; text-shadow:0 1px 3px rgba(20,20,55,.55); vertical-align:bottom; }
+      .hero-aside-rule { display:block; width:22px; margin:7px 0 0 auto; border-top:2px solid #ffffff; }
+      .hero-single .eyebrow { color:#4232C5; font-size:9px; line-height:1.35; letter-spacing:.12em; }
+      .hero-single h1 { width:96%; margin:6px 0 6px; color:#17175F; font-size:22px; line-height:1.13; letter-spacing:-.035em; font-weight:700; }
+      .hero-single p { width:94%; max-width:500px; margin:0; color:#62698A; font-size:11px; line-height:1.38; }
+      .context-strip { padding:8px 24px; color:#62698A; background:#ECEBFF; font-size:10px; line-height:1.4; }
+      .context-icon { width:22px; height:22px; margin-right:9px; background:#ffffff; border:1px solid #DCD9FF; border-radius:5px; }
+      .shell-single .context-strip { padding:8px 24px; border-right:19px solid #ffffff; border-left:36px solid #ffffff; font-size:9px; line-height:1.35; }
+      .shell-single .context-icon { width:20px; height:20px; line-height:20px; }
+      .context-title { color:#4232C5; font-size:8px; letter-spacing:.08em; white-space:nowrap; }
+      .context-bar { display:inline-block; width:3px; margin:0 1px; background:#4232C5; vertical-align:bottom; }
+      .context-bar-one { height:6px; }
+      .context-bar-two { height:10px; }
+      .context-bar-three { height:14px; }
+      .content-single { padding:14px 14px 16px 30px; }
+      .single-property { margin:0; padding:0; border:0; }
+      .property-card-single { width:100%; border:1px solid #E5E6EF; border-radius:11px; background:#FBFBFE; }
+      .property-card-single td { padding:5px 7px; vertical-align:middle; }
+      .single-photo-cell { width:39%; padding:5px 8px 5px 7px !important; }
+      .single-photo-wrap { position:relative; width:100%; }
+      .single-photo { width:100%; height:116px; object-fit:cover; border-radius:7px; }
+      .single-operation-badge { position:absolute; top:8px; left:8px; display:inline-block; padding:4px 9px; color:#4232C5; background:#ECEBFF; border:1px solid #DCD9FF; border-radius:999px; font-size:9px; line-height:1.2; font-weight:700; }
+      .single-detail-cell { width:34%; padding:5px 10px !important; vertical-align:middle; }
+      .single-heading { color:#17175F; font-size:14px; line-height:1.3; font-weight:700; }
+      .single-code { margin-top:4px; color:#62698A; font-size:11px; line-height:1.3; }
+      .single-feature-row { margin-top:13px; }
+      .single-feature { display:inline-block; margin:0 10px 4px 0; color:#62698A; font-size:10px; line-height:1.3; white-space:nowrap; }
+      .single-feature .comp-icon { width:13px; height:13px; margin-right:4px; vertical-align:-2px; }
+      .single-feature .comp-icon-area i { left:1px; top:4px; width:10px; }
+      .single-feature .comp-icon-bed { height:11px; }
+      .single-feature .comp-icon-bed i { width:4px; height:4px; }
+      .single-feature .comp-icon-bed b { top:6px; }
+      .single-feature .comp-icon-bath i { top:5px; height:5px; }
+      .single-operation { margin-top:5px; color:#62698A; font-size:11px; line-height:1.3; }
+      .single-price-cell { width:25%; padding:5px 10px !important; border-left:1px solid #E5E6EF; text-align:center; vertical-align:middle; }
+      .single-price-label { color:#62698A; font-size:9px; line-height:1.35; letter-spacing:.08em; text-transform:uppercase; }
+      .single-price { margin-top:4px; color:#17175F; font-size:24px; line-height:1.1; font-weight:700; white-space:nowrap; }
+      .valuation-strip-single { width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-radius:9px; background:#FBFAFF; }
+      .valuation-strip-single td { width:25%; padding:8px 9px; vertical-align:middle; border-left:1px solid #ECEBF3; }
+      .valuation-strip-single td:first-child { border-left:0; }
+      .valuation-three td { width:33.333%; }
+      .valuation-strip-single .label { color:#62698A; font-size:8px; letter-spacing:.045em; white-space:nowrap; }
+      .strip-icon-single { display:inline-block; width:21px; height:20px; margin-right:6px; color:#4232C5; border:0; font-size:18px; font-weight:700; line-height:20px; text-align:center; vertical-align:-3px; }
+      .valuation-strip-single .strip-value { margin-top:5px; color:#17175F; font-size:17px; line-height:1.12; font-weight:700; }
+      .valuation-strip-single .strip-note { margin-top:3px; color:#62698A; font-size:9px; line-height:1.25; }
+      .valuation-suggested { background:#ECEBFF; }
+      .valuation-suggested .strip-value { color:#4232C5; font-size:20px; }
+      .valuation-gap-note { color:#62698A; }
+      .single-property + .single-property { margin-top:15px; padding-top:15px; border-top:1px solid #E5E6EF; }
+      .portfolio-summary-heading { margin:0 0 9px; padding:0 0 8px; border-bottom:1px solid #E5E6EF; color:#17175F; font-size:18px; line-height:1.25; font-weight:700; }
+      .portfolio-item { box-sizing:border-box; width:100%; min-height:220px; margin:0 0 8px; padding:16px 9px; border:1px solid #E5E6EF; border-radius:9px; background:#FBFAFF; }
+      .portfolio-summary-card { width:100%; border:0; border-radius:0; background:transparent; }
+      .portfolio-summary-card td { vertical-align:middle; }
+      .portfolio-photo-cell { width:146px; padding:7px 10px 7px 7px; }
+      .portfolio-photo { display:block; width:146px; height:82px; object-fit:cover; border-radius:7px; }
+      .portfolio-info-cell { padding:7px 9px; }
+      .portfolio-type { color:#17175F; font-size:13px; line-height:1.25; font-weight:700; }
+      .portfolio-code { margin-top:3px; color:#62698A; font-size:9px; line-height:1.25; }
+      .portfolio-executive { margin-top:3px; color:#62698A; font-size:8px; line-height:1.25; }
+      .portfolio-price-cell { width:142px; padding:7px 10px; border-left:1px solid #E5E6EF; text-align:right; }
+      .portfolio-price-label, .portfolio-label { color:#62698A; font-size:8px; line-height:1.25; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+      .portfolio-price { margin-top:3px; color:#17175F; font-size:18px; line-height:1.1; font-weight:700; white-space:nowrap; }
+      .portfolio-data { width:100%; margin-top:5px; border:1px solid #E5E6EF; border-radius:8px; background:#F8F7FF; }
+      .portfolio-data td { width:50%; padding:6px 9px; vertical-align:top; }
+      .portfolio-data td + td { border-left:1px solid #E5E6EF; }
+      .portfolio-value { margin-top:2px; color:#17175F; font-size:12px; line-height:1.2; font-weight:700; }
+      .portfolio-detail { margin-top:2px; color:#62698A; font-size:8px; line-height:1.25; }
+      .portfolio-activity { margin-top:3px; color:#282252; font-size:9px; line-height:1.3; font-weight:700; }
+      .portfolio-origins { margin-top:2px; color:#62698A; font-size:8px; line-height:1.25; }
+      .portfolio-position { margin-top:5px; padding:5px 9px; color:#4E5571; background:#F3F2FA; border-radius:6px; font-size:9px; line-height:1.3; }
+      .portfolio-position strong { color:#17175F; }
+      .portfolio-actions { width:100%; margin-top:5px; }
+      .portfolio-actions td { padding:3px 2px 0; vertical-align:middle; }
+      .portfolio-primary { display:inline-block; padding:7px 12px; color:#ffffff !important; background:#17175F; border-radius:999px; font-size:9px; line-height:1.2; font-weight:700; }
+      .portfolio-authorized { display:block; margin-bottom:3px; color:#4232C5; font-size:8px; line-height:1.2; font-weight:700; }
+      .portfolio-report { color:#4232C5 !important; font-size:9px; line-height:1.25; font-weight:700; white-space:nowrap; }
+      .activity-90-single { box-sizing:border-box; width:100%; margin:10px 0 0; padding:9px 11px; border:1px solid #E5E6EF; border-radius:8px; background:#F7F8FF; }
+      .activity-title-single { color:#17175F; font-size:10px; line-height:1.3; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+      .activity-stats-single { width:100%; margin-top:7px; }
+      .activity-stats-single td { width:33.333%; padding:5px 8px; border-left:1px solid #E5E6EF; vertical-align:top; }
+      .activity-stats-single td:first-child { padding-left:0; border-left:0; }
+      .activity-stat-label-single { color:#62698A; font-size:8px; line-height:1.25; text-transform:uppercase; }
+      .activity-stat-value-single { margin-top:2px; color:#17175F; font-size:14px; line-height:1.15; font-weight:700; }
+      .activity-portals-single { margin:5px 0 0; color:#62698A; font-size:8px; line-height:1.35; }
+      .activity-copy-single { margin:5px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
+      .evidence-single { margin:12px 0 0; padding:15px 14px 13px; border:1px solid #E5E6EF; border-radius:10px; background:#ffffff; }
+      .evidence-heading-row { width:100%; }
+      .evidence-heading-row td { vertical-align:top; }
+      .evidence-title-single { color:#17175F; font-size:17px; line-height:1.2; font-weight:700; }
+      .evidence-badge-single { display:inline-block; padding:5px 8px; color:#4232C5; background:#ECEBFF; border-radius:999px; font-size:9px; line-height:1.2; font-weight:700; white-space:nowrap; }
+      .evidence-note-single { margin:5px 0 0; color:#62698A; font-size:10px; line-height:1.4; }
+      .positioning-mode-title { margin:13px 0 0; color:#62698A; font-size:10px; line-height:1.35; font-weight:700; letter-spacing:.03em; }
+      .position-graph { width:100%; margin:10px 0 0; }
+      .position-graph-labels td { width:33.333%; color:#62698A; font-size:9px; line-height:1.25; }
+      .position-track { width:100%; margin-top:4px; }
+      .position-track td { width:20%; height:14px; padding:0; }
+      .position-track td:first-child { border-radius:999px 0 0 999px; }
+      .position-track td:last-child { border-radius:0 999px 999px 0; }
+      .position-marker-grid, .position-caption-grid { width:100%; table-layout:fixed; }
+      .position-marker-row td { height:12px; padding-top:0; text-align:center; vertical-align:top; }
+      .position-marker { display:inline-block; width:9px; height:9px; border-radius:50%; }
+      .position-marker-reference { position:relative; top:-13px; background:#B8B6D3; border:1px solid #ffffff; }
+      .position-marker-property { position:relative; top:-16px; width:17px; height:17px; background:#17175F; border:2px solid #ffffff; box-shadow:0 0 0 1px #17175F; }
+      .position-caption-row td { color:#62698A; font-size:9px; line-height:1.3; text-align:center; vertical-align:top; }
+      .position-caption-row strong { color:#17175F; font-size:9px; }
+      .position-reference-callout { display:inline-block; padding:4px 7px; color:#62698A; background:#F3F2F8; border-radius:7px; font-size:8px; line-height:1.25; white-space:nowrap; }
+      .position-property-callout { display:inline-block; padding:4px 7px; color:#ffffff; background:#17175F; border-radius:7px; font-size:8px; line-height:1.25; font-weight:700; white-space:nowrap; }
+      .caption-dot { display:inline-block; width:6px; height:6px; margin-right:3px; border-radius:50%; vertical-align:1px; }
+      .caption-dot-reference { background:#B8B6D3; }
+      .caption-dot-property { background:#4232C5; }
+      .position-metrics { width:100%; margin-top:8px; }
+      .position-metric { width:50%; padding:11px 12px; border:1px solid #E5E6EF; border-radius:8px; background:#F7F6FF; vertical-align:middle; }
+      .position-metric + .position-metric { border-left:8px solid #ffffff; }
+      .position-metric strong { display:block; margin-top:3px; color:#17175F; font-size:17px; line-height:1.15; }
+      .position-metric-icon { width:31px; color:#4232C5; font-size:20px; line-height:1; text-align:center; vertical-align:middle; }
+      .position-fallback-card { margin-top:14px; padding:13px 14px; border:1px solid #E5E6EF; border-radius:8px; background:#F7F6FF; }
+      .position-fallback-title { color:#17175F; font-size:11px; font-weight:700; }
+      .position-fallback-values { width:100%; margin-top:8px; }
+      .position-fallback-values td { width:50%; padding:0 12px 0 0; color:#62698A; font-size:9px; vertical-align:top; }
+      .position-fallback-values td + td { padding-left:12px; border-left:1px solid #E5E6EF; }
+      .position-fallback-values strong { display:block; margin-top:3px; color:#17175F; font-size:16px; }
+      .position-unavailable-card { margin-top:14px; padding:14px; border:1px solid #E5E6EF; border-radius:8px; color:#62698A; background:#F7F6FF; font-size:10px; line-height:1.45; }
+      .position-explanation { margin:0; padding-left:9px; border-left:1px solid #E5E6EF; color:#62698A; font-size:8px; line-height:1.25; }
+      .comparables-grid-single { width:100%; margin:10px 0 0; border-collapse:separate !important; border-spacing:9px 0; }
+      .comp-card-single { width:33.333%; height:82px; padding:10px 11px 8px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
+      .comp-card-single .comp-icon-area { width:12px; height:12px; }
+      .comp-card-single .comp-icon-area i { left:1px; top:4px; width:9px; }
+      .comparable-card-heading { white-space:nowrap; }
+      .comparable-rank-single { display:inline-block; width:20px; height:20px; margin-right:6px; color:#4232C5; background:#ECEBFF; border-radius:50%; font-size:9px; line-height:20px; text-align:center; vertical-align:middle; }
+      .comparable-source-single { color:#17175F; font-size:10px; line-height:1.3; font-weight:700; text-transform:uppercase; vertical-align:middle; }
+      .comparable-main-single { height:2.7em; overflow:hidden; margin-top:5px; color:#62698A; font-size:10px; line-height:1.3; }
+      .comp-attribute-row { white-space:nowrap; }
+      .comp-attribute { display:inline-block; margin-right:7px; color:#62698A; font-size:10px; line-height:1.3; white-space:nowrap; }
+      .comp-icon { position:relative; display:inline-block; width:13px; height:12px; margin-right:4px; color:#625B87; vertical-align:-1px; box-sizing:border-box; }
+      .comp-icon-area { width:9px; height:9px; border:1px solid #817D95; border-radius:1px; }
+      .comp-icon-area i { position:absolute; left:0; top:3px; width:7px; border-top:1px solid #817D95; transform:rotate(-42deg); }
+      .comp-icon-land { height:9px; border-bottom:1px solid #817D95; }
+      .comp-icon-land i, .comp-icon-land b { position:absolute; top:2px; height:6px; border-left:1px solid #817D95; }
+      .comp-icon-land i { left:1px; }
+      .comp-icon-land b { right:1px; }
+      .comp-icon-bed { height:9px; border-left:1px solid #817D95; border-bottom:1px solid #817D95; }
+      .comp-icon-bed i { position:absolute; left:2px; top:1px; width:3px; height:3px; border:1px solid #817D95; border-radius:50%; }
+      .comp-icon-bed b { position:absolute; left:1px; right:0; top:5px; border-top:1px solid #817D95; }
+      .comp-icon-bath i { position:absolute; left:1px; right:1px; top:4px; height:4px; border:1px solid #817D95; border-top:0; border-radius:0 0 3px 3px; }
+      .comp-icon-bath b { position:absolute; left:2px; top:1px; height:3px; border-left:1px solid #817D95; }
+      .comp-icon-parking { width:11px; height:11px; border:1px solid #817D95; border-radius:50%; color:#62698A; font-size:8px; line-height:10px; font-style:normal; font-weight:700; text-align:center; }
+      .comparable-value-row { width:100%; margin-top:2px; table-layout:fixed; }
+      .comparable-value-row td:first-child { width:50%; }
+      .comparable-value-row td:last-child { width:50%; }
+      .comparable-value-row td { padding:0; vertical-align:baseline; }
+      .comparable-price-single { color:#17175F; font-size:16px; line-height:1.15; font-weight:700; white-space:nowrap; }
+      .comparable-unit-single { color:#62698A; font-size:8px; line-height:1.2; white-space:nowrap; }
+      .land-reference-single { margin:9px 0 0; padding:8px 10px; border-radius:7px; background:#F7F6FF; }
+      .land-reference-single .land-reference-title { color:#17175F; font-size:10px; }
+      .land-reference-single .land-reference-note { margin:2px 0 0; font-size:9px; }
+      .land-references-grid { width:100%; margin-top:5px; }
+      .land-references-grid td { width:50%; padding:3px 8px 0 0; color:#62698A; font-size:9px; line-height:1.3; }
+      .disclaimer-single { margin:7px 0 0; color:#62698A; font-size:9px; line-height:1.3; }
+      .insights-single { width:100%; margin:14px 0 0; table-layout:fixed; }
+      .insight-single { width:49%; padding:14px 13px; border-radius:9px; vertical-align:top; }
+      .insight-single-gap { width:2%; }
+      .insight-diagnostic { background:#F5F6FF; }
+      .insight-recommendation { border:1px solid #EAE3D7; background:#FFFCF6; box-sizing:border-box; }
+      .insight-single .label, .insight-single .recommendation-label { color:#62698A; font-size:9px; }
+      .insight-single .diagnostic-copy { margin:8px 0 0; color:#41486C; font-size:11px; line-height:1.45; }
+      .insight-single .recommendation-title { margin-top:3px; color:#17175F; font-size:14px; line-height:1.2; font-weight:700; }
+      .insight-single .recommendation-copy { margin:8px 0 0; color:#62698A; font-size:11px; line-height:1.4; }
+      .insight-heading-single { color:#4232C5; font-size:14px; line-height:1; vertical-align:middle; }
+      .insight-head-row-single { width:100%; }
+      .insight-head-row-single td { padding:0; vertical-align:middle; }
+      .insight-icon-cell-single { width:31px; }
+      .insight-icon-box-single { position:relative; display:inline-block; width:21px; height:24px; border:1px solid #4232C5; border-radius:3px; background:#ffffff; box-sizing:border-box; vertical-align:middle; }
+      .insight-icon-document-single:before, .insight-icon-document-single:after { position:absolute; left:4px; right:4px; height:1px; background:#4232C5; content:""; }
+      .insight-icon-document-single:before { top:7px; box-shadow:0 4px 0 #4232C5, 0 8px 0 #4232C5; }
+      .insight-icon-target-single { width:22px; height:22px; border:2px solid #4232C5; border-radius:50%; background:transparent; }
+      .insight-icon-target-single:before, .insight-icon-target-single:after { position:absolute; border:1px solid #4232C5; border-radius:50%; content:""; }
+      .insight-icon-target-single:before { inset:4px; }
+      .insight-icon-target-single:after { inset:8px; background:#4232C5; }
+      .insight-title-single { color:#62698A; font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+      .price-compare-single { width:100%; margin-top:10px; border-collapse:separate !important; border-spacing:5px 0; }
+      .price-compare-single td { width:33.333%; padding:8px 7px; border:1px solid #EAE2D6; border-radius:6px; background:#FBF9F4; vertical-align:top; }
+      .price-compare-single .label { font-size:7px; letter-spacing:.02em; white-space:nowrap; }
+      .price-compare-single strong { display:block; margin-top:4px; color:#17175F; font-size:17px; line-height:1.1; white-space:nowrap; }
+      .document-line-single { width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-radius:8px; background:#ffffff; }
+      .document-line-single td { padding:10px 11px; vertical-align:middle; }
+      .document-icon-single { width:30px; color:#4232C5; font-size:9px; font-weight:700; }
+      .document-icon-box { display:inline-block; width:18px; height:22px; padding:3px; border:1px solid #4232C5; border-radius:3px; box-sizing:border-box; vertical-align:middle; }
+      .document-icon-box i { display:block; width:10px; height:3px; margin-top:3px; border-top:1px solid #4232C5; }
+      .document-icon-box i:first-child { margin-top:1px; }
+      .document-copy-single { color:#62698A; font-size:11px; line-height:1.4; }
+      .document-copy-single strong { color:#17175F; font-size:12px; }
+      .document-evidence-single { width:34%; color:#62698A; font-size:9px; line-height:1.45; }
+      .document-evidence-grid-single { width:100%; }
+      .document-evidence-grid-single td { padding:1px 4px 1px 0; white-space:nowrap; }
+      .document-check-single { color:#4232C5; font-size:11px; font-weight:700; }
+      .document-action-single { display:inline-block; padding:7px 9px; color:#4232C5; background:#ECEBFF; border-radius:5px; font-size:9px; line-height:1.2; font-weight:700; white-space:nowrap; }
+      .communal-context-single { margin:10px 0 0; padding:10px 12px; border:1px solid #E5E6EF; border-radius:8px; background:#F8F7FF; }
+      .communal-context-heading { color:#17175F; font-size:12px; line-height:1.25; font-weight:700; }
+      .communal-context-subtitle { margin-top:2px; color:#62698A; font-size:9px; line-height:1.3; }
+      .communal-metrics-single { width:100%; margin-top:6px; }
+      .communal-metrics-single td { width:33.333%; padding:5px 8px 0 0; border-top:1px solid #E5E6EF; vertical-align:top; }
+      .communal-metric-label { color:#62698A; font-size:8px; line-height:1.25; }
+      .communal-metric-value { margin-top:2px; color:#17175F; font-size:11px; line-height:1.25; font-weight:700; }
+      .communal-context-copy { margin:5px 0 0; color:#62698A; font-size:9px; line-height:1.3; }
+      .actions-single { width:350px; max-width:100%; margin:18px auto 8px; }
+      .actions-single .primary { box-sizing:border-box; height:46px; padding:0 18px; background:#17175F; border-radius:999px; font-size:11px; line-height:46px; }
+      .actions-single .secondary { padding:9px 10px 0; color:#4232C5 !important; font-size:9px; }
+      .executive-single { padding:10px 20px; border-top:1px solid #E5E6EF; }
+      .executive-one { padding:0 !important; border-top:0; text-align:left; }
+      .executive-single table { width:100%; }
+      .executive-single td { vertical-align:middle; }
+      .exec-avatar-single { width:39px; }
+      .exec-avatar-single span { display:inline-block; width:34px; height:34px; color:#4232C5; background:#ECEBFF; border-radius:50%; font-size:11px; line-height:34px; text-align:center; }
+      .exec-details-single { color:#62698A; font-size:9px; line-height:1.4; }
+      .exec-details-single strong { display:block; color:#17175F; font-size:11px; }
+      .exec-name-single { display:block; margin-top:1px; color:#17175F; font-size:10px; line-height:1.25; font-weight:700; }
+      .exec-contact-single { display:block; margin-top:1px; color:#62698A; font-size:9px; line-height:1.25; }
+      .exec-brand-cell-single { width:105px; text-align:right; }
+      .brand-logo-executive-single { display:block; width:96px; height:40px; margin-left:auto; object-fit:cover; object-position:center; }
+      .exec-tagline-single { width:120px; color:#4232C5; font-family:Georgia,serif; font-size:12px; line-height:1.25; font-style:italic; text-align:right; }
+      .footer-single { padding:12px 42px 14px; color:#62698A; font-size:9px; line-height:1.45; text-align:center; border-top:1px solid #E5E6EF; }
+      .brand-logo-header { display:block; width:96px; height:40px; object-fit:cover; object-position:center; }
+      .brand-logo-footer { display:block; width:60px; height:26px; margin:0 auto 2px; object-fit:cover; object-position:center; }
+      .footer-one { padding:0; }
+      .footer-links-single { color:#4232C5; font-size:8px; line-height:1.15; letter-spacing:.08em; }
+      @media only screen and (max-width:620px) {
+        .page { padding:0; }
+        .shell-single { width:100%; }
+        .shell-single .header { padding:17px 20px 15px; }
+        .header { padding:17px 20px 15px; }
+        .hero { padding:27px 20px 23px; }
+        .hero-copy, .hero-visual { display:block; width:auto; padding:0; }
+        .hero-visual { margin-top:16px; }
+        .hero-visual img { height:145px; }
+        .hero h1 { font-size:25px; line-height:1.18; }
+        .hero p { font-size:13px; line-height:1.65; }
+        .content { padding:22px 20px 16px; }
+        .property-summary td { padding:19px 18px; }
+        .property-price { font-size:24px; }
+        .property-photo-cell, .property-price-cell { display:block; width:auto !important; padding:0 !important; border-left:0; }
+        .property-photo { height:150px; margin-bottom:16px; }
+        .property-detail-cell { display:block; width:auto !important; padding:0 !important; margin-bottom:14px; }
+        .property-price-cell-inner { padding:15px 0 0; border-top:1px solid #e9e7ef; }
+        .summary-cell { display:block; width:auto; padding:0 0 13px; }
+        .summary-cell + .summary-cell { padding:13px 0 0; border-top:1px solid #e9e7ef; border-left:0; }
+        .evidence { padding-top:23px; }
+        .evidence-title { font-size:18px; }
+        .position-values strong { font-size:18px; }
+        .comp-card { display:block; width:auto !important; margin-bottom:8px; }
+        .comp-card + .comp-card { border-left:1px solid #eeeef4; }
+        .insight-card { display:block; width:auto !important; }
+        .insight-card + .insight-card { margin-top:8px; border-left:0; }
+        .valuation-strip td { display:block; width:auto; border-left:0; border-top:1px solid #e5e4ed; }
+        .valuation-strip td:first-child { border-top:0; }
+        .actions { width:96%; }
+        .executive { padding-left:20px; padding-right:20px; }
+        .desktop-only { display:none; }
+        .hero-single { border-right:0; border-left:0; background-image:none !important; }
+        .hero-single-copy { display:block; width:auto !important; padding:17px 16px 15px; }
+        .hero-single-aside { display:none; }
+        .hero-single h1 { width:auto; font-size:23px; }
+        .hero-single p { width:auto; }
+        .context-strip { padding:8px 16px; }
+        .shell-single .context-strip { border-right:0; border-left:0; }
+        .content-single { padding:10px 12px 12px; }
+        .portfolio-summary-heading { margin-bottom:7px; font-size:17px; }
+        .portfolio-item { margin-bottom:7px; }
+        .portfolio-photo-cell { width:31%; padding:6px 6px 6px 6px; }
+        .portfolio-photo { width:100%; height:76px; }
+        .portfolio-info-cell { width:69%; padding:5px 5px; }
+        .portfolio-type { font-size:11px; }
+        .portfolio-code { font-size:8px; }
+        .portfolio-executive { font-size:7px; }
+        .portfolio-price-cell { width:40%; padding:5px 5px; }
+        .portfolio-price-label { font-size:7px; }
+        .portfolio-price { font-size:12px; white-space:nowrap; }
+        .portfolio-data { display:block; }
+        .portfolio-data tbody, .portfolio-data tr { display:block; width:100%; }
+        .portfolio-data td { display:block; width:auto !important; padding:5px 8px; }
+        .portfolio-data td + td { border-left:0; border-top:1px solid #E5E6EF; }
+        .portfolio-value { font-size:12px; }
+        .portfolio-activity { font-size:9px; }
+        .portfolio-position { font-size:9px; }
+        .portfolio-actions td { padding-top:4px; }
+        .portfolio-primary { padding:8px 10px; font-size:8px; }
+        .portfolio-report { font-size:8px; }
+        .single-photo-cell, .single-detail-cell, .single-price-cell { display:block; width:auto !important; padding:8px !important; border-left:0; text-align:left; }
+        .single-photo { height:155px; }
+        .single-price-cell { border-top:1px solid #E5E6EF; text-align:left; }
+        .valuation-strip-single td { display:inline-block; width:50% !important; min-height:54px; box-sizing:border-box; border-top:1px solid #E5E6EF; }
+        .valuation-strip-single td:nth-child(odd) { border-left:0; }
+        .valuation-strip-single td:first-child, .valuation-strip-single td:nth-child(2) { border-top:0; }
+        .evidence-single { padding:12px 11px; }
+        .evidence-heading-row td { display:block; width:auto !important; text-align:left !important; }
+        .evidence-badge-single { margin-top:5px; }
+        .position-caption-row td { font-size:8px; }
+        .position-property-callout, .position-reference-callout { max-width:92px; box-sizing:border-box; white-space:normal; }
+        .position-property-row td { height:28px; }
+        .position-property-anchor { position:relative; }
+        .position-property-callout { position:absolute; top:0; left:-24px; }
+        .position-property-anchor-first .position-property-callout { left:0; }
+        .position-property-anchor-last .position-property-callout { left:auto; right:0; }
+        .position-metric { display:block; width:auto !important; }
+        .position-metric + .position-metric { border-left:1px solid #E5E6EF; border-top:6px solid #ffffff; }
+        .comp-card-single { display:block; width:auto !important; margin-bottom:7px; }
+        .insight-single { display:block; width:auto !important; }
+        .insight-single-gap { display:none; }
+        .insight-recommendation { margin-top:7px; }
+        .actions-single { width:100%; }
+        .executive-single { padding-left:16px; padding-right:16px; }
+        .exec-brand-cell-single { width:65px; }
+        .brand-logo-executive-single { width:62px; }
+        .document-evidence-single { display:none; }
+        .exec-tagline-single { width:95px; font-size:10px; }
+        .footer-single { padding-left:16px; padding-right:16px; }
+        .footer-brand-cell-single { width:58px; padding-right:7px; }
+        .footer-brand-single { width:52px; height:24px; }
+        .footer-single img.footer-brand-single { width:64px; height:24px; }
+        .footer-copy-single { font-size:7px; }
+      }
+    </style>
+  </head>
+  <body>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="page">
+      <tr><td align="center">
+        <table role="presentation" cellspacing="0" cellpadding="0" class="shell shell-single">
+          <tr><td class="header">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+              <tr>
+                <td align="left"><img class="brand-logo-header" src="{{ logo_url }}" alt="PROCASA" /></td>
+                <td align="right"><div class="header-label">Informe comercial</div><div class="header-sub">Propietarios</div></td>
+              </tr>
+            </table>
+          </td></tr>
+          {% if true %}
+            <tr><td class="hero-single" style="background-image:linear-gradient(90deg,#F7F6FF 0%,#F7F6FF 48%,rgba(247,246,255,.92) 56%,rgba(247,246,255,.48) 69%,rgba(34,34,67,.25) 83%,rgba(20,20,45,.50) 100%),url('{{ logo_url|replace('logo.png', 'propiedades/pexels-alishalubben-2305747.jpg') }}');">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="hero-single-copy" width="69%">
+                <div class="eyebrow">Seguimiento comercial · Procasa</div>
+                <h1>{{ hero_title }}</h1>
+                <p>{{ hero_description }}</p>
+              </td><td class="hero-single-aside" width="31%">Buenas<br />propiedades<br />crean grandes<br />historias<span class="hero-aside-rule"></span></td></tr></table>
+            </td></tr>
+          {% else %}
+            <tr><td class="hero">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+                <td class="hero-copy"><div class="eyebrow">Seguimiento comercial · Procasa</div><h1>Estamos preparando tu propiedad<br class="desktop-only" /> para un nuevo escenario de compradores</h1><p>Observamos el mercado y las alternativas disponibles para ayudarte a mantener un posicionamiento competitivo y capturar nuevas oportunidades de demanda.</p></td>
+                {% if properties and properties[0].image.available %}<td class="hero-visual"><img src="{{ properties[0].image.url }}" alt="Fotografía de {{ properties[0].property_heading }}" /></td>{% endif %}
+              </tr></table>
+            </td></tr>
+          {% endif %}
+          {% if context_note %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong> {{ context_note }}</td></tr>{% endif %}
+          <tr><td class="content content-single">
+            {% if properties|length >= 3 %}<div class="portfolio-summary-heading">Tus propiedades en revisión</div>{% endif %}
+            {% for property in properties %}
+              <section class="property {% if properties|length >= 3 %}portfolio-item{% else %}single-property{% endif %}"{% if properties|length >= 3 %} data-property-code="{{ property.code }}"{% endif %}>
+                {% if properties|length >= 3 %}
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="portfolio-summary-card">
+                    <tr>
+                      <td class="portfolio-photo-cell"><img class="portfolio-photo" src="{{ property.image.url }}" alt="Fotografía de {{ property.property_heading }}" /></td>
+                      <td class="portfolio-info-cell">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+                          <td><div class="portfolio-type">{{ property.property_type }} · {{ property.commune }}</div><div class="portfolio-code">Código {{ property.code }} · {{ property.operation_label }}</div><div class="portfolio-executive">Ejecutivo responsable: {{ property.portfolio_summary.executive_name }}</div></td>
+                          <td class="portfolio-price-cell"><div class="portfolio-price-label">Precio actual</div><div class="portfolio-price">{{ property.price_label }}</div></td>
+                        </tr></table>
+                      </td>
+                    </tr>
+                  </table>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="portfolio-data">
+                    <tr>
+                      <td><div class="portfolio-label">{{ property.portfolio_summary.reference_label }}</div><div class="portfolio-value">{{ property.portfolio_summary.reference_value }}</div></td>
+                      <td data-activity-state="{{ property.activity_90d.state }}"><div class="portfolio-label">Actividad 90 días</div><div class="portfolio-activity">{{ property.portfolio_summary.activity_text }}</div>{% if property.portfolio_summary.activity_origins %}<div class="portfolio-origins">{{ property.portfolio_summary.activity_origins }}</div>{% endif %}</td>
+                    </tr>
+                  </table>
+                  <div class="portfolio-position"><strong>Posicionamiento:</strong> {{ property.portfolio_summary.positioning_text }}</div>
+                  <table role="presentation" cellspacing="0" cellpadding="0" class="portfolio-actions"><tr>
+                    <td>{% if property.portfolio_summary.authorized_price %}<span class="portfolio-authorized">NUEVO VALOR {{ property.recommended_price_label }} · AJUSTE {{ property.portfolio_summary.adjustment_label }}</span>{% endif %}<a class="portfolio-primary" data-cta-property-code="{{ property.code }}" href="{{ property.cta.primary_url }}">{% if property.portfolio_summary.authorized_price %}{{ property.cta.primary_label }}{% else %}Revisar recomendación con mi asesor{% endif %} →</a></td>
+                    <td align="right">{% if property.portfolio_summary.report_url %}<a class="portfolio-report" data-report-property-code="{{ property.code }}" href="{{ property.portfolio_summary.report_url }}">Ver respaldo →</a>{% endif %}</td>
+                  </tr></table>
+                {% else %}
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="property-card-single">
+                  <tr>
+                    {% if property.image.available %}<td class="single-photo-cell"><div class="single-photo-wrap"><img class="single-photo" src="{{ property.image.url }}" alt="Fotografía de {{ property.property_heading }}" /><span class="single-operation-badge">{{ property.operation_label }}</span></div></td>{% endif %}
+                    <td class="single-detail-cell"><div class="single-heading">{{ property.property_type }} · {{ property.commune }}</div><div class="single-code">Código {{ property.code }}</div>{% if property.feature_cards %}<div class="single-feature-row">{% for feature in property.feature_cards %}<span class="single-feature">{% if feature.kind == 'area' %}<span class="comp-icon comp-icon-area" aria-hidden="true"><i></i></span>{% elif feature.kind == 'bed' %}<span class="comp-icon comp-icon-bed" aria-hidden="true"><i></i><b></b></span>{% elif feature.kind == 'bath' %}<span class="comp-icon comp-icon-bath" aria-hidden="true"><i></i><b></b></span>{% endif %}{{ feature.label }}</span>{% endfor %}</div>{% endif %}</td>
+                    <td class="single-price-cell"><div class="single-price-label">Valor actual</div><div class="single-price">{{ property.price_label }}</div></td>
+                  </tr>
+                </table>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="valuation-strip-single"><tr>{% for slot in property.valuation_slots %}<td{% if slot.emphasis %} class="valuation-suggested"{% endif %}><div class="label"><span class="strip-icon-single">{% if loop.index == 1 %}${% elif loop.index == 2 %}▤{% elif loop.index == 3 %}↗{% else %}◎{% endif %}</span>{{ slot.label }}</div><div class="strip-value">{{ slot.value }}</div><div class="strip-note">{{ slot.note }}</div></td>{% endfor %}</tr></table>
+
+                {% if property.activity_90d.state == "KNOWN_POSITIVE" %}
+                  <section class="activity-90-single"><div class="activity-title-single">Actividad comercial · últimos 90 días</div><table role="presentation" cellspacing="0" cellpadding="0" class="activity-stats-single"><tr><td><div class="activity-stat-label-single">Leads registrados</div><div class="activity-stat-value-single">{{ property.activity_90d.total_leads }}</div></td><td><div class="activity-stat-label-single">Conversaciones</div><div class="activity-stat-value-single">{{ property.activity_90d.conversations }}</div></td><td><div class="activity-stat-label-single">Visitas coordinadas</div><div class="activity-stat-value-single">{{ property.activity_90d.visits }}</div></td></tr></table>{% if property.activity_90d.portals %}<p class="activity-portals-single">Origen de los leads: {% for portal in property.activity_90d.portals %}{{ portal.name }} {{ portal.count }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}</section>
+                {% elif property.activity_90d.state == "KNOWN_ZERO" %}
+                  <section class="activity-90-single"><div class="activity-title-single">Actividad comercial · últimos 90 días</div><div class="activity-stat-value-single">0 leads registrados</div><p class="activity-copy-single">No registramos nuevas consultas en este período. Este dato describe la actividad observada y no determina por sí solo el interés del mercado.</p></section>
+                {% endif %}
+
+                {% if property.appraisal.visible and property.appraisal.kind == "COMMUNAL_MARKET_REPORT" and property.appraisal.metrics %}
+                  <div class="communal-context-single">
+                    <div class="communal-context-heading">Contexto de mercado</div>
+                    <div class="communal-context-subtitle">{{ property.property_type }} en {{ property.commune }}</div>
+                    {% if property.appraisal.metrics[1:3] %}<table role="presentation" cellspacing="0" cellpadding="0" class="communal-metrics-single"><tr>{% for metric in property.appraisal.metrics[1:3] %}<td><div class="communal-metric-label">{{ metric.label }}</div><div class="communal-metric-value">{{ metric.value }}</div></td>{% endfor %}</tr></table>{% endif %}
+                    <p class="communal-context-copy">Esta referencia corresponde al comportamiento del segmento en la comuna y complementa el análisis específico de tu propiedad.</p>
+                  </div>
+                {% endif %}
+
+                {% if property.comparable.visible %}
+                  <section class="evidence-single">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="evidence-heading-row"><tr><td><div class="evidence-title-single">{% if property.comparable.effective_type == "PARCEL_WITH_IMPROVEMENTS" %}Propiedades con construcciones similares{% else %}Tu propiedad frente a inmuebles comparables{% endif %}</div></td><td align="right"><span class="evidence-badge-single">{{ property.comparable.badge_label }}</span></td></tr></table>
+                    <p class="evidence-note-single">{% if property.is_rental %}Arriendos publicados observados actualmente; sirven como referencia comercial y no representan valores de contratos cerrados.{% else %}Publicaciones similares observadas actualmente en el mercado; sirven como referencia comercial y no representan precios de cierre.{% endif %}</p>
+                    {% if property.comparable.display_status == "REVIEW" %}<div class="review-note">Estas referencias muestran diferencias relevantes y deben revisarse junto con tu asesor.</div>{% endif %}
+                    {% if property.comparable.positioning_mode in ["PRICE_M2", "TOTAL_PRICE"] %}
+                    <div class="positioning-mode-title">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}{% if property.is_rental %}Comparación por arriendo publicado (UF/mes){% else %}Comparación por precio publicado (UF){% endif %}{% else %}Posicionamiento por {{ property.comparable.positioning_unit_label }}{% endif %}</div>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-graph">
+                      <tr class="position-graph-labels"><td align="left">Más competitivo<br /><span>(menor valor)</span></td><td align="center">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</td><td align="right">Zona superior<br /><span>(mayor valor)</span></td></tr>
+                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track"><tr><td style="background:#ECEBFF;"></td><td style="background:#DCD9FA;"></td><td style="background:#BDB6F0;"></td><td style="background:#9185E2;"></td><td style="background:#6252D0;"></td></tr></table></td></tr>
+                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-marker-grid"><tr class="position-marker-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-marker position-marker-reference"></span>{% endif %}{% if cell.marker %}<span class="position-marker position-marker-property"></span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
+                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-caption-grid"><tr class="position-caption-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-reference-callout"><strong>Referencia comparable</strong><br />{{ property.comparable.positioning_reference_label }}</span>{% endif %}</td>{% endfor %}</tr><tr class="position-caption-row"><td colspan="21" style="height:3px;font-size:3px;line-height:3px;">&nbsp;</td></tr><tr class="position-caption-row position-property-row">{% for cell in property.comparable.positioning_graph.cells %}<td{% if cell.marker %} class="position-property-anchor{% if loop.first %} position-property-anchor-first{% elif loop.last %} position-property-anchor-last{% endif %}"{% endif %}>{% if cell.marker %}<span class="position-property-callout"><strong>Tu propiedad</strong><br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
+                    </table>
+                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">▥</td><td><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong></td></tr></table></td><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">⌂</td><td><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong></td></tr></table></td></tr></table>
+                    {% elif property.appraisal.visible and property.appraisal.kind == "INDIVIDUAL_APPRAISAL" %}
+                      <div class="position-fallback-card"><div class="position-fallback-title">Posicionamiento frente a la valoración</div><table role="presentation" cellspacing="0" cellpadding="0" class="position-fallback-values"><tr><td>Precio publicado<strong>{{ property.price_label }}</strong></td><td>Tasación de referencia<strong>{{ property.appraisal.mid_label }}</strong></td></tr></table></div>
+                    {% else %}
+                      <div class="position-unavailable-card">Las referencias se muestran como publicaciones observadas; no hay una base homogénea suficiente para dibujar una banda de posicionamiento.</div>
+                    {% endif %}
+                    {% if property.comparable.top3 %}
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="comparables-grid-single"><tr>
+                        {% for comparable in property.comparable.top3 %}
+                          <td class="comp-card-single">
+                            <div class="comparable-card-heading"><span class="comparable-rank-single">{{ loop.index }}</span><span class="comparable-source-single">{{ comparable.portal }}</span></div>
+                            <div class="comparable-main-single">
+                              {% if comparable.surface_label != "Superficie no disponible" %}<div class="comp-attribute">{% if "terreno" in comparable.surface_label|lower %}<span class="comp-icon comp-icon-land" aria-hidden="true"><i></i><b></b></span>{% else %}<span class="comp-icon comp-icon-area" aria-hidden="true"><i></i></span>{% endif %}{{ comparable.surface_label }}</div>{% endif %}
+                              <div class="comp-attribute-row">{% if comparable.rooms_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-bed" aria-hidden="true"><i></i><b></b></span>{{ comparable.rooms_label|replace(" dorm.", "") }}</span>{% endif %}{% if comparable.baths_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-bath" aria-hidden="true"><i></i><b></b></span>{{ comparable.baths_label|replace(" baño(s)", "") }}</span>{% endif %}{% if comparable.parking_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-parking" aria-hidden="true">P</span>{{ comparable.parking_label }}</span>{% endif %}</div>
+                            </div>
+                            <table role="presentation" cellspacing="0" cellpadding="0" class="comparable-value-row"><tr><td><div class="comparable-price-single">{{ comparable.price_label }}</div></td><td align="right">{% if comparable.unit_label != "No disponible" %}<div class="comparable-unit-single">{{ comparable.unit_label }}</div>{% endif %}</td></tr></table>
+                          </td>
+                        {% endfor %}
+                      </tr></table>
+                    {% endif %}
+                    {% if property.comparable.land_reference_visible %}
+                      <div class="land-reference-single"><div class="land-reference-title">Referencia de valor de suelo</div><p class="land-reference-note">Terrenos comparables analizados por separado de las propiedades con construcciones similares.</p><table role="presentation" cellspacing="0" cellpadding="0" class="land-references-grid"><tr>{% for comparable in property.comparable.land_top3[:2] %}<td><strong>{{ comparable.portal }}</strong> · {{ comparable.surface_label }} · {{ comparable.price_label }}{% if comparable.unit_label != "No disponible" %} · {{ comparable.unit_label }}{% endif %}</td>{% endfor %}</tr></table></div>
+                    {% endif %}
+                    <p class="disclaimer-single">{% if property.is_rental %}Las referencias corresponden a arriendos publicados y no representan valores de contratos cerrados.{% else %}Las referencias corresponden a publicaciones actualmente disponibles y no representan precios efectivos de cierre.{% endif %}</p>
+                  </section>
+                {% endif %}
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="insights-single"><tr>
+                  <td class="insight-single insight-diagnostic"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-document-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Diagnóstico PROCASA</div></td></tr></table><div class="diagnostic-copy">{{ property.single_diagnostic_text }}</div></td><td class="insight-single-gap"></td>
+                  <td class="insight-single insight-recommendation"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-target-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Recomendación PROCASA</div></td></tr></table><div class="recommendation-title">{{ property.recommendation_title }}</div><p class="recommendation-copy">{{ property.recommendation_text }}</p>
+                    {% if property.recommended_price_label %}<table role="presentation" cellspacing="0" cellpadding="0" class="price-compare-single"><tr><td><div class="label">Precio actual</div><strong>{{ property.price_label }}</strong></td><td><div class="label">Nuevo valor</div><strong>{{ property.recommended_price_label }}</strong></td><td><div class="label">Ajuste</div><strong>{{ property.appraisal.adjustment_label }}</strong></td></tr></table>{% endif %}
+                  </td>
+                </tr></table>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="document-line-single"><tr><td class="document-icon-single"><span class="document-icon-box" aria-hidden="true"><i></i><i></i><i></i></span></td><td class="document-copy-single" width="40%"><strong>{% if property.document.visible %}Informe comercial disponible{% else %}Respaldo comercial{% endif %}</strong><br />{{ property.document["copy"] or "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA." }}</td><td class="document-evidence-single"><table role="presentation" cellspacing="0" cellpadding="0" class="document-evidence-grid-single"><tr>{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<td><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</td>{% elif property.appraisal.metrics %}<td><span class="document-check-single">✓</span> Contexto comunal</td>{% endif %}{% if property.comparable.visible %}<td><span class="document-check-single">✓</span> Publicaciones comparables</td>{% endif %}</tr></table></td><td align="right">{% if property.document.visible and property.cta.secondary_url %}<a class="document-action-single" href="{{ property.cta.secondary_url }}">Ver informe →</a>{% else %}<span class="document-action-single">Revisar con asesor</span>{% endif %}</td></tr></table>
+
+                <table role="presentation" cellspacing="0" cellpadding="0" class="actions actions-single"><tr><td><a class="primary" href="{{ property.cta.primary_url }}">{{ property.cta.primary_label }} →</a></td></tr>{% if property.cta.secondary_url %}<tr><td><a class="secondary" href="{{ property.cta.secondary_url }}">Ver respaldo comercial</a></td></tr>{% endif %}</table>
+                {% endif %}
+              </section>
+            {% endfor %}
+          </td></tr>
+          <tr><td class="executive executive-one">
+            <div class="executive-single"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">{% for executive in executives %}<tr><td class="exec-avatar-single"><span>{{ executive.initials }}</span></td><td class="exec-details-single"><strong>Tu ejecutivo PROCASA</strong><span class="exec-name-single">{{ executive.name }}</span><span class="exec-contact-single">{{ executive.email }}{% if executive.email and executive.phone %} · {% endif %}{{ executive.phone }}</span></td>{% if loop.first %}<td class="exec-brand-cell-single"><div class="exec-tagline-single">Te acompañamos<br />en cada paso</div><img class="brand-logo-executive-single" src="{{ logo_url }}" alt="PROCASA" /></td>{% endif %}</tr>{% endfor %}</table></div>
+          </td></tr>
+          <tr><td class="footer footer-one"><div class="footer-single">PROCASA · Información comercial para apoyar tu decisión. {{ footer_disclaimer }}</div></td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>

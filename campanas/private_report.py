@@ -27,6 +27,7 @@ from reportlab.pdfgen import canvas
 
 from config import Config
 from services.gdrive_sync import GDriveSync
+from .owner_campaign_test_actions import TEST_CAMPAIGN_ID
 
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,8 @@ APPRAISALS_FOLDER_ID = "1PPlc7QYzbx9T4KfLLsq4LcnnzClDZFnq"
 COMMUNAL_FOLDER_ID = "1wqku4RRzdDWAaMqJgVJ0AaqYOQEkV3Uh"
 PDF_MIME_TYPE = "application/pdf"
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
-TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
-TEST_RECIPIENT = "pgalleguillos@procasa.cl"
+TEST_RECIPIENT = "jpcaro@procasa.cl"
 REPORT_ACTION = "ver_informe"
 REPORT_TYPES = frozenset({"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"})
 _PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")

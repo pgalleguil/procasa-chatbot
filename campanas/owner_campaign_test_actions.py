@@ -23,8 +23,9 @@ from fastapi.responses import HTMLResponse
 from config import Config
 
 
-TEST_RECIPIENT = "pgalleguillos@procasa.cl"
-TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
+TEST_RECIPIENT = "jpcaro@procasa.cl"
+TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260924"
+TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260924"
 REPORT_ACTION = "ver_informe"
 ACCEPT_PRICE_ACTION = "aceptar_nuevo_valor"
 ADVISOR_ACTION = "revisar_con_mi_asesor"
@@ -165,6 +166,7 @@ def _insert_test_event(
     executive: str,
     token: str,
     event_at: datetime | None = None,
+    details: Mapping[str, Any] | None = None,
 ) -> str:
     if event_type not in {
         "cta_clicked", "price_authorized", "advisor_review_requested", "report_opened"
@@ -178,18 +180,22 @@ def _insert_test_event(
     existing = collection.find_one({"event_id": event_id}, {"event_id": 1})
     if existing:
         return str(existing["event_id"])
-    collection.insert_one(
-        {
-            "event_id": event_id,
-            "event_type": event_type,
-            "campaign_id": TEST_CAMPAIGN_ID,
-            "property_code": property_code,
-            "executive": executive,
-            "event_at": event_at,
-            "test_mode": True,
-            "source": "owner_campaign_test",
-        }
-    )
+    event = {
+        "event_id": event_id,
+        "event_type": event_type,
+        "event_name": f"{event_type}_test",
+        "campaign_id": TEST_CAMPAIGN_ID,
+        "campaign_version": TEST_CAMPAIGN_VERSION,
+        "property_code": property_code,
+        "executive": executive,
+        "event_at": event_at,
+        "test_mode": True,
+        "source": "owner_campaign_test",
+    }
+    if details:
+        allowed = {"operation", "current_price", "proposed_price", "adjustment_pct"}
+        event.update({key: value for key, value in details.items() if key in allowed})
+    collection.insert_one(event)
     return event_id
 
 
@@ -290,8 +296,19 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
         if ledger.get("cta_type") != "PRICE_AUTHORIZATION":
             raise OwnerCampaignTestError("price_authorization_not_allowed")
         operation, price_before = _live_price_snapshot(database, code)
-        if operation != "VENTA" or not _valid_lower_target(ledger, price_before.get("precio_uf")):
+        if (
+            operation not in {"VENTA", "ARRIENDO"}
+            or str(ledger.get("operation") or "").strip().upper() != operation
+            or not _valid_lower_target(ledger, price_before.get("precio_uf"))
+        ):
             raise OwnerCampaignTestError("price_authorization_evidence_invalid")
+        try:
+            proposed_price = float(ledger.get("display_recommended_price"))
+            current_price = float(price_before["precio_uf"])
+        except (TypeError, ValueError, KeyError):
+            raise OwnerCampaignTestError("price_authorization_values_invalid")
+        if not math.isfinite(proposed_price) or not math.isfinite(current_price):
+            raise OwnerCampaignTestError("price_authorization_values_invalid")
     elif action == ADVISOR_ACTION and ledger.get("cta_type") not in {
         "ADVISOR_REVIEW", "PRICE_AUTHORIZATION", "REPORT_ONLY"
     }:
@@ -307,6 +324,9 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
                 property_code=code,
                 executive=executive,
                 token=token,
+                details={"operation": operation, "current_price": current_price,
+                         "proposed_price": proposed_price,
+                         "adjustment_pct": ledger.get("adjustment_pct")},
             )
         )
     outcome_id = _insert_test_event(
@@ -315,6 +335,12 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
         property_code=code,
         executive=executive,
         token=token,
+        details=(
+            {"operation": operation, "current_price": current_price,
+             "proposed_price": proposed_price,
+             "adjustment_pct": ledger.get("adjustment_pct")}
+            if action == ACCEPT_PRICE_ACTION else None
+        ),
     )
     event_ids.append(outcome_id)
 

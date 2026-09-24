@@ -5,6 +5,8 @@ Examples::
     python -m analytics.owner_campaign_test_sender --cases A,B,D --test-mode --dry-run
     python -m analytics.owner_campaign_test_sender --cases A,B,D --test-mode
     python -m analytics.owner_campaign_test_sender --cases C,E --test-mode
+    python -m analytics.owner_campaign_test_sender --cases A,B,C,D,E --test-mode --dry-run
+    python -m analytics.owner_campaign_test_sender --cases A,B,C,D,E --test-mode
 
 There is deliberately no recipient, property-code, campaign-id, or price
 override. Live data is read from Mongo; test ledger writes and SMTP delivery
@@ -41,8 +43,9 @@ TRIGGER_SECRET_ENV = "OWNER_CAMPAIGN_TEST_TRIGGER_SECRET"
 DELIVERY_UNKNOWN_BASELINE = 6
 INITIAL_CASES = ("A", "B", "D")
 REMAINING_CASES = ("C", "E")
+ALL_CASES = ("A", "B", "C", "D", "E")
 INITIAL_PROPERTY_CODES = frozenset({"5641", "16521", "16527"})
-ALLOWED_BATCHES = frozenset({INITIAL_CASES, REMAINING_CASES})
+ALLOWED_BATCHES = frozenset({INITIAL_CASES, REMAINING_CASES, ALL_CASES})
 
 
 class TestCampaignCLIError(ValueError):
@@ -52,10 +55,10 @@ class TestCampaignCLIError(ValueError):
 def parse_cases(value: str) -> tuple[str, ...]:
     parts = str(value or "").split(",")
     if any(not part.strip() for part in parts):
-        raise TestCampaignCLIError("cases_must_be_A_B_D_or_C_E")
+        raise TestCampaignCLIError("cases_must_be_A_B_D_C_E_or_ALL")
     cases = tuple(part.strip().upper() for part in parts)
     if cases not in ALLOWED_BATCHES:
-        raise TestCampaignCLIError("cases_must_be_A_B_D_or_C_E")
+        raise TestCampaignCLIError("cases_must_be_A_B_D_C_E_or_ALL")
     return cases
 
 
@@ -65,7 +68,7 @@ def parse_trigger_request(payload: Any) -> tuple[tuple[str, ...], bool]:
         raise TestCampaignCLIError("trigger_payload_invalid")
     batch = payload.get("batch")
     mode = payload.get("mode")
-    batches = {"ABD": INITIAL_CASES, "CE": REMAINING_CASES}
+    batches = {"ABD": INITIAL_CASES, "CE": REMAINING_CASES, "ALL": ALL_CASES}
     if not isinstance(batch, str) or batch not in batches:
         raise TestCampaignCLIError("trigger_batch_invalid")
     if not isinstance(mode, str) or mode not in {"dry-run", "send"}:
@@ -149,6 +152,10 @@ def _validate_phase(db: Any, cases: tuple[str, ...]) -> None:
         if rows:
             raise TestCampaignCLIError("initial_batch_already_registered")
         return
+    if cases == ALL_CASES:
+        if rows:
+            raise TestCampaignCLIError("full_batch_already_registered")
+        return
     if cases == REMAINING_CASES and set(codes) == INITIAL_PROPERTY_CODES:
         return
     raise TestCampaignCLIError("remaining_batch_requires_completed_A_B_D")
@@ -180,7 +187,7 @@ def run_test_batch(
 ) -> dict[str, Any]:
     selected = parse_cases(cases) if isinstance(cases, str) else cases
     if selected not in ALLOWED_BATCHES:
-        raise TestCampaignCLIError("cases_must_be_A_B_D_or_C_E")
+        raise TestCampaignCLIError("cases_must_be_A_B_D_C_E_or_ALL")
     if test_mode is not True or not test_mode_enabled():
         raise TestCampaignCLIError("test_mode_required_and_must_be_enabled_in_environment")
     if mass_send_enabled():
@@ -266,7 +273,7 @@ def run_test_batch(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run only the fixed-recipient PROCASA owner-campaign E2E tests.")
-    parser.add_argument("--cases", required=True, help="Exactly A,B,D for the first batch or C,E after it completes.")
+    parser.add_argument("--cases", required=True, help="Exactly A,B,D; C,E after A,B,D; or the full A,B,C,D,E batch.")
     parser.add_argument("--test-mode", action="store_true", help="Required; environment test mode must also be enabled.")
     parser.add_argument("--dry-run", action="store_true", help="Render and validate live cases without ledger writes or SMTP.")
     return parser

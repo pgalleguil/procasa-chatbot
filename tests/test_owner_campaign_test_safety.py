@@ -18,6 +18,7 @@ from campanas import owner_campaign_test_runtime as runtime
 from campanas import owner_campaign_test_sender as sender
 from campanas import owner_campaign_test_runner as runner
 from analytics import owner_campaign_test_sender as cli
+from analytics import owner_campaign_email_v2 as email_v2
 
 
 SECRET = "owner-campaign-e2e-secret-for-tests"
@@ -159,7 +160,7 @@ def test_environment(monkeypatch):
 
 
 def test_recipient_policy_allows_only_fixed_test_mailbox():
-    assert actions.TEST_RECIPIENT == "pgalleguillos@procasa.cl"
+    assert actions.TEST_RECIPIENT == "jpcaro@procasa.cl"
     assert sender.TEST_RECIPIENT == actions.TEST_RECIPIENT
     sender.validate_recipient_envelope(
         to=sender.TEST_RECIPIENT,
@@ -170,17 +171,19 @@ def test_recipient_policy_allows_only_fixed_test_mailbox():
 
 
 def test_corrected_test_recipient_is_the_only_test_address_in_harness_sources():
-    old_test_address = "jpcaro" + "@procasa.cl"
+    old_test_address = "pgalleguillos" + "@procasa.cl"
     root = Path(__file__).parents[1]
-    for relative in (
+    sources = (
         "campanas/owner_campaign_test_actions.py",
         "campanas/owner_campaign_test_sender.py",
         "campanas/owner_campaign_test_runner.py",
         "campanas/owner_campaign_test_runtime.py",
         "campanas/private_report.py",
         "tests/test_owner_campaign_test_safety.py",
-    ):
-        assert old_test_address not in (root / relative).read_text(encoding="utf-8")
+    )
+    source_text = {relative: (root / relative).read_text(encoding="utf-8") for relative in sources}
+    assert "jpcaro@procasa.cl" in source_text["campanas/owner_campaign_test_actions.py"]
+    assert all(old_test_address not in text for text in source_text.values())
 
 
 def test_live_case_builder_can_limit_first_phase_to_a_b_d(monkeypatch):
@@ -220,14 +223,15 @@ def test_live_builder_selects_only_requested_operation_price_block():
 @pytest.mark.parametrize(("value", "expected"), [
     ("A,B,D", ("A", "B", "D")),
     ("C,E", ("C", "E")),
+    ("A,B,C,D,E", ("A", "B", "C", "D", "E")),
 ])
-def test_independent_cli_accepts_only_the_two_explicit_batches(value, expected):
+def test_independent_cli_accepts_only_fixed_batches(value, expected):
     assert cli.parse_cases(value) == expected
 
 
-@pytest.mark.parametrize("value", ["A", "A,B", "A,B,C,D,E", "C,E,A", "A,,B,D", "5641,16521,16527"])
+@pytest.mark.parametrize("value", ["A", "A,B", "A,B,C,D", "C,E,A", "A,,B,D", "5641,16521,16527"])
 def test_independent_cli_rejects_other_case_batches(value):
-    with pytest.raises(cli.TestCampaignCLIError, match="cases_must_be_A_B_D_or_C_E"):
+    with pytest.raises(cli.TestCampaignCLIError, match="cases_must_be_A_B_D_C_E_or_ALL"):
         cli.parse_cases(value)
 
 
@@ -236,6 +240,8 @@ def test_independent_cli_rejects_other_case_batches(value):
     ({"batch": "ABD", "mode": "send"}, ("A", "B", "D")),
     ({"batch": "CE", "mode": "dry-run"}, ("C", "E")),
     ({"batch": "CE", "mode": "send"}, ("C", "E")),
+    ({"batch": "ALL", "mode": "dry-run"}, ("A", "B", "C", "D", "E")),
+    ({"batch": "ALL", "mode": "send"}, ("A", "B", "C", "D", "E")),
 ])
 def test_http_trigger_accepts_only_named_batches_and_modes(payload, expected):
     cases, _dry_run = cli.parse_trigger_request(payload)
@@ -282,54 +288,21 @@ def test_fixed_recipient_abd_cases_do_not_require_owner_email_but_portfolios_do(
         sender.validate_explicit_cases([wrapper])
 
 
-def test_executive_resolution_prefers_the_unique_active_agent_when_names_repeat():
-    class UserCollection:
-        def find(self, *_args, **_kwargs):
-            return [
-                {"nombre": "Ejecutivo Duplicado", "rol": "agente", "is_active": False,
-                 "email": "inactive@example.test", "telefono": "+56 9 1111 1111"},
-                {"nombre": "EJECUTIVO Duplicado", "rol": "agente", "is_active": True,
-                 "email": "active@example.test", "telefono": "+56 9 2222 2222"},
-            ]
-
-    class UserDB:
+def test_test_executive_uses_property_label_without_users_lookup_or_contact_requirement():
+    class CRMUsersMustNotBeRead:
         def __getitem__(self, name):
-            assert name == "usuarios"
-            return UserCollection()
+            raise AssertionError(f"test sender must not query {name}")
 
-    result = runtime._resolve_executive(UserDB(), {"estado": {"ejecutivo": "Ejecutivo Duplicado"}})
-    assert result["email"] == "active@example.test"
-    assert result["phone"] == "+56 9 2222 2222"
-
-
-def test_executive_resolution_collapses_duplicate_active_rows_only_for_same_contact():
-    class UserCollection:
-        def __init__(self, rows):
-            self.rows = rows
-
-        def find(self, *_args, **_kwargs):
-            return self.rows
-
-    class UserDB:
-        def __init__(self, rows):
-            self.rows = rows
-
-        def __getitem__(self, name):
-            assert name == "usuarios"
-            return UserCollection(self.rows)
-
-    prop = {"estado": {"ejecutivo": "Ejecutivo Duplicado"}}
-    identical = [
-        {"nombre": "Ejecutivo Duplicado", "rol": "agente", "is_active": True,
-         "email": "same@example.test", "telefono": "+56 9 2222 2222"},
-        {"nombre": "EJECUTIVO Duplicado", "rol": "agente", "is_active": True,
-         "email": " SAME@example.test ", "telefono": "+56 9 2222 2222"},
-    ]
-    assert runtime._resolve_executive(UserDB(identical), prop)["email"] == "same@example.test"
-
-    conflicting = [dict(identical[0]), {**identical[1], "email": "other@example.test"}]
-    with pytest.raises(runtime.LiveTestCaseBuildError, match="executive_user_match_not_unique"):
-        runtime._resolve_executive(UserDB(conflicting), prop)
+    executive = runtime._resolve_executive(CRMUsersMustNotBeRead(), {
+        "estado": {"ejecutivo": "Ejecutiva desde propiedad"},
+    })
+    assert executive == {
+        "name": "Ejecutiva desde propiedad", "email": "", "phone": "",
+        "initials": "", "source": "estado.ejecutivo",
+    }
+    fallback = runtime._resolve_executive(CRMUsersMustNotBeRead(), {"estado": {"ejecutivo": "Vacante"}})
+    assert fallback["name"] == "Equipo PROCASA"
+    assert fallback["email"] == fallback["phone"] == ""
 
 
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
@@ -351,6 +324,21 @@ def test_independent_cli_phase_gate_requires_completed_initial_batch():
     cli._validate_phase(db, cli.REMAINING_CASES)
 
 
+def test_independent_cli_full_batch_is_allowed_only_before_any_test_send():
+    db = FakeDB()
+    cli._validate_phase(db, cli.ALL_CASES)
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [{
+        "campaign_id": actions.TEST_CAMPAIGN_ID,
+        "property_code": "5641",
+        "test_mode": True,
+        "actual_recipient_email": actions.TEST_RECIPIENT,
+        "delivery_status": "test_sent",
+        "smtp_accepted": True,
+    }]
+    with pytest.raises(cli.TestCampaignCLIError, match="full_batch_already_registered"):
+        cli._validate_phase(db, cli.ALL_CASES)
+
+
 def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
     db = FakeDB()
     cases = [_case(case_id) for case_id in cli.INITIAL_CASES]
@@ -365,9 +353,33 @@ def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
     monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
     result = cli.run_test_batch(cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6)
     assert result["status"] == "preflight_passed_no_send"
-    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
+    assert result["actual_recipient_email"] == "jpcaro@procasa.cl"
     assert result["preflight"]["owner_recipient_blocked"] is True
     assert result["preflight"]["live_price_mutation_blocked"] is True
+    assert result["test_emails_sent"] == 0
+    assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
+
+
+def test_independent_cli_full_batch_preflights_all_five_without_writing_or_sending(monkeypatch):
+    db = FakeDB()
+    cases = [_case(case_id) for case_id in cli.ALL_CASES]
+    prepared = [
+        sender.PreparedTestMessage(case, "[TEST PROCASA] test", "<html/>", "test", "report", "action")
+        for case in cases
+    ]
+    monkeypatch.setattr(cli, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(cli, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(cli, "build_owner_campaign_test_cases_live", lambda _db, case_ids: [
+        case for case in cases if case.case_id in case_ids
+    ])
+    monkeypatch.setattr(cli, "prepare_test_messages", lambda _cases: prepared)
+    monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
+
+    result = cli.run_test_batch(cli.ALL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6)
+
+    assert result["status"] == "preflight_passed_no_send"
+    assert result["case_ids"] == list(cli.ALL_CASES)
+    assert result["actual_recipient_email"] == "jpcaro@procasa.cl"
     assert result["test_emails_sent"] == 0
     assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
 
@@ -501,8 +513,8 @@ def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
     response = runner.render_admin_runner_ui()
     body = response.body.decode("utf-8")
     assert response.headers["cache-control"] == "private, no-store"
-    assert "pgalleguillos@procasa.cl" in body
-    assert "window.confirm('Enviar exclusivamente a pgalleguillos@procasa.cl')" in body
+    assert "jpcaro@procasa.cl" in body
+    assert "window.confirm('Enviar exclusivamente a jpcaro@procasa.cl')" in body
     assert "method:'POST'" in body
     assert "fetch('/captacion/test-runner'" in body
     assert "GENERATE_PREVIEWS_ABD" in body and "SEND_TEST_EMAILS_ABD" in body
@@ -699,6 +711,163 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
+
+
+def test_single_test_render_does_not_require_executive_email_or_phone():
+    case = _case("B")
+    model = _approved_property_model(case)
+    model["executive"] = {"name": case.executive, "email": "", "phone": "", "initials": "EP"}
+    case = replace(case, render_context={
+        "property_model": model,
+        "executives": [{"name": case.executive, "email": "", "phone": ""}],
+        "source_checks": {key: True for key in {
+            "real_property_image", "executive_name", "reference_correct",
+            "comparables_compatible", "own_listing_excluded", "cta_correct",
+        }},
+    })
+    rendered = sender.prepare_test_messages([case])[0]
+    assert "Tu ejecutivo PROCASA" in rendered.text
+    assert case.executive in rendered.text
+
+
+def test_missing_subject_metric_hides_comparison_and_downgrades_numeric_cta():
+    property_model = email_v2._property_context(
+        {
+            "codigo_propiedad": "16521",
+            "tipo_propiedad": "Casa",
+            "comuna": "Talca",
+            "operacion": "VENTA",
+            "precio_publicado_uf": 1713.7,
+            "superficie_construida": None,
+            "superficie_util": None,
+            "superficie_terreno": 200,
+        },
+        {
+            "codigo": "16521",
+            "tipo": "Casa",
+            "comuna": "Talca",
+            "operacion": "VENTA",
+            "comparables_quality": "HIGH",
+            "recommendation": "con ajuste de precio sustentado",
+            "diagnostic": "ALIGNED",
+            "nuevo_precio_objetivo_uf": 1600,
+            "document_type": "INDIVIDUAL_APPRAISAL",
+            "attachment": {"status": "ok"},
+            "cta": {"primary_url": "https://example.test/action"},
+        },
+        {
+            "client_validation_v3": {
+                "comparable_display_status": "FULL",
+                "effective_type": "HOUSE",
+                "primary_surface": "built_m2",
+                "integral_comparables": [{
+                    "listing_id": "external-1",
+                    "price_uf": 2000,
+                    "built_m2": 64,
+                    "price_m2_built": 31.25,
+                    "price_m2": 31.25,
+                }],
+            },
+            "supporting_evidence": {
+                "appraisal": {
+                    "estimated_low_uf": 1400,
+                    "estimated_mid_uf": 1500,
+                    "estimated_high_uf": 1800,
+                    "current_price_uf": 1713.7,
+                    "position_vs_appraisal": "WITHIN_RANGE",
+                },
+            },
+        },
+        {"name": "Ejecutivo PROCASA"},
+    )
+
+    assert property_model["comparable"]["visible"] is False
+    assert property_model["comparable"]["hidden_reason"] == "PROPERTY_METRIC_MISSING"
+    assert property_model["recommendation"] == "revisión con asesor"
+    assert property_model["recommended_price_label"] is None
+    assert [item["label"] for item in property_model["summary_metrics"]] == ["Precio publicado"]
+
+
+def test_unique_sii_appraisal_area_flows_to_value_model_and_approved_renderer():
+    appraisal_doc = {
+        "codigo_propiedad": "16521",
+        "tasacion_online": {
+            "valor_comercial": {"uf": 1442},
+            "valor_minimo_maximo": {"precio_minimo_uf": 1009, "precio_maximo_uf": 1809},
+            "total_construccion_m2": 64,
+        },
+    }
+
+    class AppraisalCollection:
+        def find(self, query, _projection=None):
+            assert query == {"codigo_propiedad": {"$in": ["16521", 16521]}}
+            return [appraisal_doc]
+
+    class AppraisalDB:
+        def __getitem__(self, name):
+            assert name == runtime.APPRAISAL_COLLECTION
+            return AppraisalCollection()
+
+    master = {
+        "codigo": "16521",
+        "caracteristicas": {"superficie_terreno": 200},
+    }
+    appraisal = runtime._appraisal(AppraisalDB(), master, runtime.VENTA, 1713.7)
+    assert appraisal is not None
+    assert appraisal["property_built_m2"] == 64
+    assert appraisal["property_built_m2_source"] == "tasaciones.tasacion_online.total_construccion_m2:SII"
+
+    dimensions = runtime._dimensions(master, appraisal)
+    assert dimensions["built"] == 64
+    assert dimensions["built_source"] == appraisal["property_built_m2_source"]
+    assert dimensions["land"] == 200
+    assert dimensions["useful"] is None and dimensions["total"] is None
+
+    prop = {
+        "codigo_propiedad": "16521", "tipo_propiedad": "Casa", "comuna": "Talca",
+        "operacion": "VENTA", "precio_publicado_uf": 1713.7,
+        "superficie_construida": dimensions["built"],
+        "superficie_construida_m2": dimensions["built"],
+        "superficie_construida_source": dimensions["built_source"],
+        "superficie_terreno": dimensions["land"],
+    }
+    evidence = {
+        "client_validation_v3": {
+            "comparable_display_status": "FULL", "effective_type": "HOUSE",
+            "primary_surface": "built_m2", "evidence_level": "HIGH",
+            "integral_comparables": [
+                {"listing_id": f"external-{index}", "price_uf": 2200 + index,
+                 "built_m2": 70 + index, "price_m2_built": 30 + index,
+                 "price_m2": 30 + index}
+                for index in range(12)
+            ],
+            "land_references": [],
+        },
+        "supporting_evidence": {"appraisal": appraisal},
+    }
+    qa_row = {
+        "codigo": "16521", "tipo": "Casa", "comuna": "Talca", "operacion": "VENTA",
+        "comparables_quality": "HIGH", "recommendation": "revisión con asesor",
+        "diagnostic": "REVIEW", "document_type": "INDIVIDUAL_APPRAISAL",
+        "attachment": {"status": "ok"},
+        "cta": {"primary_label": "Revisar recomendación con mi asesor"},
+    }
+    executive = {"name": "Ejecutivo PROCASA", "email": "", "phone": ""}
+    property_model = email_v2._property_context(prop, qa_row, evidence, executive)
+    assert property_model["property_built_m2"] == 64
+    assert property_model["property_built_m2_source"] == appraisal["property_built_m2_source"]
+    assert property_model["comparable"]["visible"] is True
+    assert property_model["comparable"]["positioning_property_value"] == pytest.approx(1713.7 / 64)
+    assert property_model["comparable"]["positioning_unit_label"] == "UF/m² construido"
+    assert "64 m² construidos" in property_model["feature_cards"][0]["label"]
+
+    html = email_v2.render_owner_campaign_email_v2(
+        [property_model], email=actions.TEST_RECIPIENT, executives=[executive],
+        base_url="https://procasa-chatbot-yr8d.onrender.com",
+    )
+    assert "64 m² construidos" in html
+    assert "UF/m² construido" in html
+    assert "26,8" in html
 
 
 def test_unknown_activity_is_not_rendered_as_zero():
@@ -911,8 +1080,8 @@ def test_test_price_authorization_appends_events_and_keeps_exact_live_price():
     assert [event["event_type"] for event in events] == ["cta_clicked", "price_authorized"]
     assert all(event["test_mode"] is True and event["property_code"] == "16521" for event in events)
     authorization = events[1]
-    assert authorization["campaign_id"] == "owner_price_campaign_test_20260924"
-    assert authorization["campaign_version"] == "owner_campaign_test_20260924"
+    assert authorization["campaign_id"] == "owner_price_campaign_test_20260923"
+    assert authorization["campaign_version"] == "owner_campaign_test_20260923"
     assert authorization["event_name"] == "price_authorized_test"
     assert authorization["operation"] == "VENTA"
     assert authorization["current_price"] == 5000
@@ -955,7 +1124,7 @@ def test_report_open_records_only_report_opened_test_event():
     assert events[0]["event_id"] == event_id
     assert events[0]["event_type"] == "report_opened"
     assert events[0]["test_mode"] is True
-    assert events[0]["campaign_id"] == "owner_price_campaign_test_20260924"
+    assert events[0]["campaign_id"] == "owner_price_campaign_test_20260923"
     assert events[0]["event_name"] == "report_opened_test"
     assert events[0]["property_code"] == "16521"
     assert "contactos" not in db.requested

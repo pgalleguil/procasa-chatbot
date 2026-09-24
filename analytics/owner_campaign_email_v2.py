@@ -180,19 +180,53 @@ def _baths_label(item: Mapping[str, Any]) -> str:
 
 
 def _surface_from_property(prop: Mapping[str, Any], primary_surface: str) -> float | None:
+    value, _label = _surface_detail_from_property(prop, primary_surface)
+    return value
+
+
+def _surface_detail_from_property(prop: Mapping[str, Any], primary_surface: str) -> tuple[float | None, str]:
     characteristics = prop.get("caracteristicas") if isinstance(prop.get("caracteristicas"), Mapping) else {}
     candidates: list[Any]
     if primary_surface == "built_m2":
-        candidates = [prop.get("superficie_construida_m2"), prop.get("superficie_construida"), prop.get("m2_construidos"), characteristics.get("superficie_construida"), characteristics.get("casa_m2"), characteristics.get("m2_construidos")]
+        candidates = [
+            (prop.get("superficie_construida_m2"), "construidos"),
+            (prop.get("superficie_construida"), "construidos"),
+            (prop.get("m2_construidos"), "construidos"),
+            (characteristics.get("superficie_construida"), "construidos"),
+            (characteristics.get("casa_m2"), "construidos"),
+            (characteristics.get("m2_construidos"), "construidos"),
+        ]
     elif primary_surface in {"surface_ref_m2", "surface_util_m2"}:
-        candidates = [prop.get("superficie_util_m2"), prop.get("superficie_util"), prop.get("m2_utiles"), characteristics.get("superficie_util"), characteristics.get("superficie_construida"), characteristics.get("casa_m2")]
+        candidates = [
+            (prop.get("superficie_util_m2"), "útiles"),
+            (prop.get("superficie_util"), "útiles"),
+            (prop.get("m2_utiles"), "útiles"),
+            (characteristics.get("superficie_util"), "útiles"),
+            (characteristics.get("superficie_util_m2"), "útiles"),
+            (characteristics.get("m2_utiles"), "útiles"),
+            (prop.get("superficie_construida_m2"), "construidos"),
+            (prop.get("superficie_construida"), "construidos"),
+            (prop.get("m2_construidos"), "construidos"),
+            (characteristics.get("superficie_construida"), "construidos"),
+            (characteristics.get("casa_m2"), "construidos"),
+            (characteristics.get("m2_construidos"), "construidos"),
+            (prop.get("superficie_total_m2"), "totales"),
+            (prop.get("superficie_total"), "totales"),
+            (characteristics.get("superficie_total_m2"), "totales"),
+            (characteristics.get("superficie_total"), "totales"),
+        ]
     else:
-        candidates = [prop.get("superficie_terreno_m2"), prop.get("superficie_terreno"), characteristics.get("superficie_terreno")]
-    for candidate in candidates:
+        candidates = [
+            (prop.get("superficie_terreno_m2"), "de terreno"),
+            (prop.get("superficie_terreno"), "de terreno"),
+            (characteristics.get("superficie_terreno"), "de terreno"),
+            (characteristics.get("superficie_terreno_m2"), "de terreno"),
+        ]
+    for candidate, label in candidates:
         parsed = number(candidate)
         if parsed is not None and parsed > 0:
-            return parsed
-    return None
+            return parsed, label
+    return None, ""
 
 
 def _first_positive(prop: Mapping[str, Any], keys: tuple[str, ...]) -> float | None:
@@ -207,12 +241,13 @@ def _first_positive(prop: Mapping[str, Any], keys: tuple[str, ...]) -> float | N
 
 def _property_feature_cards(prop: Mapping[str, Any]) -> list[dict[str, str]]:
     features: list[dict[str, str]] = []
-    built = _surface_from_property(prop, "built_m2")
-    land = _surface_from_property(prop, "land_m2")
-    if built is not None:
-        features.append({"kind": "area", "label": f"{fmt_number(built, 0)} m² construidos"})
-    elif land is not None:
-        features.append({"kind": "area", "label": f"{fmt_number(land, 0)} m² terreno"})
+    property_type = str(prop.get("tipo_propiedad") or "").casefold()
+    preferred_surface = "built_m2" if any(token in property_type for token in ("casa", "parcela", "sitio")) else "surface_ref_m2"
+    area, area_label = _surface_detail_from_property(prop, preferred_surface)
+    if area is None:
+        area, area_label = _surface_detail_from_property(prop, "land_m2")
+    if area is not None:
+        features.append({"kind": "area", "label": f"{fmt_number(area, 0)} m² {area_label}"})
     bedrooms = _first_positive(prop, ("dormitorios", "habitaciones", "n_dormitorios", "numero_dormitorios"))
     bathrooms = _first_positive(prop, ("banos", "baños", "n_banos", "numero_banos"))
     if bedrooms is not None:
@@ -277,15 +312,30 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         return {"visible": False}
     primary_surface = str(v3.get("primary_surface") or "built_m2")
     is_rent = _is_rent((prop or {}).get("operacion"))
+    property_surface, surface_basis = _surface_detail_from_property(prop or {}, primary_surface)
     if primary_surface == "built_m2":
         price_key, unit = "price_m2_built", "UF/m²/mes" if is_rent else "UF/m² construido"
     elif primary_surface in {"surface_ref_m2", "surface_util_m2"}:
-        price_key, unit = "price_m2", "UF/m²/mes" if is_rent else "UF/m² útil"
+        price_key = "price_m2"
+        unit = "UF/m²/mes" if is_rent else {
+            "útiles": "UF/m² útil",
+            "construidos": "UF/m² construido",
+            "totales": "UF/m² total",
+        }.get(surface_basis, "UF/m² útil")
     else:
         price_key, unit = "price_m2_land", "UF/m²/mes" if is_rent else "UF/m² terreno"
+    if property_surface is None:
+        # Never infer the subject property's area from a comparable. Without
+        # the same valid metric on both sides there is no client-facing
+        # positioning comparison to show.
+        return {
+            "visible": False,
+            "hidden_reason": "PROPERTY_METRIC_MISSING",
+            "effective_type": effective_type,
+            "evidence_level": level,
+        }
     values = [float(number(item.get(price_key) if number(item.get(price_key)) is not None else item.get("price_m2"))) for item in integral if number(item.get(price_key) if number(item.get(price_key)) is not None else item.get("price_m2")) is not None]
     distribution = _distribution(values)
-    property_surface = _surface_from_property(prop or {}, primary_surface)
     property_price = number(property_price_uf)
     property_value = property_price / property_surface if property_price and property_surface else None
     percentile = _percentile(values, property_value)
@@ -486,7 +536,11 @@ def _property_context(
     operation = str(qa_row.get("operacion") or prop.get("operacion") or "")
     is_rental = _is_rent(operation)
     appraisal = _appraisal_model(support, price, operation)
-    review_guard = bool(v3.get("evidence_conflict")) or str(v3.get("comparable_display_status") or "").upper() == "REVIEW"
+    review_guard = (
+        bool(v3.get("evidence_conflict"))
+        or str(v3.get("comparable_display_status") or "").upper() == "REVIEW"
+        or comparable.get("hidden_reason") == "PROPERTY_METRIC_MISSING"
+    )
     if recommendation == "con ajuste de precio sustentado" and (review_guard or (level in {"LIMITED", "INSUFFICIENT"} and document_type != "INDIVIDUAL_APPRAISAL")):
         recommendation = "revisión con asesor"
         recommended_price = None
@@ -501,7 +555,7 @@ def _property_context(
         document_copy = ""
     position = comparable.get("position_label") if comparable.get("visible") else "Sin referencia suficiente"
     summary_market = comparable.get("median_label") if comparable.get("visible") else "Sin referencia suficiente"
-    summary_property = comparable.get("property_value_label") if comparable.get("visible") else "No disponible"
+    summary_property = comparable.get("property_value_label") if comparable.get("visible") else None
     diagnostic_text = _diagnostic_text(level, str(qa_row.get("diagnostic") or "sin diagnóstico"), comparable)
     single_diagnostic_text = diagnostic_text
     if appraisal.get("visible") and appraisal.get("kind") == "INDIVIDUAL_APPRAISAL":
@@ -540,6 +594,8 @@ def _property_context(
         "code": str(qa_row.get("codigo") or prop.get("codigo_propiedad") or ""),
         "property_type": property_type,
         "commune": commune,
+        "property_built_m2": _surface_from_property(prop, "built_m2"),
+        "property_built_m2_source": str(prop.get("superficie_construida_source") or "") or None,
         "property_heading": f"{property_type} · {commune}".upper().strip(" ·"),
         "operation_label": operation.title(),
         "operation_raw": operation,
@@ -548,8 +604,9 @@ def _property_context(
         "feature_cards": _property_feature_cards(prop),
         "summary_metrics": [
             {"icon": "◉", "label": "Precio publicado", "value": _price_label(price, operation)},
-            {"icon": "╱", "label": "Valor por m²", "value": summary_property},
-            {"icon": "▥", "label": "Referencia comparable", "value": summary_market},
+            *([{"icon": "╱", "label": "Valor por m²", "value": summary_property},
+               {"icon": "▥", "label": "Referencia comparable", "value": summary_market}]
+              if comparable.get("visible") else []),
         ],
         "context_note": (
             "En un escenario donde podrían abrirse nuevas oportunidades de acceso a la vivienda, es clave que tu propiedad esté bien posicionada para aprovechar este mayor dinamismo."

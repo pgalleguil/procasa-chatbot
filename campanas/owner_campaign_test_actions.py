@@ -23,9 +23,9 @@ from fastapi.responses import HTMLResponse
 from config import Config
 
 
-TEST_RECIPIENT = "pgalleguillos@procasa.cl"
-TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260924"
-TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260924"
+TEST_RECIPIENT = "jpcaro@procasa.cl"
+TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
+TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 REPORT_ACTION = "ver_informe"
 ACCEPT_PRICE_ACTION = "aceptar_nuevo_valor"
 ADVISOR_ACTION = "revisar_con_mi_asesor"

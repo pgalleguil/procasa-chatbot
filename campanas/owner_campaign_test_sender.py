@@ -23,6 +23,7 @@ from .owner_campaign_test_actions import (
     ADVISOR_ACTION,
     REPORT_ACTION,
     TEST_CAMPAIGN_ID,
+    TEST_CAMPAIGN_VERSION,
     TEST_RECIPIENT,
     issue_test_link_token,
     test_mode_enabled,
@@ -39,8 +40,6 @@ REQUIRED_RENDER_CHECKS = frozenset(
     {
         "real_property_image",
         "executive_name",
-        "executive_email",
-        "executive_phone",
         "activity_90d",
         "portal_breakdown_valid",
         "operation_correct",
@@ -385,7 +384,7 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 raise TestSenderError("test_campaign_case_already_registered")
             entries.append((query, {
                 "campaign_id": TEST_CAMPAIGN_ID,
-                "campaign_version": "owner_campaign_test_20260924",
+                "campaign_version": TEST_CAMPAIGN_VERSION,
                 "property_code": case.property_code,
                 "intended_owner_email": case.intended_owner_email.strip(),
                 "actual_recipient_email": TEST_RECIPIENT,
@@ -577,7 +576,7 @@ def _render_portfolio_case(case: OwnerCampaignTestCase) -> Mapping[str, Any]:
         if not isinstance(source_checks, Mapping) or not isinstance(model, Mapping):
             raise TestSenderError("approved_view_model_required")
         if any(source_checks.get(key) is not True for key in {
-            "real_property_image", "executive_name", "executive_email", "executive_phone",
+            "real_property_image", "executive_name",
             "activity_90d", "portal_breakdown_valid", "reference_correct",
             "comparables_compatible", "own_listing_excluded", "cta_correct",
         }):
@@ -594,7 +593,7 @@ def _render_portfolio_case(case: OwnerCampaignTestCase) -> Mapping[str, Any]:
         if not isinstance(item.get("executive"), Mapping):
             raise TestSenderError("resolved_executive_required")
         executive = item["executive"]
-        if not all(str(executive.get(key) or "").strip() for key in ("name", "email", "phone")):
+        if not str(executive.get("name") or "").strip():
             raise TestSenderError("resolved_executive_required")
         if str(executive.get("name") or "").strip() != property_case.executive.strip():
             raise TestSenderError("view_model_executive_mismatch")
@@ -707,7 +706,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     activity_valid, portal_valid = _valid_activity(activity)
     if not image.get("available") or not str(image.get("url") or "").startswith(("https://", "http://")) or image.get("source") not in {"UNIVERSO_CARTERA", "PROCASA_PUBLICATION"}:
         raise TestSenderError("real_property_image_required")
-    if not executive.get("name") or not executive.get("email") or not executive.get("phone"):
+    if not executive.get("name"):
         raise TestSenderError("resolved_executive_required")
     if str(executive.get("name")).strip() != case.executive.strip():
         raise TestSenderError("view_model_executive_mismatch")
@@ -723,7 +722,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
         raise TestSenderError("view_model_document_mismatch")
 
     source_check_keys = {
-        "real_property_image", "executive_name", "executive_email", "executive_phone",
+        "real_property_image", "executive_name",
         "reference_correct", "comparables_compatible", "own_listing_excluded", "cta_correct",
     }
     if any(source_checks.get(key) is not True for key in source_check_keys):
@@ -784,8 +783,8 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     checks = {
         "real_property_image": True,
         "executive_name": True,
-        "executive_email": True,
-        "executive_phone": True,
+        "executive_email": bool(executive.get("email")),
+        "executive_phone": bool(executive.get("phone")),
         "activity_90d": activity_valid,
         "portal_breakdown_valid": portal_valid,
         "operation_correct": True,

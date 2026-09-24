@@ -192,6 +192,30 @@ def test_live_case_builder_can_limit_first_phase_to_a_b_d(monkeypatch):
     assert loaded["codes"] == {"5641", "16521", "16527"}
 
 
+@pytest.mark.parametrize(("document", "expected"), [
+    ({"tipo_operacion": {"venta": True, "arriendo": False}}, runtime.VENTA),
+    ({"tipo_operacion": {"venta": False, "arriendo": True}}, runtime.ARRIENDO),
+    ({"resumen": {"snapshot_listado": {"operacion": "Arriendo"}}}, runtime.ARRIENDO),
+    ({"tipo_operacion": {"venta": True, "arriendo": True}}, runtime.VENTA_ARRIENDO),
+    ({"tipo_operacion": {"venta": False, "arriendo": False}}, runtime.UNKNOWN_OPERATION),
+])
+def test_live_builder_operation_resolution_does_not_import_ignored_scripts(document, expected):
+    assert runtime.resolve_property_operation(document) == expected
+
+
+def test_live_builder_selects_only_requested_operation_price_block():
+    document = {"tipo_operacion": {
+        "venta": True,
+        "arriendo": True,
+        "precio_venta": {"precio_uf": 5000},
+        "precio_arriendo": {"precio_uf": 25},
+    }}
+    assert runtime.operation_price_block(document, requested_operation="VENTA")["precio_uf"] == 5000
+    assert runtime.operation_price_block(document, requested_operation="ARRIENDO")["precio_uf"] == 25
+    sale_only = {"tipo_operacion": {"venta": True, "arriendo": False, "precio_venta": {"precio_uf": 5000}}}
+    assert runtime.operation_price_block(sale_only, requested_operation="ARRIENDO") is None
+
+
 def test_runner_uses_a_b_d_then_c_e_and_blocks_partial_batches():
     db = FakeDB()
     assert runner._next_test_phase(db) == ("INITIAL", ("A", "B", "D"))

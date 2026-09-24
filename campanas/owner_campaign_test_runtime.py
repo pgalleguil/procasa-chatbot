@@ -17,8 +17,6 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from scripts.property_operation import ARRIENDO, VENTA, VENTA_ARRIENDO, operation_price_block, resolve_property_operation
-
 from .owner_campaign_test_sender import OwnerCampaignTestCase
 
 
@@ -39,6 +37,11 @@ CAMPAIGN_SEGMENTS = {
     "STRONG_PRICE_ADJUSTMENT", "MIXED_EVIDENCE", "COMPETITIVE_LOW_RESPONSE", "INSUFFICIENT_EVIDENCE"
 }
 PORTALS = ("PortalInmobiliario", "MercadoLibre", "Yapo", "TocToc", "ChilePropiedades", "Proppit", "WhatsApp/Directo", "Otro")
+VENTA = "VENTA"
+ARRIENDO = "ARRIENDO"
+VENTA_ARRIENDO = "VENTA_ARRIENDO"
+UNKNOWN_OPERATION = "UNKNOWN"
+_SINGULAR_OPERATIONS = {VENTA, ARRIENDO}
 
 
 class LiveTestCaseBuildError(ValueError):
@@ -73,6 +76,99 @@ def _fold(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or "").casefold())
     text = "".join(char for char in text if not unicodedata.combining(char))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def _operation_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        value = value.strip().casefold()
+        if value in {"true", "1", "si", "sí", "yes", "activo", "activa"}:
+            return True
+        if value in {"false", "0", "no", "inactivo", "inactiva"}:
+            return False
+    return None
+
+
+def _operations_in_label(value: Any) -> set[str]:
+    text = f" {_fold(value)} "
+    operations: set[str] = set()
+    if re.search(r"\bventa\b|\bvender\b|\bvendida?\b", text):
+        operations.add(VENTA)
+    if re.search(r"\barriendo\b|\barrendamiento\b|\balquiler\b|\brenta\b", text):
+        operations.add(ARRIENDO)
+    return operations
+
+
+def _operation_result(operations: set[str]) -> str:
+    if operations == {VENTA}:
+        return VENTA
+    if operations == {ARRIENDO}:
+        return ARRIENDO
+    if operations == _SINGULAR_OPERATIONS:
+        return VENTA_ARRIENDO
+    return UNKNOWN_OPERATION
+
+
+def resolve_property_operation(doc: Mapping[str, Any] | Any, *, requested_operation: Any = None) -> str:
+    """Resolve operation from canonical flags, then observed listing metadata."""
+    if isinstance(doc, str):
+        resolved = _operation_result(_operations_in_label(doc))
+    elif isinstance(doc, Mapping):
+        operation = doc.get("tipo_operacion")
+        operation = operation if isinstance(operation, Mapping) else {}
+        sale_flag = _operation_flag(operation.get("venta"))
+        rent_flag = _operation_flag(operation.get("arriendo"))
+        if sale_flag is True or rent_flag is True:
+            active = set()
+            if sale_flag is True:
+                active.add(VENTA)
+            if rent_flag is True:
+                active.add(ARRIENDO)
+            resolved = _operation_result(active)
+        elif sale_flag is False and rent_flag is False:
+            resolved = UNKNOWN_OPERATION
+        else:
+            summary = doc.get("resumen")
+            summary = summary if isinstance(summary, Mapping) else {}
+            listing = summary.get("snapshot_listado")
+            listing = listing if isinstance(listing, Mapping) else {}
+            labels = [listing.get("operacion")]
+            labels.extend((operation.get("operacion"), doc.get("operacion"), summary.get("operacion")))
+            state = doc.get("estado")
+            if isinstance(state, Mapping):
+                labels.append(state.get("operacion"))
+            resolved = UNKNOWN_OPERATION
+            for label in labels:
+                found = _operations_in_label(label)
+                if found:
+                    resolved = _operation_result(found)
+                    break
+    else:
+        resolved = UNKNOWN_OPERATION
+    if requested_operation is not None:
+        requested = _operation_result(_operations_in_label(requested_operation))
+        if requested not in _SINGULAR_OPERATIONS:
+            return UNKNOWN_OPERATION
+        if resolved == VENTA_ARRIENDO:
+            return requested
+        if resolved != requested:
+            return UNKNOWN_OPERATION
+    return resolved
+
+
+def operation_price_block(doc: Mapping[str, Any], *, requested_operation: Any = None) -> Mapping[str, Any] | None:
+    """Return only the live price block for one unambiguous operation."""
+    resolved = resolve_property_operation(doc, requested_operation=requested_operation)
+    if resolved not in _SINGULAR_OPERATIONS:
+        return None
+    operation = doc.get("tipo_operacion")
+    if not isinstance(operation, Mapping):
+        return None
+    block = operation.get("precio_venta" if resolved == VENTA else "precio_arriendo")
+    return block if isinstance(block, Mapping) else None
 
 
 def _variants(code: str) -> list[Any]:

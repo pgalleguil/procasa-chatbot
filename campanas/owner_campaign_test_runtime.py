@@ -259,7 +259,16 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
         user for user in matches
         if user.get("is_active") is True and str(user.get("rol") or "").strip().casefold() == "agente"
     ]
-    if len(active_agents) == 1:
+    active_contact_profiles = {
+        (
+            str(item.get("email") or item.get("correo") or item.get("mail") or "").strip().casefold(),
+            re.sub(r"\D", "", str(item.get("telefono") or item.get("celular") or item.get("phone") or item.get("movil") or "")),
+        )
+        for item in active_agents
+    }
+    if active_agents and len(active_contact_profiles) == 1:
+        # Duplicate active user rows are safe to collapse only when both
+        # current contact channels identify the same executive.
         user = active_agents[0]
     elif len(active_agents) > 1 or len(matches) != 1:
         raise LiveTestCaseBuildError("executive_user_match_not_unique")

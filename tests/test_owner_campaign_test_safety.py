@@ -302,6 +302,36 @@ def test_executive_resolution_prefers_the_unique_active_agent_when_names_repeat(
     assert result["phone"] == "+56 9 2222 2222"
 
 
+def test_executive_resolution_collapses_duplicate_active_rows_only_for_same_contact():
+    class UserCollection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def find(self, *_args, **_kwargs):
+            return self.rows
+
+    class UserDB:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return UserCollection(self.rows)
+
+    prop = {"estado": {"ejecutivo": "Ejecutivo Duplicado"}}
+    identical = [
+        {"nombre": "Ejecutivo Duplicado", "rol": "agente", "is_active": True,
+         "email": "same@example.test", "telefono": "+56 9 2222 2222"},
+        {"nombre": "EJECUTIVO Duplicado", "rol": "agente", "is_active": True,
+         "email": " SAME@example.test ", "telefono": "+56 9 2222 2222"},
+    ]
+    assert runtime._resolve_executive(UserDB(identical), prop)["email"] == "same@example.test"
+
+    conflicting = [dict(identical[0]), {**identical[1], "email": "other@example.test"}]
+    with pytest.raises(runtime.LiveTestCaseBuildError, match="executive_user_match_not_unique"):
+        runtime._resolve_executive(UserDB(conflicting), prop)
+
+
 def test_independent_cli_phase_gate_requires_completed_initial_batch():
     db = FakeDB()
     cli._validate_phase(db, cli.INITIAL_CASES)

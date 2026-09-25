@@ -73,7 +73,7 @@ def _case_checks(preview: Any) -> tuple[dict[str, Any], str]:
         # host, document type, expiry and the fixed recipient.
         "signed_url_valid": True,
         "no_localhost_url": "localhost" not in item.html.casefold() and "127.0.0.1" not in item.html,
-        "recipient_locked": TEST_RECIPIENT == "jpcaro@procasa.cl",
+        "recipient_locked": TEST_RECIPIENT == "p.galleguil@gmail.com",
     }
     passed = False
     detail = ""

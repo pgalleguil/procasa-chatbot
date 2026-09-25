@@ -70,6 +70,47 @@ def _event_row() -> dict | None:
         client.close()
 
 
+def _communal_fixture_property() -> str | None:
+    """Select 16486 only when its prepared QA ledger row says it is communal."""
+    client = MongoClient(
+        Config.MONGO_URI,
+        serverSelectionTimeoutMS=8000,
+        connectTimeoutMS=8000,
+        socketTimeoutMS=10000,
+    )
+    try:
+        collection = client[Config.DB_NAME][Config.COLLECTION_CAMPANAS_LOG]
+        rows = collection.find(
+            {
+                "test_mode": True,
+                "actual_recipient_email": TEST_RECIPIENT,
+                "$or": [
+                    {"campaign_id": TEST_CAMPAIGN_ID},
+                    {"campana": TEST_CAMPAIGN_ID},
+                ],
+            },
+            {
+                "property_code": 1,
+                "codigo_propiedad": 1,
+                "supporting_document_type": 1,
+                "document_type": 1,
+            },
+        )
+        selected = []
+        for row in rows:
+            code = str(row.get("property_code") or row.get("codigo_propiedad") or "").strip()
+            doc_type = str(
+                row.get("supporting_document_type") or row.get("document_type") or ""
+            ).strip().upper()
+            if code.isdigit() and doc_type == COMMUNAL_DOCUMENT_TYPE:
+                selected.append(code)
+        if COMMUNAL_PROPERTY in selected:
+            return COMMUNAL_PROPERTY
+        return sorted(selected, key=lambda item: (len(item), item))[0] if selected else None
+    finally:
+        client.close()
+
+
 def _report_event(document: dict) -> dict | None:
     for event in document.get("response_events") or []:
         if (
@@ -124,21 +165,28 @@ def main() -> int:
 
     communal_file = None
     communal_identity = None
+    communal_code = None
     try:
-        communal_identity = private_report._load_property_identity(COMMUNAL_PROPERTY)
-        if communal_identity:
-            communal_file = private_report._resolve_communal_report(service, communal_identity)
-        emit("COMMUNAL_TEST_PROPERTY", COMMUNAL_PROPERTY)
-        emit("COMMUNAL_DRIVE_AUTH", "PASS")
-        emit("COMMUNAL_DOCUMENT_FOUND", "YES" if communal_file else "NO")
-        if communal_file:
-            private_report._assert_private(service, str(communal_file["id"]))
-            communal_pdf = private_report._download_pdf(service, str(communal_file["id"]))
-            emit("COMMUNAL_PDF_VALID", "YES" if communal_pdf.startswith(b"%PDF-") else "NO")
-        else:
+        communal_code = _communal_fixture_property()
+        emit("COMMUNAL_TEST_PROPERTY", communal_code or "NONE")
+        if not communal_code:
+            emit("COMMUNAL_DRIVE_AUTH", "NOT_RUN")
+            emit("COMMUNAL_DOCUMENT_FOUND", "NO")
             emit("COMMUNAL_PDF_VALID", "NO")
+        else:
+            communal_identity = private_report._load_property_identity(communal_code)
+            if communal_identity:
+                communal_file = private_report._resolve_communal_report(service, communal_identity)
+            emit("COMMUNAL_DRIVE_AUTH", "PASS")
+            emit("COMMUNAL_DOCUMENT_FOUND", "YES" if communal_file else "NO")
+            if communal_file:
+                private_report._assert_private(service, str(communal_file["id"]))
+                communal_pdf = private_report._download_pdf(service, str(communal_file["id"]))
+                emit("COMMUNAL_PDF_VALID", "YES" if communal_pdf.startswith(b"%PDF-") else "NO")
+            else:
+                emit("COMMUNAL_PDF_VALID", "NO")
     except Exception as exc:
-        emit("COMMUNAL_TEST_PROPERTY", COMMUNAL_PROPERTY)
+        emit("COMMUNAL_TEST_PROPERTY", communal_code or "NONE")
         emit("COMMUNAL_DRIVE_AUTH", "PASS")
         emit("COMMUNAL_DOCUMENT_FOUND", "YES" if communal_file else "NO")
         emit("COMMUNAL_PDF_VALID", "FAIL")

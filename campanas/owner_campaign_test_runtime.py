@@ -8,7 +8,9 @@ bytes; it never writes campaign or operational property data.
 from __future__ import annotations
 
 import html as html_lib
+import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -47,6 +49,7 @@ ARRIENDO = "ARRIENDO"
 VENTA_ARRIENDO = "VENTA_ARRIENDO"
 UNKNOWN_OPERATION = "UNKNOWN"
 _SINGULAR_OPERATIONS = {VENTA, ARRIENDO}
+logger = logging.getLogger(__name__)
 
 
 class LiveTestCaseBuildError(ValueError):
@@ -1152,6 +1155,16 @@ def _build_portfolio(
         by_owner[(email, executive)].append(master)
     groups = sorted((items for items in by_owner.values() if len(items) >= 3), key=lambda items: (-len(items), str(items[0].get("codigo") or "")))
     for group in groups[:20]:
+        group_codes = sorted(str(item.get("codigo") or "").strip() for item in group)
+        group_email = _email_from_property(group[0])
+        email_group_hash = hashlib.sha256(group_email.encode("utf-8")).hexdigest()[:12]
+        source_counts = Counter(_email_source_from_property(item) for item in group)
+        logger.info(
+            "OWNER_CAMPAIGN_E_GROUP_CANDIDATE owner_hash=%s candidate_count=%s "
+            "property_codes=%s email_source_counts=%s",
+            email_group_hash, len(group), ",".join(group_codes),
+            ",".join(f"{source}:{count}" for source, count in sorted(source_counts.items())),
+        )
         cases: list[OwnerCampaignTestCase] = []
         for master in sorted(group, key=lambda item: str(item.get("codigo") or "")):
             try:
@@ -1188,6 +1201,10 @@ def _build_portfolio(
                 case = OwnerCampaignTestCase(**{**case.__dict__, "render_context": {**case.render_context, "property_model": model, "source_checks": {**case.render_context["source_checks"], "cta_correct": True}}})
                 cases.append(case)
             except LiveTestCaseBuildError as exc:
+                logger.warning(
+                    "OWNER_CAMPAIGN_E_PROPERTY_REJECTED property_code=%s error_code=%s",
+                    code, exc.error_code,
+                )
                 if str(exc) == "qa_fixture_conflicts_with_live_segment":
                     raise
                 continue
@@ -1199,6 +1216,12 @@ def _build_portfolio(
                 for item in selected
             }
             email_source = next(iter(email_sources)) if len(email_sources) == 1 else "mixed"
+            selected_codes = ",".join(item.property_code for item in selected)
+            logger.info(
+                "OWNER_CAMPAIGN_E_GROUP_SELECTED owner_hash=%s owner_email_source=%s "
+                "property_count=%s property_codes=%s",
+                email_group_hash, email_source, len(selected), selected_codes,
+            )
             return OwnerCampaignTestCase(**{
                 **first.__dict__, "case_id": "E", "portfolio_cases": selected,
                 "render_context": {

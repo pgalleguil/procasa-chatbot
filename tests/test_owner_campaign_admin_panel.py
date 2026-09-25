@@ -182,6 +182,38 @@ def test_preview_builder_exposes_only_symbolic_safe_error_codes(monkeypatch):
     assert {result.error_code for result in results} == {"preview_build_failed"}
 
 
+def test_e_preview_failure_logs_redacted_traceback_and_selected_portfolio(monkeypatch, caplog):
+    import logging
+
+    from analytics import owner_campaign_report_normalization as normalization
+
+    children = tuple(SimpleNamespace(property_code=code) for code in ("17081", "6331", "6348"))
+    case = SimpleNamespace(
+        case_id="E", portfolio_cases=children,
+        render_context={"owner_email_source": "datos_propietario.email"},
+    )
+    monkeypatch.setattr(normalization, "ALL_CASES", ("E",))
+    monkeypatch.setattr(normalization, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [case])
+
+    def fail_during_render(_cases):
+        raise RuntimeError("failed owner@example.com token=eyJabcdefghijklmnop.abc.def")
+
+    monkeypatch.setattr(normalization, "prepare_test_messages", fail_during_render)
+    with caplog.at_level(logging.ERROR, logger=normalization.__name__):
+        results = normalization.build_rendered_test_previews(FakeDB())
+
+    assert results[0].error_code == "preview_build_failed"
+    assert "OWNER_CAMPAIGN_E_PREVIEW_EXCEPTION phase=prepare_render_and_links" in caplog.text
+    assert "exception_type=RuntimeError" in caplog.text
+    assert "owner_email_source=datos_propietario.email" in caplog.text
+    assert "property_count=3" in caplog.text
+    assert "property_codes=17081,6331,6348" in caplog.text
+    assert "owner@example.com" not in caplog.text
+    assert "eyJabcdefghijklmnop" not in caplog.text
+    assert "in build_rendered_test_previews" in caplog.text
+    assert "in fail_during_render" in caplog.text
+
+
 @pytest.mark.parametrize("status", [400, 403, 415])
 def test_post_rejects_missing_or_unsafe_confirmation_without_runner(status, monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")

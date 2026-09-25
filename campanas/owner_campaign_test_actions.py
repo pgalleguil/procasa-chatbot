@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from html import escape
 from typing import Any, Mapping
 from urllib.parse import quote
 
@@ -32,6 +33,24 @@ PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
 
 class OwnerCampaignTestError(ValueError):
     """A test action did not meet the signed test-only authorization contract."""
+
+
+def _campaign_test_page(title: str, content: str, raw_content: bool = False) -> str:
+    """Wrap trusted test-action content in a small responsive PROCASA page."""
+    safe_title = escape(str(title or "Acción de prueba"))
+    safe_content = str(content or "") if raw_content else f"<p>{escape(str(content or ''))}</p>"
+    return (
+        "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<title>{safe_title}</title></head>"
+        "<body style=\"margin:0;padding:24px 16px;background:#f4f3fa;font-family:Arial,sans-serif;color:#25224a;\">"
+        "<main class=\"card\" style=\"box-sizing:border-box;max-width:520px;margin:8vh auto;padding:28px 24px;background:#fff;"
+        "border:1px solid #e5e3f0;border-radius:12px;box-shadow:0 8px 28px rgba(35,29,78,.08);\">"
+        f"<div style=\"margin-bottom:18px;color:#4232c5;font-size:13px;font-weight:700;letter-spacing:.08em;\">PROCASA</div>"
+        f"<h1 style=\"margin:0 0 16px;font-size:24px;line-height:1.25;\">{safe_title}</h1>"
+        f"<section style=\"font-size:16px;line-height:1.55;\">{safe_content}</section>"
+        "</main></body></html>"
+    )
 
 
 def test_mode_enabled() -> bool:
@@ -234,8 +253,10 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
         content = (
             '<p>Confirma que autorizas el nuevo valor propuesto para esta prueba.</p>'
             f'<form method="post" action="{action_url}">'
-            '<button type="submit">Confirmar autorización</button></form>'
-            '<p>El precio publicado no se modificará.</p>'
+            '<button type="submit" style="display:inline-block;padding:12px 18px;border:0;border-radius:7px;'
+            'background:#4232c5;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">'
+            'CONFIRMAR AUTORIZACIÓN</button></form>'
+            '<p>El precio publicado no será modificado automáticamente.</p>'
         )
         return HTMLResponse(
             _campaign_test_page("Confirma el nuevo valor", content, raw_content=True),
@@ -243,13 +264,13 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
     if result["event"] == "price_authorized":
-        title = "Autorización de prueba registrada"
+        title = "Autorización registrada"
         message = "La autorización quedó registrada en modo de prueba. El precio publicado no fue modificado."
     else:
         title = "Solicitud de revisión registrada"
         message = "Tu solicitud quedó registrada en modo de prueba."
     return HTMLResponse(
-        f"<main><h1>{title}</h1><p>{message}</p></main>",
+        _campaign_test_page(title, message),
         status_code=200,
-        headers={"Cache-Control": "private, no-store"},
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
     )

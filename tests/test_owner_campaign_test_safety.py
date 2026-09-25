@@ -1110,6 +1110,54 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert set(db.requested) <= {actions.LEDGER_COLLECTION, actions.PROPERTY_COLLECTION}
 
 
+def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(monkeypatch):
+    db = _action_db(code="5641")
+    token = _action_token("5641")
+    price_before = dict(db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"])
+
+    get_response = actions.handle_test_action(token, db=db, confirmed=False)
+
+    page = get_response.body.decode("utf-8")
+    assert get_response.status_code == 200
+    assert get_response.headers["cache-control"] == "private, no-store"
+    assert "<html" in page and "name=\"viewport\"" in page
+    assert "Confirma el nuevo valor" in page
+    assert "CONFIRMAR AUTORIZACIÓN" in page
+    assert "El precio publicado no será modificado automáticamente." in page
+    row = db.docs[actions.LEDGER_COLLECTION][0]
+    assert [event["event"] for event in row["response_events"]] == ["cta_clicked"]
+    assert all(event["event"] != "price_authorized" for event in row["response_events"])
+
+    post_response = actions.handle_test_action(token, db=db, confirmed=True)
+
+    assert post_response.status_code == 200
+    assert "Autorización registrada" in post_response.body.decode("utf-8")
+    row = db.docs[actions.LEDGER_COLLECTION][0]
+    assert [event["event"] for event in row["response_events"]] == ["cta_clicked", "price_authorized"]
+    assert row["response_events"][-1]["property_code"] == "5641"
+    price_after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"]
+    assert price_before == price_after
+
+
+def test_accept_price_invalid_token_returns_404_without_events():
+    db = _action_db(code="5641")
+    response = actions.handle_test_action("invalid-token", db=db, confirmed=False)
+    assert response.status_code == 404
+    assert db.docs[actions.LEDGER_COLLECTION][0].get("response_events", []) == []
+
+
+def test_document_priority_remains_individual_then_communal_then_none(monkeypatch):
+    monkeypatch.setattr(runtime, "_appraisal", lambda *_args: {"estimated_mid_uf": 1000})
+    monkeypatch.setattr(runtime, "_communal", lambda *_args: {"relevant_metrics": {"n_observations": 10}})
+    assert runtime._support(object(), {}, "VENTA", 1000)[0] == "INDIVIDUAL_APPRAISAL"
+
+    monkeypatch.setattr(runtime, "_appraisal", lambda *_args: None)
+    assert runtime._support(object(), {}, "VENTA", 1000)[0] == "COMMUNAL_MARKET_REPORT"
+
+    monkeypatch.setattr(runtime, "_communal", lambda *_args: None)
+    assert runtime._support(object(), {}, "VENTA", 1000)[0] == "NONE"
+
+
 def test_test_rent_authorization_requires_confirmation_without_changing_live_rent(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
@@ -1220,6 +1268,7 @@ def test_public_test_action_route_is_token_only_and_bypasses_legacy_handler():
     body = ast.unparse(route)
     assert "request.query_params" in body
     assert "handle_test_action" in body
+    assert "request.method.upper() == 'POST'" in body
     assert "handle_campana_respuesta" not in body
     assert "_require_captacion_report_admin" not in body
 

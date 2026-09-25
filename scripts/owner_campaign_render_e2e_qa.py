@@ -12,10 +12,15 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
 from pymongo import MongoClient
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from campanas import private_report
 from campanas.test_mode import TEST_CAMPAIGN_ID, TEST_RECIPIENT, issue_test_token

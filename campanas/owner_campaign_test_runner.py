@@ -6,6 +6,7 @@ import html
 import hashlib
 import json
 import os
+import re
 import time
 from collections import Counter
 from typing import Any, Mapping
@@ -26,7 +27,11 @@ from .owner_campaign_test_actions import (
     issue_test_link_token,
     test_mode_enabled,
 )
-from .owner_campaign_test_runtime import build_owner_campaign_test_cases_live
+from .owner_campaign_test_runtime import (
+    LiveTestCaseBuildError,
+    build_owner_campaign_test_cases_live,
+    qa_evidence_metadata,
+)
 from .owner_campaign_test_sender import (
     SERVICE_BASE_URL,
     TEST_LEDGER_COLLECTION,
@@ -37,6 +42,7 @@ from .owner_campaign_test_sender import (
 
 
 ALLOWED_ACTIONS = frozenset({
+    "GENERATE_PREVIEWS_ALL",
     "GENERATE_PREVIEWS_ABD",
     "SEND_TEST_EMAILS_ABD",
     "GENERATE_PREVIEWS_CE",
@@ -50,6 +56,7 @@ ALLOWED_ACTIONS = frozenset({
 MASS_SEND_ENV = "OWNER_CAMPAIGN_MASS_SEND_ENABLED"
 INITIAL_CASE_IDS = ("A", "B", "D")
 REMAINING_CASE_IDS = ("C", "E")
+ALL_CASE_IDS = ("A", "B", "C", "D", "E")
 INITIAL_PROPERTY_CODES = frozenset({"5641", "16521", "16527"})
 CASE_C_PROPERTY_CODE = "16486"
 
@@ -88,8 +95,23 @@ def _safe_case_summary(case: Any) -> dict[str, Any]:
     }
 
 
-def _preview_page(prepared: list[Any], *, phase: str) -> str:
+def _preview_page(
+    prepared: list[Any],
+    *,
+    phase: str,
+    evidence: Mapping[str, Any] | None = None,
+) -> str:
+    evidence = evidence or {}
     cards = []
+    preview_results = "".join(
+        f"<li>PREVIEW_{html.escape(str(item.case.case_id))}=PASS</li>"
+        for item in prepared
+    )
+    rendered_case_ids = {str(item.case.case_id) for item in prepared}
+    error_results = "".join(
+        f"<li>{case_id}_ERROR_CODE={'NONE' if case_id in rendered_case_ids else 'NOT_RUN'}</li>"
+        for case_id in ("A", "B", "C", "D", "E")
+    )
     for item in prepared:
         summary = _safe_case_summary(item.case)
         title = f"Test {html.escape(summary['case_id'])} · {len(summary['property_codes'])} propiedad(es)"
@@ -111,6 +133,12 @@ def _preview_page(prepared: list[Any], *, phase: str) -> str:
         "<section class='case'><h2>Pre-flight</h2><ul>"
         "<li>RENDER_OK: PASS</li><li>DATA_VALIDATION_OK: PASS</li>"
         "<li>SIGNED_URLS_OK: PASS</li><li>RECIPIENT_GUARD_OK: PASS</li>"
+        f"<li>QA_EVIDENCE_SOURCE: {html.escape(str(evidence.get('source') or ''))}</li>"
+        f"<li>QA_EVIDENCE_SHA256: {html.escape(str(evidence.get('sha256') or ''))}</li>"
+        f"<li>QA_EVIDENCE_RECORDS: {html.escape(str(evidence.get('records') or ''))}</li>"
+        "<li>ALL_PREFLIGHT_PASS=YES</li>"
+        f"{preview_results}"
+        f"{error_results}"
         "<li>PRICE_MUTATION_GUARD_OK: PASS (acciones firmadas de test, sin actualización del precio vivo)</li>"
         "</ul></section>"
         + "".join(cards) + "</main></body></html>"
@@ -162,14 +190,54 @@ def generate_previews(db: Any = None, *, expected_phase: str | None = None) -> t
         raise TestRunnerError("unsafe_test_environment")
     database = _runner_db(db)
     phase, case_ids = _require_phase(database, expected_phase)
-    cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
-    prepared = prepare_test_messages(cases)
+    return _generate_previews_for_cases(database, phase, case_ids)
+
+
+def generate_all_previews(db: Any = None) -> tuple[str, dict[str, Any]]:
+    """Render the fixed A-E set without consulting send-phase state or SMTP."""
+    if not test_mode_enabled() or _mass_send_enabled():
+        raise TestRunnerError("unsafe_test_environment")
+    return _generate_previews_for_cases(_runner_db(db), "ALL_NO_SEND", ALL_CASE_IDS)
+
+
+def _generate_previews_for_cases(
+    database: Any,
+    phase: str,
+    case_ids: tuple[str, ...],
+) -> tuple[str, dict[str, Any]]:
+    try:
+        cases = build_owner_campaign_test_cases_live(database, case_ids=case_ids)
+    except LiveTestCaseBuildError as exc:
+        case_errors = (
+            {case_id: exc.case_errors.get(case_id, "NOT_RUN") for case_id in case_ids}
+            if exc.case_errors else {case_id: exc.error_code for case_id in case_ids}
+        )
+        details = ";".join(f"{case_id}_ERROR_CODE={code}" for case_id, code in case_errors.items())
+        raise TestRunnerError(f"preview_case_build_failed;{details}") from exc
+    prepared = []
+    render_errors: dict[str, str] = {}
+    for case in cases:
+        try:
+            prepared.extend(prepare_test_messages([case]))
+        except (TestSenderError, ValueError) as exc:
+            candidate = str(exc)
+            safe_code = candidate if re.fullmatch(r"[a-z0-9_]+", candidate) else "render_validation_failed"
+            render_errors[case.case_id] = safe_code
+    if render_errors:
+        details = ";".join(
+            f"{case_id}_ERROR_CODE={render_errors.get(case_id, 'NONE')}"
+            for case_id in case_ids
+        )
+        raise TestRunnerError(f"preview_render_failed;{details}")
     if tuple(item.case.case_id for item in prepared) != case_ids:
         raise TestRunnerError("requested_live_previews_incomplete")
-    return _preview_page(prepared, phase=phase), {
+    evidence = qa_evidence_metadata()
+    return _preview_page(prepared, phase=phase, evidence=evidence), {
         "status": "previews_pass",
         "phase": phase,
         "case_ids": list(case_ids),
+        "all_preflight_pass": True,
+        "qa_evidence": evidence,
         "campaign_id": TEST_CAMPAIGN_ID,
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
@@ -429,6 +497,8 @@ def execute_runner_action(action: str, db: Any = None) -> Any:
     normalized = validate_runner_request(
         {"action": action}, test_mode=test_mode_enabled(), mass_send_enabled=_mass_send_enabled(),
     )
+    if normalized == "GENERATE_PREVIEWS_ALL":
+        return generate_all_previews(db)
     phase_actions = {
         "GENERATE_PREVIEWS_ABD": ("generate", "INITIAL"),
         "SEND_TEST_EMAILS_ABD": ("send", "INITIAL"),
@@ -451,6 +521,7 @@ def render_admin_runner_ui() -> HTMLResponse:
     """Return the deliberately small, non-editable test-runner page."""
     recipient = html.escape(TEST_RECIPIENT)
     actions = [
+        ("GENERATE_PREVIEWS_ALL", "0. Generar previews A–E · solo revisión, sin envío", "preview", "ALL_NO_SEND"),
         ("GENERATE_PREVIEWS_ABD", "1. Generar previews A/B/D", "preview", "INITIAL"),
         ("SEND_TEST_EMAILS_ABD", "2. Enviar test A/B/D", "send", "INITIAL"),
         ("GENERATE_PREVIEWS_CE", "3. Generar previews C/E", "preview", "REMAINING"),
@@ -524,7 +595,7 @@ async def handle_admin_runner_request(request: Any, require_admin: Any) -> Any:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if action in {"GENERATE_PREVIEWS_ABD", "GENERATE_PREVIEWS_CE", "GENERATE_PREVIEWS"}:
+    if action in {"GENERATE_PREVIEWS_ALL", "GENERATE_PREVIEWS_ABD", "GENERATE_PREVIEWS_CE", "GENERATE_PREVIEWS"}:
         document, _summary = result
         return HTMLResponse(document, status_code=200, headers={"Cache-Control": "private, no-store"})
     return result

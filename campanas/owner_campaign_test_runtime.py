@@ -8,11 +8,14 @@ bytes; it never writes campaign or operational property data.
 from __future__ import annotations
 
 import html as html_lib
+import json
 import math
+import os
 import re
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -23,9 +26,11 @@ from .owner_campaign_test_sender import OwnerCampaignTestCase
 PROPERTY_COLLECTION = "universo_cartera_prop360"
 APPRAISAL_COLLECTION = "tasaciones"
 COMMUNAL_COLLECTION = "mercado_comunal"
+QA_EVIDENCE_SOURCE = "FROZEN_APPROVED_REPORT"
+QA_EVIDENCE_FILENAME = "owner_campaign_qa_evidence_20260923.json"
+QA_EVIDENCE_PATH = Path(__file__).resolve().parents[1] / "analytics" / "fixtures" / QA_EVIDENCE_FILENAME
 PROPERTY_CODES = {"A": "5641", "B": "16521", "C": "16486", "D": "16527"}
 EXPLICITLY_EXCLUDED_CODES = frozenset({"6754"})
-APPROVED_A_RAW_TARGET_UF = 2857.0
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PLACEHOLDER_EMAIL_LOCALPARTS = frozenset({
     "incorrecto", "correo-incorrecto", "correo_incorrecto", "email-invalido",
@@ -46,6 +51,73 @@ _SINGULAR_OPERATIONS = {VENTA, ARRIENDO}
 
 class LiveTestCaseBuildError(ValueError):
     """Live records do not safely satisfy a fixed test-case contract."""
+
+    def __init__(self, code: str, *, case_errors: Mapping[str, str] | None = None):
+        super().__init__(code)
+        self.error_code = code
+        self.case_errors = dict(case_errors or {})
+
+
+def _test_mode_enabled() -> bool:
+    return os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() == "true"
+
+
+def _load_qa_evidence_fixture() -> dict[str, Any]:
+    """Load the frozen fixture only inside TEST_MODE and validate its manifest."""
+    if not _test_mode_enabled():
+        raise LiveTestCaseBuildError("qa_fixture_test_mode_only")
+    try:
+        raw = QA_EVIDENCE_PATH.read_bytes()
+        fixture = json.loads(raw)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise LiveTestCaseBuildError("qa_evidence_fixture_unavailable") from exc
+    if not isinstance(fixture, dict):
+        raise LiveTestCaseBuildError("qa_evidence_fixture_invalid")
+    source_hash = str(fixture.get("source_report_sha256") or "")
+    segments = fixture.get("segments_by_code")
+    counts = fixture.get("segment_counts")
+    cases = fixture.get("cases")
+    if (
+        fixture.get("schema_version") != "owner_campaign_qa_evidence_v1"
+        or fixture.get("source_report_filename") != "owner_campaign_structural_evidence_dry_run_final_20260923.json"
+        or not re.fullmatch(r"[0-9a-f]{64}", source_hash)
+        or fixture.get("record_count") != 406
+        or not isinstance(segments, dict)
+        or len(segments) != 406
+        or not isinstance(counts, dict)
+        or not isinstance(cases, dict)
+        or not {"A", "B", "D"}.issubset(cases)
+    ):
+        raise LiveTestCaseBuildError("qa_evidence_fixture_invalid")
+    actual_counts = dict(sorted(Counter(str(value) for value in segments.values()).items()))
+    if actual_counts != dict(sorted((str(key), int(value)) for key, value in counts.items())):
+        raise LiveTestCaseBuildError("qa_evidence_fixture_segment_counts_invalid")
+    if sum(actual_counts.values()) != fixture["record_count"]:
+        raise LiveTestCaseBuildError("qa_evidence_fixture_record_count_invalid")
+    expected_codes = {"A": "5641", "B": "16521", "D": "16527"}
+    for case_id, code in expected_codes.items():
+        case = cases.get(case_id)
+        if (
+            not isinstance(case, dict)
+            or str(case.get("property_code") or "") != code
+            or str(case.get("evidence_segment") or "").upper() != str(segments.get(code) or "").upper()
+            or case.get("document_type") not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}
+        ):
+            raise LiveTestCaseBuildError("qa_evidence_fixture_case_invalid")
+    price_policy_hash = str(fixture.get("price_policy_report_sha256") or "")
+    if not re.fullmatch(r"[0-9a-f]{64}", price_policy_hash):
+        raise LiveTestCaseBuildError("qa_evidence_fixture_policy_provenance_invalid")
+    return fixture
+
+
+def qa_evidence_metadata() -> dict[str, Any]:
+    """Expose non-sensitive provenance for the admin QA preview response."""
+    fixture = _load_qa_evidence_fixture()
+    return {
+        "source": QA_EVIDENCE_SOURCE,
+        "sha256": fixture["source_report_sha256"],
+        "records": fixture["record_count"],
+    }
 
 
 def _number(value: Any) -> float | None:
@@ -231,6 +303,7 @@ def _dimensions(master: Mapping[str, Any], appraisal: Mapping[str, Any] | None =
     for path, source in (
         ("caracteristicas.superficie_construida", "caracteristicas.superficie_construida"),
         ("caracteristicas.m2_construidos", "caracteristicas.m2_construidos"),
+        ("caracteristicas.casa_m2", "caracteristicas.casa_m2"),
     ):
         built = _number(_path(master, path))
         if built is not None and built > 0:
@@ -528,6 +601,74 @@ def _appraisal(db: Any, master: Mapping[str, Any], operation: str, current_price
     }
 
 
+def _fixture_appraisal(
+    fixture_case: Mapping[str, Any], operation: str, current_price: float,
+) -> dict[str, Any] | None:
+    if fixture_case.get("document_type") != "INDIVIDUAL_APPRAISAL":
+        return None
+    low = mid = high = built = None
+    built_source = None
+    appraisal = fixture_case.get("appraisal")
+    if isinstance(appraisal, Mapping):
+        low = _number(appraisal.get("low_uf"))
+        mid = _number(appraisal.get("mid_uf"))
+        high = _number(appraisal.get("high_uf"))
+    rent = _number(fixture_case.get("rent_estimate_uf"))
+    if operation == ARRIENDO:
+        if rent is None:
+            return None
+        low = mid = high = rent
+    elif operation != VENTA or mid is None:
+        return None
+    if fixture_case.get("total_construccion_m2") is not None:
+        built = _number(fixture_case.get("total_construccion_m2"))
+        built_source = str(fixture_case.get("built_m2_source") or "")
+        if built is None or built <= 0 or not built_source.endswith(":SII"):
+            raise LiveTestCaseBuildError("qa_fixture_built_area_invalid")
+    position = (
+        "ABOVE_RANGE" if high is not None and current_price > high
+        else "BELOW_RANGE" if low is not None and current_price < low
+        else "WITHIN_RANGE" if low is not None and high is not None
+        else "NEAR_REFERENCE"
+    )
+    return {
+        "estimated_low_uf": low,
+        "estimated_mid_uf": mid,
+        "estimated_high_uf": high,
+        "current_price_uf": current_price,
+        "position_vs_appraisal": position,
+        "document_date": None,
+        "property_built_m2": built,
+        "property_built_m2_source": built_source,
+        "evidence_source": QA_EVIDENCE_SOURCE,
+        "source_lineage": dict(fixture_case.get("source_lineage") or {}),
+    }
+
+
+def _assert_live_appraisal_matches_fixture(
+    live_appraisal: Mapping[str, Any] | None,
+    fixture_case: Mapping[str, Any],
+    operation: str,
+) -> None:
+    """Fail closed when any overlapping current structured value disagrees."""
+    if not isinstance(live_appraisal, Mapping):
+        return
+    expected_appraisal = fixture_case.get("appraisal") if isinstance(fixture_case.get("appraisal"), Mapping) else {}
+    pairs = (
+        ("estimated_low_uf", expected_appraisal.get("low_uf")),
+        ("estimated_mid_uf", fixture_case.get("rent_estimate_uf") if operation == ARRIENDO else expected_appraisal.get("mid_uf")),
+        ("estimated_high_uf", expected_appraisal.get("high_uf")),
+        ("property_built_m2", fixture_case.get("total_construccion_m2")),
+    )
+    for live_key, fixture_value in pairs:
+        live_value = _number(live_appraisal.get(live_key))
+        expected_value = _number(fixture_value)
+        if live_value is not None and expected_value is not None and not math.isclose(
+            live_value, expected_value, rel_tol=0, abs_tol=0.05,
+        ):
+            raise LiveTestCaseBuildError("qa_fixture_conflicts_with_live_appraisal")
+
+
 def _communal(db: Any, master: Mapping[str, Any], operation: str) -> dict[str, Any] | None:
     commune, prop_type = _commune(master), _property_type(master)
     matches = []
@@ -555,16 +696,44 @@ def _communal(db: Any, master: Mapping[str, Any], operation: str) -> dict[str, A
     }
 
 
-def _support(db: Any, master: Mapping[str, Any], operation: str, current: float) -> tuple[str, dict[str, Any]]:
-    appraisal = _appraisal(db, master, operation, current)
+def _support(
+    db: Any,
+    master: Mapping[str, Any],
+    operation: str,
+    current: float,
+    *,
+    qa_fixture_case: Mapping[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    live_appraisal = _appraisal(db, master, operation, current)
+    if qa_fixture_case is not None:
+        _assert_live_appraisal_matches_fixture(live_appraisal, qa_fixture_case, operation)
+        appraisal = _fixture_appraisal(qa_fixture_case, operation, current)
+        doc_type = str(qa_fixture_case.get("document_type") or "NONE").upper()
+        if doc_type == "INDIVIDUAL_APPRAISAL" and appraisal is None:
+            raise LiveTestCaseBuildError("qa_fixture_appraisal_unavailable")
+    else:
+        appraisal = live_appraisal
+        communal = None
+        doc_type = ""
     try:
         communal = _communal(db, master, operation)
     except Exception:
         # A communal report is secondary context; it must not block an
         # individually supported A/B/D test case.
         communal = None
-    doc_type = "INDIVIDUAL_APPRAISAL" if appraisal else "COMMUNAL_MARKET_REPORT" if communal else "NONE"
+    if qa_fixture_case is not None:
+        if doc_type == "COMMUNAL_MARKET_REPORT" and communal is None:
+            raise LiveTestCaseBuildError("qa_fixture_communal_document_unavailable")
+        if doc_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT", "NONE"}:
+            raise LiveTestCaseBuildError("qa_fixture_document_type_invalid")
+        if live_appraisal is not None and doc_type != "INDIVIDUAL_APPRAISAL":
+            raise LiveTestCaseBuildError("qa_fixture_document_type_conflicts_with_live_source")
+    else:
+        doc_type = "INDIVIDUAL_APPRAISAL" if appraisal else "COMMUNAL_MARKET_REPORT" if communal else "NONE"
     support = {"operation": operation, "appraisal": appraisal, "communal_market": communal}
+    if qa_fixture_case is not None:
+        support["qa_evidence_source"] = QA_EVIDENCE_SOURCE
+        support["qa_evidence_lineage"] = dict(qa_fixture_case.get("source_lineage") or {})
     return doc_type, support
 
 
@@ -577,6 +746,20 @@ def _campaign_segment(master: Mapping[str, Any]) -> str | None:
         if segment in CAMPAIGN_SEGMENTS:
             return segment
     return None
+
+
+def _campaign_segment_for_test(
+    master: Mapping[str, Any],
+    segments_by_code: Mapping[str, Any],
+) -> str:
+    code = str(master.get("codigo") or "").strip()
+    approved = str(segments_by_code.get(code) or "").strip().upper()
+    if approved not in CAMPAIGN_SEGMENTS:
+        raise LiveTestCaseBuildError("qa_fixture_segment_missing")
+    current = _campaign_segment(master)
+    if current and current != approved:
+        raise LiveTestCaseBuildError("qa_fixture_conflicts_with_live_segment")
+    return approved
 
 
 def _date(value: Any) -> datetime | None:
@@ -718,18 +901,33 @@ def _segment_copy(segment: str, operation: str, authorization: bool) -> dict[str
     return content
 
 
-def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: str, raw_target: float | None = None, now: datetime) -> OwnerCampaignTestCase:
+def _build_case(
+    db: Any,
+    master: Mapping[str, Any],
+    case_id: str,
+    *,
+    segment: str,
+    raw_target: float | None = None,
+    display_target: float | None = None,
+    qa_fixture_case: Mapping[str, Any] | None = None,
+    qa_segments: Mapping[str, Any] | None = None,
+    qa_manifest: Mapping[str, Any] | None = None,
+    now: datetime,
+) -> OwnerCampaignTestCase:
     code = str(master.get("codigo") or "").strip()
     if not code or not _active_available(master) or not _is_sucre(master):
         raise LiveTestCaseBuildError("property_not_current_active_available_sucre")
+    if qa_segments is not None:
+        approved_segment = _campaign_segment_for_test(master, qa_segments)
+        if str(segment or "").strip().upper() != approved_segment:
+            raise LiveTestCaseBuildError("qa_fixture_segment_conflicts_with_case")
+        segment = approved_segment
     # A/B/D are sent only to the fixed test inbox; owner email is useful for
     # attribution when present but is not needed to render or route test mail.
     # Portfolio grouping (E) still requires a real owner email for identity.
     email = _email_from_property(master, required=case_id == "E")
     executive = _resolve_executive(db, master)
     operation = resolve_property_operation(master)
-    if case_id == "D" and operation == VENTA_ARRIENDO:
-        operation = ARRIENDO
     if operation not in {VENTA, ARRIENDO}:
         raise LiveTestCaseBuildError("property_operation_unresolved")
     price_block = operation_price_block(master, requested_operation=operation)
@@ -742,23 +940,35 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
     quality = str((analysis.get("client_evidence") or {}).get("evidence_level") or "INSUFFICIENT").upper()
     percentile = _number(market.get("property_percentile"))
     own_ids = _own_listing_ids(master)
-    doc_type, support = _support(db, master, operation, current)
+    doc_type, support = _support(db, master, operation, current, qa_fixture_case=qa_fixture_case)
     appraisal = support.get("appraisal") if isinstance(support.get("appraisal"), Mapping) else None
     dimensions = _dimensions(master, appraisal)
+    if case_id == "B" and qa_fixture_case is not None:
+        fixture_built = _number(qa_fixture_case.get("total_construccion_m2"))
+        live_built = _dimensions(master).get("built")
+        if fixture_built is None:
+            raise LiveTestCaseBuildError("qa_fixture_built_area_missing")
+        if live_built is not None and not math.isclose(live_built, fixture_built, rel_tol=0, abs_tol=0.05):
+            raise LiveTestCaseBuildError("qa_fixture_conflicts_with_live_built_area")
+        dimensions["built"] = fixture_built
+        dimensions["built_source"] = str(qa_fixture_case.get("built_m2_source") or "")
     v3, integral_n, land_n = _comparables(master, operation, appraisal)
 
     if case_id == "A":
+        if raw_target is None or display_target is None:
+            raise LiveTestCaseBuildError("qa_fixture_case_a_target_missing")
         adjustment = (current - raw_target) / current * 100 if raw_target else -1
         appraisal = support.get("appraisal") or {}
         appraisal_high = _number(appraisal.get("estimated_high_uf"))
         if (
-            operation != VENTA or doc_type != "INDIVIDUAL_APPRAISAL"
+            segment != "STRONG_PRICE_ADJUSTMENT"
+                or operation != VENTA or doc_type != "INDIVIDUAL_APPRAISAL"
                 or quality not in {"HIGH", "MEDIUM"} or integral_n < 8
                 or percentile is None or percentile < 75
                 or not _case_a_primary_surface_compatible(prop_type, v3.get("primary_surface"))
                 or _primary_surface_value(dimensions, v3.get("primary_surface")) is None
                 or appraisal_high is None or not math.isclose(appraisal_high, float(raw_target), abs_tol=0.05)
-            or not 2 <= adjustment <= 10
+                or not 2 <= adjustment <= 10
         ):
             raise LiveTestCaseBuildError("case_a_live_evidence_not_authorized")
         expected_segment, cta_type = "STRONG_PRICE_ADJUSTMENT", "PRICE_AUTHORIZATION"
@@ -768,12 +978,13 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
         # B is a regression scenario for reconciling a subject-owned SII area
         # from its unique appraisal record. Comparables remain external; the
         # appraisal/current-price relationship still requires advisor review.
-        if operation != VENTA or v3.get("primary_surface") != "built_m2" or integral_n != 19 or dimensions["built"] is None or not str(dimensions.get("built_source") or "").endswith(":SII") or mid is None or high is None or not mid < current <= high:
+        if segment != "MIXED_EVIDENCE" or operation != VENTA or v3.get("primary_surface") != "built_m2" or integral_n != 19 or dimensions["built"] is None or not str(dimensions.get("built_source") or "").endswith(":SII") or mid is None or high is None or not mid < current <= high:
             raise LiveTestCaseBuildError("case_b_live_mixed_evidence_contract_failed")
         expected_segment, cta_type = "MIXED_EVIDENCE", "ADVISOR_REVIEW"
     elif case_id == "C":
         if (
-            operation != VENTA or "parcela" not in _fold(prop_type)
+            segment != "INSUFFICIENT_EVIDENCE"
+            or operation != VENTA or "parcela" not in _fold(prop_type)
             or v3.get("primary_surface") != "built_m2"
             or dimensions["built"] is None or dimensions["land"] is None
             or abs(dimensions["built"] - 560) > 1 or abs(dimensions["land"] - 5000) > 1
@@ -785,16 +996,15 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
         estimate = (support.get("appraisal") or {}).get("estimated_mid_uf")
         if operation != ARRIENDO or not _number(estimate) or not v3.get("integral_comparables"):
             raise LiveTestCaseBuildError("case_d_rental_sources_unavailable")
-        expected_segment = _campaign_segment(master) or "TEST_ADVISOR_REVIEW"
+        expected_segment = segment
         cta_type = "ADVISOR_REVIEW"
     else:
-        stored = _campaign_segment(master)
-        expected_segment = stored or "TEST_ADVISOR_REVIEW"
+        expected_segment = segment
         cta_type = "ADVISOR_REVIEW"
 
     existing_segment = _campaign_segment(master)
-    if case_id in {"A", "B", "C"} and existing_segment and existing_segment != expected_segment:
-        raise LiveTestCaseBuildError("fixed_case_segment_conflicts_with_live_source")
+    if existing_segment and existing_segment != expected_segment:
+        raise LiveTestCaseBuildError("qa_fixture_conflicts_with_live_segment")
 
     adjustment_pct = -((current - float(raw_target)) / current * 100) if raw_target else None
     prop = {
@@ -830,6 +1040,8 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
     model["executive"] = executive
     model["activity_90d"] = _activity_90d(db, code, now)
     model["campaign_segment"] = expected_segment
+    if qa_manifest is not None:
+        model["qa_evidence"] = dict(qa_manifest)
     if operation == ARRIENDO and doc_type == "INDIVIDUAL_APPRAISAL":
         model["document"] = dict(model.get("document") or {})
         model["document"]["copy"] = "Estimación de arriendo individual disponible como respaldo comercial."
@@ -840,7 +1052,7 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
         model["appraisal"].pop("recommended_label", None)
         model["appraisal"].pop("adjustment_label", None)
     else:
-        model["recommended_price_label"] = f"{raw_target:,.0f} UF".replace(",", ".")
+        model["recommended_price_label"] = f"{display_target:,.0f} UF".replace(",", ".")
         model["display_adjustment_label"] = f"{adjustment_pct:+.1f}%".replace(".", ",")
         model["appraisal"] = dict(model.get("appraisal") or {})
         model["appraisal"]["recommended_label"] = model["recommended_price_label"]
@@ -868,9 +1080,13 @@ def _build_case(db: Any, master: Mapping[str, Any], case_id: str, *, segment: st
         case_id=case_id, property_code=code, intended_owner_email=email,
         operation=operation, evidence_segment=test_segment, document_type=doc_type,
         executive=executive["name"], current_price=current, cta_type=cta_type,
-        raw_recommended_price=raw_target, display_recommended_price=raw_target,
+        raw_recommended_price=raw_target,
+        display_recommended_price=display_target if cta_type == "PRICE_AUTHORIZATION" else None,
         adjustment_pct=adjustment_pct, commune=commune, property_type=prop_type,
-        render_context={"property_model": model, "executives": [executive], "source_checks": source_checks},
+        render_context={
+            "property_model": model, "executives": [executive], "source_checks": source_checks,
+            **({"qa_evidence": dict(qa_manifest)} if qa_manifest is not None else {}),
+        },
     )
 
 
@@ -882,12 +1098,18 @@ def _load_code_docs(db: Any, codes: set[str]) -> dict[str, dict[str, Any]]:
     return indexed
 
 
-def _build_portfolio(db: Any, now: datetime) -> OwnerCampaignTestCase:
+def _build_portfolio(
+    db: Any,
+    now: datetime,
+    *,
+    qa_segments: Mapping[str, Any] | None = None,
+    qa_manifest: Mapping[str, Any] | None = None,
+) -> OwnerCampaignTestCase:
     fixed_case_codes = set(PROPERTY_CODES.values())
     candidates = []
     for master in db[PROPERTY_COLLECTION].find({"estado.estado_prop360": "Activa", "disponible_prop360": True}):
         code = str(master.get("codigo") or "").strip()
-        if code in fixed_case_codes or code in EXPLICITLY_EXCLUDED_CODES:
+        if code in fixed_case_codes or code in EXPLICITLY_EXCLUDED_CODES or (qa_segments is not None and code not in qa_segments):
             continue
         if not _active_available(master) or not _is_sucre(master):
             continue
@@ -907,13 +1129,16 @@ def _build_portfolio(db: Any, now: datetime) -> OwnerCampaignTestCase:
         cases: list[OwnerCampaignTestCase] = []
         for master in sorted(group, key=lambda item: str(item.get("codigo") or "")):
             try:
-                segment = _campaign_segment(master)
-                # A portfolio preview must retain each property's live segment.
-                # Without it, silently assigning a test-only segment would no
-                # longer represent the owner's actual campaign evidence.
+                segment = (
+                    _campaign_segment_for_test(master, qa_segments)
+                    if qa_segments is not None else _campaign_segment(master)
+                )
                 if segment not in CAMPAIGN_SEGMENTS:
                     continue
-                case = _build_case(db, master, "E", segment=segment, now=now)
+                case = _build_case(
+                    db, master, "E", segment=segment, qa_segments=qa_segments,
+                    qa_manifest=qa_manifest, now=now,
+                )
                 if case.document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
                     continue
                 case = OwnerCampaignTestCase(**{**case.__dict__, "cta_type": "ADVISOR_REVIEW", "raw_recommended_price": None, "display_recommended_price": None, "adjustment_pct": None})
@@ -936,12 +1161,20 @@ def _build_portfolio(db: Any, now: datetime) -> OwnerCampaignTestCase:
                 })
                 case = OwnerCampaignTestCase(**{**case.__dict__, "render_context": {**case.render_context, "property_model": model, "source_checks": {**case.render_context["source_checks"], "cta_correct": True}}})
                 cases.append(case)
-            except LiveTestCaseBuildError:
+            except LiveTestCaseBuildError as exc:
+                if str(exc) == "qa_fixture_conflicts_with_live_segment":
+                    raise
                 continue
         if len(cases) >= 3 and len({item.intended_owner_email for item in cases}) == 1 and len({item.executive for item in cases}) == 1:
             selected = tuple(cases[: min(9, len(cases))])
             first = selected[0]
-            return OwnerCampaignTestCase(**{**first.__dict__, "case_id": "E", "portfolio_cases": selected, "render_context": {"executives": [first.render_context["property_model"]["executive"]]}})
+            return OwnerCampaignTestCase(**{
+                **first.__dict__, "case_id": "E", "portfolio_cases": selected,
+                "render_context": {
+                    "executives": [first.render_context["property_model"]["executive"]],
+                    **({"qa_evidence": dict(qa_manifest)} if qa_manifest is not None else {}),
+                },
+            })
     raise LiveTestCaseBuildError("current_multi_property_owner_group_unavailable")
 
 
@@ -959,14 +1192,65 @@ def build_owner_campaign_test_cases_live(
     requested = tuple(("A", "B", "C", "D", "E") if case_ids is None else case_ids)
     if not requested or len(requested) != len(set(requested)) or set(requested) - {"A", "B", "C", "D", "E"}:
         raise LiveTestCaseBuildError("requested_test_cases_invalid")
+    fixture = _load_qa_evidence_fixture()
+    qa_cases = fixture["cases"]
+    qa_segments = fixture["segments_by_code"]
+    qa_manifest = {
+        "source": QA_EVIDENCE_SOURCE,
+        "sha256": fixture["source_report_sha256"],
+        "records": fixture["record_count"],
+    }
     current_time = now or datetime.now(timezone.utc)
     fixed_ids = [case_id for case_id in requested if case_id != "E"]
-    docs = _load_code_docs(db, {PROPERTY_CODES[case_id] for case_id in fixed_ids}) if fixed_ids else {}
+    try:
+        docs = _load_code_docs(db, {PROPERTY_CODES[case_id] for case_id in fixed_ids}) if fixed_ids else {}
+    except LiveTestCaseBuildError as exc:
+        code = exc.error_code if re.fullmatch(r"[a-z0-9_]+", exc.error_code) else "case_build_failed"
+        raise LiveTestCaseBuildError(
+            "qa_cases_failed",
+            case_errors={case_id: code if case_id in fixed_ids else "NOT_RUN" for case_id in requested},
+        ) from exc
     builders = {
-        "A": lambda: _build_case(db, docs[PROPERTY_CODES["A"]], "A", segment="STRONG_PRICE_ADJUSTMENT", raw_target=APPROVED_A_RAW_TARGET_UF, now=current_time),
-        "B": lambda: _build_case(db, docs[PROPERTY_CODES["B"]], "B", segment="MIXED_EVIDENCE", now=current_time),
-        "C": lambda: _build_case(db, docs[PROPERTY_CODES["C"]], "C", segment="INSUFFICIENT_EVIDENCE", now=current_time),
-        "D": lambda: _build_case(db, docs[PROPERTY_CODES["D"]], "D", segment="TEST_ADVISOR_REVIEW", now=current_time),
-        "E": lambda: _build_portfolio(db, current_time),
+        "A": lambda: _build_case(
+            db, docs[PROPERTY_CODES["A"]], "A",
+            segment=qa_segments[PROPERTY_CODES["A"]],
+            raw_target=_number(qa_cases["A"].get("raw_recommended_price_uf")),
+            display_target=_number(qa_cases["A"].get("display_recommended_price_uf")),
+            qa_fixture_case=qa_cases["A"], qa_segments=qa_segments,
+            qa_manifest=qa_manifest, now=current_time,
+        ),
+        "B": lambda: _build_case(
+            db, docs[PROPERTY_CODES["B"]], "B",
+            segment=qa_segments[PROPERTY_CODES["B"]],
+            qa_fixture_case=qa_cases["B"], qa_segments=qa_segments,
+            qa_manifest=qa_manifest, now=current_time,
+        ),
+        "C": lambda: _build_case(
+            db, docs[PROPERTY_CODES["C"]], "C",
+            segment=qa_segments[PROPERTY_CODES["C"]], qa_segments=qa_segments,
+            qa_manifest=qa_manifest, now=current_time,
+        ),
+        "D": lambda: _build_case(
+            db, docs[PROPERTY_CODES["D"]], "D",
+            segment=qa_segments[PROPERTY_CODES["D"]],
+            qa_fixture_case=qa_cases["D"], qa_segments=qa_segments,
+            qa_manifest=qa_manifest, now=current_time,
+        ),
+        "E": lambda: _build_portfolio(
+            db, current_time, qa_segments=qa_segments, qa_manifest=qa_manifest,
+        ),
     }
-    return [builders[case_id]() for case_id in requested]
+    built: list[OwnerCampaignTestCase] = []
+    case_errors: dict[str, str] = {}
+    for case_id in requested:
+        try:
+            built.append(builders[case_id]())
+        except LiveTestCaseBuildError as exc:
+            code = exc.error_code if re.fullmatch(r"[a-z0-9_]+", exc.error_code) else "case_build_failed"
+            case_errors[case_id] = code
+    if case_errors:
+        raise LiveTestCaseBuildError(
+            "qa_cases_failed",
+            case_errors={case_id: case_errors.get(case_id, "NONE") for case_id in requested},
+        )
+    return built

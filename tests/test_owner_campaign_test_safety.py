@@ -1212,3 +1212,128 @@ def test_http_campaign_runner_is_secret_gated_and_bypasses_crm():
     full_source = source.read_text(encoding="utf-8-sig")
     assert "/internal/owner-campaign-test-runner" not in full_source
     assert "/captacion/test-runner" not in body
+
+
+def test_live_dimensions_use_casa_m2_as_built_area_with_source_lineage():
+    dimensions = runtime._dimensions({
+        "caracteristicas": {
+            "casa_m2": 560,
+            "superficie_terreno": 5000,
+        },
+    })
+
+    assert dimensions["built"] == 560
+    assert dimensions["built_source"] == "caracteristicas.casa_m2"
+    assert dimensions["land"] == 5000
+
+
+def test_live_dimensions_preserve_built_area_source_priority():
+    dimensions = runtime._dimensions({
+        "caracteristicas": {
+            "superficie_construida": 100,
+            "m2_construidos": 90,
+            "casa_m2": 80,
+        },
+    })
+
+    assert dimensions["built"] == 100
+    assert dimensions["built_source"] == "caracteristicas.superficie_construida"
+
+
+def test_qa_fixture_is_generated_from_approved_evidence_and_contains_only_safe_fields():
+    fixture = runtime._load_qa_evidence_fixture()
+
+    assert fixture["source_report_filename"] == "owner_campaign_structural_evidence_dry_run_final_20260923.json"
+    assert re.fullmatch(r"[0-9a-f]{64}", fixture["source_report_sha256"])
+    assert fixture["record_count"] == len(fixture["segments_by_code"]) == 406
+    assert fixture["segment_counts"] == {
+        "COMPETITIVE_LOW_RESPONSE": 9,
+        "INSUFFICIENT_EVIDENCE": 172,
+        "MIXED_EVIDENCE": 180,
+        "STRONG_PRICE_ADJUSTMENT": 45,
+    }
+    assert fixture["cases"]["A"]["appraisal"] == {
+        "low_uf": 2357.0, "mid_uf": 2666.0, "high_uf": 2857.0,
+    }
+    assert fixture["cases"]["A"]["raw_recommended_price_uf"] == 2857.0
+    assert fixture["cases"]["A"]["display_recommended_price_uf"] == 2857.0
+    assert fixture["cases"]["B"]["total_construccion_m2"] == 64.0
+    assert fixture["cases"]["B"]["built_m2_source"].endswith(":SII")
+    assert fixture["cases"]["D"]["rent_estimate_uf"] == 16.0
+    serialized = json.dumps(fixture).casefold()
+    assert "@" not in serialized
+    assert "secret" not in serialized
+    assert "token" not in serialized
+
+
+def test_production_runtime_uses_qa_fixture_no(monkeypatch, tmp_path):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "false")
+    monkeypatch.setattr(runtime, "QA_EVIDENCE_PATH", tmp_path / "must-not-be-read.json")
+
+    with pytest.raises(runtime.LiveTestCaseBuildError, match="qa_fixture_test_mode_only"):
+        runtime._load_qa_evidence_fixture()
+
+
+def test_qa_fixture_conflicting_live_appraisal_fails_closed():
+    fixture_case = {
+        "appraisal": {"low_uf": 1009.0, "mid_uf": 1442.0, "high_uf": 1809.0},
+        "total_construccion_m2": 64.0,
+    }
+    with pytest.raises(runtime.LiveTestCaseBuildError, match="qa_fixture_conflicts_with_live_appraisal"):
+        runtime._assert_live_appraisal_matches_fixture({
+            "estimated_low_uf": 1009.0,
+            "estimated_mid_uf": 1400.0,
+            "estimated_high_uf": 1809.0,
+            "property_built_m2": 64.0,
+        }, fixture_case, "VENTA")
+
+
+def test_generate_all_previews_is_preview_only_and_exposes_fixture_provenance(monkeypatch):
+    cases = [SimpleNamespace(
+        case_id=case_id, property_code=f"test-{case_id}", operation="VENTA",
+        evidence_segment="MIXED_EVIDENCE", document_type="NONE", cta_type="ADVISOR_REVIEW",
+        portfolio_cases=(),
+    ) for case_id in ("A", "B", "C", "D", "E")]
+    monkeypatch.setattr(runner, "build_owner_campaign_test_cases_live", lambda _db, case_ids: cases)
+    monkeypatch.setattr(
+        runner,
+        "prepare_test_messages",
+        lambda requested: [SimpleNamespace(case=requested[0], html=f"<p>{requested[0].case_id}</p>")],
+    )
+    monkeypatch.setattr(runner, "qa_evidence_metadata", lambda: {
+        "source": "FROZEN_APPROVED_REPORT", "sha256": "a" * 64, "records": 406,
+    })
+
+    page, result = runner.generate_all_previews(object())
+
+    assert result["case_ids"] == ["A", "B", "C", "D", "E"]
+    assert result["all_preflight_pass"] is True
+    assert result["owner_emails_sent"] == 0
+    for case_id in ("A", "B", "C", "D", "E"):
+        assert f"PREVIEW_{case_id}=PASS" in page
+        assert f"{case_id}_ERROR_CODE=NONE" in page
+    assert "QA_EVIDENCE_SOURCE: FROZEN_APPROVED_REPORT" in page
+    assert "QA_EVIDENCE_RECORDS: 406" in page
+    assert "sin envío" in page
+
+
+def test_preview_failure_reports_safe_per_case_error_codes(monkeypatch):
+    monkeypatch.setattr(runner, "build_owner_campaign_test_cases_live", lambda *_a, **_k: (_ for _ in ()).throw(
+        runtime.LiveTestCaseBuildError(
+            "qa_cases_failed",
+            case_errors={
+                "A": "NONE", "B": "case_b_live_mixed_evidence_contract_failed",
+                "C": "NONE", "D": "NONE", "E": "NONE",
+            },
+        ),
+    ))
+
+    with pytest.raises(runner.TestRunnerError) as exc:
+        runner._generate_previews_for_cases(object(), "ALL_NO_SEND", ("A", "B", "C", "D", "E"))
+
+    assert str(exc.value) == (
+        "preview_case_build_failed;A_ERROR_CODE=NONE;"
+        "B_ERROR_CODE=case_b_live_mixed_evidence_contract_failed;"
+        "C_ERROR_CODE=NONE;D_ERROR_CODE=NONE;E_ERROR_CODE=NONE"
+    )
+    assert "@" not in str(exc.value)

@@ -90,6 +90,47 @@ def test_get_rejects_overrides_and_page_never_discloses_secret(monkeypatch):
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
 
 
+def test_panel_displays_frozen_fixture_provenance_and_safe_case_error():
+    from analytics.owner_campaign_report_normalization import PreviewResult
+
+    response = panel._render_panel(
+        commit="abc123", secret_present=True, mongo_ready=True, smtp_ready=True,
+        test_mode=True, mass_send=False, delivery_unknown=6,
+        previews=(PreviewResult("E", None, "current_multi_property_owner_group_unavailable"),),
+        qa_evidence={
+            "source": "FROZEN_APPROVED_REPORT",
+            "sha256": "a" * 64,
+            "records": 406,
+        },
+    )
+    body = response.body.decode()
+    assert "QA_EVIDENCE_SOURCE" in body and "FROZEN_APPROVED_REPORT" in body
+    assert "QA_EVIDENCE_SHA256" in body and "a" * 64 in body
+    assert "QA_EVIDENCE_RECORDS" in body and "406" in body
+    assert "E_ERROR_CODE=current_multi_property_owner_group_unavailable" in body
+    assert "Envío deshabilitado" in body
+
+
+def test_preview_builder_exposes_only_symbolic_safe_error_codes(monkeypatch):
+    from analytics import owner_campaign_report_normalization as normalization
+    from campanas.owner_campaign_test_runtime import LiveTestCaseBuildError
+
+    def raise_safe_error(_db, *, case_ids):
+        raise LiveTestCaseBuildError("current_multi_property_owner_group_unavailable")
+
+    monkeypatch.setattr(normalization, "build_owner_campaign_test_cases_live", raise_safe_error)
+    results = normalization.build_rendered_test_previews(FakeDB())
+    assert len(results) == 5
+    assert {result.error_code for result in results} == {"current_multi_property_owner_group_unavailable"}
+
+    def raise_untrusted_error(_db, *, case_ids):
+        raise ValueError("owner@example.com secret material")
+
+    monkeypatch.setattr(normalization, "build_owner_campaign_test_cases_live", raise_untrusted_error)
+    results = normalization.build_rendered_test_previews(FakeDB())
+    assert {result.error_code for result in results} == {"preview_build_failed"}
+
+
 @pytest.mark.parametrize("status", [400, 403, 415])
 def test_post_rejects_missing_or_unsafe_confirmation_without_runner(status, monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")

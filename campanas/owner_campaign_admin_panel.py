@@ -63,7 +63,7 @@ def _case_checks(preview: Any) -> tuple[dict[str, Any], str]:
             "no_localhost_url": False,
             "recipient_locked": False,
             "case_contract": False,
-        }, "No se pudo preparar el preview con datos actuales."
+        }, f"No se pudo preparar el preview con datos actuales. {preview.case_id}_ERROR_CODE={html.escape(preview.error_code or 'preview_build_failed')}"
 
     case = item.case
     cases = _property_cases(case)
@@ -151,6 +151,7 @@ def _all_preview_checks(previews: tuple[Any, ...]) -> tuple[bool, dict[str, tupl
 def _render_panel(*, commit: str, secret_present: bool, mongo_ready: bool,
                   smtp_ready: bool, test_mode: bool, mass_send: bool,
                   delivery_unknown: int | None, previews: tuple[Any, ...] | None,
+                  qa_evidence: Mapping[str, Any] | None = None,
                   preview_error: bool = False, send_result: Mapping[str, Any] | None = None,
                   run_already_registered: bool = False) -> HTMLResponse:
     checks: dict[str, tuple[dict[str, Any], str]] = {}
@@ -206,6 +207,7 @@ def _render_panel(*, commit: str, secret_present: bool, mongo_ready: bool,
             )
     all_pass_text = "PASS" if all_cases_pass else "FAIL"
     delivery_text = str(delivery_unknown) if delivery_unknown is not None else "NO DISPONIBLE"
+    evidence = qa_evidence or {}
     status_block = ""
     if send_result is not None:
         sent = int(send_result.get("test_emails_sent") or 0)
@@ -252,6 +254,9 @@ section{{background:#fff;border:1px solid #dce2ef;border-radius:12px;padding:18p
 <div class="stat">SMTP disponible<br><strong>{str(smtp_ready).upper()}</strong></div>
 <div class="stat">TEST_MODE / MASS_SEND<br><strong>{str(test_mode).upper()} / {str(mass_send).upper()}</strong></div>
 <div class="stat">delivery_unknown<br><strong>{html.escape(delivery_text)}</strong> · esperado 6</div>
+<div class="stat">QA_EVIDENCE_SOURCE<br><strong>{html.escape(str(evidence.get('source') or 'NO DISPONIBLE'))}</strong></div>
+<div class="stat">QA_EVIDENCE_SHA256<br><strong>{html.escape(str(evidence.get('sha256') or 'NO DISPONIBLE'))}</strong></div>
+<div class="stat">QA_EVIDENCE_RECORDS<br><strong>{html.escape(str(evidence.get('records') or 'NO DISPONIBLE'))}</strong></div>
 <div class="stat">Preflight A–E<br><strong>{all_pass_text}</strong></div>
 <div class="stat">Destinatario fijo<br><strong>{TEST_RECIPIENT}</strong></div></div>
 <p>Campaña: <code>{TEST_CAMPAIGN_ID}</code> · casos fijos: A 5641, B 16521, C 16486, D 16527 y E cartera vigente de 3 o más propiedades.</p>
@@ -277,6 +282,7 @@ async def handle_panel_get(request: Any) -> HTMLResponse:
     run_already_registered = False
     delivery_unknown: int | None = None
     previews = None
+    qa_evidence = None
     preview_error = False
     commit = os.environ.get("RENDER_GIT_COMMIT", "unknown")
     try:
@@ -286,10 +292,12 @@ async def handle_panel_get(request: Any) -> HTMLResponse:
     if secret_present:
         try:
             from analytics.owner_campaign_report_normalization import build_rendered_test_previews
+            from campanas.owner_campaign_test_runtime import qa_evidence_metadata
 
             database = await asyncio.to_thread(_mongo_db_and_ping)
             mongo_ready = True
             run_already_registered = await asyncio.to_thread(_test_run_registered, database)
+            qa_evidence = await asyncio.to_thread(qa_evidence_metadata)
             previews = await asyncio.to_thread(build_rendered_test_previews, database)
             preview_error = any(item.prepared is None for item in previews)
         except Exception:
@@ -303,7 +311,7 @@ async def handle_panel_get(request: Any) -> HTMLResponse:
     return _render_panel(
         commit=commit, secret_present=secret_present, mongo_ready=mongo_ready,
         smtp_ready=smtp_ready, test_mode=True, mass_send=mass_send_enabled(),
-        delivery_unknown=delivery_unknown, previews=previews, preview_error=preview_error,
+        delivery_unknown=delivery_unknown, previews=previews, qa_evidence=qa_evidence, preview_error=preview_error,
         run_already_registered=run_already_registered,
     )
 

@@ -11,7 +11,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from analytics.owner_campaign_test_sender import ALL_CASES
-from campanas.owner_campaign_test_runtime import build_owner_campaign_test_cases_live
+from campanas.owner_campaign_test_runtime import (
+    LiveTestCaseBuildError,
+    build_owner_campaign_test_cases_live,
+)
 from campanas.owner_campaign_test_sender import (
     PreparedTestMessage,
     prepare_test_messages,
@@ -38,7 +41,18 @@ def build_rendered_test_previews(db: Any) -> tuple[PreviewResult, ...]:
                 raise ValueError("rendered_case_batch_incomplete")
             results.append(PreviewResult(case_id, prepared[0]))
         except Exception as exc:
-            # The admin UI needs a safe pass/fail, not exception details that
-            # might contain source data or configuration.
-            results.append(PreviewResult(case_id, None, type(exc).__name__))
+            # Only builder-owned symbolic codes are safe to expose. Arbitrary
+            # exception text/types can contain source data or configuration.
+            code = "preview_build_failed"
+            if isinstance(exc, LiveTestCaseBuildError):
+                candidate = str(exc.error_code or "")
+                is_safe_symbol = (
+                    len(candidate) <= 64
+                    and candidate.isascii()
+                    and candidate.replace("_", "").isalnum()
+                    and candidate[:1].isalpha()
+                )
+                if is_safe_symbol:
+                    code = candidate
+            results.append(PreviewResult(case_id, None, code))
     return tuple(results)

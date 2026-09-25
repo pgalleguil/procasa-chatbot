@@ -345,6 +345,7 @@
       .document-evidence-single { width:34%; color:#62698A; font-size:9px; line-height:1.45; }
       .document-evidence-grid-single { width:100%; }
       .document-evidence-grid-single td { padding:1px 4px 1px 0; white-space:nowrap; }
+      .document-evidence-mobile-single { display:none; color:#62698A; font-size:10px; line-height:1.55; margin-top:5px; }
       .document-check-single { color:#4232C5; font-size:11px; font-weight:700; }
       .document-action-single { display:inline-block; padding:7px 9px; color:#4232C5; background:#ECEBFF; border-radius:5px; font-size:9px; line-height:1.2; font-weight:700; white-space:nowrap; }
       .communal-context-single { margin:10px 0 0; padding:10px 12px; border:1px solid #E5E6EF; border-radius:8px; background:#F8F7FF; }
@@ -464,6 +465,7 @@
         .exec-brand-cell-single { width:65px; }
         .brand-logo-executive-single { width:62px; }
         .document-evidence-single { display:none; }
+        .document-evidence-mobile-single { display:block; }
         .exec-tagline-single { width:95px; font-size:10px; }
         .footer-single { padding-left:16px; padding-right:16px; }
         .footer-brand-cell-single { width:58px; padding-right:7px; }
@@ -474,9 +476,9 @@
     </style>
   </head>
   <body>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="page">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="page" style="width:100%;margin:0;padding:0;background:#F5F5F3;">
       <tr><td align="center">
-        <table role="presentation" cellspacing="0" cellpadding="0" class="shell shell-single">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" class="shell shell-single" style="width:100%;max-width:740px;background:#ffffff;">
           <tr><td class="header">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
               <tr>
@@ -602,9 +604,9 @@
                   </td>
                 </tr></table>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="document-line-single"><tr><td class="document-icon-single"><span class="document-icon-box" aria-hidden="true"><i></i><i></i><i></i></span></td><td class="document-copy-single" width="40%"><strong>{% if property.document.visible %}Informe comercial disponible{% else %}Respaldo comercial{% endif %}</strong><br />{{ property.document["copy"] or "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA." }}</td><td class="document-evidence-single"><table role="presentation" cellspacing="0" cellpadding="0" class="document-evidence-grid-single"><tr>{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<td><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</td>{% elif property.appraisal.metrics %}<td><span class="document-check-single">✓</span> Contexto comunal</td>{% endif %}{% if property.comparable.visible %}<td><span class="document-check-single">✓</span> Publicaciones comparables</td>{% endif %}</tr></table></td><td align="right">{% if property.document.visible and property.cta.secondary_url %}<a class="document-action-single" href="{{ property.cta.secondary_url }}">Ver informe →</a>{% else %}<span class="document-action-single">Revisar con asesor</span>{% endif %}</td></tr></table>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="document-line-single"><tr><td class="document-icon-single"><span class="document-icon-box" aria-hidden="true"><i></i><i></i><i></i></span></td><td class="document-copy-single" width="40%"><strong>{% if property.document.visible %}Informe comercial disponible{% else %}Respaldo comercial{% endif %}</strong><br />{{ property.document["copy"] or "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA." }}<div class="document-evidence-mobile-single">{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<span><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</span>{% elif property.appraisal.metrics %}<span><span class="document-check-single">✓</span> Contexto comunal</span>{% endif %}{% if property.comparable.visible %}<span> &nbsp; <span class="document-check-single">✓</span> Publicaciones comparables</span>{% endif %}</div></td><td class="document-evidence-single"><table role="presentation" cellspacing="0" cellpadding="0" class="document-evidence-grid-single"><tr>{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<td><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</td>{% elif property.appraisal.metrics %}<td><span class="document-check-single">✓</span> Contexto comunal</td>{% endif %}{% if property.comparable.visible %}<td><span class="document-check-single">✓</span> Publicaciones comparables</td>{% endif %}</tr></table></td><td align="right">{% if property.document.visible and property.cta.secondary_url %}<a class="document-action-single" href="{{ property.cta.secondary_url }}">Ver informe →</a>{% else %}<span class="document-action-single">Revisar con asesor</span>{% endif %}</td></tr></table>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" class="actions actions-single"><tr><td><a class="primary" href="{{ property.cta.primary_url }}">{{ property.cta.primary_label }} →</a></td></tr>{% if property.cta.secondary_url %}<tr><td><a class="secondary" href="{{ property.cta.secondary_url }}">Ver respaldo comercial</a></td></tr>{% endif %}</table>
+                <table role="presentation" cellspacing="0" cellpadding="0" class="actions actions-single"><tr><td><a class="primary" href="{{ property.cta.primary_url }}">{{ property.cta.primary_label }} →</a></td></tr></table>
                 {% endif %}
               </section>
             {% endfor %}

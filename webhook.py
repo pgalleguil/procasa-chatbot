@@ -70,8 +70,7 @@ from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
-from campanas.handler import handle_campana_respuesta
-from campanas.private_report import handle_campaign_report
+from campanas.handler import handle_campana_informe, handle_campana_respuesta
 from campanas.owner_campaign_test_actions import handle_test_action
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
@@ -4246,7 +4245,7 @@ async def api_keep_alive(request: Request):
     """Endpoint ligero para renovar la cookie de sesión sin recargar"""
     return {"status": "ok", "timestamp": time.time()}
 
-@app.get("/campana/respuesta")
+@app.api_route("/campana/respuesta", methods=["GET", "POST"])
 async def campana_respuesta(
     request: Request,
     email: str = Query(...),
@@ -4263,7 +4262,7 @@ async def campana_respuesta(
 async def campana_informe(request: Request, token: str = Query(...)):
     if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
         raise HTTPException(status_code=400, detail="Parámetros de informe inválidos")
-    return await handle_campaign_report(token)
+    return await handle_campana_informe(token=token)
 
 
 @app.get("/campana/test-accion", include_in_schema=False)

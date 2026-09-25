@@ -114,6 +114,7 @@ def test_panel_displays_frozen_fixture_provenance_and_safe_case_error():
 def test_preview_builder_exposes_only_symbolic_safe_error_codes(monkeypatch):
     from analytics import owner_campaign_report_normalization as normalization
     from campanas.owner_campaign_test_runtime import LiveTestCaseBuildError
+    from campanas.owner_campaign_test_sender import TestSenderError
 
     def raise_safe_error(_db, *, case_ids):
         raise LiveTestCaseBuildError("current_multi_property_owner_group_unavailable")
@@ -122,6 +123,13 @@ def test_preview_builder_exposes_only_symbolic_safe_error_codes(monkeypatch):
     results = normalization.build_rendered_test_previews(FakeDB())
     assert len(results) == 5
     assert {result.error_code for result in results} == {"current_multi_property_owner_group_unavailable"}
+
+    def raise_sender_error(_db, *, case_ids):
+        raise TestSenderError("test_case_e_property_links_incomplete")
+
+    monkeypatch.setattr(normalization, "build_owner_campaign_test_cases_live", raise_sender_error)
+    results = normalization.build_rendered_test_previews(FakeDB())
+    assert {result.error_code for result in results} == {"test_case_e_property_links_incomplete"}
 
     def raise_untrusted_error(_db, *, case_ids):
         raise ValueError("owner@example.com secret material")

@@ -17,6 +17,7 @@ from campanas.owner_campaign_test_runtime import (
 )
 from campanas.owner_campaign_test_sender import (
     PreparedTestMessage,
+    TestSenderError,
     prepare_test_messages,
 )
 
@@ -44,15 +45,20 @@ def build_rendered_test_previews(db: Any) -> tuple[PreviewResult, ...]:
             # Only builder-owned symbolic codes are safe to expose. Arbitrary
             # exception text/types can contain source data or configuration.
             code = "preview_build_failed"
+            candidate = ""
             if isinstance(exc, LiveTestCaseBuildError):
                 candidate = str(exc.error_code or "")
-                is_safe_symbol = (
-                    len(candidate) <= 64
-                    and candidate.isascii()
-                    and candidate.replace("_", "").isalnum()
-                    and candidate[:1].isalpha()
-                )
-                if is_safe_symbol:
-                    code = candidate
+            elif isinstance(exc, TestSenderError):
+                # Sender errors are raised only with internal symbolic codes;
+                # still validate their shape before showing them in the panel.
+                candidate = str(exc)
+            is_safe_symbol = (
+                len(candidate) <= 64
+                and candidate.isascii()
+                and candidate.replace("_", "").isalnum()
+                and candidate[:1].isalpha()
+            )
+            if is_safe_symbol:
+                code = candidate
             results.append(PreviewResult(case_id, None, code))
     return tuple(results)

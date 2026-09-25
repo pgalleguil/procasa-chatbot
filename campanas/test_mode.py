@@ -6,24 +6,36 @@ import base64
 import hashlib
 import hmac
 import json
+import os
+import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
 
 TEST_RECIPIENT = "pgalleguillos@procasa.cl"
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
+TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
-TEST_ACTIONS = {"aceptar_rebaja", "contactar_ejecutivo", "ver_informe"}
+ACCEPT_PRICE_ACTION = "aceptar_rebaja"
+ADVISOR_ACTION = "contactar_ejecutivo"
+REPORT_ACTION = "ver_informe"
+TEST_ACTIONS = {ACCEPT_PRICE_ACTION, ADVISOR_ACTION, REPORT_ACTION}
 REPORT_DOCUMENT_TYPES = {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}
+PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
 EVENT_BY_ACTION = {
-    "aceptar_rebaja": "price_authorized",
-    "contactar_ejecutivo": "advisor_review_requested",
-    "ver_informe": "report_opened",
+    ACCEPT_PRICE_ACTION: "price_authorized",
+    ADVISOR_ACTION: "advisor_review_requested",
+    REPORT_ACTION: "report_opened",
 }
 
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def test_mode_enabled() -> bool:
+    return os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() == "true"
 
 
 def issue_test_token(
@@ -34,34 +46,56 @@ def issue_test_token(
         raise ValueError("Test campaign id must match the isolated E2E campaign")
     if recipient.strip().casefold() != TEST_RECIPIENT:
         raise ValueError("Test tokens may only target the configured test recipient")
-    if action not in TEST_ACTIONS or not property_code.strip() or not secret:
+    property_code = str(property_code or "").strip()
+    if action not in TEST_ACTIONS or not PROPERTY_CODE_RE.fullmatch(property_code) or not secret:
         raise ValueError("Invalid test token claims")
     normalized_document_type = str(document_type or "").strip().upper()
-    if action == "ver_informe" and normalized_document_type not in REPORT_DOCUMENT_TYPES:
+    if action == REPORT_ACTION and normalized_document_type not in REPORT_DOCUMENT_TYPES:
         raise ValueError("Report test tokens require a supported document_type")
-    if action != "ver_informe" and normalized_document_type:
+    if action != REPORT_ACTION and normalized_document_type:
         raise ValueError("document_type is only valid for report tokens")
     payload = {
         "campaign_id": campaign_id,
-        "property_code": property_code.strip(),
+        "property_code": property_code,
         "action": action,
         "recipient": TEST_RECIPIENT,
         "exp": int(expires_at),
         "test_mode": True,
     }
-    if action == "ver_informe":
+    if action == REPORT_ACTION:
         payload["document_type"] = normalized_document_type
     encoded = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
     signature = _b64(hmac.new(secret.encode(), encoded.encode(), hashlib.sha256).digest())
     return f"t1.{encoded}.{signature}"
 
 
-def verify_test_token(
-    token: str, *, secret: str, campaign_id: str, property_code: str,
-    action: str, recipient: str, now_epoch: int | None = None,
-    document_type: str | None = None,
+def issue_campaign_test_token(
+    *, property_code: str, action: str, document_type: str | None = None,
+    expires_in_seconds: int = 3600, now_epoch: int | None = None,
+) -> str:
+    """Issue a short-lived token using the one configured campaign contract."""
+    if not test_mode_enabled():
+        raise ValueError("Test mode is disabled")
+    if not isinstance(expires_in_seconds, int) or not 60 <= expires_in_seconds <= 86400:
+        raise ValueError("Test token TTL is invalid")
+    secret = os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "")
+    expires_at = int(now_epoch if now_epoch is not None else time.time()) + expires_in_seconds
+    return issue_test_token(
+        campaign_id=TEST_CAMPAIGN_ID,
+        property_code=property_code,
+        action=action,
+        secret=secret,
+        expires_at=expires_at,
+        recipient=TEST_RECIPIENT,
+        document_type=document_type,
+    )
+
+
+def decode_test_token(
+    token: str, *, secret: str, now_epoch: int | None = None,
 ) -> dict[str, Any] | None:
-    if not secret or recipient.strip().casefold() != TEST_RECIPIENT:
+    """Verify the shared signed-token contract and return its claims."""
+    if not secret or not token:
         return None
     try:
         version, encoded, signature = token.split(".", 2)
@@ -70,26 +104,62 @@ def verify_test_token(
             return None
         payload = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
         now = int(now_epoch if now_epoch is not None else datetime.now(timezone.utc).timestamp())
-        payload_document_type = str(payload.get("document_type") or "").strip().upper()
-        expected_document_type = str(document_type or "").strip().upper()
+        document_type = str(payload.get("document_type") or "").strip().upper()
+        campaign_id = str(payload.get("campaign_id") or "")
+        property_code = str(payload.get("property_code") or "")
+        action = str(payload.get("action") or "")
         if (
-            payload.get("test_mode") is not True
+            not isinstance(payload, dict)
+            or payload.get("test_mode") is not True
             or payload.get("recipient") != TEST_RECIPIENT
-            or not str(payload.get("campaign_id", "")).startswith(TEST_CAMPAIGN_PREFIX)
-            or payload.get("campaign_id") != TEST_CAMPAIGN_ID
-            or payload.get("campaign_id") != campaign_id
-            or payload.get("property_code") != property_code
-            or payload.get("action") != action
+            or campaign_id != TEST_CAMPAIGN_ID
+            or not campaign_id.startswith(TEST_CAMPAIGN_PREFIX)
+            or not PROPERTY_CODE_RE.fullmatch(property_code)
             or action not in TEST_ACTIONS
-            or (action == "ver_informe" and payload_document_type not in REPORT_DOCUMENT_TYPES)
-            or (expected_document_type and payload_document_type != expected_document_type)
-            or (action != "ver_informe" and payload_document_type)
+            or (action == REPORT_ACTION and document_type not in REPORT_DOCUMENT_TYPES)
+            or (action != REPORT_ACTION and document_type)
             or int(payload.get("exp", 0)) <= now
         ):
             return None
+        payload["document_type"] = document_type if document_type else None
         return payload
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError, OverflowError):
         return None
+
+
+def verify_campaign_test_token(
+    token: str, *, allowed_actions: set[str] | frozenset[str] = TEST_ACTIONS,
+    now_epoch: int | None = None,
+) -> dict[str, Any] | None:
+    if not test_mode_enabled():
+        return None
+    claims = decode_test_token(
+        token,
+        secret=os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", ""),
+        now_epoch=now_epoch,
+    )
+    if claims is None or claims.get("action") not in allowed_actions:
+        return None
+    return claims
+
+
+def verify_test_token(
+    token: str, *, secret: str, campaign_id: str, property_code: str,
+    action: str, recipient: str, now_epoch: int | None = None,
+    document_type: str | None = None,
+) -> dict[str, Any] | None:
+    payload = decode_test_token(token, secret=secret, now_epoch=now_epoch)
+    expected_document_type = str(document_type or "").strip().upper()
+    if (
+        payload is None
+        or recipient.strip().casefold() != TEST_RECIPIENT
+        or payload.get("campaign_id") != campaign_id
+        or payload.get("property_code") != property_code
+        or payload.get("action") != action
+        or (expected_document_type and payload.get("document_type") != expected_document_type)
+    ):
+        return None
+    return payload
 
 
 def persist_test_event(
@@ -136,7 +206,7 @@ def persist_test_event(
     actual_recipient = str(existing.get("actual_recipient_email") or "").strip().casefold()
     if actual_recipient != TEST_RECIPIENT:
         raise ValueError("Prepared test ledger row has an unexpected recipient")
-    if action == "ver_informe":
+    if action == REPORT_ACTION:
         ledger_document_type = str(
             existing.get("supporting_document_type") or existing.get("document_type") or ""
         ).strip().upper()
@@ -152,7 +222,7 @@ def persist_test_event(
         ]
         desired_ids = [click_id]
     elif stage == "confirm":
-        if action != "aceptar_rebaja":
+        if action != ACCEPT_PRICE_ACTION:
             raise ValueError("Only price authorization has a confirmation stage")
         if click_id not in event_ids:
             raise ValueError("Price authorization requires a prior CTA click")
@@ -161,8 +231,8 @@ def persist_test_event(
             "event": event_name,
             "action": action,
             "executive": existing.get("executive"),
-            "proposed_value": existing.get("display_target"),
-            "authorized_value": existing.get("display_target"),
+            "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
+            "authorized_value": existing.get("display_target", existing.get("display_recommended_price")),
             "current_value_at_campaign": existing.get("current_price_at_send"),
         }]
         desired_ids = [authorization_id]
@@ -183,18 +253,20 @@ def persist_test_event(
     if not desired_events:
         return {
             "event": event_name,
+            "event_ids": [],
             "stored_collection": "ajuste_precio",
             "stored_record_id": str(existing.get("_id") or ""),
             "timestamp": timestamp.isoformat(),
             "test_mode": True,
             "duplicate": True,
-            "proposed_value": existing.get("display_target"),
+            "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
         }
     common = {
         "campaign_id": campaign_id,
         "campaign_version": existing.get("campaign_version") or "OWNER_CAMPAIGN_EMAIL_V2",
         "property_code": code,
         "owner_email": existing.get("intended_owner_email") or existing.get("owner_email"),
+        "executive": existing.get("executive"),
         "document_type": document_type,
         "event_at": timestamp.isoformat(),
         "token_version": "t1",
@@ -210,10 +282,11 @@ def persist_test_event(
     record = ledger.find_one(base_query) or existing
     return {
         "event": event_name,
+        "event_ids": desired_ids,
         "stored_collection": "ajuste_precio",
         "stored_record_id": str(record.get("_id") or getattr(result, "upserted_id", "") or ""),
         "timestamp": timestamp.isoformat(),
         "test_mode": True,
         "duplicate": not bool(getattr(result, "modified_count", 0)),
-        "proposed_value": existing.get("display_target"),
+        "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
     }

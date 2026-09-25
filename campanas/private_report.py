@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import io
-import json
 import logging
 import os
 import re
@@ -27,7 +23,13 @@ from reportlab.pdfgen import canvas
 
 from config import Config
 from services.gdrive_sync import GDriveSync
-from .test_mode import TEST_CAMPAIGN_ID, TEST_RECIPIENT
+from .test_mode import (
+    TEST_CAMPAIGN_ID,
+    TEST_RECIPIENT,
+    decode_test_token,
+    persist_test_event,
+    test_mode_enabled,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -36,10 +38,8 @@ APPRAISALS_FOLDER_ID = "1PPlc7QYzbx9T4KfLLsq4LcnnzClDZFnq"
 COMMUNAL_FOLDER_ID = "1wqku4RRzdDWAaMqJgVJ0AaqYOQEkV3Uh"
 PDF_MIME_TYPE = "application/pdf"
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
-TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
 REPORT_ACTION = "ver_informe"
 REPORT_TYPES = frozenset({"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"})
-_PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
 
 
 class CampaignReportError(Exception):
@@ -55,39 +55,20 @@ def _decode_token_claims(token: str, secret: str, *, now_epoch: int | None = Non
     Commune, type, operation, filenames, and Drive identifiers are deliberately
     discarded. Those values must come from the canonical property record.
     """
-    if not token or not secret or os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() != "true":
+    if not token or not secret or not test_mode_enabled():
         return None
-    try:
-        version, encoded, signature = token.split(".", 2)
-        if version != "t1":
-            return None
-        expected = base64.urlsafe_b64encode(
-            hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
-        ).rstrip(b"=").decode("ascii")
-        if not hmac.compare_digest(signature, expected):
-            return None
-        payload_bytes = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
-        claims = json.loads(payload_bytes.decode("utf-8"))
-        if not isinstance(claims, dict):
-            return None
-        now = int(now_epoch if now_epoch is not None else time.time())
-        code = str(claims.get("property_code") or "")
-        document_type = str(claims.get("document_type") or "").strip().upper()
-        campaign_id = str(claims.get("campaign_id") or "")
-        if (
-            campaign_id != TEST_CAMPAIGN_ID
-            or not campaign_id.startswith(TEST_CAMPAIGN_PREFIX)
-            or claims.get("test_mode") is not True
-            or str(claims.get("recipient") or "").casefold() != TEST_RECIPIENT
-            or claims.get("action") != REPORT_ACTION
-            or not _PROPERTY_CODE_RE.fullmatch(code)
-            or document_type not in REPORT_TYPES
-            or int(claims.get("exp") or 0) <= now
-        ):
-            return None
-        return {"property_code": code, "document_type": document_type}
-    except (ValueError, TypeError, KeyError, UnicodeDecodeError, json.JSONDecodeError, OverflowError):
+    claims = decode_test_token(token, secret=secret, now_epoch=now_epoch)
+    if claims is None or claims.get("action") != REPORT_ACTION:
         return None
+    return {
+        "campaign_id": str(claims["campaign_id"]),
+        "property_code": str(claims["property_code"]),
+        "action": REPORT_ACTION,
+        "recipient": TEST_RECIPIENT,
+        "exp": int(claims["exp"]),
+        "test_mode": True,
+        "document_type": str(claims["document_type"]),
+    }
 
 
 def _path(document: Mapping[str, Any], dotted: str) -> Any:
@@ -334,21 +315,30 @@ def _resolve_drive_file(
     return _resolve_communal_report(service, identity)
 
 
-def _assert_private(service: Any, file_id: str) -> None:
+def _assert_private(service: Any, file_id: str) -> str:
     page_token = None
     while True:
-        response = service.permissions().list(
-            fileId=file_id,
-            pageSize=100,
-            fields="nextPageToken,permissions(type,role)",
-            supportsAllDrives=True,
-            **({"pageToken": page_token} if page_token else {}),
-        ).execute()
+        try:
+            response = service.permissions().list(
+                fileId=file_id,
+                pageSize=100,
+                fields="nextPageToken,permissions(type,role)",
+                supportsAllDrives=True,
+                **({"pageToken": page_token} if page_token else {}),
+            ).execute()
+        except HttpError as exc:
+            if (
+                getattr(getattr(exc, "resp", None), "status", None) == 403
+                and test_mode_enabled()
+            ):
+                logger.info("[CAMPAIGN_REPORT_DRIVE] privacy=ACL_UNVERIFIED_403 mode=test")
+                return "ACL_UNVERIFIED_403"
+            raise
         if any((permission or {}).get("type") == "anyone" for permission in response.get("permissions") or []):
             raise CampaignReportError(403, "public_drive_permission_refused")
         page_token = response.get("nextPageToken")
         if not page_token:
-            return
+            return "VERIFIED_PRIVATE"
 
 
 def _download_pdf(service: Any, file_id: str) -> bytes:
@@ -365,6 +355,22 @@ def _download_pdf(service: Any, file_id: str) -> bytes:
     if not content.startswith(b"%PDF-"):
         raise CampaignReportError(502, "invalid_pdf_content")
     return content
+
+
+def _record_test_report_opened(claims: Mapping[str, Any]) -> dict[str, Any]:
+    if not test_mode_enabled() or claims.get("test_mode") is not True:
+        raise CampaignReportError(404, "test_tracking_unavailable")
+    client = MongoClient(
+        Config.MONGO_URI,
+        serverSelectionTimeoutMS=8000,
+        connectTimeoutMS=8000,
+        socketTimeoutMS=10000,
+    )
+    try:
+        ledger = client[Config.DB_NAME][Config.COLLECTION_CAMPANAS_LOG]
+        return persist_test_event(ledger, claims, stage="complete")
+    finally:
+        client.close()
 
 
 def _safe_client_filename(identity: Mapping[str, str] | None, property_code: str) -> str:
@@ -484,6 +490,9 @@ def _serve_campaign_report(token: str) -> Response:
             )
             return _fallback_response(identity, property_code)
         pdf_bytes = _download_pdf(service, str(file_record["id"]))
+        if not pdf_bytes.startswith(b"%PDF-"):
+            raise CampaignReportError(502, "invalid_pdf_content")
+        _record_test_report_opened(claims)
         logger.info(
             "[CAMPAIGN_REPORT_DRIVE] status=read_ok document_type=%s bytes=%s",
             claims["document_type"], len(pdf_bytes),

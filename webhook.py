@@ -4265,11 +4265,15 @@ async def campana_informe(request: Request, token: str = Query(...)):
     return await handle_campana_informe(token=token)
 
 
-@app.get("/campana/test-accion", include_in_schema=False)
+@app.api_route("/campana/test-accion", methods=["GET", "POST"], include_in_schema=False)
 async def campana_test_accion(request: Request, token: str = Query(...)):
     if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
         raise HTTPException(status_code=400, detail="Parámetros de acción inválidos")
-    return await asyncio.to_thread(handle_test_action, token)
+    return await asyncio.to_thread(
+        handle_test_action,
+        token,
+        confirmed=request.method.upper() == "POST",
+    )
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

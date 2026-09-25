@@ -18,16 +18,16 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from config import Config
 
-from .owner_campaign_test_actions import (
+from .test_mode import (
     ACCEPT_PRICE_ACTION,
     ADVISOR_ACTION,
     REPORT_ACTION,
     TEST_CAMPAIGN_ID,
     TEST_CAMPAIGN_VERSION,
     TEST_RECIPIENT,
-    issue_test_link_token,
+    issue_campaign_test_token,
     test_mode_enabled,
-    verify_test_link_token,
+    verify_campaign_test_token,
 )
 
 
@@ -99,7 +99,7 @@ def build_test_links(case: OwnerCampaignTestCase) -> dict[str, str]:
         raise TestSenderError("explicit_test_case_required")
     links: dict[str, str] = {}
     if case.document_type in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
-        report_token = issue_test_link_token(
+        report_token = issue_campaign_test_token(
             property_code=case.property_code,
             action=REPORT_ACTION,
             document_type=case.document_type,
@@ -110,7 +110,7 @@ def build_test_links(case: OwnerCampaignTestCase) -> dict[str, str]:
         "ADVISOR_REVIEW": ADVISOR_ACTION,
     }.get(case.cta_type)
     if action:
-        action_token = issue_test_link_token(property_code=case.property_code, action=action)
+        action_token = issue_campaign_test_token(property_code=case.property_code, action=action)
         links["action"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(action_token, safe='')}"
     return links
 
@@ -257,7 +257,7 @@ def _token_from_link(href: str, expected_path: str) -> dict[str, Any] | None:
     values = parse_qs(parsed.query, keep_blank_values=True)
     if set(values) != {"token"} or len(values["token"]) != 1:
         raise TestSenderError("test_link_query_invalid")
-    claims = verify_test_link_token(values["token"][0])
+    claims = verify_campaign_test_token(values["token"][0])
     if claims is None:
         raise TestSenderError("test_link_signature_invalid")
     return claims

@@ -23,7 +23,7 @@ from typing import Any, Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from campanas.owner_campaign_test_actions import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
+from campanas.test_mode import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
 from campanas.owner_campaign_test_runtime import (
     LiveTestCaseBuildError,
     build_owner_campaign_test_cases_live,

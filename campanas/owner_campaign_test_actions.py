@@ -1,37 +1,31 @@
-"""Fail-closed, test-only owner campaign CTA handling.
-
-Only signed links for the fixed test campaign and test recipient are accepted.
-Actions append audit events to the existing ``conversation_events`` collection;
-they never write to contacts, price_updates, or the property portfolio.
-"""
+"""Compatibility entry point for the canonical, test-only owner campaign flow."""
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import math
-import os
 import re
-import time
-from datetime import datetime, timezone
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from fastapi.responses import HTMLResponse
 
 from config import Config
+from .test_mode import (
+    TEST_CAMPAIGN_ID,
+    TEST_CAMPAIGN_VERSION,
+    TEST_RECIPIENT,
+    ACCEPT_PRICE_ACTION,
+    ADVISOR_ACTION,
+    REPORT_ACTION,
+    issue_campaign_test_token,
+    persist_test_event,
+    test_mode_enabled as _test_mode_enabled,
+    verify_campaign_test_token,
+)
 
 
-TEST_RECIPIENT = "p.galleguil@gmail.com"
-TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
-TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
-REPORT_ACTION = "ver_informe"
-ACCEPT_PRICE_ACTION = "aceptar_nuevo_valor"
-ADVISOR_ACTION = "revisar_con_mi_asesor"
 ALLOWED_ACTIONS = frozenset({REPORT_ACTION, ACCEPT_PRICE_ACTION, ADVISOR_ACTION})
 PROPERTY_COLLECTION = "universo_cartera_prop360"
-EVENT_COLLECTION = "conversation_events"
 LEDGER_COLLECTION = "ajuste_precio"
 PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
 
@@ -41,11 +35,7 @@ class OwnerCampaignTestError(ValueError):
 
 
 def test_mode_enabled() -> bool:
-    return os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() == "true"
-
-
-def _test_secret() -> str:
-    return os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "")
+    return _test_mode_enabled()
 
 
 def issue_test_link_token(
@@ -56,44 +46,17 @@ def issue_test_link_token(
     expires_in_seconds: int = 3600,
     now_epoch: int | None = None,
 ) -> str:
-    """Create a short-lived signed link for a single test property/action."""
-    if not test_mode_enabled():
-        raise OwnerCampaignTestError("test_mode_disabled")
-    secret = _test_secret()
-    if not secret:
-        raise OwnerCampaignTestError("test_token_secret_missing")
-    code = str(property_code or "").strip()
-    action_value = str(action or "").strip()
-    if not PROPERTY_CODE_RE.fullmatch(code) or action_value not in ALLOWED_ACTIONS:
-        raise OwnerCampaignTestError("test_link_claims_invalid")
-    if not isinstance(expires_in_seconds, int) or not 60 <= expires_in_seconds <= 86400:
-        raise OwnerCampaignTestError("test_link_ttl_invalid")
-    claims: dict[str, Any] = {
-        "campaign_id": TEST_CAMPAIGN_ID,
-        "property_code": code,
-        "action": action_value,
-        "recipient": TEST_RECIPIENT,
-        "test_mode": True,
-        "exp": int(now_epoch if now_epoch is not None else time.time()) + expires_in_seconds,
-    }
-    if action_value == REPORT_ACTION:
-        normalized_type = str(document_type or "").strip().upper()
-        if normalized_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
-            raise OwnerCampaignTestError("test_report_type_invalid")
-        claims["document_type"] = normalized_type
-    elif document_type is not None:
-        normalized_type = str(document_type).strip().upper()
-        if normalized_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
-            raise OwnerCampaignTestError("test_report_type_invalid")
-        claims["document_type"] = normalized_type
-
-    encoded = base64.urlsafe_b64encode(
-        json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    ).rstrip(b"=").decode("ascii")
-    signature = base64.urlsafe_b64encode(
-        hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
-    ).rstrip(b"=").decode("ascii")
-    return f"t1.{encoded}.{signature}"
+    """Compatibility wrapper around the canonical campaign token issuer."""
+    try:
+        return issue_campaign_test_token(
+            property_code=property_code,
+            action=action,
+            document_type=document_type,
+            expires_in_seconds=expires_in_seconds,
+            now_epoch=now_epoch,
+        )
+    except ValueError as exc:
+        raise OwnerCampaignTestError(str(exc)) from exc
 
 
 def verify_test_link_token(
@@ -102,41 +65,8 @@ def verify_test_link_token(
     allowed_actions: frozenset[str] = ALLOWED_ACTIONS,
     now_epoch: int | None = None,
 ) -> dict[str, Any] | None:
-    """Verify a test token without trusting any caller-supplied routing data."""
-    secret = _test_secret()
-    if not test_mode_enabled() or not secret or not token:
-        return None
-    try:
-        version, encoded, supplied_signature = token.split(".", 2)
-        if version != "t1":
-            return None
-        expected_signature = base64.urlsafe_b64encode(
-            hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
-        ).rstrip(b"=").decode("ascii")
-        if not hmac.compare_digest(supplied_signature, expected_signature):
-            return None
-        claims = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
-        if not isinstance(claims, dict):
-            return None
-        code = str(claims.get("property_code") or "")
-        action = str(claims.get("action") or "")
-        now = int(now_epoch if now_epoch is not None else time.time())
-        if (
-            claims.get("campaign_id") != TEST_CAMPAIGN_ID
-            or claims.get("test_mode") is not True
-            or str(claims.get("recipient") or "").strip().casefold() != TEST_RECIPIENT
-            or action not in allowed_actions
-            or not PROPERTY_CODE_RE.fullmatch(code)
-            or int(claims.get("exp") or 0) <= now
-        ):
-            return None
-        if action == REPORT_ACTION and claims.get("document_type") not in {
-            "INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"
-        }:
-            return None
-        return claims
-    except (ValueError, TypeError, KeyError, UnicodeDecodeError, json.JSONDecodeError, OverflowError):
-        return None
+    """Compatibility verifier backed by the single canonical HMAC decoder."""
+    return verify_campaign_test_token(token, allowed_actions=allowed_actions, now_epoch=now_epoch)
 
 
 def _database(db: Any = None):
@@ -158,71 +88,22 @@ def _test_ledger(db: Any, property_code: str) -> Mapping[str, Any] | None:
     )
 
 
-def _insert_test_event(
-    db: Any,
-    *,
-    event_type: str,
-    property_code: str,
-    executive: str,
-    token: str,
-    event_at: datetime | None = None,
-    details: Mapping[str, Any] | None = None,
-) -> str:
-    if event_type not in {
-        "cta_clicked", "price_authorized", "advisor_review_requested", "report_opened"
-    }:
-        raise OwnerCampaignTestError("test_event_type_invalid")
-    event_at = event_at or datetime.now(timezone.utc)
-    event_id = hashlib.sha256(
-        f"{TEST_CAMPAIGN_ID}|{property_code}|{event_type}|{token}".encode("utf-8")
-    ).hexdigest()
-    collection = db[EVENT_COLLECTION]
-    existing = collection.find_one({"event_id": event_id}, {"event_id": 1})
-    if existing:
-        return str(existing["event_id"])
-    event = {
-        "event_id": event_id,
-        "event_type": event_type,
-        "event_name": f"{event_type}_test",
-        "campaign_id": TEST_CAMPAIGN_ID,
-        "campaign_version": TEST_CAMPAIGN_VERSION,
-        "property_code": property_code,
-        "executive": executive,
-        "event_at": event_at,
-        "test_mode": True,
-        "source": "owner_campaign_test",
-    }
-    if details:
-        allowed = {"operation", "current_price", "proposed_price", "adjustment_pct"}
-        event.update({key: value for key, value in details.items() if key in allowed})
-    collection.insert_one(event)
-    return event_id
-
-
 def record_test_report_opened(property_code: str, *, token: str, db: Any = None) -> str:
-    """Append only a report_opened event for a previously registered test send."""
+    """Compatibility wrapper that records through the canonical test ledger."""
     if not test_mode_enabled():
         raise OwnerCampaignTestError("test_mode_disabled")
     code = str(property_code or "").strip()
     if not PROPERTY_CODE_RE.fullmatch(code):
         raise OwnerCampaignTestError("property_code_invalid")
+    claims = verify_test_link_token(token, allowed_actions=frozenset({REPORT_ACTION}))
+    if claims is None or claims.get("property_code") != code:
+        raise OwnerCampaignTestError("test_report_token_invalid")
     database = _database(db)
-    ledger = _test_ledger(database, code)
-    if not ledger:
-        raise OwnerCampaignTestError("test_campaign_ledger_missing")
-    executive = str(ledger.get("executive") or "").strip()
-    if not executive:
-        raise OwnerCampaignTestError("test_executive_missing")
-    if not token:
-        raise OwnerCampaignTestError("test_report_token_missing")
-    return _insert_test_event(
-        database,
-        event_type="report_opened",
-        property_code=code,
-        executive=executive,
-        # The helper hashes this value into event_id and never persists it.
-        token=token,
-    )
+    try:
+        stored = persist_test_event(database[LEDGER_COLLECTION], claims, stage="complete")
+    except (LookupError, ValueError) as exc:
+        raise OwnerCampaignTestError("test_campaign_ledger_invalid") from exc
+    return str((stored.get("event_ids") or [""])[-1])
 
 
 def _live_price_snapshot(db: Any, property_code: str) -> tuple[str, dict[str, Any]]:
@@ -274,7 +155,7 @@ def _valid_lower_target(ledger: Mapping[str, Any], current_uf: Any) -> bool:
     return math.isfinite(current) and math.isfinite(recommended) and 0 < recommended < current
 
 
-def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
+def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> dict[str, Any]:
     claims = verify_test_link_token(
         token,
         allowed_actions=frozenset({ACCEPT_PRICE_ACTION, ADVISOR_ACTION}),
@@ -287,10 +168,6 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
     ledger = _test_ledger(database, code)
     if not ledger:
         raise OwnerCampaignTestError("test_campaign_ledger_missing")
-    executive = str(ledger.get("executive") or "").strip()
-    if not executive:
-        raise OwnerCampaignTestError("test_executive_missing")
-
     price_before = price_after = None
     if action == ACCEPT_PRICE_ACTION:
         if ledger.get("cta_type") != "PRICE_AUTHORIZATION":
@@ -314,35 +191,16 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
     }:
         raise OwnerCampaignTestError("advisor_review_not_allowed")
 
-    event_type = "price_authorized" if action == ACCEPT_PRICE_ACTION else "advisor_review_requested"
-    event_ids = []
     if action == ACCEPT_PRICE_ACTION:
-        event_ids.append(
-            _insert_test_event(
-                database,
-                event_type="cta_clicked",
-                property_code=code,
-                executive=executive,
-                token=token,
-                details={"operation": operation, "current_price": current_price,
-                         "proposed_price": proposed_price,
-                         "adjustment_pct": ledger.get("adjustment_pct")},
-            )
+        stored = persist_test_event(
+            database[LEDGER_COLLECTION],
+            claims,
+            stage="confirm" if confirmed else "click",
         )
-    outcome_id = _insert_test_event(
-        database,
-        event_type=event_type,
-        property_code=code,
-        executive=executive,
-        token=token,
-        details=(
-            {"operation": operation, "current_price": current_price,
-             "proposed_price": proposed_price,
-             "adjustment_pct": ledger.get("adjustment_pct")}
-            if action == ACCEPT_PRICE_ACTION else None
-        ),
-    )
-    event_ids.append(outcome_id)
+        event_type = "price_authorized" if confirmed else "cta_clicked"
+    else:
+        stored = persist_test_event(database[LEDGER_COLLECTION], claims, stage="complete")
+        event_type = "advisor_review_requested"
 
     if action == ACCEPT_PRICE_ACTION:
         operation_after, price_after = _live_price_snapshot(database, code)
@@ -352,7 +210,8 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
         "campaign_id": TEST_CAMPAIGN_ID,
         "property_code": code,
         "event": event_type,
-        "event_ids": event_ids,
+        "event_ids": stored.get("event_ids", []),
+        "requires_confirmation": action == ACCEPT_PRICE_ACTION and not confirmed,
         "test_mode": True,
         "live_price_before": price_before,
         "live_price_after": price_after,
@@ -360,9 +219,9 @@ def process_test_action(token: str, *, db: Any = None) -> dict[str, Any]:
     }
 
 
-def handle_test_action(token: str, *, db: Any = None) -> HTMLResponse:
+def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> HTMLResponse:
     try:
-        result = process_test_action(token, db=db)
+        result = process_test_action(token, db=db, confirmed=confirmed)
     except OwnerCampaignTestError:
         return HTMLResponse(
             "<main><h1>Acción de prueba no disponible</h1><p>Solicita un nuevo enlace a tu asesor.</p></main>",
@@ -370,6 +229,19 @@ def handle_test_action(token: str, *, db: Any = None) -> HTMLResponse:
         )
     except Exception:
         return HTMLResponse("<main><h1>No pudimos registrar la prueba</h1></main>", status_code=503)
+    if result.get("requires_confirmation"):
+        action_url = "/campana/test-accion?token=" + quote(token, safe="")
+        content = (
+            '<p>Confirma que autorizas el nuevo valor propuesto para esta prueba.</p>'
+            f'<form method="post" action="{action_url}">'
+            '<button type="submit">Confirmar autorización</button></form>'
+            '<p>El precio publicado no se modificará.</p>'
+        )
+        return HTMLResponse(
+            _campaign_test_page("Confirma el nuevo valor", content, raw_content=True),
+            status_code=200,
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
     if result["event"] == "price_authorized":
         title = "Autorización de prueba registrada"
         message = "La autorización quedó registrada en modo de prueba. El precio publicado no fue modificado."

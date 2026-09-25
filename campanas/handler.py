@@ -15,7 +15,7 @@ from pymongo import MongoClient
 from config import Config
 from .email_service import enviar_alerta_equipo
 from .utils import get_accion_config, normalize_accion
-from .test_mode import TEST_ACTIONS, TEST_RECIPIENT, persist_test_event, verify_test_token
+from .test_mode import TEST_ACTIONS, TEST_RECIPIENT, persist_test_event, test_mode_enabled, verify_test_token
 from . import private_report
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def _sync_process_campana_response(
     if mode == "test":
         # Fail closed before connecting to Mongo. Unlike the legacy test path,
         # this branch never reads or updates contactos or the live property.
-        if os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() != "true":
+        if not test_mode_enabled():
             return {
                 "status_code": 404,
                 "titulo": "Acción de prueba no disponible",
@@ -308,7 +308,7 @@ def _resolve_test_price_authorization_response(
     *, email: str, codigos: str, campana: str, token: str, confirmed: bool,
 ):
     """Require an explicit POST confirmation before recording test price approval."""
-    if os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() != "true":
+    if not test_mode_enabled():
         return HTMLResponse("Acción de prueba no disponible.", status_code=404)
     email_lower = (email or "").strip().casefold()
     codes = [item.strip() for item in (codigos or "").split(",") if item.strip()]
@@ -427,13 +427,7 @@ def _resolve_test_report_response(*, token: str):
 
     try:
         _record_test_report_event(claims, stage="click")
-        response = private_report._serve_campaign_report(token)
-        if (
-            response.status_code == 200
-            and response.headers.get("x-campaign-report-resolution") == "drive"
-        ):
-            _record_test_report_event(claims, stage="complete")
-        return response
+        return private_report._serve_campaign_report(token)
     except (LookupError, ValueError):
         logger.info("[CAMPAIGN_REPORT_TRACKING] status=prepared_test_row_missing code=%s", decoded["property_code"])
         return private_report._response(404, "Documento no disponible para esta prueba.")

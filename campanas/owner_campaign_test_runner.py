@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import hashlib
 import json
 import os
 import re
@@ -18,15 +17,16 @@ import asyncio
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 
-from .owner_campaign_test_actions import (
+from .test_mode import (
     ACCEPT_PRICE_ACTION,
     ADVISOR_ACTION,
     REPORT_ACTION,
     TEST_CAMPAIGN_ID,
     TEST_RECIPIENT,
-    issue_test_link_token,
+    issue_campaign_test_token,
     test_mode_enabled,
 )
+from .owner_campaign_test_actions import _database, _live_price_snapshot
 from .owner_campaign_test_runtime import (
     LiveTestCaseBuildError,
     build_owner_campaign_test_cases_live,
@@ -259,6 +259,17 @@ def _http_get(url: str, *, timeout: int = 35) -> tuple[int, Mapping[str, str], b
         raise TestRunnerError("public_test_url_unreachable") from exc
 
 
+def _http_post(url: str, *, timeout: int = 35) -> tuple[int, Mapping[str, str], bytes]:
+    request = Request(url, data=b"", method="POST", headers={"User-Agent": "PROCASA-owner-campaign-test/1.0"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return int(response.status), dict(response.headers.items()), response.read(2_000_000)
+    except HTTPError as exc:
+        return int(exc.code), dict(exc.headers.items()), exc.read(2_000_000)
+    except (URLError, TimeoutError, OSError) as exc:
+        raise TestRunnerError("public_test_url_unreachable") from exc
+
+
 def _health_delivery_unknown() -> int:
     status, headers, body = _http_get(f"{SERVICE_BASE_URL}/health", timeout=20)
     if status != 200:
@@ -327,12 +338,20 @@ def send_tests(db: Any = None, *, expected_phase: str | None = None) -> dict[str
 
 
 def _event_exists(db: Any, *, code: str, event_name: str) -> Mapping[str, Any] | None:
-    return db["conversation_events"].find_one({
+    expected_event = event_name.removesuffix("_test")
+    row = db[TEST_LEDGER_COLLECTION].find_one({
         "campaign_id": TEST_CAMPAIGN_ID,
         "property_code": code,
-        "event_name": event_name,
         "test_mode": True,
+        "actual_recipient_email": TEST_RECIPIENT,
     })
+    return next((
+        event for event in (row or {}).get("response_events", [])
+        if event.get("event") == expected_event
+        and event.get("campaign_id") == TEST_CAMPAIGN_ID
+        and event.get("property_code") == code
+        and event.get("test_mode") is True
+    ), None)
 
 
 def verify_test_actions(db: Any = None) -> dict[str, Any]:
@@ -368,22 +387,22 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
     e_rows.sort(key=lambda row: str(row.get("property_code") or ""))
 
     # Capture price from the live property immediately before and after the real public action URL.
-    from .owner_campaign_test_actions import _live_price_snapshot, _database
-
     database = _database(db)
     a_before_operation, live_before = _live_price_snapshot(database, "5641")
-    a_token = issue_test_link_token(property_code="5641", action=ACCEPT_PRICE_ACTION)
-    b_token = issue_test_link_token(property_code="16521", action=ADVISOR_ACTION)
+    a_token = issue_campaign_test_token(property_code="5641", action=ACCEPT_PRICE_ACTION)
+    b_token = issue_campaign_test_token(property_code="16521", action=ADVISOR_ACTION)
     a_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(a_token, safe='')}"
     b_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(b_token, safe='')}"
     a_status, a_headers, a_body = _http_get(a_url)
+    if a_status == 200:
+        a_status, a_headers, a_body = _http_post(a_url)
     b_status, b_headers, b_body = _http_get(b_url)
     a_after_operation, live_after = _live_price_snapshot(database, "5641")
 
     report_type = str(by_code["5641"].get("document_type") or "").upper()
     if report_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
         raise TestRunnerError("test_a_report_type_missing")
-    report_token = issue_test_link_token(property_code="5641", action=REPORT_ACTION, document_type=report_type)
+    report_token = issue_campaign_test_token(property_code="5641", action=REPORT_ACTION, document_type=report_type)
     report_url = f"{SERVICE_BASE_URL}/campana/informe?token={quote(report_token, safe='')}"
     report_status, report_headers, report_body = _http_get(report_url)
 
@@ -392,7 +411,7 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
     token_parts[2] = ("A" if signature[0] != "A" else "B") + signature[1:]
     invalid_token = ".".join(token_parts)
     invalid_status, _, _ = _http_get(f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(invalid_token, safe='')}")
-    expired_token = issue_test_link_token(
+    expired_token = issue_campaign_test_token(
         property_code="5641", action=ADVISOR_ACTION, now_epoch=int(time.time()) - 7200,
     )
     expired_status, _, _ = _http_get(f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(expired_token, safe='')}")
@@ -402,13 +421,14 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
     # The signed token is the only property identity. A conflicting, unsigned
     # query parameter may be ignored (200 for the token's own property), but it
     # must never create an event under the other property's identity.
-    wrong_property_event_id = hashlib.sha256(
-        f"{TEST_CAMPAIGN_ID}|5641|advisor_review_requested|{b_token}".encode("utf-8")
-    ).hexdigest()
+    code_5641 = db[TEST_LEDGER_COLLECTION].find_one({"campaign_id": TEST_CAMPAIGN_ID, "property_code": "5641"}) or {}
     cross_property_token_blocked = (
         cross_status in {200, 400, 404}
-        and db["conversation_events"].find_one({"event_id": wrong_property_event_id}) is None
-        and bool(_event_exists(db, code="16521", event_name="advisor_review_requested_test"))
+        and not any(
+            event.get("property_code") == "5641" and event.get("event") == "advisor_review_requested"
+            for event in code_5641.get("response_events", [])
+        )
+        and bool(_event_exists(db, code="16521", event_name="advisor_review_requested"))
     )
 
     e_action_results = []
@@ -416,9 +436,12 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
     for row in e_rows:
         code = str(row.get("property_code") or "")
         action = ACCEPT_PRICE_ACTION if row.get("cta_type") == "PRICE_AUTHORIZATION" else ADVISOR_ACTION
-        token = issue_test_link_token(property_code=code, action=action)
-        status, _, _ = _http_get(f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(token, safe='')}")
-        expected_event = "price_authorized_test" if action == ACCEPT_PRICE_ACTION else "advisor_review_requested_test"
+        token = issue_campaign_test_token(property_code=code, action=action)
+        action_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(token, safe='')}"
+        status, _, _ = _http_get(action_url)
+        if status == 200 and action == ACCEPT_PRICE_ACTION:
+            status, _, _ = _http_post(action_url)
+        expected_event = "price_authorized" if action == ACCEPT_PRICE_ACTION else "advisor_review_requested"
         stored = _event_exists(db, code=code, event_name=expected_event)
         e_action_results.append(status == 200 and bool(stored))
 
@@ -426,7 +449,7 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         if report_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
             e_report_results.append(False)
             continue
-        report_token = issue_test_link_token(property_code=code, action=REPORT_ACTION, document_type=report_type)
+        report_token = issue_campaign_test_token(property_code=code, action=REPORT_ACTION, document_type=report_type)
         status, headers, body = _http_get(
             f"{SERVICE_BASE_URL}/campana/informe?token={quote(report_token, safe='')}"
         )
@@ -434,23 +457,24 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         e_report_results.append(
             status == 200
             and headers.get("Content-Type", "").split(";")[0] == "application/pdf"
+            and headers.get("X-Campaign-Report-Resolution") == "drive"
             and "private" in headers.get("Cache-Control", "")
             and "no-store" in headers.get("Cache-Control", "")
             and len(body) > 0
             and bool(opened)
         )
 
-    auth_event = _event_exists(db, code="5641", event_name="price_authorized_test")
-    advisor_event = _event_exists(db, code="16521", event_name="advisor_review_requested_test")
-    report_event = _event_exists(db, code="5641", event_name="report_opened_test")
+    auth_event = _event_exists(db, code="5641", event_name="price_authorized")
+    advisor_event = _event_exists(db, code="16521", event_name="advisor_review_requested")
+    report_event = _event_exists(db, code="5641", event_name="report_opened")
     price_unchanged = a_before_operation == a_after_operation and live_before == live_after
     event_values_match = bool(auth_event) and (
-        float(auth_event.get("current_price", 0)) == float(live_before.get("precio_uf", -1))
-        and float(auth_event.get("proposed_price", -1)) == float(by_code["5641"].get("display_recommended_price", -2))
+        float(auth_event.get("current_value_at_campaign", 0)) == float(by_code["5641"].get("current_price_at_send", -1))
+        and float(auth_event.get("proposed_value", -1)) == float(by_code["5641"].get("display_target", -2))
     )
     report_resolution = str(report_headers.get("X-Campaign-Report-Resolution") or "")
     delivery_unknown = _health_delivery_unknown()
-    if not (a_status == 200 and b_status == 200 and report_status == 200 and report_headers.get("Content-Type", "").split(";")[0] == "application/pdf" and "private" in report_headers.get("Cache-Control", "") and "no-store" in report_headers.get("Cache-Control", "") and len(report_body) > 0):
+    if not (a_status == 200 and b_status == 200 and report_status == 200 and report_headers.get("Content-Type", "").split(";")[0] == "application/pdf" and report_headers.get("X-Campaign-Report-Resolution") == "drive" and "private" in report_headers.get("Cache-Control", "") and "no-store" in report_headers.get("Cache-Control", "") and len(report_body) > 0):
         raise TestRunnerError("test_public_url_smoke_failed")
     if not (auth_event and advisor_event and report_event and event_values_match and price_unchanged):
         raise TestRunnerError("test_event_or_live_price_validation_failed")
@@ -474,8 +498,8 @@ def verify_test_actions(db: Any = None) -> dict[str, Any]:
         "price_authorization_event_stored": True,
         "advisor_review_event_stored": True,
         "report_opened_event_stored": True,
-        "auth_event_current_price": auth_event.get("current_price"),
-        "auth_event_proposed_price": auth_event.get("proposed_price"),
+        "auth_event_current_price": auth_event.get("current_value_at_campaign"),
+        "auth_event_proposed_price": auth_event.get("proposed_value"),
         "live_price_before": live_before.get("precio_uf"),
         "live_price_after": live_after.get("precio_uf"),
         "live_property_price_changed": not price_unchanged,

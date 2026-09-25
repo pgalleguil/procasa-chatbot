@@ -51,7 +51,19 @@ class FakeCollection:
         for doc in self.docs:
             if all(doc.get(key) == value for key, value in query.items()):
                 doc.update(update.get("$set", {}))
-                return SimpleNamespace(matched_count=1, modified_count=1)
+                modified = bool(update.get("$set"))
+                for key, spec in update.get("$addToSet", {}).items():
+                    values = spec.get("$each", []) if isinstance(spec, dict) else [spec]
+                    current = doc.setdefault(key, [])
+                    for value in values:
+                        if value not in current:
+                            current.append(value)
+                            modified = True
+                for key, spec in update.get("$push", {}).items():
+                    values = spec.get("$each", []) if isinstance(spec, dict) else [spec]
+                    doc.setdefault(key, []).extend(values)
+                    modified = modified or bool(values)
+                return SimpleNamespace(matched_count=1, modified_count=int(modified))
         if upsert:
             doc = dict(query)
             doc.update(update.get("$setOnInsert", {}))
@@ -160,7 +172,7 @@ def test_environment(monkeypatch):
 
 
 def test_recipient_policy_allows_only_fixed_test_mailbox():
-    assert actions.TEST_RECIPIENT == "jpcaro@procasa.cl"
+    assert actions.TEST_RECIPIENT == "pgalleguillos@procasa.cl"
     assert sender.TEST_RECIPIENT == actions.TEST_RECIPIENT
     sender.validate_recipient_envelope(
         to=sender.TEST_RECIPIENT,
@@ -171,7 +183,7 @@ def test_recipient_policy_allows_only_fixed_test_mailbox():
 
 
 def test_corrected_test_recipient_is_the_only_test_address_in_harness_sources():
-    old_test_address = "pgalleguillos" + "@procasa.cl"
+    old_test_address = "jpcaro" + "@procasa.cl"
     root = Path(__file__).parents[1]
     sources = (
         "campanas/owner_campaign_test_actions.py",
@@ -182,7 +194,7 @@ def test_corrected_test_recipient_is_the_only_test_address_in_harness_sources():
         "tests/test_owner_campaign_test_safety.py",
     )
     source_text = {relative: (root / relative).read_text(encoding="utf-8") for relative in sources}
-    assert "jpcaro@procasa.cl" in source_text["campanas/owner_campaign_test_actions.py"]
+    assert "from .test_mode import" in source_text["campanas/owner_campaign_test_actions.py"]
     assert all(old_test_address not in text for text in source_text.values())
 
 
@@ -353,7 +365,7 @@ def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
     monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
     result = cli.run_test_batch(cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6)
     assert result["status"] == "preflight_passed_no_send"
-    assert result["actual_recipient_email"] == "jpcaro@procasa.cl"
+    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
     assert result["preflight"]["owner_recipient_blocked"] is True
     assert result["preflight"]["live_price_mutation_blocked"] is True
     assert result["test_emails_sent"] == 0
@@ -379,7 +391,7 @@ def test_independent_cli_full_batch_preflights_all_five_without_writing_or_sendi
 
     assert result["status"] == "preflight_passed_no_send"
     assert result["case_ids"] == list(cli.ALL_CASES)
-    assert result["actual_recipient_email"] == "jpcaro@procasa.cl"
+    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
     assert result["test_emails_sent"] == 0
     assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
 
@@ -513,8 +525,8 @@ def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
     response = runner.render_admin_runner_ui()
     body = response.body.decode("utf-8")
     assert response.headers["cache-control"] == "private, no-store"
-    assert "jpcaro@procasa.cl" in body
-    assert "window.confirm('Enviar exclusivamente a jpcaro@procasa.cl')" in body
+    assert "pgalleguillos@procasa.cl" in body
+    assert "window.confirm('Enviar exclusivamente a pgalleguillos@procasa.cl')" in body
     assert "method:'POST'" in body
     assert "fetch('/captacion/test-runner'" in body
     assert "GENERATE_PREVIEWS_ABD" in body and "SEND_TEST_EMAILS_ABD" in body
@@ -707,7 +719,7 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "5da1d474e021f7ffc983167ba33956e22a8351dc480f6a32a23a47086f54f54b"
+        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "d026b5c70099e59f9cd2ca332f4e3b53d7c650c908031eeb25d7a0f498a0a80d"
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
@@ -1024,14 +1036,17 @@ def test_test_ledger_id_is_deterministic_and_concurrent_duplicate_aborts_before_
 def _test_ledger(*, code, cta_type="PRICE_AUTHORIZATION", evidence_segment="PRICE_AUTHORIZATION_READY", operation="VENTA"):
     return {
         "campaign_id": actions.TEST_CAMPAIGN_ID,
+        "campaign_version": actions.TEST_CAMPAIGN_VERSION,
         "property_code": code,
         "test_mode": True,
         "actual_recipient_email": actions.TEST_RECIPIENT,
         "intended_owner_email": OWNER_EMAIL,
         "executive": "Ejecutivo PROCASA",
         "operation": operation,
+        "current_price_at_send": 5000.0 if operation == "VENTA" else 21.0,
         "cta_type": cta_type,
         "evidence_segment": evidence_segment,
+        "document_type": "INDIVIDUAL_APPRAISAL",
         "display_recommended_price": 19.3 if operation == "ARRIENDO" else 4700.0,
     }
 
@@ -1052,81 +1067,97 @@ def _action_db(code="16521", *, cta_type="PRICE_AUTHORIZATION", evidence_segment
     return db
 
 
-def _action_token(code="16521", action=actions.ACCEPT_PRICE_ACTION, *, recipient=actions.TEST_RECIPIENT):
-    claims = {
-        "campaign_id": actions.TEST_CAMPAIGN_ID,
-        "property_code": code,
-        "action": action,
-        "recipient": recipient,
-        "test_mode": True,
-        "exp": 2_000_000_000,
-    }
-    encoded = base64.urlsafe_b64encode(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode()).rstrip(b"=").decode()
-    signature = base64.urlsafe_b64encode(hmac.new(SECRET.encode(), encoded.encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
-    return f"t1.{encoded}.{signature}"
+def _action_token(code="16521", action=actions.ACCEPT_PRICE_ACTION, *, recipient=actions.TEST_RECIPIENT, document_type=None):
+    from campanas.test_mode import issue_test_token
+    return issue_test_token(
+        campaign_id=actions.TEST_CAMPAIGN_ID,
+        property_code=code,
+        action=action,
+        secret=SECRET,
+        expires_at=2_000_000_000,
+        recipient=recipient,
+        document_type=document_type,
+    )
 
 
-def test_test_price_authorization_appends_events_and_keeps_exact_live_price():
+def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_price(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
     db = _action_db()
     before = dict(db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"])
-    result = actions.process_test_action(_action_token(), db=db)
+    token = _action_token()
+    click = actions.process_test_action(token, db=db)
+    assert click["requires_confirmation"] is True
+    ledger_row = db.docs[actions.LEDGER_COLLECTION][0]
+    assert [event["event"] for event in ledger_row["response_events"]] == ["cta_clicked"]
+    result = actions.process_test_action(token, db=db, confirmed=True)
     after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"]
-    events = db.docs[actions.EVENT_COLLECTION]
+    events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
     assert result["event"] == "price_authorized"
     assert result["test_mode"] is True
     assert result["test_price_mutation"] is False
     assert result["live_price_before"] == result["live_price_after"] == before
     assert after == before
-    assert [event["event_type"] for event in events] == ["cta_clicked", "price_authorized"]
+    assert [event["event"] for event in events] == ["cta_clicked", "price_authorized"]
     assert all(event["test_mode"] is True and event["property_code"] == "16521" for event in events)
     authorization = events[1]
     assert authorization["campaign_id"] == "owner_price_campaign_test_20260923"
     assert authorization["campaign_version"] == "owner_campaign_test_20260923"
-    assert authorization["event_name"] == "price_authorized_test"
-    assert authorization["operation"] == "VENTA"
-    assert authorization["current_price"] == 5000
-    assert authorization["proposed_price"] == 4700
+    assert authorization["action"] == actions.ACCEPT_PRICE_ACTION
+    assert authorization["current_value_at_campaign"] == 5000
+    assert authorization["proposed_value"] == 4700
     assert authorization["event_at"] is not None
-    assert set(db.requested) <= {actions.LEDGER_COLLECTION, actions.PROPERTY_COLLECTION, actions.EVENT_COLLECTION}
+    assert set(db.requested) <= {actions.LEDGER_COLLECTION, actions.PROPERTY_COLLECTION}
 
 
-def test_test_rent_authorization_appends_events_without_changing_live_rent():
+def test_test_rent_authorization_requires_confirmation_without_changing_live_rent(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
     db = _action_db(code="16527", operation="ARRIENDO")
     before = dict(db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_arriendo"])
-    result = actions.process_test_action(_action_token("16527"), db=db)
+    token = _action_token("16527")
+    actions.process_test_action(token, db=db)
+    result = actions.process_test_action(token, db=db, confirmed=True)
     after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_arriendo"]
     assert result["event"] == "price_authorized"
     assert result["test_mode"] is True
     assert result["live_price_before"] == result["live_price_after"] == before
     assert after == before
-    assert [event["event_type"] for event in db.docs[actions.EVENT_COLLECTION]] == ["cta_clicked", "price_authorized"]
+    assert [event["event"] for event in db.docs[actions.LEDGER_COLLECTION][0]["response_events"]] == ["cta_clicked", "price_authorized"]
 
 
-def test_advisor_cta_writes_only_test_events_and_no_legacy_response_collections():
+def test_advisor_cta_writes_only_test_events_to_adjustment_ledger(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
     db = _action_db(cta_type="ADVISOR_REVIEW", evidence_segment="MIXED_EVIDENCE")
     result = actions.process_test_action(_action_token(action=actions.ADVISOR_ACTION), db=db)
     assert result["event"] == "advisor_review_requested"
-    assert [event["event_type"] for event in db.docs[actions.EVENT_COLLECTION]] == [
-        "advisor_review_requested"
+    events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
+    assert [event["event"] for event in events] == [
+        "cta_clicked", "advisor_review_requested"
     ]
-    assert all(event["executive"] == "Ejecutivo PROCASA" for event in db.docs[actions.EVENT_COLLECTION])
-    assert all(event["campaign_id"] == actions.TEST_CAMPAIGN_ID and event["test_mode"] is True for event in db.docs[actions.EVENT_COLLECTION])
+    assert all(event["executive"] == "Ejecutivo PROCASA" for event in events)
+    assert all(event["campaign_id"] == actions.TEST_CAMPAIGN_ID and event["test_mode"] is True for event in events)
     assert "contactos" not in db.requested
     assert "price_updates" not in db.requested
     assert actions.PROPERTY_COLLECTION not in db.requested
 
 
-def test_report_open_records_only_report_opened_test_event():
+def test_report_open_records_in_adjustment_ledger(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
     db = _action_db(cta_type="REPORT_ONLY", evidence_segment="MIXED_EVIDENCE")
-    event_id = actions.record_test_report_opened("16521", token="signed-report-token", db=db)
-    events = db.docs[actions.EVENT_COLLECTION]
-    assert len(events) == 1
-    assert events[0]["event_id"] == event_id
-    assert events[0]["event_type"] == "report_opened"
-    assert events[0]["test_mode"] is True
-    assert events[0]["campaign_id"] == "owner_price_campaign_test_20260923"
-    assert events[0]["event_name"] == "report_opened_test"
-    assert events[0]["property_code"] == "16521"
+    token = _action_token("16521", action=actions.REPORT_ACTION, document_type="INDIVIDUAL_APPRAISAL")
+    event_id = actions.record_test_report_opened("16521", token=token, db=db)
+    events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
+    assert len(events) == 2
+    assert events[0]["event"] == "cta_clicked"
+    assert events[1]["event_id"] == event_id
+    assert events[1]["event"] == "report_opened"
+    assert events[1]["event_at"]
+    assert events[1]["test_mode"] is True
+    assert events[1]["campaign_id"] == "owner_price_campaign_test_20260923"
+    assert events[1]["property_code"] == "16521"
     assert "contactos" not in db.requested
     assert "price_updates" not in db.requested
     assert actions.PROPERTY_COLLECTION not in db.requested
@@ -1176,7 +1207,7 @@ def test_invalid_and_cross_property_signed_actions_fail_before_any_event():
     )
     with pytest.raises(actions.OwnerCampaignTestError, match="test_action_token_invalid"):
         actions.process_test_action(expired, db=db)
-    assert db.docs.get(actions.EVENT_COLLECTION, []) == []
+    assert all(not row.get("response_events") for row in db.docs[actions.LEDGER_COLLECTION])
 
 
 def test_public_test_action_route_is_token_only_and_bypasses_legacy_handler():

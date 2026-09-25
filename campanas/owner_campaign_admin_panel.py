@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 
-from campanas.owner_campaign_test_actions import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
+from campanas.test_mode import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
 from analytics.owner_campaign_test_sender import ALL_CASES, TEST_RUN_ID, mass_send_enabled
 from config import Config
 
@@ -73,7 +73,7 @@ def _case_checks(preview: Any) -> tuple[dict[str, Any], str]:
         # host, document type, expiry and the fixed recipient.
         "signed_url_valid": True,
         "no_localhost_url": "localhost" not in item.html.casefold() and "127.0.0.1" not in item.html,
-        "recipient_locked": TEST_RECIPIENT == "p.galleguil@gmail.com",
+        "recipient_locked": TEST_RECIPIENT == "pgalleguillos@procasa.cl",
     }
     passed = False
     detail = ""

@@ -407,7 +407,7 @@ def test_fixed_test_run_id_is_persisted_in_existing_campaign_ledger():
     assert ledger.payloads[0]["test_run_id"] == "owner_campaign_email_AE_20260924_v1"
     assert ledger.payloads[0]["campaign_id"] == "owner_price_campaign_test_20260923"
     assert ledger.payloads[0]["test_mode"] is True
-    assert ledger.payloads[0]["actual_recipient_email"] == "p.galleguil@gmail.com"
+    assert ledger.payloads[0]["actual_recipient_email"] == "pgalleguillos@procasa.cl"
 
 
 def test_registered_test_run_is_rejected_before_any_delivery_check(monkeypatch):

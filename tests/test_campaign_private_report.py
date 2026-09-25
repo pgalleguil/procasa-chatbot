@@ -123,7 +123,11 @@ def _patch_runtime(monkeypatch, service, identity=PROPERTY_IDENTITY):
     monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=service))
     monkeypatch.setattr(private_report, "MediaIoBaseDownload", _Downloader)
     monkeypatch.setattr(private_report, "_load_property_identity", lambda code: identity)
-    monkeypatch.setattr(private_report, "_record_test_report_opened", lambda code, _token: report_open_calls.append(code))
+    monkeypatch.setattr(
+        private_report,
+        "_record_test_report_opened",
+        lambda claims: report_open_calls.append(claims["property_code"]),
+    )
     return report_open_calls
 
 
@@ -136,7 +140,7 @@ async def test_individual_appraisal_is_resolved_by_property_code_and_never_by_to
     service = _Service({
         private_report.APPRAISALS_FOLDER_ID: [_pdf("server-only-drive-id", f"{CODE}.pdf")]
     })
-    _patch_runtime(monkeypatch, service)
+    report_open_calls = _patch_runtime(monkeypatch, service)
 
     response = await private_report.handle_campaign_report(_token(drive_file_id="attacker-selected-id"))
 
@@ -149,17 +153,18 @@ async def test_individual_appraisal_is_resolved_by_property_code_and_never_by_to
     assert service._files.media_calls == [{"fileId": "server-only-drive-id", "supportsAllDrives": True}]
     assert service._files.list_calls[0]["q"].startswith(f"'{private_report.APPRAISALS_FOLDER_ID}' in parents")
     assert "server-only-drive-id" not in str(response.headers)
+    assert report_open_calls == [CODE]
 
 
 @pytest.mark.asyncio
-async def test_valid_report_link_records_only_the_test_report_open_hook(monkeypatch):
+async def test_fallback_report_does_not_record_report_opened(monkeypatch):
     service = _Service({private_report.APPRAISALS_FOLDER_ID: []})
     report_open_calls = _patch_runtime(monkeypatch, service)
 
     response = await private_report.handle_campaign_report(_token())
 
     assert response.status_code == 200
-    assert report_open_calls == [CODE]
+    assert report_open_calls == []
 
 
 @pytest.mark.asyncio
@@ -324,6 +329,37 @@ async def test_drive_http_error_status_is_preserved_without_error_body(monkeypat
     assert b"private id" not in response.body
 
 
+@pytest.mark.asyncio
+async def test_test_mode_acl_403_is_reported_unverified_and_allows_real_pdf_download(monkeypatch):
+    error = HttpError(SimpleNamespace(status=403, reason="Forbidden"), b'{"error":{"message":"ACL hidden"}}')
+    service = _Service({
+        private_report.APPRAISALS_FOLDER_ID: [_pdf("appraisal-pdf", f"{CODE}.pdf")]
+    })
+    service._permissions.list = lambda **_kwargs: _Request(error)
+    report_open_calls = _patch_runtime(monkeypatch, service)
+
+    privacy = private_report._assert_private(service, "appraisal-pdf")
+    response = await private_report.handle_campaign_report(_token())
+
+    assert privacy == "ACL_UNVERIFIED_403"
+    assert response.status_code == 200
+    assert response.headers["x-campaign-report-resolution"] == "drive"
+    assert response.body.startswith(b"%PDF-")
+    assert service._files.media_calls == [{"fileId": "appraisal-pdf", "supportsAllDrives": True}]
+    assert report_open_calls == [CODE]
+
+
+def test_production_mode_does_not_allow_acl_403_to_skip_private_check(monkeypatch):
+    error = HttpError(SimpleNamespace(status=403, reason="Forbidden"), b"{}")
+    service = _Service({})
+    service._permissions.list = lambda **_kwargs: _Request(error)
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "false")
+
+    with pytest.raises(HttpError):
+        private_report._assert_private(service, "private-file")
+    assert service._files.media_calls == []
+
+
 def test_property_identity_uses_canonical_cartera_fields_only():
     document = {
         "codigo": CODE,
@@ -402,7 +438,15 @@ def test_response_token_claims_drop_all_untrusted_document_metadata(monkeypatch)
         SECRET,
         now_epoch=1_900_000_000,
     )
-    assert decoded == {"property_code": CODE, "document_type": "COMMUNAL_MARKET_REPORT"}
+    assert decoded == {
+        "campaign_id": private_report.TEST_CAMPAIGN_ID,
+        "property_code": CODE,
+        "action": "ver_informe",
+        "recipient": private_report.TEST_RECIPIENT,
+        "exp": 2_000_000_000,
+        "test_mode": True,
+        "document_type": "COMMUNAL_MARKET_REPORT",
+    }
 
 
 def test_report_route_only_accepts_signed_token_and_startup_permission_repair_is_removed():

@@ -1,8 +1,7 @@
 """Read-only live source builder for the fixed owner-campaign E2E cases.
 
-The only writes in this test harness belong to the existing test ledger and
-conversation event store. This module only reads Mongo and public listing image
-bytes; it never writes campaign or operational property data.
+This module reads Mongo, existing conversation events, and public listing image
+bytes. It does not write to either event store, campaign rows, or property data.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .owner_campaign_test_sender import OwnerCampaignTestCase
+from .test_mode import test_mode_enabled
 
 
 PROPERTY_COLLECTION = "universo_cartera_prop360"
@@ -62,7 +62,7 @@ class LiveTestCaseBuildError(ValueError):
 
 
 def _test_mode_enabled() -> bool:
-    return os.getenv("OWNER_CAMPAIGN_TEST_MODE", "").strip().casefold() == "true"
+    return test_mode_enabled()
 
 
 def _load_qa_evidence_fixture() -> dict[str, Any]:

@@ -145,11 +145,15 @@ def test_e_portfolio_scan_is_limited_to_approved_codes_to_avoid_cursor_timeout()
 
     class Collection:
         query = None
+        projection = None
 
-        def find(self, query):
+        def find(self, query, projection=None):
             self.query = query
+            self.projection = projection
             if not isinstance(query.get("codigo", {}).get("$in"), list):
                 raise NetworkTimeout("unbounded active-property cursor timed out")
+            if not projection or "analisis_comparables" in projection:
+                raise NetworkTimeout("full property payload cursor timed out")
             return []
 
     collection = Collection()
@@ -170,6 +174,9 @@ def test_e_portfolio_scan_is_limited_to_approved_codes_to_avoid_cursor_timeout()
     assert collection.query["codigo"]["$in"] == [
         "17081", 17081, "6331", 6331, "6348", 6348,
     ]
+    assert collection.projection["datos_propietario.email"] == 1
+    assert collection.projection["estado.ejecutivo"] == 1
+    assert "analisis_comparables" not in collection.projection
 
 
 def test_e_preview_contract_requires_primary_owner_email_source():

@@ -1147,7 +1147,27 @@ def _build_portfolio(
         portfolio_query["codigo"] = {
             "$in": [value for code in approved_codes for value in _variants(code)]
         }
-    for master in db[PROPERTY_COLLECTION].find(portfolio_query):
+    # The cartera documents carry large comparable/evidence payloads. E only
+    # needs identity and owner-grouping fields during discovery; fetching full
+    # documents for every approved code can exceed Render's Mongo socket timeout.
+    portfolio_projection = {
+        "_id": 0,
+        "codigo": 1,
+        "estado.estado_prop360": 1,
+        "disponible_prop360": 1,
+        "estado.oficina": 1,
+        "resumen.oficina": 1,
+        "oficina_nombre": 1,
+        "estado.ejecutivo": 1,
+        "datos_propietario.email": 1,
+        "email_propietario": 1,
+        "propietario.email": 1,
+        "owner.email": 1,
+        "contacto.email": 1,
+        "resumen.email_propietario": 1,
+        "email": 1,
+    }
+    for master in db[PROPERTY_COLLECTION].find(portfolio_query, portfolio_projection):
         code = str(master.get("codigo") or "").strip()
         if code in fixed_case_codes or code in EXPLICITLY_EXCLUDED_CODES or (qa_segments is not None and code not in qa_segments):
             continue
@@ -1158,18 +1178,27 @@ def _build_portfolio(
             executive_name = str(_path(master, "estado.ejecutivo") or "").strip()
             if not executive_name:
                 continue
-            candidates.append((email, _fold(executive_name), master))
+            candidates.append({
+                "email": email,
+                "email_source": _email_source_from_property(master),
+                "executive": _fold(executive_name),
+                "executive_name": executive_name,
+                "code": code,
+            })
         except LiveTestCaseBuildError:
             continue
     by_owner: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-    for email, executive, master in candidates:
-        by_owner[(email, executive)].append(master)
-    groups = sorted((items for items in by_owner.values() if len(items) >= 3), key=lambda items: (-len(items), str(items[0].get("codigo") or "")))
+    for candidate in candidates:
+        by_owner[(candidate["email"], candidate["executive"])].append(candidate)
+    groups = sorted(
+        (items for items in by_owner.values() if len(items) >= 3),
+        key=lambda items: (-len(items), str(items[0]["code"])),
+    )
     for group in groups[:20]:
-        group_codes = sorted(str(item.get("codigo") or "").strip() for item in group)
-        group_email = _email_from_property(group[0])
+        group_codes = sorted(item["code"] for item in group)
+        group_email = group[0]["email"]
         email_group_hash = hashlib.sha256(group_email.encode("utf-8")).hexdigest()[:12]
-        source_counts = Counter(_email_source_from_property(item) for item in group)
+        source_counts = Counter(item["email_source"] for item in group)
         logger.info(
             "OWNER_CAMPAIGN_E_GROUP_CANDIDATE owner_hash=%s candidate_count=%s "
             "property_codes=%s email_source_counts=%s",
@@ -1177,7 +1206,18 @@ def _build_portfolio(
             ",".join(f"{source}:{count}" for source, count in sorted(source_counts.items())),
         )
         cases: list[OwnerCampaignTestCase] = []
-        for master in sorted(group, key=lambda item: str(item.get("codigo") or "")):
+        # Hydrate only this eligible owner's properties with their full live
+        # documents; the compact discovery documents above are not used to render.
+        full_group = _load_code_docs(db, set(group_codes))
+        for code in group_codes:
+            master = full_group[code]
+            if (
+                not _active_available(master)
+                or not _is_sucre(master)
+                or _email_from_property(master) != group_email
+                or _fold(str(_path(master, "estado.ejecutivo") or "").strip()) != group[0]["executive"]
+            ):
+                continue
             try:
                 segment = (
                     _campaign_segment_for_test(master, qa_segments)
@@ -1214,7 +1254,7 @@ def _build_portfolio(
             except LiveTestCaseBuildError as exc:
                 logger.warning(
                     "OWNER_CAMPAIGN_E_PROPERTY_REJECTED property_code=%s error_code=%s",
-                    code, exc.error_code,
+                    master.get("codigo"), exc.error_code,
                 )
                 if str(exc) == "qa_fixture_conflicts_with_live_segment":
                     raise

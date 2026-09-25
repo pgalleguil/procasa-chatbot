@@ -128,6 +128,50 @@ def test_owner_email_prefers_current_property_owner_field_and_keeps_fallbacks():
     assert _email_source_from_property(fallback) == "email_propietario"
 
 
+def test_e_portfolio_scan_is_limited_to_approved_codes_to_avoid_cursor_timeout():
+    from datetime import datetime, timezone
+
+    from pymongo.errors import NetworkTimeout
+
+    from campanas.owner_campaign_test_runtime import (
+        LiveTestCaseBuildError, _build_portfolio,
+    )
+
+    segments = {
+        "17081": "MIXED_EVIDENCE",
+        "6331": "MIXED_EVIDENCE",
+        "6348": "MIXED_EVIDENCE",
+    }
+
+    class Collection:
+        query = None
+
+        def find(self, query):
+            self.query = query
+            if not isinstance(query.get("codigo", {}).get("$in"), list):
+                raise NetworkTimeout("unbounded active-property cursor timed out")
+            return []
+
+    collection = Collection()
+
+    class Database:
+        def __getitem__(self, name):
+            assert name == "universo_cartera_prop360"
+            return collection
+
+    with pytest.raises(LiveTestCaseBuildError) as error:
+        _build_portfolio(
+            Database(), datetime.now(timezone.utc), qa_segments=segments,
+        )
+
+    assert error.value.error_code == "current_multi_property_owner_group_unavailable"
+    assert collection.query["estado.estado_prop360"] == "Activa"
+    assert collection.query["disponible_prop360"] is True
+    assert collection.query["codigo"]["$in"] == [
+        "17081", 17081, "6331", 6331, "6348", 6348,
+    ]
+
+
 def test_e_preview_contract_requires_primary_owner_email_source():
     from analytics.owner_campaign_report_normalization import PreviewResult
 

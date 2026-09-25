@@ -1136,7 +1136,18 @@ def _build_portfolio(
 ) -> OwnerCampaignTestCase:
     fixed_case_codes = set(PROPERTY_CODES.values())
     candidates = []
-    for master in db[PROPERTY_COLLECTION].find({"estado.estado_prop360": "Activa", "disponible_prop360": True}):
+    portfolio_query: dict[str, Any] = {
+        "estado.estado_prop360": "Activa",
+        "disponible_prop360": True,
+    }
+    if qa_segments is not None:
+        # E is a TEST_MODE portfolio preview, so only scan the frozen approved
+        # campaign universe instead of streaming the entire active collection.
+        approved_codes = sorted({str(code).strip() for code in qa_segments if str(code).strip()})
+        portfolio_query["codigo"] = {
+            "$in": [value for code in approved_codes for value in _variants(code)]
+        }
+    for master in db[PROPERTY_COLLECTION].find(portfolio_query):
         code = str(master.get("codigo") or "").strip()
         if code in fixed_case_codes or code in EXPLICITLY_EXCLUDED_CODES or (qa_segments is not None and code not in qa_segments):
             continue

@@ -127,8 +127,17 @@ def _case_checks(preview: Any) -> tuple[dict[str, Any], str]:
     elif case_id == "E":
         action_links = len(re.findall(r"/campana/test-accion\?token=", item.html))
         report_links = len(re.findall(r"/campana/informe\?token=", item.html))
-        passed = len(cases) >= 3 and action_links == len(cases) and report_links == len(cases)
-        detail = f"Cartera · {len(cases)} propiedades · token y CTA por propiedad" if passed else "E no tiene al menos 3 propiedades con links individuales."
+        email_source = str((case.render_context or {}).get("owner_email_source") or "")
+        passed = (
+            len(cases) >= 3
+            and email_source == "datos_propietario.email"
+            and action_links == len(cases)
+            and report_links == len(cases)
+        )
+        detail = (
+            f"Cartera · {len(cases)} propiedades · owner source={email_source} · token y CTA por propiedad"
+            if passed else "E no confirma grupo vigente, fuente de email prioritaria o links individuales."
+        )
     common["case_contract"] = passed
     return common, detail
 

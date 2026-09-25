@@ -247,20 +247,44 @@ def _variants(code: str) -> list[Any]:
     return [code, int(code)] if code.isdigit() else [code]
 
 
-def _email_from_property(master: Mapping[str, Any], *, required: bool = True) -> str:
-    for value in (
-        master.get("email_propietario"), _path(master, "propietario.email"),
-        _path(master, "owner.email"), _path(master, "contacto.email"),
-        _path(master, "resumen.email_propietario"), master.get("email"),
+def _owner_email_candidates(master: Mapping[str, Any]) -> tuple[tuple[str, Any], ...]:
+    return (
+        ("datos_propietario.email", _path(master, "datos_propietario.email")),
+        ("email_propietario", master.get("email_propietario")),
+        ("propietario.email", _path(master, "propietario.email")),
+        ("owner.email", _path(master, "owner.email")),
+        ("contacto.email", _path(master, "contacto.email")),
+        ("resumen.email_propietario", _path(master, "resumen.email_propietario")),
+        ("email", master.get("email")),
+    )
+
+
+def _valid_owner_email(value: Any) -> str | None:
+    email = str(value or "").strip().casefold()
+    localpart = email.partition("@")[0]
+    if (
+        EMAIL_RE.fullmatch(email)
+        and email not in {"incorrecto@procasa.cl", "firmasjpc@gmail.com"}
+        and localpart not in PLACEHOLDER_EMAIL_LOCALPARTS
     ):
-        email = str(value or "").strip().casefold()
-        localpart = email.partition("@")[0]
-        if (
-            EMAIL_RE.fullmatch(email)
-            and email not in {"incorrecto@procasa.cl", "firmasjpc@gmail.com"}
-            and localpart not in PLACEHOLDER_EMAIL_LOCALPARTS
-        ):
+        return email
+    return None
+
+
+def _email_from_property(master: Mapping[str, Any], *, required: bool = True) -> str:
+    for _source, value in _owner_email_candidates(master):
+        email = _valid_owner_email(value)
+        if email:
             return email
+    if required:
+        raise LiveTestCaseBuildError("owner_email_unavailable")
+    return ""
+
+
+def _email_source_from_property(master: Mapping[str, Any], *, required: bool = True) -> str:
+    for source, value in _owner_email_candidates(master):
+        if _valid_owner_email(value):
+            return source
     if required:
         raise LiveTestCaseBuildError("owner_email_unavailable")
     return ""
@@ -926,6 +950,7 @@ def _build_case(
     # attribution when present but is not needed to render or route test mail.
     # Portfolio grouping (E) still requires a real owner email for identity.
     email = _email_from_property(master, required=case_id == "E")
+    email_source = _email_source_from_property(master, required=case_id == "E")
     executive = _resolve_executive(db, master)
     operation = resolve_property_operation(master)
     if operation not in {VENTA, ARRIENDO}:
@@ -1059,6 +1084,7 @@ def _build_case(
         model["appraisal"]["adjustment_label"] = model["display_adjustment_label"]
     price_percentile_label = _number(market.get("property_percentile"))
     source_checks = {
+        "owner_email_source": email_source,
         "real_property_image": image.get("available") is True,
         "executive_name": bool(executive.get("name")), "executive_email": False,
         "executive_phone": False, "activity_90d": True,
@@ -1168,10 +1194,16 @@ def _build_portfolio(
         if len(cases) >= 3 and len({item.intended_owner_email for item in cases}) == 1 and len({item.executive for item in cases}) == 1:
             selected = tuple(cases[: min(9, len(cases))])
             first = selected[0]
+            email_sources = {
+                str((item.render_context.get("source_checks") or {}).get("owner_email_source") or "")
+                for item in selected
+            }
+            email_source = next(iter(email_sources)) if len(email_sources) == 1 else "mixed"
             return OwnerCampaignTestCase(**{
                 **first.__dict__, "case_id": "E", "portfolio_cases": selected,
                 "render_context": {
                     "executives": [first.render_context["property_model"]["executive"]],
+                    "owner_email_source": email_source,
                     **({"qa_evidence": dict(qa_manifest)} if qa_manifest is not None else {}),
                 },
             })

@@ -111,6 +111,49 @@ def test_panel_displays_frozen_fixture_provenance_and_safe_case_error():
     assert "Envío deshabilitado" in body
 
 
+def test_owner_email_prefers_current_property_owner_field_and_keeps_fallbacks():
+    from campanas.owner_campaign_test_runtime import (
+        _email_from_property, _email_source_from_property,
+    )
+
+    master = {
+        "datos_propietario": {"email": " Mauro.Owner@Example.com "},
+        "email_propietario": "legacy@example.com",
+    }
+    assert _email_from_property(master) == "mauro.owner@example.com"
+    assert _email_source_from_property(master) == "datos_propietario.email"
+
+    fallback = {"email_propietario": "legacy@example.com"}
+    assert _email_from_property(fallback) == "legacy@example.com"
+    assert _email_source_from_property(fallback) == "email_propietario"
+
+
+def test_e_preview_contract_requires_primary_owner_email_source():
+    from analytics.owner_campaign_report_normalization import PreviewResult
+
+    child_cases = tuple(
+        SimpleNamespace(property_code=code, operation="VENTA", evidence_segment="MIXED_EVIDENCE", cta_type="ADVISOR_REVIEW")
+        for code in ("17081", "6331", "6348")
+    )
+    case = SimpleNamespace(
+        case_id="E", portfolio_cases=child_cases,
+        render_context={"owner_email_source": "datos_propietario.email"},
+    )
+    prepared = SimpleNamespace(
+        case=case,
+        html=("/campana/test-accion?token=x /campana/test-accion?token=y "
+              "/campana/test-accion?token=z /campana/informe?token=x "
+              "/campana/informe?token=y /campana/informe?token=z"),
+        text="rendered",
+    )
+    checks, _detail = panel._case_checks(PreviewResult("E", prepared, None))
+    assert all(checks.values())
+
+    case.render_context["owner_email_source"] = "email_propietario"
+    checks, _detail = panel._case_checks(PreviewResult("E", prepared, None))
+    assert not checks["case_contract"]
+
+
 def test_preview_builder_exposes_only_symbolic_safe_error_codes(monkeypatch):
     from analytics import owner_campaign_report_normalization as normalization
     from campanas.owner_campaign_test_runtime import LiveTestCaseBuildError

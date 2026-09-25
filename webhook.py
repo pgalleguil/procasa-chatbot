@@ -71,7 +71,7 @@ from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 # === TUS MÓDULOS PROPIOS ===
-from campanas.handler import handle_campana_respuesta
+from campanas.handler import handle_campana_informe, handle_campana_respuesta
 from retiro.handler import handle_retiro_confirmacion, handle_solicitud_contacto
 from api_leads_intelligence import get_leads_executive_report, get_specific_lead_chat
 from api_crm import get_crm_leads_list, get_lead_detail_data, update_lead_crm_data, log_crm_event, manage_crm_notes, get_unique_executives, get_semantic_recommendations, log_recommendation_sent, normalize_crm_temperature
@@ -1227,41 +1227,7 @@ async def lifespan(app: FastAPI):
         _startup_sync_db_init,
     )
     
-    # Tarea de fondo: otorgar permisos y copiar expedientes existentes a carpeta raiz de Drive
-    def _fix_existing_drive_permissions():
-        try:
-            from chatbot.storage import get_db
-            from services.gdrive_sync import GDriveSync
-            from config import Config
-            db = get_db()
-            g_visitas = GDriveSync(parent_folder_id=Config.GDRIVE_VISITAS_FOLDER_ID)
-            g_contracts = GDriveSync(parent_folder_id=Config.GDRIVE_CONVENIOS_FOLDER_ID)
-            if not g_visitas.service:
-                return
-            for col_name, g_inst in [("visitas", g_visitas), ("contracts", g_contracts)]:
-                docs = list(db[col_name].find({
-                    "$or": [
-                        {"security.gdrive_folder_id": {"$exists": True, "$ne": None}},
-                        {"security.original_pdf_drive_id": {"$exists": True, "$ne": None}}
-                    ]
-                }))
-                for doc in docs:
-                    sec = doc.get("security") or {}
-                    f_id = sec.get("gdrive_folder_id")
-                    d_id = sec.get("original_pdf_drive_id")
-                    code = doc.get("visita_code") or doc.get("contract_code")
-                    if f_id:
-                        g_inst.share_item(f_id)
-                    if d_id:
-                        g_inst.share_item(d_id)
-            logger.info("[GDRIVE] Permisos y copias en carpeta principal actualizados correctamente.")
-        except Exception as e:
-            logger.warning(f"[GDRIVE] Error reparando permisos antiguos de Drive: {e}")
-
-    try:
-        _WORKER_THREAD_POOL.submit(_fix_existing_drive_permissions)
-    except Exception as e:
-        logger.warning(f"[GDRIVE] No se pudo lanzar worker de permisos Drive: {e}")
+    logger.info("STARTUP_DRIVE_PERMISSION_MUTATION=0")
 
     # El modelo de embeddings se cargará bajo demanda para ahorrar RAM en el arranque
     logger.info("Startup completo. Modelo de embeddings se cargará en el primer uso.")
@@ -4017,7 +3983,7 @@ async def api_keep_alive(request: Request):
     """Endpoint ligero para renovar la cookie de sesión sin recargar"""
     return {"status": "ok", "timestamp": time.time()}
 
-@app.get("/campana/respuesta")
+@app.api_route("/campana/respuesta", methods=["GET", "POST"])
 async def campana_respuesta(
     request: Request,
     email: str = Query(...),
@@ -4028,6 +3994,17 @@ async def campana_respuesta(
     mode: str = Query("live")
 ):
     return await handle_campana_respuesta(request, email, accion, codigos, campana, mode, token)
+
+
+@app.get("/campana/informe")
+async def campana_informe(
+    request: Request,
+    token: str = Query(""),
+):
+    return await handle_campana_informe(
+        token=request.query_params.get("token", "") or token,
+    )
+
 
 @app.get("/api/reporte_real")
 async def api_reporte_real():

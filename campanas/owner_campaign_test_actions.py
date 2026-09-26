@@ -102,7 +102,6 @@ def _test_ledger(db: Any, property_code: str) -> Mapping[str, Any] | None:
             "campaign_id": TEST_CAMPAIGN_ID,
             "property_code": property_code,
             "test_mode": True,
-            "actual_recipient_email": TEST_RECIPIENT,
         }
     )
 

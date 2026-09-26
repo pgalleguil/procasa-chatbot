@@ -11,9 +11,10 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Any, Mapping
+from uuid import uuid4
 
 
-TEST_RECIPIENT = "pgalleguillos@procasa.cl"
+TEST_RECIPIENT = "p.galleguil@gmail.com"
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
@@ -28,6 +29,7 @@ EVENT_BY_ACTION = {
     ADVISOR_ACTION: "advisor_review_requested",
     REPORT_ACTION: "report_opened",
 }
+PRICE_CONFIRM_PAGE_OPENED = "price_confirm_page_opened"
 
 
 def _b64(data: bytes) -> str:
@@ -162,6 +164,19 @@ def verify_test_token(
     return payload
 
 
+def _event_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def persist_test_event(
     ledger: Any,
     claims: Mapping[str, Any],
@@ -185,26 +200,28 @@ def persist_test_event(
     token_id = hashlib.sha256(
         f"{campaign_id}|{code}|{action}|{document_type or ''}|{claims.get('exp')}".encode()
     ).hexdigest()[:24]
-    legacy_query = {
-        "campana": campaign_id,
-        "codigo_propiedad": code,
-        "test_mode": True,
-    }
     current_query = {
         "campaign_id": campaign_id,
         "property_code": code,
         "test_mode": True,
     }
-    existing = ledger.find_one(legacy_query)
-    base_query = legacy_query if existing else current_query
+    legacy_query = {
+        "campana": campaign_id,
+        "codigo_propiedad": code,
+        "test_mode": True,
+    }
+    existing = ledger.find_one(current_query)
+    base_query = current_query
     if not existing:
-        existing = ledger.find_one(current_query)
+        existing = ledger.find_one(legacy_query)
+        base_query = legacy_query
     if not existing or not (existing.get("intended_owner_email") or existing.get("owner_email")):
         raise LookupError("Prepared test campaign/property ledger row not found")
     if not existing.get("test_mode"):
         raise ValueError("Refusing to append a test event to a live campaign row")
     actual_recipient = str(existing.get("actual_recipient_email") or "").strip().casefold()
-    if actual_recipient != TEST_RECIPIENT:
+    resend_recipient = str(existing.get("test_resend_recipient_email") or "").strip().casefold()
+    if TEST_RECIPIENT not in {actual_recipient, resend_recipient}:
         raise ValueError("Prepared test ledger row has an unexpected recipient")
     if action == REPORT_ACTION:
         ledger_document_type = str(
@@ -213,14 +230,61 @@ def persist_test_event(
         if ledger_document_type != document_type:
             raise ValueError("Report token document_type does not match the prepared property row")
 
-    event_ids = existing.get("response_event_ids") or []
+    event_ids = set(existing.get("response_event_ids") or [])
+    history = [event for event in (existing.get("response_events") or []) if isinstance(event, Mapping)]
+    for stored_event in history:
+        if isinstance(stored_event, Mapping) and stored_event.get("event_id"):
+            event_ids.add(stored_event["event_id"])
+    owner_response = existing.get("owner_response")
+    owner_response = owner_response if isinstance(owner_response, Mapping) else {}
+    historical_authorizations = [
+        event for event in history if event.get("event") == EVENT_BY_ACTION[ACCEPT_PRICE_ACTION]
+    ]
+    if historical_authorizations and owner_response.get("status") != "PRICE_AUTHORIZED":
+        dated_authorizations = [
+            (date, event) for event in historical_authorizations
+            if (date := _event_datetime(event.get("event_at"))) is not None
+        ]
+        latest_event = max(
+            dated_authorizations, key=lambda item: item[0]
+        )[1] if dated_authorizations else historical_authorizations[-1]
+        normalize_set: dict[str, Any] = {"owner_response.status": "PRICE_AUTHORIZED"}
+        authorized_value = latest_event.get("authorized_value", latest_event.get("proposed_value"))
+        current_value = latest_event.get("current_value_at_campaign")
+        if authorized_value is not None:
+            normalize_set["owner_response.authorized_value"] = authorized_value
+        if current_value is not None:
+            normalize_set["owner_response.current_value_at_campaign"] = current_value
+        normalize_update: dict[str, Any] = {"$set": normalize_set}
+        if dated_authorizations:
+            normalize_update["$min"] = {
+                "owner_response.first_authorized_at": min(item[0] for item in dated_authorizations)
+            }
+            normalize_update["$max"] = {
+                "owner_response.last_authorized_at": max(item[0] for item in dated_authorizations)
+            }
+        ledger.update_one(
+            {**base_query, "owner_response.status": {"$in": [None, "", "PENDING"]}},
+            normalize_update,
+            upsert=False,
+        )
     click_id = hashlib.sha256(f"{token_id}|cta_clicked".encode()).hexdigest()[:24]
     authorization_id = hashlib.sha256(f"{token_id}|confirmed_authorization".encode()).hexdigest()[:24]
+    occurrence = timestamp.isoformat()
+    occurrence_nonce = uuid4().hex
+    confirm_page_id = hashlib.sha256(
+        f"{token_id}|{PRICE_CONFIRM_PAGE_OPENED}|{occurrence}|{occurrence_nonce}".encode()
+    ).hexdigest()[:24]
     if stage == "click":
-        desired_events = [] if click_id in event_ids else [
-            {"event_id": click_id, "event": "cta_clicked", "action": action}
-        ]
-        desired_ids = [click_id]
+        desired_events = []
+        if click_id not in event_ids:
+            desired_events.append({"event_id": click_id, "event": "cta_clicked", "action": action})
+        if action == ACCEPT_PRICE_ACTION and confirm_page_id not in event_ids:
+            desired_events.append({
+                "event_id": confirm_page_id,
+                "event": PRICE_CONFIRM_PAGE_OPENED,
+                "action": action,
+            })
     elif stage == "confirm":
         if action != ACCEPT_PRICE_ACTION:
             raise ValueError("Only price authorization has a confirmation stage")
@@ -235,22 +299,27 @@ def persist_test_event(
             "authorized_value": existing.get("display_target", existing.get("display_recommended_price")),
             "current_value_at_campaign": existing.get("current_price_at_send"),
         }]
-        desired_ids = [authorization_id]
     else:
         desired_events = []
-        desired_ids = []
         if click_id not in event_ids:
             desired_events.append({"event_id": click_id, "event": "cta_clicked", "action": action})
-            desired_ids.append(click_id)
-        if token_id not in event_ids:
+        occurrence_event_id = hashlib.sha256(
+            f"{token_id}|{event_name}|{occurrence}|{occurrence_nonce}".encode()
+        ).hexdigest()[:24]
+        if occurrence_event_id not in event_ids:
             desired_events.append({
-                "event_id": token_id,
+                "event_id": occurrence_event_id,
                 "event": event_name,
                 "action": action,
                 "executive": existing.get("executive"),
             })
-            desired_ids.append(token_id)
+    desired_ids = [event["event_id"] for event in desired_events]
     if not desired_events:
+        ledger.update_one(
+            {**base_query, "owner_response.status": {"$in": [None, ""]}},
+            {"$set": {"owner_response.status": "PENDING"}},
+            upsert=False,
+        )
         return {
             "event": event_name,
             "event_ids": [],
@@ -273,12 +342,39 @@ def persist_test_event(
         "test_mode": True,
     }
     events = [{**common, **event} for event in desired_events]
-    update = {
+    update: dict[str, Any] = {
+        "$set": {
+            "campaign_id": campaign_id,
+            "property_code": code,
+            "owner_response.updated_at": timestamp,
+        },
         "$addToSet": {"response_event_ids": {"$each": desired_ids}},
         "$push": {"response_events": {"$each": events}},
     }
-    query = {**base_query, "actual_recipient_email": TEST_RECIPIENT}
+    authorized = any(event.get("event") == EVENT_BY_ACTION[ACCEPT_PRICE_ACTION] for event in desired_events)
+    if authorized:
+        target = existing.get("display_recommended_price", existing.get("display_target"))
+        update["$set"].update({
+            "owner_response.status": "PRICE_AUTHORIZED",
+            "owner_response.authorized_value": target,
+            "owner_response.current_value_at_campaign": existing.get("current_price_at_send"),
+        })
+        update["$min"] = {"owner_response.first_authorized_at": timestamp}
+        update["$max"] = {"owner_response.last_authorized_at": timestamp}
+    elif action == ADVISOR_ACTION:
+        update["$max"] = {"owner_response.advisor_requested_at": timestamp}
+    elif action == REPORT_ACTION:
+        update["$max"] = {"owner_response.last_report_opened_at": timestamp}
+
+    query = {**base_query, "response_event_ids": {"$nin": desired_ids}}
     result = ledger.update_one(query, update, upsert=False)
+    modified = bool(getattr(result, "modified_count", 0))
+    if modified and not authorized:
+        ledger.update_one(
+            {**base_query, "owner_response.status": {"$in": [None, ""]}},
+            {"$set": {"owner_response.status": "PENDING"}},
+            upsert=False,
+        )
     record = ledger.find_one(base_query) or existing
     return {
         "event": event_name,
@@ -287,6 +383,6 @@ def persist_test_event(
         "stored_record_id": str(record.get("_id") or getattr(result, "upserted_id", "") or ""),
         "timestamp": timestamp.isoformat(),
         "test_mode": True,
-        "duplicate": not bool(getattr(result, "modified_count", 0)),
+        "duplicate": not modified,
         "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
     }

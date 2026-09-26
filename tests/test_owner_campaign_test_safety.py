@@ -33,13 +33,40 @@ class FakeCollection:
 
     def find_one(self, query, projection=None):
         for doc in self.docs:
-            if all(doc.get(key) == value for key, value in query.items()):
+            if self._matches(doc, query):
                 return dict(doc)
         return None
 
     def find(self, query=None, projection=None):
         query = query or {}
-        return [dict(doc) for doc in self.docs if all(doc.get(key) == value for key, value in query.items())]
+        return [dict(doc) for doc in self.docs if self._matches(doc, query)]
+
+    @staticmethod
+    def _matches(doc, query):
+        for key, expected in query.items():
+            actual = doc
+            for part in key.split("."):
+                actual = actual.get(part) if isinstance(actual, dict) else None
+            if isinstance(expected, dict) and "$nin" in expected:
+                if any(value in (actual or []) for value in expected["$nin"]):
+                    return False
+            elif isinstance(expected, dict) and "$in" in expected:
+                if actual not in expected["$in"]:
+                    return False
+            elif isinstance(expected, dict) and "$exists" in expected:
+                if (actual is not None) != expected["$exists"]:
+                    return False
+            elif actual != expected:
+                return False
+        return True
+
+    @staticmethod
+    def _set_path(doc, dotted, value):
+        parts = dotted.split(".")
+        target = doc
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+        target[parts[-1]] = value
 
     def insert_one(self, doc):
         self.docs.append(dict(doc))
@@ -49,8 +76,9 @@ class FakeCollection:
         if self.name == actions.PROPERTY_COLLECTION:
             raise AssertionError("test action attempted a live property write")
         for doc in self.docs:
-            if all(doc.get(key) == value for key, value in query.items()):
-                doc.update(update.get("$set", {}))
+            if self._matches(doc, query):
+                for key, value in update.get("$set", {}).items():
+                    self._set_path(doc, key, value)
                 modified = bool(update.get("$set"))
                 for key, spec in update.get("$addToSet", {}).items():
                     values = spec.get("$each", []) if isinstance(spec, dict) else [spec]
@@ -63,6 +91,16 @@ class FakeCollection:
                     values = spec.get("$each", []) if isinstance(spec, dict) else [spec]
                     doc.setdefault(key, []).extend(values)
                     modified = modified or bool(values)
+                for operator in ("$min", "$max"):
+                    for key, value in update.get(operator, {}).items():
+                        current = doc
+                        parts = key.split(".")
+                        for part in parts[:-1]:
+                            current = current.setdefault(part, {})
+                        old = current.get(parts[-1])
+                        if old is None or (operator == "$min" and value < old) or (operator == "$max" and value > old):
+                            current[parts[-1]] = value
+                            modified = True
                 return SimpleNamespace(matched_count=1, modified_count=int(modified))
         if upsert:
             doc = dict(query)
@@ -172,7 +210,7 @@ def test_environment(monkeypatch):
 
 
 def test_recipient_policy_allows_only_fixed_test_mailbox():
-    assert actions.TEST_RECIPIENT == "pgalleguillos@procasa.cl"
+    assert actions.TEST_RECIPIENT == "p.galleguil@gmail.com"
     assert sender.TEST_RECIPIENT == actions.TEST_RECIPIENT
     sender.validate_recipient_envelope(
         to=sender.TEST_RECIPIENT,
@@ -385,7 +423,7 @@ def test_independent_cli_dry_run_never_calls_smtp_or_writes_ledger(monkeypatch):
     monkeypatch.setattr(cli, "send_test_messages", lambda *_a, **_k: pytest.fail("dry run must not send"))
     result = cli.run_test_batch(cli.INITIAL_CASES, test_mode=True, dry_run=True, db=db, health_reader=lambda: 6)
     assert result["status"] == "preflight_passed_no_send"
-    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
+    assert result["actual_recipient_email"] == actions.TEST_RECIPIENT
     assert result["preflight"]["owner_recipient_blocked"] is True
     assert result["preflight"]["live_price_mutation_blocked"] is True
     assert result["test_emails_sent"] == 0
@@ -411,7 +449,7 @@ def test_independent_cli_full_batch_preflights_all_five_without_writing_or_sendi
 
     assert result["status"] == "preflight_passed_no_send"
     assert result["case_ids"] == list(cli.ALL_CASES)
-    assert result["actual_recipient_email"] == "pgalleguillos@procasa.cl"
+    assert result["actual_recipient_email"] == actions.TEST_RECIPIENT
     assert result["test_emails_sent"] == 0
     assert not db.docs.get(sender.TEST_LEDGER_COLLECTION)
 
@@ -545,8 +583,8 @@ def test_runner_page_is_non_editable_admin_ui_and_send_is_post_only():
     response = runner.render_admin_runner_ui()
     body = response.body.decode("utf-8")
     assert response.headers["cache-control"] == "private, no-store"
-    assert "pgalleguillos@procasa.cl" in body
-    assert "window.confirm('Enviar exclusivamente a pgalleguillos@procasa.cl')" in body
+    assert actions.TEST_RECIPIENT in body
+    assert f"window.confirm('Enviar exclusivamente a {actions.TEST_RECIPIENT}')" in body
     assert "method:'POST'" in body
     assert "fetch('/captacion/test-runner'" in body
     assert "GENERATE_PREVIEWS_ABD" in body and "SEND_TEST_EMAILS_ABD" in body
@@ -1113,7 +1151,10 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     click = actions.process_test_action(token, db=db)
     assert click["requires_confirmation"] is True
     ledger_row = db.docs[actions.LEDGER_COLLECTION][0]
-    assert [event["event"] for event in ledger_row["response_events"]] == ["cta_clicked"]
+    assert [event["event"] for event in ledger_row["response_events"]] == [
+        "cta_clicked", "price_confirm_page_opened"
+    ]
+    assert ledger_row["owner_response"]["status"] == "PENDING"
     result = actions.process_test_action(token, db=db, confirmed=True)
     after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"]
     events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
@@ -1122,9 +1163,16 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert result["test_price_mutation"] is False
     assert result["live_price_before"] == result["live_price_after"] == before
     assert after == before
-    assert [event["event"] for event in events] == ["cta_clicked", "price_authorized"]
+    assert [event["event"] for event in events] == [
+        "cta_clicked", "price_confirm_page_opened", "price_authorized"
+    ]
+    summary = ledger_row["owner_response"]
+    assert summary["status"] == "PRICE_AUTHORIZED"
+    assert summary["first_authorized_at"] == summary["last_authorized_at"]
+    assert summary["authorized_value"] == 4700.0
+    assert summary["current_value_at_campaign"] == 5000.0
     assert all(event["test_mode"] is True and event["property_code"] == "16521" for event in events)
-    authorization = events[1]
+    authorization = next(event for event in events if event["event"] == "price_authorized")
     assert authorization["campaign_id"] == "owner_price_campaign_test_20260923"
     assert authorization["campaign_version"] == "owner_campaign_test_20260923"
     assert authorization["action"] == actions.ACCEPT_PRICE_ACTION
@@ -1149,7 +1197,10 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert "CONFIRMAR AUTORIZACIÓN" in page
     assert "El precio publicado no será modificado automáticamente." in page
     row = db.docs[actions.LEDGER_COLLECTION][0]
-    assert [event["event"] for event in row["response_events"]] == ["cta_clicked"]
+    assert [event["event"] for event in row["response_events"]] == [
+        "cta_clicked", "price_confirm_page_opened"
+    ]
+    assert row["owner_response"]["status"] == "PENDING"
     assert all(event["event"] != "price_authorized" for event in row["response_events"])
 
     post_response = actions.handle_test_action(token, db=db, confirmed=True)
@@ -1157,10 +1208,81 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert post_response.status_code == 200
     assert "Autorización registrada" in post_response.body.decode("utf-8")
     row = db.docs[actions.LEDGER_COLLECTION][0]
-    assert [event["event"] for event in row["response_events"]] == ["cta_clicked", "price_authorized"]
+    assert [event["event"] for event in row["response_events"]] == [
+        "cta_clicked", "price_confirm_page_opened", "price_authorized"
+    ]
     assert row["response_events"][-1]["property_code"] == "5641"
     price_after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"]
     assert price_before == price_after
+
+
+def test_authorized_status_stays_sticky_after_reopening_report_and_contacting_advisor(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(code="5641")
+    accept_token = _action_token("5641")
+    actions.process_test_action(accept_token, db=db)
+    actions.process_test_action(accept_token, db=db, confirmed=True)
+    ledger_row = db.docs[actions.LEDGER_COLLECTION][0]
+    first_authorized_at = ledger_row["owner_response"]["first_authorized_at"]
+    event_count_after_authorization = len(ledger_row["response_events"])
+
+    # Repeated POST for the same signed token is idempotent.
+    actions.process_test_action(accept_token, db=db, confirmed=True)
+    assert len(ledger_row["response_events"]) == event_count_after_authorization
+
+    report_token = _action_token(
+        "5641", action=actions.REPORT_ACTION, document_type="INDIVIDUAL_APPRAISAL"
+    )
+    actions.record_test_report_opened("5641", token=report_token, db=db)
+    actions.record_test_report_opened("5641", token=report_token, db=db)
+    advisor_token = _action_token("5641", action=actions.ADVISOR_ACTION)
+    actions.process_test_action(advisor_token, db=db)
+
+    summary = ledger_row["owner_response"]
+    assert summary["status"] == "PRICE_AUTHORIZED"
+    assert summary["first_authorized_at"] == first_authorized_at
+    assert summary["last_authorized_at"] == first_authorized_at
+    assert summary["authorized_value"] == 4700.0
+    assert summary["current_value_at_campaign"] == 5000.0
+    assert summary["last_report_opened_at"] is not None
+    assert summary["advisor_requested_at"] is not None
+    assert summary["updated_at"] >= summary["advisor_requested_at"]
+    events = ledger_row["response_events"]
+    assert sum(event["event"] == "report_opened" for event in events) == 2
+    assert len({event["event_id"] for event in events}) == len(events)
+
+
+def test_existing_authorization_event_normalizes_summary_without_losing_authorization(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(code="5641")
+    ledger_row = db.docs[actions.LEDGER_COLLECTION][0]
+    authorized_at = "2026-09-25T17:04:00+00:00"
+    ledger_row["response_events"] = [{
+        "event_id": "old-authorization-id",
+        "event": "price_authorized",
+        "event_at": authorized_at,
+        "authorized_value": 4700.0,
+        "current_value_at_campaign": 5000.0,
+    }]
+    ledger_row["response_event_ids"] = ["old-authorization-id"]
+
+    report_token = _action_token(
+        "5641", action=actions.REPORT_ACTION, document_type="INDIVIDUAL_APPRAISAL"
+    )
+    actions.record_test_report_opened("5641", token=report_token, db=db)
+
+    summary = ledger_row["owner_response"]
+    assert summary["status"] == "PRICE_AUTHORIZED"
+    assert summary["first_authorized_at"].isoformat() == authorized_at
+    assert summary["last_authorized_at"].isoformat() == authorized_at
+    assert summary["authorized_value"] == 4700.0
+    assert summary["current_value_at_campaign"] == 5000.0
+    assert ledger_row["response_events"][0]["event_id"] == "old-authorization-id"
+    assert [event["event"] for event in ledger_row["response_events"][-2:]] == [
+        "cta_clicked", "report_opened"
+    ]
 
 
 def test_accept_price_invalid_token_returns_404_without_events():
@@ -1195,7 +1317,9 @@ def test_test_rent_authorization_requires_confirmation_without_changing_live_ren
     assert result["test_mode"] is True
     assert result["live_price_before"] == result["live_price_after"] == before
     assert after == before
-    assert [event["event"] for event in db.docs[actions.LEDGER_COLLECTION][0]["response_events"]] == ["cta_clicked", "price_authorized"]
+    assert [event["event"] for event in db.docs[actions.LEDGER_COLLECTION][0]["response_events"]] == [
+        "cta_clicked", "price_confirm_page_opened", "price_authorized"
+    ]
 
 
 def test_advisor_cta_writes_only_test_events_to_adjustment_ledger(monkeypatch):

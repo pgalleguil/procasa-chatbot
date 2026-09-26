@@ -29,6 +29,7 @@ from .test_mode import ADVISOR_ACTION, TEST_CAMPAIGN_ID, TEST_RECIPIENT, issue_c
 
 PROPERTY_CODE = "5641"
 CASE_ID = "A"
+PREVIOUS_TEST_RECIPIENT = "pgalleguillos@procasa.cl"
 FINAL_RESEND_PURPOSE = "FINAL_VISUAL_QA_RESEND_5641_V1"
 FINAL_RESEND_SUBJECT = "[TEST FINAL PROCASA] Informe propiedad 5641"
 VALID_EXISTING_DELIVERY_STATUSES = frozenset({"pending_test_send", "test_sent"})
@@ -139,7 +140,9 @@ def _existing_ledger_row(db: Any) -> dict[str, Any]:
         row.get("campaign_id") != TEST_CAMPAIGN_ID
         or str(row.get("property_code") or "") != PROPERTY_CODE
         or row.get("test_mode") is not True
-        or str(row.get("actual_recipient_email") or "").strip().casefold() != TEST_RECIPIENT
+        or str(row.get("actual_recipient_email") or "").strip().casefold() not in {
+            TEST_RECIPIENT, PREVIOUS_TEST_RECIPIENT
+        }
         or row.get("delivery_status") not in VALID_EXISTING_DELIVERY_STATUSES
     ):
         raise TestSenderError("final_resend_existing_qa_row_invalid")
@@ -229,7 +232,7 @@ def _reserve_existing_row(
             "campaign_id": TEST_CAMPAIGN_ID,
             "property_code": PROPERTY_CODE,
             "test_mode": True,
-            "actual_recipient_email": TEST_RECIPIENT,
+            "actual_recipient_email": row.get("actual_recipient_email"),
             "delivery_status": row["delivery_status"],
             **previous_hash_filter,
             **status_filter,
@@ -239,6 +242,7 @@ def _reserve_existing_row(
             "last_test_resend_status": "sending",
             "last_test_resend_started_at": now,
             "last_test_resend_attempt_html_sha256": html_hash,
+            "test_resend_recipient_email": TEST_RECIPIENT,
         }},
         upsert=False,
     )
@@ -305,7 +309,9 @@ def resend_existing_test_case(
     if dry_run:
         return summary
 
-    if row.get("test_mode") is not True or row.get("actual_recipient_email") != TEST_RECIPIENT:
+    if row.get("test_mode") is not True or str(row.get("actual_recipient_email") or "").strip().casefold() not in {
+        TEST_RECIPIENT, PREVIOUS_TEST_RECIPIENT
+    }:
         raise TestSenderError("final_resend_existing_qa_row_invalid")
     sent_at = datetime.now(timezone.utc)
     ledger = db[TEST_LEDGER_COLLECTION]

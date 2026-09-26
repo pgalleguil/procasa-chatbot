@@ -24,6 +24,22 @@ def _row(**updates):
     return row
 
 
+def _approved_html_source():
+    return """<!doctype html><html><body>
+      <h1>Revisión comercial de tu propiedad</h1><p>Buenas propiedades crean grandes historias</p>
+      <section>CHILE · SEPTIEMBRE 2026 FINANCIAMIENTO HIPOTECARIO TPM Fuentes: Banco Central de Chile y MINVU · septiembre 2026</section>
+      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
+      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
+      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
+      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
+      <div class="advisor-review">¿Prefieres conversarlo antes? <a href="#old">Revisar con mi ejecutivo →</a></div>
+    </body></html>"""
+
+
+def _advisor_url(token="advisor"):
+    return f"{resend.SERVICE_BASE_URL}/campana/test-accion?token={token}"
+
+
 class _Collection:
     def __init__(self, row):
         self.row = row
@@ -148,12 +164,7 @@ def test_accepted_history_is_preserved_and_used_as_latest_hash():
 
 
 def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
-    source = """<!doctype html><html><body>
-      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
-      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
-      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
-      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
-    </body></html>"""
+    source = _approved_html_source()
     old_hash = "a" * 64
     db = _DB(_row(
         last_test_resend_purpose=resend.FINAL_RESEND_PURPOSE,
@@ -161,12 +172,13 @@ def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
         last_test_resend_html_sha256=old_hash,
     ))
     case = SimpleNamespace(case_id="A", property_code="5641")
-    prepared = SimpleNamespace(html=source, report_token="fresh-report", action_token="fresh-action")
+    prepared = SimpleNamespace(html=source, report_token="report", action_token="action")
     monkeypatch.setattr(resend, "test_mode_enabled", lambda: True)
     monkeypatch.setattr(resend, "Config", SimpleNamespace(GMAIL_USER="qa@procasa.cl"))
     monkeypatch.setattr(resend, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [case])
     monkeypatch.setattr(resend, "prepare_test_messages", lambda cases: [prepared])
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    monkeypatch.setattr(resend, "issue_campaign_test_token", lambda **kwargs: "fresh-advisor")
 
     result = resend.resend_existing_test_case(dry_run=True, db=db)
 
@@ -177,47 +189,41 @@ def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
     assert result["recipient"] == TEST_RECIPIENT
     assert result["report_link_present"] is True
     assert result["price_auth_link_present"] is True
+    assert result["advisor_review_link_present"] is True
+    assert result["approved_single_property_template_active"] is True
     assert result["html_match"] is True
     assert result["new_ledger_row_created"] is False
     assert db.collection.updates == []
 
 
 def test_dry_run_blocks_same_hash_before_smtp_or_ledger_write(monkeypatch):
-    source = """<!doctype html><html><body>
-      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
-      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
-      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
-      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
-    </body></html>"""
+    source = _approved_html_source()
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
-    safe_html = resend._final_visual_html(SimpleNamespace(html=source, report_token="r", action_token="a"))
+    safe_html = resend._final_visual_html(SimpleNamespace(html=source, report_token="report", action_token="action"), advisor_review_url=_advisor_url())
     same_hash = resend._sha256(safe_html)
     db = _DB(_row(last_test_resend_smtp_accepted=True, last_test_resend_html_sha256=same_hash))
     monkeypatch.setattr(resend, "test_mode_enabled", lambda: True)
     monkeypatch.setattr(resend, "Config", SimpleNamespace(GMAIL_USER="qa@procasa.cl"))
     monkeypatch.setattr(resend, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [SimpleNamespace(case_id="A", property_code="5641")])
-    monkeypatch.setattr(resend, "prepare_test_messages", lambda cases: [SimpleNamespace(html=source, report_token="r", action_token="a")])
+    monkeypatch.setattr(resend, "prepare_test_messages", lambda cases: [SimpleNamespace(html=source, report_token="report", action_token="action")])
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    monkeypatch.setattr(resend, "issue_campaign_test_token", lambda **kwargs: "advisor")
     with pytest.raises(SenderError, match="same_visual_test_already_sent"):
         resend.resend_existing_test_case(dry_run=True, db=db)
     assert db.collection.updates == []
 
 
 def test_send_audits_the_same_row_and_one_shot_blocks_repeat(monkeypatch):
-    source = """<!doctype html><html><body>
-      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
-      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
-      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
-      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
-    </body></html>"""
+    source = _approved_html_source()
     db = _DB(_row())
     case = SimpleNamespace(case_id="A", property_code="5641")
-    prepared = SimpleNamespace(html=source, report_token="fresh-report", action_token="fresh-action")
+    prepared = SimpleNamespace(html=source, report_token="report", action_token="action")
     monkeypatch.setattr(resend, "test_mode_enabled", lambda: True)
     monkeypatch.setattr(resend, "Config", SimpleNamespace(GMAIL_USER="qa@procasa.cl", GMAIL_PASSWORD="test"))
     monkeypatch.setattr(resend, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [case])
     monkeypatch.setattr(resend, "prepare_test_messages", lambda cases: [prepared])
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    monkeypatch.setattr(resend, "issue_campaign_test_token", lambda **kwargs: "fresh-advisor")
     monkeypatch.setattr(resend.smtplib, "SMTP", _SMTP)
     _SMTP.calls = 0
 
@@ -254,16 +260,13 @@ def test_reservation_and_audit_update_never_upsert():
 
 def test_final_html_requires_report_and_action_buttons(monkeypatch):
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
-    source = """<!doctype html><html><body>
-      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
-      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
-      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
-      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
-    </body></html>"""
-    prepared = SimpleNamespace(html=source, report_token="fresh-report", action_token="fresh-action")
-    result = resend._final_visual_html(prepared)
+    source = _approved_html_source()
+    prepared = SimpleNamespace(html=source, report_token="report", action_token="action")
+    result = resend._final_visual_html(prepared, advisor_review_url=_advisor_url())
     assert "VER INFORME →" in result
     assert "ACEPTAR NUEVO VALOR →" in result
+    assert "Revisión comercial de tu propiedad" in result
+    assert "Revisar con mi ejecutivo →" in result
     assert "Ver respaldo comercial" not in result
 
 

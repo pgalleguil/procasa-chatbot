@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import smtplib
 from typing import Any, Callable, Sequence
+from urllib.parse import parse_qs, quote, urlsplit
 
 from analytics.owner_campaign_email_compat import make_email_safe_html
 from config import Config
@@ -24,7 +25,7 @@ from .owner_campaign_test_sender import (
     prepare_test_messages,
     validate_recipient_envelope,
 )
-from .test_mode import TEST_CAMPAIGN_ID, TEST_RECIPIENT, test_mode_enabled
+from .test_mode import ADVISOR_ACTION, TEST_CAMPAIGN_ID, TEST_RECIPIENT, issue_campaign_test_token, test_mode_enabled
 
 PROPERTY_CODE = "5641"
 CASE_ID = "A"
@@ -52,13 +53,17 @@ def _replace_anchor_label(source_html: str, selector: str, label: str) -> str:
     return html.tostring(tree, encoding="unicode", method="html", doctype="<!doctype html>")
 
 
-def _final_visual_html(prepared: PreparedTestMessage) -> str:
+def _final_visual_html(prepared: PreparedTestMessage, *, advisor_review_url: str) -> str:
     html = prepared.html
     html = _replace_anchor_label(html, ".document-action-single", "VER INFORME →")
     html = _replace_anchor_label(html, ".primary", "ACEPTAR NUEVO VALOR →")
     from lxml import html as lxml_html
 
     tree = lxml_html.fromstring(html)
+    advisor_links = tree.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' advisor-review ')]//a")
+    if len(advisor_links) != 1:
+        raise TestSenderError("final_resend_advisor_review_link_missing_or_duplicated")
+    advisor_links[0].set("href", advisor_review_url)
     strong = tree.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' document-copy-single ')]//strong")
     if len(strong) != 1:
         raise TestSenderError("final_resend_document_section_invalid")
@@ -68,8 +73,15 @@ def _final_visual_html(prepared: PreparedTestMessage) -> str:
         "Informe comercial disponible",
         "Tasación individual",
         "Publicaciones comparables",
+        "Revisión comercial de tu propiedad",
+        "Buenas propiedades crean grandes historias",
+        "CHILE · SEPTIEMBRE 2026",
+        "FINANCIAMIENTO HIPOTECARIO",
+        "TPM",
+        "Fuentes: Banco Central de Chile y MINVU · septiembre 2026",
         "VER INFORME →",
         "ACEPTAR NUEVO VALOR →",
+        "Revisar con mi ejecutivo →",
     )
     if any(label not in visible for label in required):
         raise TestSenderError("final_resend_required_content_missing")
@@ -81,12 +93,21 @@ def _final_visual_html(prepared: PreparedTestMessage) -> str:
     links.feed(safe_html)
     report_links = [href for href in links.hrefs if "/campana/informe?token=" in href]
     action_links = [href for href in links.hrefs if "/campana/test-accion?token=" in href]
-    if len(report_links) != 1 or len(action_links) != 1:
+    if len(report_links) != 1 or len(action_links) != 2:
         raise TestSenderError("final_resend_signed_links_missing_or_duplicated")
     if not report_links[0].startswith(f"{SERVICE_BASE_URL}/campana/informe?token="):
         raise TestSenderError("final_resend_report_endpoint_mismatch")
     if prepared.report_token is None or prepared.action_token is None:
         raise TestSenderError("final_resend_fresh_tokens_required")
+    if not advisor_review_url.startswith(f"{SERVICE_BASE_URL}/campana/test-accion?token="):
+        raise TestSenderError("final_resend_advisor_review_endpoint_mismatch")
+    advisor_token = advisor_review_url.rsplit("token=", 1)[-1]
+    if advisor_token in {prepared.report_token, prepared.action_token}:
+        raise TestSenderError("final_resend_advisor_review_token_not_distinct")
+    report_token = parse_qs(urlsplit(report_links[0]).query).get("token", [""])[0]
+    found_action_tokens = {parse_qs(urlsplit(href).query).get("token", [""])[0] for href in action_links}
+    if report_token != prepared.report_token or found_action_tokens != {prepared.action_token, advisor_token}:
+        raise TestSenderError("final_resend_fresh_links_do_not_match_tokens")
     return safe_html
 
 
@@ -232,7 +253,9 @@ def resend_existing_test_case(
     if len(prepared) != 1 or prepared[0].report_token is None or prepared[0].action_token is None:
         raise TestSenderError("final_resend_signed_links_missing")
     item = prepared[0]
-    final_html = _final_visual_html(item)
+    advisor_review_token = issue_campaign_test_token(property_code=PROPERTY_CODE, action=ADVISOR_ACTION)
+    advisor_review_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(advisor_review_token, safe='')}"
+    final_html = _final_visual_html(item, advisor_review_url=advisor_review_url)
     final_hash = _sha256(final_html)
     previous_hash = _require_changed_html(row, final_hash)
     message, smtp_hash = _message_with_hash_gate(
@@ -253,6 +276,8 @@ def resend_existing_test_case(
         "new_ledger_row_created": False,
         "report_link_present": True,
         "price_auth_link_present": True,
+        "advisor_review_link_present": True,
+        "approved_single_property_template_active": True,
         "duplicate_document_cta_removed": True,
         "final_email_safe_html_sha256": final_hash,
         "smtp_html_before_mime_sha256": smtp_hash,

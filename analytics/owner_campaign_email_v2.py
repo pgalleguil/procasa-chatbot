@@ -11,8 +11,10 @@ from __future__ import annotations
 import math
 import statistics
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -25,6 +27,19 @@ from config import Config
 
 TEMPLATE_VERSION = "OWNER_CAMPAIGN_EMAIL_V2"
 TEMPLATE_FILE = "owner_campaign_email_v2.html"
+SINGLE_PROPERTY_HERO_TITLE = "Revisión comercial de tu propiedad"
+SINGLE_PROPERTY_HERO_DESCRIPTION = (
+    "Analizamos el comportamiento reciente del mercado, las alternativas comparables disponibles y la respuesta comercial de tu propiedad "
+    "para evaluar su posicionamiento actual. El objetivo es identificar oportunidades que permitan fortalecer su competitividad, "
+    "captar mayor interés y mejorar sus posibilidades de concretar una venta."
+)
+SINGLE_PROPERTY_MACRO_COPY = (
+    "El financiamiento y la capacidad de decisión siguen influyendo. El IPoM de septiembre describe una demanda interna más débil y "
+    "deterioro del mercado laboral y la confianza, factores que pueden extender las decisiones de los hogares.",
+    "El subsidio a la tasa y FOGAES se limita a viviendas nuevas elegibles de hasta 6.000 UF; puede reducir cerca de un punto la tasa "
+    "y permitir un pie de 10%. No se atribuye ese beneficio a esta propiedad usada: puede, en cambio, aumentar la competencia relativa "
+    "de parte de la oferta nueva. Por eso conviene revisar su posición frente a alternativas y la respuesta comercial observada.",
+)
 
 
 def number(value: Any) -> float | None:
@@ -777,6 +792,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         model.setdefault("initials", _initials(model.get("name")))
         executive_models.append(model)
     all_rent = bool(property_models) and all(bool(item.get("is_rental")) for item in property_models)
+    single_property_only = len(property_models) == 1 and not bool(property_models[0].get("is_rental"))
     mixed_operations = bool({bool(item.get("is_rental")) for item in property_models}) and len({bool(item.get("is_rental")) for item in property_models}) > 1
     if all_rent:
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de arriendo"
@@ -788,17 +804,35 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         hero_description = "Cada análisis conserva su operación, evidencia y recomendación específica."
         context_note = "CONTEXTO DE MERCADO · Cada propiedad se evalúa por separado según su operación y segmento."
         footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un precio o valor final de contrato."
+    elif single_property_only:
+        hero_title = SINGLE_PROPERTY_HERO_TITLE
+        hero_description = SINGLE_PROPERTY_HERO_DESCRIPTION
+        context_note = ""
+        footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta."
     else:
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de compradores"
         hero_description = "Observamos el mercado y las alternativas disponibles para ayudarte a mantener un posicionamiento competitivo y capturar nuevas oportunidades de demanda."
         context_note = str(property_models[0].get("context_note") or "") if property_models else ""
         footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta."
+    now_chile = datetime.now(ZoneInfo("America/Santiago"))
+    spanish_months = (
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+    )
+    macro_context = {
+        "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only else (),
+        "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only else "",
+    }
+    report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
     return template.render(
         template_version=TEMPLATE_VERSION,
         email=email,
         logo_url=(base_url or Config.CRM_BASE_URL).rstrip("/") + "/static/logo.png",
         properties=property_models,
         executives=executive_models,
+        single_property_only=single_property_only,
+        macro_context=macro_context,
+        report_date=report_date,
         hero_title=hero_title,
         hero_description=hero_description,
         context_note=context_note,

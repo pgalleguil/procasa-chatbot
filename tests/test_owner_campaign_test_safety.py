@@ -349,6 +349,7 @@ def test_test_executive_resolves_active_crm_contact_by_assigned_name():
             return next((item for item in self.records if all(item.get(key) == value for key, value in query.items())), None)
 
         def find(self, query, projection):
+            self.query = (query, projection)
             return [item for item in self.records if all(item.get(key) == value for key, value in query.items())]
 
     class CRM:
@@ -367,12 +368,11 @@ def test_test_executive_resolves_active_crm_contact_by_assigned_name():
         "estado": {"ejecutivo": "Ejecutiva desde propiedad"},
     })
     assert executive == {
-        "name": "Ejecutiva desde propiedad", "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
-        "initials": "", "source": "usuarios",
+        "name": "Ejecutiva desde propiedad", "directory_name": "Ejecutiva desde propiedad",
+        "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
+        "initials": "", "source": "usuarios", "match_type": "EXACT_NAME", "match_unique": True,
     }
-    assert db.users.query[0] == {
-        "nombre": "Ejecutiva desde propiedad", "rol": "agente", "is_active": True,
-    }
+    assert db.users.query[0] == {"rol": "agente", "is_active": True}
     fallback = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "Vacante"}})
     assert fallback["name"] == "Equipo PROCASA"
     assert fallback["email"] == fallback["phone"] == ""
@@ -393,6 +393,7 @@ def test_executive_contact_prefers_complete_property_contact_without_directory_l
     assert executive["email"] == "ejecutiva@procasa.cl"
     assert executive["phone"] == "+56912345678"
     assert executive["source"] == "property"
+    assert executive["match_type"] == "PROPERTY_CONTACT"
 
 
 def test_executive_directory_lookup_uses_exact_normalized_name_and_completes_partial_property_contact():
@@ -427,6 +428,107 @@ def test_executive_directory_lookup_uses_exact_normalized_name_and_completes_par
     assert executive["email"] == "directo@procasa.cl"
     assert executive["phone"] == "+56987654321"
     assert executive["source"] == "property+usuarios"
+
+
+def test_executive_directory_matches_property_name_with_unique_extra_surname():
+    class Users:
+        def find(self, query, projection):
+            assert query == {"rol": "agente", "is_active": True}
+            return [{
+                "nombre": "Erika Garrido", "rol": "agente", "is_active": True,
+                "email": "egarrido@procasa.cl", "telefono": "+56991951317",
+            }]
+
+    class CRM:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return Users()
+
+    executive = runtime._resolve_executive(CRM(), {
+        "estado": {"ejecutivo": "Erika Garrido Varela"},
+    })
+
+    assert executive["name"] == "Erika Garrido Varela"
+    assert executive["directory_name"] == "Erika Garrido"
+    assert executive["email"] == "egarrido@procasa.cl"
+    assert executive["phone"] == "+56991951317"
+    assert executive["match_type"] == "UNIQUE_NAME_SUBSET"
+    assert executive["match_unique"] is True
+
+
+def test_exact_normalized_full_name_match_precedes_name_subset():
+    class Users:
+        def find(self, _query, _projection):
+            return [
+                {"nombre": "Jose Perez", "rol": "agente", "is_active": True,
+                 "email": "jose@procasa.cl", "telefono": "+56912345678"},
+                {"nombre": "Jose Perez Soto", "rol": "agente", "is_active": True,
+                 "email": "other@procasa.cl", "telefono": "+56987654321"},
+            ]
+
+    class CRM:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return Users()
+
+    executive = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "José Pérez"}})
+    assert executive["directory_name"] == "Jose Perez"
+    assert executive["match_type"] == "EXACT_NAME"
+    assert executive["email"] == "jose@procasa.cl"
+
+
+def test_ambiguous_partial_executive_matches_block_contact_resolution():
+    class Users:
+        def find(self, _query, _projection):
+            return [
+                {"nombre": "Erika Garrido", "rol": "agente", "is_active": True,
+                 "email": "one@procasa.cl", "telefono": "+56912345678"},
+                {"nombre": "Erika Varela", "rol": "agente", "is_active": True,
+                 "email": "two@procasa.cl", "telefono": "+56987654321"},
+            ]
+
+    class CRM:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return Users()
+
+    executive = runtime._resolve_executive(CRM(), {
+        "estado": {"ejecutivo": "Erika Garrido Varela"},
+    })
+    assert executive["email"] == executive["phone"] == ""
+    assert executive["match_type"] == "AMBIGUOUS_NAME_SUBSET"
+    assert executive["match_unique"] is False
+
+
+def test_inactive_and_missing_executive_directory_matches_block_contact_resolution():
+    class Users:
+        def __init__(self, records):
+            self.records = records
+
+        def find(self, query, _projection):
+            return [item for item in self.records if all(item.get(key) == value for key, value in query.items())]
+
+    class CRM:
+        def __init__(self, records):
+            self.users = Users(records)
+
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return self.users
+
+    inactive = runtime._resolve_executive(CRM([{
+        "nombre": "Erika Garrido", "rol": "agente", "is_active": False,
+        "email": "inactive@procasa.cl", "telefono": "+56912345678",
+    }]), {"estado": {"ejecutivo": "Erika Garrido Varela"}})
+    missing = runtime._resolve_executive(CRM([{
+        "nombre": "Erika Alvarado", "rol": "agente", "is_active": True,
+        "email": "other@procasa.cl", "telefono": "+56912345678",
+    }]), {"estado": {"ejecutivo": "Erika Garrido Varela"}})
+
+    assert inactive["email"] == inactive["phone"] == ""
+    assert inactive["match_type"] == "NO_MATCH"
+    assert missing["email"] == missing["phone"] == ""
+    assert missing["match_type"] == "NO_MATCH"
 
 
 def test_executive_directory_normalized_name_ambiguity_fails_closed():

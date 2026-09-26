@@ -153,6 +153,25 @@ def _fold(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
+def _directory_name_matches_assigned(directory_name: Any, assigned_name: Any) -> bool:
+    """Allow an ordered, multi-token directory name contained in assignment."""
+    directory_tokens = _fold(directory_name).split()
+    assigned_tokens = _fold(assigned_name).split()
+    if (
+        len(directory_tokens) < 2
+        or len(directory_tokens) > len(assigned_tokens)
+        or directory_tokens[0] != assigned_tokens[0]
+    ):
+        return False
+    position = 0
+    for token in assigned_tokens:
+        if token == directory_tokens[position]:
+            position += 1
+            if position == len(directory_tokens):
+                return True
+    return False
+
+
 def _operation_flag(value: Any) -> bool | None:
     if isinstance(value, bool):
         return value
@@ -401,35 +420,52 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
     # has priority. Partial property contacts are completed from the CRM below.
     if name and property_email and property_phone:
         return {
-            "name": name, "email": property_email, "phone": property_phone,
-            "initials": "", "source": "property",
+            "name": name, "directory_name": "", "email": property_email, "phone": property_phone,
+            "initials": "", "source": "property", "match_type": "PROPERTY_CONTACT", "match_unique": True,
         }
 
     user: Mapping[str, Any] = {}
+    directory_name = ""
+    match_type = "PROPERTY_CONTACT" if name and property_email and property_phone else "NO_MATCH"
+    match_unique = bool(name and property_email and property_phone)
     if name:
         try:
             users = db["usuarios"]
-            candidate = users.find_one(
-                {"nombre": name, "rol": "agente", "is_active": True},
+            directory_users = list(users.find(
+                {"rol": "agente", "is_active": True},
                 {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1, "tel": 1, "movil": 1},
-            )
-            if isinstance(candidate, Mapping) and _fold(candidate.get("nombre")) == _fold(name):
-                user = candidate
-            else:
-                # Some legacy CRM names differ only by casing, accents, or
-                # punctuation. Match normalized whole names, never substrings
-                # or fuzzy candidates; ambiguous matches fail closed.
-                candidates = [
-                    item for item in users.find(
-                        {"rol": "agente", "is_active": True},
-                        {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1, "tel": 1, "movil": 1},
-                    )
-                    if isinstance(item, Mapping) and _fold(item.get("nombre")) == _fold(name)
+            ))
+            active_named = [
+                item for item in directory_users
+                if isinstance(item, Mapping) and _fold(item.get("nombre"))
+            ]
+            exact_matches = [item for item in active_named if _fold(item.get("nombre")) == _fold(name)]
+            if len(exact_matches) == 1:
+                user = exact_matches[0]
+                directory_name = str(user.get("nombre") or "")
+                match_type = "EXACT_NAME"
+                match_unique = True
+            elif not exact_matches:
+                subset_matches = [
+                    item for item in active_named
+                    if _directory_name_matches_assigned(item.get("nombre"), name)
                 ]
-                if len(candidates) == 1:
-                    user = candidates[0]
+                if len(subset_matches) == 1:
+                    user = subset_matches[0]
+                    directory_name = str(user.get("nombre") or "")
+                    match_type = "UNIQUE_NAME_SUBSET"
+                    match_unique = True
+                elif subset_matches:
+                    match_type = "AMBIGUOUS_NAME_SUBSET"
+                    match_unique = False
+            elif len(exact_matches) > 1:
+                match_type = "AMBIGUOUS_EXACT_NAME"
+                match_unique = False
         except Exception:
-            candidate = None
+            user = {}
+            directory_name = ""
+            match_type = "DIRECTORY_LOOKUP_FAILED"
+            match_unique = False
 
     email = property_email or _valid_owner_email(user.get("email") or user.get("username")) or ""
     phone_value = property_phone or user.get("telefono") or user.get("tel") or user.get("movil") or user.get("phone")
@@ -441,10 +477,13 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
     source = "property+usuarios" if user and (property_email or property_phone) else ("usuarios" if user else "estado.ejecutivo")
     return {
         "name": name or "Equipo PROCASA",
+        "directory_name": directory_name,
         "email": email,
         "phone": phone,
         "initials": "",
         "source": source if name else "fallback",
+        "match_type": match_type,
+        "match_unique": match_unique,
     }
 
 

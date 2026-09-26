@@ -149,7 +149,7 @@
       .footer { padding:14px 28px 21px; color:#9a9eaa; font-size:9px; line-height:1.5; text-align:center; }
       .footer img { width:48px; height:auto; margin:0 auto 8px; opacity:.8; }
       .desktop-only { display:inline; }
-      .hero-single { padding:0; border-right:19px solid #ffffff; border-left:36px solid #ffffff; background-color:#F7F6FF; background-repeat:no-repeat; background-position:center, right center; background-size:100% 100%, 42% 100%; }
+      .hero-single { padding:0; border-right:19px solid #ffffff; border-left:36px solid #ffffff; background-color:#F7F6FF; background-repeat:no-repeat; background-position:center, right center; background-size:100% 100%, 58% 100%; }
       .hero-single-copy { width:69%; padding:21px 10px 19px 22px; vertical-align:middle; }
       .hero-single-aside { width:31%; padding:10px 13px 12px 5px; color:#ffffff; font-family:Georgia,serif; font-size:13px; line-height:1.18; text-align:right; text-shadow:0 1px 3px rgba(20,20,55,.55); vertical-align:bottom; }
       .hero-aside-rule { display:block; width:22px; margin:7px 0 0 auto; border-top:2px solid #ffffff; }
@@ -161,6 +161,15 @@
       .shell-single .context-strip { padding:8px 24px; border-right:19px solid #ffffff; border-left:36px solid #ffffff; font-size:9px; line-height:1.35; }
       .shell-single .context-icon { width:20px; height:20px; line-height:20px; }
       .context-title { color:#4232C5; font-size:8px; letter-spacing:.08em; white-space:nowrap; }
+      .macro-heading-single { display:block; margin-bottom:7px; color:#4232C5; font-size:8px; line-height:1.3; font-weight:700; letter-spacing:.08em; }
+      .macro-kpis-single { width:100%; margin:0 0 7px; border-collapse:collapse; }
+      .macro-kpis-single td { width:33.333%; padding:5px 7px; border:1px solid #DCD9FF; background:#F8F7FF; vertical-align:top; }
+      .macro-kpis-single td + td { border-left:0; }
+      .macro-kpi-label-single { color:#62698A; font-size:7px; line-height:1.25; font-weight:700; letter-spacing:.035em; }
+      .macro-kpi-value-single { margin-top:2px; color:#17175F; font-size:12px; line-height:1.15; font-weight:700; }
+      .macro-kpi-note-single { margin-top:2px; color:#62698A; font-size:7px; line-height:1.25; }
+      .macro-copy-single { margin:4px 0 0; color:#515B70; font-size:10.5px; line-height:1.48; }
+      .macro-source-single { margin-top:5px; color:#7A8192; font-size:7px; line-height:1.25; }
       .context-bar { display:inline-block; width:3px; margin:0 1px; background:#4232C5; vertical-align:bottom; }
       .context-bar-one { height:6px; }
       .context-bar-two { height:10px; }
@@ -184,17 +193,34 @@
       .single-feature .comp-icon-bed i { width:4px; height:4px; }
       .single-feature .comp-icon-bed b { top:6px; }
       .single-feature .comp-icon-bath i { top:5px; height:5px; }
+      .single-feature .comp-icon { color:#5D4BC7; border-radius:3px; background:#F0EEFF; }
+      .single-feature .comp-icon-area { border:0; }
+      .single-feature .comp-icon-area:before { position:absolute; left:3px; top:3px; width:6px; height:6px; border:1px solid #6252D0; border-radius:1px; content:""; }
+      .single-feature .comp-icon-area:after { position:absolute; left:6px; top:2px; height:9px; border-left:1px solid #6252D0; content:""; }
+      .single-feature .comp-icon-area i { display:none; }
+      .single-feature .comp-icon-bed { height:13px; border:0; }
+      .single-feature .comp-icon-bed:before { position:absolute; left:2px; top:3px; width:9px; height:5px; border:1px solid #6252D0; border-radius:2px 2px 0 0; background:#ffffff; content:""; }
+      .single-feature .comp-icon-bed:after { position:absolute; left:2px; right:2px; bottom:2px; border-top:1px solid #6252D0; content:""; }
+      .single-feature .comp-icon-bed i { left:4px; top:4px; width:3px; height:2px; border:0; border-radius:1px; background:#6252D0; }
+      .single-feature .comp-icon-bed b { display:none; }
+      .single-feature .comp-icon-bath { height:13px; border:0; }
+      .single-feature .comp-icon-bath:before { position:absolute; left:2px; right:2px; top:5px; height:4px; border:1px solid #6252D0; border-top:0; border-radius:0 0 4px 4px; background:#ffffff; content:""; }
+      .single-feature .comp-icon-bath:after { position:absolute; left:3px; top:3px; width:4px; height:2px; border-top:1px solid #6252D0; border-right:1px solid #6252D0; content:""; }
+      .single-feature .comp-icon-bath i, .single-feature .comp-icon-bath b { display:none; }
       .single-operation { margin-top:5px; color:#62698A; font-size:11px; line-height:1.3; }
       .single-price-cell { width:25%; padding:5px 10px !important; border-left:1px solid #E5E6EF; text-align:center; vertical-align:middle; }
       .single-price-label { color:#62698A; font-size:9px; line-height:1.35; letter-spacing:.08em; text-transform:uppercase; }
       .single-price { margin-top:4px; color:#17175F; font-size:24px; line-height:1.1; font-weight:700; white-space:nowrap; }
       .valuation-strip-single { width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-radius:9px; background:#FBFAFF; }
-      .valuation-strip-single td { width:25%; padding:8px 9px; vertical-align:middle; border-left:1px solid #ECEBF3; }
+      .valuation-strip-single td { width:25%; padding:8px 9px; vertical-align:top; border-left:1px solid #ECEBF3; }
       .valuation-strip-single td:first-child { border-left:0; }
+      .valuation-strip-single td:nth-child(2) { background:#FBFBFD; }
+      .valuation-strip-single td:nth-child(2) .strip-value { color:#62698A; font-size:15px; }
+      .valuation-strip-single td:nth-child(2) .strip-note { color:#7A8192; font-size:8px; }
       .valuation-three td { width:33.333%; }
-      .valuation-strip-single .label { color:#62698A; font-size:8px; letter-spacing:.045em; white-space:nowrap; }
-      .strip-icon-single { display:inline-block; width:21px; height:20px; margin-right:6px; color:#4232C5; border:0; font-size:18px; font-weight:700; line-height:20px; text-align:center; vertical-align:-3px; }
-      .valuation-strip-single .strip-value { margin-top:5px; color:#17175F; font-size:17px; line-height:1.12; font-weight:700; }
+      .valuation-strip-single .label { display:block; height:20px; color:#62698A; font-size:8px; line-height:20px; letter-spacing:.045em; white-space:nowrap; }
+      .strip-icon-single { display:inline-block; width:21px; height:20px; margin-right:6px; color:#4232C5; border:0; font-size:18px; font-weight:700; line-height:20px; text-align:center; vertical-align:middle; }
+      .valuation-strip-single .strip-value { min-height:38px; margin-top:5px; color:#17175F; font-size:17px; line-height:1.12; font-weight:700; }
       .valuation-strip-single .strip-note { margin-top:3px; color:#62698A; font-size:9px; line-height:1.25; }
       .valuation-suggested { background:#ECEBFF; }
       .valuation-suggested .strip-value { color:#4232C5; font-size:20px; }
@@ -252,8 +278,10 @@
       .position-marker-grid, .position-caption-grid { width:100%; table-layout:fixed; }
       .position-marker-row td { height:12px; padding-top:0; text-align:center; vertical-align:top; }
       .position-marker { display:inline-block; width:9px; height:9px; border-radius:50%; }
-      .position-marker-reference { position:relative; top:-13px; background:#B8B6D3; border:1px solid #ffffff; }
+      .position-marker-reference { position:relative; top:-15px; width:11px; height:11px; background:#6252D0; border:2px solid #ffffff; box-shadow:0 0 0 1px #6252D0; }
       .position-marker-property { position:relative; top:-16px; width:17px; height:17px; background:#17175F; border:2px solid #ffffff; box-shadow:0 0 0 1px #17175F; }
+      .position-marker-leader-reference:after { position:absolute; left:50%; top:15px; height:24px; border-left:1px solid #6252D0; content:""; }
+      .position-marker-leader-property:after { position:absolute; left:50%; top:21px; height:45px; border-left:1px solid #17175F; content:""; }
       .position-caption-row td { color:#62698A; font-size:9px; line-height:1.3; text-align:center; vertical-align:top; }
       .position-caption-row strong { color:#17175F; font-size:9px; }
       .position-reference-callout { display:inline-block; padding:4px 7px; color:#62698A; background:#F3F2F8; border-radius:7px; font-size:8px; line-height:1.25; white-space:nowrap; }
@@ -275,9 +303,24 @@
       .position-unavailable-card { margin-top:14px; padding:14px; border:1px solid #E5E6EF; border-radius:8px; color:#62698A; background:#F7F6FF; font-size:10px; line-height:1.45; }
       .position-explanation { margin:0; padding-left:9px; border-left:1px solid #E5E6EF; color:#62698A; font-size:8px; line-height:1.25; }
       .comparables-grid-single { width:100%; margin:10px 0 0; border-collapse:separate !important; border-spacing:9px 0; }
-      .comp-card-single { width:33.333%; height:82px; padding:10px 11px 8px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
-      .comp-card-single .comp-icon-area { width:12px; height:12px; }
-      .comp-card-single .comp-icon-area i { left:1px; top:4px; width:9px; }
+      .comp-card-single { width:33.333%; height:68px; padding:9px 10px 7px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
+      .comp-card-single .comparable-main-single { height:auto; min-height:14px; overflow:visible; margin-top:6px; font-size:9px; line-height:1.35; }
+      .comp-card-single .comp-attribute-row { white-space:nowrap; }
+      .comp-card-single .comp-attribute { margin-right:0; font-size:9px; vertical-align:middle; }
+      .comp-card-single .comp-icon { width:13px; height:13px; margin-right:3px; color:#5D4BC7; vertical-align:-3px; border-radius:3px; background:#F0EEFF; }
+      .comp-card-single .comp-icon-area { border:0; }
+      .comp-card-single .comp-icon-area:before { position:absolute; left:3px; top:3px; width:6px; height:6px; border:1px solid #6252D0; border-radius:1px; content:""; }
+      .comp-card-single .comp-icon-area:after { position:absolute; left:6px; top:2px; height:9px; border-left:1px solid #6252D0; content:""; }
+      .comp-card-single .comp-icon-area i { display:none; }
+      .comp-card-single .comp-icon-bed { border:0; }
+      .comp-card-single .comp-icon-bed:before { position:absolute; left:2px; top:3px; width:9px; height:5px; border:1px solid #6252D0; border-radius:2px 2px 0 0; background:#ffffff; content:""; }
+      .comp-card-single .comp-icon-bed:after { position:absolute; left:2px; right:2px; bottom:2px; border-top:1px solid #6252D0; content:""; }
+      .comp-card-single .comp-icon-bed i { left:4px; top:4px; width:3px; height:2px; border:0; border-radius:1px; background:#6252D0; }
+      .comp-card-single .comp-icon-bed b { display:none; }
+      .comp-card-single .comp-icon-bath { border:0; }
+      .comp-card-single .comp-icon-bath:before { position:absolute; left:2px; right:2px; top:5px; height:4px; border:1px solid #6252D0; border-top:0; border-radius:0 0 4px 4px; background:#ffffff; content:""; }
+      .comp-card-single .comp-icon-bath:after { position:absolute; left:3px; top:3px; width:4px; height:2px; border-top:1px solid #6252D0; border-right:1px solid #6252D0; content:""; }
+      .comp-card-single .comp-icon-bath i, .comp-card-single .comp-icon-bath b { display:none; }
       .comparable-card-heading { white-space:nowrap; }
       .comparable-rank-single { display:inline-block; width:20px; height:20px; margin-right:6px; color:#4232C5; background:#ECEBFF; border-radius:50%; font-size:9px; line-height:20px; text-align:center; vertical-align:middle; }
       .comparable-source-single { color:#17175F; font-size:10px; line-height:1.3; font-weight:700; text-transform:uppercase; vertical-align:middle; }
@@ -334,6 +377,7 @@
       .price-compare-single td { width:33.333%; padding:8px 7px; border:1px solid #EAE2D6; border-radius:6px; background:#FBF9F4; vertical-align:top; }
       .price-compare-single .label { font-size:7px; letter-spacing:.02em; white-space:nowrap; }
       .price-compare-single strong { display:block; margin-top:4px; color:#17175F; font-size:17px; line-height:1.1; white-space:nowrap; }
+      .price-compare-single td, .price-compare-single .label, .price-compare-single strong { text-align:center; }
       .document-line-single { width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-radius:8px; background:#ffffff; }
       .document-line-single td { padding:10px 11px; vertical-align:middle; }
       .document-icon-single { width:30px; color:#4232C5; font-size:9px; font-weight:700; }
@@ -356,9 +400,59 @@
       .communal-metric-label { color:#62698A; font-size:8px; line-height:1.25; }
       .communal-metric-value { margin-top:2px; color:#17175F; font-size:11px; line-height:1.25; font-weight:700; }
       .communal-context-copy { margin:5px 0 0; color:#62698A; font-size:9px; line-height:1.3; }
+      .single-property-review .position-caption-row td { padding:0 3px; text-align:left; }
+      .single-property-review .position-caption-row td + td { text-align:right; }
+      .single-property-review .caption-dot-property { background:#17175F; }
+      .single-property-review .position-callout-single { position:relative; display:inline-block; width:112px; margin-left:-53px; padding-top:5px; color:#62698A; font-size:8px; line-height:1.25; text-align:center; vertical-align:top; }
+      .single-property-review .position-callout-single:before { content:none; }
+      .single-property-review .position-callout-property { color:#17175F; font-weight:700; }
+      .position-close-reference, .position-close-property { display:block; width:100%; box-sizing:border-box; padding:2px 0; text-align:center; color:#62698A; font-size:8px; line-height:1.3; }
+      .position-close-property { color:#17175F; font-weight:700; }
+      .single-property-review .position-callout-first { margin-left:0; text-align:left; }
+      .single-property-review .position-callout-first:before { left:5px; }
+      .single-property-review .position-callout-last { margin-left:-108px; text-align:right; }
+      .single-property-review .position-callout-last:before { left:auto; right:5px; }
+      .market-reference-single { margin:10px 0 0; padding:9px 11px; border:1px solid #E9E8F0; border-radius:8px; background:#FBFBFD; }
+      .market-reference-title-single { color:#4F5570; font-size:10px; line-height:1.25; font-weight:700; letter-spacing:.035em; }
+      .market-reference-subtitle-single { margin-top:2px; color:#62698A; font-size:9px; line-height:1.3; }
+      .market-reference-grid-single { width:100%; margin-top:7px; }
+      .market-reference-grid-single td { width:50%; padding:5px 8px 0 0; border-top:1px solid #E5E6EF; vertical-align:top; }
+      .market-reference-grid-single td + td { padding-left:10px; border-left:1px solid #E5E6EF; }
+      .market-reference-label-single { color:#62698A; font-size:8px; line-height:1.25; letter-spacing:.04em; text-transform:uppercase; }
+      .market-reference-value-single { margin-top:2px; color:#424967; font-size:12px; line-height:1.2; font-weight:700; }
+      .market-reference-note-single { margin-top:2px; color:#62698A; font-size:8px; line-height:1.25; }
+      .market-reference-copy-single { margin:6px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
+      .market-reference-date-single { margin-top:4px; color:#7A8192; font-size:8px; line-height:1.25; }
+      .sample-note-single { margin:6px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
+      .sample-note-single strong { color:#41486C; }
+      .single-line-icon { position:relative; display:inline-block; width:15px; height:15px; margin-right:5px; color:#4232C5; vertical-align:-3px; box-sizing:border-box; }
+      .single-line-icon-price:before { position:absolute; left:2px; top:3px; width:10px; height:8px; border:1px solid #4232C5; border-radius:2px; content:""; }
+      .single-line-icon-price:after { position:absolute; left:4px; right:4px; top:6px; border-top:1px solid #4232C5; content:""; }
+      .single-line-icon-market:before { position:absolute; left:2px; bottom:2px; width:2px; height:5px; border:1px solid #4232C5; content:""; box-shadow:4px -3px 0 -1px #ffffff, 4px -3px 0 0 #4232C5, 8px -6px 0 -1px #ffffff, 8px -6px 0 0 #4232C5; }
+      .single-line-icon-position:before { position:absolute; left:3px; top:3px; width:8px; height:8px; border:1px solid #4232C5; border-radius:50%; content:""; }
+      .single-line-icon-position:after { position:absolute; left:6px; top:6px; width:3px; height:3px; border:1px solid #4232C5; border-radius:50%; content:""; }
+      .single-line-icon-new-value:before { position:absolute; left:7px; top:2px; height:9px; border-left:1px solid #4232C5; content:""; }
+      .single-line-icon-new-value:after { position:absolute; left:4px; top:7px; width:6px; height:6px; border-right:1px solid #4232C5; border-bottom:1px solid #4232C5; content:""; transform:rotate(45deg); }
+      .market-small-icon { position:relative; display:inline-block; width:14px; height:14px; margin-right:5px; vertical-align:-3px; box-sizing:border-box; }
+      .market-small-icon-reference:before { position:absolute; left:2px; top:2px; width:9px; height:9px; border:1px solid #4232C5; border-radius:50%; content:""; }
+      .market-small-icon-reference:after { position:absolute; left:5px; top:5px; width:3px; height:3px; border:1px solid #4232C5; border-radius:50%; content:""; }
+      .market-small-icon-property:before { position:absolute; left:2px; top:6px; width:9px; height:7px; border:1px solid #4232C5; border-top:0; content:""; }
+      .market-small-icon-property:after { position:absolute; left:2px; top:2px; width:8px; height:8px; border-top:1px solid #4232C5; border-left:1px solid #4232C5; content:""; transform:rotate(45deg); }
+      .market-small-icon-universe:before { position:absolute; left:2px; top:2px; width:9px; height:9px; border:1px solid #4232C5; content:""; }
+      .market-small-icon-universe:after { position:absolute; left:4px; top:5px; width:6px; border-top:1px solid #4232C5; content:""; box-shadow:0 3px 0 #4232C5; }
+      .contact-line-single { display:block; margin-top:3px; color:#4D5675; font-size:10px; line-height:1.35; }
+      .contact-icon-single { position:relative; display:inline-block; width:13px; height:12px; margin-right:5px; color:#4232C5; vertical-align:-2px; box-sizing:border-box; }
+      .contact-icon-email-single { border:1px solid #4232C5; border-radius:2px; }
+      .contact-icon-email-single:before, .contact-icon-email-single:after { position:absolute; top:2px; width:7px; border-top:1px solid #4232C5; content:""; }
+      .contact-icon-email-single:before { left:0; transform:rotate(34deg); }
+      .contact-icon-email-single:after { right:0; transform:rotate(-34deg); }
+      .contact-icon-phone-single:before { position:absolute; left:4px; top:1px; width:5px; height:9px; border-left:1px solid #4232C5; border-right:1px solid #4232C5; border-radius:5px; content:""; transform:rotate(-35deg); }
+      .contact-icon-phone-single:after { position:absolute; left:2px; top:1px; width:3px; height:3px; border-left:1px solid #4232C5; border-bottom:1px solid #4232C5; content:""; transform:rotate(-35deg); }
+      .report-date-single { margin:8px 0 3px; color:#7A8192; font-size:8px; line-height:1.3; text-align:center; }
       .actions-single { width:350px; max-width:100%; margin:18px auto 8px; }
       .actions-single .primary { box-sizing:border-box; height:46px; padding:0 18px; background:#17175F; border-radius:999px; font-size:11px; line-height:46px; }
-      .actions-single .secondary { padding:9px 10px 0; color:#4232C5 !important; font-size:9px; }
+      .actions-single .advisor-review { padding:5px 8px 0; color:#7A7890; font-size:9px; line-height:1.35; text-align:center; }
+      .actions-single .advisor-review a { color:#6252D0 !important; font-weight:700; white-space:nowrap; }
       .executive-single { padding:10px 20px; border-top:1px solid #E5E6EF; }
       .executive-one { padding:0 !important; border-top:0; text-align:left; }
       .executive-single table { width:100%; }
@@ -368,10 +462,9 @@
       .exec-details-single { color:#62698A; font-size:9px; line-height:1.4; }
       .exec-details-single strong { display:block; color:#17175F; font-size:11px; }
       .exec-name-single { display:block; margin-top:1px; color:#17175F; font-size:10px; line-height:1.25; font-weight:700; }
-      .exec-contact-single { display:block; margin-top:1px; color:#62698A; font-size:9px; line-height:1.25; }
+      .exec-contact-single { display:block; margin-top:2px; color:#62698A; font-size:10px; line-height:1.35; }
       .exec-brand-cell-single { width:105px; text-align:right; }
       .brand-logo-executive-single { display:block; width:96px; height:40px; margin-left:auto; object-fit:cover; object-position:center; }
-      .exec-tagline-single { width:120px; color:#4232C5; font-family:Georgia,serif; font-size:12px; line-height:1.25; font-style:italic; text-align:right; }
       .footer-single { padding:12px 42px 14px; color:#62698A; font-size:9px; line-height:1.45; text-align:center; border-top:1px solid #E5E6EF; }
       .brand-logo-header { display:block; width:96px; height:40px; object-fit:cover; object-position:center; }
       .brand-logo-footer { display:block; width:60px; height:26px; margin:0 auto 2px; object-fit:cover; object-position:center; }
@@ -416,6 +509,11 @@
         .hero-single p { width:auto; }
         .context-strip { padding:8px 16px; }
         .shell-single .context-strip { border-right:0; border-left:0; }
+        .macro-kpis-single td { padding:4px 5px; }
+        .macro-kpi-label-single, .macro-kpi-note-single, .macro-source-single { font-size:6.5px; }
+        .macro-kpi-value-single { font-size:11px; }
+        .macro-kpi-context-single { font-size:8px; }
+        .macro-copy-single { font-size:9.5px; line-height:1.43; }
         .content-single { padding:10px 12px 12px; }
         .portfolio-summary-heading { margin-bottom:7px; font-size:17px; }
         .portfolio-item { margin-bottom:7px; }
@@ -448,12 +546,6 @@
         .evidence-heading-row td { display:block; width:auto !important; text-align:left !important; }
         .evidence-badge-single { margin-top:5px; }
         .position-caption-row td { font-size:8px; }
-        .position-property-callout, .position-reference-callout { max-width:92px; box-sizing:border-box; white-space:normal; }
-        .position-property-row td { height:28px; }
-        .position-property-anchor { position:relative; }
-        .position-property-callout { position:absolute; top:0; left:-24px; }
-        .position-property-anchor-first .position-property-callout { left:0; }
-        .position-property-anchor-last .position-property-callout { left:auto; right:0; }
         .position-metric { display:block; width:auto !important; }
         .position-metric + .position-metric { border-left:1px solid #E5E6EF; border-top:6px solid #ffffff; }
         .comp-card-single { display:block; width:auto !important; margin-bottom:7px; }
@@ -466,7 +558,6 @@
         .brand-logo-executive-single { width:62px; }
         .document-evidence-single { display:none; }
         .document-evidence-mobile-single { display:block; }
-        .exec-tagline-single { width:95px; font-size:10px; }
         .footer-single { padding-left:16px; padding-right:16px; }
         .footer-brand-cell-single { width:58px; padding-right:7px; }
         .footer-brand-single { width:52px; height:24px; }
@@ -478,7 +569,7 @@
   <body>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="page" style="width:100%;margin:0;padding:0;background:#F5F5F3;">
       <tr><td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" class="shell shell-single" style="width:100%;max-width:740px;background:#ffffff;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" class="shell shell-single{% if properties|length == 1 %} single-property-review{% elif properties|length == 2 %} two-property-detail{% endif %}" style="width:100%;max-width:740px;background:#ffffff;">
           <tr><td class="header">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
               <tr>
@@ -487,10 +578,10 @@
               </tr>
             </table>
           </td></tr>
-          {% if true %}
-            <tr><td class="hero-single" style="background-image:linear-gradient(90deg,#F7F6FF 0%,#F7F6FF 48%,rgba(247,246,255,.92) 56%,rgba(247,246,255,.48) 69%,rgba(34,34,67,.25) 83%,rgba(20,20,45,.50) 100%),url('{{ logo_url|replace('logo.png', 'propiedades/pexels-alishalubben-2305747.jpg') }}');">
+          {% if single_property_only %}
+            <tr><td class="hero-single" style="background-image:linear-gradient(90deg,#F7F6FF 0%,#F7F6FF 35%,rgba(247,246,255,.98) 44%,rgba(247,246,255,.88) 51%,rgba(247,246,255,.65) 59%,rgba(247,246,255,.36) 68%,rgba(247,246,255,.10) 77%,rgba(34,34,67,.08) 88%,rgba(20,20,45,.38) 100%),url('{{ logo_url|replace('logo.png', 'propiedades/pexels-alishalubben-2305747.jpg') }}');">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="hero-single-copy" width="69%">
-                <div class="eyebrow">Seguimiento comercial · Procasa</div>
+                <div class="eyebrow">SEGUIMIENTO COMERCIAL · PROCASA</div>
                 <h1>{{ hero_title }}</h1>
                 <p>{{ hero_description }}</p>
               </td><td class="hero-single-aside" width="31%">Buenas<br />propiedades<br />crean grandes<br />historias<span class="hero-aside-rule"></span></td></tr></table>
@@ -503,7 +594,7 @@
               </tr></table>
             </td></tr>
           {% endif %}
-          {% if context_note %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong> {{ context_note }}</td></tr>{% endif %}
+          {% if single_property_only %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong><div class="macro-heading-single">CHILE · SEPTIEMBRE 2026</div><table role="presentation" cellspacing="0" cellpadding="0" class="macro-kpis-single"><tr><td><div class="macro-kpi-label-single">FINANCIAMIENTO HIPOTECARIO</div><div class="macro-kpi-value-single">≈ 4,1%</div><div class="macro-kpi-note-single">4,08% al 15 sep. · 4,04% prom. agosto</div></td><td><div class="macro-kpi-label-single">TPM</div><div class="macro-kpi-value-single">4,5%</div><div class="macro-kpi-note-single">Vigente al 21 de septiembre</div></td><td><div class="macro-kpi-label-single">CONTEXTO</div><div class="macro-kpi-value-single macro-kpi-context-single">Mayor selectividad / competencia</div><div class="macro-kpi-note-single">Demanda y confianza más débiles</div></td></tr></table>{% for paragraph in macro_context.copy_paragraphs[:2] %}<p class="macro-copy-single">{{ paragraph }}</p>{% endfor %}<div class="macro-source-single">{{ macro_context.source_line }}</div></td></tr>{% elif context_note %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong> {{ context_note }}</td></tr>{% endif %}
           <tr><td class="content content-single">
             {% if properties|length >= 3 %}<div class="portfolio-summary-heading">Tus propiedades en revisión</div>{% endif %}
             {% for property in properties %}
@@ -540,15 +631,26 @@
                   </tr>
                 </table>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="valuation-strip-single"><tr>{% for slot in property.valuation_slots %}<td{% if slot.emphasis %} class="valuation-suggested"{% endif %}><div class="label"><span class="strip-icon-single">{% if loop.index == 1 %}${% elif loop.index == 2 %}▤{% elif loop.index == 3 %}↗{% else %}◎{% endif %}</span>{{ slot.label }}</div><div class="strip-value">{{ slot.value }}</div><div class="strip-note">{{ slot.note }}</div></td>{% endfor %}</tr></table>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="valuation-strip-single"><tr>{% for slot in (property.single_valuation_slots if single_property_only else property.valuation_slots) %}<td{% if slot.emphasis %} class="valuation-suggested"{% endif %}><div class="label">{% if single_property_only %}<span class="single-line-icon single-line-icon-{{ slot.icon }}" aria-hidden="true"></span>{% else %}<span class="strip-icon-single">{% if loop.index == 1 %}${% elif loop.index == 2 %}▤{% elif loop.index == 3 %}↗{% else %}◎{% endif %}</span>{% endif %}{{ slot.label }}</div><div class="strip-value">{{ slot.value }}</div><div class="strip-note">{{ slot.note }}</div></td>{% endfor %}</tr></table>
 
                 {% if property.activity_90d.state == "KNOWN_POSITIVE" %}
                   <section class="activity-90-single"><div class="activity-title-single">Actividad comercial · últimos 90 días</div><table role="presentation" cellspacing="0" cellpadding="0" class="activity-stats-single"><tr><td><div class="activity-stat-label-single">Leads registrados</div><div class="activity-stat-value-single">{{ property.activity_90d.total_leads }}</div></td><td><div class="activity-stat-label-single">Conversaciones</div><div class="activity-stat-value-single">{{ property.activity_90d.conversations }}</div></td><td><div class="activity-stat-label-single">Visitas coordinadas</div><div class="activity-stat-value-single">{{ property.activity_90d.visits }}</div></td></tr></table>{% if property.activity_90d.portals %}<p class="activity-portals-single">Origen de los leads: {% for portal in property.activity_90d.portals %}{{ portal.name }} {{ portal.count }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}</section>
                 {% elif property.activity_90d.state == "KNOWN_ZERO" %}
-                  <section class="activity-90-single"><div class="activity-title-single">Actividad comercial · últimos 90 días</div><div class="activity-stat-value-single">0 leads registrados</div><p class="activity-copy-single">No registramos nuevas consultas en este período. Este dato describe la actividad observada y no determina por sí solo el interés del mercado.</p></section>
+                  <section class="activity-90-single"><div class="activity-title-single">ACTIVIDAD COMERCIAL · ÚLTIMOS 90 DÍAS</div><div class="activity-stat-value-single">0 leads registrados</div><p class="activity-copy-single">No registramos nuevas consultas en este período. Esta señal no determina por sí sola el valor de la propiedad, pero complementa el análisis de posicionamiento, mercado y publicaciones comparables.</p></section>
                 {% endif %}
 
-                {% if property.appraisal.visible and property.appraisal.kind == "COMMUNAL_MARKET_REPORT" and property.appraisal.metrics %}
+                {% if single_property_only and property.market_reference.visible %}
+                  <div class="market-reference-single">
+                    <div class="market-reference-title-single">Referencia comunal · contexto secundario</div>
+                    <div class="market-reference-subtitle-single">{{ property.property_type }} · {{ property.commune }}</div>
+                    <table role="presentation" cellspacing="0" cellpadding="0" class="market-reference-grid-single"><tr>
+                      <td><div class="market-reference-label-single"><span class="market-small-icon market-small-icon-reference" aria-hidden="true"></span>Referencia del segmento</div><div class="market-reference-value-single">{{ property.market_reference.reference_value }}</div><div class="market-reference-note-single">UF/m² de oferta</div></td>
+                      <td><div class="market-reference-label-single"><span class="market-small-icon market-small-icon-universe" aria-hidden="true"></span>Universo observado</div><div class="market-reference-value-single">{{ property.market_reference.universe_value }} {{ property.market_reference.universe_unit }}</div><div class="market-reference-note-single">Universo amplio del mercado comunal</div></td>
+                    </tr></table>
+                    <p class="market-reference-copy-single">El universo comunal entrega una referencia amplia del mercado. Por separado, se seleccionaron 20 publicaciones con características estructurales más comparables para el análisis específico.</p>
+                    {% if property.market_reference.source_date %}<div class="market-reference-date-single">Último corte comunal disponible: {{ property.market_reference.source_date }}</div>{% endif %}
+                  </div>
+                {% elif property.appraisal.visible and property.appraisal.kind == "COMMUNAL_MARKET_REPORT" and property.appraisal.metrics %}
                   <div class="communal-context-single">
                     <div class="communal-context-heading">Contexto de mercado</div>
                     <div class="communal-context-subtitle">{{ property.property_type }} en {{ property.commune }}</div>
@@ -560,17 +662,18 @@
                 {% if property.comparable.visible %}
                   <section class="evidence-single">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="evidence-heading-row"><tr><td><div class="evidence-title-single">{% if property.comparable.effective_type == "PARCEL_WITH_IMPROVEMENTS" %}Propiedades con construcciones similares{% else %}Tu propiedad frente a inmuebles comparables{% endif %}</div></td><td align="right"><span class="evidence-badge-single">{{ property.comparable.badge_label }}</span></td></tr></table>
-                    <p class="evidence-note-single">{% if property.is_rental %}Arriendos publicados observados actualmente; sirven como referencia comercial y no representan valores de contratos cerrados.{% else %}Publicaciones similares observadas actualmente en el mercado; sirven como referencia comercial y no representan precios de cierre.{% endif %}</p>
+                    <p class="evidence-note-single">{% if single_property_only %}{% if property.is_rental %}Seleccionamos arriendos publicados que comparten características relevantes con tu propiedad. Estas referencias ayudan a comparar su posicionamiento frente a alternativas que un arrendatario puede encontrar en el mercado.{% else %}Seleccionamos publicaciones actualmente disponibles que comparten características relevantes con tu propiedad. Estas referencias permiten comparar su posicionamiento frente a alternativas que un comprador puede encontrar en el mercado.{% endif %}{% else %}{% if property.is_rental %}Arriendos publicados observados actualmente; sirven como referencia comercial y no representan valores de contratos cerrados.{% else %}Publicaciones similares observadas actualmente en el mercado; sirven como referencia comercial y no representan precios de cierre.{% endif %}{% endif %}</p>
+                    {% if single_property_only %}<p class="sample-note-single"><strong>De las {{ property.comparable.selected_n }} publicaciones seleccionadas mostramos {{ property.comparable.top3[:3]|length }} referencias representativas. El cálculo utiliza la muestra completa.</strong> Muestra del {{ property.comparable.source_date }}; es distinta del universo comunal.</p>{% endif %}
                     {% if property.comparable.display_status == "REVIEW" %}<div class="review-note">Estas referencias muestran diferencias relevantes y deben revisarse junto con tu asesor.</div>{% endif %}
                     {% if property.comparable.positioning_mode in ["PRICE_M2", "TOTAL_PRICE"] %}
                     <div class="positioning-mode-title">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}{% if property.is_rental %}Comparación por arriendo publicado (UF/mes){% else %}Comparación por precio publicado (UF){% endif %}{% else %}Posicionamiento por {{ property.comparable.positioning_unit_label }}{% endif %}</div>
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-graph">
-                      <tr class="position-graph-labels"><td align="left">Más competitivo<br /><span>(menor valor)</span></td><td align="center">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</td><td align="right">Zona superior<br /><span>(mayor valor)</span></td></tr>
+                      <tr class="position-graph-labels"><td align="left">{% if single_property_only %}Más competitivo{% else %}Más competitivo{% endif %}<br /><span>(menor valor)</span></td><td align="center">{% if single_property_only %}Referencia de mercado{% elif property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</td><td align="right">{% if single_property_only %}Zona superior{% else %}Zona superior{% endif %}<br /><span>(mayor valor)</span></td></tr>
                       <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track"><tr><td style="background:#ECEBFF;"></td><td style="background:#DCD9FA;"></td><td style="background:#BDB6F0;"></td><td style="background:#9185E2;"></td><td style="background:#6252D0;"></td></tr></table></td></tr>
-                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-marker-grid"><tr class="position-marker-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-marker position-marker-reference"></span>{% endif %}{% if cell.marker %}<span class="position-marker position-marker-property"></span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
-                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-caption-grid"><tr class="position-caption-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-reference-callout"><strong>Referencia comparable</strong><br />{{ property.comparable.positioning_reference_label }}</span>{% endif %}</td>{% endfor %}</tr><tr class="position-caption-row"><td colspan="21" style="height:3px;font-size:3px;line-height:3px;">&nbsp;</td></tr><tr class="position-caption-row position-property-row">{% for cell in property.comparable.positioning_graph.cells %}<td{% if cell.marker %} class="position-property-anchor{% if loop.first %} position-property-anchor-first{% elif loop.last %} position-property-anchor-last{% endif %}"{% endif %}>{% if cell.marker %}<span class="position-property-callout"><strong>Tu propiedad</strong><br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
+                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-marker-grid"><tr class="position-marker-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-marker position-marker-reference{% if single_property_only and not property.comparable.positioning_graph.markers_close %} position-marker-leader-reference{% endif %}"></span>{% endif %}{% if cell.marker %}<span class="position-marker position-marker-property{% if single_property_only and not property.comparable.positioning_graph.markers_close %} position-marker-leader-property{% endif %}"></span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
+                      <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-caption-grid">{% if single_property_only and property.comparable.positioning_graph.markers_close %}<tr class="position-caption-row"><td colspan="21"><span class="position-close-reference">Referencia comparable · {{ property.comparable.positioning_reference_label }}</span></td></tr><tr class="position-caption-row position-property-row"><td colspan="21"><span class="position-close-property">Tu propiedad · {{ property.comparable.positioning_property_label }}</span></td></tr>{% elif single_property_only %}<tr class="position-caption-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-callout-single{% if loop.first %} position-callout-first{% elif loop.last %} position-callout-last{% endif %}">Referencia comparable<br />{{ property.comparable.positioning_reference_label }}</span>{% endif %}</td>{% endfor %}</tr><tr class="position-caption-row position-property-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.marker %}<span class="position-callout-single position-callout-property{% if loop.first %} position-callout-first{% elif loop.last %} position-callout-last{% endif %}">Tu propiedad<br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr>{% else %}<tr class="position-caption-row">{% for cell in property.comparable.positioning_graph.cells %}<td>{% if cell.reference %}<span class="position-reference-callout"><strong>Referencia comparable</strong><br />{{ property.comparable.positioning_reference_label }}</span>{% endif %}</td>{% endfor %}</tr><tr class="position-caption-row"><td colspan="21" style="height:3px;font-size:3px;line-height:3px;">&nbsp;</td></tr><tr class="position-caption-row position-property-row">{% for cell in property.comparable.positioning_graph.cells %}<td{% if cell.marker %} class="position-property-anchor{% if loop.first %} position-property-anchor-first{% elif loop.last %} position-property-anchor-last{% endif %}"{% endif %}>{% if cell.marker %}<span class="position-property-callout"><strong>Tu propiedad</strong><br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr>{% endif %}</table></td></tr>
                     </table>
-                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">▥</td><td><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong></td></tr></table></td><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">⌂</td><td><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong></td></tr></table></td></tr></table>
+                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-reference" aria-hidden="true"></span>{% else %}▥{% endif %}</td><td><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong></td></tr></table></td><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-property" aria-hidden="true"></span>{% else %}⌂{% endif %}</td><td><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong></td></tr></table></td></tr></table>
                     {% elif property.appraisal.visible and property.appraisal.kind == "INDIVIDUAL_APPRAISAL" %}
                       <div class="position-fallback-card"><div class="position-fallback-title">Posicionamiento frente a la valoración</div><table role="presentation" cellspacing="0" cellpadding="0" class="position-fallback-values"><tr><td>Precio publicado<strong>{{ property.price_label }}</strong></td><td>Tasación de referencia<strong>{{ property.appraisal.mid_label }}</strong></td></tr></table></div>
                     {% else %}
@@ -578,13 +681,14 @@
                     {% endif %}
                     {% if property.comparable.top3 %}
                       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="comparables-grid-single"><tr>
-                        {% for comparable in property.comparable.top3 %}
+                        {% for comparable in property.comparable.top3[:3] %}
                           <td class="comp-card-single">
                             <div class="comparable-card-heading"><span class="comparable-rank-single">{{ loop.index }}</span><span class="comparable-source-single">{{ comparable.portal }}</span></div>
-                            <div class="comparable-main-single">
-                              {% if comparable.surface_label != "Superficie no disponible" %}<div class="comp-attribute">{% if "terreno" in comparable.surface_label|lower %}<span class="comp-icon comp-icon-land" aria-hidden="true"><i></i><b></b></span>{% else %}<span class="comp-icon comp-icon-area" aria-hidden="true"><i></i></span>{% endif %}{{ comparable.surface_label }}</div>{% endif %}
-                              <div class="comp-attribute-row">{% if comparable.rooms_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-bed" aria-hidden="true"><i></i><b></b></span>{{ comparable.rooms_label|replace(" dorm.", "") }}</span>{% endif %}{% if comparable.baths_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-bath" aria-hidden="true"><i></i><b></b></span>{{ comparable.baths_label|replace(" baño(s)", "") }}</span>{% endif %}{% if comparable.parking_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-parking" aria-hidden="true">P</span>{{ comparable.parking_label }}</span>{% endif %}</div>
-                            </div>
+                            <div class="comparable-main-single"><div class="comp-attribute-row">
+                              {% if comparable.surface_label != "Superficie no disponible" %}<span class="comp-attribute">{% if "terreno" in comparable.surface_label|lower %}<span class="comp-icon comp-icon-land" aria-hidden="true"><i></i><b></b></span>{% else %}<span class="comp-icon comp-icon-area" aria-hidden="true"><i></i></span>{% endif %}{{ comparable.surface_label|replace(" m² construidos", " m² const.")|replace(" m² construido", " m² const.") }}{% if comparable.rooms_label or comparable.baths_label %}&nbsp;·&nbsp;{% endif %}</span>{% endif %}
+                              {% if comparable.rooms_label %}<span class="comp-attribute"><span class="comp-icon comp-icon-bed" aria-hidden="true"><i></i><b></b></span>{{ comparable.rooms_label|replace(" dorm.", " dorm") }}{% if comparable.baths_label %}&nbsp;·&nbsp;{% endif %}</span>{% endif %}
+                              {% if comparable.baths_label %}{% set bath_count = comparable.baths_label|replace(" baño(s)", "") %}<span class="comp-attribute"><span class="comp-icon comp-icon-bath" aria-hidden="true"><i></i><b></b></span>{{ bath_count }} baño{% if bath_count != "1" %}s{% endif %}</span>{% endif %}
+                            </div>{% if comparable.parking_label %}<div class="comp-attribute-row comp-parking-row"><span class="comp-attribute"><span class="comp-icon comp-icon-parking" aria-hidden="true">P</span>{{ comparable.parking_label }}</span></div>{% endif %}</div>
                             <table role="presentation" cellspacing="0" cellpadding="0" class="comparable-value-row"><tr><td><div class="comparable-price-single">{{ comparable.price_label }}</div></td><td align="right">{% if comparable.unit_label != "No disponible" %}<div class="comparable-unit-single">{{ comparable.unit_label }}</div>{% endif %}</td></tr></table>
                           </td>
                         {% endfor %}
@@ -598,23 +702,23 @@
                 {% endif %}
 
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="insights-single"><tr>
-                  <td class="insight-single insight-diagnostic"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-document-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Diagnóstico PROCASA</div></td></tr></table><div class="diagnostic-copy">{{ property.single_diagnostic_text }}</div></td><td class="insight-single-gap"></td>
-                  <td class="insight-single insight-recommendation"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-target-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Recomendación PROCASA</div></td></tr></table><div class="recommendation-title">{{ property.recommendation_title }}</div><p class="recommendation-copy">{{ property.recommendation_text }}</p>
+                  <td class="insight-single insight-diagnostic"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-document-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Diagnóstico PROCASA</div></td></tr></table><div class="diagnostic-copy">{% if single_property_only and property.code|string == "5641" %}La propiedad se encuentra por sobre la referencia observada en la muestra comparable reciente. En los últimos 90 días no registramos nuevas consultas, una señal que no determina por sí sola el valor, pero que refuerza la conveniencia de revisar su posicionamiento frente a alternativas similares.<br /><br />La referencia comunal disponible complementa este análisis como contexto secundario.{% elif single_property_only %}{{ property.single_diagnostic_text }}{% else %}{{ property.diagnostic_text }}{% endif %}</div></td><td class="insight-single-gap"></td>
+                  <td class="insight-single insight-recommendation"><table role="presentation" cellspacing="0" cellpadding="0" class="insight-head-row-single"><tr><td class="insight-icon-cell-single"><span class="insight-icon-box-single insight-icon-target-single" aria-hidden="true"></span></td><td><div class="insight-title-single">Recomendación PROCASA</div></td></tr></table><div class="recommendation-title">{{ property.recommendation_title }}</div><p class="recommendation-copy">{% if single_property_only and property.code|string == "5641" %}Considerando el posicionamiento frente a comparables recientes, la actividad comercial observada y las referencias disponibles, recomendamos revisar el precio a {{ property.recommended_price_label }} para fortalecer su competitividad frente a alternativas similares.{% elif single_property_only %}{{ property.single_recommendation_text }}{% else %}{{ property.recommendation_text }}{% endif %}</p>
                     {% if property.recommended_price_label %}<table role="presentation" cellspacing="0" cellpadding="0" class="price-compare-single"><tr><td><div class="label">Precio actual</div><strong>{{ property.price_label }}</strong></td><td><div class="label">Nuevo valor</div><strong>{{ property.recommended_price_label }}</strong></td><td><div class="label">Ajuste</div><strong>{{ property.appraisal.adjustment_label }}</strong></td></tr></table>{% endif %}
                   </td>
                 </tr></table>
 
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="document-line-single"><tr><td class="document-icon-single"><span class="document-icon-box" aria-hidden="true"><i></i><i></i><i></i></span></td><td class="document-copy-single" width="40%"><strong>{% if property.document.visible %}Informe comercial disponible{% else %}Respaldo comercial{% endif %}</strong><br />{{ property.document["copy"] or "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA." }}<div class="document-evidence-mobile-single">{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<span><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</span>{% elif property.appraisal.metrics %}<span><span class="document-check-single">✓</span> Contexto comunal</span>{% endif %}{% if property.comparable.visible %}<span> &nbsp; <span class="document-check-single">✓</span> Publicaciones comparables</span>{% endif %}</div></td><td class="document-evidence-single"><table role="presentation" cellspacing="0" cellpadding="0" class="document-evidence-grid-single"><tr>{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<td><span class="document-check-single">✓</span> {% if property.is_rental %}Estimación de arriendo{% else %}Tasación individual{% endif %}</td>{% elif property.appraisal.metrics %}<td><span class="document-check-single">✓</span> Contexto comunal</td>{% endif %}{% if property.comparable.visible %}<td><span class="document-check-single">✓</span> Publicaciones comparables</td>{% endif %}</tr></table></td><td align="right">{% if property.document.visible and property.cta.secondary_url %}<a class="document-action-single" href="{{ property.cta.secondary_url }}">Ver informe →</a>{% else %}<span class="document-action-single">Revisar con asesor</span>{% endif %}</td></tr></table>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="document-line-single"><tr><td class="document-icon-single"><span class="document-icon-box" aria-hidden="true"><i></i><i></i><i></i></span></td><td class="document-copy-single" width="40%"><strong>{% if property.document.visible %}Informe comercial disponible{% else %}Respaldo comercial{% endif %}</strong><br />{% if single_property_only %}{{ property.single_document_copy }}{% else %}{{ property.document["copy"] or "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA." }}{% endif %}<div class="document-evidence-mobile-single">{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<span><span class="document-check-single">✓</span> {% if property.is_rental and not single_property_only %}Estimación de arriendo{% elif property.is_rental %}Estimación individual{% else %}Tasación individual{% endif %}</span>{% elif property.document.type == "COMMUNAL_MARKET_REPORT" %}<span><span class="document-check-single">✓</span> {% if single_property_only %}Informe de mercado comunal{% else %}Contexto comunal{% endif %}</span>{% elif not single_property_only and property.appraisal.metrics %}<span><span class="document-check-single">✓</span> Contexto comunal</span>{% endif %}{% if property.comparable.visible %}<span> &nbsp; <span class="document-check-single">✓</span> Publicaciones comparables</span>{% endif %}</div></td><td class="document-evidence-single"><table role="presentation" cellspacing="0" cellpadding="0" class="document-evidence-grid-single"><tr>{% if property.document.type == "INDIVIDUAL_APPRAISAL" %}<td><span class="document-check-single">✓</span> {% if property.is_rental and not single_property_only %}Estimación de arriendo{% elif property.is_rental %}Estimación individual{% else %}Tasación individual{% endif %}</td>{% elif property.document.type == "COMMUNAL_MARKET_REPORT" %}<td><span class="document-check-single">✓</span> {% if single_property_only %}Informe de mercado comunal{% else %}Contexto comunal{% endif %}</td>{% elif not single_property_only and property.appraisal.metrics %}<td><span class="document-check-single">✓</span> Contexto comunal</td>{% endif %}{% if property.comparable.visible %}<td><span class="document-check-single">✓</span> Publicaciones comparables</td>{% endif %}</tr></table></td><td align="right">{% if property.document.visible and property.cta.secondary_url %}<a class="document-action-single" href="{{ property.cta.secondary_url }}">{% if single_property_only %}VER INFORME →{% else %}Ver informe →{% endif %}</a>{% else %}<span class="document-action-single">Revisar con asesor</span>{% endif %}</td></tr></table>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" class="actions actions-single"><tr><td><a class="primary" href="{{ property.cta.primary_url }}">{{ property.cta.primary_label }} →</a></td></tr></table>
+                <table role="presentation" cellspacing="0" cellpadding="0" class="actions actions-single"><tr><td><a class="primary" href="{{ property.cta.primary_url }}">{{ property.cta.primary_label }} →</a></td></tr>{% if single_property_only and property.cta.secondary_url %}<tr><td class="advisor-review">¿Prefieres conversarlo antes? <a href="{{ property.cta.secondary_url }}">Revisar con mi ejecutivo →</a></td></tr>{% endif %}</table>
                 {% endif %}
               </section>
             {% endfor %}
           </td></tr>
           <tr><td class="executive executive-one">
-            <div class="executive-single"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">{% for executive in executives %}<tr><td class="exec-avatar-single"><span>{{ executive.initials }}</span></td><td class="exec-details-single"><strong>Tu ejecutivo PROCASA</strong><span class="exec-name-single">{{ executive.name }}</span><span class="exec-contact-single">{{ executive.email }}{% if executive.email and executive.phone %} · {% endif %}{{ executive.phone }}</span></td>{% if loop.first %}<td class="exec-brand-cell-single"><div class="exec-tagline-single">Te acompañamos<br />en cada paso</div><img class="brand-logo-executive-single" src="{{ logo_url }}" alt="PROCASA" /></td>{% endif %}</tr>{% endfor %}</table></div>
+            <div class="executive-single"><table role="presentation" width="100%" cellspacing="0" cellpadding="0">{% for executive in executives %}<tr><td class="exec-avatar-single"><span>{{ executive.initials }}</span></td><td class="exec-details-single"><strong>Tu ejecutivo PROCASA</strong><span class="exec-name-single">{{ executive.name }}</span>{% if single_property_only %}<span class="contact-line-single"><span class="contact-icon-single contact-icon-email-single" aria-hidden="true"></span>{{ executive.email }}</span><span class="contact-line-single"><span class="contact-icon-single contact-icon-phone-single" aria-hidden="true"></span>{{ executive.phone }}</span>{% else %}<span class="exec-contact-single">{{ executive.email }}{% if executive.email and executive.phone %} · {% endif %}{{ executive.phone }}</span>{% endif %}</td>{% if loop.first %}<td class="exec-brand-cell-single">{% if not single_property_only %}<div class="exec-tagline-single">Te acompañamos<br />en cada paso</div>{% endif %}<img class="brand-logo-executive-single" src="{{ logo_url }}" alt="PROCASA" /></td>{% endif %}</tr>{% endfor %}</table></div>
           </td></tr>
-          <tr><td class="footer footer-one"><div class="footer-single">PROCASA · Información comercial para apoyar tu decisión. {{ footer_disclaimer }}</div></td></tr>
+          <tr><td class="footer footer-one">{% if single_property_only %}<div class="report-date-single">Informe generado el {{ report_date }}{% if properties[0].activity_90d.state in ["KNOWN_POSITIVE", "KNOWN_ZERO"] %} · Actividad comercial analizada: últimos 90 días{% endif %}</div>{% endif %}<div class="footer-single">PROCASA · Información comercial para apoyar tu decisión. {{ footer_disclaimer }}</div></td></tr>
         </table>
       </td></tr>
     </table>

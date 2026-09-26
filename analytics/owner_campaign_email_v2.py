@@ -530,6 +530,34 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
     return {"visible": False}
 
 
+def _market_reference_model(support: Mapping[str, Any], operation: Any = None) -> dict[str, Any]:
+    communal = support.get("communal_market") if isinstance(support.get("communal_market"), Mapping) else {}
+    metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+    is_rental = _is_rent(operation or communal.get("operation"))
+    reference_key = "uf_m2_arriendo_actual" if is_rental else "uf_m2_publicacion_actual"
+    universe_keys = ("publicaciones_arriendo_activas", "n_observations") if is_rental else ("publicaciones_activas", "n_observations")
+    reference = number(metrics.get(reference_key) or communal.get(reference_key))
+    universe = next((number(metrics.get(key) or communal.get(key)) for key in universe_keys if number(metrics.get(key) or communal.get(key)) is not None), None)
+    if reference is None or universe is None or reference <= 0 or universe < 5:
+        return {"visible": False}
+    source_date = communal.get("document_date")
+    if source_date:
+        try:
+            parsed_date = source_date if isinstance(source_date, datetime) else datetime.fromisoformat(str(source_date).replace("Z", "+00:00"))
+            month_names = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+            source_date = f"{parsed_date.day} de {month_names[parsed_date.month - 1]} de {parsed_date.year}"
+        except (TypeError, ValueError):
+            source_date = str(source_date)
+    return {
+        "visible": True,
+        "reference_value": fmt_number(reference, 1),
+        "reference_unit": "UF/m²/mes de oferta" if is_rental else "UF/m² de oferta",
+        "universe_value": fmt_number(universe, 0),
+        "universe_unit": "publicaciones activas",
+        "source_date": str(source_date or ""),
+    }
+
+
 def _property_context(
     prop: Mapping[str, Any],
     qa_row: Mapping[str, Any],
@@ -551,6 +579,7 @@ def _property_context(
     operation = str(qa_row.get("operacion") or prop.get("operacion") or "")
     is_rental = _is_rent(operation)
     appraisal = _appraisal_model(support, price, operation)
+    market_reference = _market_reference_model(support, operation)
     review_guard = (
         bool(v3.get("evidence_conflict"))
         or str(v3.get("comparable_display_status") or "").upper() == "REVIEW"
@@ -564,10 +593,13 @@ def _property_context(
         appraisal["adjustment_label"] = f"{((recommended_price - price) / price * 100.0):+.1f}%".replace(".", ",")
     if document_type == "INDIVIDUAL_APPRAISAL":
         document_copy = "Tasación individual disponible como respaldo comercial. El PDF se mantiene como documento adjunto."
+        single_document_copy = "Tu tasación individual se encuentra disponible como respaldo comercial y puede revisarse de forma privada desde este informe."
     elif document_type == "COMMUNAL_MARKET_REPORT":
         document_copy = "Informe de mercado comunal disponible como contexto. El PDF se mantiene como documento adjunto."
+        single_document_copy = "El informe de mercado comunal está disponible como contexto y puede revisarse de forma privada desde este informe."
     else:
         document_copy = ""
+        single_document_copy = "Puedes revisar las referencias disponibles junto con tu ejecutivo PROCASA."
     position = comparable.get("position_label") if comparable.get("visible") else "Sin referencia suficiente"
     summary_market = comparable.get("median_label") if comparable.get("visible") else "Sin referencia suficiente"
     summary_property = comparable.get("property_value_label") if comparable.get("visible") else None
@@ -632,6 +664,8 @@ def _property_context(
         "comparable": comparable,
         "diagnostic_text": diagnostic_text,
         "single_diagnostic_text": single_diagnostic_text,
+        "single_document_copy": single_document_copy,
+        "single_recommendation_text": str(segment_content.get("body") or _recommendation_text(recommendation)),
         "recommendation_title": _recommendation_title(recommendation),
         "recommendation_text": str(segment_content.get("body") or _recommendation_text(recommendation)),
         "campaign_segment": str(qa_row.get("evidence_segment") or ""),
@@ -639,6 +673,7 @@ def _property_context(
         "recommended_price_label": _price_label(recommended_price, operation) if recommended_price is not None and recommended_price > 0 else None,
         "document": {"visible": document_visible, "copy": document_copy, "type": document_type},
         "appraisal": appraisal,
+        "market_reference": market_reference,
         "cta": {
             "primary_url": primary_url,
             "primary_label": primary_label,
@@ -783,7 +818,12 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         model = dict(original)
         activity = model.get("activity_90d") if isinstance(model.get("activity_90d"), Mapping) else {"state": "UNKNOWN"}
         model["activity_90d"] = dict(activity)
-        model["valuation_slots"] = _valuation_slots(model)
+        valuation_slots = _valuation_slots(model)
+        model["valuation_slots"] = valuation_slots
+        model["single_valuation_slots"] = [
+            {**slot, "icon": icon}
+            for slot, icon in zip(valuation_slots, ("price", "market", "difference", "target"))
+        ]
         model["portfolio_summary"] = _portfolio_summary(model)
         property_models.append(model)
     executive_models = []

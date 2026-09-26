@@ -273,6 +273,15 @@ def test_final_html_requires_report_and_action_buttons(monkeypatch):
     assert "Ver respaldo comercial" not in result
 
 
+def test_final_html_blocks_send_when_executive_contact_is_missing(monkeypatch):
+    monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    source = _approved_html_source().replace("qa@procasa.cl", "").replace("+56912345678", "")
+    prepared = SimpleNamespace(html=source, report_token="report", action_token="action")
+
+    with pytest.raises(SenderError, match="executive_contact_missing"):
+        resend._final_visual_html(prepared, advisor_review_url=_advisor_url())
+
+
 def test_rendered_html_does_not_create_email_or_ledger_row():
     # _build_email is intentionally only reached after the hash gate; this
     # structural assertion covers the no-send helper surface used by dry-run.

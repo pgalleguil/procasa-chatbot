@@ -340,26 +340,29 @@ def test_fixed_recipient_abd_cases_do_not_require_owner_email_but_portfolios_do(
 
 def test_test_executive_resolves_active_crm_contact_by_assigned_name():
     class Users:
-        def __init__(self, record):
-            self.record = record
+        def __init__(self, records):
+            self.records = records
             self.query = None
 
         def find_one(self, query, projection):
             self.query = (query, projection)
-            return self.record
+            return next((item for item in self.records if all(item.get(key) == value for key, value in query.items())), None)
+
+        def find(self, query, projection):
+            return [item for item in self.records if all(item.get(key) == value for key, value in query.items())]
 
     class CRM:
-        def __init__(self, record):
-            self.users = Users(record)
+        def __init__(self, records=()):
+            self.users = Users(list(records))
 
         def __getitem__(self, name):
             assert name == "usuarios"
             return self.users
 
-    db = CRM({
+    db = CRM([{
         "nombre": "Ejecutiva desde propiedad", "rol": "agente", "is_active": True,
         "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
-    })
+    }])
     executive = runtime._resolve_executive(db, {
         "estado": {"ejecutivo": "Ejecutiva desde propiedad"},
     })
@@ -370,9 +373,81 @@ def test_test_executive_resolves_active_crm_contact_by_assigned_name():
     assert db.users.query[0] == {
         "nombre": "Ejecutiva desde propiedad", "rol": "agente", "is_active": True,
     }
-    fallback = runtime._resolve_executive(CRM(None), {"estado": {"ejecutivo": "Vacante"}})
+    fallback = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "Vacante"}})
     assert fallback["name"] == "Equipo PROCASA"
     assert fallback["email"] == fallback["phone"] == ""
+
+
+def test_executive_contact_prefers_complete_property_contact_without_directory_lookup():
+    class NoDirectory:
+        def __getitem__(self, _name):
+            pytest.fail("complete property contact should not query the CRM directory")
+
+    executive = runtime._resolve_executive(NoDirectory(), {
+        "estado": {"ejecutivo": "Ejecutiva asignada"},
+        "email_ejecutivo": "Ejecutiva@procasa.cl",
+        "movil_ejecutivo": "9 1234 5678",
+    })
+
+    assert executive["name"] == "Ejecutiva asignada"
+    assert executive["email"] == "ejecutiva@procasa.cl"
+    assert executive["phone"] == "+56912345678"
+    assert executive["source"] == "property"
+
+
+def test_executive_directory_lookup_uses_exact_normalized_name_and_completes_partial_property_contact():
+    class Users:
+        def __init__(self, records):
+            self.records = records
+
+        def find_one(self, query, projection):
+            return next((item for item in self.records if all(item.get(key) == value for key, value in query.items())), None)
+
+        def find(self, query, projection):
+            return [item for item in self.records if all(item.get(key) == value for key, value in query.items())]
+
+    class CRM:
+        def __init__(self, records):
+            self.users = Users(records)
+
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return self.users
+
+    db = CRM([{
+        "nombre": "José Pérez", "rol": "agente", "is_active": True,
+        "email": "jose.perez@procasa.cl", "movil": "+56 9 8765 4321",
+    }])
+    executive = runtime._resolve_executive(db, {
+        "estado": {"ejecutivo": "Jose Perez"},
+        "email_ejecutivo": "directo@procasa.cl",
+    })
+
+    assert executive["name"] == "Jose Perez"
+    assert executive["email"] == "directo@procasa.cl"
+    assert executive["phone"] == "+56987654321"
+    assert executive["source"] == "property+usuarios"
+
+
+def test_executive_directory_normalized_name_ambiguity_fails_closed():
+    class Users:
+        def find_one(self, _query, _projection):
+            return None
+
+        def find(self, _query, _projection):
+            return [
+                {"nombre": "Jose Perez", "rol": "agente", "is_active": True, "email": "one@procasa.cl", "phone": "+56912345678"},
+                {"nombre": "José Pérez", "rol": "agente", "is_active": True, "email": "two@procasa.cl", "phone": "+56987654321"},
+            ]
+
+    class CRM:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return Users()
+
+    executive = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "JOSE PEREZ"}})
+    assert executive["email"] == executive["phone"] == ""
+    assert executive["source"] == "estado.ejecutivo"
 
 
 def test_independent_cli_phase_gate_requires_completed_initial_batch():

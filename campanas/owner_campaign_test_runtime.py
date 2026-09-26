@@ -367,31 +367,84 @@ def _dimensions(master: Mapping[str, Any], appraisal: Mapping[str, Any] | None =
 
 
 def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
-    """Resolve the assigned active executive and their existing CRM contacts."""
+    """Resolve the assigned executive from property contacts, then canonical CRM users.
+
+    This resolver is read-only. The CRM ``usuarios`` directory is the canonical
+    contact source used by existing lead delivery flows.
+    """
     name = str(_path(master, "estado.ejecutivo") or "").strip()
     if _fold(name) in UNKNOWN_EXECUTIVES or re.search(r"\b(vacante|pendiente)\b", _fold(name)):
         name = ""
+
+    def first_value(paths: Sequence[str]) -> Any:
+        for path in paths:
+            value = _path(master, path)
+            if value is not None and str(value).strip():
+                return value
+        return None
+
+    property_email = _valid_owner_email(first_value((
+        "email_ejecutivo", "correo_ejecutivo", "ejecutivo_email",
+        "estado.email_ejecutivo", "estado.correo_ejecutivo", "estado.ejecutivo_email",
+    )))
+    property_phone = first_value((
+        "telefono_ejecutivo", "movil_ejecutivo", "fono_ejecutivo",
+        "estado.telefono_ejecutivo", "estado.movil_ejecutivo", "estado.fono_ejecutivo",
+    ))
+    try:
+        from chatbot.crm_delivery import validate_executive_recipient
+        property_phone = validate_executive_recipient(str(property_phone or ""))
+    except Exception:
+        property_phone = None
+
+    # A complete, valid property contact is already bound to this listing and
+    # has priority. Partial property contacts are completed from the CRM below.
+    if name and property_email and property_phone:
+        return {
+            "name": name, "email": property_email, "phone": property_phone,
+            "initials": "", "source": "property",
+        }
+
     user: Mapping[str, Any] = {}
     if name:
         try:
-            candidate = db["usuarios"].find_one(
+            users = db["usuarios"]
+            candidate = users.find_one(
                 {"nombre": name, "rol": "agente", "is_active": True},
-                {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1},
+                {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1, "tel": 1, "movil": 1},
             )
+            if isinstance(candidate, Mapping) and _fold(candidate.get("nombre")) == _fold(name):
+                user = candidate
+            else:
+                # Some legacy CRM names differ only by casing, accents, or
+                # punctuation. Match normalized whole names, never substrings
+                # or fuzzy candidates; ambiguous matches fail closed.
+                candidates = [
+                    item for item in users.find(
+                        {"rol": "agente", "is_active": True},
+                        {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1, "tel": 1, "movil": 1},
+                    )
+                    if isinstance(item, Mapping) and _fold(item.get("nombre")) == _fold(name)
+                ]
+                if len(candidates) == 1:
+                    user = candidates[0]
         except Exception:
             candidate = None
-        if isinstance(candidate, Mapping) and _fold(candidate.get("nombre")) == _fold(name):
-            user = candidate
-    email = str(user.get("email") or user.get("username") or "").strip()
-    if not EMAIL_RE.fullmatch(email):
-        email = ""
-    phone = str(user.get("phone") or user.get("telefono") or "").strip()
+
+    email = property_email or _valid_owner_email(user.get("email") or user.get("username")) or ""
+    phone_value = property_phone or user.get("telefono") or user.get("tel") or user.get("movil") or user.get("phone")
+    try:
+        from chatbot.crm_delivery import validate_executive_recipient
+        phone = validate_executive_recipient(str(phone_value or "")) or ""
+    except Exception:
+        phone = ""
+    source = "property+usuarios" if user and (property_email or property_phone) else ("usuarios" if user else "estado.ejecutivo")
     return {
         "name": name or "Equipo PROCASA",
         "email": email,
         "phone": phone,
         "initials": "",
-        "source": "usuarios" if user else ("estado.ejecutivo" if name else "fallback"),
+        "source": source if name else "fallback",
     }
 
 

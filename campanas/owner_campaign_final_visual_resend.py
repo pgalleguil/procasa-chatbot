@@ -68,7 +68,23 @@ def _final_visual_html(prepared: PreparedTestMessage, *, advisor_review_url: str
     if len(strong) != 1:
         raise TestSenderError("final_resend_document_section_invalid")
     strong[0].text = "Informe comercial disponible"
-    visible = " ".join(tree.text_content().split())
+    executive_names = tree.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' exec-name-single ')]")
+    executive_contacts = tree.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' contact-line-single ')]")
+    if (
+        len(executive_names) != 1 or not " ".join(executive_names[0].text_content().split())
+        or len(executive_contacts) != 2
+        or any(not " ".join(item.text_content().split()) for item in executive_contacts)
+    ):
+        raise TestSenderError("final_resend_executive_contact_missing")
+    visible_parts: list[str] = []
+    for node in tree.iter():
+        if node.text:
+            visible_parts.append(node.text)
+        if node.tag.lower() == "br":
+            visible_parts.append(" ")
+        if node.tail:
+            visible_parts.append(node.tail)
+    visible = " ".join("".join(visible_parts).split())
     required = (
         "Informe comercial disponible",
         "Tasación individual",

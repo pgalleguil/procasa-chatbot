@@ -300,19 +300,39 @@ def test_fixed_recipient_abd_cases_do_not_require_owner_email_but_portfolios_do(
         sender.validate_explicit_cases([wrapper])
 
 
-def test_test_executive_uses_property_label_without_users_lookup_or_contact_requirement():
-    class CRMUsersMustNotBeRead:
-        def __getitem__(self, name):
-            raise AssertionError(f"test sender must not query {name}")
+def test_test_executive_resolves_active_crm_contact_by_assigned_name():
+    class Users:
+        def __init__(self, record):
+            self.record = record
+            self.query = None
 
-    executive = runtime._resolve_executive(CRMUsersMustNotBeRead(), {
+        def find_one(self, query, projection):
+            self.query = (query, projection)
+            return self.record
+
+    class CRM:
+        def __init__(self, record):
+            self.users = Users(record)
+
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return self.users
+
+    db = CRM({
+        "nombre": "Ejecutiva desde propiedad", "rol": "agente", "is_active": True,
+        "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
+    })
+    executive = runtime._resolve_executive(db, {
         "estado": {"ejecutivo": "Ejecutiva desde propiedad"},
     })
     assert executive == {
-        "name": "Ejecutiva desde propiedad", "email": "", "phone": "",
-        "initials": "", "source": "estado.ejecutivo",
+        "name": "Ejecutiva desde propiedad", "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
+        "initials": "", "source": "usuarios",
     }
-    fallback = runtime._resolve_executive(CRMUsersMustNotBeRead(), {"estado": {"ejecutivo": "Vacante"}})
+    assert db.users.query[0] == {
+        "nombre": "Ejecutiva desde propiedad", "rol": "agente", "is_active": True,
+    }
+    fallback = runtime._resolve_executive(CRM(None), {"estado": {"ejecutivo": "Vacante"}})
     assert fallback["name"] == "Equipo PROCASA"
     assert fallback["email"] == fallback["phone"] == ""
 
@@ -711,15 +731,19 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
     rendered = sender.prepare_test_messages(cases)
     assert len(rendered) == 4
     for item in rendered:
-        assert "class=\"shell shell-single\"" in item.html
-        assert "class=\"hero-single\"" in item.html
+        assert 'class="shell shell-single' in item.html
+        if item.case.case_id == "D":
+            assert 'class="hero"' in item.html
+            assert "Estamos preparando tu propiedad para un nuevo escenario de arriendo" in item.text
+        else:
+            assert 'class="hero-single"' in item.html
         if item.report_token:
             assert "https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=" in item.html
         assert "https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=" in item.html
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "d026b5c70099e59f9cd2ca332f4e3b53d7c650c908031eeb25d7a0f498a0a80d"
+        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "bdb24d7c3fddba0e22be5f5f27ef45c19e21f62877b58bffec72ab07ceabf307"
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()

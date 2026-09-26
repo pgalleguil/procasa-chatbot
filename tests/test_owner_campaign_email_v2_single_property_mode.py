@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from lxml import html as lxml_html
+
 from analytics import owner_campaign_email_v2 as renderer
 from analytics.owner_campaign_email_compat import make_email_safe_html
 
@@ -166,3 +168,23 @@ def test_real_single_property_template_renders_approved_visual_content():
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
     assert "Revisar con mi ejecutivo" in safe_html
+    valuation_cells = [
+        " ".join(cell.itertext()).strip()
+        for cell in lxml_html.fromstring(html).xpath("//*[contains(concat(' ',normalize-space(@class),' '),' valuation-strip-single ')]//td")
+    ]
+    assert "REFERENCIA DEL SEGMENTO 52,3 UF/m² Corte 18 de mayo de 2026" in valuation_cells[1]
+    assert "POSICIONAMIENTO Sobre la muestra comparable Frente a publicaciones similares" in valuation_cells[2]
+
+
+def test_missing_comparable_source_date_does_not_leave_empty_sample_label():
+    model = _single_property_model()
+    model["comparable"]["source_date"] = ""
+    html = renderer.render_owner_campaign_email_v2(
+        [model],
+        email="qa@example.test",
+        executives=[{"name": "Erika Garrido Varela", "email": "egarrido@procasa.cl", "phone": "+56991951317"}],
+        base_url="https://example.test",
+    )
+    visible = " ".join(lxml_html.fromstring(html).text_content().split())
+    assert "Muestra del ;" not in visible
+    assert "La muestra es distinta del universo comunal." in visible

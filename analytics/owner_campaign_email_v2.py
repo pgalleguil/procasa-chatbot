@@ -9,6 +9,7 @@ the same CTA URLs supplied by QA.
 from __future__ import annotations
 
 import math
+import re
 import statistics
 import sys
 from datetime import datetime
@@ -733,6 +734,53 @@ def _valuation_slots(property_model: Mapping[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def _single_property_valuation_slots(property_model: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Use the approved single-property KPI hierarchy and phrasing."""
+    slots = _valuation_slots(property_model)
+    if len(slots) < 4:
+        return slots
+    market = property_model.get("market_reference") if isinstance(property_model.get("market_reference"), Mapping) else {}
+    comparable = property_model.get("comparable") if isinstance(property_model.get("comparable"), Mapping) else {}
+
+    if market.get("visible"):
+        unit = str(market.get("reference_unit") or "UF/m²").replace(" de oferta", "")
+        reference_value = str(market.get("reference_value") or "Revisar con asesor")
+        source_date = str(market.get("source_date") or "").strip()
+        slot2 = {
+            "label": "REFERENCIA DEL SEGMENTO",
+            "value": f"{reference_value} {unit}" if reference_value != "Revisar con asesor" else reference_value,
+            "note": f"Corte {source_date}" if source_date else "Referencia de mercado",
+            "emphasis": False,
+        }
+    else:
+        slot2 = slots[1]
+
+    if comparable.get("visible"):
+        def leading_number(value: Any) -> float | None:
+            match = re.match(r"^\s*([+-]?[\d. ]+(?:,\d+)?)", str(value or ""))
+            return number(match.group(1)) if match else None
+
+        subject = leading_number(comparable.get("positioning_property_label"))
+        reference = leading_number(comparable.get("positioning_reference_label"))
+        if subject is not None and reference is not None:
+            position = "Sobre la muestra comparable" if subject > reference else (
+                "Bajo la muestra comparable" if subject < reference else "En la muestra comparable"
+            )
+        else:
+            position = str(comparable.get("position_label") or "Revisar con asesor")
+        slot3 = {
+            "label": "POSICIONAMIENTO",
+            "value": position,
+            "note": "Frente a publicaciones similares",
+            "emphasis": False,
+        }
+    else:
+        slot3 = slots[2]
+
+    slot4 = slots[3]
+    return [slots[0], slot2, slot3, slot4]
+
+
 def _portfolio_summary(property_model: Mapping[str, Any]) -> dict[str, Any]:
     """Compact, presentation-only fields for the 3+ property email variant."""
     appraisal = property_model.get("appraisal") if isinstance(property_model.get("appraisal"), Mapping) else {}
@@ -814,6 +862,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     )
     template = environment.get_template(TEMPLATE_FILE)
     property_models = []
+    single_property_only = len(properties) == 1 and not bool(properties[0].get("is_rental"))
     for original in properties:
         model = dict(original)
         activity = model.get("activity_90d") if isinstance(model.get("activity_90d"), Mapping) else {"state": "UNKNOWN"}
@@ -822,7 +871,10 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         model["valuation_slots"] = valuation_slots
         model["single_valuation_slots"] = [
             {**slot, "icon": icon}
-            for slot, icon in zip(valuation_slots, ("price", "market", "difference", "target"))
+            for slot, icon in zip(
+                _single_property_valuation_slots(model) if single_property_only else valuation_slots,
+                ("price", "market", "position", "new-value"),
+            )
         ]
         model["portfolio_summary"] = _portfolio_summary(model)
         property_models.append(model)

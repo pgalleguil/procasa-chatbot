@@ -366,17 +366,32 @@ def _dimensions(master: Mapping[str, Any], appraisal: Mapping[str, Any] | None =
     }
 
 
-def _resolve_executive(_db: Any, master: Mapping[str, Any]) -> dict[str, str]:
-    """Use the property-level executive label; test mail does not need CRM contacts."""
+def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
+    """Resolve the assigned active executive and their existing CRM contacts."""
     name = str(_path(master, "estado.ejecutivo") or "").strip()
     if _fold(name) in UNKNOWN_EXECUTIVES or re.search(r"\b(vacante|pendiente)\b", _fold(name)):
         name = ""
+    user: Mapping[str, Any] = {}
+    if name:
+        try:
+            candidate = db["usuarios"].find_one(
+                {"nombre": name, "rol": "agente", "is_active": True},
+                {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1},
+            )
+        except Exception:
+            candidate = None
+        if isinstance(candidate, Mapping) and _fold(candidate.get("nombre")) == _fold(name):
+            user = candidate
+    email = str(user.get("email") or user.get("username") or "").strip()
+    if not EMAIL_RE.fullmatch(email):
+        email = ""
+    phone = str(user.get("phone") or user.get("telefono") or "").strip()
     return {
         "name": name or "Equipo PROCASA",
-        "email": "",
-        "phone": "",
+        "email": email,
+        "phone": phone,
         "initials": "",
-        "source": "estado.ejecutivo" if name else "fallback",
+        "source": "usuarios" if user else ("estado.ejecutivo" if name else "fallback"),
     }
 
 
@@ -1089,8 +1104,9 @@ def _build_case(
     source_checks = {
         "owner_email_source": email_source,
         "real_property_image": image.get("available") is True,
-        "executive_name": bool(executive.get("name")), "executive_email": False,
-        "executive_phone": False, "activity_90d": True,
+        "executive_name": bool(executive.get("name")),
+        "executive_email": bool(executive.get("email")),
+        "executive_phone": bool(executive.get("phone")), "activity_90d": True,
         "portal_breakdown_valid": True, "reference_correct": True,
         "comparables_compatible": str((analysis.get("segmento") or {}).get("operacion") or "").upper() == operation,
         "own_listing_excluded": bool(own_ids) and not any(str(item.get("listing_id") or "") in own_ids for item in v3["integral_comparables"] + v3["land_references"]),

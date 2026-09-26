@@ -26,13 +26,16 @@ def _row(**updates):
 
 def _approved_html_source():
     return """<!doctype html><html><body>
-      <h1>Revisión comercial de tu propiedad</h1><p>Buenas propiedades crean grandes historias</p>
+      <h1>Revisión comercial de tu propiedad</h1><p class="hero-single-aside">Buenas<br />propiedades<br />crean grandes<br />historias</p>
       <section>CHILE · SEPTIEMBRE 2026 FINANCIAMIENTO HIPOTECARIO TPM Fuentes: Banco Central de Chile y MINVU · septiembre 2026</section>
       <div class="document-copy-single"><strong>Informe comercial disponible</strong>
       <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
       <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
       <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
       <div class="advisor-review">¿Prefieres conversarlo antes? <a href="#old">Revisar con mi ejecutivo →</a></div>
+      <div class="executive-single"><span class="exec-name-single">Ejecutiva QA</span>
+      <span class="contact-line-single"><span class="contact-icon-single contact-icon-email-single"></span>qa@procasa.cl</span>
+      <span class="contact-line-single"><span class="contact-icon-single contact-icon-phone-single"></span>+56912345678</span></div>
     </body></html>"""
 
 

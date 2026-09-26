@@ -39,12 +39,22 @@ class _Collection:
 
     def update_one(self, query, update, upsert=False):
         self.updates.append((query, update, upsert))
-        matched = self.row is not None and all(
-            (self.row.get(key) != value if isinstance(value, dict) and "$ne" in value else self.row.get(key) == value)
-            for key, value in query.items()
-        )
+        def matches(key, expected):
+            actual = self.row.get(key)
+            if isinstance(expected, dict):
+                if "$ne" in expected:
+                    return actual != expected["$ne"]
+                if "$exists" in expected:
+                    return (key in self.row) is expected["$exists"]
+            return actual == expected
+
+        matched = self.row is not None and all(matches(key, value) for key, value in query.items())
         if matched:
             self.row.update(update.get("$set", {}))
+            for key, increment in update.get("$inc", {}).items():
+                self.row[key] = self.row.get(key, 0) + increment
+            for key, item in update.get("$push", {}).items():
+                self.row.setdefault(key, []).append(item)
         return SimpleNamespace(matched_count=int(matched))
 
 
@@ -119,11 +129,22 @@ def test_hash_mismatch_blocks_mime_creation(monkeypatch):
         resend._message_with_hash_gate("<p>final</p>", expected_hash="wrong", text="QA")
 
 
-def test_dry_run_keeps_the_existing_row_and_success_blocks_second_resend():
-    db = _DB(_row(last_test_resend_purpose=resend.FINAL_RESEND_PURPOSE, last_test_resend_smtp_accepted=True))
-    with pytest.raises(SenderError, match="final_visual_test_already_sent"):
-        resend._existing_ledger_row(db)
-    assert db.collection.updates == []
+def test_identical_html_is_blocked_but_changed_html_is_allowed():
+    old_hash = "a" * 64
+    row = _row(
+        last_test_resend_purpose=resend.FINAL_RESEND_PURPOSE,
+        last_test_resend_smtp_accepted=True,
+        last_test_resend_html_sha256=old_hash,
+    )
+    assert resend._last_accepted_html_hash(row) == old_hash
+    with pytest.raises(SenderError, match="same_visual_test_already_sent"):
+        resend._require_changed_html(row, old_hash)
+    assert resend._require_changed_html(row, "b" * 64) == old_hash
+
+
+def test_accepted_history_is_preserved_and_used_as_latest_hash():
+    row = _row(test_resend_history=[{"html_sha256": "c" * 64, "smtp_accepted": True}])
+    assert resend._last_accepted_html_hash(row) == "c" * 64
 
 
 def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
@@ -133,7 +154,12 @@ def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
       <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
       <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
     </body></html>"""
-    db = _DB(_row())
+    old_hash = "a" * 64
+    db = _DB(_row(
+        last_test_resend_purpose=resend.FINAL_RESEND_PURPOSE,
+        last_test_resend_smtp_accepted=True,
+        last_test_resend_html_sha256=old_hash,
+    ))
     case = SimpleNamespace(case_id="A", property_code="5641")
     prepared = SimpleNamespace(html=source, report_token="fresh-report", action_token="fresh-action")
     monkeypatch.setattr(resend, "test_mode_enabled", lambda: True)
@@ -144,12 +170,36 @@ def test_dry_run_validates_fresh_case_without_writing_ledger(monkeypatch):
 
     result = resend.resend_existing_test_case(dry_run=True, db=db)
 
+    assert result["html_changed"] is True
+    assert result["old_html_sha256"] == old_hash
+    assert result["qa_resend_allowed"] is True
     assert result["property_code"] == "5641"
     assert result["recipient"] == TEST_RECIPIENT
     assert result["report_link_present"] is True
     assert result["price_auth_link_present"] is True
     assert result["html_match"] is True
     assert result["new_ledger_row_created"] is False
+    assert db.collection.updates == []
+
+
+def test_dry_run_blocks_same_hash_before_smtp_or_ledger_write(monkeypatch):
+    source = """<!doctype html><html><body>
+      <div class="document-copy-single"><strong>Informe comercial disponible</strong>
+      <span>✓ Tasación individual</span><span>✓ Publicaciones comparables</span></div>
+      <a class="document-action-single" href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report">Ver informe →</a>
+      <a class="primary" href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action">Aceptar →</a>
+    </body></html>"""
+    monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    safe_html = resend._final_visual_html(SimpleNamespace(html=source, report_token="r", action_token="a"))
+    same_hash = resend._sha256(safe_html)
+    db = _DB(_row(last_test_resend_smtp_accepted=True, last_test_resend_html_sha256=same_hash))
+    monkeypatch.setattr(resend, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(resend, "Config", SimpleNamespace(GMAIL_USER="qa@procasa.cl"))
+    monkeypatch.setattr(resend, "build_owner_campaign_test_cases_live", lambda _db, *, case_ids: [SimpleNamespace(case_id="A", property_code="5641")])
+    monkeypatch.setattr(resend, "prepare_test_messages", lambda cases: [SimpleNamespace(html=source, report_token="r", action_token="a")])
+    monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    with pytest.raises(SenderError, match="same_visual_test_already_sent"):
+        resend.resend_existing_test_case(dry_run=True, db=db)
     assert db.collection.updates == []
 
 
@@ -181,17 +231,20 @@ def test_send_audits_the_same_row_and_one_shot_blocks_repeat(monkeypatch):
     assert db.collection.row["actual_recipient_email"] == TEST_RECIPIENT
     assert db.collection.row["last_test_resend_smtp_accepted"] is True
     assert db.collection.row["test_resend_count"] == 1
+    assert db.collection.row["test_resend_history"][-1]["smtp_accepted"] is True
     assert db.collection.row["delivery_status"] == "pending_test_send"
     assert len(db.collection.updates) == 2
     assert all(update[2] is False for update in db.collection.updates)
-    with pytest.raises(SenderError, match="final_visual_test_already_sent"):
-        resend._existing_ledger_row(db)
+    with pytest.raises(SenderError, match="same_visual_test_already_sent"):
+        resend._require_changed_html(db.collection.row, result["final_email_safe_html_sha256"])
+    assert db.collection.row["last_test_resend_html_sha256"] == result["final_email_safe_html_sha256"]
+    assert db.collection.row["test_resend_count"] == 1
 
 
 def test_reservation_and_audit_update_never_upsert():
     db = _DB(_row())
     row = resend._existing_ledger_row(db)
-    resend._reserve_existing_row(db.collection, row, "a" * 64, resend.datetime.now(resend.timezone.utc))
+    resend._reserve_existing_row(db.collection, row, "a" * 64, resend.datetime.now(resend.timezone.utc), None)
     assert db.collection.updates[-1][2] is False
     assert db.collection.row["last_test_resend_status"] == "sending"
     assert db.collection.row["campaign_id"] == TEST_CAMPAIGN_ID
@@ -219,3 +272,15 @@ def test_rendered_html_does_not_create_email_or_ledger_row():
     # structural assertion covers the no-send helper surface used by dry-run.
     assert issubclass(EmailMessage, object)
     assert "_write_test_ledger_entries" not in inspect.getsource(resend.resend_existing_test_case)
+
+
+def test_changed_hash_reservation_is_compare_and_set_and_never_upserts():
+    old_hash = "a" * 64
+    row = _row(last_test_resend_smtp_accepted=True, last_test_resend_html_sha256=old_hash)
+    db = _DB(row)
+    snapshot = resend._existing_ledger_row(db)
+    resend._reserve_existing_row(db.collection, snapshot, "b" * 64, resend.datetime.now(resend.timezone.utc), old_hash)
+    query, _update, upsert = db.collection.updates[-1]
+    assert query["last_test_resend_html_sha256"] == old_hash
+    assert query["last_test_resend_status"] == {"$exists": False}
+    assert upsert is False

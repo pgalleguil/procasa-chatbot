@@ -1,4 +1,4 @@
-"""One-shot resend path for the existing final visual QA case A (property 5641)."""
+"""Hash-gated resend path for the existing final visual QA case A (property 5641)."""
 
 from __future__ import annotations
 
@@ -106,14 +106,39 @@ def _existing_ledger_row(db: Any) -> dict[str, Any]:
         or row.get("delivery_status") not in VALID_EXISTING_DELIVERY_STATUSES
     ):
         raise TestSenderError("final_resend_existing_qa_row_invalid")
-    if row.get("last_test_resend_purpose") == FINAL_RESEND_PURPOSE and (
-        row.get("last_test_resend_smtp_accepted") is True
-        or row.get("last_test_resend_status") in {"sending", "smtp_error", "smtp_refused", "test_sent"}
-    ):
-        raise TestSenderError("final_visual_test_already_sent")
-    if row.get("last_test_resend_purpose") == FINAL_RESEND_PURPOSE:
+    # A sending marker can mean SMTP accepted the message even if the process
+    # lost its response. Fail closed until that ambiguous attempt is reviewed.
+    if row.get("last_test_resend_status") == "sending":
         raise TestSenderError("final_visual_test_already_sent")
     return row
+
+
+def _last_accepted_html_hash(row: dict[str, Any]) -> str | None:
+    history = row.get("test_resend_history")
+    if isinstance(history, list):
+        for attempt in reversed(history):
+            if isinstance(attempt, dict) and attempt.get("smtp_accepted") is True:
+                value = attempt.get("html_sha256")
+                if isinstance(value, str) and value:
+                    return value
+    if row.get("last_test_resend_smtp_accepted") is True:
+        value = row.get("last_test_resend_html_sha256")
+        if isinstance(value, str) and value:
+            return value
+    # Keep compatibility with QA rows that stored the accepted test HTML under
+    # an older audit field name.
+    for key in ("last_qa_email_html_sha256", "last_test_email_html_sha256"):
+        value = row.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _require_changed_html(row: dict[str, Any], html_hash: str) -> str | None:
+    previous_hash = _last_accepted_html_hash(row)
+    if previous_hash is not None and hmac.compare_digest(previous_hash, html_hash):
+        raise TestSenderError("same_visual_test_already_sent")
+    return previous_hash
 
 
 def _message_with_hash_gate(html: str, *, expected_hash: str, text: str) -> tuple[EmailMessage, str]:
@@ -142,7 +167,25 @@ def _message_with_hash_gate(html: str, *, expected_hash: str, text: str) -> tupl
     return message, smtp_hash
 
 
-def _reserve_existing_row(ledger: Any, row: dict[str, Any], html_hash: str, now: datetime) -> None:
+def _reserve_existing_row(
+    ledger: Any,
+    row: dict[str, Any],
+    html_hash: str,
+    now: datetime,
+    previous_hash: str | None,
+) -> None:
+    if previous_hash != _last_accepted_html_hash(row):
+        raise TestSenderError("final_visual_test_already_sent")
+    previous_hash_filter = (
+        {"last_test_resend_html_sha256": row["last_test_resend_html_sha256"]}
+        if "last_test_resend_html_sha256" in row
+        else {"last_test_resend_html_sha256": {"$exists": False}}
+    )
+    status_filter = (
+        {"last_test_resend_status": row["last_test_resend_status"]}
+        if "last_test_resend_status" in row
+        else {"last_test_resend_status": {"$exists": False}}
+    )
     result = ledger.update_one(
         {
             "_id": row["_id"],
@@ -151,15 +194,14 @@ def _reserve_existing_row(ledger: Any, row: dict[str, Any], html_hash: str, now:
             "test_mode": True,
             "actual_recipient_email": TEST_RECIPIENT,
             "delivery_status": row["delivery_status"],
-            "last_test_resend_purpose": {"$ne": FINAL_RESEND_PURPOSE},
-            "last_test_resend_smtp_accepted": {"$ne": True},
-            "last_test_resend_status": {"$ne": "sending"},
+            **previous_hash_filter,
+            **status_filter,
         },
         {"$set": {
             "last_test_resend_purpose": FINAL_RESEND_PURPOSE,
             "last_test_resend_status": "sending",
             "last_test_resend_started_at": now,
-            "last_test_resend_html_sha256": html_hash,
+            "last_test_resend_attempt_html_sha256": html_hash,
         }},
         upsert=False,
     )
@@ -192,6 +234,7 @@ def resend_existing_test_case(
     item = prepared[0]
     final_html = _final_visual_html(item)
     final_hash = _sha256(final_html)
+    previous_hash = _require_changed_html(row, final_hash)
     message, smtp_hash = _message_with_hash_gate(
         final_html,
         expected_hash=final_hash,
@@ -203,6 +246,10 @@ def resend_existing_test_case(
         "recipient": TEST_RECIPIENT,
         "subject": FINAL_RESEND_SUBJECT,
         "existing_ledger_row_valid": True,
+        "old_html_sha256": previous_hash,
+        "current_html_sha256": final_hash,
+        "html_changed": previous_hash != final_hash,
+        "qa_resend_allowed": True,
         "new_ledger_row_created": False,
         "report_link_present": True,
         "price_auth_link_present": True,
@@ -221,7 +268,7 @@ def resend_existing_test_case(
         raise TestSenderError("final_resend_existing_qa_row_invalid")
     sent_at = datetime.now(timezone.utc)
     ledger = db[TEST_LEDGER_COLLECTION]
-    _reserve_existing_row(ledger, row, final_hash, sent_at)
+    _reserve_existing_row(ledger, row, final_hash, sent_at, previous_hash)
     smtp_factory = smtp_factory or smtplib.SMTP
     try:
         with smtp_factory("smtp.gmail.com", 587, timeout=30) as server:
@@ -244,18 +291,30 @@ def resend_existing_test_case(
         raise TestSenderError("final_resend_smtp_refused")
     rfc_message_id = str(message["Message-ID"] or "")
     audit = {
-        "test_resend_count": int(row.get("test_resend_count") or 0) + 1,
         "last_test_resend_at": sent_at,
         "last_test_resend_message_id": rfc_message_id,
         "last_test_resend_subject": FINAL_RESEND_SUBJECT,
         "last_test_resend_html_sha256": final_hash,
+        "last_test_resend_accepted_html_sha256": final_hash,
         "last_test_resend_smtp_accepted": True,
         "last_test_resend_status": "test_sent",
         "last_test_resend_purpose": FINAL_RESEND_PURPOSE,
     }
     updated = ledger.update_one(
         {"_id": row["_id"], "last_test_resend_purpose": FINAL_RESEND_PURPOSE, "last_test_resend_status": "sending"},
-        {"$set": audit},
+        {
+            "$set": audit,
+            "$inc": {"test_resend_count": 1},
+            "$push": {
+                "test_resend_history": {
+                    "sent_at": sent_at,
+                    "message_id": rfc_message_id,
+                    "subject": FINAL_RESEND_SUBJECT,
+                    "html_sha256": final_hash,
+                    "smtp_accepted": True,
+                }
+            },
+        },
         upsert=False,
     )
     if getattr(updated, "matched_count", 0) != 1:

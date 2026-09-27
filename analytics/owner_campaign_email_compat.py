@@ -107,6 +107,40 @@ def _protect_media_overrides(source_html: str) -> str:
     return source_html
 
 
+def _keep_responsive_styles_only(source_html: str) -> str:
+    """Drop desktop rules after inlining while preserving authored media queries.
+
+    Premailer copies supported desktop declarations onto each element. Keeping
+    those same rules in a <style> block needlessly grows large campaign emails
+    and can push Gmail past its clipping threshold. Mobile overrides remain in
+    their original media blocks, with their declarations marked important by
+    _protect_media_overrides().
+    """
+
+    def compact_style(match: re.Match[str]) -> str:
+        opening, stylesheet, closing = match.groups()
+        responsive_blocks: list[str] = []
+        for media_match in _MEDIA_START_RE.finditer(stylesheet):
+            depth = 1
+            close = media_match.end()
+            while close < len(stylesheet) and depth:
+                if stylesheet[close] == "{":
+                    depth += 1
+                elif stylesheet[close] == "}":
+                    depth -= 1
+                close += 1
+            if depth == 0:
+                responsive_blocks.append(stylesheet[media_match.start():close])
+        return opening + "".join(responsive_blocks) + closing
+
+    return re.sub(
+        r"(<style\b[^>]*>)(.*?)(</style\s*>)",
+        compact_style,
+        source_html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+
 def make_email_safe_html(source_html: str) -> str:
     """Inline critical class-based CSS while retaining responsive enhancements."""
     materialized_source = _materialize_pseudo_elements(source_html)
@@ -133,4 +167,5 @@ def make_email_safe_html(source_html: str) -> str:
         if source_node.get("height") is None and final_node.get("height") is not None:
             if final_node.tag not in {"table", "img", "td", "th", "tr"}:
                 final_node.attrib.pop("height", None)
-    return html.tostring(final_tree, encoding="unicode", method="html", doctype="<!doctype html>")
+    serialized = html.tostring(final_tree, encoding="unicode", method="html", doctype="<!doctype html>")
+    return _keep_responsive_styles_only(serialized)

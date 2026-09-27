@@ -217,6 +217,22 @@ def test_targeted_none_case_preflight_checks_copy_mobile_and_gmail(case_id, code
     assert result["COPY_SALE_CORRECT" if operation == "VENTA" else "RENT_COPY_CORRECT"] is True
 
 
+def test_gmail_safe_html_compacts_inlined_desktop_css_but_keeps_mobile_overrides():
+    from analytics.owner_campaign_email_compat import make_email_safe_html
+
+    html = (
+        '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<style>.card{color:#17175f;background:#f7f6ff;padding:20px}'
+        '@media only screen and (max-width:620px){.card{padding:10px;width:100%}}</style></head>'
+        '<body><div class="card">Contenido</div></body></html>'
+    )
+    safe = make_email_safe_html(html)
+    assert 'color:#17175f' in safe or 'color: #17175f' in safe
+    assert "@media only screen and (max-width:620px)" in safe
+    assert "padding:10px !important" in safe or "padding:10px!important" in safe
+    assert ".card{color:#17175f" not in safe
+
+
 def test_panel_displays_frozen_fixture_provenance_and_safe_case_error():
     from analytics.owner_campaign_report_normalization import PreviewResult
 

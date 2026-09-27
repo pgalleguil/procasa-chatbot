@@ -527,19 +527,25 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
             )
         else:
             checks = (preflight["html_render_pass"] is True,)
-        if not all((*checks, preflight["html_render_pass"] is True,
-                    preflight["mobile_390_pass"] is True, preflight["gmail_safe_pass"] is True,
-                    preflight["single_visual_system"] is True,
-                    preflight["duplicated_property_image"] is False)):
-            raise TestSenderError("targeted_qa_render_preflight_failed")
+        raw_failures = []
+        if not all(checks):
+            raw_failures.append("document_or_copy")
+        for field in ("html_render_pass", "mobile_390_pass", "gmail_safe_pass", "single_visual_system"):
+            if preflight[field] is not True:
+                raw_failures.append(field)
+        if preflight["duplicated_property_image"] is not False:
+            raw_failures.append("duplicated_property_image")
+        if raw_failures:
+            raise TestSenderError("targeted_qa_render_preflight_failed:" + ",".join(raw_failures))
     except (TestSenderError, ValueError) as exc:
-        raise HTTPException(status_code=409, detail="QA dirigido bloqueado por preflight; no se envió correo") from exc
+        raise HTTPException(status_code=409, detail=f"QA dirigido bloqueado por preflight; no se envió correo ({exc})") from exc
 
     try:
         from analytics.owner_campaign_email_compat import make_email_safe_html
         safe_html = make_email_safe_html(item.html)
-        if len(safe_html.encode("utf-8")) > MAX_TEST_HTML_BYTES:
-            raise TestSenderError("final_resend_html_exceeds_gmail_budget")
+        safe_bytes = len(safe_html.encode("utf-8"))
+        if safe_bytes > MAX_TEST_HTML_BYTES:
+            raise TestSenderError(f"final_resend_html_exceeds_gmail_budget:{safe_bytes}")
         safe_item = replace(item, html=safe_html)
         from campanas.owner_campaign_test_sender import _LinkParser, validate_recipient_envelope
         parsed_links = _LinkParser()
@@ -548,16 +554,18 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
             raise TestSenderError("no_document_report_link_forbidden")
         validate_recipient_envelope(to=TEST_RECIPIENT, cc=(), bcc=(), envelope_recipients=[TEST_RECIPIENT])
         safe_preflight = _targeted_single_preflight(safe_item)
-        if (
-            safe_preflight["single_visual_system"] is not True
-            or safe_preflight["duplicated_property_image"] is not False
-            or safe_preflight["mobile_390_pass"] is not True
-            or safe_preflight["gmail_safe_pass"] is not True
-            or (item.case.document_type == "NONE" and safe_preflight["empty_document_card"] is not False)
-        ):
-            raise TestSenderError("gmail_safe_visual_preflight_failed")
+        safe_failures = []
+        for field in ("single_visual_system", "mobile_390_pass", "gmail_safe_pass"):
+            if safe_preflight[field] is not True:
+                safe_failures.append(field)
+        if safe_preflight["duplicated_property_image"] is not False:
+            safe_failures.append("duplicated_property_image")
+        if item.case.document_type == "NONE" and safe_preflight["empty_document_card"] is not False:
+            safe_failures.append("empty_document_card")
+        if safe_failures:
+            raise TestSenderError("gmail_safe_visual_preflight_failed:" + ",".join(safe_failures))
     except (TestSenderError, ValueError) as exc:
-        raise HTTPException(status_code=409, detail="QA dirigido bloqueado por preflight Gmail-safe; no se envió correo") from exc
+        raise HTTPException(status_code=409, detail=f"QA dirigido bloqueado por preflight Gmail-safe; no se envió correo ({exc})") from exc
 
     preview_id = secrets.token_urlsafe(24)
     now = time.monotonic()

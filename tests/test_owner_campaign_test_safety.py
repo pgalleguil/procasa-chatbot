@@ -53,6 +53,9 @@ class FakeCollection:
             elif isinstance(expected, dict) and "$in" in expected:
                 if actual not in expected["$in"]:
                     return False
+            elif isinstance(expected, dict) and "$ne" in expected:
+                if actual == expected["$ne"]:
+                    return False
             elif isinstance(expected, dict) and "$exists" in expected:
                 if (actual is not None) != expected["$exists"]:
                     return False
@@ -88,9 +91,12 @@ class FakeCollection:
                             current.append(value)
                             modified = True
                 for key, spec in update.get("$push", {}).items():
-                    values = spec.get("$each", []) if isinstance(spec, dict) else [spec]
+                    values = spec["$each"] if isinstance(spec, dict) and "$each" in spec else [spec]
                     doc.setdefault(key, []).extend(values)
                     modified = modified or bool(values)
+                for key, amount in update.get("$inc", {}).items():
+                    doc[key] = doc.get(key, 0) + amount
+                    modified = True
                 for operator in ("$min", "$max"):
                     for key, value in update.get(operator, {}).items():
                         current = doc
@@ -1395,6 +1401,60 @@ def test_sender_reuses_exactly_prepared_html_and_checks_decoded_mime_hash(monkey
     ledger_row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
     assert ledger_row["rendered_html_sha256"] == result[0]["final_html_sha256"]
     assert ledger_row["mime_decoded_html_sha256"] == result[0]["final_html_sha256"]
+
+
+def test_changed_qa_resend_updates_same_ledger_row_and_appends_history(monkeypatch):
+    case = _case("A")
+    prepared = sender.prepare_test_messages([case], render_case=_render)
+    db = FakeDB()
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [{
+        "_id": f"{sender.TEST_CAMPAIGN_ID}:5641",
+        "campaign_id": sender.TEST_CAMPAIGN_ID,
+        "property_code": "5641",
+        "test_mode": True,
+        "actual_recipient_email": "old-qa-recipient@example.test",
+        "delivery_status": "test_sent",
+        "smtp_accepted": True,
+        "rendered_html_sha256": "prior-accepted-html-hash",
+        "owner_response": {"status": "PRICE_AUTHORIZED"},
+        "response_events": [{"event_type": "price_authorized"}],
+        "test_resend_count": 2,
+        "test_resend_history": [{"html_sha256": "prior-accepted-html-hash", "smtp_accepted": True}],
+    }]
+    result = sender._send_prepared_test_messages(
+        prepared, db=db, smtp_factory=FakeSMTP, allow_changed_qa_resend=True,
+    )
+    row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
+    assert len(db.docs[sender.TEST_LEDGER_COLLECTION]) == 1
+    assert row["owner_response"] == {"status": "PRICE_AUTHORIZED"}
+    assert row["response_events"] == [{"event_type": "price_authorized"}]
+    assert row["test_resend_count"] == 3
+    assert row["last_test_sent_at"]
+    assert row["last_test_recipient"] == sender.TEST_RECIPIENT
+    assert row["last_test_html_sha256"] == result[0]["final_html_sha256"]
+    assert row["last_test_resend_html_sha256"] == result[0]["final_html_sha256"]
+    assert len(row["test_resend_history"]) == 2
+    assert row["test_resend_history"][-1]["smtp_accepted"] is True
+    assert result[0]["recipient"] == sender.TEST_RECIPIENT
+    _sender_address, recipients, raw_message = FakeSMTP.instances[-1].sent[0]
+    assert recipients == [sender.TEST_RECIPIENT]
+    assert "Cc:" not in raw_message and "Bcc:" not in raw_message
+    assert OWNER_EMAIL not in raw_message
+
+
+def test_normal_owner_qa_duplicate_guard_still_blocks_existing_ledger_row(monkeypatch):
+    db = FakeDB()
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [{
+        "_id": f"{sender.TEST_CAMPAIGN_ID}:5641",
+        "campaign_id": sender.TEST_CAMPAIGN_ID,
+        "property_code": "5641",
+        "test_mode": True,
+        "actual_recipient_email": sender.TEST_RECIPIENT,
+        "delivery_status": "test_sent",
+    }]
+    with pytest.raises(sender.TestSenderError, match="test_campaign_case_already_registered"):
+        sender.send_test_messages([_case("A")], render_case=_render, db=db, smtp_factory=FakeSMTP)
+    assert FakeSMTP.instances == []
 
 
 def test_smtp_explicit_recipient_refusal_is_recorded_as_not_accepted():

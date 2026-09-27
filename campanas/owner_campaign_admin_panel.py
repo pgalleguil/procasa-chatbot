@@ -485,7 +485,7 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
                 _send_prepared_test_messages,
                 prepared,
                 db=database,
-                allow_changed_qa_resend=property_code == "6132",
+                allow_changed_qa_resend=property_code in TARGETED_QA_CASES,
             )
         except Exception as exc:
             raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc

@@ -41,6 +41,7 @@ TARGETED_SINGLE_TEST_CONTRACTS = {
     "SALE_NONE_6873": ("6873", "VENTA"),
     "RENT_NONE_6132": ("6132", "ARRIENDO"),
 }
+TARGETED_QA_RESEND_PROPERTY_CODES = frozenset({"5641", "6132", "16486", "6873"})
 TEST_CASE_IDS = TEST_CASE_IDS | frozenset(TARGETED_SINGLE_TEST_CONTRACTS)
 TEST_LEDGER_COLLECTION = "ajuste_precio"
 TEST_RUN_ID = "owner_campaign_email_AE_20260924_v1"
@@ -445,22 +446,22 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
 
 
 def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str) -> dict[str, Any] | None:
-    """Reserve a changed-HTML resend for the one approved RENT/NONE QA case.
+    """Reserve a changed-HTML resend for one allowlisted single-property QA case.
 
     The original QA ledger row is reused. An identical accepted HTML is
     blocked, and an ambiguous in-flight attempt remains fail-closed.
     """
-    if str(item.case.property_code) != "6132":
+    property_code = str(item.case.property_code)
+    if property_code not in TARGETED_QA_RESEND_PROPERTY_CODES:
         raise TestSenderError("targeted_qa_resend_property_not_allowed")
     ledger = db[TEST_LEDGER_COLLECTION]
-    query = {"campaign_id": TEST_CAMPAIGN_ID, "property_code": "6132"}
+    query = {"campaign_id": TEST_CAMPAIGN_ID, "property_code": property_code}
     row = ledger.find_one(query)
     if row is None:
         return None
     if (
         row.get("test_mode") is not True
-        or str(row.get("actual_recipient_email") or "").strip().casefold() != TEST_RECIPIENT
-        or str(row.get("property_code") or "") != "6132"
+        or str(row.get("property_code") or "") != property_code
         or str(row.get("campaign_id") or "") != TEST_CAMPAIGN_ID
         or row.get("delivery_status") not in {"test_sent", "pending_test_send"}
     ):
@@ -475,15 +476,23 @@ def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str
             if isinstance(attempt, dict) and attempt.get("smtp_accepted") is True:
                 accepted_hash = attempt.get("html_sha256")
                 break
+    has_accepted_send = row.get("smtp_accepted") is True or row.get("delivery_status") == "test_sent"
     if accepted_hash is None and row.get("last_test_resend_smtp_accepted") is True:
-        accepted_hash = row.get("last_test_resend_html_sha256")
-    if accepted_hash is None and row.get("smtp_accepted") is True:
-        accepted_hash = row.get("rendered_html_sha256")
+        accepted_hash = row.get("last_test_html_sha256") or row.get("last_test_resend_html_sha256")
+    if accepted_hash is None and has_accepted_send:
+        accepted_hash = (
+            row.get("last_test_html_sha256")
+            or row.get("last_test_resend_html_sha256")
+            or row.get("smtp_html_sha256")
+            or row.get("rendered_html_sha256")
+        )
+    if has_accepted_send and not accepted_hash:
+        raise TestSenderError("previous_qa_html_hash_unavailable")
     if accepted_hash and hmac.compare_digest(str(accepted_hash), html_hash):
         raise TestSenderError("same_visual_test_already_sent")
 
     marker = {
-        "last_test_resend_purpose": "TARGETED_SINGLE_QA_RESEND_6132_V1",
+        "last_test_resend_purpose": "TARGETED_SINGLE_QA_RESEND_ALLOWLIST_V2",
         "last_test_resend_status": "sending",
         "last_test_resend_started_at": datetime.now(timezone.utc),
         "last_test_resend_attempt_html_sha256": html_hash,
@@ -492,6 +501,7 @@ def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str
     result = ledger.update_one(
         {"_id": row.get("_id"), "delivery_status": row.get("delivery_status"),
          "rendered_html_sha256": row.get("rendered_html_sha256"),
+         "campaign_id": TEST_CAMPAIGN_ID, "property_code": property_code, "test_mode": True,
          "last_test_resend_status": {"$ne": "sending"}},
         {"$set": marker},
     )
@@ -648,6 +658,9 @@ def _send_prepared_test_messages(
                                     "last_test_resend_message_id": rfc_message_id,
                                     "last_test_resend_subject": item.subject,
                                     "last_test_resend_html_sha256": final_hash,
+                                    "last_test_sent_at": sent_at,
+                                    "last_test_recipient": TEST_RECIPIENT,
+                                    "last_test_html_sha256": final_hash,
                                     "last_test_resend_preview_html_sha256": final_hash,
                                     "last_test_resend_smtp_html_sha256": final_hash,
                                     "last_test_resend_mime_decoded_html_sha256": mime_hash,

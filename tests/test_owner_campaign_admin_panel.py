@@ -102,6 +102,7 @@ def test_single_qa_endpoint_rejects_recipient_or_unallowlisted_property(monkeypa
 @pytest.mark.parametrize("body", [
     f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=6132&QA_PROPERTY_CODE=6873",
     f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=6132&property_code=6873",
+    f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=5641&recipient=owner%40example.com",
     f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}",
 ])
 def test_single_qa_endpoint_requires_exactly_one_property_selection(monkeypatch, body):
@@ -215,55 +216,91 @@ class _ExistingQaDb:
         return self.ledger
 
 
-def _existing_6132_qa_row():
+def _existing_qa_row(property_code, *, previous_hash="old-html-hash"):
     from campanas.owner_campaign_test_sender import TEST_CAMPAIGN_ID, TEST_RECIPIENT
 
     return {
-        "_id": f"{TEST_CAMPAIGN_ID}:6132",
+        "_id": f"{TEST_CAMPAIGN_ID}:{property_code}",
         "campaign_id": TEST_CAMPAIGN_ID,
-        "property_code": "6132",
+        "property_code": str(property_code),
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
         "delivery_status": "test_sent",
         "smtp_accepted": True,
-        "rendered_html_sha256": "old-html-hash",
+        "rendered_html_sha256": previous_hash,
     }
 
 
-def test_targeted_6132_resend_reuses_ledger_only_for_changed_html():
+@pytest.mark.parametrize("property_code", ["5641", "6132", "16486", "6873"])
+def test_allowlisted_targeted_resend_reuses_ledger_only_for_changed_html(property_code):
     from campanas.owner_campaign_test_sender import _begin_targeted_qa_resend
 
-    db = _ExistingQaDb(_existing_6132_qa_row())
-    item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
+    db = _ExistingQaDb(_existing_qa_row(property_code))
+    item = SimpleNamespace(case=SimpleNamespace(property_code=property_code))
     reserved = _begin_targeted_qa_resend(db, item, "new-html-hash")
 
     assert reserved["last_test_resend_status"] == "sending"
     assert db.ledger.row["rendered_html_sha256"] == "old-html-hash"
+    assert db.ledger.row["last_test_resend_attempt_html_sha256"] == "new-html-hash"
+    assert db.ledger.row["test_resend_recipient_email"] == "p.galleguil@gmail.com"
     assert len(db.ledger.updates) == 1
 
 
-def test_targeted_6132_resend_blocks_identical_html_before_smtp():
+@pytest.mark.parametrize("property_code", ["5641", "6132", "16486", "6873"])
+def test_allowlisted_targeted_resend_blocks_identical_html_before_smtp(property_code):
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
-    db = _ExistingQaDb(_existing_6132_qa_row())
-    item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
+    db = _ExistingQaDb(_existing_qa_row(property_code))
+    item = SimpleNamespace(case=SimpleNamespace(property_code=property_code))
     with pytest.raises(TestSenderError, match="same_visual_test_already_sent"):
         _begin_targeted_qa_resend(db, item, "old-html-hash")
     assert db.ledger.updates == []
 
 
-def test_targeted_qa_resend_rejects_other_property_and_ambiguous_attempt():
+def test_targeted_qa_resend_rejects_non_allowlisted_property_and_ambiguous_attempt():
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
-    item = SimpleNamespace(case=SimpleNamespace(property_code="6873"))
+    item = SimpleNamespace(case=SimpleNamespace(property_code="99999"))
     with pytest.raises(TestSenderError, match="property_not_allowed"):
-        _begin_targeted_qa_resend(_ExistingQaDb(_existing_6132_qa_row()), item, "new")
+        _begin_targeted_qa_resend(_ExistingQaDb(_existing_qa_row("99999")), item, "new")
 
-    row = _existing_6132_qa_row()
+    row = _existing_qa_row("6132")
     row["last_test_resend_status"] = "sending"
     item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
     with pytest.raises(TestSenderError, match="requires_review"):
         _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new")
+
+
+def test_targeted_qa_resend_rejects_legacy_sent_row_without_comparable_hash():
+    from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
+
+    row = _existing_qa_row("16486", previous_hash=None)
+    row.pop("rendered_html_sha256")
+    item = SimpleNamespace(case=SimpleNamespace(property_code="16486"))
+    with pytest.raises(TestSenderError, match="previous_qa_html_hash_unavailable"):
+        _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
+
+
+def test_normal_qa_sender_duplicate_protection_remains_unchanged():
+    from campanas.owner_campaign_test_sender import (
+        TEST_CAMPAIGN_ID, TEST_RECIPIENT, TestSenderError, _write_test_ledger_entries,
+    )
+
+    row = {
+        "_id": f"{TEST_CAMPAIGN_ID}:5641",
+        "campaign_id": TEST_CAMPAIGN_ID,
+        "property_code": "5641",
+        "test_mode": True,
+        "actual_recipient_email": TEST_RECIPIENT,
+    }
+    db = _ExistingQaDb(row)
+    item = SimpleNamespace(
+        case=SimpleNamespace(case_id="A", property_code="5641", intended_owner_email="owner@example.com"),
+        property_cases=(),
+    )
+    with pytest.raises(TestSenderError, match="test_campaign_case_already_registered"):
+        _write_test_ledger_entries(db, [item])
+    assert db.ledger.updates == []
 
 
 @pytest.mark.parametrize(("case_id", "code", "operation", "copy_text"), [

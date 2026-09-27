@@ -1230,6 +1230,73 @@ def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["recipient"] == sender.TEST_RECIPIENT
 
 
+def test_targeted_single_qa_accepts_only_fixed_none_cases():
+    sale_none = replace(
+        _case("C"), case_id="SALE_NONE_6873", property_code="6873", operation="VENTA",
+        document_type="NONE", cta_type="ADVISOR_REVIEW",
+    )
+    rent_none = replace(
+        _case("D"), case_id="RENT_NONE_6132", property_code="6132", operation="ARRIENDO",
+        document_type="NONE", cta_type="ADVISOR_REVIEW",
+    )
+    assert sender.validate_explicit_cases([sale_none, rent_none]) == [sale_none, rent_none]
+    with pytest.raises(sender.TestSenderError, match="targeted_single_case_contract_invalid"):
+        sender.validate_explicit_cases([replace(sale_none, property_code="6874")])
+    with pytest.raises(sender.TestSenderError, match="targeted_single_case_contract_invalid"):
+        sender.validate_explicit_cases([replace(rent_none, document_type="COMMUNAL_MARKET_REPORT")])
+
+
+def test_live_builder_limits_targeted_qa_codes_to_the_fixed_none_cases(monkeypatch):
+    from types import SimpleNamespace
+
+    requested_codes = []
+
+    def load_docs(_db, codes):
+        requested_codes.extend(sorted(codes))
+        return {code: {"codigo": code} for code in codes}
+
+    def build_case(_db, master, case_id, *, segment, now):
+        return SimpleNamespace(
+            case_id=case_id,
+            property_code=master["codigo"],
+            operation="VENTA" if case_id == "SALE_NONE_6873" else "ARRIENDO",
+            document_type="NONE",
+        )
+
+    monkeypatch.setattr(runtime, "_load_code_docs", load_docs)
+    monkeypatch.setattr(runtime, "_campaign_segment", lambda _master: "MIXED_EVIDENCE")
+    monkeypatch.setattr(runtime, "_build_case", build_case)
+    cases = runtime.build_owner_campaign_test_cases_live(
+        FakeDB(), case_ids=("RENT_NONE_6132", "SALE_NONE_6873"),
+    )
+    assert requested_codes == ["6132", "6873"]
+    assert [case.property_code for case in cases] == ["6132", "6873"]
+    with pytest.raises(runtime.LiveTestCaseBuildError, match="requested_test_cases_invalid"):
+        runtime.build_owner_campaign_test_cases_live(FakeDB(), case_ids=("RENT_NONE_99999",))
+
+
+def test_sender_reuses_exactly_prepared_html_and_checks_decoded_mime_hash(monkeypatch):
+    case = _case("A")
+    calls = []
+    prepared = sender.prepare_test_messages(
+        [case], render_case=lambda selected: (calls.append(selected.case_id) or _render(selected))
+    )
+    db = FakeDB()
+    monkeypatch.setattr(
+        sender, "prepare_test_messages",
+        lambda *_args, **_kwargs: pytest.fail("must not render again after FINAL_HTML"),
+    )
+    result = sender._send_prepared_test_messages(prepared, db=db, smtp_factory=FakeSMTP)
+    assert calls == ["A"]
+    assert result[0]["final_html_sha256"] == result[0]["preview_html_sha256"]
+    assert result[0]["final_html_sha256"] == result[0]["smtp_html_sha256"]
+    assert result[0]["final_html_sha256"] == result[0]["mime_decoded_html_sha256"]
+    assert int(result[0]["html_bytes"]) > 0
+    ledger_row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
+    assert ledger_row["rendered_html_sha256"] == result[0]["final_html_sha256"]
+    assert ledger_row["mime_decoded_html_sha256"] == result[0]["final_html_sha256"]
+
+
 def test_smtp_explicit_recipient_refusal_is_recorded_as_not_accepted():
     class RefusingSMTP(FakeSMTP):
         def sendmail(self, sender_address, recipients, message):

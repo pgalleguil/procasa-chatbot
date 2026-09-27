@@ -7,6 +7,8 @@ mass-send path. Every message is addressed to the fixed test mailbox only.
 from __future__ import annotations
 
 import math
+import hashlib
+import hmac
 import re
 import smtplib
 from dataclasses import dataclass, field
@@ -33,7 +35,13 @@ from .test_mode import (
 
 SERVICE_BASE_URL = "https://procasa-chatbot-yr8d.onrender.com"
 MAX_TEST_EMAILS = 5
+MAX_TEST_HTML_BYTES = 95 * 1024
 TEST_CASE_IDS = frozenset({"A", "B", "C", "D", "E"})
+TARGETED_SINGLE_TEST_CONTRACTS = {
+    "SALE_NONE_6873": ("6873", "VENTA"),
+    "RENT_NONE_6132": ("6132", "ARRIENDO"),
+}
+TEST_CASE_IDS = TEST_CASE_IDS | frozenset(TARGETED_SINGLE_TEST_CONTRACTS)
 TEST_LEDGER_COLLECTION = "ajuste_precio"
 TEST_RUN_ID = "owner_campaign_email_AE_20260924_v1"
 PROPERTY_CODE_RE = re.compile(r"^[0-9]{1,32}$")
@@ -222,6 +230,15 @@ def validate_explicit_cases(cases: Sequence[OwnerCampaignTestCase]) -> list[Owne
                 raise TestSenderError("test_case_d_contract_invalid")
         elif case.case_id == "E":
             continue
+        elif case.case_id in TARGETED_SINGLE_TEST_CONTRACTS:
+            property_code, operation = TARGETED_SINGLE_TEST_CONTRACTS[case.case_id]
+            if (
+                case.property_code != property_code
+                or case.operation != operation
+                or case.document_type != "NONE"
+                or case.cta_type != "ADVISOR_REVIEW"
+            ):
+                raise TestSenderError("targeted_single_case_contract_invalid")
     return list(cases)
 
 
@@ -272,8 +289,14 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
     checks = rendered.get("checks")
     if not subject or "\r" in subject or "\n" in subject or not html.strip() or not text.strip():
         raise TestSenderError("test_render_incomplete")
+    if len(html.encode("utf-8")) > MAX_TEST_HTML_BYTES:
+        raise TestSenderError("test_html_exceeds_gmail_budget")
     if not isinstance(checks, Mapping) or any(checks.get(key) is not True for key in REQUIRED_RENDER_CHECKS):
         raise TestSenderError("test_render_quality_check_failed")
+    if case.case_id in TARGETED_SINGLE_TEST_CONTRACTS and any(
+        checks.get(key) is not True for key in ("executive_email", "executive_phone")
+    ):
+        raise TestSenderError("targeted_test_executive_contact_incomplete")
     property_cases = _property_cases(case)
     content = (subject + "\n" + html + "\n" + text).casefold()
     if any(
@@ -283,8 +306,10 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
     ):
         raise TestSenderError("intended_owner_email_leaked")
 
-    if case.case_id == "D":
-        rent_checks = {"rental_uf_per_month", "rental_estimate", "rental_comparables"}
+    if case.operation == "ARRIENDO":
+        rent_checks = {"rental_uf_per_month", "rental_comparables"}
+        if case.document_type == "INDIVIDUAL_APPRAISAL":
+            rent_checks.add("rental_estimate")
         if checks.get("sale_fields_present") is not False or any(checks.get(key) is not True for key in rent_checks):
             raise TestSenderError("test_case_d_sale_or_rent_check_failed")
 
@@ -328,6 +353,8 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
     for property_case in property_cases:
         if property_case.document_type in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"} and property_case.property_code not in report_tokens:
             raise TestSenderError("test_report_link_missing")
+        if property_case.document_type == "NONE" and property_case.property_code in report_tokens:
+            raise TestSenderError("no_document_report_link_forbidden")
         if _action_for_case(property_case) and property_case.property_code not in action_tokens:
             raise TestSenderError("test_action_link_missing")
     if case.case_id == "E" and (len(action_tokens) != len(property_cases) or len(report_tokens) != len(property_cases)):
@@ -454,21 +481,67 @@ def send_test_messages(
         raise TestSenderError("test_mode_disabled")
     if not Config.GMAIL_USER or not Config.GMAIL_PASSWORD:
         raise TestSenderError("test_smtp_credentials_unavailable")
-    prepared = prepare_test_messages(cases, render_case=render_case)
+    validated_cases = validate_explicit_cases(cases)
+    prepared = prepare_test_messages(validated_cases, render_case=render_case)
+    return _send_prepared_test_messages(prepared, db=db, smtp_factory=smtp_factory)
+
+
+def _send_prepared_test_messages(
+    prepared_messages: Sequence[PreparedTestMessage],
+    *,
+    db: Any = None,
+    smtp_factory: Callable[..., Any] | None = None,
+) -> list[dict[str, str]]:
+    """Send an already validated fixed QA render without rendering it again."""
+    if not test_mode_enabled():
+        raise TestSenderError("test_mode_disabled")
+    if not Config.GMAIL_USER or not Config.GMAIL_PASSWORD:
+        raise TestSenderError("test_smtp_credentials_unavailable")
+    prepared = list(prepared_messages)
+    if (
+        not prepared
+        or len(prepared) > MAX_TEST_EMAILS
+        or any(not isinstance(item, PreparedTestMessage) for item in prepared)
+        or any(not item.html.strip() or not item.subject.strip() or not item.text.strip() for item in prepared)
+    ):
+        raise TestSenderError("prepared_test_message_mismatch")
+    validated_cases = validate_explicit_cases([item.case for item in prepared])
+    if tuple(item.case for item in prepared) != tuple(validated_cases):
+        raise TestSenderError("prepared_test_message_mismatch")
+    for _item in prepared:
+        validate_recipient_envelope(
+            to=TEST_RECIPIENT, cc=(), bcc=(), envelope_recipients=[TEST_RECIPIENT],
+        )
     database = db
     if database is None:
         from chatbot.storage import get_db
 
         database = get_db()
-    # Every render and recipient check completes before ledger changes or SMTP.
+    # Build and validate the exact MIME messages before ledger changes or SMTP.
+    # The already-rendered HTML object can be reused by the targeted QA sender.
+    messages: list[tuple[PreparedTestMessage, EmailMessage, str, str, int]] = []
+    for item in prepared:
+        message = _build_email(item)
+        final_hash = hashlib.sha256(item.html.encode("utf-8")).hexdigest()
+        mime_html_part = message.get_body(preferencelist=("html",))
+        if mime_html_part is None:
+            raise TestSenderError("mime_html_part_missing")
+        decoded_html = mime_html_part.get_content()
+        # EmailMessage adds its MIME line terminator on decode. Ignore that
+        # transport-only final newline when comparing the HTML payload.
+        decoded_canonical = decoded_html.rstrip("\r\n")
+        mime_hash = hashlib.sha256(decoded_canonical.encode("utf-8")).hexdigest()
+        if not hmac.compare_digest(final_hash, mime_hash):
+            raise TestSenderError("mime_decoded_html_mismatch")
+        messages.append((item, message, final_hash, mime_hash, len(item.html.encode("utf-8"))))
+    # Every render, recipient, MIME, and parity check completes before SMTP.
     _write_test_ledger_entries(database, prepared)
     smtp_factory = smtp_factory or smtplib.SMTP
     results: list[dict[str, str]] = []
     with smtp_factory("smtp.gmail.com", 587, timeout=30) as server:
         server.starttls()
         server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-        for item in prepared:
-            message = _build_email(item)
+        for item, message, final_hash, mime_hash, html_bytes in messages:
             refused = server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
             if refused:
                 refused_at = datetime.now(timezone.utc)
@@ -505,6 +578,10 @@ def send_test_messages(
                         "rfc_message_id": rfc_message_id,
                         "sent_at": sent_at,
                         "recipient": TEST_RECIPIENT,
+                        "rendered_html_sha256": final_hash,
+                        "smtp_html_sha256": final_hash,
+                        "mime_decoded_html_sha256": mime_hash,
+                        "html_bytes": html_bytes,
                     }},
                 )
                 property_codes.append(property_case.property_code)
@@ -518,6 +595,11 @@ def send_test_messages(
                 "rfc_message_id": rfc_message_id,
                 "sent_at": sent_at.isoformat(),
                 "recipient": TEST_RECIPIENT,
+                "final_html_sha256": final_hash,
+                "preview_html_sha256": final_hash,
+                "smtp_html_sha256": final_hash,
+                "mime_decoded_html_sha256": mime_hash,
+                "html_bytes": str(html_bytes),
             })
     return results
 

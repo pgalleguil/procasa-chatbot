@@ -90,6 +90,46 @@ def test_get_rejects_overrides_and_page_never_discloses_secret(monkeypatch):
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
 
 
+def test_targeted_qa_endpoint_rejects_recipient_or_property_overrides(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    body = (
+        f"confirmation={panel.TARGETED_MINIMUM_QA_CONFIRMATION}"
+        "&recipient=owner%40example.com&property_code=99999"
+    ).encode()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(panel.handle_targeted_minimum_qa_send(FakeRequest(body, headers=_headers())))
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize(("case_id", "code", "operation", "copy_text"), [
+    ("SALE_NONE_6873", "6873", "VENTA", "Respaldo comercial. Revisar con asesor."),
+    ("RENT_NONE_6132", "6132", "ARRIENDO", "Respaldo comercial. Canon mensual y arriendo. Revisar con asesor."),
+])
+def test_targeted_none_case_preflight_checks_copy_mobile_and_gmail(case_id, code, operation, copy_text):
+    case = SimpleNamespace(
+        case_id=case_id, property_code=code, operation=operation, document_type="NONE",
+        render_context={"source_checks": {"comparables_compatible": True},
+                       "property_model": {"comparable": {"visible": True}}},
+    )
+    rendered = SimpleNamespace(
+        case=case,
+        text="plain text",
+        html=(
+            '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<style>@media only screen and (max-width:600px){.x{width:100%}}</style></head>'
+            f'<body>{copy_text}</body></html>'
+        ),
+    )
+    result = panel._targeted_single_preflight(rendered)
+    assert result["report_button_present"] is False
+    assert result["broken_document_copy"] is False
+    assert result["empty_document_card"] is False
+    assert result["html_render_pass"] is True
+    assert result["mobile_390_pass"] is True
+    assert result["gmail_safe_pass"] is True
+    assert result["COPY_SALE_CORRECT" if operation == "VENTA" else "RENT_COPY_CORRECT"] is True
+
+
 def test_panel_displays_frozen_fixture_provenance_and_safe_case_error():
     from analytics.owner_campaign_report_normalization import PreviewResult
 

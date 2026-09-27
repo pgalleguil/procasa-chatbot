@@ -17,6 +17,7 @@ from config import Config
 from .owner_campaign_test_runtime import build_owner_campaign_test_cases_live
 from .owner_campaign_test_sender import (
     SERVICE_BASE_URL,
+    MAX_TEST_HTML_BYTES,
     TEST_LEDGER_COLLECTION,
     TEST_RUN_ID,
     PreparedTestMessage,
@@ -106,6 +107,8 @@ def _final_visual_html(prepared: PreparedTestMessage, *, advisor_review_url: str
         raise TestSenderError("final_resend_duplicate_document_cta")
     final_html = lxml_html.tostring(tree, encoding="unicode", method="html", doctype="<!doctype html>")
     safe_html = make_email_safe_html(final_html)
+    if len(safe_html.encode("utf-8")) > MAX_TEST_HTML_BYTES:
+        raise TestSenderError("final_resend_html_exceeds_gmail_budget")
     links = _LinkParser()
     links.feed(safe_html)
     report_links = [href for href in links.hrefs if "/campana/informe?token=" in href]
@@ -198,6 +201,12 @@ def _message_with_hash_gate(html: str, *, expected_hash: str, text: str) -> tupl
     if not hmac.compare_digest(expected_hash, smtp_hash):
         raise TestSenderError("final_resend_html_hash_mismatch")
     message.add_alternative(html, subtype="html", charset="utf-8")
+    html_part = message.get_body(preferencelist=("html",))
+    if html_part is None:
+        raise TestSenderError("final_resend_mime_html_missing")
+    decoded_html = html_part.get_content().rstrip("\r\n")
+    if not hmac.compare_digest(expected_hash, _sha256(decoded_html)):
+        raise TestSenderError("final_resend_mime_html_hash_mismatch")
     validate_recipient_envelope(
         to=message.get_all("To", []),
         cc=message.get_all("Cc", []),
@@ -300,7 +309,12 @@ def resend_existing_test_case(
         "approved_single_property_template_active": True,
         "duplicate_document_cta_removed": True,
         "final_email_safe_html_sha256": final_hash,
+        "preview_html_sha256": final_hash,
         "smtp_html_before_mime_sha256": smtp_hash,
+        "mime_decoded_html_sha256": _sha256(
+            message.get_body(preferencelist=("html",)).get_content().rstrip("\r\n")
+        ),
+        "final_html_bytes": len(final_html.encode("utf-8")),
         "html_match": final_hash == smtp_hash,
         "test_email_sent": False,
         "owner_emails_sent": 0,
@@ -342,7 +356,13 @@ def resend_existing_test_case(
         "last_test_resend_message_id": rfc_message_id,
         "last_test_resend_subject": FINAL_RESEND_SUBJECT,
         "last_test_resend_html_sha256": final_hash,
+        "last_test_resend_preview_html_sha256": final_hash,
+        "last_test_resend_smtp_html_sha256": final_hash,
         "last_test_resend_accepted_html_sha256": final_hash,
+        "last_test_resend_mime_decoded_html_sha256": _sha256(
+            message.get_body(preferencelist=("html",)).get_content().rstrip("\r\n")
+        ),
+        "last_test_resend_html_bytes": len(final_html.encode("utf-8")),
         "last_test_resend_smtp_accepted": True,
         "last_test_resend_status": "test_sent",
         "last_test_resend_purpose": FINAL_RESEND_PURPOSE,

@@ -32,6 +32,9 @@ QA_EVIDENCE_SOURCE = "FROZEN_APPROVED_REPORT"
 QA_EVIDENCE_FILENAME = "owner_campaign_qa_evidence_20260923.json"
 QA_EVIDENCE_PATH = Path(__file__).resolve().parents[1] / "analytics" / "fixtures" / QA_EVIDENCE_FILENAME
 PROPERTY_CODES = {"A": "5641", "B": "16521", "C": "16486", "D": "16527"}
+# One-shot, fixed-code QA cases for the final single-property gates. These
+# identifiers are internal contracts, never caller-supplied property codes.
+TARGETED_SINGLE_CASE_CODES = {"SALE_NONE_6873": "6873", "RENT_NONE_6132": "6132"}
 EXPLICITLY_EXCLUDED_CODES = frozenset({"6754"})
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PLACEHOLDER_EMAIL_LOCALPARTS = frozenset({
@@ -1404,8 +1407,43 @@ def build_owner_campaign_test_cases_live(
 
         db = get_db()
     requested = tuple(("A", "B", "C", "D", "E") if case_ids is None else case_ids)
-    if not requested or len(requested) != len(set(requested)) or set(requested) - {"A", "B", "C", "D", "E"}:
+    allowed_ids = {"A", "B", "C", "D", "E", *TARGETED_SINGLE_CASE_CODES}
+    if not requested or len(requested) != len(set(requested)) or set(requested) - allowed_ids:
         raise LiveTestCaseBuildError("requested_test_cases_invalid")
+    if set(requested).issubset(TARGETED_SINGLE_CASE_CODES):
+        target_codes = {TARGETED_SINGLE_CASE_CODES[case_id] for case_id in requested}
+        try:
+            docs = _load_code_docs(db, target_codes)
+        except LiveTestCaseBuildError as exc:
+            raise LiveTestCaseBuildError(
+                "targeted_qa_properties_not_available",
+                case_errors={case_id: exc.error_code for case_id in requested},
+            ) from exc
+        built: list[OwnerCampaignTestCase] = []
+        errors: dict[str, str] = {}
+        for case_id in requested:
+            code = TARGETED_SINGLE_CASE_CODES[case_id]
+            master = docs[code]
+            try:
+                segment = _campaign_segment(master)
+                if segment not in CAMPAIGN_SEGMENTS:
+                    raise LiveTestCaseBuildError("targeted_qa_segment_unresolved")
+                case = _build_case(
+                    db, master, case_id, segment=segment,
+                    now=now or datetime.now(timezone.utc),
+                )
+                expected_operation = VENTA if case_id == "SALE_NONE_6873" else ARRIENDO
+                if case.operation != expected_operation or case.document_type != "NONE":
+                    raise LiveTestCaseBuildError("targeted_qa_live_contract_mismatch")
+                built.append(case)
+            except LiveTestCaseBuildError as exc:
+                errors[case_id] = exc.error_code
+        if errors:
+            raise LiveTestCaseBuildError(
+                "targeted_qa_live_build_failed",
+                case_errors={case_id: errors.get(case_id, "NONE") for case_id in requested},
+            )
+        return built
     fixture = _load_qa_evidence_fixture()
     qa_cases = fixture["cases"]
     qa_segments = fixture["segments_by_code"]

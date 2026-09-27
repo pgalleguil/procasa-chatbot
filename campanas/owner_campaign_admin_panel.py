@@ -481,7 +481,12 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
         from campanas.owner_campaign_test_sender import _send_prepared_test_messages
         database = await asyncio.to_thread(_mongo_db_and_ping)
         try:
-            send_result = await asyncio.to_thread(_send_prepared_test_messages, prepared, db=database)
+            send_result = await asyncio.to_thread(
+                _send_prepared_test_messages,
+                prepared,
+                db=database,
+                allow_changed_qa_resend=property_code == "6132",
+            )
         except Exception as exc:
             raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc
         sent = send_result[0]

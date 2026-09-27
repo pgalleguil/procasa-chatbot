@@ -153,7 +153,8 @@ def test_single_qa_endpoint_builds_and_sends_only_selected_6132(monkeypatch):
     })
     sent = []
 
-    def send(items, *, db):
+    def send(items, *, db, allow_changed_qa_resend=False):
+        assert allow_changed_qa_resend is True
         sent.append([(entry.case.property_code, entry.html) for entry in items])
         import hashlib
 
@@ -186,6 +187,83 @@ def test_single_qa_endpoint_builds_and_sends_only_selected_6132(monkeypatch):
     assert f"FINAL_HTML_SHA256={preview_response.headers['x-qa-html-sha256']}" in page
     assert "OWNER_EMAILS_SENT=0" in page
     assert "p.galleguil@gmail.com" in page
+
+
+class _ExistingQaLedger:
+    def __init__(self, row):
+        self.row = dict(row)
+        self.updates = []
+
+    def find_one(self, query):
+        if query.get("campaign_id") == self.row.get("campaign_id") and query.get("property_code") == self.row.get("property_code"):
+            return dict(self.row)
+        return None
+
+    def update_one(self, query, update):
+        self.updates.append((query, update))
+        if query.get("_id") != self.row.get("_id") or self.row.get("last_test_resend_status") == "sending":
+            return SimpleNamespace(matched_count=0)
+        self.row.update(update["$set"])
+        return SimpleNamespace(matched_count=1)
+
+
+class _ExistingQaDb:
+    def __init__(self, row):
+        self.ledger = _ExistingQaLedger(row)
+
+    def __getitem__(self, _name):
+        return self.ledger
+
+
+def _existing_6132_qa_row():
+    from campanas.owner_campaign_test_sender import TEST_CAMPAIGN_ID, TEST_RECIPIENT
+
+    return {
+        "_id": f"{TEST_CAMPAIGN_ID}:6132",
+        "campaign_id": TEST_CAMPAIGN_ID,
+        "property_code": "6132",
+        "test_mode": True,
+        "actual_recipient_email": TEST_RECIPIENT,
+        "delivery_status": "test_sent",
+        "smtp_accepted": True,
+        "rendered_html_sha256": "old-html-hash",
+    }
+
+
+def test_targeted_6132_resend_reuses_ledger_only_for_changed_html():
+    from campanas.owner_campaign_test_sender import _begin_targeted_qa_resend
+
+    db = _ExistingQaDb(_existing_6132_qa_row())
+    item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
+    reserved = _begin_targeted_qa_resend(db, item, "new-html-hash")
+
+    assert reserved["last_test_resend_status"] == "sending"
+    assert db.ledger.row["rendered_html_sha256"] == "old-html-hash"
+    assert len(db.ledger.updates) == 1
+
+
+def test_targeted_6132_resend_blocks_identical_html_before_smtp():
+    from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
+
+    db = _ExistingQaDb(_existing_6132_qa_row())
+    item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
+    with pytest.raises(TestSenderError, match="same_visual_test_already_sent"):
+        _begin_targeted_qa_resend(db, item, "old-html-hash")
+    assert db.ledger.updates == []
+
+
+def test_targeted_qa_resend_rejects_other_property_and_ambiguous_attempt():
+    from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
+
+    item = SimpleNamespace(case=SimpleNamespace(property_code="6873"))
+    with pytest.raises(TestSenderError, match="property_not_allowed"):
+        _begin_targeted_qa_resend(_ExistingQaDb(_existing_6132_qa_row()), item, "new")
+
+    row = _existing_6132_qa_row()
+    row["last_test_resend_status"] = "sending"
+    item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
+    with pytest.raises(TestSenderError, match="requires_review"):
+        _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new")
 
 
 @pytest.mark.parametrize(("case_id", "code", "operation", "copy_text"), [

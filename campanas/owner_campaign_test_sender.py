@@ -444,6 +444,62 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
             raise TestSenderError("test_campaign_case_already_registered")
 
 
+def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str) -> dict[str, Any] | None:
+    """Reserve a changed-HTML resend for the one approved RENT/NONE QA case.
+
+    The original QA ledger row is reused. An identical accepted HTML is
+    blocked, and an ambiguous in-flight attempt remains fail-closed.
+    """
+    if str(item.case.property_code) != "6132":
+        raise TestSenderError("targeted_qa_resend_property_not_allowed")
+    ledger = db[TEST_LEDGER_COLLECTION]
+    query = {"campaign_id": TEST_CAMPAIGN_ID, "property_code": "6132"}
+    row = ledger.find_one(query)
+    if row is None:
+        return None
+    if (
+        row.get("test_mode") is not True
+        or str(row.get("actual_recipient_email") or "").strip().casefold() != TEST_RECIPIENT
+        or str(row.get("property_code") or "") != "6132"
+        or str(row.get("campaign_id") or "") != TEST_CAMPAIGN_ID
+        or row.get("delivery_status") not in {"test_sent", "pending_test_send"}
+    ):
+        raise TestSenderError("targeted_qa_resend_ledger_invalid")
+    if row.get("last_test_resend_status") == "sending":
+        raise TestSenderError("targeted_qa_resend_attempt_requires_review")
+
+    accepted_hash = None
+    history = row.get("test_resend_history")
+    if isinstance(history, list):
+        for attempt in reversed(history):
+            if isinstance(attempt, dict) and attempt.get("smtp_accepted") is True:
+                accepted_hash = attempt.get("html_sha256")
+                break
+    if accepted_hash is None and row.get("last_test_resend_smtp_accepted") is True:
+        accepted_hash = row.get("last_test_resend_html_sha256")
+    if accepted_hash is None and row.get("smtp_accepted") is True:
+        accepted_hash = row.get("rendered_html_sha256")
+    if accepted_hash and hmac.compare_digest(str(accepted_hash), html_hash):
+        raise TestSenderError("same_visual_test_already_sent")
+
+    marker = {
+        "last_test_resend_purpose": "TARGETED_SINGLE_QA_RESEND_6132_V1",
+        "last_test_resend_status": "sending",
+        "last_test_resend_started_at": datetime.now(timezone.utc),
+        "last_test_resend_attempt_html_sha256": html_hash,
+        "test_resend_recipient_email": TEST_RECIPIENT,
+    }
+    result = ledger.update_one(
+        {"_id": row.get("_id"), "delivery_status": row.get("delivery_status"),
+         "rendered_html_sha256": row.get("rendered_html_sha256"),
+         "last_test_resend_status": {"$ne": "sending"}},
+        {"$set": marker},
+    )
+    if getattr(result, "matched_count", 0) != 1:
+        raise TestSenderError("targeted_qa_resend_reservation_conflict")
+    return {"_id": row.get("_id"), **marker}
+
+
 def _build_email(item: PreparedTestMessage) -> EmailMessage:
     message = EmailMessage()
     message["From"] = Config.GMAIL_USER or ""
@@ -491,6 +547,7 @@ def _send_prepared_test_messages(
     *,
     db: Any = None,
     smtp_factory: Callable[..., Any] | None = None,
+    allow_changed_qa_resend: bool = False,
 ) -> list[dict[str, str]]:
     """Send an already validated fixed QA render without rendering it again."""
     if not test_mode_enabled():
@@ -535,72 +592,122 @@ def _send_prepared_test_messages(
             raise TestSenderError("mime_decoded_html_mismatch")
         messages.append((item, message, final_hash, mime_hash, len(item.html.encode("utf-8"))))
     # Every render, recipient, MIME, and parity check completes before SMTP.
-    _write_test_ledger_entries(database, prepared)
+    resend_row = None
+    if allow_changed_qa_resend:
+        if len(prepared) != 1:
+            raise TestSenderError("targeted_qa_resend_single_message_only")
+        resend_row = _begin_targeted_qa_resend(database, prepared[0], messages[0][2])
+    if resend_row is None:
+        _write_test_ledger_entries(database, prepared)
     smtp_factory = smtp_factory or smtplib.SMTP
     results: list[dict[str, str]] = []
-    with smtp_factory("smtp.gmail.com", 587, timeout=30) as server:
-        server.starttls()
-        server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-        for item, message, final_hash, mime_hash, html_bytes in messages:
-            refused = server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
-            if refused:
-                refused_at = datetime.now(timezone.utc)
+    smtp_send_attempted = False
+    try:
+        with smtp_factory("smtp.gmail.com", 587, timeout=30) as server:
+            server.starttls()
+            server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
+            for item, message, final_hash, mime_hash, html_bytes in messages:
+                smtp_send_attempted = True
+                refused = server.sendmail(Config.GMAIL_USER, [TEST_RECIPIENT], message.as_string())
+                if refused:
+                    refused_at = datetime.now(timezone.utc)
+                    if resend_row:
+                        database[TEST_LEDGER_COLLECTION].update_one(
+                            {"_id": resend_row["_id"], "last_test_resend_status": "sending"},
+                            {"$set": {"last_test_resend_status": "smtp_refused", "last_test_resend_smtp_accepted": False,
+                                      "last_test_resend_at": refused_at}},
+                        )
+                    else:
+                        for property_case in item.property_cases or _property_cases(item.case):
+                            database[TEST_LEDGER_COLLECTION].update_one(
+                                {
+                                    "campaign_id": TEST_CAMPAIGN_ID,
+                                    "property_code": property_case.property_code,
+                                    "test_mode": True,
+                                    "actual_recipient_email": TEST_RECIPIENT,
+                                },
+                                {"$set": {
+                                    "delivery_status": "test_recipient_refused",
+                                    "smtp_accepted": False,
+                                    "recipient": TEST_RECIPIENT,
+                                    "smtp_attempted_at": refused_at,
+                                }},
+                            )
+                    raise TestSenderError("test_recipient_refused_by_smtp")
+                property_codes = []
+                sent_at = datetime.now(timezone.utc)
+                rfc_message_id = str(message["Message-ID"])
                 for property_case in item.property_cases or _property_cases(item.case):
-                    database[TEST_LEDGER_COLLECTION].update_one(
-                        {
-                            "campaign_id": TEST_CAMPAIGN_ID,
-                            "property_code": property_case.property_code,
-                            "test_mode": True,
-                            "actual_recipient_email": TEST_RECIPIENT,
-                        },
-                        {"$set": {
-                            "delivery_status": "test_recipient_refused",
-                            "smtp_accepted": False,
-                            "recipient": TEST_RECIPIENT,
-                            "smtp_attempted_at": refused_at,
-                        }},
-                    )
-                raise TestSenderError("test_recipient_refused_by_smtp")
-            property_codes = []
-            sent_at = datetime.now(timezone.utc)
-            rfc_message_id = str(message["Message-ID"])
-            for property_case in item.property_cases or _property_cases(item.case):
-                database[TEST_LEDGER_COLLECTION].update_one(
-                    {
-                        "campaign_id": TEST_CAMPAIGN_ID,
-                        "property_code": property_case.property_code,
-                        "test_mode": True,
-                        "actual_recipient_email": TEST_RECIPIENT,
-                    },
-                    {"$set": {
-                        "delivery_status": "test_sent",
-                        "smtp_accepted": True,
-                        "rfc_message_id": rfc_message_id,
-                        "sent_at": sent_at,
-                        "recipient": TEST_RECIPIENT,
-                        "rendered_html_sha256": final_hash,
-                        "smtp_html_sha256": final_hash,
-                        "mime_decoded_html_sha256": mime_hash,
-                        "html_bytes": html_bytes,
-                    }},
-                )
-                property_codes.append(property_case.property_code)
-            results.append({
-                "case_id": item.case.case_id,
-                "property_code": item.case.property_code,
-                "property_codes": ",".join(property_codes),
-                "status": "sent_to_test_recipient",
-                "delivery_status": "accepted_by_smtp_relay",
-                "smtp_accepted": True,
-                "rfc_message_id": rfc_message_id,
-                "sent_at": sent_at.isoformat(),
-                "recipient": TEST_RECIPIENT,
-                "final_html_sha256": final_hash,
-                "preview_html_sha256": final_hash,
-                "smtp_html_sha256": final_hash,
-                "mime_decoded_html_sha256": mime_hash,
-                "html_bytes": str(html_bytes),
-            })
+                    if resend_row:
+                        update = database[TEST_LEDGER_COLLECTION].update_one(
+                            {"_id": resend_row["_id"], "last_test_resend_status": "sending",
+                             "last_test_resend_attempt_html_sha256": final_hash},
+                            {
+                                "$set": {
+                                    "last_test_resend_at": sent_at,
+                                    "last_test_resend_message_id": rfc_message_id,
+                                    "last_test_resend_subject": item.subject,
+                                    "last_test_resend_html_sha256": final_hash,
+                                    "last_test_resend_preview_html_sha256": final_hash,
+                                    "last_test_resend_smtp_html_sha256": final_hash,
+                                    "last_test_resend_mime_decoded_html_sha256": mime_hash,
+                                    "last_test_resend_html_bytes": html_bytes,
+                                    "last_test_resend_smtp_accepted": True,
+                                    "last_test_resend_status": "test_sent",
+                                },
+                                "$inc": {"test_resend_count": 1},
+                                "$push": {"test_resend_history": {
+                                    "at": sent_at, "message_id": rfc_message_id, "html_sha256": final_hash,
+                                    "smtp_accepted": True, "recipient": TEST_RECIPIENT, "html_bytes": html_bytes,
+                                }},
+                            },
+                        )
+                        if getattr(update, "matched_count", 0) != 1:
+                            raise TestSenderError("targeted_qa_resend_audit_persistence_failed_after_smtp")
+                    else:
+                        database[TEST_LEDGER_COLLECTION].update_one(
+                            {
+                                "campaign_id": TEST_CAMPAIGN_ID,
+                                "property_code": property_case.property_code,
+                                "test_mode": True,
+                                "actual_recipient_email": TEST_RECIPIENT,
+                            },
+                            {"$set": {
+                                "delivery_status": "test_sent",
+                                "smtp_accepted": True,
+                                "rfc_message_id": rfc_message_id,
+                                "sent_at": sent_at,
+                                "recipient": TEST_RECIPIENT,
+                                "rendered_html_sha256": final_hash,
+                                "smtp_html_sha256": final_hash,
+                                "mime_decoded_html_sha256": mime_hash,
+                                "html_bytes": html_bytes,
+                            }},
+                        )
+                    property_codes.append(property_case.property_code)
+                results.append({
+                    "case_id": item.case.case_id,
+                    "property_code": item.case.property_code,
+                    "property_codes": ",".join(property_codes),
+                    "status": "sent_to_test_recipient",
+                    "delivery_status": "accepted_by_smtp_relay",
+                    "smtp_accepted": True,
+                    "rfc_message_id": rfc_message_id,
+                    "sent_at": sent_at.isoformat(),
+                    "recipient": TEST_RECIPIENT,
+                    "final_html_sha256": final_hash,
+                    "preview_html_sha256": final_hash,
+                    "smtp_html_sha256": final_hash,
+                    "mime_decoded_html_sha256": mime_hash,
+                    "html_bytes": str(html_bytes),
+                })
+    except Exception as exc:
+        if resend_row and not smtp_send_attempted:
+            database[TEST_LEDGER_COLLECTION].update_one(
+                {"_id": resend_row["_id"], "last_test_resend_status": "sending"},
+                {"$set": {"last_test_resend_status": "smtp_failed_before_data", "last_test_resend_smtp_accepted": False}},
+            )
+        raise
     return results
 
 

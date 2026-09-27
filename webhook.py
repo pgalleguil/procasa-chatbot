@@ -5871,9 +5871,9 @@ async def run_owner_campaign_email_test(request: Request):
 
 @app.post("/owner-campaign-email-test/send-targeted-minimum", response_class=HTMLResponse, include_in_schema=False)
 async def run_owner_campaign_targeted_minimum_qa(request: Request):
-    from campanas.owner_campaign_admin_panel import handle_targeted_minimum_qa_send
+    from campanas.owner_campaign_admin_panel import handle_targeted_single_qa_send
 
-    return await handle_targeted_minimum_qa_send(request)
+    return await handle_targeted_single_qa_send(request)
 
 
 @app.get("/captacion/reporte-semanal", response_class=HTMLResponse)

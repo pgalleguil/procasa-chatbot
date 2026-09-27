@@ -19,7 +19,13 @@ from config import Config
 
 TOKEN_SECRET_ENV = "OWNER_CAMPAIGN_TEST_TOKEN_SECRET"
 CONFIRMATION_VALUE = "RUN_OWNER_CAMPAIGN_TEST"
-TARGETED_MINIMUM_QA_CONFIRMATION = "SEND_FIXED_QA_5641_6132"
+TARGETED_SINGLE_QA_CONFIRMATION = "SEND_ONE_APPROVED_QA_CASE"
+TARGETED_QA_CASES = {
+    "5641": "A",
+    "16486": "C",
+    "6873": "SALE_NONE_6873",
+    "6132": "RENT_NONE_6132",
+}
 DELIVERY_UNKNOWN_BASELINE = 6
 EXPECTED_B_BUILT_SOURCE = "tasaciones.tasacion_online.total_construccion_m2:SII"
 _SALE_TERMS = (
@@ -408,8 +414,8 @@ def _targeted_single_preflight(item: Any) -> dict[str, Any]:
     }
 
 
-async def handle_targeted_minimum_qa_send(request: Any) -> HTMLResponse:
-    """Send only the fixed QA cases: existing 5641 plus fixed rent 6132."""
+async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
+    """Render and send exactly one allowlisted QA property to the fixed inbox."""
     if not test_mode_enabled():
         raise HTTPException(status_code=404, detail="Herramienta temporal no disponible")
     _validate_same_origin_post(request)
@@ -422,88 +428,71 @@ async def handle_targeted_minimum_qa_send(request: Any) -> HTMLResponse:
         form = parse_qs(body.decode("ascii"), strict_parsing=True, keep_blank_values=True)
     except (UnicodeDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Confirmación inválida") from None
-    if set(form) != {"confirmation"} or form.get("confirmation") != [TARGETED_MINIMUM_QA_CONFIRMATION]:
-        raise HTTPException(status_code=400, detail="Se requiere confirmación literal")
+    if (
+        set(form) != {"confirmation", "QA_PROPERTY_CODE"}
+        or form.get("confirmation") != [TARGETED_SINGLE_QA_CONFIRMATION]
+        or len(form.get("QA_PROPERTY_CODE", [])) != 1
+    ):
+        raise HTTPException(status_code=400, detail="Se requiere un único código QA permitido")
+    property_code = form["QA_PROPERTY_CODE"][0]
+    case_id = TARGETED_QA_CASES.get(property_code)
+    if case_id is None:
+        raise HTTPException(status_code=400, detail="Código de propiedad fuera de la allowlist QA")
     if not _secret_present() or not Config.GMAIL_USER or not Config.GMAIL_PASSWORD or mass_send_enabled():
         raise HTTPException(status_code=409, detail="Precondiciones de prueba no disponibles")
 
     from campanas.owner_campaign_test_runtime import build_owner_campaign_test_cases_live
     from campanas.owner_campaign_test_sender import (
-        TEST_LEDGER_COLLECTION, TestSenderError, _send_prepared_test_messages, prepare_test_messages,
+        TestSenderError, _send_prepared_test_messages, prepare_test_messages,
     )
-    from campanas.owner_campaign_final_visual_resend import resend_existing_test_case
 
     database = await asyncio.to_thread(_mongo_db_and_ping)
-    existing_6132 = await asyncio.to_thread(
-        lambda: database[TEST_LEDGER_COLLECTION].find_one({
-            "campaign_id": TEST_CAMPAIGN_ID, "property_code": "6132",
-        }, {"_id": 1})
-    )
-    if existing_6132:
-        raise HTTPException(status_code=409, detail="El caso QA 6132 ya tiene un registro; no se repetirá")
-
     try:
-        live_cases = await asyncio.to_thread(
-            build_owner_campaign_test_cases_live, database,
-            case_ids=("SALE_NONE_6873", "RENT_NONE_6132"),
-        )
+        live_cases = await asyncio.to_thread(build_owner_campaign_test_cases_live, database, case_ids=(case_id,))
+        if len(live_cases) != 1 or str(live_cases[0].property_code) != property_code:
+            raise TestSenderError("single_qa_selection_mismatch")
         prepared = await asyncio.to_thread(prepare_test_messages, live_cases)
-        by_code = {item.case.property_code: item for item in prepared}
-        if set(by_code) != {"6873", "6132"} or any(item.case.document_type != "NONE" for item in prepared):
-            raise TestSenderError("targeted_qa_document_contract_failed")
-        sale_preflight = _targeted_single_preflight(by_code["6873"])
-        rent_preflight = _targeted_single_preflight(by_code["6132"])
-        if not all((
-            sale_preflight["report_button_present"] is False,
-            sale_preflight["broken_document_copy"] is False,
-            sale_preflight["empty_document_card"] is False,
-            sale_preflight["COPY_SALE_CORRECT"] is True,
-            sale_preflight["html_render_pass"] is True,
-            sale_preflight["mobile_390_pass"] is True,
-            sale_preflight["gmail_safe_pass"] is True,
-            rent_preflight["report_button_present"] is False,
-            rent_preflight["broken_document_copy"] is False,
-            rent_preflight["empty_document_card"] is False,
-            rent_preflight["RENT_COPY_CORRECT"] is True,
-            rent_preflight["rent_comparables_only"] is True,
-            rent_preflight["html_render_pass"] is True,
-            rent_preflight["mobile_390_pass"] is True,
-            rent_preflight["gmail_safe_pass"] is True,
-        )):
+        if len(prepared) != 1 or prepared[0].case.property_code != property_code:
+            raise TestSenderError("single_qa_render_selection_mismatch")
+        item = prepared[0]
+        preflight = _targeted_single_preflight(item)
+        op = str(item.case.operation).upper()
+        if item.case.document_type == "NONE":
+            copy_key = "COPY_SALE_CORRECT" if op == "VENTA" else "RENT_COPY_CORRECT"
+            checks = (
+                preflight["report_button_present"] is False,
+                preflight["broken_document_copy"] is False,
+                preflight["empty_document_card"] is False,
+                preflight[copy_key] is True,
+            )
+        else:
+            checks = (preflight["html_render_pass"] is True,)
+        if not all((*checks, preflight["html_render_pass"] is True,
+                    preflight["mobile_390_pass"] is True, preflight["gmail_safe_pass"] is True)):
             raise TestSenderError("targeted_qa_render_preflight_failed")
     except (TestSenderError, ValueError) as exc:
         raise HTTPException(status_code=409, detail="QA dirigido bloqueado por preflight; no se envió correo") from exc
 
-    # Reuse the hash-gated, existing-row path for 5641; it cannot create a new row.
     try:
-        sale_result = await asyncio.to_thread(resend_existing_test_case, dry_run=False, db=database)
+        send_result = await asyncio.to_thread(_send_prepared_test_messages, prepared, db=database)
     except Exception as exc:
-        raise HTTPException(status_code=409, detail="QA 5641 se detuvo antes de completar el envío") from exc
+        raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc
 
-    try:
-        rent_result = await asyncio.to_thread(
-            _send_prepared_test_messages,
-            [by_code["6132"]],
-            db=database,
-        )
-    except Exception as exc:
-        # The first accepted test remains audited if this second SMTP call fails.
-        raise HTTPException(status_code=503, detail="QA 5641 aceptado; QA 6132 no completó el envío") from exc
-
-    rent_sent = rent_result[0]
+    sent = send_result[0]
+    hashes = (
+        sent["final_html_sha256"], sent["preview_html_sha256"],
+        sent["smtp_html_sha256"], sent["mime_decoded_html_sha256"],
+    )
+    if len(set(hashes)) != 1:
+        raise HTTPException(status_code=500, detail="La verificación de paridad HTML falló")
     return HTMLResponse(
         "<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>QA PROCASA completado</title><body><main><h1>QA dirigido completado</h1>"
-        f"<p>SALE + NONE 6873: render PASS, sin correo enviado; HTML {sale_preflight['html_bytes']} bytes; "
-        f"preview SHA-256 {sale_preflight['html_sha256']}.</p>"
-        f"<p>RENT + NONE 6132: render PASS, documento NONE, Gmail-safe PASS, enviado al buzón QA fijo; "
-        f"HTML {rent_sent['html_bytes']} bytes.</p>"
-        f"<p>SALE + APPRAISAL 5641: enviado al buzón QA fijo; HTML {sale_result['final_html_bytes']} bytes.</p>"
-        f"<p>5641 FINAL={sale_result['final_email_safe_html_sha256']} · PREVIEW={sale_result['preview_html_sha256']} · "
-        f"SMTP={sale_result['smtp_html_before_mime_sha256']} · MIME_DECODED={sale_result['mime_decoded_html_sha256']}</p>"
-        f"<p>6132 FINAL={rent_sent['final_html_sha256']} · PREVIEW={rent_sent['preview_html_sha256']} · "
-        f"SMTP={rent_sent['smtp_html_sha256']} · MIME_DECODED={rent_sent['mime_decoded_html_sha256']}</p>"
-        f"<p>HTML_PARITY=YES · GMAIL_CLIPPING_SAFE=YES · Emails QA enviados: 2 · emails a propietarios: 0 · precios modificados: no.</p></main></body></html>",
+        f"<p>QA_SELECTED_PROPERTY={html.escape(property_code)} · QA_SKIPPED_5641={'NO' if property_code == '5641' else 'YES'}.</p>"
+        f"<p>TEST_EMAIL_SENT=YES · TEST_RECIPIENT={html.escape(TEST_RECIPIENT)} · RFC_MESSAGE_ID={html.escape(sent['rfc_message_id'])}</p>"
+        f"<p>FINAL_HTML_SHA256={hashes[0]} · PREVIEW_HTML_SHA256={hashes[1]} · SMTP_HTML_SHA256={hashes[2]} · MIME_DECODED_HTML_SHA256={hashes[3]}</p>"
+        f"<p>HTML_PARITY=PASS · FINAL_HTML_BYTES={sent['html_bytes']} · GMAIL_CLIPPING_SAFE={'YES' if int(sent['html_bytes']) < 95 * 1024 else 'NO'}</p>"
+        "<p>EMAILS_SENT=1 · OWNER_EMAILS_SENT=0 · LIVE_PRICE_CHANGED=NO · NEW_MONGO_COLLECTIONS=0.</p></main></body></html>",
         status_code=200,
         headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"},
     )

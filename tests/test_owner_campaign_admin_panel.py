@@ -90,15 +90,83 @@ def test_get_rejects_overrides_and_page_never_discloses_secret(monkeypatch):
     assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
 
 
-def test_targeted_qa_endpoint_rejects_recipient_or_property_overrides(monkeypatch):
+def test_single_qa_endpoint_rejects_recipient_or_unallowlisted_property(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
-    body = (
-        f"confirmation={panel.TARGETED_MINIMUM_QA_CONFIRMATION}"
-        "&recipient=owner%40example.com&property_code=99999"
-    ).encode()
+    body = (f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}"
+            "&QA_PROPERTY_CODE=99999&recipient=owner%40example.com").encode()
     with pytest.raises(HTTPException) as error:
-        asyncio.run(panel.handle_targeted_minimum_qa_send(FakeRequest(body, headers=_headers())))
+        asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(body, headers=_headers())))
     assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("body", [
+    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132&QA_PROPERTY_CODE=6873",
+    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132&property_code=6873",
+    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}",
+])
+def test_single_qa_endpoint_requires_exactly_one_property_selection(monkeypatch, body):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(body.encode(), headers=_headers())))
+    assert error.value.status_code == 400
+
+
+def test_single_qa_endpoint_builds_and_sends_only_selected_6132(monkeypatch):
+    from campanas import owner_campaign_test_runtime as runtime
+    from campanas import owner_campaign_test_sender as sender
+
+    monkeypatch.setattr(panel, "test_mode_enabled", lambda: True)
+    monkeypatch.setattr(panel, "_secret_present", lambda: True)
+    monkeypatch.setattr(panel, "_mongo_db_and_ping", lambda: FakeDB())
+    monkeypatch.setattr(panel, "mass_send_enabled", lambda: False)
+    monkeypatch.setattr(panel.Config, "GMAIL_USER", "smtp-user")
+    monkeypatch.setattr(panel.Config, "GMAIL_PASSWORD", "smtp-pass")
+    async def run_in_test_thread(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_in_test_thread)
+    selected = []
+    case = SimpleNamespace(property_code="6132", operation="ARRIENDO", document_type="NONE")
+    item = SimpleNamespace(case=case, html="<html>final</html>", text="final")
+
+    def build(_database, *, case_ids):
+        selected.append(tuple(case_ids))
+        return [case]
+
+    def prepare(cases):
+        assert cases == [case]
+        return [item]
+
+    monkeypatch.setattr(runtime, "build_owner_campaign_test_cases_live", build)
+    monkeypatch.setattr(sender, "prepare_test_messages", prepare)
+    monkeypatch.setattr(panel, "_targeted_single_preflight", lambda _item: {
+        "property_code": "6132", "report_button_present": False,
+        "broken_document_copy": False, "empty_document_card": False,
+        "RENT_COPY_CORRECT": True, "rent_comparables_only": True,
+        "html_render_pass": True, "mobile_390_pass": True, "gmail_safe_pass": True,
+    })
+    sent = []
+    hashes = "a" * 64
+
+    def send(items, *, db):
+        sent.append([entry.case.property_code for entry in items])
+        return [{
+            "rfc_message_id": "<qa@procasa.cl>", "final_html_sha256": hashes,
+            "preview_html_sha256": hashes, "smtp_html_sha256": hashes,
+            "mime_decoded_html_sha256": hashes, "html_bytes": "17",
+        }]
+
+    monkeypatch.setattr(sender, "_send_prepared_test_messages", send)
+    body = f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132".encode()
+    response = asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(body, headers=_headers())))
+    page = response.body.decode()
+    assert selected == [("RENT_NONE_6132",)]
+    assert sent == [["6132"]]
+    assert "QA_SELECTED_PROPERTY=6132" in page
+    assert "QA_SKIPPED_5641=YES" in page
+    assert "HTML_PARITY=PASS" in page
+    assert "OWNER_EMAILS_SENT=0" in page
+    assert "p.galleguil@gmail.com" in page
 
 
 @pytest.mark.parametrize(("case_id", "code", "operation", "copy_text"), [

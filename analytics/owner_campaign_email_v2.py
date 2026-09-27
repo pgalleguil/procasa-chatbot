@@ -80,7 +80,32 @@ def fmt_unit(value: Any, unit: str) -> str:
         return "No disponible"
     if unit == "CLP/m²":
         return "$ " + f"{parsed:,.0f}".replace(",", ".") + "/m²"
+    if unit == "CLP/m²/mes":
+        return "$ " + f"{parsed:,.0f}".replace(",", ".") + "/m²/mes"
     return fmt_number(parsed, 1) + " " + unit
+
+
+def _rent_price_clp(prop: Mapping[str, Any]) -> float | None:
+    """Return the canonical monthly rent in CLP when that source is present."""
+    candidates = [prop.get("precio_publicado_clp"), prop.get("arriendo_clp"), prop.get("price_clp")]
+    operation = prop.get("tipo_operacion")
+    if isinstance(operation, Mapping):
+        rent = operation.get("precio_arriendo")
+        if isinstance(rent, Mapping):
+            candidates.extend((rent.get("precio_clp"), rent.get("price_clp")))
+    for candidate in candidates:
+        parsed = number(candidate)
+        if parsed is not None and parsed > 0:
+            return parsed
+    return None
+
+
+def _rent_comparable_price_clp(item: Mapping[str, Any]) -> float | None:
+    for key in ("price_clp", "precio_clp", "monthly_price_clp", "precio_arriendo_clp"):
+        parsed = number(item.get(key))
+        if parsed is not None and parsed > 0:
+            return parsed
+    return None
 
 
 def _is_rent(operation: Any) -> bool:
@@ -298,14 +323,17 @@ def _v3_reference_item(item: Mapping[str, Any], unit: str, price_key: str, opera
     price_m2 = item.get(price_key)
     if number(price_m2) is None:
         price_m2 = item.get("price_m2")
+    rent_price_clp = _rent_comparable_price_clp(item) if _is_rent(operation) else None
     return {
         "listing_id": str(item.get("listing_id") or ""),
         "portal": _portal_label(item.get("portal")),
-        "price_label": _price_label(price, operation),
+        "price_label": ("$ " + f"{rent_price_clp:,.0f}".replace(",", ".") + " / mes") if rent_price_clp is not None else _price_label(price, operation),
         "unit_label": fmt_unit(price_m2, unit),
         "surface_label": _surface_label({"superficie_construida": item.get("built_m2"), "superficie_terreno": item.get("land_m2")}),
         "rooms_label": _rooms_label({"dormitorios": item.get("bedrooms")}),
         "baths_label": _baths_label({"banos": item.get("bathrooms")}),
+        "property_type_label": str(item.get("property_type") or item.get("tipo_propiedad") or item.get("tipo") or "").strip(),
+        "commune_label": str(item.get("commune") or item.get("comuna") or "").strip(),
         "distance_label": (fmt_number(item.get("distance"), 2) + " de distancia estructural") if number(item.get("distance")) is not None else "Referencia estructural",
     }
 
@@ -330,16 +358,16 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
     is_rent = _is_rent((prop or {}).get("operacion"))
     property_surface, surface_basis = _surface_detail_from_property(prop or {}, primary_surface)
     if primary_surface == "built_m2":
-        price_key, unit = "price_m2_built", "UF/m²/mes" if is_rent else "UF/m² construido"
+        price_key, unit = "price_m2_built", "CLP/m²/mes" if is_rent else "UF/m² construido"
     elif primary_surface in {"surface_ref_m2", "surface_util_m2"}:
         price_key = "price_m2"
-        unit = "UF/m²/mes" if is_rent else {
+        unit = "CLP/m²/mes" if is_rent else {
             "útiles": "UF/m² útil",
             "construidos": "UF/m² construido",
             "totales": "UF/m² total",
         }.get(surface_basis, "UF/m² útil")
     else:
-        price_key, unit = "price_m2_land", "UF/m²/mes" if is_rent else "UF/m² terreno"
+        price_key, unit = "price_m2_land", "CLP/m²/mes" if is_rent else "UF/m² terreno"
     if property_surface is None:
         # Never infer the subject property's area from a comparable. Without
         # the same valid metric on both sides there is no client-facing
@@ -353,7 +381,11 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
     values = [float(number(item.get(price_key) if number(item.get(price_key)) is not None else item.get("price_m2"))) for item in integral if number(item.get(price_key) if number(item.get(price_key)) is not None else item.get("price_m2")) is not None]
     distribution = _distribution(values)
     property_price = number(property_price_uf)
-    property_value = property_price / property_surface if property_price and property_surface else None
+    if is_rent:
+        rent_price_clp = _rent_price_clp(prop or {})
+        property_value = rent_price_clp / property_surface if rent_price_clp and property_surface else None
+    else:
+        property_value = property_price / property_surface if property_price and property_surface else None
     percentile = _percentile(values, property_value)
     position = _position_label(percentile)
     selected = min(len(integral), 20)
@@ -367,7 +399,7 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         interpretation = "Las referencias disponibles muestran valores de suelo y algunas propiedades con construcciones similares, por lo que recomendamos revisar el posicionamiento junto al asesor."
     display_status = "REVIEW" if bool(v3.get("evidence_conflict")) or status == "REVIEW" else "OK"
     top3 = [_v3_reference_item(item, unit, price_key, (prop or {}).get("operacion")) for item in integral[:3]]
-    land_top3 = [_v3_reference_item(item, "UF/m²/mes" if is_rent else "UF/m² terreno", "price_m2_land", (prop or {}).get("operacion")) for item in land[:3]]
+    land_top3 = [_v3_reference_item(item, "CLP/m²/mes" if is_rent else "UF/m² terreno", "price_m2_land", (prop or {}).get("operacion")) for item in land[:3]]
     total_price_values = [float(number(item.get("price_uf"))) for item in integral if number(item.get("price_uf")) is not None and number(item.get("price_uf")) > 0]
     total_price_distribution = _distribution(total_price_values)
     if property_value is not None and distribution.get("median") is not None:
@@ -526,7 +558,7 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
             "gap_label": None,
             "position_label": None,
             "metrics": metrics[:3],
-            "copy": "Este contexto resume arriendos publicados observados y no representa valores de contratos cerrados." if is_rent else "Este contexto resume información agregada de publicaciones observadas y no representa precios de cierre.",
+        "copy": "Este contexto resume arriendos publicados observados y no representa valores de contratos cerrados." if is_rent else "Este contexto resume información agregada de publicaciones observadas y no representa precios de cierre.",
         }
     return {"visible": False}
 
@@ -727,7 +759,7 @@ def _valuation_slots(property_model: Mapping[str, Any]) -> list[dict[str, str]]:
         position = comparable.get("position_label") if comparable.get("visible") else "Revisión con asesor"
         slot4 = ("POSICIONAMIENTO", position, "Referencia comercial", False)
     return [
-        {"label": "PRECIO PUBLICADO", "value": price_label, "note": "Valor vigente", "emphasis": False},
+        {"label": "CANON PUBLICADO" if is_rental else "PRECIO PUBLICADO", "value": price_label, "note": "Valor vigente", "emphasis": False},
         {"label": slot2[0], "value": slot2[1], "note": slot2[2], "emphasis": False},
         {"label": slot3[0], "value": slot3[1], "note": slot3[2], "emphasis": False},
         {"label": slot4[0], "value": slot4[1], "note": slot4[2], "emphasis": slot4[3]},
@@ -760,8 +792,11 @@ def _single_property_valuation_slots(property_model: Mapping[str, Any]) -> list[
             match = re.match(r"^\s*([+-]?[\d. ]+(?:,\d+)?)", str(value or ""))
             return number(match.group(1)) if match else None
 
-        subject = leading_number(comparable.get("positioning_property_label"))
-        reference = leading_number(comparable.get("positioning_reference_label"))
+        subject = number(comparable.get("positioning_property_value"))
+        reference = number(comparable.get("positioning_reference_value"))
+        if subject is None or reference is None:
+            subject = leading_number(comparable.get("positioning_property_label"))
+            reference = leading_number(comparable.get("positioning_reference_label"))
         if subject is not None and reference is not None:
             position = "Sobre la muestra comparable" if subject > reference else (
                 "Bajo la muestra comparable" if subject < reference else "En la muestra comparable"
@@ -911,12 +946,32 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
-    macro_context = {
-        # The approved individual visual system is shared by sale and rent,
-        # while the mortgage/subsidy editorial block remains sale-only.
-        "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only and not all_rent else (),
-        "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only and not all_rent else "",
-    }
+    if single_property_only and all_rent:
+        rent_count = property_models[0].get("comparable", {}).get("universe_n") or property_models[0].get("comparable", {}).get("selected_n") or 0
+        macro_context = {
+            # Keep the approved sale/rent single-property section structure and
+            # visual weight. Only its evidence-specific copy and labels vary.
+            "copy_paragraphs": (
+                "En el mercado de arriendo, el canon mensual, la oferta disponible y las consultas recientes ayudan a entender cómo se posiciona la propiedad frente a las alternativas que evalúa un arrendatario.",
+                "Las publicaciones similares aportan una referencia comercial para conversar sobre demanda y plazo de colocación. No representan valores de contratos cerrados ni garantizan un resultado.",
+            ),
+            "source_line": "Contexto de arriendo · referencias comerciales observadas",
+            "kpis": [
+                {"label": "OPERACIÓN", "value": "Arriendo", "note": "Canon mensual vigente"},
+                {"label": "PUBLICACIONES", "value": f"{rent_count} similares", "note": "Observadas en arriendo"},
+                {"label": "ENFOQUE", "value": "Colocación", "note": "Posicionamiento y demanda", "context": True},
+            ],
+        }
+    else:
+        macro_context = {
+            "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only else (),
+            "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only else "",
+            "kpis": [
+                {"label": "FINANCIAMIENTO HIPOTECARIO", "value": "≈ 4,1%", "note": "4,08% al 15 sep. · 4,04% prom. agosto"},
+                {"label": "TPM", "value": "4,5%", "note": "Vigente al 21 de septiembre"},
+                {"label": "CONTEXTO", "value": "Mayor selectividad / competencia", "note": "Demanda y confianza más débiles", "context": True},
+            ],
+        }
     report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
     return template.render(
         template_version=TEMPLATE_VERSION,

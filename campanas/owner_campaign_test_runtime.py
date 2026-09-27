@@ -656,6 +656,9 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
             "listing_id": str(item.get("listing_id") or item.get("source_id") or ""),
             "portal": item.get("portal"),
             "price_uf": _number(item.get("precio_uf") or item.get("price_uf")),
+            "price_clp": _number(item.get("precio_clp") or item.get("price_clp") or item.get("precio_arriendo_clp")),
+            "property_type": item.get("tipo_propiedad") or item.get("property_type") or item.get("tipo"),
+            "commune": item.get("comuna") or item.get("commune"),
             "built_m2": built,
             "land_m2": land_m2,
             "bedrooms": _number(item.get("dormitorios") or item.get("bedrooms")),
@@ -1148,6 +1151,7 @@ def _build_case(
     prop = {
         "codigo_propiedad": code, "codigo": code, "tipo_propiedad": prop_type,
         "comuna": commune, "operacion": operation, "precio_publicado_uf": current,
+        "precio_publicado_clp": _number((price_block or {}).get("precio_clp")),
         "superficie_construida": dimensions["built"], "superficie_construida_m2": dimensions["built"],
         "superficie_construida_source": dimensions["built_source"],
         "superficie_util": dimensions["useful"],

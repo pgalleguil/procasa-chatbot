@@ -118,7 +118,10 @@ def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
     )
     assert captured["single_property_only"] is True
     assert captured["hero_title"].endswith("arriendo")
-    assert captured["macro_context"]["copy_paragraphs"] == ()
+    assert len(captured["macro_context"]["copy_paragraphs"]) == 2
+    assert "financiamiento" not in " ".join(captured["macro_context"]["copy_paragraphs"]).casefold()
+    assert len(captured["macro_context"]["kpis"]) == 3
+    assert captured["macro_context"]["kpis"][0]["value"] == "Arriendo"
 
 
 def test_market_reference_uses_only_communal_source_values():
@@ -220,6 +223,72 @@ def test_single_rent_none_uses_approved_single_visual_system_without_document_or
     safe_html = make_email_safe_html(html)
     assert "@media" in safe_html and "viewport" in safe_html
     assert 'alt="PROCASA"' in safe_html
+
+
+def test_rent_comparable_metrics_are_clp_per_square_metre_per_month():
+    evidence = {
+        "client_validation_v3": {
+            "comparable_display_status": "FULL",
+            "effective_type": "OFFICE",
+            "primary_surface": "built_m2",
+            "integral_comparables": [
+                {"listing_id": "r1", "price_uf": 135, "price_clp": 5518848,
+                 "built_m2": 965, "price_m2_built": 5719, "price_m2": 5719,
+                 "property_type": "Oficina", "commune": "Santiago"},
+                {"listing_id": "r2", "price_uf": 235, "price_clp": 9588780,
+                 "built_m2": 1218, "price_m2_built": 7880.6, "price_m2": 7880.6,
+                 "property_type": "Oficina", "commune": "Santiago"},
+                {"listing_id": "r3", "price_uf": 129, "price_clp": 5266452,
+                 "built_m2": 720, "price_m2_built": 7318, "price_m2": 7318,
+                 "property_type": "Oficina", "commune": "Santiago"},
+            ],
+        }
+    }
+    prop = {
+        "operacion": "ARRIENDO", "superficie_construida": 1300,
+        "precio_publicado_uf": 185, "precio_publicado_clp": 7556900,
+    }
+    result = renderer._comparable_model(evidence, "HIGH", 185, prop)
+
+    assert result["positioning_unit_label"] == "CLP/m²/mes"
+    assert result["positioning_property_label"] == "$ 5.813/m²/mes"
+    assert result["positioning_reference_label"] == "$ 7.318/m²/mes"
+    assert result["top3"][0]["price_label"] == "$ 5.518.848 / mes"
+    assert result["top3"][0]["unit_label"] == "$ 5.719/m²/mes"
+    assert result["top3"][0]["property_type_label"] == "Oficina"
+    assert result["top3"][0]["commune_label"] == "Santiago"
+    slots = renderer._single_property_valuation_slots({
+        "is_rental": True,
+        "price_label": "185 UF / mes",
+        "comparable": result,
+        "appraisal": {"visible": False},
+        "activity_90d": {"state": "UNKNOWN"},
+    })
+    assert slots[2]["value"] == "Bajo la muestra comparable"
+
+
+def test_rent_heading_says_arriendo_and_visual_structure_is_shared():
+    sale_model = _single_property_model()
+    rent_model = _single_property_model()
+    rent_model.update({
+        "code": "6132", "operation_label": "Arriendo", "operation_raw": "ARRIENDO",
+        "is_rental": True, "price_label": "185 UF / mes",
+        "document": {"visible": False, "type": "NONE", "copy": ""},
+        "appraisal": {"visible": False, "kind": "NONE", "metrics": []},
+        "recommended_price_label": None,
+    })
+    executive = {"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}
+    sale_html = renderer.render_owner_campaign_email_v2([sale_model], email="qa@example.test", executives=[executive], base_url="https://example.test")
+    rent_html = renderer.render_owner_campaign_email_v2([rent_model], email="qa@example.test", executives=[executive], base_url="https://example.test")
+    sale_root, rent_root = lxml_html.fromstring(sale_html), lxml_html.fromstring(rent_html)
+
+    def single_structure(root):
+        return [" ".join(node.get("class", "").split()) for node in root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' single-property-review ') or contains(concat(' ',normalize-space(@class),' '),' hero-single ') or contains(concat(' ',normalize-space(@class),' '),' property-card-single ') or contains(concat(' ',normalize-space(@class),' '),' valuation-strip-single ') or contains(concat(' ',normalize-space(@class),' '),' activity-90-single ') or contains(concat(' ',normalize-space(@class),' '),' evidence-single ') or contains(concat(' ',normalize-space(@class),' '),' insight-single ') or contains(concat(' ',normalize-space(@class),' '),' executive-single ') or contains(concat(' ',normalize-space(@class),' '),' footer-one ')]")]
+
+    rent_text = " ".join(rent_root.text_content().split()).casefold()
+    assert "Publicaciones similares en arriendo" in rent_html
+    assert "comprador" not in rent_text and "venta" not in rent_text
+    assert single_structure(sale_root) == single_structure(rent_root)
 
 
 def test_missing_comparable_source_date_does_not_leave_empty_sample_label():

@@ -959,7 +959,7 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "bdb24d7c3fddba0e22be5f5f27ef45c19e21f62877b58bffec72ab07ceabf307"
+        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "c077bc042bc532f331ca860b1de46765fde3c732e8fe8993131c8aaecbfc609a"
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()

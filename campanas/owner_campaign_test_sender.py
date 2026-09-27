@@ -968,7 +968,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     rental_checks = {
         "rental_uf_per_month": expected_rent and ("/mes" in price_text.casefold() or "/ mes" in price_text.casefold()),
         "rental_estimate": expected_rent and bool((property_model.get("appraisal") or {}).get("visible")),
-        "rental_comparables": expected_rent and bool(comparable.get("visible")) and any("UF/m²/mes" in str(item.get("unit_label") or "") for item in comparable.get("top3") or []),
+        "rental_comparables": expected_rent and bool(comparable.get("visible")) and str(comparable.get("positioning_unit_label") or "").strip() == "CLP/m²/mes",
         "sale_fields_present": any(term in lower_text for term in sale_terms) if expected_rent else False,
     }
     checks = {

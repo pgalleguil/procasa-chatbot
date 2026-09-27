@@ -870,7 +870,7 @@ def test_only_rendered_valid_test_links_pass_preflight():
 
 def _approved_property_model(case):
     rental = case.operation == "ARRIENDO"
-    unit = "UF/m²/mes" if rental else "UF/m² construido"
+    unit = "CLP/m²/mes" if rental else "UF/m² construido"
     action_label = "ACEPTAR NUEVO VALOR" if case.cta_type == "PRICE_AUTHORIZATION" else "Revisar recomendación con mi asesor"
     target = case.display_recommended_price
     price = f"{case.current_price:g} UF / mes" if rental else "5.000 UF"
@@ -963,6 +963,51 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
+
+
+def test_rent_clp_m2_month_validation_accepts_clp_without_uf_m2_month():
+    case = replace(
+        _case("D"), case_id="RENT_NONE_6132", property_code="6132",
+        document_type="NONE", intended_owner_email="qa-owner@example.test",
+    )
+    model = _approved_property_model(case)
+    model["document"] = {"visible": False, "copy": "", "type": "NONE"}
+    model["appraisal"] = {"visible": False, "kind": "NONE", "metrics": []}
+    case = replace(case, render_context={
+        "property_model": model,
+        "executives": [{"name": case.executive, "email": "executive@procasa.cl", "phone": "+56 9 1234 5678"}],
+        "source_checks": {key: True for key in {
+            "real_property_image", "executive_name", "reference_correct",
+            "comparables_compatible", "own_listing_excluded", "cta_correct",
+        }},
+    })
+
+    prepared = sender.prepare_test_messages([case])
+
+    assert len(prepared) == 1
+    assert prepared[0].case.property_code == "6132"
+    assert "CLP/m²/mes" in prepared[0].html
+    assert "UF/m²/mes" not in prepared[0].html
+    assert "/campana/informe?token=" not in prepared[0].html
+
+
+def test_sale_validation_remains_unchanged_without_rent_comparable_unit():
+    case = _case("A")
+    model = _approved_property_model(case)
+    case = replace(case, render_context={
+        "property_model": model,
+        "executives": [{"name": case.executive, "email": "executive@procasa.cl", "phone": "+56 9 1234 5678"}],
+        "source_checks": {key: True for key in {
+            "real_property_image", "executive_name", "reference_correct",
+            "comparables_compatible", "own_listing_excluded", "cta_correct",
+        }},
+    })
+
+    prepared = sender.prepare_test_messages([case])
+
+    assert len(prepared) == 1
+    assert prepared[0].case.operation == "VENTA"
+    assert "UF/m² construido" in prepared[0].html
 
 
 def test_single_test_render_does_not_require_executive_email_or_phone():

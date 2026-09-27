@@ -435,7 +435,7 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
         try:
             users = db["usuarios"]
             directory_users = list(users.find(
-                {"rol": "agente", "is_active": True},
+                {"is_active": True},
                 {"nombre": 1, "email": 1, "username": 1, "phone": 1, "telefono": 1, "tel": 1, "movil": 1},
             ))
             active_named = [
@@ -446,7 +446,7 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
             if len(exact_matches) == 1:
                 user = exact_matches[0]
                 directory_name = str(user.get("nombre") or "")
-                match_type = "EXACT_NAME"
+                match_type = "EXACT_NORMALIZED"
                 match_unique = True
             elif not exact_matches:
                 subset_matches = [
@@ -462,7 +462,7 @@ def _resolve_executive(db: Any, master: Mapping[str, Any]) -> dict[str, str]:
                     match_type = "AMBIGUOUS_NAME_SUBSET"
                     match_unique = False
             elif len(exact_matches) > 1:
-                match_type = "AMBIGUOUS_EXACT_NAME"
+                match_type = "AMBIGUOUS_EXACT_NORMALIZED"
                 match_unique = False
         except Exception:
             user = {}

@@ -370,9 +370,9 @@ def test_test_executive_resolves_active_crm_contact_by_assigned_name():
     assert executive == {
         "name": "Ejecutiva desde propiedad", "directory_name": "Ejecutiva desde propiedad",
         "email": "ejecutiva@procasa.cl", "phone": "+56912345678",
-        "initials": "", "source": "usuarios", "match_type": "EXACT_NAME", "match_unique": True,
+        "initials": "", "source": "usuarios", "match_type": "EXACT_NORMALIZED", "match_unique": True,
     }
-    assert db.users.query[0] == {"rol": "agente", "is_active": True}
+    assert db.users.query[0] == {"is_active": True}
     fallback = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "Vacante"}})
     assert fallback["name"] == "Equipo PROCASA"
     assert fallback["email"] == fallback["phone"] == ""
@@ -433,7 +433,7 @@ def test_executive_directory_lookup_uses_exact_normalized_name_and_completes_par
 def test_executive_directory_matches_property_name_with_unique_extra_surname():
     class Users:
         def find(self, query, projection):
-            assert query == {"rol": "agente", "is_active": True}
+            assert query == {"is_active": True}
             return [{
                 "nombre": "Erika Garrido", "rol": "agente", "is_active": True,
                 "email": "egarrido@procasa.cl", "telefono": "+56991951317",
@@ -473,7 +473,7 @@ def test_exact_normalized_full_name_match_precedes_name_subset():
 
     executive = runtime._resolve_executive(CRM(), {"estado": {"ejecutivo": "José Pérez"}})
     assert executive["directory_name"] == "Jose Perez"
-    assert executive["match_type"] == "EXACT_NAME"
+    assert executive["match_type"] == "EXACT_NORMALIZED"
     assert executive["email"] == "jose@procasa.cl"
 
 
@@ -1273,6 +1273,36 @@ def test_live_builder_limits_targeted_qa_codes_to_the_fixed_none_cases(monkeypat
     assert [case.property_code for case in cases] == ["6132", "6873"]
     with pytest.raises(runtime.LiveTestCaseBuildError, match="requested_test_cases_invalid"):
         runtime.build_owner_campaign_test_cases_live(FakeDB(), case_ids=("RENT_NONE_99999",))
+
+
+def test_executive_resolver_accepts_unique_active_supervisor_by_normalized_name():
+    directory_query = []
+    supervisor_email = "jpcaro" + "@procasa.cl"
+
+    class Directory:
+        def find(self, query, _projection=None):
+            directory_query.append(query)
+            assert query == {"is_active": True}
+            return [{
+                "nombre": "Jorge Pablo Caro",
+                "email": supervisor_email,
+                "telefono": "+56940904971",
+                "rol": "supervisor",
+                "is_active": True,
+            }]
+
+    class DB:
+        def __getitem__(self, name):
+            assert name == "usuarios"
+            return Directory()
+
+    executive = runtime._resolve_executive(DB(), {"estado": {"ejecutivo": "jorge PABLO CARO"}})
+    assert directory_query == [{"is_active": True}]
+    assert executive["name"] == "jorge PABLO CARO"
+    assert executive["email"] == supervisor_email
+    assert executive["phone"] == "+56940904971"
+    assert executive["match_type"] == "EXACT_NORMALIZED"
+    assert executive["match_unique"] is True
 
 
 def test_sender_reuses_exactly_prepared_html_and_checks_decoded_mime_hash(monkeypatch):

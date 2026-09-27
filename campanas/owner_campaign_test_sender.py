@@ -42,6 +42,7 @@ TARGETED_SINGLE_TEST_CONTRACTS = {
     "RENT_NONE_6132": ("6132", "ARRIENDO"),
 }
 TARGETED_QA_RESEND_PROPERTY_CODES = frozenset({"5641", "6132", "16486", "6873"})
+MISSING_HISTORICAL_HASH_OVERRIDE_CODES = frozenset({"16486"})
 TEST_CASE_IDS = TEST_CASE_IDS | frozenset(TARGETED_SINGLE_TEST_CONTRACTS)
 TEST_LEDGER_COLLECTION = "ajuste_precio"
 TEST_RUN_ID = "owner_campaign_email_AE_20260924_v1"
@@ -486,7 +487,8 @@ def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str
             or row.get("smtp_html_sha256")
             or row.get("rendered_html_sha256")
         )
-    if has_accepted_send and not accepted_hash:
+    missing_hash_override = has_accepted_send and not accepted_hash
+    if missing_hash_override and property_code not in MISSING_HISTORICAL_HASH_OVERRIDE_CODES:
         raise TestSenderError("previous_qa_html_hash_unavailable")
     if accepted_hash and hmac.compare_digest(str(accepted_hash), html_hash):
         raise TestSenderError("same_visual_test_already_sent")
@@ -497,6 +499,7 @@ def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str
         "last_test_resend_started_at": datetime.now(timezone.utc),
         "last_test_resend_attempt_html_sha256": html_hash,
         "test_resend_recipient_email": TEST_RECIPIENT,
+        "last_test_missing_hash_override_attempt": bool(missing_hash_override),
     }
     result = ledger.update_one(
         {"_id": row.get("_id"), "delivery_status": row.get("delivery_status"),
@@ -661,6 +664,9 @@ def _send_prepared_test_messages(
                                     "last_test_sent_at": sent_at,
                                     "last_test_recipient": TEST_RECIPIENT,
                                     "last_test_html_sha256": final_hash,
+                                    "last_test_missing_hash_override_used": bool(
+                                        resend_row.get("last_test_missing_hash_override_attempt")
+                                    ),
                                     "last_test_resend_preview_html_sha256": final_hash,
                                     "last_test_resend_smtp_html_sha256": final_hash,
                                     "last_test_resend_mime_decoded_html_sha256": mime_hash,

@@ -271,12 +271,18 @@ def test_targeted_qa_resend_rejects_non_allowlisted_property_and_ambiguous_attem
         _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new")
 
 
-def test_targeted_qa_resend_rejects_legacy_sent_row_without_comparable_hash():
+def test_missing_hash_override_is_one_time_and_scoped_to_16486():
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
     row = _existing_qa_row("16486", previous_hash=None)
     row.pop("rendered_html_sha256")
     item = SimpleNamespace(case=SimpleNamespace(property_code="16486"))
+    reserved = _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
+    assert reserved["last_test_missing_hash_override_attempt"] is True
+
+    row = _existing_qa_row("5641", previous_hash=None)
+    row.pop("rendered_html_sha256")
+    item = SimpleNamespace(case=SimpleNamespace(property_code="5641"))
     with pytest.raises(TestSenderError, match="previous_qa_html_hash_unavailable"):
         _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
 

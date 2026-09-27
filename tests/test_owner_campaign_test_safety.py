@@ -1457,6 +1457,32 @@ def test_normal_owner_qa_duplicate_guard_still_blocks_existing_ledger_row(monkey
     assert FakeSMTP.instances == []
 
 
+def test_16486_missing_hash_override_persists_current_hash_then_blocks_duplicate(monkeypatch):
+    case = _case("C", document_type="COMMUNAL_MARKET_REPORT")
+    prepared = sender.prepare_test_messages([case], render_case=_render)
+    db = FakeDB()
+    db.docs[sender.TEST_LEDGER_COLLECTION] = [{
+        "_id": f"{sender.TEST_CAMPAIGN_ID}:16486",
+        "campaign_id": sender.TEST_CAMPAIGN_ID,
+        "property_code": "16486",
+        "test_mode": True,
+        "actual_recipient_email": "old-qa-recipient@example.test",
+        "delivery_status": "test_sent",
+        "smtp_accepted": True,
+    }]
+    result = sender._send_prepared_test_messages(
+        prepared, db=db, smtp_factory=FakeSMTP, allow_changed_qa_resend=True,
+    )
+    row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
+    assert row["last_test_missing_hash_override_used"] is True
+    assert row["last_test_html_sha256"] == result[0]["final_html_sha256"]
+    assert row["last_test_recipient"] == sender.TEST_RECIPIENT
+    assert row["test_resend_count"] == 1
+    assert len(row["test_resend_history"]) == 1
+    with pytest.raises(sender.TestSenderError, match="same_visual_test_already_sent"):
+        sender._begin_targeted_qa_resend(db, prepared[0], result[0]["final_html_sha256"])
+
+
 def test_smtp_explicit_recipient_refusal_is_recorded_as_not_accepted():
     class RefusingSMTP(FakeSMTP):
         def sendmail(self, sender_address, recipients, message):

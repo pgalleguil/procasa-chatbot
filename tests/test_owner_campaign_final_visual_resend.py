@@ -273,6 +273,17 @@ def test_final_html_requires_report_and_action_buttons(monkeypatch):
     assert "Ver respaldo comercial" not in result
 
 
+def test_final_html_does_not_require_obsolete_footer_slogan(monkeypatch):
+    monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
+    source = _approved_html_source().replace("Buenas propiedades crean grandes historias", "")
+    prepared = SimpleNamespace(html=source, report_token="report", action_token="action")
+
+    result = resend._final_visual_html(prepared, advisor_review_url=_advisor_url())
+
+    assert "Revisión comercial de tu propiedad" in result
+    assert "Revisar con mi ejecutivo →" in result
+
+
 def test_final_html_blocks_send_when_executive_contact_is_missing(monkeypatch):
     monkeypatch.setattr(resend, "make_email_safe_html", lambda value: value)
     source = _approved_html_source().replace("qa@procasa.cl", "").replace("+56912345678", "")

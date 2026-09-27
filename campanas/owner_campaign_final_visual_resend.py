@@ -92,7 +92,6 @@ def _final_visual_html(prepared: PreparedTestMessage, *, advisor_review_url: str
         "Tasación individual",
         "Publicaciones comparables",
         "Revisión comercial de tu propiedad",
-        "Buenas propiedades crean grandes historias",
         "CHILE · SEPTIEMBRE 2026",
         "FINANCIAMIENTO HIPOTECARIO",
         "TPM",

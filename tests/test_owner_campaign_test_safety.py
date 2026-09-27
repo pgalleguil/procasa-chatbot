@@ -948,7 +948,8 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
     for item in rendered:
         assert 'class="shell shell-single' in item.html
         if item.case.case_id == "D":
-            assert 'class="hero"' in item.html
+            assert 'class="hero-single"' in item.html
+            assert 'class="hero"' not in item.html
             assert "Estamos preparando tu propiedad para un nuevo escenario de arriendo" in item.text
         else:
             assert 'class="hero-single"' in item.html

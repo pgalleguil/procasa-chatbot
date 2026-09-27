@@ -862,7 +862,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     )
     template = environment.get_template(TEMPLATE_FILE)
     property_models = []
-    single_property_only = len(properties) == 1 and not bool(properties[0].get("is_rental"))
+    single_property_only = len(properties) == 1
     for original in properties:
         model = dict(original)
         activity = model.get("activity_90d") if isinstance(model.get("activity_90d"), Mapping) else {"state": "UNKNOWN"}
@@ -884,7 +884,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         model.setdefault("initials", _initials(model.get("name")))
         executive_models.append(model)
     all_rent = bool(property_models) and all(bool(item.get("is_rental")) for item in property_models)
-    single_property_only = len(property_models) == 1 and not bool(property_models[0].get("is_rental"))
+    single_property_only = len(property_models) == 1
     mixed_operations = bool({bool(item.get("is_rental")) for item in property_models}) and len({bool(item.get("is_rental")) for item in property_models}) > 1
     if all_rent:
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de arriendo"
@@ -912,8 +912,10 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
     macro_context = {
-        "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only else (),
-        "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only else "",
+        # The approved individual visual system is shared by sale and rent,
+        # while the mortgage/subsidy editorial block remains sale-only.
+        "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only and not all_rent else (),
+        "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only and not all_rent else "",
     }
     report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
     return template.render(

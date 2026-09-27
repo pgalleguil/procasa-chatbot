@@ -6,6 +6,10 @@ import asyncio
 import html
 import os
 import re
+import secrets
+import threading
+import time
+from dataclasses import replace
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,13 +23,17 @@ from config import Config
 
 TOKEN_SECRET_ENV = "OWNER_CAMPAIGN_TEST_TOKEN_SECRET"
 CONFIRMATION_VALUE = "RUN_OWNER_CAMPAIGN_TEST"
-TARGETED_SINGLE_QA_CONFIRMATION = "SEND_ONE_APPROVED_QA_CASE"
+TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION = "PREVIEW_ONE_APPROVED_QA_CASE"
+TARGETED_SINGLE_QA_CONFIRMATION = "SEND_PREVIEWED_QA_CASE"
 TARGETED_QA_CASES = {
     "5641": "A",
     "16486": "C",
     "6873": "SALE_NONE_6873",
     "6132": "RENT_NONE_6132",
 }
+_SINGLE_QA_PREVIEWS: dict[str, tuple[float, str, Any]] = {}
+_SINGLE_QA_PREVIEWS_LOCK = threading.Lock()
+_SINGLE_QA_PREVIEW_TTL_SECONDS = 600
 DELIVERY_UNKNOWN_BASELINE = 6
 EXPECTED_B_BUILT_SOURCE = "tasaciones.tasacion_online.total_construccion_m2:SII"
 _SALE_TERMS = (
@@ -369,10 +377,13 @@ def _targeted_single_preflight(item: Any) -> dict[str, Any]:
         "descargar el informe",
         "descarga tu informe",
     ))
-    nonempty_document_fallback = (
-        "respaldo comercial" in visible
-        and ("revisar con asesor" in visible or "revisar con tu ejecutivo" in visible)
-    )
+    document_module_present = bool(re.search(
+        r"(?is)<[^>]+\bclass=[\"'][^\"']*\bdocument-line-single\b",
+        item.html,
+    ))
+    property_model = (case.render_context or {}).get("property_model") or {}
+    property_image_url = str((property_model.get("image") or {}).get("url") or "")
+    duplicated_property_image = bool(property_image_url and item.html.count(property_image_url) > 1)
     media_query = bool(re.search(r"@media[^{}]*max-width\s*:\s*(?:390|4\d\d|5\d\d|6\d\d)px", item.html, re.I))
     mobile = "name=\"viewport\"" in item.html.casefold() and media_query
     gmail_safe = len(item.html.encode("utf-8")) <= 95 * 1024
@@ -400,7 +411,9 @@ def _targeted_single_preflight(item: Any) -> dict[str, Any]:
         "document_type": str(case.document_type),
         "report_button_present": not no_report,
         "broken_document_copy": broken_copy,
-        "empty_document_card": not nonempty_document_fallback,
+        "empty_document_card": case.document_type == "NONE" and document_module_present,
+        "duplicated_property_image": duplicated_property_image,
+        "single_visual_system": "hero-single" in item.html and "single-property-review" in item.html,
         operation_check: copy_ok,
         "rent_comparables_only": case.operation != "ARRIENDO" or (
             source_checks.get("comparables_compatible") is True
@@ -415,36 +428,83 @@ def _targeted_single_preflight(item: Any) -> dict[str, Any]:
 
 
 async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
-    """Render and send exactly one allowlisted QA property to the fixed inbox."""
+    """Preview one allowlisted QA email, then send that exact cached HTML once."""
     if not test_mode_enabled():
         raise HTTPException(status_code=404, detail="Herramienta temporal no disponible")
     _validate_same_origin_post(request)
     if str(request.headers.get("content-type") or "").split(";", 1)[0].strip().casefold() != "application/x-www-form-urlencoded":
         raise HTTPException(status_code=415, detail="Formato de confirmación no permitido")
     body = await request.body()
-    if len(body) > 256:
+    if len(body) > 512:
         raise HTTPException(status_code=413, detail="Confirmación inválida")
     try:
         form = parse_qs(body.decode("ascii"), strict_parsing=True, keep_blank_values=True)
     except (UnicodeDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Confirmación inválida") from None
-    if (
-        set(form) != {"confirmation", "QA_PROPERTY_CODE"}
-        or form.get("confirmation") != [TARGETED_SINGLE_QA_CONFIRMATION]
-        or len(form.get("QA_PROPERTY_CODE", [])) != 1
-    ):
+    confirmation = form.get("confirmation", [])
+    property_codes = form.get("QA_PROPERTY_CODE", [])
+    preview_mode = (
+        set(form) == {"confirmation", "QA_PROPERTY_CODE"}
+        and confirmation == [TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION]
+        and len(property_codes) == 1
+    )
+    send_mode = (
+        set(form) == {"confirmation", "QA_PROPERTY_CODE", "preview_id"}
+        and confirmation == [TARGETED_SINGLE_QA_CONFIRMATION]
+        and len(property_codes) == 1
+        and len(form.get("preview_id", [])) == 1
+    )
+    if not (preview_mode or send_mode):
         raise HTTPException(status_code=400, detail="Se requiere un único código QA permitido")
-    property_code = form["QA_PROPERTY_CODE"][0]
+    property_code = property_codes[0]
     case_id = TARGETED_QA_CASES.get(property_code)
     if case_id is None:
         raise HTTPException(status_code=400, detail="Código de propiedad fuera de la allowlist QA")
-    if not _secret_present() or not Config.GMAIL_USER or not Config.GMAIL_PASSWORD or mass_send_enabled():
+    if not _secret_present() or not Config.GMAIL_USER or mass_send_enabled() or (send_mode and not Config.GMAIL_PASSWORD):
         raise HTTPException(status_code=409, detail="Precondiciones de prueba no disponibles")
 
+    if send_mode:
+        preview_id = form["preview_id"][0]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", preview_id):
+            raise HTTPException(status_code=400, detail="Preview QA inválido")
+        now = time.monotonic()
+        with _SINGLE_QA_PREVIEWS_LOCK:
+            expired = [key for key, value in _SINGLE_QA_PREVIEWS.items() if now - value[0] > _SINGLE_QA_PREVIEW_TTL_SECONDS]
+            for key in expired:
+                _SINGLE_QA_PREVIEWS.pop(key, None)
+            cached = _SINGLE_QA_PREVIEWS.pop(preview_id, None)
+        if cached is None or now - cached[0] > _SINGLE_QA_PREVIEW_TTL_SECONDS or cached[1] != property_code:
+            raise HTTPException(status_code=409, detail="Preview expirado o no corresponde al caso seleccionado; vuelva a generarlo")
+        prepared = [cached[2]]
+        if str(prepared[0].case.property_code) != property_code:
+            raise HTTPException(status_code=409, detail="El HTML preparado no corresponde al caso seleccionado")
+        from campanas.owner_campaign_test_sender import _send_prepared_test_messages
+        database = await asyncio.to_thread(_mongo_db_and_ping)
+        try:
+            send_result = await asyncio.to_thread(_send_prepared_test_messages, prepared, db=database)
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc
+        sent = send_result[0]
+        hashes = (
+            sent["final_html_sha256"], sent["preview_html_sha256"],
+            sent["smtp_html_sha256"], sent["mime_decoded_html_sha256"],
+        )
+        if len(set(hashes)) != 1:
+            raise HTTPException(status_code=500, detail="La verificación de paridad HTML falló")
+        return HTMLResponse(
+            "<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>QA PROCASA completado</title><body><main><h1>QA individual enviado</h1>"
+            f"<p>QA_SELECTED_PROPERTY={html.escape(property_code)} · QA_SKIPPED_5641={'NO' if property_code == '5641' else 'YES'}.</p>"
+            f"<p>TEST_EMAIL_SENT=YES · TEST_RECIPIENT={html.escape(TEST_RECIPIENT)} · RFC_MESSAGE_ID={html.escape(sent['rfc_message_id'])}</p>"
+            f"<p>FINAL_HTML_SHA256={hashes[0]} · PREVIEW_HTML_SHA256={hashes[1]} · SMTP_HTML_SHA256={hashes[2]} · MIME_DECODED_HTML_SHA256={hashes[3]}</p>"
+            f"<p>HTML_PARITY=PASS · FINAL_HTML_BYTES={sent['html_bytes']} · GMAIL_CLIPPING_SAFE={'YES' if int(sent['html_bytes']) < 95 * 1024 else 'NO'}</p>"
+            "<p>EMAILS_SENT=1 · OWNER_EMAILS_SENT=0 · LIVE_PRICE_CHANGED=NO · NEW_MONGO_COLLECTIONS=0.</p></main></body></html>",
+            status_code=200,
+            headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"},
+        )
+
     from campanas.owner_campaign_test_runtime import build_owner_campaign_test_cases_live
-    from campanas.owner_campaign_test_sender import (
-        TestSenderError, _send_prepared_test_messages, prepare_test_messages,
-    )
+    from campanas.owner_campaign_test_sender import MAX_TEST_HTML_BYTES, TestSenderError, prepare_test_messages
 
     database = await asyncio.to_thread(_mongo_db_and_ping)
     try:
@@ -468,33 +528,54 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
         else:
             checks = (preflight["html_render_pass"] is True,)
         if not all((*checks, preflight["html_render_pass"] is True,
-                    preflight["mobile_390_pass"] is True, preflight["gmail_safe_pass"] is True)):
+                    preflight["mobile_390_pass"] is True, preflight["gmail_safe_pass"] is True,
+                    preflight["single_visual_system"] is True,
+                    preflight["duplicated_property_image"] is False)):
             raise TestSenderError("targeted_qa_render_preflight_failed")
     except (TestSenderError, ValueError) as exc:
         raise HTTPException(status_code=409, detail="QA dirigido bloqueado por preflight; no se envió correo") from exc
 
     try:
-        send_result = await asyncio.to_thread(_send_prepared_test_messages, prepared, db=database)
-    except Exception as exc:
-        raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc
+        from analytics.owner_campaign_email_compat import make_email_safe_html
+        safe_html = make_email_safe_html(item.html)
+        if len(safe_html.encode("utf-8")) > MAX_TEST_HTML_BYTES:
+            raise TestSenderError("final_resend_html_exceeds_gmail_budget")
+        safe_item = replace(item, html=safe_html)
+        from campanas.owner_campaign_test_sender import _LinkParser, validate_recipient_envelope
+        parsed_links = _LinkParser()
+        parsed_links.feed(safe_html)
+        if item.case.document_type == "NONE" and any("/campana/informe" in href for href in parsed_links.hrefs):
+            raise TestSenderError("no_document_report_link_forbidden")
+        validate_recipient_envelope(to=TEST_RECIPIENT, cc=(), bcc=(), envelope_recipients=[TEST_RECIPIENT])
+        safe_preflight = _targeted_single_preflight(safe_item)
+        if (
+            safe_preflight["single_visual_system"] is not True
+            or safe_preflight["duplicated_property_image"] is not False
+            or safe_preflight["mobile_390_pass"] is not True
+            or safe_preflight["gmail_safe_pass"] is not True
+            or (item.case.document_type == "NONE" and safe_preflight["empty_document_card"] is not False)
+        ):
+            raise TestSenderError("gmail_safe_visual_preflight_failed")
+    except (TestSenderError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail="QA dirigido bloqueado por preflight Gmail-safe; no se envió correo") from exc
 
-    sent = send_result[0]
-    hashes = (
-        sent["final_html_sha256"], sent["preview_html_sha256"],
-        sent["smtp_html_sha256"], sent["mime_decoded_html_sha256"],
-    )
-    if len(set(hashes)) != 1:
-        raise HTTPException(status_code=500, detail="La verificación de paridad HTML falló")
+    preview_id = secrets.token_urlsafe(24)
+    now = time.monotonic()
+    with _SINGLE_QA_PREVIEWS_LOCK:
+        expired = [key for key, value in _SINGLE_QA_PREVIEWS.items() if now - value[0] > _SINGLE_QA_PREVIEW_TTL_SECONDS]
+        for key in expired:
+            _SINGLE_QA_PREVIEWS.pop(key, None)
+        _SINGLE_QA_PREVIEWS.clear()
+        _SINGLE_QA_PREVIEWS[preview_id] = (now, property_code, safe_item)
+    preview_hash = __import__("hashlib").sha256(safe_html.encode("utf-8")).hexdigest()
     return HTMLResponse(
-        "<!doctype html><html lang='es'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>QA PROCASA completado</title><body><main><h1>QA dirigido completado</h1>"
-        f"<p>QA_SELECTED_PROPERTY={html.escape(property_code)} · QA_SKIPPED_5641={'NO' if property_code == '5641' else 'YES'}.</p>"
-        f"<p>TEST_EMAIL_SENT=YES · TEST_RECIPIENT={html.escape(TEST_RECIPIENT)} · RFC_MESSAGE_ID={html.escape(sent['rfc_message_id'])}</p>"
-        f"<p>FINAL_HTML_SHA256={hashes[0]} · PREVIEW_HTML_SHA256={hashes[1]} · SMTP_HTML_SHA256={hashes[2]} · MIME_DECODED_HTML_SHA256={hashes[3]}</p>"
-        f"<p>HTML_PARITY=PASS · FINAL_HTML_BYTES={sent['html_bytes']} · GMAIL_CLIPPING_SAFE={'YES' if int(sent['html_bytes']) < 95 * 1024 else 'NO'}</p>"
-        "<p>EMAILS_SENT=1 · OWNER_EMAILS_SENT=0 · LIVE_PRICE_CHANGED=NO · NEW_MONGO_COLLECTIONS=0.</p></main></body></html>",
+        safe_html,
         status_code=200,
-        headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"},
+        headers={
+            "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow",
+            "X-QA-Preview-ID": preview_id, "X-QA-Property-Code": property_code,
+            "X-QA-HTML-SHA256": preview_hash, "X-QA-HTML-Bytes": str(len(safe_html.encode("utf-8"))),
+        },
     )
 
 

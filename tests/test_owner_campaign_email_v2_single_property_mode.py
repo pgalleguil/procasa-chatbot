@@ -81,7 +81,7 @@ def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypa
     assert captured["report_date"]
 
 
-def test_renderer_keeps_legacy_layout_for_multiproperty_and_rental(monkeypatch):
+def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
     captured = {}
 
     class FakeTemplate:
@@ -116,8 +116,9 @@ def test_renderer_keeps_legacy_layout_for_multiproperty_and_rental(monkeypatch):
         executives=[],
         base_url="https://example.test",
     )
-    assert captured["single_property_only"] is False
+    assert captured["single_property_only"] is True
     assert captured["hero_title"].endswith("arriendo")
+    assert captured["macro_context"]["copy_paragraphs"] == ()
 
 
 def test_market_reference_uses_only_communal_source_values():
@@ -174,6 +175,51 @@ def test_real_single_property_template_renders_approved_visual_content():
     ]
     assert "REFERENCIA DEL SEGMENTO 52,3 UF/m² Corte 18 de mayo de 2026" in valuation_cells[1]
     assert "POSICIONAMIENTO Sobre la muestra comparable Frente a publicaciones similares" in valuation_cells[2]
+
+
+def test_single_rent_none_uses_approved_single_visual_system_without_document_or_sale_copy():
+    model = _single_property_model()
+    model.update({
+        "code": "6132",
+        "operation_label": "Arriendo",
+        "operation_raw": "ARRIENDO",
+        "is_rental": True,
+        "price_label": "21 UF / mes",
+        "document": {"visible": False, "copy": "", "type": "NONE"},
+        "appraisal": {"visible": False, "kind": "NONE", "metrics": []},
+        "market_reference": {"visible": False},
+        "single_document_copy": "",
+        "single_diagnostic_text": "Revisemos el posicionamiento del canon mensual.",
+        "single_recommendation_text": "Revisa el canon mensual con tu ejecutivo.",
+        "cta": {"primary_url": "https://example.test/action", "primary_label": "REVISAR CON MI EJECUTIVO"},
+    })
+    model["comparable"].update({
+        "positioning_mode": "TOTAL_PRICE",
+        "positioning_unit_label": "UF/mes",
+        "positioning_reference_label": "20 UF/mes",
+        "positioning_property_label": "21 UF/mes",
+        "top3": [{**item, "unit_label": "UF/m²/mes"} for item in model["comparable"]["top3"]],
+    })
+    html = renderer.render_owner_campaign_email_v2(
+        [model], email="qa@example.test",
+        executives=[{"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}],
+        base_url="https://example.test",
+    )
+    root = lxml_html.fromstring(html)
+    text = " ".join(root.text_content().split()).casefold()
+    assert "hero-single" in html
+    assert "single-property-review" in html
+    assert "Estamos preparando tu propiedad para un nuevo escenario de arriendo" in html
+    assert "compradores" not in text
+    assert "financiamiento hipotecario" not in text
+    assert "concretar una venta" not in text
+    assert "21 uf / mes" in text
+    assert not root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' document-line-single ')]")
+    assert "ver informe" not in text
+    assert html.count("https://example.test/property.jpg") == 1
+    safe_html = make_email_safe_html(html)
+    assert "@media" in safe_html and "viewport" in safe_html
+    assert 'alt="PROCASA"' in safe_html
 
 
 def test_missing_comparable_source_date_does_not_leave_empty_sample_label():

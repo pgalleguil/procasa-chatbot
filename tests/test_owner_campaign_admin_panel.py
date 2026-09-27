@@ -92,7 +92,7 @@ def test_get_rejects_overrides_and_page_never_discloses_secret(monkeypatch):
 
 def test_single_qa_endpoint_rejects_recipient_or_unallowlisted_property(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
-    body = (f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}"
+    body = (f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}"
             "&QA_PROPERTY_CODE=99999&recipient=owner%40example.com").encode()
     with pytest.raises(HTTPException) as error:
         asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(body, headers=_headers())))
@@ -100,9 +100,9 @@ def test_single_qa_endpoint_rejects_recipient_or_unallowlisted_property(monkeypa
 
 
 @pytest.mark.parametrize("body", [
-    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132&QA_PROPERTY_CODE=6873",
-    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132&property_code=6873",
-    f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}",
+    f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=6132&QA_PROPERTY_CODE=6873",
+    f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=6132&property_code=6873",
+    f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}",
 ])
 def test_single_qa_endpoint_requires_exactly_one_property_selection(monkeypatch, body):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
@@ -127,7 +127,10 @@ def test_single_qa_endpoint_builds_and_sends_only_selected_6132(monkeypatch):
     monkeypatch.setattr(asyncio, "to_thread", run_in_test_thread)
     selected = []
     case = SimpleNamespace(property_code="6132", operation="ARRIENDO", document_type="NONE")
-    item = SimpleNamespace(case=case, html="<html>final</html>", text="final")
+    item = campaign_sender.PreparedTestMessage(
+        case=case, subject="QA", html="<html>final</html>", text="final",
+        report_token=None, action_token=None,
+    )
 
     def build(_database, *, case_ids):
         selected.append(tuple(case_ids))
@@ -139,32 +142,48 @@ def test_single_qa_endpoint_builds_and_sends_only_selected_6132(monkeypatch):
 
     monkeypatch.setattr(runtime, "build_owner_campaign_test_cases_live", build)
     monkeypatch.setattr(sender, "prepare_test_messages", prepare)
+    from analytics import owner_campaign_email_compat
+    monkeypatch.setattr(owner_campaign_email_compat, "make_email_safe_html", lambda value: value)
     monkeypatch.setattr(panel, "_targeted_single_preflight", lambda _item: {
         "property_code": "6132", "report_button_present": False,
         "broken_document_copy": False, "empty_document_card": False,
         "RENT_COPY_CORRECT": True, "rent_comparables_only": True,
+        "single_visual_system": True, "duplicated_property_image": False,
         "html_render_pass": True, "mobile_390_pass": True, "gmail_safe_pass": True,
     })
     sent = []
-    hashes = "a" * 64
 
     def send(items, *, db):
-        sent.append([entry.case.property_code for entry in items])
+        sent.append([(entry.case.property_code, entry.html) for entry in items])
+        import hashlib
+
+        digest = hashlib.sha256(items[0].html.encode("utf-8")).hexdigest()
         return [{
-            "rfc_message_id": "<qa@procasa.cl>", "final_html_sha256": hashes,
-            "preview_html_sha256": hashes, "smtp_html_sha256": hashes,
-            "mime_decoded_html_sha256": hashes, "html_bytes": "17",
+            "rfc_message_id": "<qa@procasa.cl>", "final_html_sha256": digest,
+            "preview_html_sha256": digest, "smtp_html_sha256": digest,
+            "mime_decoded_html_sha256": digest, "html_bytes": str(len(items[0].html.encode("utf-8"))),
         }]
 
     monkeypatch.setattr(sender, "_send_prepared_test_messages", send)
-    body = f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132".encode()
-    response = asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(body, headers=_headers())))
-    page = response.body.decode()
+    panel._SINGLE_QA_PREVIEWS.clear()
+    preview_body = f"confirmation={panel.TARGETED_SINGLE_QA_PREVIEW_CONFIRMATION}&QA_PROPERTY_CODE=6132".encode()
+    preview_response = asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(preview_body, headers=_headers())))
     assert selected == [("RENT_NONE_6132",)]
-    assert sent == [["6132"]]
+    assert sent == []
+    assert preview_response.headers["x-qa-property-code"] == "6132"
+    preview_id = preview_response.headers["x-qa-preview-id"]
+    preview_html = preview_response.body.decode()
+    assert preview_response.headers["x-qa-html-sha256"] == __import__("hashlib").sha256(preview_html.encode("utf-8")).hexdigest()
+    send_body = (
+        f"confirmation={panel.TARGETED_SINGLE_QA_CONFIRMATION}&QA_PROPERTY_CODE=6132&preview_id={preview_id}"
+    ).encode()
+    response = asyncio.run(panel.handle_targeted_single_qa_send(FakeRequest(send_body, headers=_headers())))
+    page = response.body.decode()
+    assert sent == [[("6132", preview_html)]]
     assert "QA_SELECTED_PROPERTY=6132" in page
     assert "QA_SKIPPED_5641=YES" in page
     assert "HTML_PARITY=PASS" in page
+    assert f"FINAL_HTML_SHA256={preview_response.headers['x-qa-html-sha256']}" in page
     assert "OWNER_EMAILS_SENT=0" in page
     assert "p.galleguil@gmail.com" in page
 

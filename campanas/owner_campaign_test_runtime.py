@@ -1426,8 +1426,13 @@ def build_owner_campaign_test_cases_live(
             master = docs[code]
             try:
                 segment = _campaign_segment(master)
-                if segment not in CAMPAIGN_SEGMENTS:
-                    raise LiveTestCaseBuildError("targeted_qa_segment_unresolved")
+                if segment is None:
+                    # These fixed no-document QA cases validate operation copy,
+                    # contact resolution, and document omission. When the live
+                    # record has no campaign segment, render the existing
+                    # advisor-review QA scenario; never infer or persist a
+                    # production evidence segment or price authorization.
+                    segment = "TEST_ADVISOR_REVIEW"
                 case = _build_case(
                     db, master, case_id, segment=segment,
                     now=now or datetime.now(timezone.utc),

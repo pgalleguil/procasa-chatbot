@@ -1275,6 +1275,30 @@ def test_live_builder_limits_targeted_qa_codes_to_the_fixed_none_cases(monkeypat
         runtime.build_owner_campaign_test_cases_live(FakeDB(), case_ids=("RENT_NONE_99999",))
 
 
+def test_live_builder_uses_test_only_advisor_scenario_when_target_has_no_campaign_segment(monkeypatch):
+    from types import SimpleNamespace
+
+    seen_segments = []
+    monkeypatch.setattr(runtime, "_load_code_docs", lambda _db, codes: {code: {"codigo": code} for code in codes})
+    monkeypatch.setattr(runtime, "_campaign_segment", lambda _master: None)
+
+    def build_case(_db, master, case_id, *, segment, now):
+        seen_segments.append((master["codigo"], segment))
+        return SimpleNamespace(
+            case_id=case_id,
+            property_code=master["codigo"],
+            operation="VENTA" if case_id == "SALE_NONE_6873" else "ARRIENDO",
+            document_type="NONE",
+        )
+
+    monkeypatch.setattr(runtime, "_build_case", build_case)
+    cases = runtime.build_owner_campaign_test_cases_live(
+        FakeDB(), case_ids=("SALE_NONE_6873", "RENT_NONE_6132"),
+    )
+    assert [case.property_code for case in cases] == ["6873", "6132"]
+    assert seen_segments == [("6873", "TEST_ADVISOR_REVIEW"), ("6132", "TEST_ADVISOR_REVIEW")]
+
+
 def test_executive_resolver_accepts_unique_active_supervisor_by_normalized_name():
     directory_query = []
     supervisor_email = "jpcaro" + "@procasa.cl"

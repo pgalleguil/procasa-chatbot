@@ -15,6 +15,7 @@ from uuid import uuid4
 
 
 TEST_RECIPIENT = "p.galleguil@gmail.com"
+QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873"})
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
@@ -49,7 +50,12 @@ def issue_test_token(
     if recipient.strip().casefold() != TEST_RECIPIENT:
         raise ValueError("Test tokens may only target the configured test recipient")
     property_code = str(property_code or "").strip()
-    if action not in TEST_ACTIONS or not PROPERTY_CODE_RE.fullmatch(property_code) or not secret:
+    if (
+        action not in TEST_ACTIONS
+        or property_code not in QA_PROPERTY_ALLOWLIST
+        or not PROPERTY_CODE_RE.fullmatch(property_code)
+        or not secret
+    ):
         raise ValueError("Invalid test token claims")
     normalized_document_type = str(document_type or "").strip().upper()
     if action == REPORT_ACTION and normalized_document_type not in REPORT_DOCUMENT_TYPES:
@@ -61,6 +67,7 @@ def issue_test_token(
         "property_code": property_code,
         "action": action,
         "recipient": TEST_RECIPIENT,
+        "qa_recipient": TEST_RECIPIENT,
         "exp": int(expires_at),
         "test_mode": True,
     }
@@ -73,9 +80,9 @@ def issue_test_token(
 
 def issue_campaign_test_token(
     *, property_code: str, action: str, document_type: str | None = None,
-    expires_in_seconds: int = 3600, now_epoch: int | None = None,
+    expires_in_seconds: int = 86400, now_epoch: int | None = None,
 ) -> str:
-    """Issue a short-lived token using the one configured campaign contract."""
+    """Issue a one-day token using the fixed QA campaign and recipient contract."""
     if not test_mode_enabled():
         raise ValueError("Test mode is disabled")
     if not isinstance(expires_in_seconds, int) or not 60 <= expires_in_seconds <= 86400:
@@ -114,8 +121,10 @@ def decode_test_token(
             not isinstance(payload, dict)
             or payload.get("test_mode") is not True
             or payload.get("recipient") != TEST_RECIPIENT
+            or payload.get("qa_recipient") != TEST_RECIPIENT
             or campaign_id != TEST_CAMPAIGN_ID
             or not campaign_id.startswith(TEST_CAMPAIGN_PREFIX)
+            or property_code not in QA_PROPERTY_ALLOWLIST
             or not PROPERTY_CODE_RE.fullmatch(property_code)
             or action not in TEST_ACTIONS
             or (action == REPORT_ACTION and document_type not in REPORT_DOCUMENT_TYPES)
@@ -340,6 +349,7 @@ def persist_test_event(
         "event_at": timestamp.isoformat(),
         "token_version": "t1",
         "test_mode": True,
+        "test_recipient": TEST_RECIPIENT,
     }
     events = [{**common, **event} for event in desired_events]
     update: dict[str, Any] = {

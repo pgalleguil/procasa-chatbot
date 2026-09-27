@@ -62,7 +62,7 @@ def issue_test_link_token(
     property_code: str,
     action: str,
     document_type: str | None = None,
-    expires_in_seconds: int = 3600,
+    expires_in_seconds: int = 86400,
     now_epoch: int | None = None,
 ) -> str:
     """Compatibility wrapper around the canonical campaign token issuer."""

@@ -17,12 +17,25 @@ from campanas import owner_campaign_test_actions as actions
 from campanas import owner_campaign_test_runtime as runtime
 from campanas import owner_campaign_test_sender as sender
 from campanas import owner_campaign_test_runner as runner
+from campanas import test_mode as test_mode
 from analytics import owner_campaign_test_sender as cli
 from analytics import owner_campaign_email_v2 as email_v2
 
 
 SECRET = "owner-campaign-e2e-secret-for-tests"
 OWNER_EMAIL = "real-owner@example.test"
+
+
+@pytest.fixture(autouse=True)
+def allow_legacy_codes_only_inside_legacy_harness_tests(monkeypatch):
+    # Older internal harness cases use fixture codes. Production token
+    # issuance/verification remains limited to the four current QA properties;
+    # a dedicated test below verifies that default contract without overrides.
+    monkeypatch.setattr(
+        test_mode,
+        "QA_PROPERTY_ALLOWLIST",
+        frozenset({"5641", "6132", "16486", "6873", "16521", "16527", "70001"}),
+    )
 
 
 class FakeCollection:
@@ -1572,6 +1585,40 @@ def _action_token(code="16521", action=actions.ACCEPT_PRICE_ACTION, *, recipient
     )
 
 
+def test_owner_action_tokens_are_allowlisted_recipient_bound_and_valid_for_24_hours(monkeypatch):
+    monkeypatch.setattr(test_mode, "QA_PROPERTY_ALLOWLIST", frozenset({"5641", "6132", "16486", "6873"}))
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    now = 1_800_000_000
+
+    token = test_mode.issue_campaign_test_token(
+        property_code="6132", action=actions.ADVISOR_ACTION, now_epoch=now,
+    )
+    claims = test_mode.decode_test_token(token, secret=SECRET, now_epoch=now)
+    assert claims["test_mode"] is True
+    assert claims["campaign_id"] == "owner_price_campaign_test_20260923"
+    assert claims["property_code"] == "6132"
+    assert claims["qa_recipient"] == "p.galleguil@gmail.com"
+    assert claims["exp"] == now + 86400
+    assert test_mode.verify_campaign_test_token(token, now_epoch=now + 86399)
+    assert test_mode.verify_campaign_test_token(token, now_epoch=now + 86400) is None
+
+    with pytest.raises(ValueError, match="Invalid test token claims"):
+        test_mode.issue_campaign_test_token(
+            property_code="9999", action=actions.ADVISOR_ACTION, now_epoch=now,
+        )
+    monkeypatch.setattr(test_mode, "QA_PROPERTY_ALLOWLIST", frozenset({"5641", "6132", "16486", "6873", "9999"}))
+    off_allowlist = test_mode.issue_test_token(
+        campaign_id=actions.TEST_CAMPAIGN_ID,
+        property_code="9999",
+        action=actions.ADVISOR_ACTION,
+        secret=SECRET,
+        expires_at=now + 3600,
+    )
+    monkeypatch.setattr(test_mode, "QA_PROPERTY_ALLOWLIST", frozenset({"5641", "6132", "16486", "6873"}))
+    assert test_mode.decode_test_token(off_allowlist, secret=SECRET, now_epoch=now) is None
+
+
 def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_price(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
@@ -1602,6 +1649,7 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert summary["authorized_value"] == 4700.0
     assert summary["current_value_at_campaign"] == 5000.0
     assert all(event["test_mode"] is True and event["property_code"] == "16521" for event in events)
+    assert all(event["test_recipient"] == "p.galleguil@gmail.com" for event in events)
     authorization = next(event for event in events if event["event"] == "price_authorized")
     assert authorization["campaign_id"] == "owner_price_campaign_test_20260923"
     assert authorization["campaign_version"] == "owner_campaign_test_20260923"

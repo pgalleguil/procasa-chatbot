@@ -834,9 +834,18 @@ def _single_property_valuation_slots(property_model: Mapping[str, Any]) -> list[
         unit = str(market.get("reference_unit") or "UF/m²").replace(" de oferta", "")
         reference_value = str(market.get("reference_value") or "Revisar con asesor")
         source_date = str(market.get("source_date") or "").strip()
+        # Comparable labels are already formatted with their source unit
+        # (for example "44,0 UF/m² útil" or "$ 7.881/m²/mes"). Communal
+        # references carry a bare numeric value, so only those need the unit
+        # appended here.
+        display_reference = (
+            reference_value
+            if str(market.get("source") or "").upper() == "COMPARABLES"
+            else f"{reference_value} {unit}"
+        )
         slot2 = {
             "label": "REFERENCIA DEL SEGMENTO",
-            "value": f"{reference_value} {unit}" if reference_value != "Revisar con asesor" else reference_value,
+            "value": display_reference if reference_value != "Revisar con asesor" else reference_value,
             "note": f"Corte {source_date}" if source_date else "Referencia de mercado",
             "emphasis": False,
         }

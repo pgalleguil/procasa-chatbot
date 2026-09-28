@@ -180,6 +180,49 @@ def test_communal_only_context_hides_fake_zero_and_uses_comparables_first():
     assert populated["universe_value"] == "20"
 
 
+def test_comparable_market_unit_is_not_duplicated_in_single_property_kpi():
+    slots = renderer._single_property_valuation_slots({
+        "market_reference": {
+            "visible": True,
+            "source": "COMPARABLES",
+            "reference_value": "44,0 UF/m² útil",
+            "reference_unit": "UF/m² útil",
+        },
+        "comparable": {"visible": False},
+    })
+    assert slots[1]["value"] == "44,0 UF/m² útil"
+
+
+def test_comparable_rent_unit_is_not_duplicated_in_single_property_kpi():
+    slots = renderer._single_property_valuation_slots({
+        "is_rental": True,
+        "market_reference": {
+            "visible": True,
+            "source": "COMPARABLES",
+            "reference_value": "$ 7.881/m²/mes",
+            "reference_unit": "CLP/m²/mes",
+        },
+        "comparable": {"visible": False},
+    })
+    assert slots[1]["value"] == "$ 7.881/m²/mes"
+
+
+def test_gmail_safe_icons_use_materialized_markup_and_preserve_copy():
+    source = '''<!doctype html><html><head><style>
+      .icon:before { position:absolute; left:2px; content:""; }
+      .icon::after { position:absolute; right:1px; content:""; }
+    </style></head><body><span class="icon"></span><p>Detalle visible</p></body></html>'''
+    safe_html = make_email_safe_html(source)
+    root = lxml_html.fromstring(safe_html)
+    icon = root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' icon ')]")[0]
+    assert len(icon.xpath("./span[contains(@class,'email-pseudo-before')]") ) == 1
+    assert len(icon.xpath("./span[contains(@class,'email-pseudo-after')]") ) == 1
+    assert all("position:absolute" in node.get("style", "") for node in icon)
+    assert "Detalle visible" in root.text_content()
+    assert ":before" not in safe_html and "::before" not in safe_html
+    assert ":after" not in safe_html and "::after" not in safe_html
+
+
 def test_operation_badge_is_inside_photo_and_feature_icons_are_gmail_safe_text():
     model = _single_property_model()
     model["feature_cards"] = [

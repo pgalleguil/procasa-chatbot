@@ -931,11 +931,13 @@ def _activity_90d(db: Any, code: str, now: datetime) -> dict[str, Any]:
     conversations: set[str] = set()
     visits: set[str] = set()
     try:
-        leads = list(db["leads"].find({"prospecto.codigo": {"$in": values}}, {"_id": 1, "prospecto": 1, "created_at": 1, "conversation_id": 1, "origen": 1, "portal": 1, "source": 1}))
+        leads = list(db["leads"].find({"prospecto.codigo": {"$in": values}}, {"_id": 1, "prospecto": 1, "created_at": 1, "conversation_id": 1, "origen": 1, "portal": 1, "source": 1, "test_mode": 1}))
         lead_by_id: dict[str, str] = {}
         native_ids = []
         total = 0
         for lead in leads:
+            if lead.get("test_mode") is True or str(lead.get("source") or "").casefold() == "owner_campaign_test":
+                continue
             linked_code = str(_path(lead, "prospecto.codigo") or "").strip()
             if linked_code != code:
                 continue
@@ -1023,7 +1025,7 @@ def _segment_copy(segment: str, operation: str, authorization: bool) -> dict[str
             "cta": "REVISAR POSICIONAMIENTO CON MI ASESOR", "cta_type": "ADVISOR_REVIEW",
         },
     }
-    if segment == "TEST_ADVISOR_REVIEW":
+    if segment == "TEST_ADVISOR_REVIEW" and not authorization:
         return {
             "headline": "Revisión con tu asesor",
             "body": "Las referencias de esta propiedad se presentan para una revisión individual con tu asesor. No se está proponiendo un cambio automático de precio.",
@@ -1038,6 +1040,15 @@ def _segment_copy(segment: str, operation: str, authorization: bool) -> dict[str
         })
     if rental:
         content["body"] = content["body"].replace("tasación", "estimación de arriendo").replace("precio de cierre", "valor final de contrato")
+    if authorization:
+        price_term = "canon mensual de arriendo" if rental else "precio de venta"
+        alternatives = "otras alternativas de arriendo" if rental else "otras propiedades similares"
+        content.update({
+            "headline": "Recomendación de reposicionamiento comercial",
+            "body": f"La respuesta comercial reciente es la señal principal para evaluar el reposicionamiento. Las referencias de mercado disponibles complementan la evaluación. Recomendamos ajustar el {price_term} para mejorar su posición frente a {alternatives}.",
+            "cta": "ACEPTAR NUEVO VALOR",
+            "cta_type": "PRICE_AUTHORIZATION",
+        })
     return content
 
 
@@ -1081,7 +1092,10 @@ def _build_case(
     quality = str((analysis.get("client_evidence") or {}).get("evidence_level") or "INSUFFICIENT").upper()
     percentile = _number(market.get("property_percentile"))
     own_ids = _own_listing_ids(master)
-    doc_type, support = _support(db, master, operation, current, qa_fixture_case=qa_fixture_case)
+    doc_type, support = _support(
+        db, master, operation, current,
+        qa_fixture_case=qa_fixture_case if case_id != "A" else None,
+    )
     appraisal = support.get("appraisal") if isinstance(support.get("appraisal"), Mapping) else None
     dimensions = _dimensions(master, appraisal)
     if case_id == "B" and qa_fixture_case is not None:
@@ -1096,22 +1110,11 @@ def _build_case(
     v3, integral_n, land_n = _comparables(master, operation, appraisal)
 
     if case_id == "A":
-        if raw_target is None or display_target is None:
-            raise LiveTestCaseBuildError("qa_fixture_case_a_target_missing")
-        adjustment = (current - raw_target) / current * 100 if raw_target else -1
-        appraisal = support.get("appraisal") or {}
-        appraisal_high = _number(appraisal.get("estimated_high_uf"))
         if (
-            segment != "STRONG_PRICE_ADJUSTMENT"
-                or operation != VENTA or doc_type != "INDIVIDUAL_APPRAISAL"
-                or quality not in {"HIGH", "MEDIUM"} or integral_n < 8
-                or percentile is None or percentile < 75
-                or not _case_a_primary_surface_compatible(prop_type, v3.get("primary_surface"))
-                or _primary_surface_value(dimensions, v3.get("primary_surface")) is None
-                or appraisal_high is None or not math.isclose(appraisal_high, float(raw_target), abs_tol=0.05)
-                or not 2 <= adjustment <= 10
+            segment != "STRONG_PRICE_ADJUSTMENT" or operation != VENTA
+            or (v3.get("primary_surface") and not _case_a_primary_surface_compatible(prop_type, v3.get("primary_surface")))
         ):
-            raise LiveTestCaseBuildError("case_a_live_evidence_not_authorized")
+            raise LiveTestCaseBuildError("case_a_structural_conflict")
         expected_segment, cta_type = "STRONG_PRICE_ADJUSTMENT", "PRICE_AUTHORIZATION"
     elif case_id == "B":
         appraisal = support.get("appraisal") or {}
@@ -1129,19 +1132,17 @@ def _build_case(
             or v3.get("primary_surface") != "built_m2"
             or dimensions["built"] is None or dimensions["land"] is None
             or abs(dimensions["built"] - 560) > 1 or abs(dimensions["land"] - 5000) > 1
-            or integral_n < 3 or land_n < 1
         ):
             raise LiveTestCaseBuildError("case_c_parcel_improvements_contract_failed")
-        expected_segment, cta_type = "INSUFFICIENT_EVIDENCE", "ADVISOR_REVIEW"
+        expected_segment, cta_type = "INSUFFICIENT_EVIDENCE", "PRICE_AUTHORIZATION"
     elif case_id == "D":
-        estimate = (support.get("appraisal") or {}).get("estimated_mid_uf")
-        if operation != ARRIENDO or not _number(estimate) or not v3.get("integral_comparables"):
-            raise LiveTestCaseBuildError("case_d_rental_sources_unavailable")
+        if operation != ARRIENDO:
+            raise LiveTestCaseBuildError("case_d_operation_conflict")
         expected_segment = segment
-        cta_type = "ADVISOR_REVIEW"
+        cta_type = "PRICE_AUTHORIZATION"
     else:
         expected_segment = segment
-        cta_type = "ADVISOR_REVIEW"
+        cta_type = "PRICE_AUTHORIZATION"
 
     existing_segment = _campaign_segment(master)
     if existing_segment and existing_segment != expected_segment:
@@ -1178,15 +1179,17 @@ def _build_case(
 
     executive["initials"] = _initials(executive["name"])
     image = _resolve_image(master, code)
-    model = _property_context(prop, qa_row, support_view, executive, image)
+    activity = _activity_90d(db, code, now)
+    model = _property_context(prop, qa_row, support_view, executive, image, activity)
     model["executive"] = executive
-    model["activity_90d"] = _activity_90d(db, code, now)
+    model["activity_90d"] = activity
     model["campaign_segment"] = expected_segment
     if qa_manifest is not None:
         model["qa_evidence"] = dict(qa_manifest)
     if operation == ARRIENDO and doc_type == "INDIVIDUAL_APPRAISAL":
         model["document"] = dict(model.get("document") or {})
         model["document"]["copy"] = "Estimación de arriendo individual disponible como respaldo comercial."
+    pricing = model.get("pricing_recommendation") if isinstance(model.get("pricing_recommendation"), Mapping) else {}
     if cta_type != "PRICE_AUTHORIZATION":
         model["recommended_price_label"] = None
         model["display_adjustment_label"] = None
@@ -1194,8 +1197,13 @@ def _build_case(
         model["appraisal"].pop("recommended_label", None)
         model["appraisal"].pop("adjustment_label", None)
     else:
-        model["recommended_price_label"] = f"{display_target:,.0f} UF".replace(",", ".")
-        model["display_adjustment_label"] = f"{adjustment_pct:+.1f}%".replace(".", ",")
+        display_target = _number(pricing.get("recommended_price"))
+        if not display_target:
+            raise LiveTestCaseBuildError("commercial_recommendation_unavailable")
+        raw_target = display_target
+        adjustment_pct = -float(pricing.get("recommended_adjustment_pct") or 0)
+        model["recommended_price_label"] = f"{display_target:,.0f} UF".replace(",", ".") + (" / mes" if operation == ARRIENDO else "")
+        model["display_adjustment_label"] = f"-{int(pricing.get('recommended_adjustment_pct') or 0)}%"
         model["appraisal"] = dict(model.get("appraisal") or {})
         model["appraisal"]["recommended_label"] = model["recommended_price_label"]
         model["appraisal"]["adjustment_label"] = model["display_adjustment_label"]
@@ -1219,7 +1227,7 @@ def _build_case(
     }
     # The established structural classification remains STRONG_PRICE_ADJUSTMENT;
     # PRICE_AUTHORIZATION_READY is the test-ledger/action contract for A only.
-    test_segment = "PRICE_AUTHORIZATION_READY" if case_id == "A" else expected_segment
+    test_segment = "PRICE_AUTHORIZATION_READY" if cta_type == "PRICE_AUTHORIZATION" else expected_segment
     return OwnerCampaignTestCase(
         case_id=case_id, property_code=code, intended_owner_email=email,
         operation=operation, evidence_segment=test_segment, document_type=doc_type,
@@ -1344,27 +1352,6 @@ def _build_portfolio(
                     db, master, "E", segment=segment, qa_segments=qa_segments,
                     qa_manifest=qa_manifest, now=now,
                 )
-                if case.document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
-                    continue
-                case = OwnerCampaignTestCase(**{**case.__dict__, "cta_type": "ADVISOR_REVIEW", "raw_recommended_price": None, "display_recommended_price": None, "adjustment_pct": None})
-                model = dict(case.render_context["property_model"])
-                # E never invents a numeric target. Even if this property is
-                # structurally strong, the compact test card asks for advisor
-                # review unless that property's own approved target is present.
-                content = _segment_copy(segment, case.operation, False)
-                model.update({
-                    "campaign_segment": segment,
-                    "recommendation": "revisión con asesor",
-                    "source_recommendation": "revisión con asesor",
-                    "recommendation_text": content["body"],
-                    "recommendation_title": content["headline"],
-                    "single_diagnostic_text": content["body"],
-                    "diagnostic_text": content["body"],
-                    "recommended_price_label": None,
-                    "display_adjustment_label": None,
-                    "cta": {**dict(model.get("cta") or {}), "primary_url": "", "primary_label": content["cta"]},
-                })
-                case = OwnerCampaignTestCase(**{**case.__dict__, "render_context": {**case.render_context, "property_model": model, "source_checks": {**case.render_context["source_checks"], "cta_correct": True}}})
                 cases.append(case)
             except LiveTestCaseBuildError as exc:
                 logger.warning(

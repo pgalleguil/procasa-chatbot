@@ -14,6 +14,7 @@ import re
 import statistics
 import sys
 import unicodedata
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -599,6 +600,69 @@ def _recommendation_title(recommendation: str) -> str:
     return "Mantener la estrategia y observar el mercado"
 
 
+def calculate_commercial_price_recommendation(
+    *, current_price: Any, leads_90d: Any, comparable_subject: Any = None,
+    comparable_reference: Any = None, valuation_reference: Any = None,
+) -> dict[str, Any]:
+    """Canonical owner campaign price recommendation; missing signals are reweighted."""
+    current = number(current_price)
+    leads = number(leads_90d)
+    comparable_value, comparable_market = number(comparable_subject), number(comparable_reference)
+    valuation = number(valuation_reference)
+
+    def lead_score(value: float | None) -> float | None:
+        if value is None or value < 0:
+            return None
+        if value == 0: return 1.0
+        if value == 1: return .9
+        if value == 2: return .8
+        if value == 3: return .7
+        if value <= 5: return .6
+        if value <= 8: return .45
+        if value <= 12: return .25
+        return 0.0
+
+    def price_score(subject: float | None, reference: float | None) -> float | None:
+        if subject is None or reference is None or subject <= 0 or reference <= 0:
+            return None
+        gap = (subject / reference - 1) * 100
+        if gap <= 0: return 0.0
+        if gap <= 5: return .2
+        if gap <= 10: return .5
+        if gap <= 15: return .75
+        return 1.0
+
+    scores = {
+        "leads_90d": lead_score(leads),
+        "comparables": price_score(comparable_value, comparable_market),
+        "valuation": price_score(current, valuation),
+    }
+    base_weights = {"leads_90d": .65, "comparables": .20, "valuation": .15}
+    available = {key: value for key, value in scores.items() if value is not None}
+    weight_total = sum(base_weights[key] for key in available)
+    weights = ({key: base_weights[key] / weight_total for key in available}
+               if weight_total else {})
+    final_score = sum(scores[key] * weights[key] for key in weights) if weights else None
+    raw_pct = Decimal("5") + Decimal(str(final_score)) * Decimal("5") if final_score is not None else Decimal("5")
+    adjustment = int(raw_pct.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    adjustment = max(5, min(10, adjustment))
+    recommended = None
+    if current is not None and current > 0:
+        recommended = float((Decimal(str(current)) * (Decimal("100") - Decimal(adjustment)) / Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    reason = "COMMERCIAL_REPOSITIONING"
+    return {
+        "leads_90d": int(leads) if leads is not None and leads >= 0 else None,
+        "lead_score": scores["leads_90d"],
+        "comparable_score": scores["comparables"],
+        "valuation_score": scores["valuation"],
+        "effective_weights": weights,
+        "final_score": final_score,
+        "recommended_adjustment_pct": adjustment,
+        "recommended_price": recommended,
+        "recommendation_reason": reason,
+    }
+
+
 def _appraisal_model(support: Mapping[str, Any], price: float | None, operation: Any = None) -> dict[str, Any]:
     appraisal = support.get("appraisal") if isinstance(support.get("appraisal"), Mapping) else None
     communal = support.get("communal_market") if isinstance(support.get("communal_market"), Mapping) else None
@@ -753,13 +817,12 @@ def _property_context(
     evidence: Mapping[str, Any],
     executive: Mapping[str, Any],
     property_image: Mapping[str, Any] | None = None,
+    activity_90d: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     level = str(qa_row.get("comparables_quality") or "INSUFFICIENT").upper()
     price = number(prop.get("precio_publicado_uf"))
     comparable = _comparable_model(evidence, level, price, prop)
     source_recommendation = str(qa_row.get("recommendation") or "mantener estrategia / sin ajuste")
-    recommendation = source_recommendation
-    recommended_price = number(prop.get("nuevo_precio_objetivo_uf")) if recommendation == "con ajuste de precio sustentado" else None
     document_type = str(qa_row.get("document_type") or "NONE")
     attachment = qa_row.get("attachment") if isinstance(qa_row.get("attachment"), Mapping) else {}
     document_visible = document_type != "NONE" and bool(attachment.get("status") == "ok")
@@ -769,17 +832,41 @@ def _property_context(
     is_rental = operation == "ARRIENDO"
     appraisal = _appraisal_model(support, price, operation)
     market_reference = _market_reference_model(support, operation, comparable)
-    review_guard = (
-        bool(v3.get("evidence_conflict"))
-        or str(v3.get("comparable_display_status") or "").upper() == "REVIEW"
-        or comparable.get("hidden_reason") == "PROPERTY_METRIC_MISSING"
+    segment_content = qa_row.get("segment_copy") if isinstance(qa_row.get("segment_copy"), Mapping) else {}
+    activity = activity_90d if isinstance(activity_90d, Mapping) else {}
+    lead_count = activity.get("total_leads") if str(activity.get("state") or "").upper() in {"KNOWN_POSITIVE", "KNOWN_ZERO"} else None
+    appraisal_reference = None
+    if isinstance(support.get("appraisal"), Mapping):
+        appraisal_reference = number(support["appraisal"].get("estimated_mid_uf"))
+    if appraisal_reference is None and isinstance(support.get("communal_market"), Mapping):
+        communal = support["communal_market"]
+        metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+        appraisal_reference = number(metrics.get("median_price_uf") or communal.get("median_price_uf"))
+    pricing_recommendation = calculate_commercial_price_recommendation(
+        current_price=price,
+        leads_90d=lead_count,
+        comparable_subject=comparable.get("positioning_property_value") if comparable.get("visible") else None,
+        comparable_reference=comparable.get("positioning_reference_value") if comparable.get("visible") else None,
+        valuation_reference=appraisal_reference,
     )
-    if recommendation == "con ajuste de precio sustentado" and (review_guard or (level in {"LIMITED", "INSUFFICIENT"} and document_type != "INDIVIDUAL_APPRAISAL")):
-        recommendation = "revisión con asesor"
-        recommended_price = None
-    if appraisal.get("visible") and recommended_price is not None and recommended_price > 0 and price is not None and price > 0:
-        appraisal["recommended_label"] = fmt_uf(recommended_price)
-        appraisal["adjustment_label"] = f"{((recommended_price - price) / price * 100.0):+.1f}%".replace(".", ",")
+    recommended_price = pricing_recommendation.get("recommended_price")
+    recommendation = "con ajuste de precio sustentado" if recommended_price is not None else "revisión con asesor"
+    adjustment = int(pricing_recommendation["recommended_adjustment_pct"])
+    adjustment_label = f"-{adjustment}%".replace(".", ",")
+    if lead_count is not None:
+        lead_summary = "no registró consultas" if int(lead_count) == 0 else f"registró {int(lead_count)} {'lead' if int(lead_count) == 1 else 'leads'}"
+        commercial_signal = f"La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento: la propiedad {lead_summary}."
+    else:
+        commercial_signal = "La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento, aunque su registro no está disponible."
+    price_term = "canon mensual de arriendo" if is_rental else "precio de venta"
+    alternatives = "otras alternativas de arriendo" if is_rental else "otras propiedades similares"
+    recommendation_copy = (
+        f"{commercial_signal} Las referencias de mercado y antecedentes disponibles complementan esta evaluación. Recomendamos reducir el {price_term} en {adjustment}% para mejorar su posicionamiento frente a {alternatives}."
+        if recommended_price is not None else str(segment_content.get("body") or _recommendation_text(recommendation))
+    )
+    if recommended_price is not None:
+        appraisal["recommended_label"] = _price_label(recommended_price, operation)
+        appraisal["adjustment_label"] = adjustment_label
     if document_type == "INDIVIDUAL_APPRAISAL":
         document_copy = "Tasación individual disponible como respaldo comercial. El PDF se mantiene como documento adjunto."
         single_document_copy = "Tu tasación individual se encuentra disponible como respaldo comercial y puede revisarse de forma privada desde este informe."
@@ -805,18 +892,11 @@ def _property_context(
                 f"{comparable.get('selected_n')} publicaciones similares aportan contexto de oferta para revisar el posicionamiento."
             )
         single_diagnostic_text = " ".join(diagnostic_parts)
-    segment_content = qa_row.get("segment_copy") if isinstance(qa_row.get("segment_copy"), Mapping) else {}
-    if segment_content:
-        recommendation = "con ajuste de precio sustentado" if segment_content.get("cta_type") == "PRICE_AUTHORIZATION" else "revisión con asesor"
-        if recommendation != "con ajuste de precio sustentado":
-            recommended_price = None
-            appraisal.pop("recommended_label", None)
-            appraisal.pop("adjustment_label", None)
-        diagnostic_text = str(segment_content.get("body") or diagnostic_text)
-        single_diagnostic_text = diagnostic_text
+    diagnostic_text = str(segment_content.get("body") or diagnostic_text)
+    single_diagnostic_text = diagnostic_text
     cta = qa_row.get("cta") if isinstance(qa_row.get("cta"), Mapping) else {}
     primary_url = str(cta.get("primary_url") or "")
-    primary_label = str(segment_content.get("cta") or cta.get("primary_label") or "Analizar estrategia con mi asesor")
+    primary_label = "ACEPTAR NUEVO VALOR" if recommended_price is not None else str(cta.get("primary_label") or "Revisar con mi ejecutivo")
     if recommendation == "revisión con asesor":
         if not segment_content:
             primary_url = str(cta.get("advisor_url") or cta.get("primary_url") or primary_url)
@@ -854,12 +934,14 @@ def _property_context(
         "diagnostic_text": diagnostic_text,
         "single_diagnostic_text": single_diagnostic_text,
         "single_document_copy": single_document_copy,
-        "single_recommendation_text": str(segment_content.get("body") or _recommendation_text(recommendation)),
+        "single_recommendation_text": recommendation_copy,
         "recommendation_title": _recommendation_title(recommendation),
-        "recommendation_text": str(segment_content.get("body") or _recommendation_text(recommendation)),
+        "recommendation_text": recommendation_copy,
         "campaign_segment": str(qa_row.get("evidence_segment") or ""),
         "position_summary": str(segment_content.get("body") or ""),
         "recommended_price_label": _price_label(recommended_price, operation) if recommended_price is not None and recommended_price > 0 else None,
+        "pricing_recommendation": pricing_recommendation,
+        "display_adjustment_label": adjustment_label if recommended_price is not None else None,
         "document": {"visible": document_visible, "copy": document_copy, "type": document_type},
         "appraisal": appraisal,
         "market_reference": market_reference,
@@ -878,7 +960,7 @@ def _property_context(
         "recommendation": recommendation,
         "diagnostic": str(qa_row.get("diagnostic") or "sin diagnóstico"),
         "executive": {**executive, "initials": _initials(executive_name)},
-        "activity_90d": {"state": "UNKNOWN", "total_leads": None, "portals": [], "conversations": None, "visits": None},
+        "activity_90d": dict(activity) if activity else {"state": "UNKNOWN", "total_leads": None, "portals": [], "conversations": None, "visits": None},
     }
 
 

@@ -224,15 +224,14 @@ def validate_explicit_cases(cases: Sequence[OwnerCampaignTestCase]) -> list[Owne
                 or case.operation != "VENTA"
                 or case.evidence_segment != "PRICE_AUTHORIZATION_READY"
                 or case.cta_type != "PRICE_AUTHORIZATION"
-                or case.document_type != "INDIVIDUAL_APPRAISAL"
-                or not 2 <= _reduction_pct(case) <= 10
+                or not 5 <= _reduction_pct(case) <= 10
             ):
                 raise TestSenderError("test_case_a_contract_invalid")
         elif case.case_id == "B":
             if case.property_code != "16521" or case.operation != "VENTA" or case.evidence_segment != "MIXED_EVIDENCE" or case.cta_type != "ADVISOR_REVIEW":
                 raise TestSenderError("test_case_b_contract_invalid")
         elif case.case_id == "C":
-            if case.property_code != "16486" or case.evidence_segment != "INSUFFICIENT_EVIDENCE" or case.cta_type != "ADVISOR_REVIEW":
+            if case.property_code != "16486" or case.evidence_segment != "PRICE_AUTHORIZATION_READY" or case.cta_type != "PRICE_AUTHORIZATION" or not 5 <= _reduction_pct(case) <= 10:
                 raise TestSenderError("test_case_c_contract_invalid")
         elif case.case_id == "D":
             if case.property_code != "16527" or case.operation != "ARRIENDO":
@@ -245,7 +244,9 @@ def validate_explicit_cases(cases: Sequence[OwnerCampaignTestCase]) -> list[Owne
                 case.property_code != property_code
                 or case.operation != operation
                 or case.document_type != "NONE"
-                or case.cta_type != "ADVISOR_REVIEW"
+                or case.evidence_segment != "PRICE_AUTHORIZATION_READY"
+                or case.cta_type != "PRICE_AUTHORIZATION"
+                or not 5 <= _reduction_pct(case) <= 10
             ):
                 raise TestSenderError("targeted_single_case_contract_invalid")
     return list(cases)
@@ -837,8 +838,6 @@ def _render_portfolio_case(case: OwnerCampaignTestCase) -> Mapping[str, Any]:
             raise TestSenderError("test_case_e_executive_mismatch")
         if str((item.get("document") or {}).get("type") or "NONE").upper() != property_case.document_type.upper():
             raise TestSenderError("view_model_document_mismatch")
-        if property_case.document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
-            raise TestSenderError("test_case_e_report_required")
         links = build_test_links(property_case)
         cta = dict(item.get("cta") or {})
         label = str(cta.get("primary_label") or "").casefold()

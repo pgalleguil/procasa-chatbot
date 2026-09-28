@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import time
+import unicodedata
 from html import escape
 from typing import Any, Mapping
 from urllib.parse import quote
@@ -36,22 +37,85 @@ class OwnerCampaignTestError(ValueError):
     """A test action did not meet the signed test-only authorization contract."""
 
 
-def _campaign_test_page(title: str, content: str, raw_content: bool = False) -> str:
-    """Wrap trusted test-action content in a small responsive PROCASA page."""
-    safe_title = escape(str(title or "Acción de prueba"))
+def _campaign_test_page(
+    title: str,
+    content: str,
+    raw_content: bool = False,
+    *,
+    back_url: str = "javascript:history.back()",
+    back_label: str = "VOLVER AL INFORME",
+) -> str:
+    """Shared, production-looking responsive layout for all owner action pages."""
+    safe_title = escape(str(title or "PROCASA"))
     safe_content = str(content or "") if raw_content else f"<p>{escape(str(content or ''))}</p>"
+    safe_back_url = escape(str(back_url or "javascript:history.back()"), quote=True)
+    safe_back_label = escape(str(back_label or "VOLVER AL INFORME"))
+    logo_url = escape((Config.CRM_BASE_URL or "https://procasa.cl").rstrip("/") + "/static/logo.png", quote=True)
     return (
         "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-        f"<title>{safe_title}</title></head>"
-        "<body style=\"margin:0;padding:24px 16px;background:#f4f3fa;font-family:Arial,sans-serif;color:#25224a;\">"
-        "<main class=\"card\" style=\"box-sizing:border-box;max-width:520px;margin:8vh auto;padding:28px 24px;background:#fff;"
-        "border:1px solid #e5e3f0;border-radius:12px;box-shadow:0 8px 28px rgba(35,29,78,.08);\">"
-        f"<div style=\"margin-bottom:18px;color:#4232c5;font-size:13px;font-weight:700;letter-spacing:.08em;\">PROCASA</div>"
-        f"<h1 style=\"margin:0 0 16px;font-size:24px;line-height:1.25;\">{safe_title}</h1>"
-        f"<section style=\"font-size:16px;line-height:1.55;\">{safe_content}</section>"
+        f"<title>PROCASA | {safe_title}</title>"
+        "<style>body{margin:0;padding:24px 16px;background:#f4f3fa;font-family:Arial,sans-serif;color:#25224a}"
+        ".card{box-sizing:border-box;max-width:600px;margin:7vh auto;padding:30px 30px;background:#fff;"
+        "border:1px solid #e5e3f0;border-radius:14px;box-shadow:0 8px 28px rgba(35,29,78,.08)}"
+        ".brand{display:block;width:112px;height:auto;max-height:44px;object-fit:contain;margin-bottom:26px}"
+        "h1{margin:0 0 16px;color:#17175f;font-size:26px;line-height:1.22}"
+        ".copy{font-size:16px;line-height:1.55;color:#4e5571}.facts{margin:20px 0;padding:16px;"
+        "background:#f8f7ff;border:1px solid #e5e6ef;border-radius:10px}"
+        ".facts div{margin:5px 0;font-size:14px}.facts strong{color:#62698a;font-size:11px;letter-spacing:.04em}"
+        ".next{margin:22px 0 0;padding:16px;background:#f8f7ff;border-radius:10px;font-size:14px;line-height:1.55}"
+        ".next strong{display:block;margin-bottom:8px;color:#17175f;font-size:12px;letter-spacing:.05em}"
+        ".contact{margin-top:18px;padding-top:14px;border-top:1px solid #e5e6ef;font-size:13px;line-height:1.6}"
+        ".button{display:inline-block;margin-top:22px;padding:13px 19px;border-radius:999px;background:#17175f;"
+        "color:#fff!important;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:.03em}"
+        "@media(max-width:480px){body{padding:14px 10px}.card{margin:3vh auto;padding:24px 18px}"
+        ".brand{width:96px;margin-bottom:22px}h1{font-size:23px}.copy{font-size:15px}}</style></head>"
+        "<body><main class=\"card\">"
+        f"<img class=\"brand\" src=\"{logo_url}\" alt=\"PROCASA\">"
+        f"<h1>{safe_title}</h1><section class=\"copy\">{safe_content}</section>"
+        f"<a class=\"button\" href=\"{safe_back_url}\">{safe_back_label}</a>"
         "</main></body></html>"
     )
+
+
+def _normalized_name(value: Any) -> str:
+    raw = unicodedata.normalize("NFKD", str(value or "").casefold())
+    return " ".join("".join(char for char in raw if not unicodedata.combining(char)).split())
+
+
+def _executive_contact(db: Any, ledger: Mapping[str, Any]) -> dict[str, str]:
+    raw = ledger.get("executive")
+    name = str(raw.get("name") or "").strip() if isinstance(raw, Mapping) else str(raw or "").strip()
+    if not name:
+        return {}
+    try:
+        users = db["usuarios"]
+    except (KeyError, TypeError):
+        return {"nombre": name}
+    exact = users.find_one(
+        {"is_active": True, "nombre": name},
+        {"_id": 0, "nombre": 1, "email": 1, "telefono": 1},
+    )
+    if exact:
+        return {key: str(exact.get(key) or "").strip() for key in ("nombre", "email", "telefono")}
+    matches = [
+        user for user in users.find(
+            {"is_active": True}, {"_id": 0, "nombre": 1, "email": 1, "telefono": 1}
+        )
+        if _normalized_name(user.get("nombre")) == _normalized_name(name)
+    ]
+    if len(matches) != 1:
+        return {"nombre": name}
+    return {key: str(matches[0].get(key) or "").strip() for key in ("nombre", "email", "telefono")}
+
+
+def _format_uf(value: Any) -> str:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "No disponible"
+    decimals = 1 if amount % 1 else 0
+    return f"{amount:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".") + " UF"
 
 
 def test_mode_enabled() -> bool:
@@ -246,6 +310,12 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
         "live_price_before": price_before,
         "live_price_after": price_after,
         "test_price_mutation": False,
+        "operation": str(ledger.get("operation") or "").strip().upper(),
+        "document_type": str(ledger.get("document_type") or "NONE").strip().upper(),
+        "current_price": ledger.get("current_price_at_send"),
+        "proposed_price": ledger.get("display_recommended_price"),
+        "adjustment_pct": ledger.get("adjustment_pct"),
+        "executive_contact": _executive_contact(database, ledger) if action == ADVISOR_ACTION else {},
         "timings_ms": timings,
     }
 
@@ -256,36 +326,84 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
         result = process_test_action(token, db=db, confirmed=confirmed)
     except OwnerCampaignTestError:
         return HTMLResponse(
-            "<main><h1>Acción de prueba no disponible</h1><p>Solicita un nuevo enlace a tu asesor.</p></main>",
+            "<main><h1>Acción no disponible</h1><p>Solicita un nuevo enlace a tu asesor.</p></main>",
             status_code=404,
         )
     except Exception:
-        return HTMLResponse("<main><h1>No pudimos registrar la prueba</h1></main>", status_code=503)
+        return HTMLResponse("<main><h1>No pudimos registrar tu solicitud</h1></main>", status_code=503)
     html_started = time.perf_counter()
+    report_url = "javascript:history.back()"
+    if result.get("document_type") not in {"", "NONE"}:
+        try:
+            report_token = issue_test_link_token(
+                property_code=str(result["property_code"]),
+                action=REPORT_ACTION,
+                document_type=str(result["document_type"]),
+            )
+            report_url = "/campana/informe?token=" + quote(report_token, safe="")
+        except (KeyError, ValueError, OwnerCampaignTestError):
+            pass
     if result.get("requires_confirmation"):
         action_url = "/campana/test-accion?token=" + quote(token, safe="")
+        current_price = _format_uf(result.get("current_price"))
+        proposed_price = _format_uf(result.get("proposed_price"))
+        adjustment = result.get("adjustment_pct")
+        try:
+            adjustment_text = f"{float(adjustment):.1f}%".replace(".", ",")
+        except (TypeError, ValueError):
+            adjustment_text = "No disponible"
         content = (
-            '<p>Confirma que autorizas el nuevo valor propuesto para esta prueba.</p>'
+            '<p>Estás autorizando a PROCASA a gestionar la actualización del valor comercial propuesto para esta propiedad.</p>'
+            f'<div class="facts"><div><strong>VALOR ACTUAL</strong><br>{escape(current_price)}</div>'
+            f'<div><strong>NUEVO VALOR</strong><br>{escape(proposed_price)}</div>'
+            f'<div><strong>AJUSTE</strong><br>{escape(adjustment_text)}</div></div>'
             f'<form method="post" action="{action_url}">'
-            '<button type="submit" style="display:inline-block;padding:12px 18px;border:0;border-radius:7px;'
-            'background:#4232c5;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">'
+            '<button class="button" type="submit" style="margin-top:0;border:0;cursor:pointer;">'
             'CONFIRMAR AUTORIZACIÓN</button></form>'
-            '<p>El precio publicado no será modificado automáticamente.</p>'
+            '<p>El precio publicado no se modificará automáticamente desde esta página. Nuestro equipo revisará la autorización y gestionará los pasos siguientes.</p>'
         )
         response = HTMLResponse(
-            _campaign_test_page("Confirma el nuevo valor", content, raw_content=True),
+            _campaign_test_page(
+                "Confirma el nuevo valor", content, raw_content=True,
+                back_url=report_url, back_label="VOLVER SIN CONFIRMAR",
+            ),
             status_code=200,
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
     elif result["event"] == "price_authorized":
         title = "Autorización registrada"
-        message = "La autorización quedó registrada en modo de prueba. El precio publicado no fue modificado."
+        content = (
+            '<p>Hemos registrado correctamente tu autorización para revisar el valor comercial de la propiedad.</p>'
+            '<div class="next"><strong>QUÉ SIGUE AHORA</strong>'
+            '<div>• Nuestro equipo revisará la solicitud.</div>'
+            '<div>• Tu ejecutivo coordinará los pasos necesarios.</div>'
+            '<div>• Te mantendremos informado sobre el avance de la gestión.</div></div>'
+            '<p>El valor publicado no se modifica automáticamente desde esta confirmación.</p>'
+        )
     else:
         title = "Solicitud de revisión registrada"
-        message = "Tu solicitud quedó registrada en modo de prueba."
+        contact = result.get("executive_contact") if isinstance(result.get("executive_contact"), Mapping) else {}
+        contact_name = str(contact.get("nombre") or "").strip()
+        contact_email = str(contact.get("email") or "").strip()
+        contact_phone = str(contact.get("telefono") or "").strip()
+        executive_block = ""
+        if contact_name or contact_email or contact_phone:
+            executive_block = (
+                '<div class="contact"><strong>Ejecutivo a cargo</strong><br>'
+                + "<br>".join(escape(value) for value in (contact_name, contact_email, contact_phone) if value)
+                + "</div>"
+            )
+        content = (
+            '<p>Hemos registrado tu solicitud de revisión. Tu ejecutivo PROCASA será informado para revisar contigo el posicionamiento actual de tu propiedad y orientarte respecto de los próximos pasos.</p>'
+            '<div class="next"><strong>QUÉ SIGUE AHORA</strong>'
+            '<div>1. Tu ejecutivo revisará los antecedentes de la propiedad.</div>'
+            '<div>2. Se pondrá en contacto contigo para resolver dudas y evaluar alternativas.</div>'
+            '<div>3. Podrán definir juntos la estrategia comercial más conveniente.</div></div>'
+            + executive_block
+        )
     if not result.get("requires_confirmation"):
         response = HTMLResponse(
-            _campaign_test_page(title, message),
+            _campaign_test_page(title, content, raw_content=True, back_url=report_url),
             status_code=200,
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )

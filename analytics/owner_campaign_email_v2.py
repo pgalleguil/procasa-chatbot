@@ -166,6 +166,8 @@ def _graph(distribution: Mapping[str, Any], property_value: Any) -> dict[str, An
 def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> dict[str, Any]:
     """Higher-resolution display grid for the single-email positioning band."""
     slots = 21
+    inset = 2
+    usable_slots = slots - 1 - (2 * inset)
     p10 = number(distribution.get("p10"))
     p90 = number(distribution.get("p90"))
     value = number(property_value)
@@ -175,13 +177,13 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
         reference_index = slots // 2
     else:
         ratio = lambda current: max(0.0, min(1.0, (current - p10) / (p90 - p10)))
-        index = max(0, min(slots - 1, int(round(ratio(value) * (slots - 1))))) if value is not None else slots // 2
-        reference_index = max(0, min(slots - 1, int(round(ratio(median) * (slots - 1))))) if median is not None else slots // 2
+        index = inset + max(0, min(usable_slots, int(round(ratio(value) * usable_slots)))) if value is not None else slots // 2
+        reference_index = inset + max(0, min(usable_slots, int(round(ratio(median) * usable_slots)))) if median is not None else slots // 2
     return {
         # On a 390px viewport 5 grid cells are only about 75px apart, while
         # the two labels need roughly 130px. Alternate the labels until the
         # markers have enough room on the narrowest supported layout.
-        "markers_close": abs(index - reference_index) <= 9,
+        "markers_close": abs(index - reference_index) <= 5,
         "property_index": index,
         "reference_index": reference_index,
         "cells": [

@@ -180,7 +180,7 @@ def test_communal_only_context_hides_fake_zero_and_uses_comparables_first():
     assert populated["universe_value"] == "20"
 
 
-def test_single_photo_badge_and_features_are_email_safe_and_contextual():
+def test_operation_is_in_property_details_and_photo_stays_clean():
     model = _single_property_model()
     model["feature_cards"] = [
         {"kind": "area", "label": "130 m² construidos"},
@@ -197,12 +197,32 @@ def test_single_photo_badge_and_features_are_email_safe_and_contextual():
     photo = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' single-photo-wrap ')]")
     assert len(photo) == 1
     assert photo[0].get("background") == "https://example.test/property.jpg"
-    assert photo[0].xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' single-operation-badge ')]")
+    assert not photo[0].xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' single-operation-badge ')]")
+    detail_text = " ".join(root.itertext())
+    for detail in ("Venta", "130 m² construidos", "2 dorm.", "1 baño", "1 estacionamiento"):
+        assert detail in detail_text
     visible_icons = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' property-feature-icon ')]")
     assert [icon.text for icon in visible_icons] == ["▧", "▤", "▱", "P"]
     assert "aria-label=\"Dormitorios\"" in html
     assert "class=\"comp-icon-area\"" not in html
     assert "max-width:620px" in html
+
+
+def test_none_document_keeps_commercial_support_module_without_report_button():
+    model = _single_property_model()
+    model["document"] = {"visible": False, "copy": "", "type": "NONE"}
+    model["single_document_copy"] = ""
+    html = renderer.render_owner_campaign_email_v2(
+        [model], email="qa@example.test",
+        executives=[{"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}],
+        base_url="https://example.test",
+    )
+    root = lxml_html.fromstring(html)
+    text = " ".join(root.itertext())
+    assert "RESPALDO COMERCIAL" in text
+    assert "En este envío no hay un documento adicional disponible para descarga." in text
+    assert "VER INFORME" not in text
+    assert "document-support-single" in html
 
 
 def test_zero_non_applicable_room_and_bath_features_are_hidden():
@@ -237,7 +257,19 @@ def test_price_position_markers_have_connected_alternating_labels_at_mobile_widt
     lines = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert len(labels) == 2
     assert len(lines) == 2
+    assert root.xpath("//*[@data-component-id='single-property-comparison-bar-v1']")
+    assert any("height:65px" in line.get("style", "") for line in lines)
+    for label in labels:
+        assert label.getparent().getparent().getparent().xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert "max-width:620px" in html
+
+
+def test_comparison_bar_insets_endpoint_markers_without_moving_the_labels_away():
+    low = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 10}, 10)
+    high = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 90}, 90)
+    assert low["reference_index"] == low["property_index"] == 2
+    assert high["reference_index"] == high["property_index"] == 18
+    assert len(low["cells"]) == len(high["cells"]) == 21
 
 
 def test_legacy_secondary_url_is_never_reused_as_report_destination():
@@ -327,7 +359,10 @@ def test_single_rent_none_uses_approved_single_visual_system_without_document_or
     assert "financiamiento hipotecario" not in text
     assert "concretar una venta" not in text
     assert "21 uf / mes" in text
-    assert not root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' document-line-single ')]")
+    assert "data-component-id=\"single-property-comparison-bar-v1\"" in html
+    assert "respaldo comercial" in text
+    assert "ver informe" not in text
+    assert "document-support-single" in html
     assert "ver informe" not in text
     assert html.count("https://example.test/property.jpg") == 1
     safe_html = make_email_safe_html(html)

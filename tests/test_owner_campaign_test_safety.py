@@ -980,7 +980,7 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "1fb3e0243ce842044458df8726330876fe65a5134ca361392776c96993d5b70b"
+        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "68a38af9546b657be5b08b564e9ec2663114a6602b9e371ff58aeb8f6bbbf478"
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
@@ -1729,7 +1729,10 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert "<html" in page and "name=\"viewport\"" in page
     assert "Confirma el nuevo valor" in page
     assert "CONFIRMAR AUTORIZACIÓN" in page
-    assert "El precio publicado no será modificado automáticamente." in page
+    assert "El precio publicado no se modificará automáticamente desde esta página." in page
+    assert "VALOR ACTUAL" in page and "NUEVO VALOR" in page and "AJUSTE" in page
+    assert "CONFIRMAR AUTORIZACIÓN" in page and "VOLVER SIN CONFIRMAR" in page
+    assert "modo de prueba" not in page.casefold() and "qa" not in page.casefold()
     row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in row["response_events"]] == [
         "cta_clicked", "price_confirm_page_opened"
@@ -1743,6 +1746,10 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert "tracking_write" in post_response.headers["server-timing"]
     assert "html_render" in post_response.headers["server-timing"]
     assert "Autorización registrada" in post_response.body.decode("utf-8")
+    success_page = post_response.body.decode("utf-8")
+    assert "QUÉ SIGUE AHORA" in success_page
+    assert "El valor publicado no se modifica automáticamente" in success_page
+    assert "modo de prueba" not in success_page.casefold() and "qa" not in success_page.casefold()
     row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in row["response_events"]] == [
         "cta_clicked", "price_confirm_page_opened", "price_authorized"
@@ -1879,6 +1886,22 @@ def test_advisor_cta_writes_only_test_events_to_adjustment_ledger(monkeypatch):
     assert "contactos" not in db.requested
     assert "price_updates" not in db.requested
     assert actions.PROPERTY_COLLECTION not in db.requested
+
+
+def test_action_pages_share_brand_layout_and_advisor_copy_has_no_test_text(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(cta_type="ADVISOR_REVIEW", evidence_segment="MIXED_EVIDENCE")
+    advisor = actions.handle_test_action(_action_token(action=actions.ADVISOR_ACTION), db=db)
+    page = advisor.body.decode("utf-8")
+    assert advisor.status_code == 200
+    assert "Solicitud de revisión registrada" in page
+    assert "QUÉ SIGUE AHORA" in page
+    assert "VOLVER AL INFORME" in page
+    assert "/static/logo.png" in page
+    assert "modo de prueba" not in page.casefold()
+    assert "qa" not in page.casefold()
+    assert "Tu ejecutivo PROCASA será informado" in page
 
 
 def test_report_open_records_in_adjustment_ledger(monkeypatch):

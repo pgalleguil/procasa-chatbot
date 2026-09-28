@@ -1,20 +1,13 @@
-{% macro comparison_anchor(graph, marker_index, label_title, label_value, color, label_tier, bold_title=false) -%}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-anchor-grid" style="width:100%;table-layout:fixed;"><tr>
-  {% for cell in graph.cells %}<td align="center" height="{{ label_tier }}" valign="top" style="height:{{ label_tier }}px;line-height:{{ label_tier }}px;">{% if loop.index0 == marker_index %}<span class="position-anchor-line" style="display:inline-block;width:2px;height:{{ label_tier }}px;background:{{ color }};font-size:1px;line-height:1px;">&nbsp;</span>{% endif %}</td>{% endfor %}
-</tr><tr>{% for cell in graph.cells %}<td align="center" valign="top" style="font-size:9px;line-height:1.3;color:#62698A;">{% if loop.index0 == marker_index %}<span class="position-anchor-label" style="display:block;width:132px;max-width:132px;margin-left:{% if marker_index <= 3 %}0{% elif marker_index >= 17 %}-130px{% else %}-65px{% endif %};text-align:{% if marker_index <= 3 %}left{% elif marker_index >= 17 %}right{% else %}center{% endif %};">{% if bold_title %}<strong>{{ label_title }}</strong>{% else %}{{ label_title }}{% endif %}<br /><strong style="color:{{ color }};">{{ label_value }}</strong></span>{% endif %}</td>{% endfor %}</tr></table>
-{%- endmacro %}
-{% macro single_comparison_bar(graph, property_label, reference_label) -%}
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-graph single-comparison-bar" data-component-id="single-property-comparison-bar-v1">
-  <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track" style="width:100%;table-layout:fixed;"><tr>
-    {% for cell in graph.cells %}<td style="height:14px;line-height:14px;text-align:center;background:{% if loop.index0 < 4 %}#ECEBFF{% elif loop.index0 < 8 %}#DCD9FA{% elif loop.index0 < 13 %}#BDB6F0{% elif loop.index0 < 17 %}#9185E2{% else %}#6252D0{% endif %};">
-      {% if cell.reference and cell.marker %}<span style="display:inline-block;width:15px;height:15px;border:2px solid #ffffff;border-radius:50%;background:#17175F;vertical-align:middle;"><span style="display:inline-block;width:5px;height:5px;border:1px solid #ffffff;border-radius:50%;background:#6252D0;vertical-align:top;"></span></span>
-      {% elif cell.reference %}<span style="display:inline-block;width:11px;height:11px;border:2px solid #ffffff;border-radius:50%;background:#6252D0;vertical-align:middle;"></span>
-      {% elif cell.marker %}<span style="display:inline-block;width:15px;height:15px;border:2px solid #ffffff;border-radius:50%;background:#17175F;vertical-align:middle;"></span>{% endif %}
-    </td>{% endfor %}
-  </tr></table></td></tr>
-  <tr><td colspan="3">{{ comparison_anchor(graph, graph.reference_index, 'Referencia comparable', reference_label, '#6252D0', 16) }}</td></tr>
-  <tr><td colspan="3">{{ comparison_anchor(graph, graph.property_index, 'Tu propiedad', property_label, '#17175F', 42, true) }}</td></tr>
-</table>
+{% macro single_comparison_bar(graph, property_label, reference_label, unit_label) -%}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-graph single-comparison-bar" data-component-id="single-property-comparison-bar-v1"><tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track">
+<tr><td colspan="21" class="position-legend-cell"><table role="presentation" cellspacing="0" cellpadding="0" align="right"><tr>{% for label, color in [('Muy bajo','#ECEBFF'),('Bajo','#DCD9FA'),('Medio','#BDB6F0'),('Alto','#9185E2'),('Muy alto','#6252D0')] %}<td class="position-legend-item"><span class="position-legend-dot" style="background:{{ color }}"></span>{{ label }}</td>{% endfor %}</tr></table></td></tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" align="center" valign="bottom" class="position-ref-label{% if loop.index0 <= 3 %} position-label-near-start{% elif loop.index0 >= 17 %} position-label-near-end{% endif %}">{% if cell.reference %}<span class="position-ref-box">Referencia de mercado<br /><strong>{{ reference_label }}</strong></span>{% endif %}</td>{% endfor %}</tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" align="center" class="position-ref-stem">{% if cell.reference %}<span>&nbsp;</span>{% endif %}</td>{% endfor %}</tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" class="position-band-cell" style="background:{% if loop.index0 < 4 %}#ECEBFF{% elif loop.index0 < 8 %}#DCD9FA{% elif loop.index0 < 13 %}#BDB6F0{% elif loop.index0 < 17 %}#9185E2{% else %}#6252D0{% endif %};">{% if cell.reference and cell.marker %}<span class="position-both-marker"><i></i></span>{% elif cell.reference %}<span class="position-ref-marker"></span>{% elif cell.marker %}<span class="position-property-marker"></span>{% endif %}</td>{% endfor %}</tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" align="center" valign="top" class="position-property-stem">{% if cell.marker %}<span>&nbsp;</span>{% endif %}</td>{% endfor %}</tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" align="center" valign="top" class="position-prop-label{% if loop.index0 <= 3 %} position-label-near-start{% elif loop.index0 >= 17 %} position-label-near-end{% endif %}">{% if cell.marker %}<span class="position-prop-box"><strong>Tu propiedad</strong><br /><b>{{ property_label }}</b></span>{% endif %}</td>{% endfor %}</tr>
+<tr>{% for cell in graph.cells %}<td width="4.7619%" align="{% if loop.index0 == 0 %}left{% elif loop.index0 == 20 %}right{% else %}center{% endif %}" valign="top" class="position-axis">{% if cell.axis_label %}<strong>{{ cell.axis_label }}</strong><br /><span>{{ unit_label }}</span>{% endif %}</td>{% endfor %}</tr>
+</table></td></tr></table>
 {%- endmacro %}
 <!doctype html>
 <html lang="es">
@@ -186,6 +179,7 @@
       .macro-kpi-label-single { color:#62698A; font-size:7px; line-height:1.25; font-weight:700; letter-spacing:.035em; }
       .macro-kpi-value-single { margin-top:2px; color:#17175F; font-size:12px; line-height:1.15; font-weight:700; }
       .macro-kpi-note-single { margin-top:2px; color:#62698A; font-size:7px; line-height:1.25; }
+      .macro-highlight-single { margin:0 0 7px; padding:6px 8px; border-left:3px solid #6252D0; background:#FFFFFF; color:#282252; font-size:10px; line-height:1.4; font-weight:700; }
       .macro-copy-single { margin:4px 0 0; color:#515B70; font-size:10.5px; line-height:1.48; }
       .macro-source-single { margin-top:5px; color:#7A8192; font-size:7px; line-height:1.25; }
       .context-bar { display:inline-block; width:3px; margin:0 1px; background:#4232C5; vertical-align:bottom; }
@@ -289,7 +283,28 @@
       .position-graph { width:100%; margin:10px 0 0; }
       .position-graph-labels td { width:33.333%; color:#62698A; font-size:9px; line-height:1.25; }
       .position-track { width:100%; margin-top:4px; }
-      .position-track td { width:4.7619%; height:14px; padding:0; }
+      .position-track { table-layout:fixed; }
+      .position-track td { width:4.7619%; padding:0; text-align:center; }
+      .position-legend-cell { padding:0 0 10px; text-align:right; }
+      .position-legend-item { padding:3px 5px; color:#62698A; font-size:8px; line-height:1.2; white-space:nowrap; }
+      .position-legend-dot { display:inline-block; width:7px; height:7px; margin-right:3px; border-radius:50%; vertical-align:middle; }
+      .position-ref-label { height:48px; vertical-align:bottom; }
+      .position-ref-box,.position-prop-box { display:block; width:160px; margin-left:-65px; padding:4px 7px; border:1px solid #E4E1FF; border-radius:6px; background:#FFFFFF; color:#62698A; font-size:8px; line-height:1.2; text-align:center; white-space:normal; box-sizing:border-box; }
+      .position-ref-box strong,.position-prop-box b { color:#4232C5; font-size:9px; }
+      .position-ref-stem { height:14px; }
+      .position-ref-stem span { display:block; width:2px; height:12px; margin:0 auto; background:#6252D0; font-size:1px; line-height:1px; }
+      .position-band-cell { height:14px; line-height:14px; }
+      .position-both-marker,.position-property-marker,.position-ref-marker { display:inline-block; border:2px solid #ffffff; border-radius:50%; vertical-align:middle; }
+      .position-both-marker,.position-property-marker { width:15px; height:15px; background:#17175F; }
+      .position-both-marker i { display:inline-block; width:5px; height:5px; border:1px solid #ffffff; border-radius:50%; background:#6252D0; vertical-align:top; }
+      .position-ref-marker { width:11px; height:11px; background:#6252D0; }
+      .position-property-stem { height:38px; padding-top:5px !important; }
+      .position-property-stem span { display:block; width:2px; height:26px; margin:0 auto; border-left:2px dashed #17175F; font-size:1px; line-height:1px; }
+      .position-prop-label { height:39px; }
+      .position-prop-box { border-color:#DCD9FA; background:#FBFAFF; color:#17175F; }
+      .position-axis { height:29px; padding-top:8px !important; color:#62698A; font-size:8px; line-height:1.15; }
+      .position-axis strong { color:#62698A; font-size:8px; }
+      .position-axis span { white-space:nowrap; }
       .position-track td:first-child { border-radius:999px 0 0 999px; }
       .position-track td:last-child { border-radius:0 999px 999px 0; }
       .position-marker-grid, .position-caption-grid { width:100%; table-layout:fixed; }
@@ -567,8 +582,12 @@
         .evidence-single { padding:12px 11px; }
         .evidence-heading-row td { display:block; width:auto !important; text-align:left !important; }
         .evidence-badge-single { margin-top:5px; }
+        .position-ref-box,.position-prop-box { width:140px !important; margin-left:-63px !important; }
+        .position-label-near-start .position-ref-box, .position-label-near-start .position-prop-box { margin-left:0 !important; }
+        .position-label-near-end .position-ref-box, .position-label-near-end .position-prop-box { margin-left:-91px !important; }
+        .position-axis:last-child { position:relative; left:-28px; }
         .position-caption-row td { font-size:8px; }
-        .single-comparison-bar .position-anchor-label { width:132px !important; font-size:8px; }
+        .single-comparison-bar .position-anchor-label { width:auto !important; max-width:none !important; margin:0 !important; font-size:8px; }
         .single-property-review .position-callout-single:not(.position-callout-first) { width:100px !important; margin-left:-47px !important; }
         .single-property-review .position-callout-last { margin-left:-96px !important; text-align:right !important; }
         .position-metric { display:block; width:auto !important; }
@@ -619,7 +638,7 @@
               </tr></table>
             </td></tr>
           {% endif %}
-          {% if single_property_only and macro_context.copy_paragraphs %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong><div class="macro-heading-single">CHILE · SEPTIEMBRE 2026</div><table role="presentation" cellspacing="0" cellpadding="0" class="macro-kpis-single"><tr>{% for kpi in macro_context.kpis %}<td><div class="macro-kpi-label-single">{{ kpi.label }}</div><div class="macro-kpi-value-single{% if kpi.context %} macro-kpi-context-single{% endif %}">{{ kpi.value }}</div><div class="macro-kpi-note-single">{{ kpi.note }}</div></td>{% endfor %}</tr></table>{% for paragraph in macro_context.copy_paragraphs[:2] %}<p class="macro-copy-single">{{ paragraph }}</p>{% endfor %}<div class="macro-source-single">{{ macro_context.source_line }}</div></td></tr>{% elif context_note %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong> {{ context_note }}</td></tr>{% endif %}
+          {% if single_property_only and macro_context.copy_paragraphs %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong><div class="macro-heading-single">CHILE · SEPTIEMBRE 2026</div><table role="presentation" cellspacing="0" cellpadding="0" class="macro-kpis-single"><tr>{% for kpi in macro_context.kpis %}<td><div class="macro-kpi-label-single">{{ kpi.label }}</div><div class="macro-kpi-value-single{% if kpi.context %} macro-kpi-context-single{% endif %}">{{ kpi.value }}</div><div class="macro-kpi-note-single">{{ kpi.note }}</div></td>{% endfor %}</tr></table><p class="macro-highlight-single">{{ macro_context.highlight }}</p>{% for paragraph in macro_context.copy_paragraphs %}<p class="macro-copy-single">{{ paragraph }}</p>{% endfor %}<div class="macro-source-single">Fuentes: {{ macro_context.source_line }}</div></td></tr>{% elif context_note %}<tr><td class="context-strip"><span class="context-icon"><i class="context-bar context-bar-one"></i><i class="context-bar context-bar-two"></i><i class="context-bar context-bar-three"></i></span><strong class="context-title">CONTEXTO DE MERCADO</strong> {{ context_note }}</td></tr>{% endif %}
           <tr><td class="content content-single">
             {% if properties|length >= 3 %}<div class="portfolio-summary-heading">Tus propiedades en revisión</div>{% endif %}
             {% for property in properties %}
@@ -692,13 +711,13 @@
                     {% if property.comparable.display_status == "REVIEW" %}<div class="review-note">Estas referencias muestran diferencias relevantes y deben revisarse junto con tu asesor.</div>{% endif %}
                     {% if property.comparable.positioning_mode in ["PRICE_M2", "TOTAL_PRICE"] %}
                     <div class="positioning-mode-title">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}{% if property.is_rental %}Comparación por arriendo publicado (UF/mes){% else %}Comparación por precio publicado (UF){% endif %}{% else %}Posicionamiento por {{ property.comparable.positioning_unit_label }}{% endif %}</div>
-                    {% if single_property_only %}{{ single_comparison_bar(property.comparable.positioning_graph, property.comparable.positioning_property_label, property.comparable.positioning_reference_label) }}{% else %}
+                    {% if single_property_only %}{{ single_comparison_bar(property.comparable.positioning_graph, property.comparable.positioning_property_label, property.comparable.positioning_reference_label, property.comparable.positioning_unit_label if property.comparable.positioning_mode != "TOTAL_PRICE" else ("UF/mes" if property.is_rental else "UF")) }}{% else %}
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-graph">
                       <tr class="position-graph-labels"><td align="left">Más competitivo<br /><span>(menor valor)</span></td><td align="center">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</td><td align="right">Zona superior<br /><span>(mayor valor)</span></td></tr>
                       <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track"><tr>{% for cell in property.comparable.positioning_graph.cells %}<td style="height:14px;line-height:14px;text-align:center;background:{% if loop.index0 < 4 %}#ECEBFF{% elif loop.index0 < 8 %}#DCD9FA{% elif loop.index0 < 13 %}#BDB6F0{% elif loop.index0 < 17 %}#9185E2{% else %}#6252D0{% endif %};">{% if cell.reference %}<span style="display:inline-block;width:11px;height:11px;border:2px solid #ffffff;border-radius:50%;background:#6252D0;vertical-align:middle;"></span>{% endif %}{% if cell.marker %}<span style="display:inline-block;width:15px;height:15px;border:2px solid #ffffff;border-radius:50%;background:#17175F;vertical-align:middle;"></span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
                       <tr><td colspan="3"><table role="presentation" class="position-anchor-grid" cellspacing="0" cellpadding="0"><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.reference %}<span class="position-anchor-line" style="background:#6252D0;"></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.reference %}<span class="position-anchor-label" style="text-align:{% if loop.index0 <= 2 %}left{% elif loop.index0 >= 18 %}right{% else %}center{% endif %};margin-left:{% if loop.index0 <= 2 %}0{% elif loop.index0 >= 18 %}-117px{% else %}-58px{% endif %};">Referencia comparable<br /><strong>{{ property.comparable.positioning_reference_label }}</strong></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.marker %}<span class="position-anchor-line" style="background:#17175F;"></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.marker %}<span class="position-anchor-label" style="text-align:{% if loop.index0 <= 2 %}left{% elif loop.index0 >= 18 %}right{% else %}center{% endif %};margin-left:{% if loop.index0 <= 2 %}0{% elif loop.index0 >= 18 %}-117px{% else %}-58px{% endif %};"><strong>Tu propiedad</strong><br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
                     </table>{% endif %}
-                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-reference" aria-hidden="true"></span>{% else %}▥{% endif %}</td><td><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong></td></tr></table></td><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-property" aria-hidden="true"></span>{% else %}⌂{% endif %}</td><td><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong></td></tr></table></td></tr></table>
+                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-reference" aria-hidden="true"></span>{% else %}▥{% endif %}</td><td><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong></td></tr></table></td><td class="position-metric"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="position-metric-icon">{% if single_property_only %}<span class="market-small-icon market-small-icon-property" aria-hidden="true"></span>{% else %}⌂{% endif %}</td><td><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong></td>{% if single_property_only and property.comparable.positioning_delta_label %}<td align="right" style="padding-left:8px;border-left:1px solid #E5E6EF;white-space:nowrap;"><span style="display:inline-block;padding:5px 7px;border-radius:8px;background:#FFF0EE;color:#E64B4B;font-size:10px;font-weight:700;">{% if property.comparable.positioning_delta_pct >= 0 %}↑{% else %}↓{% endif %} {{ property.comparable.positioning_delta_label }}</span><br /><span style="color:#817D95;font-size:8px;">{{ property.comparable.positioning_delta_context }}</span></td>{% endif %}</tr></table></td></tr></table>
                     {% elif property.appraisal.visible and property.appraisal.kind == "INDIVIDUAL_APPRAISAL" %}
                       <div class="position-fallback-card"><div class="position-fallback-title">Posicionamiento frente a la valoración</div><table role="presentation" cellspacing="0" cellpadding="0" class="position-fallback-values"><tr><td>Precio publicado<strong>{{ property.price_label }}</strong></td><td>Tasación de referencia<strong>{{ property.appraisal.mid_label }}</strong></td></tr></table></div>
                     {% else %}

@@ -8,10 +8,12 @@ the same CTA URLs supplied by QA.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import statistics
 import sys
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,21 +28,87 @@ if str(ROOT) not in sys.path:
 from config import Config
 
 
+logger = logging.getLogger(__name__)
 TEMPLATE_VERSION = "OWNER_CAMPAIGN_EMAIL_V2"
 TEMPLATE_FILE = "owner_campaign_email_v2.html"
 SINGLE_PROPERTY_HERO_TITLE = "Revisión comercial de tu propiedad"
-SINGLE_PROPERTY_HERO_DESCRIPTION = (
-    "Analizamos el comportamiento reciente del mercado, las alternativas comparables disponibles y la respuesta comercial de tu propiedad "
-    "para evaluar su posicionamiento actual. El objetivo es identificar oportunidades que permitan fortalecer su competitividad, "
-    "captar mayor interés y mejorar sus posibilidades de concretar una venta."
+SINGLE_PROPERTY_SALE_HERO_DESCRIPTION = (
+    "Analizamos las condiciones actuales del mercado, la respuesta comercial de tu propiedad y las alternativas disponibles para los compradores. "
+    "El objetivo es evaluar si su posicionamiento actual sigue siendo competitivo y detectar oportunidades para aumentar el interés y favorecer una venta."
 )
-SINGLE_PROPERTY_MACRO_COPY = (
-    "El financiamiento y la capacidad de decisión siguen influyendo. El IPoM de septiembre describe una demanda interna más débil y "
-    "deterioro del mercado laboral y la confianza, factores que pueden extender las decisiones de los hogares.",
-    "El subsidio a la tasa y FOGAES se limita a viviendas nuevas elegibles de hasta 6.000 UF; puede reducir cerca de un punto la tasa "
-    "y permitir un pie de 10%. No se atribuye ese beneficio a esta propiedad usada: puede, en cambio, aumentar la competencia relativa "
-    "de parte de la oferta nueva. Por eso conviene revisar su posición frente a alternativas y la respuesta comercial observada.",
+SINGLE_PROPERTY_RENT_HERO_DESCRIPTION = (
+    "Analizamos las condiciones actuales del mercado, la respuesta comercial de tu propiedad y las alternativas disponibles para quienes buscan arrendar. "
+    "El objetivo es evaluar si su posicionamiento actual sigue siendo competitivo y detectar oportunidades para aumentar el interés y favorecer un arriendo."
 )
+SINGLE_PROPERTY_SALE_MACRO_CONTEXT = {
+    "highlight": "Un mercado más exigente obliga a competir mejor por la atención del comprador.",
+    "copy_paragraphs": (
+        "El escenario económico sigue influyendo en las decisiones de compra. El Banco Central reporta una desaceleración de la demanda interna, junto con un deterioro del mercado laboral y de los indicadores de confianza, factores que pueden hacer más cuidadosas y prolongadas las decisiones de los hogares.",
+        "A esto se suma un cambio relevante en la competencia: actualmente existen beneficios de financiamiento para viviendas nuevas de hasta 6.000 UF, mediante subsidio a la tasa hipotecaria y FOGAES. Estos beneficios no aplican a esta propiedad usada, pero pueden hacer más atractivas determinadas alternativas nuevas para algunos compradores.",
+        "En este contexto, mantener un precio competitivo cobra mayor importancia. Por eso analizamos también la respuesta real que ha tenido tu propiedad durante los últimos 90 días antes de proponer un nuevo posicionamiento.",
+    ),
+    "source_line": "Banco Central de Chile y MINVU · septiembre 2026",
+    "kpis": [
+        {"label": "FINANCIAMIENTO HIPOTECARIO", "value": "≈ 4,1%", "note": "4,08% al 15 sep. · 4,04% prom. agosto"},
+        {"label": "TPM", "value": "4,5%", "note": "Vigente en septiembre"},
+        {"label": "CONTEXTO", "value": "Demanda interna más débil", "note": "Menor confianza y mercado laboral debilitado", "context": True},
+    ],
+}
+SINGLE_PROPERTY_RENT_MACRO_CONTEXT = {
+    "highlight": "En arriendo, el valor mensual es uno de los principales factores de comparación entre las alternativas disponibles.",
+    "copy_paragraphs": (
+        "El mercado laboral y el costo de vida continúan influyendo en las decisiones de los hogares. La tasa de desocupación nacional alcanzó 9,5% en el trimestre mayo–julio y la inflación registró una variación de 4,1% en doce meses a agosto. Al mismo tiempo, las remuneraciones reales aumentaron 4,1% anual a julio.",
+        "En este escenario, quienes buscan arrendar pueden evaluar con especial atención el compromiso mensual que representa una propiedad y compararlo con las alternativas disponibles. Por eso, un precio bien posicionado resulta importante para captar interés y transformar búsquedas en contactos efectivos.",
+        "Más allá del contexto general, la señal más relevante es la respuesta que ha tenido esta propiedad. Por eso analizamos sus leads de los últimos 90 días antes de proponer un nuevo posicionamiento de precio.",
+    ),
+    "source_line": "INE y Banco Central de Chile · septiembre 2026",
+    "kpis": [
+        {"label": "MERCADO LABORAL", "value": "9,5%", "note": "Tasa de desocupación · mayo–julio 2026"},
+        {"label": "INFLACIÓN", "value": "4,1%", "note": "Variación a 12 meses · agosto 2026"},
+        {"label": "REMUNERACIONES REALES", "value": "+4,1%", "note": "Variación a 12 meses · julio 2026"},
+    ],
+}
+
+
+class OperationReviewRequiredError(ValueError):
+    """Fail-closed error raised when a property's operation cannot be identified."""
+
+    def __init__(self, reason: str, raw_value: Any = None) -> None:
+        self.review_reason = reason
+        logger.warning(
+            "OWNER_CAMPAIGN_OPERATION_REVIEW_REQUIRED reason=%s operation=%r",
+            reason,
+            str(raw_value or "").strip(),
+        )
+        super().__init__(f"REVIEW_REQUIRED:{reason}; operation={str(raw_value or '').strip()!r}")
+
+
+def _normalize_operation(value: Any) -> str:
+    """Return a canonical operation or fail closed when the source is unclear."""
+    raw = str(value or "").strip()
+    if not raw:
+        raise OperationReviewRequiredError("OPERATION_MISSING")
+    folded = "".join(
+        char for char in unicodedata.normalize("NFKD", raw.casefold())
+        if not unicodedata.combining(char)
+    )
+    tokens = set(re.findall(r"[a-z]+", folded))
+    rent_tokens = {"arriendo", "arriendos", "arrendar", "alquiler", "alquileres", "renta", "rent", "rental", "leasing"}
+    sale_tokens = {"venta", "ventas", "vender", "sell", "sale"}
+    has_rent = bool(tokens & rent_tokens)
+    has_sale = bool(tokens & sale_tokens)
+    if has_rent and not has_sale:
+        return "ARRIENDO"
+    if has_sale and not has_rent:
+        return "VENTA"
+    reason = "OPERATION_AMBIGUOUS" if has_rent and has_sale else "OPERATION_UNRECOGNIZED"
+    raise OperationReviewRequiredError(reason, raw)
+
+
+def _operation_from_sources(primary: Any, fallback: Any) -> str:
+    """Use the QA operation first and the property operation only as its fallback."""
+    source = primary if str(primary or "").strip() else fallback
+    return _normalize_operation(source)
 
 
 def number(value: Any) -> float | None:
@@ -164,10 +232,8 @@ def _graph(distribution: Mapping[str, Any], property_value: Any) -> dict[str, An
 
 
 def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> dict[str, Any]:
-    """Higher-resolution display grid for the single-email positioning band."""
+    """Numeric display grid for the single-email positioning band."""
     slots = 21
-    inset = 2
-    usable_slots = slots - 1 - (2 * inset)
     p10 = number(distribution.get("p10"))
     p90 = number(distribution.get("p90"))
     value = number(property_value)
@@ -175,16 +241,44 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
     if p10 is None or p90 is None or p90 <= p10:
         index = slots // 2
         reference_index = slots // 2
+        axis_ticks = []
     else:
-        ratio = lambda current: max(0.0, min(1.0, (current - p10) / (p90 - p10)))
-        index = inset + max(0, min(usable_slots, int(round(ratio(value) * usable_slots)))) if value is not None else slots // 2
-        reference_index = inset + max(0, min(usable_slots, int(round(ratio(median) * usable_slots)))) if median is not None else slots // 2
+        # Keep both the owner's value and the market reference inside a padded
+        # scale. Percentile-only bounds pinned outliers to the track ends and
+        # let their callout boxes run beyond the email column.
+        values = [p10, p90]
+        values.extend(current for current in (value, median) if current is not None)
+        observed_min, observed_max = min(values), max(values)
+        percentile_span = p90 - p10
+        observed_span = max(observed_max - observed_min, percentile_span)
+        padding = max(percentile_span * 0.18, observed_span * 0.15)
+        axis_min = observed_min - padding
+        axis_max = observed_max + padding
+        axis_span = axis_max - axis_min
+        ratio = lambda current: max(0.0, min(1.0, (current - axis_min) / axis_span))
+        usable_slots = slots - 1
+        index = max(0, min(usable_slots, int(round(ratio(value) * usable_slots)))) if value is not None else slots // 2
+        reference_index = max(0, min(usable_slots, int(round(ratio(median) * usable_slots)))) if median is not None else slots // 2
+        axis_ticks = [
+            {
+                "slot": tick * 4,
+                "label": fmt_number(axis_min + (axis_span * tick / 5), 0 if (axis_min + (axis_span * tick / 5)).is_integer() else 1),
+            }
+            for tick in range(6)
+        ]
+    ticks_by_slot = {tick["slot"]: tick["label"] for tick in axis_ticks}
     return {
         "markers_close": abs(index - reference_index) <= 5,
         "property_index": index,
         "reference_index": reference_index,
+        "axis_ticks": axis_ticks,
         "cells": [
-            {"active": i <= index, "marker": i == index, "reference": i == reference_index}
+            {
+                "active": i <= index,
+                "marker": i == index,
+                "reference": i == reference_index,
+                "axis_label": ticks_by_slot.get(i),
+            }
             for i in range(slots)
         ]
     }
@@ -440,6 +534,13 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         positioning_property_label = ""
         positioning_reference_label = ""
         positioning_graph = {"cells": []}
+    positioning_delta_pct = None
+    positioning_delta_label = ""
+    positioning_delta_context = ""
+    if positioning_property_value is not None and positioning_reference_value is not None and positioning_reference_value > 0:
+        positioning_delta_pct = ((positioning_property_value - positioning_reference_value) / positioning_reference_value) * 100
+        positioning_delta_label = ("+" if positioning_delta_pct >= 0 else "−") + fmt_number(abs(positioning_delta_pct), 0) + "%"
+        positioning_delta_context = "sobre la referencia" if positioning_delta_pct >= 0 else "bajo la referencia"
     return {
         "visible": True,
         "scope_label": scope,
@@ -454,6 +555,9 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         "positioning_unit_label": positioning_unit_label,
         "positioning_property_label": positioning_property_label,
         "positioning_reference_label": positioning_reference_label,
+        "positioning_delta_pct": positioning_delta_pct,
+        "positioning_delta_label": positioning_delta_label,
+        "positioning_delta_context": positioning_delta_context,
         "positioning_graph": positioning_graph,
         "selected_n": selected,
         "universe_n": len(integral),
@@ -661,8 +765,8 @@ def _property_context(
     document_visible = document_type != "NONE" and bool(attachment.get("status") == "ok")
     v3 = evidence.get("client_validation_v3") if isinstance(evidence.get("client_validation_v3"), Mapping) else {}
     support = evidence.get("supporting_evidence") if isinstance(evidence.get("supporting_evidence"), Mapping) else {}
-    operation = str(qa_row.get("operacion") or prop.get("operacion") or "")
-    is_rental = _is_rent(operation)
+    operation = _operation_from_sources(qa_row.get("operacion"), prop.get("operacion"))
+    is_rental = operation == "ARRIENDO"
     appraisal = _appraisal_model(support, price, operation)
     market_reference = _market_reference_model(support, operation, comparable)
     review_guard = (
@@ -729,7 +833,7 @@ def _property_context(
         "property_built_m2": _surface_from_property(prop, "built_m2"),
         "property_built_m2_source": str(prop.get("superficie_construida_source") or "") or None,
         "property_heading": f"{property_type} · {commune}".upper().strip(" ·"),
-        "operation_label": operation.title(),
+        "operation_label": "Arriendo" if is_rental else "Venta",
         "operation_raw": operation,
         "is_rental": is_rental,
         "price_label": _price_label(price, operation),
@@ -965,6 +1069,11 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     single_property_only = len(properties) == 1
     for original in properties:
         model = dict(original)
+        operation_source = model.get("operation_raw") or model.get("operation_label") or model.get("operacion")
+        operation = _normalize_operation(operation_source)
+        model["operation_raw"] = operation
+        model["operation_label"] = "Arriendo" if operation == "ARRIENDO" else "Venta"
+        model["is_rental"] = operation == "ARRIENDO"
         cta = model.get("cta") if isinstance(model.get("cta"), Mapping) else {}
         model["cta"] = {
             **dict(cta),
@@ -992,7 +1101,17 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     all_rent = bool(property_models) and all(bool(item.get("is_rental")) for item in property_models)
     single_property_only = len(property_models) == 1
     mixed_operations = bool({bool(item.get("is_rental")) for item in property_models}) and len({bool(item.get("is_rental")) for item in property_models}) > 1
-    if all_rent:
+    if single_property_only:
+        is_single_rental = property_models[0]["operation_raw"] == "ARRIENDO"
+        hero_title = SINGLE_PROPERTY_HERO_TITLE
+        hero_description = SINGLE_PROPERTY_RENT_HERO_DESCRIPTION if is_single_rental else SINGLE_PROPERTY_SALE_HERO_DESCRIPTION
+        context_note = ""
+        footer_disclaimer = (
+            "Las referencias de arriendo corresponden a publicaciones observadas y no garantizan un valor final de contrato."
+            if is_single_rental else
+            "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta."
+        )
+    elif all_rent:
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de arriendo"
         hero_description = "Revisamos el mercado y las alternativas disponibles para ayudar a sostener un posicionamiento competitivo y captar nuevas oportunidades de arriendo."
         context_note = "El análisis utiliza referencias de arriendo y valores mensuales para esta propiedad."
@@ -1002,11 +1121,6 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         hero_description = "Cada análisis conserva su operación, evidencia y recomendación específica."
         context_note = "CONTEXTO DE MERCADO · Cada propiedad se evalúa por separado según su operación y segmento."
         footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un precio o valor final de contrato."
-    elif single_property_only:
-        hero_title = SINGLE_PROPERTY_HERO_TITLE
-        hero_description = SINGLE_PROPERTY_HERO_DESCRIPTION
-        context_note = ""
-        footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta."
     else:
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de compradores"
         hero_description = "Observamos el mercado y las alternativas disponibles para ayudarte a mantener un posicionamiento competitivo y capturar nuevas oportunidades de demanda."
@@ -1017,31 +1131,18 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
-    if single_property_only and all_rent:
-        rent_count = property_models[0].get("comparable", {}).get("universe_n") or property_models[0].get("comparable", {}).get("selected_n") or 0
-        macro_context = {
-            # Keep the approved sale/rent single-property section structure and
-            # visual weight. Only its evidence-specific copy and labels vary.
-            "copy_paragraphs": (
-                "En el mercado de arriendo, el canon mensual, la oferta disponible y las consultas recientes ayudan a entender cómo se posiciona la propiedad frente a las alternativas que evalúa un arrendatario.",
-                "Las publicaciones similares aportan una referencia comercial para conversar sobre demanda y plazo de colocación. No representan valores de contratos cerrados ni garantizan un resultado.",
-            ),
-            "source_line": "Contexto de arriendo · referencias comerciales observadas",
-            "kpis": [
-                {"label": "OPERACIÓN", "value": "Arriendo", "note": "Canon mensual vigente"},
-                {"label": "PUBLICACIONES", "value": f"{rent_count} similares", "note": "Observadas en arriendo"},
-                {"label": "ENFOQUE", "value": "Colocación", "note": "Posicionamiento y demanda", "context": True},
-            ],
-        }
+    if single_property_only:
+        macro_context = (
+            SINGLE_PROPERTY_RENT_MACRO_CONTEXT
+            if property_models[0]["operation_raw"] == "ARRIENDO"
+            else SINGLE_PROPERTY_SALE_MACRO_CONTEXT
+        )
     else:
         macro_context = {
-            "copy_paragraphs": SINGLE_PROPERTY_MACRO_COPY if single_property_only else (),
-            "source_line": "Fuentes: Banco Central de Chile y MINVU · septiembre 2026" if single_property_only else "",
-            "kpis": [
-                {"label": "FINANCIAMIENTO HIPOTECARIO", "value": "≈ 4,1%", "note": "4,08% al 15 sep. · 4,04% prom. agosto"},
-                {"label": "TPM", "value": "4,5%", "note": "Vigente al 21 de septiembre"},
-                {"label": "CONTEXTO", "value": "Mayor selectividad / competencia", "note": "Demanda y confianza más débiles", "context": True},
-            ],
+            "highlight": "",
+            "copy_paragraphs": (),
+            "source_line": "",
+            "kpis": [],
         }
     report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
     return template.render(

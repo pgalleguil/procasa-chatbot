@@ -24,7 +24,7 @@ def _single_property_model():
             "visible": True, "effective_type": "APARTMENT", "badge_label": "20 publicaciones similares analizadas", "selected_n": 20,
             "source_date": "18 de mayo de 2026", "display_status": "OK", "positioning_mode": "PRICE_M2",
             "positioning_unit_label": "UF/m² útil", "positioning_reference_label": "44,0 UF/m² útil", "positioning_property_label": "62,0 UF/m² útil",
-            "positioning_graph": {"cells": [{"reference": index == 9, "marker": index == 19} for index in range(21)], "markers_close": False},
+            "positioning_graph": {"cells": [{"reference": index == 9, "marker": index == 19} for index in range(21)], "markers_close": False, "reference_index": 9, "property_index": 19, "reference_label_index": 9, "property_label_index": 16},
             "top3": [
                 {"portal": "Toctoc", "surface_label": "53 m² construidos", "rooms_label": "3 dorm.", "baths_label": "1 baño(s)", "price_label": "1.591 UF", "unit_label": "30,0 UF/m² útil", "parking_label": ""},
                 {"portal": "Toctoc", "surface_label": "47 m² construidos", "rooms_label": "3 dorm.", "baths_label": "1 baño(s)", "price_label": "2.100 UF", "unit_label": "44,7 UF/m² útil", "parking_label": ""},
@@ -256,19 +256,24 @@ def test_price_position_markers_have_connected_alternating_labels_at_mobile_widt
     labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-label ')]")
     lines = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert len(labels) == 2
-    assert len(lines) == 2
+    assert len(lines) == 4  # marker stems plus the label-centered connector stems
     assert root.xpath("//*[@data-component-id='single-property-comparison-bar-v1']")
-    assert any("height:65px" in line.get("style", "") for line in lines)
+    assert all("height:12px" in line.get("style", "") for line in lines)
+    assert len(root.xpath("//td[@colspan='9']")) == 2
     for label in labels:
         assert label.getparent().getparent().getparent().xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert "max-width:620px" in html
 
 
-def test_comparison_bar_insets_endpoint_markers_without_moving_the_labels_away():
+def test_comparison_bar_edge_clamps_labels_and_connects_them_to_endpoint_markers():
     low = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 10}, 10)
     high = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 90}, 90)
     assert low["reference_index"] == low["property_index"] == 2
     assert high["reference_index"] == high["property_index"] == 18
+    assert low["reference_label_index"] == 4 and low["property_label_index"] == 12
+    assert high["reference_label_index"] == 8 and high["property_label_index"] == 16
+    assert abs(low["reference_index"] - low["reference_label_index"]) > 0
+    assert abs(high["property_index"] - high["property_label_index"]) > 0
     assert len(low["cells"]) == len(high["cells"]) == 21
 
 

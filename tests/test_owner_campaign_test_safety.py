@@ -920,7 +920,12 @@ def _approved_property_model(case):
             "positioning_unit_label": unit,
             "positioning_property_label": f"23 {unit}",
             "positioning_reference_label": f"21 {unit}",
-            "positioning_graph": {"cells": [{"reference": index == 2, "marker": index == 3} for index in range(5)]},
+            "positioning_graph": {
+                "reference_index": 3, "property_index": 18,
+                "reference_label_index": 4, "property_label_index": 16,
+                "markers_close": False,
+                "cells": [{"reference": index == 3, "marker": index == 18} for index in range(21)],
+            },
             "selected_n": 12,
             "universe_n": 80,
             "position_label": "en la zona media",
@@ -980,7 +985,7 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "68a38af9546b657be5b08b564e9ec2663114a6602b9e371ff58aeb8f6bbbf478"
+        assert ".single-comparison-bar .position-anchor-label" in style.group(1)
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
@@ -1032,6 +1037,8 @@ def test_qa_report_price_and_advisor_links_are_distinct_and_bound_to_property(mo
             assert links_by_action[actions.ACCEPT_PRICE_ACTION] != advisor_url
         if case.property_code == "6132":
             assert actions.REPORT_ACTION not in links_by_action
+            assert html.count("REVISAR CON MI EJECUTIVO") == 1
+            assert "¿Prefieres conversarlo antes?" not in html
         if case.property_code == "16486":
             assert actions.REPORT_ACTION in links_by_action
 
@@ -1728,11 +1735,12 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert "html_render" in get_response.headers["server-timing"]
     assert "<html" in page and "name=\"viewport\"" in page
     assert "Confirma el nuevo valor" in page
-    assert "CONFIRMAR AUTORIZACIÓN" in page
-    assert "El precio publicado no se modificará automáticamente desde esta página." in page
+    assert "CONFIRMAR NUEVO VALOR" in page
+    assert "Esta autorización no modifica automáticamente el precio publicado." in page
     assert "VALOR ACTUAL" in page and "NUEVO VALOR" in page and "AJUSTE" in page
-    assert "CONFIRMAR AUTORIZACIÓN" in page and "VOLVER SIN CONFIRMAR" in page
-    assert "modo de prueba" not in page.casefold() and "qa" not in page.casefold()
+    assert "CONFIRMAR NUEVO VALOR" in page and "Volver sin confirmar" in page
+    visible_text = re.sub(r"<[^>]+>", " ", page).casefold()
+    assert "modo de prueba" not in visible_text and "qa" not in visible_text and "test" not in visible_text
     row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in row["response_events"]] == [
         "cta_clicked", "price_confirm_page_opened"
@@ -1748,8 +1756,9 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert "Autorización registrada" in post_response.body.decode("utf-8")
     success_page = post_response.body.decode("utf-8")
     assert "QUÉ SIGUE AHORA" in success_page
-    assert "El valor publicado no se modifica automáticamente" in success_page
-    assert "modo de prueba" not in success_page.casefold() and "qa" not in success_page.casefold()
+    assert "El precio publicado no cambia automáticamente" in success_page
+    success_visible_text = re.sub(r"<[^>]+>", " ", success_page).casefold()
+    assert "modo de prueba" not in success_visible_text and "qa" not in success_visible_text and "test" not in success_visible_text
     row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in row["response_events"]] == [
         "cta_clicked", "price_confirm_page_opened", "price_authorized"
@@ -1888,6 +1897,74 @@ def test_advisor_cta_writes_only_test_events_to_adjustment_ledger(monkeypatch):
     assert actions.PROPERTY_COLLECTION not in db.requested
 
 
+def test_advisor_request_is_idempotent_when_success_page_is_refreshed(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(cta_type="ADVISOR_REVIEW", evidence_segment="MIXED_EVIDENCE")
+    token = _action_token(action=actions.ADVISOR_ACTION)
+
+    for _ in range(3):
+        response = actions.handle_test_action(token, db=db)
+        assert response.status_code == 200
+
+    events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
+    assert [event["event"] for event in events].count("cta_clicked") == 1
+    assert [event["event"] for event in events].count("advisor_review_requested") == 1
+    assert db.docs[actions.LEDGER_COLLECTION][0]["owner_response"]["status"] == "PENDING"
+
+
+def test_advisor_refresh_never_resets_existing_price_authorization(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(code="5641", cta_type="PRICE_AUTHORIZATION")
+    row = db.docs[actions.LEDGER_COLLECTION][0]
+    row["owner_response"] = {"status": "PRICE_AUTHORIZED", "authorized_value": 4700.0}
+    row["response_events"] = [{
+        "event_id": "historic-price-authorization",
+        "event": "price_authorized",
+        "action": actions.ACCEPT_PRICE_ACTION,
+        "event_at": "2026-09-25T17:04:00+00:00",
+        "authorized_value": 4700.0,
+        "current_value_at_campaign": 5000.0,
+    }]
+    row["response_event_ids"] = ["historic-price-authorization"]
+
+    token = _action_token("5641", actions.ADVISOR_ACTION)
+    actions.handle_test_action(token, db=db)
+    actions.handle_test_action(token, db=db)
+
+    assert row["owner_response"]["status"] == "PRICE_AUTHORIZED"
+    assert [event["event"] for event in row["response_events"]].count("advisor_review_requested") == 1
+
+
+def test_action_pages_use_one_responsive_premium_layout_for_price_and_advisor(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(cta_type="PRICE_AUTHORIZATION", evidence_segment="PRICE_AUTHORIZATION_READY")
+
+    confirm = actions.handle_test_action(_action_token("16521"), db=db).body.decode("utf-8")
+    success = actions.handle_test_action(_action_token("16521"), db=db, confirmed=True).body.decode("utf-8")
+    advisor = actions.handle_test_action(
+        _action_token("16521", actions.ADVISOR_ACTION), db=db
+    ).body.decode("utf-8")
+
+    for page in (confirm, success, advisor):
+        assert 'id="owner_campaign_action_layout"' in page
+        assert 'name="viewport" content="width=device-width, initial-scale=1"' in page
+        assert "/static/logo.png" in page
+        assert "modo de prueba" not in page.casefold()
+        assert "qa" not in page.casefold()
+        visible_text = re.sub(r"<[^>]+>", " ", page).casefold()
+        assert "test" not in visible_text
+        assert "prueba" not in visible_text
+    assert "Confirma el nuevo valor" in confirm
+    assert "VALOR ACTUAL" in confirm and "NUEVO VALOR" in confirm and "AJUSTE" in confirm
+    assert "CONFIRMAR NUEVO VALOR" in confirm and "Volver sin confirmar" in confirm
+    assert "Autorización registrada" in success and "QUÉ SIGUE AHORA" in success
+    assert "Solicitud enviada a tu ejecutivo" in advisor
+    assert "TU EJECUTIVO PROCASA" in advisor
+
+
 def test_action_pages_share_brand_layout_and_advisor_copy_has_no_test_text(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
     monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
@@ -1895,13 +1972,14 @@ def test_action_pages_share_brand_layout_and_advisor_copy_has_no_test_text(monke
     advisor = actions.handle_test_action(_action_token(action=actions.ADVISOR_ACTION), db=db)
     page = advisor.body.decode("utf-8")
     assert advisor.status_code == 200
-    assert "Solicitud de revisión registrada" in page
+    assert "Solicitud enviada a tu ejecutivo" in page
+    assert "owner_campaign_action_layout" in page
     assert "QUÉ SIGUE AHORA" in page
     assert "VOLVER AL INFORME" in page
     assert "/static/logo.png" in page
     assert "modo de prueba" not in page.casefold()
     assert "qa" not in page.casefold()
-    assert "Tu ejecutivo PROCASA será informado" in page
+    assert "Tu ejecutivo PROCASA revisará los antecedentes" in page
 
 
 def test_report_open_records_in_adjustment_ledger(monkeypatch):

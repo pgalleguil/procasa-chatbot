@@ -312,9 +312,17 @@ def persist_test_event(
         desired_events = []
         if click_id not in event_ids:
             desired_events.append({"event_id": click_id, "event": "cta_clicked", "action": action})
-        occurrence_event_id = hashlib.sha256(
-            f"{token_id}|{event_name}|{occurrence}|{occurrence_nonce}".encode()
-        ).hexdigest()[:24]
+        # A signed advisor action token represents one logical request. The
+        # success page may be refreshed or reopened, but those page views must
+        # not create additional commercial requests. Keep other complete-stage
+        # events occurrence-based if they are added in the future.
+        occurrence_event_id = (
+            hashlib.sha256(f"{token_id}|{event_name}".encode()).hexdigest()[:24]
+            if action == ADVISOR_ACTION
+            else hashlib.sha256(
+                f"{token_id}|{event_name}|{occurrence}|{occurrence_nonce}".encode()
+            ).hexdigest()[:24]
+        )
         if occurrence_event_id not in event_ids:
             desired_events.append({
                 "event_id": occurrence_event_id,

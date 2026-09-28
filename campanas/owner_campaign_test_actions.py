@@ -42,11 +42,13 @@ def _campaign_test_page(
     content: str,
     raw_content: bool = False,
     *,
+    eyebrow: str = "PROCASA · ASESORÍA COMERCIAL",
     back_url: str = "javascript:history.back()",
     back_label: str = "VOLVER AL INFORME",
 ) -> str:
-    """Shared, production-looking responsive layout for all owner action pages."""
+    """Shared premium responsive layout for all owner action pages."""
     safe_title = escape(str(title or "PROCASA"))
+    safe_eyebrow = escape(str(eyebrow or "PROCASA"))
     safe_content = str(content or "") if raw_content else f"<p>{escape(str(content or ''))}</p>"
     safe_back_url = escape(str(back_url or "javascript:history.back()"), quote=True)
     safe_back_label = escape(str(back_label or "VOLVER AL INFORME"))
@@ -55,26 +57,48 @@ def _campaign_test_page(
         "<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
         f"<title>PROCASA | {safe_title}</title>"
-        "<style>body{margin:0;padding:24px 16px;background:#f4f3fa;font-family:Arial,sans-serif;color:#25224a}"
-        ".card{box-sizing:border-box;max-width:600px;margin:7vh auto;padding:30px 30px;background:#fff;"
-        "border:1px solid #e5e3f0;border-radius:14px;box-shadow:0 8px 28px rgba(35,29,78,.08)}"
-        ".brand{display:block;width:112px;height:auto;max-height:44px;object-fit:contain;margin-bottom:26px}"
-        "h1{margin:0 0 16px;color:#17175f;font-size:26px;line-height:1.22}"
-        ".copy{font-size:16px;line-height:1.55;color:#4e5571}.facts{margin:20px 0;padding:16px;"
-        "background:#f8f7ff;border:1px solid #e5e6ef;border-radius:10px}"
-        ".facts div{margin:5px 0;font-size:14px}.facts strong{color:#62698a;font-size:11px;letter-spacing:.04em}"
-        ".next{margin:22px 0 0;padding:16px;background:#f8f7ff;border-radius:10px;font-size:14px;line-height:1.55}"
-        ".next strong{display:block;margin-bottom:8px;color:#17175f;font-size:12px;letter-spacing:.05em}"
-        ".contact{margin-top:18px;padding-top:14px;border-top:1px solid #e5e6ef;font-size:13px;line-height:1.6}"
-        ".button{display:inline-block;margin-top:22px;padding:13px 19px;border-radius:999px;background:#17175f;"
-        "color:#fff!important;text-decoration:none;font-size:13px;font-weight:bold;letter-spacing:.03em}"
-        "@media(max-width:480px){body{padding:14px 10px}.card{margin:3vh auto;padding:24px 18px}"
-        ".brand{width:96px;margin-bottom:22px}h1{font-size:23px}.copy{font-size:15px}}</style></head>"
-        "<body><main class=\"card\">"
-        f"<img class=\"brand\" src=\"{logo_url}\" alt=\"PROCASA\">"
-        f"<h1>{safe_title}</h1><section class=\"copy\">{safe_content}</section>"
-        f"<a class=\"button\" href=\"{safe_back_url}\">{safe_back_label}</a>"
-        "</main></body></html>"
+        "<style>*{box-sizing:border-box}body{margin:0;padding:36px 18px;background:#f3f2fa;"
+        "font-family:Arial,Helvetica,sans-serif;color:#25224a}.owner_campaign_action_layout{max-width:780px;"
+        "margin:5vh auto;padding:42px 46px;background:#fff;border:1px solid #e7e6f0;border-radius:22px;"
+        "box-shadow:0 14px 42px rgba(34,29,89,.10)}.brand-row{padding-bottom:26px;margin-bottom:30px;"
+        "border-bottom:1px solid #eeedf5}.brand{display:block;width:116px;height:auto;max-height:48px;object-fit:contain}"
+        ".eyebrow{margin:0 0 12px;color:#6252d0;font-size:11px;font-weight:700;letter-spacing:.13em}"
+        "h1{margin:0 0 15px;color:#17175f;font-size:32px;line-height:1.18;letter-spacing:-.025em}"
+        ".copy{font-size:16px;line-height:1.65;color:#555d7b}.copy p{margin:0 0 18px}"
+        ".summary{display:flex;align-items:stretch;gap:14px;margin:26px 0;padding:17px;"
+        "background:#f8f7ff;border:1px solid #e8e6f6;border-radius:16px}.summary-cell{flex:1;min-width:0;padding:8px 12px}"
+        ".summary-cell.new{background:#eceaff;border-radius:12px}.summary-label{display:block;margin-bottom:8px;"
+        "color:#747b99;font-size:10px;font-weight:700;letter-spacing:.1em}.summary-value{display:block;"
+        "color:#17175f;font-size:23px;font-weight:700;line-height:1.15}.summary-cell.new .summary-value{"
+        "color:#5546c6;font-size:27px}.summary-arrow{align-self:center;color:#8176dc;font-size:22px}"
+        ".summary-adjustment{align-self:center;min-width:76px;text-align:center;color:#555d7b;font-size:12px;line-height:1.5}"
+        ".notice{margin:20px 0;padding:16px 18px;border-left:3px solid #a69cef;background:#f8f7ff;"
+        "border-radius:4px 12px 12px 4px;color:#62698a;font-size:13px;line-height:1.6}"
+        ".next{margin:27px 0 0;padding:20px 22px;background:#f8f7ff;border:1px solid #eeedf6;"
+        "border-radius:15px;font-size:14px;line-height:1.55}.next-title{display:block;margin-bottom:14px;"
+        "color:#17175f;font-size:11px;font-weight:700;letter-spacing:.1em}.step{display:flex;gap:12px;margin:11px 0;color:#555d7b}"
+        ".step-no{flex:0 0 30px;color:#6252d0;font-size:12px;font-weight:700}.contact{margin-top:20px;"
+        "padding:19px 21px;background:#fff;border:1px solid #e7e6f0;border-radius:15px;font-size:14px;line-height:1.7}"
+        ".contact-title{display:block;margin-bottom:8px;color:#17175f;font-size:11px;font-weight:700;letter-spacing:.1em}"
+        ".contact a{color:#5144bd;text-decoration:none;overflow-wrap:anywhere}.actions{display:flex;align-items:center;"
+        "gap:18px;margin-top:27px}.button{display:inline-flex;justify-content:center;align-items:center;min-height:48px;"
+        "padding:0 22px;border:0;border-radius:999px;background:#17175f;color:#fff!important;text-decoration:none;"
+        "font-size:12px;font-weight:700;letter-spacing:.045em;cursor:pointer}.button-secondary{display:inline-block;"
+        "padding:12px 4px;color:#62698a;text-decoration:none;font-size:13px;font-weight:600}.check{display:flex;"
+        "align-items:center;justify-content:center;width:52px;height:52px;margin:0 0 20px;border-radius:50%;"
+        "background:#eeecff;color:#5546c6;font-size:27px;font-weight:700}.badge-icon{display:inline-flex;"
+        "align-items:center;justify-content:center;width:52px;height:52px;margin:0 0 20px;border-radius:50%;"
+        "background:#eeecff;color:#5546c6;font-size:22px}"
+        "@media(max-width:600px){body{padding:14px 10px}.owner_campaign_action_layout{margin:2vh auto;padding:25px 19px;border-radius:18px}"
+        ".brand-row{padding-bottom:20px;margin-bottom:23px}.brand{width:100px}h1{font-size:27px}.copy{font-size:15px}"
+        ".summary{gap:5px;padding:10px;margin:21px 0}.summary-cell{padding:10px 7px}.summary-label{font-size:9px}"
+        ".summary-value{font-size:18px}.summary-cell.new .summary-value{font-size:21px}.summary-arrow{font-size:17px}"
+        ".summary-adjustment{min-width:53px;font-size:10px}.next{padding:17px}.actions{align-items:stretch;flex-direction:column;gap:8px}"
+        ".button{width:100%}.button-secondary{text-align:center}.contact{padding:16px}.step{gap:8px}}"
+        "</style></head><body><main id=\"owner_campaign_action_layout\" class=\"owner_campaign_action_layout\">"
+        f"<div class=\"brand-row\"><img class=\"brand\" src=\"{logo_url}\" alt=\"PROCASA\"></div>"
+        f"<p class=\"eyebrow\">{safe_eyebrow}</p><section class=\"copy\"><h1>{safe_title}</h1>{safe_content}</section>"
+        f"</main></body></html>"
     )
 
 
@@ -116,6 +140,19 @@ def _format_uf(value: Any) -> str:
         return "No disponible"
     decimals = 1 if amount % 1 else 0
     return f"{amount:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".") + " UF"
+
+
+def _campaign_value(value: Any, operation: Any) -> str:
+    formatted = _format_uf(value)
+    return formatted + ("/mes" if str(operation or "").strip().upper() == "ARRIENDO" else "")
+
+
+def _numbered_steps(items: tuple[str, ...]) -> str:
+    rows = "".join(
+        f'<div class="step"><span class="step-no">{index:02d}</span><span>{escape(text)}</span></div>'
+        for index, text in enumerate(items, 1)
+    )
+    return f'<div class="next"><strong class="next-title">QUÉ SIGUE AHORA</strong>{rows}</div>'
 
 
 def test_mode_enabled() -> bool:
@@ -345,65 +382,92 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
             pass
     if result.get("requires_confirmation"):
         action_url = "/campana/test-accion?token=" + quote(token, safe="")
-        current_price = _format_uf(result.get("current_price"))
-        proposed_price = _format_uf(result.get("proposed_price"))
+        is_rent = str(result.get("operation") or "").strip().upper() == "ARRIENDO"
+        current_price = _campaign_value(result.get("current_price"), result.get("operation"))
+        proposed_price = _campaign_value(result.get("proposed_price"), result.get("operation"))
         adjustment = result.get("adjustment_pct")
         try:
             adjustment_text = f"{float(adjustment):.1f}%".replace(".", ",")
         except (TypeError, ValueError):
             adjustment_text = "No disponible"
         content = (
-            '<p>Estás autorizando a PROCASA a gestionar la actualización del valor comercial propuesto para esta propiedad.</p>'
-            f'<div class="facts"><div><strong>VALOR ACTUAL</strong><br>{escape(current_price)}</div>'
-            f'<div><strong>NUEVO VALOR</strong><br>{escape(proposed_price)}</div>'
-            f'<div><strong>AJUSTE</strong><br>{escape(adjustment_text)}</div></div>'
+            '<p>Revisa los antecedentes antes de confirmar. Al continuar, autorizas a PROCASA a gestionar '
+            f'{"la actualización comercial del canon mensual propuesto para esta propiedad." if is_rent else "la actualización comercial del valor propuesto para esta propiedad."}</p>'
+            f'<div class="summary"><div class="summary-cell"><span class="summary-label">'
+            f'{"CANON ACTUAL" if is_rent else "VALOR ACTUAL"}</span><strong class="summary-value">{escape(current_price)}</strong></div>'
+            '<span class="summary-arrow" aria-hidden="true">→</span>'
+            f'<div class="summary-cell new"><span class="summary-label">'
+            f'{"NUEVO CANON" if is_rent else "NUEVO VALOR"}</span><strong class="summary-value">{escape(proposed_price)}</strong></div>'
+            f'<div class="summary-adjustment"><span class="summary-label">AJUSTE</span><strong>{escape(adjustment_text)}</strong></div></div>'
+            f'<div class="notice">Esta autorización no modifica automáticamente el {"canon mensual" if is_rent else "precio"} publicado. '
+            'Tu ejecutivo revisará la solicitud y coordinará la actualización correspondiente.</div>'
             f'<form method="post" action="{action_url}">'
-            '<button class="button" type="submit" style="margin-top:0;border:0;cursor:pointer;">'
-            'CONFIRMAR AUTORIZACIÓN</button></form>'
-            '<p>El precio publicado no se modificará automáticamente desde esta página. Nuestro equipo revisará la autorización y gestionará los pasos siguientes.</p>'
+            '<div class="actions"><button class="button" type="submit">'
+            f'{"CONFIRMAR NUEVO CANON" if is_rent else "CONFIRMAR NUEVO VALOR"} →</button>'
+            f'<a class="button-secondary" href="{escape(report_url, quote=True)}">Volver sin confirmar</a></div></form>'
         )
         response = HTMLResponse(
             _campaign_test_page(
-                "Confirma el nuevo valor", content, raw_content=True,
-                back_url=report_url, back_label="VOLVER SIN CONFIRMAR",
+                "Confirma el nuevo canon" if is_rent else "Confirma el nuevo valor", content, raw_content=True,
+                eyebrow="PROCASA · AUTORIZACIÓN DE CANON" if is_rent else "PROCASA · AUTORIZACIÓN DE PRECIO",
             ),
             status_code=200,
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
     elif result["event"] == "price_authorized":
-        title = "Autorización registrada"
+        is_rent = str(result.get("operation") or "").strip().upper() == "ARRIENDO"
+        title = "Autorización de canon registrada" if is_rent else "Autorización registrada"
         content = (
-            '<p>Hemos registrado correctamente tu autorización para revisar el valor comercial de la propiedad.</p>'
-            '<div class="next"><strong>QUÉ SIGUE AHORA</strong>'
-            '<div>• Nuestro equipo revisará la solicitud.</div>'
-            '<div>• Tu ejecutivo coordinará los pasos necesarios.</div>'
-            '<div>• Te mantendremos informado sobre el avance de la gestión.</div></div>'
-            '<p>El valor publicado no se modifica automáticamente desde esta confirmación.</p>'
+            '<div class="check" aria-hidden="true">✓</div>'
+            f'<p>Hemos registrado correctamente tu autorización para actualizar el {"canon mensual" if is_rent else "valor comercial"} de la propiedad.</p>'
+            f'<div class="summary"><div class="summary-cell new"><span class="summary-label">{"CANON AUTORIZADO" if is_rent else "VALOR AUTORIZADO"}</span>'
+            f'<strong class="summary-value">{escape(_campaign_value(result.get("proposed_price"), result.get("operation")))}</strong></div></div>'
+            + _numbered_steps((
+                "Revisaremos la solicitud y los antecedentes de la propiedad.",
+                "Tu ejecutivo coordinará la actualización correspondiente.",
+                "Te mantendremos informado sobre el avance de la gestión.",
+            ))
+            + f'<div class="notice">El {"canon" if is_rent else "precio"} publicado no cambia automáticamente desde esta página.</div>'
+            + f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>'
         )
+        eyebrow = "PROCASA · SOLICITUD RECIBIDA"
     else:
-        title = "Solicitud de revisión registrada"
+        title = "Solicitud enviada a tu ejecutivo"
         contact = result.get("executive_contact") if isinstance(result.get("executive_contact"), Mapping) else {}
         contact_name = str(contact.get("nombre") or "").strip()
         contact_email = str(contact.get("email") or "").strip()
         contact_phone = str(contact.get("telefono") or "").strip()
         executive_block = ""
         if contact_name or contact_email or contact_phone:
+            email_html = (
+                f'<a href="mailto:{escape(contact_email, quote=True)}">{escape(contact_email)}</a>'
+                if contact_email else ""
+            )
+            phone_digits = re.sub(r"[^0-9+]", "", contact_phone)
+            phone_html = (
+                f'<a href="tel:{escape(phone_digits, quote=True)}">{escape(contact_phone)}</a>'
+                if contact_phone else ""
+            )
             executive_block = (
-                '<div class="contact"><strong>Ejecutivo a cargo</strong><br>'
-                + "<br>".join(escape(value) for value in (contact_name, contact_email, contact_phone) if value)
+                '<div class="contact"><strong class="contact-title">TU EJECUTIVO PROCASA</strong>'
+                + "<br>".join(value for value in (escape(contact_name), email_html, phone_html) if value)
                 + "</div>"
             )
         content = (
-            '<p>Hemos registrado tu solicitud de revisión. Tu ejecutivo PROCASA será informado para revisar contigo el posicionamiento actual de tu propiedad y orientarte respecto de los próximos pasos.</p>'
-            '<div class="next"><strong>QUÉ SIGUE AHORA</strong>'
-            '<div>1. Tu ejecutivo revisará los antecedentes de la propiedad.</div>'
-            '<div>2. Se pondrá en contacto contigo para resolver dudas y evaluar alternativas.</div>'
-            '<div>3. Podrán definir juntos la estrategia comercial más conveniente.</div></div>'
+            '<div class="badge-icon" aria-hidden="true">◎</div>'
+            '<p>Registramos tu solicitud. Tu ejecutivo PROCASA revisará los antecedentes de la propiedad para conversar contigo sobre su posicionamiento y las alternativas comerciales disponibles.</p>'
+            + _numbered_steps((
+                "Revisión de los antecedentes comerciales.",
+                "Contacto para resolver dudas y evaluar alternativas.",
+                "Definición conjunta de los próximos pasos.",
+            ))
             + executive_block
+            + f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>'
         )
+        eyebrow = "PROCASA · ASESORÍA COMERCIAL"
     if not result.get("requires_confirmation"):
         response = HTMLResponse(
-            _campaign_test_page(title, content, raw_content=True, back_url=report_url),
+            _campaign_test_page(title, content, raw_content=True, eyebrow=eyebrow),
             status_code=200,
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )

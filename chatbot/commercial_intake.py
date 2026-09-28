@@ -30,6 +30,8 @@ def _candidate(text, lead):
     if code: return str(code).strip()
     urls = re.findall(r"https?://[^\s]+", str(text or ""), flags=re.I)
     if urls: return urls[-1]
+    mlc = re.search(r"\bMLC[-_]?\d+\b", str(text or ""), flags=re.I)
+    if mlc: return mlc.group(0)
     match = re.search(r"\b\d{4,12}\b", str(text or ""))
     return match.group(0) if match else None
 
@@ -148,21 +150,27 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         _state(db, event["_id"], WAITING_PROPERTY, "property_not_provided", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
     prop_meta = {}
-    if str(raw).lower().startswith(("http://", "https://")):
+    if str(raw).lower().startswith(("http://", "https://")) or re.search(r"\bMLC[-_]?\d+\b", str(raw), re.I):
         prop, prop_meta = lookup_property_link(db, raw)
     else:
         prop = find_property_by_any_identifier(db, raw)
     if not prop:
         identity = property_reference_identity(raw)
+        ambiguous = prop_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE"
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
-            "commercial_processing_state": WAITING_INVENTORY, "assignment_type": "MISSING_PROPERTY",
+            "commercial_processing_state": WAITING_INVENTORY,
+            "assignment_type": "AMBIGUOUS_PROPERTY_REFERENCE" if ambiguous else "MISSING_PROPERTY",
+            "property_resolution_error": "AMBIGUOUS_PROPERTY_REFERENCE" if ambiguous else None,
             **identity, "last_lookup_at": now,
             "commercial_notification_eligible": False}, "$inc": {"lookup_attempts": 1}})
         db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
             **identity, "source_message": str(text or ""),
+            "resolution_error": "AMBIGUOUS_PROPERTY_REFERENCE" if ambiguous else None,
+            "candidate_property_codes": prop_meta.get("candidate_codes", []),
             "last_lookup_at": now, "notification_eligible": False},
             "$inc": {"lookup_attempts": 1}})
-        _state(db, event["_id"], WAITING_INVENTORY, "property_not_in_inventory", now)
+        _state(db, event["_id"], WAITING_INVENTORY,
+               "ambiguous_property_reference" if ambiguous else "property_not_in_inventory", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
     if not _property_is_active(prop):
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {

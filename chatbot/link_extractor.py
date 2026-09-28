@@ -146,6 +146,13 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 propiedad.get("codigo"), alias_meta.get("match_method"),
             )
             return True, propiedad, plataforma, codigo_externo
+        if alias_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            logger.error(
+                "[PROPERTY_LINK_AMBIGUOUS] portal=%s external_id=%s candidate_codes=%s",
+                alias_meta.get("portal"), alias_meta.get("external_id"),
+                alias_meta.get("candidate_codes", []),
+            )
+            return False, None, plataforma, alias_meta.get("external_id")
         
         print(f"\n[INFO] Plataforma detectada: {plataforma} | Buscando en {PROPERTY_COLLECTION_NAME}")
         print(f"[LINK_DEBUG] URL recibida: {url_clean}")

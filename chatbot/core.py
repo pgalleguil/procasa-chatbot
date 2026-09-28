@@ -38,6 +38,7 @@ from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     canonical_property_context,
     find_property_by_any_identifier,
+    lookup_property_link,
     get_prop_location,
     get_prop_operation,
     guard_resolved_property_response,
@@ -264,6 +265,18 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
     value = str(raw_value).strip()
     if not value:
         return None
+
+    if value.lower().startswith(("http://", "https://")) or re.search(r"\bMLC[-_]?\d+\b", value, re.I):
+        prop, meta = lookup_property_link(db, value, PROPERTY_COLLECTION_NAME)
+        if meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            return None
+        if prop:
+            return prop
+        prop, meta = lookup_property_link(db, value, "universo_cartera")
+        if meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            return None
+        if prop:
+            return prop
 
     value_int = safe_int_conversion(value)
     portal = (portal or "").strip()

@@ -325,7 +325,8 @@ def test_targeted_none_case_preflight_checks_copy_mobile_and_gmail(case_id, code
         html=(
             '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
             '<style>@media only screen and (max-width:600px){.x{width:100%}}</style></head>'
-            f'<body>{copy_text}</body></html>'
+            f'<body>{copy_text}<table class="document-line-single document-support-single">'
+            'RESPALDO COMERCIAL</table></body></html>'
         ),
     )
     result = panel._targeted_single_preflight(rendered)

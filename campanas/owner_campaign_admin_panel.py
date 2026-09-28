@@ -377,10 +377,11 @@ def _targeted_single_preflight(item: Any) -> dict[str, Any]:
         "descargar el informe",
         "descarga tu informe",
     ))
-    document_module_present = bool(re.search(
-        r"(?is)<[^>]+\bclass=[\"'][^\"']*\bdocument-line-single\b",
-        item.html,
-    ))
+    document_module_present = any(
+        "document-line-single" in set(match.group(1).split())
+        and "document-support-single" not in set(match.group(1).split())
+        for match in re.finditer(r"(?is)<[^>]+\bclass=[\"']([^\"']*)[\"']", item.html)
+    )
     property_model = (case.render_context or {}).get("property_model") or {}
     property_image_url = str((property_model.get("image") or {}).get("url") or "")
     duplicated_property_image = bool(property_image_url and item.html.count(property_image_url) > 1)

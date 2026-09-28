@@ -178,6 +178,12 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
         index = max(0, min(slots - 1, int(round(ratio(value) * (slots - 1))))) if value is not None else slots // 2
         reference_index = max(0, min(slots - 1, int(round(ratio(median) * (slots - 1))))) if median is not None else slots // 2
     return {
+        # On a 390px viewport 5 grid cells are only about 75px apart, while
+        # the two labels need roughly 130px. Alternate the labels until the
+        # markers have enough room on the narrowest supported layout.
+        "markers_close": abs(index - reference_index) <= 9,
+        "property_index": index,
+        "reference_index": reference_index,
         "cells": [
             {"active": i <= index, "marker": i == index, "reference": i == reference_index}
             for i in range(slots)
@@ -212,12 +218,17 @@ def _surface_label(item: Mapping[str, Any]) -> str:
 
 def _rooms_label(item: Mapping[str, Any]) -> str:
     value = number(item.get("dormitorios"))
-    return f"{fmt_number(value, 0)} dorm." if value is not None else ""
+    return f"{fmt_number(value, 0)} dorm." if value is not None and value > 0 else ""
 
 
 def _baths_label(item: Mapping[str, Any]) -> str:
     value = number(item.get("banos"))
-    return f"{fmt_number(value, 0)} baño(s)" if value is not None else ""
+    return f"{fmt_number(value, 0)} baño(s)" if value is not None and value > 0 else ""
+
+
+def _parking_label(item: Mapping[str, Any]) -> str:
+    value = number(item.get("estacionamientos", item.get("parking")))
+    return f"{fmt_number(value, 0)} estacionamiento" if value is not None and value > 0 else ""
 
 
 def _surface_from_property(prop: Mapping[str, Any], primary_surface: str) -> float | None:
@@ -295,6 +306,9 @@ def _property_feature_cards(prop: Mapping[str, Any]) -> list[dict[str, str]]:
         features.append({"kind": "bed", "label": f"{fmt_number(bedrooms, 0)} dorm."})
     if bathrooms is not None:
         features.append({"kind": "bath", "label": f"{fmt_number(bathrooms, 0)} baño(s)"})
+    parking = _first_positive(prop, ("estacionamientos", "parking", "n_estacionamientos"))
+    if parking is not None:
+        features.append({"kind": "parking", "label": f"{fmt_number(parking, 0)} estacionamiento"})
     return features
 
 
@@ -332,6 +346,7 @@ def _v3_reference_item(item: Mapping[str, Any], unit: str, price_key: str, opera
         "surface_label": _surface_label({"superficie_construida": item.get("built_m2"), "superficie_terreno": item.get("land_m2")}),
         "rooms_label": _rooms_label({"dormitorios": item.get("bedrooms")}),
         "baths_label": _baths_label({"banos": item.get("bathrooms")}),
+        "parking_label": _parking_label({"estacionamientos": item.get("parking", item.get("estacionamientos"))}),
         "property_type_label": str(item.get("property_type") or item.get("tipo_propiedad") or item.get("tipo") or "").strip(),
         "commune_label": str(item.get("commune") or item.get("comuna") or "").strip(),
         "distance_label": (fmt_number(item.get("distance"), 2) + " de distancia estructural") if number(item.get("distance")) is not None else "Referencia estructural",
@@ -488,6 +503,12 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
         low = number(appraisal.get("estimated_low_uf"))
         mid = number(appraisal.get("estimated_mid_uf"))
         high = number(appraisal.get("estimated_high_uf"))
+        low = low if low is not None and low > 0 else None
+        mid = mid if mid is not None and mid > 0 else None
+        high = high if high is not None and high > 0 else None
+        if low is None and mid is None and high is None:
+            appraisal = None
+    if appraisal:
         gap = ((price - mid) / mid * 100.0) if price is not None and mid and mid > 0 else None
         gap_amount = price - mid if price is not None and mid is not None else None
         position = str(appraisal.get("position_vs_appraisal") or "").upper()
@@ -532,6 +553,12 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
                 raw_value = communal.get(key)
             if raw_value in (None, ""):
                 continue
+            parsed_value = number(raw_value)
+            if parsed_value is not None and (
+                parsed_value < 0
+                or (value_kind in {"unit", "count"} and parsed_value <= 0)
+            ):
+                continue
             if value_kind == "unit":
                 unit_label = " UF/m²/mes" if is_rent else " UF/m²"
                 value = fmt_number(raw_value, 1) + unit_label if number(raw_value) is not None else str(raw_value).strip()
@@ -546,8 +573,11 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
         if not metrics and not is_rent:
             for key, label, decimals in (("median_price_uf", "Mediana observada", 0), ("n_observations", "Publicaciones analizadas", 0), ("price_m2_median", "Mediana por m²", 1)):
                 raw_value = communal.get(key)
-                if raw_value not in (None, ""):
+                parsed_value = number(raw_value)
+                if raw_value not in (None, "") and parsed_value is not None and parsed_value > 0:
                     metrics.append({"label": label, "value": fmt_number(raw_value, decimals)})
+        if not metrics:
+            return {"visible": False}
         return {
             "visible": True,
             "kind": "COMMUNAL_MARKET_REPORT",
@@ -563,13 +593,35 @@ def _appraisal_model(support: Mapping[str, Any], price: float | None, operation:
     return {"visible": False}
 
 
-def _market_reference_model(support: Mapping[str, Any], operation: Any = None) -> dict[str, Any]:
+def _market_reference_model(
+    support: Mapping[str, Any], operation: Any = None,
+    comparable: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     communal = support.get("communal_market") if isinstance(support.get("communal_market"), Mapping) else {}
     metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
     is_rental = _is_rent(operation or communal.get("operation"))
     reference_key = "uf_m2_arriendo_actual" if is_rental else "uf_m2_publicacion_actual"
     universe_keys = ("publicaciones_arriendo_activas", "n_observations") if is_rental else ("publicaciones_activas", "n_observations")
-    reference = number(metrics.get(reference_key) or communal.get(reference_key))
+    comparable = comparable if isinstance(comparable, Mapping) else {}
+    comparable_count = number(comparable.get("selected_n"))
+    comparable_reference = str(comparable.get("positioning_reference_label") or "").strip()
+    if comparable.get("visible") and comparable_count is not None and comparable_count >= 5 and comparable_reference:
+        match = re.match(r"^\s*([+-]?[\d. ]+(?:,\d+)?)", comparable_reference)
+        comparable_value = number(match.group(1)) if match else None
+        if comparable_value is not None and comparable_value > 0:
+            unit = str(comparable.get("positioning_unit_label") or "UF/m² de oferta")
+            source_date = str(comparable.get("source_date") or "")
+            return {
+                "visible": True,
+                "source": "COMPARABLES",
+                "reference_value": comparable_reference,
+                "reference_unit": unit,
+                "universe_value": fmt_number(comparable_count, 0),
+                "universe_unit": "publicaciones comparables",
+                "source_date": source_date,
+            }
+    raw_reference = metrics.get(reference_key) or communal.get(reference_key)
+    reference = number(raw_reference)
     universe = next((number(metrics.get(key) or communal.get(key)) for key in universe_keys if number(metrics.get(key) or communal.get(key)) is not None), None)
     if reference is None or universe is None or reference <= 0 or universe < 5:
         return {"visible": False}
@@ -583,6 +635,7 @@ def _market_reference_model(support: Mapping[str, Any], operation: Any = None) -
             source_date = str(source_date)
     return {
         "visible": True,
+        "source": "COMMUNAL",
         "reference_value": fmt_number(reference, 1),
         "reference_unit": "UF/m²/mes de oferta" if is_rental else "UF/m² de oferta",
         "universe_value": fmt_number(universe, 0),
@@ -612,7 +665,7 @@ def _property_context(
     operation = str(qa_row.get("operacion") or prop.get("operacion") or "")
     is_rental = _is_rent(operation)
     appraisal = _appraisal_model(support, price, operation)
-    market_reference = _market_reference_model(support, operation)
+    market_reference = _market_reference_model(support, operation, comparable)
     review_guard = (
         bool(v3.get("evidence_conflict"))
         or str(v3.get("comparable_display_status") or "").upper() == "REVIEW"
@@ -663,7 +716,7 @@ def _property_context(
     primary_label = str(segment_content.get("cta") or cta.get("primary_label") or "Analizar estrategia con mi asesor")
     if recommendation == "revisión con asesor":
         if not segment_content:
-            primary_url = str(cta.get("secondary_url") or primary_url)
+            primary_url = str(cta.get("advisor_url") or cta.get("primary_url") or primary_url)
         primary_label = "Revisar recomendación con mi asesor"
     elif recommendation == "con ajuste de precio sustentado":
         primary_label = str(segment_content.get("cta") or "ACEPTAR NUEVO VALOR")
@@ -710,6 +763,10 @@ def _property_context(
         "cta": {
             "primary_url": primary_url,
             "primary_label": primary_label,
+            # Report, advisor, and price actions are distinct capabilities.
+            # Never infer a report destination from the legacy secondary URL.
+            "report_url": str(cta.get("report_url") or "") if document_visible else "",
+            "advisor_url": str(cta.get("advisor_url") or ""),
             "secondary_url": str(cta.get("secondary_url") or ""),
             "secondary_label": "Otra opción para esta propiedad",
         },
@@ -885,7 +942,7 @@ def _portfolio_summary(property_model: Mapping[str, Any]) -> dict[str, Any]:
         "authorized_price": authorized_price,
         "adjustment_label": str(property_model.get("display_adjustment_label") or appraisal.get("adjustment_label") or ""),
         "executive_name": str(executive.get("name") or ""),
-        "report_url": str(cta.get("secondary_url") or "") if document.get("visible") else "",
+        "report_url": str(cta.get("report_url") or "") if document.get("visible") else "",
     }
 
 
@@ -900,6 +957,12 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     single_property_only = len(properties) == 1
     for original in properties:
         model = dict(original)
+        cta = model.get("cta") if isinstance(model.get("cta"), Mapping) else {}
+        model["cta"] = {
+            **dict(cta),
+            "report_url": str(cta.get("report_url") or "") if (model.get("document") or {}).get("visible") else "",
+            "advisor_url": str(cta.get("advisor_url") or ""),
+        }
         activity = model.get("activity_90d") if isinstance(model.get("activity_90d"), Mapping) else {"state": "UNKNOWN"}
         model["activity_90d"] = dict(activity)
         valuation_slots = _valuation_slots(model)

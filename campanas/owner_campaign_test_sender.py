@@ -97,6 +97,8 @@ class PreparedTestMessage:
     report_token: str | None
     action_token: str | None
     property_cases: tuple[OwnerCampaignTestCase, ...] = ()
+    advisor_token: str | None = None
+    price_token: str | None = None
 
 
 def _property_cases(case: OwnerCampaignTestCase) -> tuple[OwnerCampaignTestCase, ...]:
@@ -104,7 +106,7 @@ def _property_cases(case: OwnerCampaignTestCase) -> tuple[OwnerCampaignTestCase,
 
 
 def build_test_links(case: OwnerCampaignTestCase) -> dict[str, str]:
-    """Return signed test-only report/action links for one explicit test case."""
+    """Return separate signed test links for report, price, and advisor actions."""
     if not isinstance(case, OwnerCampaignTestCase):
         raise TestSenderError("explicit_test_case_required")
     links: dict[str, str] = {}
@@ -115,13 +117,18 @@ def build_test_links(case: OwnerCampaignTestCase) -> dict[str, str]:
             document_type=case.document_type,
         )
         links["report"] = f"{SERVICE_BASE_URL}/campana/informe?token={quote(report_token, safe='')}"
-    action = {
+    primary_action = {
         "PRICE_AUTHORIZATION": ACCEPT_PRICE_ACTION,
         "ADVISOR_REVIEW": ADVISOR_ACTION,
     }.get(case.cta_type)
-    if action:
-        action_token = issue_campaign_test_token(property_code=case.property_code, action=action)
-        links["action"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(action_token, safe='')}"
+    advisor_token = issue_campaign_test_token(property_code=case.property_code, action=ADVISOR_ACTION)
+    links["advisor"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(advisor_token, safe='')}"
+    if primary_action == ACCEPT_PRICE_ACTION:
+        price_token = issue_campaign_test_token(property_code=case.property_code, action=ACCEPT_PRICE_ACTION)
+        links["price"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(price_token, safe='')}"
+        links["action"] = links["price"]
+    elif primary_action == ADVISOR_ACTION:
+        links["action"] = links["advisor"]
     return links
 
 
@@ -318,7 +325,7 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
     parser = _LinkParser()
     parser.feed(html)
     report_tokens: dict[str, str] = {}
-    action_tokens: dict[str, str] = {}
+    action_tokens: dict[tuple[str, str], str] = {}
     expected_host = urlsplit(SERVICE_BASE_URL).netloc
     for href in parser.hrefs:
         parsed = urlsplit(href)
@@ -345,21 +352,38 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
             claims = _token_from_link(href, path)
             code = str(claims.get("property_code") or "")
             matching = [item for item in property_cases if item.property_code == code]
-            if len(matching) != 1 or claims.get("action") != _action_for_case(matching[0]):
+            action = str(claims.get("action") or "")
+            if len(matching) != 1 or action not in {ACCEPT_PRICE_ACTION, ADVISOR_ACTION}:
                 raise TestSenderError("test_action_link_mismatch")
             token_value = parse_qs(parsed.query)["token"][0]
-            if code in action_tokens and action_tokens[code] != token_value:
+            token_key = (code, action)
+            if token_key in action_tokens and action_tokens[token_key] != token_value:
                 raise TestSenderError("conflicting_test_action_link")
-            action_tokens[code] = token_value
+            action_tokens[token_key] = token_value
 
     for property_case in property_cases:
         if property_case.document_type in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"} and property_case.property_code not in report_tokens:
             raise TestSenderError("test_report_link_missing")
         if property_case.document_type == "NONE" and property_case.property_code in report_tokens:
             raise TestSenderError("no_document_report_link_forbidden")
-        if _action_for_case(property_case) and property_case.property_code not in action_tokens:
+        primary_action = _action_for_case(property_case)
+        if primary_action and (property_case.property_code, primary_action) not in action_tokens:
             raise TestSenderError("test_action_link_missing")
-    if case.case_id == "E" and (len(action_tokens) != len(property_cases) or len(report_tokens) != len(property_cases)):
+        if (property_case.property_code, ADVISOR_ACTION) not in action_tokens:
+            raise TestSenderError("test_advisor_link_missing")
+        report_token = report_tokens.get(property_case.property_code)
+        advisor_token = action_tokens.get((property_case.property_code, ADVISOR_ACTION))
+        price_token = action_tokens.get((property_case.property_code, ACCEPT_PRICE_ACTION))
+        report_url = f"{SERVICE_BASE_URL}/campana/informe?token={quote(report_token, safe='')}" if report_token else ""
+        advisor_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(advisor_token, safe='')}" if advisor_token else ""
+        price_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(price_token, safe='')}" if price_token else ""
+        if report_url and advisor_url and report_url == advisor_url:
+            raise TestSenderError("report_advisor_url_reused")
+        if report_url and price_url and report_url == price_url:
+            raise TestSenderError("report_price_url_reused")
+        if advisor_url and price_url and advisor_url == price_url:
+            raise TestSenderError("advisor_price_url_reused")
+    if case.case_id == "E" and len(report_tokens) != len(property_cases):
         raise TestSenderError("test_case_e_property_links_incomplete")
 
     # The renderer cannot override recipients. If it attempts to do so, abort
@@ -377,8 +401,10 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
         html=html,
         text=text,
         report_token=report_tokens.get(case.property_code),
-        action_token=action_tokens.get(case.property_code),
+        action_token=action_tokens.get((case.property_code, _action_for_case(case) or "")),
         property_cases=property_cases,
+        advisor_token=action_tokens.get((case.property_code, ADVISOR_ACTION)),
+        price_token=action_tokens.get((case.property_code, ACCEPT_PRICE_ACTION)),
     )
 
 
@@ -832,7 +858,8 @@ def _render_portfolio_case(case: OwnerCampaignTestCase) -> Mapping[str, Any]:
         elif "revisar" not in label or "asesor" not in label:
             raise TestSenderError("approved_advisor_cta_label_missing")
         cta["primary_url"] = links["action"]
-        cta["secondary_url"] = links["report"]
+        cta["advisor_url"] = links["advisor"]
+        cta["report_url"] = links.get("report", "")
         item["cta"] = cta
         item_activity = item.get("activity_90d") if isinstance(item.get("activity_90d"), Mapping) else {}
         valid_activity, valid_portals = _valid_activity(item_activity)
@@ -967,8 +994,8 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
         cta["primary_url"] = links["action"]
     elif case.cta_type == "ADVISOR_REVIEW":
         cta["primary_url"] = links["action"]
-    if "report" in links:
-        cta["secondary_url"] = links["report"]
+    cta["advisor_url"] = links["advisor"]
+    cta["report_url"] = links.get("report", "")
     property_model["cta"] = cta
 
     from analytics.owner_campaign_email_v2 import render_owner_campaign_email_v2

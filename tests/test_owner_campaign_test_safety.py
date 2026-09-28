@@ -9,7 +9,7 @@ import re
 from dataclasses import replace
 from types import SimpleNamespace
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
 
 import pytest
 
@@ -204,13 +204,15 @@ def _render(case):
             document_type=case.document_type,
         )
         links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token={quote(report_token)}">Ver informe</a>')
-    action = {
+    primary_action = {
         "PRICE_AUTHORIZATION": actions.ACCEPT_PRICE_ACTION,
         "ADVISOR_REVIEW": actions.ADVISOR_ACTION,
     }.get(case.cta_type)
-    if action:
-        action_token = actions.issue_test_link_token(property_code=case.property_code, action=action)
-        links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token={quote(action_token)}">Acción</a>')
+    if primary_action == actions.ACCEPT_PRICE_ACTION:
+        price_token = actions.issue_test_link_token(property_code=case.property_code, action=actions.ACCEPT_PRICE_ACTION)
+        links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token={quote(price_token)}">Precio</a>')
+    advisor_token = actions.issue_test_link_token(property_code=case.property_code, action=actions.ADVISOR_ACTION)
+    links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token={quote(advisor_token)}">Ejecutivo</a>')
     return {
         "subject": "Seguimiento comercial PROCASA",
         "html": f"<html><body>{' '.join(links)}</body></html>",
@@ -978,10 +980,60 @@ def test_default_adapter_renders_with_approved_v2_template_and_signed_public_lin
         assert "localhost" not in item.html
         style = re.search(r"<style>(.*?)</style>", item.html, re.DOTALL)
         assert style is not None
-        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "c077bc042bc532f331ca860b1de46765fde3c732e8fe8993131c8aaecbfc609a"
+        assert hashlib.sha256(style.group(1).encode("utf-8")).hexdigest() == "1fb3e0243ce842044458df8726330876fe65a5134ca361392776c96993d5b70b"
         assert "Actividad comercial" in item.text
         assert "Yapo 2" in item.text
     assert "tasación" not in rendered[3].text.casefold()
+
+
+def test_qa_report_price_and_advisor_links_are_distinct_and_bound_to_property(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    cases = [
+        _case("A"),
+        _case("D", property_code="6132", document_type="NONE", operation="ARRIENDO"),
+        _case("C", property_code="16486", document_type="COMMUNAL_MARKET_REPORT"),
+    ]
+    for case in cases:
+        links = sender.build_test_links(case)
+        model = _approved_property_model(case)
+        model["document"] = {
+            "visible": case.document_type != "NONE",
+            "copy": "Respaldo disponible" if case.document_type != "NONE" else "",
+            "type": case.document_type,
+        }
+        if case.document_type == "NONE":
+            model["appraisal"] = {"visible": False, "kind": "NONE", "metrics": []}
+        model["cta"] = {
+            "primary_url": links.get("price") or links["advisor"],
+            "primary_label": "ACEPTAR NUEVO VALOR" if "price" in links else "REVISAR CON MI EJECUTIVO",
+            "report_url": links.get("report", ""),
+            "advisor_url": links["advisor"],
+        }
+        html = email_v2.render_owner_campaign_email_v2(
+            [model], email=test_mode.TEST_RECIPIENT,
+            executives=[{"name": case.executive, "email": "executive@procasa.cl", "phone": "+56 9 1234 5678"}],
+        )
+        parser = sender._LinkParser()
+        parser.feed(html)
+        hrefs = [href for href in parser.hrefs if "/campana/" in href]
+        links_by_action = {}
+        for href in hrefs:
+            parsed = urlsplit(href)
+            token = parse_qs(parsed.query).get("token", [""])[0]
+            claims = test_mode.verify_campaign_test_token(token)
+            assert claims is not None
+            assert claims["property_code"] == case.property_code
+            links_by_action[claims["action"]] = href
+        advisor_url = links_by_action[actions.ADVISOR_ACTION]
+        assert advisor_url != links_by_action.get(actions.REPORT_ACTION)
+        if case.property_code == "5641":
+            assert links_by_action[actions.ACCEPT_PRICE_ACTION] != links_by_action[actions.REPORT_ACTION]
+            assert links_by_action[actions.ACCEPT_PRICE_ACTION] != advisor_url
+        if case.property_code == "6132":
+            assert actions.REPORT_ACTION not in links_by_action
+        if case.property_code == "16486":
+            assert actions.REPORT_ACTION in links_by_action
 
 
 def test_rent_clp_m2_month_validation_accepts_clp_without_uf_m2_month():
@@ -1670,6 +1722,10 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     page = get_response.body.decode("utf-8")
     assert get_response.status_code == 200
     assert get_response.headers["cache-control"] == "private, no-store"
+    assert "token_validation" in get_response.headers["server-timing"]
+    assert "mongo_lookup" in get_response.headers["server-timing"]
+    assert "tracking_write" in get_response.headers["server-timing"]
+    assert "html_render" in get_response.headers["server-timing"]
     assert "<html" in page and "name=\"viewport\"" in page
     assert "Confirma el nuevo valor" in page
     assert "CONFIRMAR AUTORIZACIÓN" in page
@@ -1684,6 +1740,8 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     post_response = actions.handle_test_action(token, db=db, confirmed=True)
 
     assert post_response.status_code == 200
+    assert "tracking_write" in post_response.headers["server-timing"]
+    assert "html_render" in post_response.headers["server-timing"]
     assert "Autorización registrada" in post_response.body.decode("utf-8")
     row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in row["response_events"]] == [
@@ -1729,6 +1787,12 @@ def test_authorized_status_stays_sticky_after_reopening_report_and_contacting_ad
     events = ledger_row["response_events"]
     assert sum(event["event"] == "report_opened" for event in events) == 2
     assert len({event["event_id"] for event in events}) == len(events)
+    assert all(event.get("event_at", "").endswith("+00:00") for event in events)
+    assert all(
+        event.get(key)
+        for event in events
+        for key in ("event_id", "event", "action", "property_code", "campaign_id", "executive")
+    )
 
 
 def test_existing_authorization_event_normalizes_summary_without_losing_authorization(monkeypatch):

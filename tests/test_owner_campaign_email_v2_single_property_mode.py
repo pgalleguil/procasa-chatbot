@@ -40,7 +40,7 @@ def _single_property_model():
         "recommendation_title": "Ajuste de precio sugerido",
         "recommendation": "con ajuste de precio sustentado",
         "recommended_price_label": "2.857 UF",
-        "cta": {"primary_url": "https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=action", "primary_label": "ACEPTAR NUEVO VALOR", "secondary_url": "https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report"},
+        "cta": {"primary_url": "https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=price", "primary_label": "ACEPTAR NUEVO VALOR", "report_url": "https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report", "advisor_url": "https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token=advisor", "secondary_url": "https://procasa-chatbot-yr8d.onrender.com/campana/informe?token=report"},
         "document": {"visible": True, "copy": "Tasación individual", "type": "INDIVIDUAL_APPRAISAL"},
     }
 
@@ -140,6 +140,7 @@ def test_market_reference_uses_only_communal_source_values():
     )
     assert result == {
         "visible": True,
+        "source": "COMMUNAL",
         "reference_value": "52,3",
         "reference_unit": "UF/m² de oferta",
         "universe_value": "812",
@@ -147,6 +148,115 @@ def test_market_reference_uses_only_communal_source_values():
         "source_date": "18 de mayo de 2026",
     }
     assert renderer._market_reference_model({}, "VENTA") == {"visible": False}
+
+
+def test_communal_only_context_hides_fake_zero_and_uses_comparables_first():
+    support = {"communal_market": {
+        "operation": "VENTA",
+        "relevant_metrics": {
+            "uf_m2_publicacion_actual": 0,
+            "uf_m2_venta_efectiva_actual": 0,
+            "publicaciones_activas": 0,
+        },
+        "median_price_uf": 0,
+        "n_observations": 0,
+        "price_m2_median": 0,
+    }}
+    appraisal = renderer._appraisal_model(support, 5000, "VENTA")
+    reference = renderer._market_reference_model(support, "VENTA")
+    assert appraisal == {"visible": False}
+    assert reference == {"visible": False}
+
+    comparable = {
+        "visible": True,
+        "selected_n": 20,
+        "positioning_reference_label": "44,0 UF/m² útil",
+        "positioning_unit_label": "UF/m² útil",
+    }
+    populated = renderer._market_reference_model(support, "VENTA", comparable)
+    assert populated["visible"] is True
+    assert populated["source"] == "COMPARABLES"
+    assert populated["reference_value"] == "44,0 UF/m² útil"
+    assert populated["universe_value"] == "20"
+
+
+def test_single_photo_badge_and_features_are_email_safe_and_contextual():
+    model = _single_property_model()
+    model["feature_cards"] = [
+        {"kind": "area", "label": "130 m² construidos"},
+        {"kind": "bed", "label": "2 dorm."},
+        {"kind": "bath", "label": "1 baño(s)"},
+        {"kind": "parking", "label": "1 estacionamiento"},
+    ]
+    html = renderer.render_owner_campaign_email_v2(
+        [model], email="qa@example.test",
+        executives=[{"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}],
+        base_url="https://example.test",
+    )
+    root = lxml_html.fromstring(html)
+    photo = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' single-photo-wrap ')]")
+    assert len(photo) == 1
+    assert photo[0].get("background") == "https://example.test/property.jpg"
+    assert photo[0].xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' single-operation-badge ')]")
+    visible_icons = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' property-feature-icon ')]")
+    assert [icon.text for icon in visible_icons] == ["▧", "▤", "▱", "P"]
+    assert "aria-label=\"Dormitorios\"" in html
+    assert "class=\"comp-icon-area\"" not in html
+    assert "max-width:620px" in html
+
+
+def test_zero_non_applicable_room_and_bath_features_are_hidden():
+    assert renderer._rooms_label({"dormitorios": 0}) == ""
+    assert renderer._baths_label({"banos": 0}) == ""
+    assert renderer._parking_label({"estacionamientos": 0}) == ""
+
+
+def test_price_position_markers_have_connected_alternating_labels_at_mobile_width():
+    model = _single_property_model()
+    graph = renderer._positioning_graph({"p10": 0, "p90": 100, "median": 55}, 50)
+    assert graph["markers_close"] is True
+    model["comparable"].update({
+        "visible": True,
+        "positioning_mode": "PRICE_M2",
+        "positioning_graph": graph,
+        "positioning_reference_label": "55 UF/m² útil",
+        "positioning_property_label": "50 UF/m² útil",
+        "positioning_unit_label": "UF/m² útil",
+        "selected_n": 20,
+        "top3": [],
+    })
+    html = renderer.render_owner_campaign_email_v2(
+        [model], email="qa@example.test",
+        executives=[{"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}],
+    )
+    root = lxml_html.fromstring(html)
+    bar = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-track ')]")
+    assert len(bar) == 1
+    assert len(bar[0].xpath(".//td")) == 21
+    labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-label ')]")
+    lines = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
+    assert len(labels) == 2
+    assert len(lines) == 2
+    assert "max-width:620px" in html
+
+
+def test_legacy_secondary_url_is_never_reused_as_report_destination():
+    model = _single_property_model()
+    model["cta"] = {
+        "primary_url": "https://example.test/price?token=p",
+        "primary_label": "ACEPTAR NUEVO VALOR",
+        "secondary_url": "https://example.test/test-accion?token=advisor",
+        "advisor_url": "https://example.test/test-accion?token=advisor",
+    }
+    html = renderer.render_owner_campaign_email_v2(
+        [model], email="qa@example.test",
+        executives=[{"name": "Jorge Pablo Caro", "email": "jpcaro@procasa.cl", "phone": "+56940904971"}],
+    )
+    root = lxml_html.fromstring(html)
+    report_buttons = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' document-action-single ')]")
+    advisor_links = root.xpath("//a[contains(@href, 'token=advisor')]")
+    assert not report_buttons
+    assert advisor_links
 
 
 def test_real_single_property_template_renders_approved_visual_content():
@@ -194,7 +304,7 @@ def test_single_rent_none_uses_approved_single_visual_system_without_document_or
         "single_document_copy": "",
         "single_diagnostic_text": "Revisemos el posicionamiento del canon mensual.",
         "single_recommendation_text": "Revisa el canon mensual con tu ejecutivo.",
-        "cta": {"primary_url": "https://example.test/action", "primary_label": "REVISAR CON MI EJECUTIVO"},
+            "cta": {"primary_url": "https://example.test/advisor", "primary_label": "REVISAR CON MI EJECUTIVO", "advisor_url": "https://example.test/advisor"},
     })
     model["comparable"].update({
         "positioning_mode": "TOTAL_PRICE",

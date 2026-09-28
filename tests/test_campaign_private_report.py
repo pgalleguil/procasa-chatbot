@@ -15,7 +15,7 @@ from campanas import private_report
 
 
 SECRET = "campaign-test-signing-secret-for-unit-tests"
-CODE = "16521"
+CODE = "5641"
 PROPERTY_IDENTITY = {
     "property_code": CODE,
     "commune": "Ñuñoa",
@@ -30,6 +30,7 @@ def _token(*, document_type="INDIVIDUAL_APPRAISAL", exp=2_000_000_000, **extra):
         "property_code": CODE,
         "action": private_report.REPORT_ACTION,
         "recipient": private_report.TEST_RECIPIENT,
+        "qa_recipient": private_report.TEST_RECIPIENT,
         "exp": exp,
         "test_mode": True,
         "document_type": document_type,
@@ -150,6 +151,13 @@ async def test_individual_appraisal_is_resolved_by_property_code_and_never_by_to
     assert response.headers["cache-control"] == "private, no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-campaign-report-resolution"] == "drive"
+    assert "token_validation" in response.headers["server-timing"]
+    assert "mongo_lookup" in response.headers["server-timing"]
+    assert "drive_resolve" in response.headers["server-timing"]
+    assert "drive_acl" in response.headers["server-timing"]
+    assert "drive_download" in response.headers["server-timing"]
+    assert "tracking_write" in response.headers["server-timing"]
+    assert "total_ms" in response.headers["server-timing"]
     assert service._files.media_calls == [{"fileId": "server-only-drive-id", "supportsAllDrives": True}]
     assert service._files.list_calls[0]["q"].startswith(f"'{private_report.APPRAISALS_FOLDER_ID}' in parents")
     assert "server-only-drive-id" not in str(response.headers)
@@ -165,6 +173,8 @@ async def test_fallback_report_does_not_record_report_opened(monkeypatch):
 
     assert response.status_code == 200
     assert report_open_calls == []
+    assert "drive_resolve" in response.headers["server-timing"]
+    assert "total_ms" in response.headers["server-timing"]
 
 
 @pytest.mark.asyncio

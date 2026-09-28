@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+import time
 from html import escape
 from typing import Any, Mapping
 from urllib.parse import quote
@@ -174,14 +175,19 @@ def _valid_lower_target(ledger: Mapping[str, Any], current_uf: Any) -> bool:
 
 
 def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> dict[str, Any]:
+    request_started = time.perf_counter()
+    timings: dict[str, float] = {}
+    token_started = time.perf_counter()
     claims = verify_test_link_token(
         token,
         allowed_actions=frozenset({ACCEPT_PRICE_ACTION, ADVISOR_ACTION}),
     )
+    timings["token_validation_ms"] = (time.perf_counter() - token_started) * 1000
     if claims is None:
         raise OwnerCampaignTestError("test_action_token_invalid")
     code = str(claims["property_code"])
     action = str(claims["action"])
+    mongo_started = time.perf_counter()
     database = _database(db)
     ledger = _test_ledger(database, code)
     if not ledger:
@@ -208,7 +214,9 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
         "ADVISOR_REVIEW", "PRICE_AUTHORIZATION", "REPORT_ONLY"
     }:
         raise OwnerCampaignTestError("advisor_review_not_allowed")
+    timings["mongo_lookup_ms"] = (time.perf_counter() - mongo_started) * 1000
 
+    tracking_started = time.perf_counter()
     if action == ACCEPT_PRICE_ACTION:
         stored = persist_test_event(
             database[LEDGER_COLLECTION],
@@ -219,11 +227,15 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
     else:
         stored = persist_test_event(database[LEDGER_COLLECTION], claims, stage="complete")
         event_type = "advisor_review_requested"
+    timings["tracking_write_ms"] = (time.perf_counter() - tracking_started) * 1000
 
     if action == ACCEPT_PRICE_ACTION:
+        price_check_started = time.perf_counter()
         operation_after, price_after = _live_price_snapshot(database, code)
         if operation_after != operation or price_after != price_before:
             raise OwnerCampaignTestError("test_price_mutation_detected")
+        timings["price_safety_check_ms"] = (time.perf_counter() - price_check_started) * 1000
+    timings["total_ms"] = (time.perf_counter() - request_started) * 1000
     return {
         "campaign_id": TEST_CAMPAIGN_ID,
         "property_code": code,
@@ -234,10 +246,12 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
         "live_price_before": price_before,
         "live_price_after": price_after,
         "test_price_mutation": False,
+        "timings_ms": timings,
     }
 
 
 def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> HTMLResponse:
+    request_started = time.perf_counter()
     try:
         result = process_test_action(token, db=db, confirmed=confirmed)
     except OwnerCampaignTestError:
@@ -247,6 +261,7 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
         )
     except Exception:
         return HTMLResponse("<main><h1>No pudimos registrar la prueba</h1></main>", status_code=503)
+    html_started = time.perf_counter()
     if result.get("requires_confirmation"):
         action_url = "/campana/test-accion?token=" + quote(token, safe="")
         content = (
@@ -257,19 +272,28 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
             'CONFIRMAR AUTORIZACIÓN</button></form>'
             '<p>El precio publicado no será modificado automáticamente.</p>'
         )
-        return HTMLResponse(
+        response = HTMLResponse(
             _campaign_test_page("Confirma el nuevo valor", content, raw_content=True),
             status_code=200,
             headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
         )
-    if result["event"] == "price_authorized":
+    elif result["event"] == "price_authorized":
         title = "Autorización registrada"
         message = "La autorización quedó registrada en modo de prueba. El precio publicado no fue modificado."
     else:
         title = "Solicitud de revisión registrada"
         message = "Tu solicitud quedó registrada en modo de prueba."
-    return HTMLResponse(
-        _campaign_test_page(title, message),
-        status_code=200,
-        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
-    )
+    if not result.get("requires_confirmation"):
+        response = HTMLResponse(
+            _campaign_test_page(title, message),
+            status_code=200,
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+    timings = dict(result.get("timings_ms") or {}) if isinstance(result.get("timings_ms"), Mapping) else {}
+    timings["html_render_ms"] = (time.perf_counter() - html_started) * 1000
+    timings["total_ms"] = (time.perf_counter() - request_started) * 1000
+    response.headers["X-Campaign-Action-Stage"] = "confirmation-post" if confirmed else "action-get"
+    response.headers["Server-Timing"] = ", ".join(f"{name};dur={value:.2f}" for name, value in timings.items())
+    for name, value in timings.items():
+        response.headers["X-Campaign-" + name.replace("_", "-").title()] = f"{value:.2f}"
+    return response

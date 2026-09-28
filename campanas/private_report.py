@@ -341,9 +341,13 @@ def _assert_private(service: Any, file_id: str) -> str:
             return "VERIFIED_PRIVATE"
 
 
-def _download_pdf(service: Any, file_id: str) -> bytes:
+def _download_pdf(service: Any, file_id: str, timings: dict[str, float] | None = None) -> bytes:
+    acl_started = time.perf_counter()
     _assert_private(service, file_id)
+    if timings is not None:
+        timings["drive_acl_ms"] = (time.perf_counter() - acl_started) * 1000
     stream = io.BytesIO()
+    fetch_started = time.perf_counter()
     downloader = MediaIoBaseDownload(
         stream,
         service.files().get_media(fileId=file_id, supportsAllDrives=True),
@@ -352,6 +356,8 @@ def _download_pdf(service: Any, file_id: str) -> bytes:
     while not done:
         _, done = downloader.next_chunk()
     content = stream.getvalue()
+    if timings is not None:
+        timings["drive_download_ms"] = (time.perf_counter() - fetch_started) * 1000
     if not content.startswith(b"%PDF-"):
         raise CampaignReportError(502, "invalid_pdf_content")
     return content
@@ -465,61 +471,87 @@ def _fallback_response(identity: Mapping[str, str] | None, property_code: str) -
 
 
 def _serve_campaign_report(token: str) -> Response:
+    request_started = time.perf_counter()
+    timings: dict[str, float] = {}
+
+    def finish(response: Response) -> Response:
+        timings["response_ready_ms"] = (time.perf_counter() - request_started) * 1000
+        timings["total_ms"] = timings["response_ready_ms"]
+        response.headers["Server-Timing"] = ", ".join(
+            f"{name};dur={value:.2f}" for name, value in timings.items()
+        )
+        for name, value in timings.items():
+            response.headers["X-Campaign-" + name.replace("_", "-").title()] = f"{value:.2f}"
+        logger.info(
+            "[CAMPAIGN_REPORT_TIMING] %s",
+            " ".join(f"{name}={value:.2f}ms" for name, value in timings.items()),
+        )
+        return response
+
+    token_started = time.perf_counter()
     claims = _decode_token_claims(
         token,
         os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", ""),
     )
+    timings["token_validation_ms"] = (time.perf_counter() - token_started) * 1000
     if claims is None:
-        return _response(404, "Documento no disponible.")
+        return finish(_response(404, "Documento no disponible."))
 
     property_code = claims["property_code"]
     try:
+        mongo_started = time.perf_counter()
         identity = _load_property_identity(property_code)
+        timings["mongo_lookup_ms"] = (time.perf_counter() - mongo_started) * 1000
         if identity is None and claims["document_type"] == "COMMUNAL_MARKET_REPORT":
-            return _fallback_response(None, property_code)
+            return finish(_fallback_response(None, property_code))
 
+        resolve_started = time.perf_counter()
         drive = GDriveSync()
         service = drive.service
         if service is None:
-            return _response(503, "Servicio de documentos no disponible.")
+            return finish(_response(503, "Servicio de documentos no disponible."))
         file_record = _resolve_drive_file(service, claims, identity)
+        timings["drive_resolve_ms"] = (time.perf_counter() - resolve_started) * 1000
         if file_record is None:
             logger.info(
                 "[CAMPAIGN_REPORT_DRIVE] status=document_pending document_type=%s",
                 claims["document_type"],
             )
-            return _fallback_response(identity, property_code)
-        pdf_bytes = _download_pdf(service, str(file_record["id"]))
+            return finish(_fallback_response(identity, property_code))
+        pdf_bytes = _download_pdf(service, str(file_record["id"]), timings)
         if not pdf_bytes.startswith(b"%PDF-"):
             raise CampaignReportError(502, "invalid_pdf_content")
+        tracking_started = time.perf_counter()
         _record_test_report_opened(claims)
+        timings["tracking_write_ms"] = (time.perf_counter() - tracking_started) * 1000
         logger.info(
             "[CAMPAIGN_REPORT_DRIVE] status=read_ok document_type=%s bytes=%s",
             claims["document_type"], len(pdf_bytes),
         )
-        return _response(
+        response = _response(
             200,
             pdf_bytes,
             filename=_safe_client_filename(identity, property_code),
             source="drive",
         )
+        return finish(response)
     except CampaignReportError as exc:
         if exc.status_code == 404:
-            return _fallback_response(locals().get("identity"), property_code)
+            return finish(_fallback_response(locals().get("identity"), property_code))
         logger.info(
             "[CAMPAIGN_REPORT_DRIVE] status=read_failed http_status=%s reason=%s",
             exc.status_code, exc.reason,
         )
-        return _response(exc.status_code, "Documento no disponible.")
+        return finish(_response(exc.status_code, "Documento no disponible."))
     except HttpError as exc:
         status_code = _drive_http_status(exc)
         if status_code == 404:
-            return _fallback_response(locals().get("identity"), property_code)
+            return finish(_fallback_response(locals().get("identity"), property_code))
         logger.info("[CAMPAIGN_REPORT_DRIVE] status=read_failed http_status=%s", status_code)
-        return _response(status_code, "Documento no disponible.")
+        return finish(_response(status_code, "Documento no disponible."))
     except Exception as exc:
         logger.warning("[CAMPAIGN_REPORT_DRIVE] status=read_failed error_type=%s", type(exc).__name__)
-        return _response(502, "Documento no disponible.")
+        return finish(_response(502, "Documento no disponible."))
 
 
 async def handle_campaign_report(token: str) -> Response:

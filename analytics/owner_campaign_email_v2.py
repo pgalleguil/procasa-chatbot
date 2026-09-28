@@ -179,23 +179,10 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
         ratio = lambda current: max(0.0, min(1.0, (current - p10) / (p90 - p10)))
         index = inset + max(0, min(usable_slots, int(round(ratio(value) * usable_slots)))) if value is not None else slots // 2
         reference_index = inset + max(0, min(usable_slots, int(round(ratio(median) * usable_slots)))) if median is not None else slots // 2
-    reference_label_index = max(4, min(16, reference_index))
-    property_label_index = max(4, min(16, index))
-    if abs(reference_label_index - property_label_index) < 8:
-        midpoint = (reference_index + index) / 2
-        if midpoint <= slots / 2:
-            reference_label_index, property_label_index = 4, 12
-        else:
-            reference_label_index, property_label_index = 8, 16
     return {
-        # On a 390px viewport 5 grid cells are only about 75px apart, while
-        # the two labels need roughly 130px. Alternate the labels until the
-        # markers have enough room on the narrowest supported layout.
         "markers_close": abs(index - reference_index) <= 5,
         "property_index": index,
         "reference_index": reference_index,
-        "property_label_index": property_label_index,
-        "reference_label_index": reference_label_index,
         "cells": [
             {"active": i <= index, "marker": i == index, "reference": i == reference_index}
             for i in range(slots)

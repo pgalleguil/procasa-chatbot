@@ -1716,6 +1716,11 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert authorization["current_value_at_campaign"] == 5000
     assert authorization["proposed_value"] == 4700
     assert authorization["event_at"] is not None
+    assert authorization["timestamp_utc"] == authorization["event_at"]
+    assert authorization["event_type"] == "price_authorized"
+    assert authorization["source"] == "owner_campaign_test_action"
+    assert authorization["qa_mode"] is True
+    assert authorization["recipient_email"] == actions.TEST_RECIPIENT
     assert set(db.requested) <= {actions.LEDGER_COLLECTION, actions.PROPERTY_COLLECTION}
 
 
@@ -1804,11 +1809,33 @@ def test_authorized_status_stays_sticky_after_reopening_report_and_contacting_ad
     assert sum(event["event"] == "report_opened" for event in events) == 2
     assert len({event["event_id"] for event in events}) == len(events)
     assert all(event.get("event_at", "").endswith("+00:00") for event in events)
+    assert all(event.get("timestamp_utc") == event.get("event_at") for event in events)
+    assert all(event.get("event_type") == event.get("event") for event in events)
     assert all(
         event.get(key)
         for event in events
         for key in ("event_id", "event", "action", "property_code", "campaign_id", "executive")
     )
+
+
+def test_none_document_action_pages_have_no_report_navigation(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    db = _action_db(code="6132", cta_type="ADVISOR_REVIEW", evidence_segment="MIXED_EVIDENCE", operation="ARRIENDO")
+    db.docs[actions.LEDGER_COLLECTION][0]["document_type"] = "NONE"
+    token = _action_token("6132", actions.ADVISOR_ACTION)
+
+    response = actions.handle_test_action(token, db=db)
+
+    page = response.body.decode("utf-8").casefold()
+    assert response.status_code == 200
+    assert "solicitud enviada a tu ejecutivo" in page
+    assert "voler al informe" not in page
+    assert "volver al informe" not in page
+    assert "/campana/informe" not in page
+    assert "javascript:history.back()" not in page
+    events = db.docs[actions.LEDGER_COLLECTION][0]["response_events"]
+    assert [event["event"] for event in events] == ["cta_clicked", "advisor_review_requested"]
 
 
 def test_existing_authorization_event_normalizes_summary_without_losing_authorization(monkeypatch):

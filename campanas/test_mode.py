@@ -355,11 +355,16 @@ def persist_test_event(
         "executive": existing.get("executive"),
         "document_type": document_type,
         "event_at": timestamp.isoformat(),
+        "timestamp_utc": timestamp.isoformat(),
+        "event_type": None,
+        "source": "owner_campaign_test_action",
+        "qa_mode": True,
         "token_version": "t1",
         "test_mode": True,
         "test_recipient": TEST_RECIPIENT,
+        "recipient_email": TEST_RECIPIENT,
     }
-    events = [{**common, **event} for event in desired_events]
+    events = [{**common, **event, "event_type": event.get("event")} for event in desired_events]
     update: dict[str, Any] = {
         "$set": {
             "campaign_id": campaign_id,

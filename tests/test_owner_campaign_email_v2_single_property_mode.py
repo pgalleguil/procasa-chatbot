@@ -180,7 +180,7 @@ def test_communal_only_context_hides_fake_zero_and_uses_comparables_first():
     assert populated["universe_value"] == "20"
 
 
-def test_operation_is_in_property_details_and_photo_stays_clean():
+def test_operation_badge_is_inside_photo_and_feature_icons_are_gmail_safe_text():
     model = _single_property_model()
     model["feature_cards"] = [
         {"kind": "area", "label": "130 m² construidos"},
@@ -197,18 +197,19 @@ def test_operation_is_in_property_details_and_photo_stays_clean():
     photo = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' single-photo-wrap ')]")
     assert len(photo) == 1
     assert photo[0].get("background") == "https://example.test/property.jpg"
-    assert not photo[0].xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' single-operation-badge ')]")
+    badge = photo[0].xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' single-operation-badge ')]")
+    assert len(badge) == 1 and badge[0].text == "VENTA"
     detail_text = " ".join(root.itertext())
     for detail in ("Venta", "130 m² construidos", "2 dorm.", "1 baño", "1 estacionamiento"):
         assert detail in detail_text
     visible_icons = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' property-feature-icon ')]")
-    assert [icon.text for icon in visible_icons] == ["▧", "▤", "▱", "P"]
+    assert [icon.text for icon in visible_icons] == ["m²", "D", "B", "E"]
     assert "aria-label=\"Dormitorios\"" in html
     assert "class=\"comp-icon-area\"" not in html
     assert "max-width:620px" in html
 
 
-def test_none_document_keeps_commercial_support_module_without_report_button():
+def test_none_document_hides_document_module_and_report_navigation():
     model = _single_property_model()
     model["document"] = {"visible": False, "copy": "", "type": "NONE"}
     model["single_document_copy"] = ""
@@ -219,10 +220,10 @@ def test_none_document_keeps_commercial_support_module_without_report_button():
     )
     root = lxml_html.fromstring(html)
     text = " ".join(root.itertext())
-    assert "RESPALDO COMERCIAL" in text
-    assert "En este envío no hay un documento adicional disponible para descarga." in text
+    assert "RESPALDO COMERCIAL" not in text
+    assert "En este envío no hay un documento adicional disponible para descarga." not in text
     assert "VER INFORME" not in text
-    assert "document-support-single" in html
+    assert "document-support-single" not in html
 
 
 def test_zero_non_applicable_room_and_bath_features_are_hidden():
@@ -231,7 +232,7 @@ def test_zero_non_applicable_room_and_bath_features_are_hidden():
     assert renderer._parking_label({"estacionamientos": 0}) == ""
 
 
-def test_price_position_markers_have_connected_alternating_labels_at_mobile_width():
+def test_price_position_markers_have_only_straight_lines_and_labels_under_each_marker():
     model = _single_property_model()
     graph = renderer._positioning_graph({"p10": 0, "p90": 100, "median": 55}, 50)
     assert graph["markers_close"] is True
@@ -256,24 +257,21 @@ def test_price_position_markers_have_connected_alternating_labels_at_mobile_widt
     labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-label ')]")
     lines = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert len(labels) == 2
-    assert len(lines) == 4  # marker stems plus the label-centered connector stems
+    assert len(lines) == 2
     assert root.xpath("//*[@data-component-id='single-property-comparison-bar-v1']")
-    assert all("height:12px" in line.get("style", "") for line in lines)
-    assert len(root.xpath("//td[@colspan='9']")) == 2
+    assert all("height:" in line.get("style", "") for line in lines)
+    assert not root.xpath("//*[contains(@style, 'transparent') and contains(@style, 'background')]")
     for label in labels:
         assert label.getparent().getparent().getparent().xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert "max-width:620px" in html
 
 
-def test_comparison_bar_edge_clamps_labels_and_connects_them_to_endpoint_markers():
+def test_comparison_bar_keeps_labels_tied_to_actual_marker_positions_at_edges():
     low = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 10}, 10)
     high = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 90}, 90)
     assert low["reference_index"] == low["property_index"] == 2
     assert high["reference_index"] == high["property_index"] == 18
-    assert low["reference_label_index"] == 4 and low["property_label_index"] == 12
-    assert high["reference_label_index"] == 8 and high["property_label_index"] == 16
-    assert abs(low["reference_index"] - low["reference_label_index"]) > 0
-    assert abs(high["property_index"] - high["property_label_index"]) > 0
+    assert "reference_label_index" not in low and "property_label_index" not in low
     assert len(low["cells"]) == len(high["cells"]) == 21
 
 
@@ -365,9 +363,9 @@ def test_single_rent_none_uses_approved_single_visual_system_without_document_or
     assert "concretar una venta" not in text
     assert "21 uf / mes" in text
     assert "data-component-id=\"single-property-comparison-bar-v1\"" in html
-    assert "respaldo comercial" in text
+    assert "respaldo comercial" not in text
     assert "ver informe" not in text
-    assert "document-support-single" in html
+    assert "document-support-single" not in html
     assert "ver informe" not in text
     assert html.count("https://example.test/property.jpg") == 1
     safe_html = make_email_safe_html(html)

@@ -369,7 +369,7 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
     except Exception:
         return HTMLResponse("<main><h1>No pudimos registrar tu solicitud</h1></main>", status_code=503)
     html_started = time.perf_counter()
-    report_url = "javascript:history.back()"
+    report_url = ""
     if result.get("document_type") not in {"", "NONE"}:
         try:
             report_token = issue_test_link_token(
@@ -404,7 +404,8 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
             f'<form method="post" action="{action_url}">'
             '<div class="actions"><button class="button" type="submit">'
             f'{"CONFIRMAR NUEVO CANON" if is_rent else "CONFIRMAR NUEVO VALOR"} →</button>'
-            f'<a class="button-secondary" href="{escape(report_url, quote=True)}">Volver sin confirmar</a></div></form>'
+            + (f'<a class="button-secondary" href="{escape(report_url, quote=True)}">Volver sin confirmar</a>' if report_url else '')
+            + '</div></form>'
         )
         response = HTMLResponse(
             _campaign_test_page(
@@ -428,7 +429,7 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
                 "Te mantendremos informado sobre el avance de la gestión.",
             ))
             + f'<div class="notice">El {"canon" if is_rent else "precio"} publicado no cambia automáticamente desde esta página.</div>'
-            + f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>'
+            + (f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>' if report_url else '')
         )
         eyebrow = "PROCASA · SOLICITUD RECIBIDA"
     else:
@@ -462,7 +463,7 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
                 "Definición conjunta de los próximos pasos.",
             ))
             + executive_block
-            + f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>'
+            + (f'<div class="actions"><a class="button" href="{escape(report_url, quote=True)}">VOLVER AL INFORME →</a></div>' if report_url else '')
         )
         eyebrow = "PROCASA · ASESORÍA COMERCIAL"
     if not result.get("requires_confirmation"):

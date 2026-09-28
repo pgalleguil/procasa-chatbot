@@ -136,6 +136,13 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
 
         # Aliases: resolver primero por ID externo y luego por URL normalizada.
         alias_prop, alias_meta = lookup_property_link(db, url_clean)
+        if alias_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            logger.error(
+                "[PROPERTY_LINK_AMBIGUOUS] portal=%s external_id=%s candidate_codes=%s",
+                alias_meta.get("portal"), alias_meta.get("external_id"),
+                alias_meta.get("candidate_codes", []),
+            )
+            return False, None, plataforma, alias_meta.get("external_id")
         if alias_prop:
             semantic_match, semantic_reason = validate_property_link_semantics(alias_prop, url_clean)
             if not semantic_match:

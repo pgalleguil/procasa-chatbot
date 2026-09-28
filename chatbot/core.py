@@ -39,6 +39,7 @@ from .alert_service import send_alert_once
 from .classifier import es_propietario, clasificar_corredor_externo
 from .processing_service import LeadProcessingService
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
+from .property_lookup import lookup_property_link
 
 # RAG IMPORT
 from .rag import buscar_propiedades, formatear_resultados_texto, buscar_semanticamente, extraer_filtros_estructurados
@@ -273,6 +274,17 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
 
     value_int = safe_int_conversion(value)
     portal = (portal or "").strip()
+    if value.lower().startswith(("http://", "https://")) or re.search(r"\bMLC[-_]?\d+\b", value, re.I):
+        prop, meta = lookup_property_link(db, value, PROPERTY_COLLECTION_NAME)
+        if meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            logger.error(
+                "[PROPERTY_REFERENCE_AMBIGUOUS] portal=%s external_id=%s candidate_codes=%s",
+                meta.get("portal"), meta.get("external_id"), meta.get("candidate_codes", []),
+            )
+            return None
+        # Explicit publication references must use the conflict-aware resolver;
+        # do not let the portal-specific legacy first-match queries override it.
+        return prop
     portal_specific_queries = []
     if portal == "Yapo":
         portal_specific_queries.extend([

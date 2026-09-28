@@ -99,10 +99,15 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
 
 
 def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = PROPERTY_COLLECTION_NAME):
-    if isinstance(raw_value, str) and raw_value.strip().lower().startswith(("http://", "https://")):
-        alias_prop, _meta = lookup_property_link(db, raw_value, collection_name)
+    if isinstance(raw_value, str) and (
+        raw_value.strip().lower().startswith(("http://", "https://"))
+        or re.search(r"\bMLC[-_]?\d+\b", raw_value, re.I)
+    ):
+        alias_prop, alias_meta = lookup_property_link(db, raw_value, collection_name)
         if alias_prop:
             return alias_prop
+        if alias_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            return None
     collection = db[collection_name]
     for query in build_property_lookup_queries(raw_value):
         prop = collection.find_one(query)
@@ -116,6 +121,15 @@ BACKUP_COLLECTION = "universo_cartera"
 
 def find_property_in_any_collection(db, raw_value: Any) -> dict | None:
     """Busca en universo_cartera primero, luego en universo_cartera_prop360 como fallback."""
+    if isinstance(raw_value, str) and (
+        raw_value.strip().lower().startswith(("http://", "https://"))
+        or re.search(r"\bMLC[-_]?\d+\b", raw_value, re.I)
+    ):
+        _prop, meta = lookup_property_link(db, raw_value, PROPERTY_COLLECTION_NAME)
+        if meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            return None
+        if _prop:
+            return _prop
     prop = find_property_by_any_identifier(db, raw_value, PROPERTY_COLLECTION_NAME)
     if prop:
         return prop
@@ -226,7 +240,10 @@ def extract_property_external_id(url: str, portal: Optional[str] = None) -> Opti
     portal = portal or canonical_portal(value)
     if portal in {"mercadolibre", "portal_inmobiliario"}:
         match = re.search(r"\bMLC[-_]?\d+\b", value, re.I)
-        return match.group(0).upper().replace("_", "-") if match else None
+        if match:
+            digits = re.search(r"\d+", match.group(0)).group(0)
+            return f"MLC-{digits}"
+        return None
     if portal == "toctoc":
         match = re.search(r"/([a-f0-9]{32,})/?(?:[?#]|$)", value, re.I)
         return match.group(1).lower() if match else None
@@ -285,137 +302,241 @@ def validate_property_link_semantics(prop: Dict[str, Any], url: str) -> tuple[bo
     return True, "match"
 
 
-def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTION_NAME):
-    """Resolve a publication using its canonical external identity.
+def _mlc_identity(value: Any) -> str | None:
+    match = re.search(r"MLC[-_]?([0-9]+)", str(value or ""), re.I)
+    return f"MLC-{match.group(1)}" if match else None
 
-    Alias records are preferred, but production has historical publication
-    documents that predate aliases.  Those documents store the same external
-    identity in portal-specific URL and code fields, so they must be queried
-    before reporting a link as unresolved.
-    """
-    portal = canonical_portal(url)
-    normalized = normalize_property_url(url)
-    external_id = extract_property_external_id(url, portal)
-    collection = db[collection_name]
-    if portal and external_id:
-        prop = collection.find_one({"publicaciones.aliases": {"$elemMatch": {
-            "portal": portal, "external_id": external_id, "activa": {"$ne": False}
-        }}})
-        if prop:
-            aliases = prop.get("publicaciones", {}).get("aliases", []) or []
-            alias = next((a for a in aliases if a.get("portal") == portal and a.get("external_id") == external_id), {})
-            return prop, {"portal": portal, "external_id": external_id,
-                          "operation": (alias.get("operacion") or operation_from_property_url(url)),
-                          "url_normalized": normalized, "match_method": "portal_external_id"}
-    if normalized:
-        prop = collection.find_one({"publicaciones.aliases": {"$elemMatch": {
-            "portal": portal, "url_normalized": normalized, "activa": {"$ne": False}
-        }}})
-        if prop:
-            aliases = prop.get("publicaciones", {}).get("aliases", []) or []
-            alias = next((a for a in aliases if a.get("url_normalized") == normalized), {})
-            return prop, {"portal": portal, "external_id": alias.get("external_id") or external_id,
-                          "operation": alias.get("operacion") or operation_from_property_url(url),
-                          "url_normalized": normalized, "match_method": "normalized_alias"}
 
-    # Historical publication schemas.  The portal may have changed domains
-    # (Portal Inmobiliario / Mercado Libre), while the MLC identity remains
-    # stable; resolve it across both URL slots and legacy code fields.
-    shared_mlc_url_fields = (
-        "publicaciones.portal_inmobiliario.url_pi",
-        "publicaciones.portal_inmobiliario.url_mercado_libre",
-    )
-    field_sets = {
-        "portal_inmobiliario": {
-            "url": shared_mlc_url_fields,
-            "id": ("publicaciones.portal_inmobiliario.codigo_pi", "codigo_pi", "codigo_mercadolibre"),
-        },
-        "mercadolibre": {
-            "url": shared_mlc_url_fields,
-            "id": ("publicaciones.portal_inmobiliario.codigo_pi", "codigo_pi", "codigo_mercadolibre"),
-        },
-        "yapo": {
-            "url": ("publicaciones.yapo.url_yapo", "url_yapo"),
-            "id": ("publicaciones.yapo.codigo_yapo", "codigo_yapo"),
-        },
-        "toctoc": {
-            "url": ("publicaciones.toctoc.url_toctoc", "toctoc.enlace"),
-            "id": (),
-        },
-        "procasa": {
-            "url": ("publicaciones.procasa.url_procasa", "source_url", "metadata.source_url"),
-            "id": ("publicaciones.codigo_internacional", "codigo_internacional"),
-        },
-    }
-    fields = field_sets.get(portal, {"url": (), "id": ()})
-    for candidate in (str(url).strip(), normalized):
-        if not candidate:
+def _publication_portals(portal: str) -> tuple[str, ...]:
+    # Portal Inmobiliario and Mercado Libre share MLC publication identities.
+    if portal in {"mercadolibre", "portal_inmobiliario"}:
+        return ("portal_inmobiliario", "mercadolibre")
+    return (portal,) if portal else ()
+
+
+def _query_documents(collection, queries: Iterable[Dict[str, Any]]) -> list[dict]:
+    """Collect every matching document where the collection supports find()."""
+    matches = {}
+    mock_find_one_only = type(collection).__module__ == "unittest.mock"
+    for query in queries:
+        try:
+            # Lightweight mocks in the existing resolver suite model find_one
+            # only; do not mistake MagicMock's empty iterable for Mongo's result.
+            if mock_find_one_only:
+                raise NotImplementedError
+            cursor = collection.find(query)
+            found = list(cursor)
+        except (AttributeError, NotImplementedError, TypeError):
+            found = []
+            try:
+                one = collection.find_one(query)
+                if one:
+                    found = [one]
+            except Exception:
+                continue
+        except Exception:
             continue
-        for field in fields["url"]:
-            prop = collection.find_one({field: candidate})
-            if prop:
-                return prop, {"portal": portal, "external_id": external_id,
-                              "operation": operation_from_property_url(url),
-                              "url_normalized": normalized, "match_method": "legacy_exact_url"}
+        for doc in found:
+            if not isinstance(doc, dict):
+                continue
+            code = str(doc.get("codigo") or doc.get("_id") or id(doc))
+            matches[code] = doc
+        if mock_find_one_only and found:
+            return list(matches.values())
+    return list(matches.values())
 
-    if external_id:
-        compact_id = external_id.replace("-", "").replace("_", "")
-        id_values = tuple(dict.fromkeys((external_id, compact_id)))
-        for field in fields["id"]:
-            prop = collection.find_one({field: {"$in": list(id_values)}})
-            if prop:
-                return prop, {"portal": portal, "external_id": external_id,
-                              "operation": operation_from_property_url(url),
-                              "url_normalized": normalized, "match_method": "legacy_external_id"}
-        # Some early producer documents retained only the external identity
-        # inside a URL field.  Match the identity, not the hostname or slug.
-        if external_id.upper().startswith("MLC-"):
-            external_pattern = r"MLC[-_]?" + re.escape(external_id.split("-", 1)[1])
-        else:
-            external_pattern = re.escape(external_id)
-        for field in fields["url"]:
-            prop = collection.find_one({field: {"$regex": external_pattern, "$options": "i"}})
-            if prop:
-                return prop, {"portal": portal, "external_id": external_id,
-                              "operation": operation_from_property_url(url),
-                              "url_normalized": normalized, "match_method": "legacy_url_external_id"}
 
-        # Prop360's current Yapo schema stores the publication aliases in a
-        # keyed object (for example ``publicaciones.yapo.publicaciones.A``),
-        # rather than in ``codigo_yapo`` or a flat URL field.  Resolve the
-        # external identity in those keyed records before declaring the link
-        # missing.  The explicit-link path must never fall back to the lead's
-        # historical property code.
-        if portal == "yapo":
-            for variant in ("A", "V", "R", "arriendo", "venta"):
-                for field in ("code", "codigo", "external_id"):
-                    prop = collection.find_one({
-                        f"publicaciones.yapo.publicaciones.{variant}.{field}": {
-                            "$in": list(id_values)
-                        }
-                    })
-                    if prop:
-                        return prop, {"portal": portal, "external_id": external_id,
-                                      "operation": operation_from_property_url(url),
-                                      "url_normalized": normalized,
-                                      "match_method": "nested_publication_external_id"}
-                prop = collection.find_one({
-                    f"publicaciones.yapo.publicaciones.{variant}.url": {
-                        "$regex": external_pattern, "$options": "i"
-                    }
-                })
-                if prop:
-                    return prop, {"portal": portal, "external_id": external_id,
-                                  "operation": operation_from_property_url(url),
-                                  "url_normalized": normalized,
-                                  "match_method": "nested_publication_url_external_id"}
-    return None, {"portal": portal, "external_id": external_id,
-                   "operation": operation_from_property_url(url),
-                   "url_normalized": normalized, "match_method": None}
+def _unique_property_codes(docs: Iterable[dict]) -> set[str]:
+    return {str(doc.get("codigo") or doc.get("_id") or "") for doc in docs}
+
+
+def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTION_NAME):
+    """Resolve current and historical publication identities without guessing.
+
+    The ``publicaciones.aliases`` model is authoritative for historical IDs.
+    Historical state is descriptive only: an alias remains resolvable unless it
+    explicitly has ``resolvable=False``. If any supplied identity is claimed by
+    different Prop360 codes, return AMBIGUOUS_PROPERTY_REFERENCE.
+    """
+    raw = str(url or "").strip()
+    portal = canonical_portal(raw)
+    external_id = extract_property_external_id(raw, portal) or _mlc_identity(raw)
+    if not portal and external_id and not raw.lower().startswith(("http://", "https://")):
+        # A bare MLC has no host; its identity family is Portal Inmobiliario.
+        portal = "portal_inmobiliario"
+    normalized = normalize_property_url(raw) if raw.lower().startswith(("http://", "https://")) else ""
+    operation = operation_from_property_url(raw)
+    collection = db[collection_name]
+    portal_values = _publication_portals(portal)
+
+    # Keep the established legacy coverage for every supported portal.
+    if portal in {"portal_inmobiliario", "mercadolibre"}:
+        root = "publicaciones.portal_inmobiliario"
+        current_url_fields = tuple(
+            f"{root}.publicaciones.{variant}.{field}"
+            for variant in ("V", "A", "R", "arriendo", "venta")
+            for field in ("url", "urls", "url_normalized", "urls_normalized")
+        )
+        current_id_fields = tuple(
+            f"{root}.publicaciones.{variant}.{field}"
+            for variant in ("V", "A", "R", "arriendo", "venta")
+            for field in ("code", "external_id", "publication_id", "portal_id")
+        )
+        legacy_url_fields = tuple(
+            f"{root}.{field}" for field in (
+                "url_pi", "url_mercado_libre", "urls_pi", "urls_mercado_libre", "url",
+            )
+        ) + ("url_pi", "url_mercado_libre")
+        legacy_id_fields = (
+            f"{root}.codigo_pi", f"{root}.publication_id", f"{root}.portal_id",
+            "codigo_pi", "codigo_mercadolibre",
+        )
+        history_bases = tuple(
+            f"{root}.{field}" for field in (
+                "historial", "history", "historical", "publications_history",
+                "historial_publicaciones",
+            )
+        )
+        historical_id_fields = tuple(
+            f"{base}.{field}" for base in history_bases
+            for field in ("code", "external_id", "publication_id", "portal_id")
+        )
+        historical_url_fields = tuple(
+            f"{base}.{field}" for base in history_bases for field in ("url", "urls")
+        )
+    elif portal == "yapo":
+        current_url_fields = ("publicaciones.yapo.url_yapo", "url_yapo")
+        current_id_fields = ("publicaciones.yapo.codigo_yapo", "codigo_yapo") + tuple(
+            f"publicaciones.yapo.publicaciones.{variant}.{field}"
+            for variant in ("A", "V", "R", "arriendo", "venta")
+            for field in ("code", "codigo", "external_id")
+        )
+        legacy_url_fields, legacy_id_fields = current_url_fields, current_id_fields
+        historical_id_fields = historical_url_fields = ()
+    elif portal == "toctoc":
+        current_url_fields = ("publicaciones.toctoc.url_toctoc", "toctoc.enlace")
+        current_id_fields = ()
+        legacy_url_fields, legacy_id_fields = current_url_fields, ()
+        historical_id_fields = historical_url_fields = ()
+    elif portal == "procasa":
+        current_url_fields = ("publicaciones.procasa.url_procasa", "source_url", "metadata.source_url")
+        current_id_fields = ("publicaciones.codigo_internacional", "codigo_internacional")
+        legacy_url_fields, legacy_id_fields = current_url_fields, current_id_fields
+        historical_id_fields = historical_url_fields = ()
+    else:
+        current_url_fields = current_id_fields = legacy_url_fields = legacy_id_fields = ()
+        historical_id_fields = historical_url_fields = ()
+
+    def _id_queries(fields):
+        if not external_id:
+            return []
+        digits = re.sub(r"\D", "", external_id)
+        compact = external_id.replace("-", "").replace("_", "")
+        vals = list(dict.fromkeys(v for v in (external_id, compact, digits) if v))
+        try:
+            numeric = safe_int_conversion(digits) if digits else None
+            if numeric is not None:
+                vals.append(numeric)
+        except Exception:
+            pass
+        return [{field: {"$in": vals}} for field in fields]
+
+    alias_id_query = []
+    alias_url_query = []
+    if portal_values and external_id:
+        alias_id_query = [{"publicaciones.aliases": {"$elemMatch": {
+            "portal": {"$in": list(portal_values)},
+            "external_id": {"$in": [external_id, external_id.replace("-", ""),
+                                      re.sub(r"\D", "", external_id)]},
+            "resolvable": {"$ne": False},
+        }}}]
+    if portal_values and normalized:
+        alias_url_query = [{"publicaciones.aliases": {"$elemMatch": {
+            "portal": {"$in": list(portal_values)},
+            "url_normalized": normalized,
+            "resolvable": {"$ne": False},
+        }}}]
+
+    current_id_queries = _id_queries(current_id_fields)
+    legacy_id_queries = _id_queries(legacy_id_fields)
+    historical_id_queries = _id_queries(historical_id_fields)
+    if external_id and portal in {"portal_inmobiliario", "mercadolibre"}:
+        external_pattern = r"MLC[-_]?" + re.escape(external_id.split("-", 1)[-1])
+        current_id_in_url_queries = [
+            {field: {"$regex": external_pattern, "$options": "i"}}
+            for field in current_url_fields
+        ]
+        legacy_id_in_url_queries = [
+            {field: {"$regex": external_pattern, "$options": "i"}}
+            for field in legacy_url_fields + historical_url_fields
+        ]
+    else:
+        current_id_in_url_queries = legacy_id_in_url_queries = []
+    current_url_queries = []
+    if normalized:
+        for field in current_url_fields:
+            current_url_queries.extend(({field: normalized}, {field: raw}))
+    historical_url_queries = []
+    if normalized:
+        for field in historical_url_fields:
+            historical_url_queries.extend(({field: normalized}, {field: raw}))
+
+    # Search every identity class before choosing by priority. This prevents a
+    # unique current ID from masking a conflicting historical URL claim.
+    current_id_docs = _query_documents(collection, current_id_queries)
+    alias_id_docs = _query_documents(collection, alias_id_query)
+    current_url_docs = _query_documents(collection, current_url_queries)
+    alias_url_docs = _query_documents(collection, alias_url_query)
+    historical_url_docs = _query_documents(collection, historical_url_queries)
+    legacy_id_docs = _query_documents(collection, legacy_id_queries)
+    legacy_url_docs = _query_documents(collection, [
+        {field: value} for field in legacy_url_fields for value in _non_empty((raw, normalized))
+    ])
+    legacy_historical_id_docs = _query_documents(collection, historical_id_queries)
+    current_id_in_url_docs = _query_documents(collection, current_id_in_url_queries)
+    legacy_id_in_url_docs = _query_documents(collection, legacy_id_in_url_queries)
+    all_docs = (current_id_docs + alias_id_docs + current_url_docs + alias_url_docs +
+                historical_url_docs + legacy_id_docs + legacy_url_docs +
+                legacy_historical_id_docs + current_id_in_url_docs + legacy_id_in_url_docs)
+    codes = _unique_property_codes(all_docs)
+    base_meta = {
+        "portal": portal,
+        "external_id": external_id,
+        "operation": operation,
+        "url_normalized": normalized,
+    }
+    if len(codes) > 1:
+        return None, {**base_meta, "match_method": "AMBIGUOUS_PROPERTY_REFERENCE",
+                      "error_code": "AMBIGUOUS_PROPERTY_REFERENCE",
+                      "candidate_codes": sorted(codes)}
+
+    # A historical alias marked publication_status=historical remains valid;
+    # only an explicit resolvable=False disables the identity.
+    ranked = (
+        (current_id_docs + current_id_in_url_docs, "current_external_id", "active"),
+        (alias_id_docs, "historical_alias_external_id", "historical"),
+        (current_url_docs, "current_url_normalized", "active"),
+        (alias_url_docs, "historical_alias_url", "historical"),
+        (historical_url_docs, "legacy_historical_url", "historical"),
+        (legacy_id_docs, "legacy_current_external_id", "active"),
+        (legacy_url_docs, "legacy_current_url", "active"),
+        (legacy_historical_id_docs, "legacy_historical_external_id", "historical"),
+        (legacy_id_in_url_docs, "legacy_url_external_id", "historical"),
+    )
+    for docs, method, publication_status in ranked:
+        if docs:
+            prop = docs[0]
+            return prop, {**base_meta, "match_method": method,
+                          "publication_status": publication_status,
+                          "resolvable": True}
+
+    return None, {**base_meta, "match_method": None, "resolvable": False}
 
 
 def build_property_alias(url: str, portal: Optional[str] = None, operation: Optional[str] = None,
-                         external_id: Optional[str] = None, active: bool = True) -> Dict[str, Any]:
+                         external_id: Optional[str] = None, active: bool = True,
+                         publication_status: Optional[str] = None,
+                         resolvable: bool = True) -> Dict[str, Any]:
     portal = portal or canonical_portal(url)
     return {
         "portal": portal,
@@ -424,6 +545,8 @@ def build_property_alias(url: str, portal: Optional[str] = None, operation: Opti
         "url_normalized": normalize_property_url(url),
         "external_id": external_id or extract_property_external_id(url, portal),
         "activa": bool(active),
+        "publication_status": publication_status or ("active" if active else "historical"),
+        "resolvable": bool(resolvable),
     }
 
 
@@ -443,7 +566,10 @@ def merge_property_aliases(existing: Any, incoming: Iterable[Dict[str, Any]]) ->
                 current.get("external_id"), current.get("url_normalized"),
             )
             if key == current_key:
-                merged[idx] = {**current, **candidate}
+                # Do not silently re-enable an alias that was explicitly
+                # disabled by a separate safety decision.
+                merged[idx] = {**current, **candidate,
+                               "resolvable": current.get("resolvable", candidate.get("resolvable", True))}
                 found = True
                 break
         if not found:

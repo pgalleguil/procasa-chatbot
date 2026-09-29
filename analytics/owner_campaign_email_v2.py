@@ -316,9 +316,12 @@ def _initials(value: Any) -> str:
 
 def _surface_label(item: Mapping[str, Any]) -> str:
     built = number(item.get("superficie_construida"))
+    useful = number(item.get("superficie_util"))
     land = number(item.get("superficie_terreno"))
     if built is not None and built > 0:
         return f"{fmt_number(built, 0)} m² construidos"
+    if useful is not None and useful > 0:
+        return f"{fmt_number(useful, 0)} m² útiles"
     if land is not None and land > 0:
         return f"{fmt_number(land, 0)} m² terreno"
     return "Superficie no disponible"
@@ -451,7 +454,11 @@ def _v3_reference_item(item: Mapping[str, Any], unit: str, price_key: str, opera
         "portal": _portal_label(item.get("portal")),
         "price_label": _clp_price_label(rent_price_clp, operation) if rent_price_clp is not None else _price_label(price, operation),
         "unit_label": fmt_unit(price_m2, unit),
-        "surface_label": _surface_label({"superficie_construida": item.get("built_m2"), "superficie_terreno": item.get("land_m2")}),
+        "surface_label": _surface_label({
+            "superficie_construida": item.get("built_m2"),
+            "superficie_util": item.get("useful_m2"),
+            "superficie_terreno": item.get("land_m2"),
+        }),
         "rooms_label": _rooms_label({"dormitorios": item.get("bedrooms")}),
         "baths_label": _baths_label({"banos": item.get("bathrooms")}),
         "parking_label": _parking_label({"estacionamientos": item.get("parking", item.get("estacionamientos"))}),

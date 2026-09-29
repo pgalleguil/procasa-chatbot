@@ -661,7 +661,9 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
     land: list[dict[str, Any]] = []
     for item in ordered:
         built = _number(item.get("superficie_construida") or item.get("built_m2"))
+        useful = _number(item.get("superficie_util") or item.get("useful_m2"))
         land_m2 = _number(item.get("superficie_terreno") or item.get("land_m2"))
+        surface_ref = _number(item.get("surface_ref_m2")) or useful or built
         comp = {
             "listing_id": str(item.get("listing_id") or item.get("source_id") or ""),
             "portal": item.get("portal"),
@@ -670,6 +672,8 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
             "property_type": item.get("tipo_propiedad") or item.get("property_type") or item.get("tipo"),
             "commune": item.get("comuna") or item.get("commune"),
             "built_m2": built,
+            "useful_m2": useful,
+            "surface_ref_m2": surface_ref,
             "land_m2": land_m2,
             "bedrooms": _number(item.get("dormitorios") or item.get("bedrooms")),
             "bathrooms": _number(item.get("banos") or item.get("bathrooms")),
@@ -680,7 +684,11 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
         }
         if effective == "PARCEL_LAND_ONLY":
             land.append(comp)
-        elif built and built > 0 and comp["price_uf"] and (comp["price_m2_built"] or comp["price_m2"]):
+        elif (
+            (built and built > 0 or primary_surface == "surface_ref_m2" and surface_ref and surface_ref > 0)
+            and comp["price_uf"]
+            and (comp["price_m2_built"] or comp["price_m2"])
+        ):
             comp["status"] = "FULL_MATCH"
             integral.append(comp)
         elif effective == "PARCEL_WITH_IMPROVEMENTS" and land_m2 and land_m2 > 0:

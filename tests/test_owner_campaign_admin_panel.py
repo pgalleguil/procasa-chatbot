@@ -11,6 +11,20 @@ from campanas import owner_campaign_admin_panel as panel
 from campanas import owner_campaign_test_sender as campaign_sender
 
 
+def test_qa_action_allows_signed_recommendation_when_legacy_evidence_is_advisor_only():
+    from campanas.owner_campaign_test_actions import _valid_lower_target
+
+    row = {
+        "evidence_segment": "INSUFFICIENT_EVIDENCE",
+        "cta_type": "ADVISOR_REVIEW",
+        "display_recommended_price": 172.05,
+    }
+
+    assert _valid_lower_target(row, 185) is True
+    assert _valid_lower_target({"display_recommended_price": 180}, 185) is False
+    assert _valid_lower_target({"display_recommended_price": 160}, 185) is False
+
+
 class FakeRequest:
     def __init__(self, body=b"", *, headers=None, query_params=None):
         self._body = body

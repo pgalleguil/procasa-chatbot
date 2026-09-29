@@ -267,14 +267,18 @@ def _live_price_snapshot(db: Any, property_code: str) -> tuple[str, dict[str, An
 
 
 def _valid_lower_target(ledger: Mapping[str, Any], current_uf: Any) -> bool:
-    if ledger.get("evidence_segment") != "PRICE_AUTHORIZATION_READY":
-        return False
     try:
         current = float(current_uf)
         recommended = float(ledger.get("display_recommended_price"))
     except (TypeError, ValueError):
         return False
-    return math.isfinite(current) and math.isfinite(recommended) and 0 < recommended < current
+    if not (math.isfinite(current) and math.isfinite(recommended) and 0 < recommended < current):
+        return False
+    # QA email templates now show the confirmation CTA for every property with
+    # a valid 5–10% recommendation. Older QA ledger rows may retain an advisor
+    # evidence classification, which must not invalidate that signed test CTA.
+    reduction_pct = (current - recommended) * 100 / current
+    return 5 <= reduction_pct <= 10
 
 
 def _qa_owner_name(db: Any, property_code: str) -> str:
@@ -374,7 +378,7 @@ def process_test_action(
         raise OwnerCampaignTestError("test_campaign_ledger_missing")
     price_before = price_after = None
     if action == ACCEPT_PRICE_ACTION:
-        if ledger.get("cta_type") != "PRICE_AUTHORIZATION":
+        if ledger.get("cta_type") not in {"PRICE_AUTHORIZATION", "ADVISOR_REVIEW"}:
             raise OwnerCampaignTestError("price_authorization_not_allowed")
         operation, price_before = _live_price_snapshot(database, code)
         if (

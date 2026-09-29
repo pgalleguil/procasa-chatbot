@@ -1957,11 +1957,13 @@ def test_advisor_refresh_never_resets_existing_price_authorization(monkeypatch):
     row["response_event_ids"] = ["historic-price-authorization"]
 
     token = _action_token("5641", actions.ADVISOR_ACTION)
-    actions.handle_test_action(token, db=db)
+    response = actions.handle_test_action(token, db=db)
     actions.handle_test_action(token, db=db)
 
     assert row["owner_response"]["status"] == "PRICE_AUTHORIZED"
     assert [event["event"] for event in row["response_events"]].count("advisor_review_requested") == 1
+    assert "Solicitud enviada" in response.body.decode("utf-8")
+    assert "Tu autorización ya fue registrada" not in response.body.decode("utf-8")
 
 
 def test_action_pages_use_one_responsive_premium_layout_for_price_and_advisor(monkeypatch):

@@ -457,8 +457,10 @@ def process_test_action(
         "event": event_type,
         "event_ids": stored.get("event_ids", []),
         "duplicate": bool(stored.get("duplicate")),
-        "already_registered": (selected.get("status") == "PRICE_AUTHORIZED" and not confirmed)
-        or (confirmed and bool(stored.get("duplicate")) and selected.get("status") == "PRICE_AUTHORIZED"),
+        "already_registered": action == ACCEPT_PRICE_ACTION and (
+            (selected.get("status") == "PRICE_AUTHORIZED" and not confirmed)
+            or (confirmed and bool(stored.get("duplicate")) and selected.get("status") == "PRICE_AUTHORIZED")
+        ),
         "requires_confirmation": action == ACCEPT_PRICE_ACTION and not confirmed and selected.get("status") != "PRICE_AUTHORIZED",
         "test_mode": True,
         "live_price_before": price_before,

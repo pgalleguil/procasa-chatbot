@@ -1720,6 +1720,117 @@ async def api_owner_campaign_test_execute(
         raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
 
 
+@app.post("/internal/owner-campaign-signing-self-test", include_in_schema=False)
+async def api_owner_campaign_signing_self_test(request: Request):
+    """Admin-authenticated, read-only production token and pilot link check."""
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    if str(user.get("rol") or "").strip().casefold() != "admin":
+        raise HTTPException(status_code=403, detail="Permiso de administrador requerido")
+
+    origin = str(request.headers.get("origin") or "").strip()
+    if not origin or urlsplit(origin).netloc.casefold() != request.url.netloc.casefold():
+        raise HTTPException(status_code=403, detail="Origen no permitido")
+    if str(request.headers.get("content-type") or "").split(";", 1)[0].strip().casefold() != "application/json":
+        raise HTTPException(status_code=415, detail="Formato no permitido")
+    body = await request.body()
+    if len(body) > 4096:
+        raise HTTPException(status_code=413, detail="Solicitud inválida")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Solicitud inválida") from None
+
+    from campanas.owner_campaign_live_config import PRODUCTION_CAMPAIGN_ID
+    from campanas.owner_campaign_live_events import (
+        issue_live_token,
+        production_signing_self_test,
+        verify_live_token,
+    )
+
+    expected_fields = {"campaign_id", "property_codes"}
+    codes = payload.get("property_codes") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != expected_fields
+        or payload.get("campaign_id") != PRODUCTION_CAMPAIGN_ID
+        or not isinstance(codes, list)
+        or len(codes) != 10
+        or any(not str(code).strip().isdigit() for code in codes)
+        or len({str(code).strip() for code in codes}) != 10
+    ):
+        raise HTTPException(status_code=400, detail="Piloto inválido")
+
+    self_test = production_signing_self_test()
+    signed_ok = bool(self_test["configured"] and self_test["sign_test"])
+    verified_ok = bool(self_test["configured"] and self_test["verify_test"])
+    pilot_signed = signed_ok
+    pilot_verified = verified_ok
+    if pilot_signed and pilot_verified:
+        try:
+            from chatbot.storage import get_db
+            from campanas import owner_campaign_test_runtime as runtime
+
+            database = await asyncio.to_thread(get_db)
+            now = int(time.time())
+            expires_at = now + (90 * 24 * 60 * 60)
+            for raw_code in codes:
+                code = str(raw_code).strip()
+                matches = await asyncio.to_thread(
+                    lambda code=code: list(database[runtime.PROPERTY_COLLECTION].find(
+                        {"codigo": {"$in": runtime._variants(code)}},
+                        {"_id": 0, "codigo": 1, "datos_propietario": 1, "propietario": 1,
+                         "owner": 1, "contacto": 1, "email": 1, "correo": 1},
+                    ).limit(2))
+                )
+                if len(matches) != 1:
+                    pilot_signed = pilot_verified = False
+                    break
+                recipient = runtime._email_from_property(matches[0])
+                for action in ("aceptar_rebaja", "contactar_ejecutivo"):
+                    token = issue_live_token(
+                        campaign_id=PRODUCTION_CAMPAIGN_ID,
+                        property_code=code,
+                        action=action,
+                        recipient=recipient,
+                        expires_at=expires_at,
+                    )
+                    claims = verify_live_token(
+                        token,
+                        campaign_id=PRODUCTION_CAMPAIGN_ID,
+                        property_code=code,
+                        recipient=recipient,
+                        action=action,
+                    )
+                    if not (
+                        isinstance(claims, dict)
+                        and claims.get("campaign_id") == PRODUCTION_CAMPAIGN_ID
+                        and str(claims.get("property_code")) == code
+                        and claims.get("action") == action
+                        and claims.get("recipient") == str(recipient).strip().casefold()
+                        and claims.get("test_mode") is False
+                        and int(claims.get("exp", 0)) == expires_at
+                        and int(claims.get("exp", 0)) > int(time.time())
+                    ):
+                        pilot_signed = pilot_verified = False
+                        break
+                if not pilot_signed or not pilot_verified:
+                    break
+        except Exception as exc:
+            logger.error("[OWNER_CAMPAIGN_SIGNING_SELF_TEST] failed error_type=%s", type(exc).__name__)
+            pilot_signed = pilot_verified = False
+
+    result = {
+        "production_signing_configured": bool(self_test["configured"]),
+        "sign_test": "PASS" if self_test["sign_test"] else "FAIL",
+        "verify_test": "PASS" if self_test["verify_test"] else "FAIL",
+        "pilot_all_token_signed": bool(pilot_signed),
+        "pilot_all_token_verified": bool(pilot_verified),
+    }
+    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+
+
 # ========================= 3. LOGIN CON GOOGLE =========================
 
 def _safe_login_next(value: str | None) -> str | None:

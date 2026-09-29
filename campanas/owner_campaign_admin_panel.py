@@ -552,8 +552,7 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
         raise HTTPException(status_code=409, detail=f"QA dirigido bloqueado por preflight; no se envió correo ({exc})") from exc
 
     try:
-        from analytics.owner_campaign_email_compat import make_email_safe_html
-        safe_html = make_email_safe_html(item.html)
+        safe_html = item.html
         safe_bytes = len(safe_html.encode("utf-8"))
         if safe_bytes > MAX_TEST_HTML_BYTES:
             raise TestSenderError(f"final_resend_html_exceeds_gmail_budget:{safe_bytes}")

@@ -238,7 +238,6 @@ def _validate_row(
 ) -> dict[str, Any]:
     from campanas import owner_campaign_test_runtime as runtime
     from campanas.owner_campaign_live_config import BOSS_CC
-    from analytics.owner_campaign_email_compat import make_email_safe_html
     from analytics.owner_campaign_email_v2 import _clp_price_label, _price_label
     from campanas.owner_campaign_live_prepare import _render_one, _row_for
 
@@ -324,7 +323,7 @@ def _validate_row(
     gradual_enabled = str(os.getenv("OWNER_CAMPAIGN_GRADUAL_OPTION_ENABLED", "false")).strip().casefold() in {"1", "true", "yes", "on"}
     if gradual_enabled:
         raise SenderError("gradual_option_enabled_for_current_campaign")
-    rendered = make_email_safe_html(_render_one(row))
+    rendered = _render_one(row)
     html_bytes = rendered.encode("utf-8")
     if not rendered.strip() or len(html_bytes) > MAX_HTML_BYTES:
         raise SenderError("render_incomplete_or_too_large")

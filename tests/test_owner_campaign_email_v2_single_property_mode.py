@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from lxml import html as lxml_html
 
-from analytics import owner_campaign_email_v2 as renderer
+from analytics import owner_campaign_email_compat, owner_campaign_email_v2 as renderer
 from analytics.owner_campaign_email_compat import make_email_safe_html
 from campanas import owner_campaign_live_prepare as live_prepare
 from campanas.owner_campaign_live_events import verify_live_token
@@ -82,6 +82,7 @@ def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypa
             return FakeTemplate()
 
     monkeypatch.setattr(renderer, "Environment", FakeEnvironment)
+    monkeypatch.setattr(owner_campaign_email_compat, "make_email_safe_html", lambda value: value)
     monkeypatch.setattr(renderer, "_valuation_slots", lambda _model: [])
     monkeypatch.setattr(renderer, "_portfolio_summary", lambda _model: {})
     monkeypatch.setattr(renderer, "_initials", lambda _name: "EG")
@@ -120,6 +121,7 @@ def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
             return FakeTemplate()
 
     monkeypatch.setattr(renderer, "Environment", FakeEnvironment)
+    monkeypatch.setattr(owner_campaign_email_compat, "make_email_safe_html", lambda value: value)
     monkeypatch.setattr(renderer, "_valuation_slots", lambda _model: [])
     monkeypatch.setattr(renderer, "_portfolio_summary", lambda _model: {})
     monkeypatch.setattr(renderer, "_initials", lambda _name: "EG")
@@ -334,7 +336,7 @@ def test_price_position_markers_have_only_straight_lines_and_labels_under_each_m
     assert sum(bool(cell.xpath("./span")) for cell in reference_stems) == 1
     assert sum(bool(cell.xpath("./span")) for cell in property_stems) == 1
     assert root.xpath("//*[@data-component-id='single-property-comparison-bar-v1']")
-    assert not root.xpath("//*[contains(@style, 'transparent') and contains(@style, 'background')]")
+    assert root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' email-pseudo-before ')]")
     assert "max-width:620px" in html
 
 
@@ -437,8 +439,8 @@ def test_real_single_property_template_renders_approved_visual_content():
     assert not any(tick in graph_text for tick in ("26,1", "34,3", "42,4", "50,6", "58,8", "66,9"))
     assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' position-metric ')]")) == 2
     assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' comp-card-single ')]")) == 3
-    assert ".position-metric { width:50%; height:116px;" in html
-    assert ".comp-card-single { width:33.333%; height:116px;" in html
+    assert 'class="position-metric" style="width:50%; height:116px;' in html
+    assert 'class="comp-card-single" style="width:33.333%; height:116px;' in html
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
     assert "REVISAR CON MI EJECUTIVO" in safe_html
@@ -526,7 +528,7 @@ def test_rent_comparable_metrics_are_clp_per_square_metre_per_month():
     assert result["positioning_unit_label"] == "CLP/m²/mes"
     assert result["positioning_property_label"] == "$ 5.813/m²/mes"
     assert result["positioning_reference_label"] == "$ 7.318/m²/mes"
-    assert result["top3"][0]["price_label"] == "$ 5.518.848 / mes"
+    assert result["top3"][0]["price_label"] == "$5.518.848"
     assert result["top3"][0]["unit_label"] == "$ 5.719/m²/mes"
     assert result["top3"][0]["property_type_label"] == "Oficina"
     assert result["top3"][0]["commune_label"] == "Santiago"

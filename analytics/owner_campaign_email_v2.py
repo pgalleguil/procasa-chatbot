@@ -32,6 +32,7 @@ from config import Config
 logger = logging.getLogger(__name__)
 TEMPLATE_VERSION = "OWNER_CAMPAIGN_EMAIL_V2"
 TEMPLATE_FILE = "owner_campaign_email_v2.html"
+OWNER_CAMPAIGN_VISUAL_BASELINE_SHA256 = "0a7c2d422ac5fbab8cbca794d144ae20151ed25a6cb0f4f386f9488ceace9eea"
 SINGLE_PROPERTY_HERO_TITLE = "Revisión comercial de tu propiedad"
 SINGLE_PROPERTY_SALE_HERO_DESCRIPTION = (
     "Analizamos las condiciones actuales del mercado, la respuesta comercial de tu propiedad y las alternativas disponibles para los compradores. "
@@ -1364,7 +1365,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
             "kpis": [],
         }
     report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
-    return template.render(
+    rendered_html = template.render(
         template_version=TEMPLATE_VERSION,
         email=email,
         logo_url=(base_url or Config.CRM_BASE_URL).rstrip("/") + "/static/logo.png",
@@ -1378,3 +1379,6 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         context_note=context_note,
         footer_disclaimer=footer_disclaimer,
     )
+    from analytics.owner_campaign_email_compat import make_email_safe_html
+
+    return make_email_safe_html(rendered_html)

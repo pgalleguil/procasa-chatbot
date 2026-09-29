@@ -253,6 +253,7 @@ def _process_owner_campaign_action(
         LIVE_ACTIONS, persist_live_event, verify_live_token,
         notify_campaign_channels_after_persist,
     )
+    from .owner_campaign_confirmation_page import gradual_option_enabled
 
     email_lower = str(email or "").strip().casefold()
     if accion not in {"aceptar_rebaja", "contactar_ejecutivo"} or not codigo.isdigit():
@@ -289,9 +290,15 @@ def _process_owner_campaign_action(
         if recommended_clp is None and current_clp is not None:
             recommended_clp = round(float(current_clp) * (100 - recommended_pct) / 100)
         gradual_pct = row.get("gradual_adjustment_pct")
-        if gradual_pct is None:
-            gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
         gradual_price = row.get("gradual_price")
+        if gradual_pct is None:
+            from analytics.owner_campaign_email_v2 import calculate_gradual_price_alternative
+            gradual = calculate_gradual_price_alternative(
+                current_price=current_price, recommended_adjustment_pct=recommended_pct,
+            )
+            gradual_pct = gradual.get("adjustment_pct")
+            if gradual_price is None:
+                gradual_price = gradual.get("price")
         if gradual_price is None and gradual_pct is not None:
             from decimal import Decimal, ROUND_HALF_UP
             gradual_price = float((Decimal(str(current_price)) * (Decimal("100") - Decimal(int(gradual_pct))) / Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
@@ -353,6 +360,7 @@ def _process_owner_campaign_action(
                 recommended_url=recommended_form,
                 gradual_url=action_url("aceptar_rebaja", token, selected_type="GRADUAL"),
                 advisor_url=advisor_url, logo_url=logo_url,
+                gradual_enabled=gradual_option_enabled(campana),
             )
             return HTMLResponse(page, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
         if accion == "aceptar_rebaja" and method != "POST":
@@ -360,10 +368,12 @@ def _process_owner_campaign_action(
         if accion == "contactar_ejecutivo" and method != "GET":
             return HTMLResponse("Método no permitido.", status_code=405)
         event = LIVE_ACTIONS[accion]
+        selected_type = str(selected_adjustment_type or "").upper()
+        if event == "price_authorized" and selected_type == "GRADUAL" and not gradual_option_enabled(campana):
+            return HTMLResponse("La opción gradual no está habilitada para esta campaña.", status_code=409)
         persist_live_event(db, claims, event="cta_clicked", action=accion)
         details = {}
         if event == "price_authorized":
-            selected_type = str(selected_adjustment_type or "").upper()
             if selected_type not in {"RECOMMENDED", "GRADUAL"}:
                 return HTMLResponse("Selecciona una alternativa válida.", status_code=400)
             if selected_type == "RECOMMENDED":

@@ -49,6 +49,23 @@ def _single_property_model():
     }
 
 
+def test_canonical_gradual_calculation_uses_only_two_or_three_percent():
+    expected = {5: 2, 6: 2, 7: 3, 8: 3, 9: 3, 10: 3}
+    for recommended_pct, gradual_pct in expected.items():
+        result = renderer.calculate_gradual_price_alternative(
+            current_price=3100, recommended_adjustment_pct=recommended_pct,
+        )
+        assert result["available"] is True
+        assert result["adjustment_pct"] == gradual_pct
+        assert result["price"] == round(3100 * (100 - gradual_pct) / 100, 4)
+
+    case_5641 = renderer.calculate_gradual_price_alternative(
+        current_price=3100, recommended_adjustment_pct=10,
+    )
+    assert case_5641["adjustment_pct"] == 3
+    assert case_5641["price"] == 3007
+
+
 def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypatch):
     captured = {}
 
@@ -80,7 +97,9 @@ def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypa
     assert captured["single_property_only"] is True
     assert captured["hero_title"] == "Revisión comercial de tu propiedad"
     assert "Analizamos las condiciones actuales del mercado" in captured["hero_description"]
-    assert len(captured["macro_context"]["copy_paragraphs"]) == 3
+    assert len(captured["macro_context"]["copy_paragraphs"]) == 2
+    assert "una demanda más selectiva" in captured["macro_context"]["copy_paragraphs"][0]
+    assert "últimos 90 días" in captured["macro_context"]["copy_paragraphs"][1]
     assert "Banco Central de Chile" in captured["macro_context"]["source_line"]
     assert captured["report_date"]
 
@@ -123,7 +142,9 @@ def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
     assert captured["single_property_only"] is True
     assert captured["hero_title"] == "Revisión comercial de tu propiedad"
     assert "quienes buscan arrendar" in captured["hero_description"]
-    assert len(captured["macro_context"]["copy_paragraphs"]) == 3
+    assert len(captured["macro_context"]["copy_paragraphs"]) == 2
+    assert "costo de vida" in captured["macro_context"]["copy_paragraphs"][0]
+    assert "arriendos similares" in captured["macro_context"]["copy_paragraphs"][1]
     assert "financiamiento" not in " ".join(captured["macro_context"]["copy_paragraphs"]).casefold()
     assert len(captured["macro_context"]["kpis"]) == 3
     assert captured["macro_context"]["kpis"][0]["value"] == "9,5%"
@@ -403,8 +424,18 @@ def test_real_single_property_template_renders_approved_visual_content():
         "Informe comercial disponible",
         "REVISAR / CONFIRMAR AJUSTE",
         "REVISAR CON MI EJECUTIVO",
+        "Comparamos tu propiedad con publicaciones disponibles que comparten características relevantes.",
+        "Se muestran 3 referencias representativas; el cálculo utiliza la muestra completa.",
+        "Mercado comparable",
     ):
         assert expected in html
+    assert "Muy bajo" not in html
+    rendered_root = lxml_html.fromstring(html)
+    graph_text = " ".join(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' single-comparison-bar ')]//text()"))
+    assert not any(tick in graph_text for tick in ("26,1", "34,3", "42,4", "50,6", "58,8", "66,9"))
+    assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' position-metric ')]")) == 2
+    assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' comp-card-single ')]")) == 3
+    assert ".comp-card-single { width:33.333%; height:116px;" in html
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
     assert "REVISAR CON MI EJECUTIVO" in safe_html
@@ -525,7 +556,7 @@ def test_rent_heading_says_arriendo_and_visual_structure_is_shared():
         return [" ".join(node.get("class", "").split()) for node in root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' single-property-review ') or contains(concat(' ',normalize-space(@class),' '),' hero-single ') or contains(concat(' ',normalize-space(@class),' '),' property-card-single ') or contains(concat(' ',normalize-space(@class),' '),' valuation-strip-single ') or contains(concat(' ',normalize-space(@class),' '),' activity-90-single ') or contains(concat(' ',normalize-space(@class),' '),' evidence-single ') or contains(concat(' ',normalize-space(@class),' '),' insight-single ') or contains(concat(' ',normalize-space(@class),' '),' executive-single ') or contains(concat(' ',normalize-space(@class),' '),' footer-one ')]")]
 
     rent_text = " ".join(rent_root.text_content().split()).casefold()
-    assert "Publicaciones similares en arriendo" in rent_html
+    assert "Tu propiedad frente a inmuebles comparables" in rent_html
     assert "comprador" not in rent_text and "venta" not in rent_text
     assert single_structure(sale_root) == single_structure(rent_root)
 
@@ -541,4 +572,4 @@ def test_missing_comparable_source_date_does_not_leave_empty_sample_label():
     )
     visible = " ".join(lxml_html.fromstring(html).text_content().split())
     assert "Muestra del ;" not in visible
-    assert "La muestra es distinta del universo comunal." in visible
+    assert "Se muestran 3 referencias representativas; el cálculo utiliza la muestra completa." in visible

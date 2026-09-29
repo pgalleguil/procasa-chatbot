@@ -494,8 +494,13 @@ def _qa_ledger_snapshot(case: OwnerCampaignTestCase) -> dict[str, Any]:
         recommended_pct = None
     if recommended_pct is None and recommendation.get("recommended_adjustment_pct") is not None:
         recommended_pct = int(round(float(recommendation["recommended_adjustment_pct"])))
-    gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
-    gradual_price = round(current * (100 - gradual_pct) / 100, 4) if gradual_pct is not None else None
+    from analytics.owner_campaign_email_v2 import calculate_gradual_price_alternative
+
+    gradual = calculate_gradual_price_alternative(
+        current_price=current, recommended_adjustment_pct=recommended_pct,
+    )
+    gradual_pct = gradual.get("adjustment_pct")
+    gradual_price = gradual.get("price")
     executives = (getattr(case, "render_context", None) or {}).get("executives") or []
     executive = executives[0] if executives and isinstance(executives[0], Mapping) else {}
     return {

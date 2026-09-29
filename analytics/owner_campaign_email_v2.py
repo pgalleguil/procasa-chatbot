@@ -42,11 +42,10 @@ SINGLE_PROPERTY_RENT_HERO_DESCRIPTION = (
     "El objetivo es evaluar si su posicionamiento actual sigue siendo competitivo y detectar oportunidades para aumentar el interés y favorecer un arriendo."
 )
 SINGLE_PROPERTY_SALE_MACRO_CONTEXT = {
-    "highlight": "Un mercado más exigente obliga a competir mejor por la atención del comprador.",
+    "highlight": "",
     "copy_paragraphs": (
-        "El escenario económico sigue influyendo en las decisiones de compra. El Banco Central reporta una desaceleración de la demanda interna, junto con un deterioro del mercado laboral y de los indicadores de confianza, factores que pueden hacer más cuidadosas y prolongadas las decisiones de los hogares.",
-        "A esto se suma un cambio relevante en la competencia: actualmente existen beneficios de financiamiento para viviendas nuevas de hasta 6.000 UF, mediante subsidio a la tasa hipotecaria y FOGAES. Estos beneficios no aplican a esta propiedad usada, pero pueden hacer más atractivas determinadas alternativas nuevas para algunos compradores.",
-        "En este contexto, mantener un precio competitivo cobra mayor importancia. Por eso analizamos también la respuesta real que ha tenido tu propiedad durante los últimos 90 días antes de proponer un nuevo posicionamiento.",
+        "Las condiciones de financiamiento y una demanda más selectiva siguen influyendo en las decisiones de compra. A esto se suma que ciertos beneficios para viviendas nuevas pueden aumentar la competencia frente a propiedades usadas.",
+        "En este escenario, el posicionamiento de precio cobra mayor relevancia. Por eso analizamos la respuesta comercial de tu propiedad durante los últimos 90 días y sus referencias de mercado antes de recomendar un ajuste.",
     ),
     "source_line": "Banco Central de Chile y MINVU · septiembre 2026",
     "kpis": [
@@ -56,11 +55,10 @@ SINGLE_PROPERTY_SALE_MACRO_CONTEXT = {
     ],
 }
 SINGLE_PROPERTY_RENT_MACRO_CONTEXT = {
-    "highlight": "En arriendo, el valor mensual es uno de los principales factores de comparación entre las alternativas disponibles.",
+    "highlight": "",
     "copy_paragraphs": (
-        "El mercado laboral y el costo de vida continúan influyendo en las decisiones de los hogares. La tasa de desocupación nacional alcanzó 9,5% en el trimestre mayo–julio y la inflación registró una variación de 4,1% en doce meses a agosto. Al mismo tiempo, las remuneraciones reales aumentaron 4,1% anual a julio.",
-        "En este escenario, quienes buscan arrendar pueden evaluar con especial atención el compromiso mensual que representa una propiedad y compararlo con las alternativas disponibles. Por eso, un precio bien posicionado resulta importante para captar interés y transformar búsquedas en contactos efectivos.",
-        "Más allá del contexto general, la señal más relevante es la respuesta que ha tenido esta propiedad. Por eso analizamos sus leads de los últimos 90 días antes de proponer un nuevo posicionamiento de precio.",
+        "El mercado laboral y el costo de vida siguen influyendo en las decisiones de arriendo. Quienes buscan una propiedad comparan especialmente el compromiso mensual y las alternativas disponibles.",
+        "Por eso analizamos la respuesta comercial de tu propiedad durante los últimos 90 días y su posición frente a arriendos similares antes de recomendar un ajuste.",
     ),
     "source_line": "INE y Banco Central de Chile · septiembre 2026",
     "kpis": [
@@ -257,7 +255,6 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
     if p10 is None or p90 is None or p90 <= p10:
         index = slots // 2
         reference_index = slots // 2
-        axis_ticks = []
     else:
         # Keep both the owner's value and the market reference inside a padded
         # scale. Percentile-only bounds pinned outliers to the track ends and
@@ -275,25 +272,17 @@ def _positioning_graph(distribution: Mapping[str, Any], property_value: Any) -> 
         usable_slots = slots - 1
         index = max(0, min(usable_slots, int(round(ratio(value) * usable_slots)))) if value is not None else slots // 2
         reference_index = max(0, min(usable_slots, int(round(ratio(median) * usable_slots)))) if median is not None else slots // 2
-        axis_ticks = [
-            {
-                "slot": tick * 4,
-                "label": fmt_number(axis_min + (axis_span * tick / 5), 0 if (axis_min + (axis_span * tick / 5)).is_integer() else 1),
-            }
-            for tick in range(6)
-        ]
-    ticks_by_slot = {tick["slot"]: tick["label"] for tick in axis_ticks}
     return {
         "markers_close": abs(index - reference_index) <= 5,
         "property_index": index,
         "reference_index": reference_index,
-        "axis_ticks": axis_ticks,
+        "axis_ticks": [],
         "cells": [
             {
                 "active": i <= index,
                 "marker": i == index,
                 "reference": i == reference_index,
-                "axis_label": ticks_by_slot.get(i),
+                "axis_label": None,
             }
             for i in range(slots)
         ]
@@ -696,13 +685,18 @@ def calculate_commercial_price_recommendation(
 
 
 def calculate_gradual_price_alternative(*, current_price: Any, recommended_adjustment_pct: Any) -> dict[str, Any]:
-    """Build the fixed, secondary option without changing the main algorithm."""
+    """Calculate the small, fixed gradual option independently of the main recommendation."""
     current = number(current_price)
     try:
         recommended = int(recommended_adjustment_pct)
     except (TypeError, ValueError):
         recommended = None
-    gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended)
+    if recommended in {5, 6}:
+        gradual_pct = 2
+    elif recommended in {7, 8, 9, 10}:
+        gradual_pct = 3
+    else:
+        gradual_pct = None
     if current is None or current <= 0 or gradual_pct is None:
         return {
             "available": False,

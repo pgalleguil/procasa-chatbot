@@ -135,6 +135,8 @@ def persist_live_event(
             "selected_price_clp": payload.get("selected_price_clp"),
             "authorized_price": payload.get("selected_price"),
         }
+        if selected_type == "GRADUAL":
+            update["$set"]["gradual_authorized_at"] = event_at
     elif event == "advisor_review_requested":
         cutoff = event_at - timedelta(hours=24)
         query["$or"] = [
@@ -237,7 +239,11 @@ def _campaign_whatsapp_text(row: Mapping[str, Any], event: str, event_at: dateti
             f"Código: {row.get('property_code')}", f"{property_name} · {commune}",
             f"Propietario: {owner}", "", f"Precio actual: {price(row.get('previous_price', row.get('current_price')))}",
             f"Recomendación PROCASA: {row.get('recommended_adjustment_pct')}% → {recommended}",
-            f"Ajuste {'elegido' if gradual else 'autorizado'}: {row.get('selected_adjustment_pct')}% · {'GRADUAL' if gradual else 'RECOMENDADO'}",
+            (
+                f"Ajuste gradual autorizado: {row.get('selected_adjustment_pct')}% → {selected}"
+                if gradual else
+                f"Ajuste recomendado autorizado: {row.get('selected_adjustment_pct')}% → {selected}"
+            ),
             f"Nuevo precio autorizado: {selected}", f"Ejecutivo: {executive}",
             f"Fecha: {event_text}", f"Campaña: {row.get('campaign_id')}",
         ]

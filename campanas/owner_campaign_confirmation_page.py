@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from html import escape
+import os
+
+
+def gradual_option_enabled(campaign_id: str | None = None) -> bool:
+    """Gradual pricing remains available for future campaigns, disabled by default."""
+    if str(campaign_id or "").startswith("owner_price_sucre_wave1"):
+        return False
+    return str(os.getenv("OWNER_CAMPAIGN_GRADUAL_OPTION_ENABLED", "false")).strip().casefold() in {"1", "true", "yes", "on"}
 
 
 def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> str:
@@ -13,31 +21,35 @@ def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> st
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>PROCASA | {escape(title)}</title><style>'
         '*{box-sizing:border-box}body{margin:0;background:#f5f6fb;color:#171b4b;'
-        'font-family:Arial,Helvetica,sans-serif}.shell{max-width:920px;margin:0 auto;padding:48px 24px 56px}'
-        '.brand{font-size:19px;font-weight:800;letter-spacing:.08em;color:#211b65}.brand-logo{display:block;max-width:156px;max-height:38px;width:auto;height:auto;object-fit:contain;object-position:left center}'
-        'h1{font-size:32px;line-height:1.2;margin:22px 0 8px;letter-spacing:-.025em}'
-        '.subtitle{font-size:16px;line-height:1.55;color:#68708f;margin:0 0 30px}'
+        'font-family:Arial,Helvetica,sans-serif}.shell{max-width:920px;margin:0 auto;padding:38px 24px 56px}'
+        'header{text-align:center}.brand{display:block;margin:0 auto 22px;text-align:center;font-size:22px;font-weight:800;letter-spacing:.08em;color:#211b65}.brand-logo{display:block;width:auto;max-width:260px;height:auto;max-height:76px;margin:0 auto 22px;object-fit:contain;object-position:center}'
+        'h1{font-size:32px;line-height:1.2;margin:0 0 8px;letter-spacing:-.025em}'
+        '.subtitle{font-size:16px;line-height:1.55;color:#68708f;margin:0 0 26px}'
         '.options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:stretch}'
-        '.card{background:#fff;border:1px solid #e1e4f1;border-radius:18px;padding:25px;box-shadow:0 8px 24px rgba(24,29,82,.055)}'
-        '.card.primary{border:2px solid #6253d7;box-shadow:0 12px 30px rgba(73,61,171,.12)}'
+        '.options.one-option{grid-template-columns:minmax(0,680px);justify-content:center}'
+        '.card{display:flex;flex-direction:column;min-height:390px;background:#fff;border:1px solid #e1e4f1;border-radius:16px;padding:25px;box-shadow:0 5px 18px rgba(24,29,82,.045)}'
+        '.card.primary{border:2px solid #6253d7;box-shadow:0 8px 24px rgba(73,61,171,.09)}'
         '.eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;color:#6556d9}'
         '.card h2{font-size:21px;margin:13px 0 18px;color:#171b4b}'
-        '.percent{font-size:48px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#211b65;margin:0 0 23px}'
+        '.percent{font-size:46px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#211b65;margin:0 0 22px}'
         '.value-label{display:block;font-size:10px;font-weight:800;letter-spacing:.11em;color:#79809b;margin-bottom:6px}'
         '.price{font-size:22px;font-weight:800;color:#211b65;line-height:1.35}'
-        '.copy{font-size:14px;line-height:1.6;color:#626b88;margin:16px 0 21px}'
-        'form{margin:0}.button{display:flex;align-items:center;justify-content:center;min-height:48px;width:100%;padding:12px 16px;border:0;border-radius:10px;background:#332a91;color:#fff;text-decoration:none;text-align:center;font-size:12px;font-weight:800;letter-spacing:.035em;cursor:pointer}'
-        '.secondary .button{background:#fff;color:#342d85;border:1px solid #c8c5e8}'
-        '.contact{margin-top:20px;padding:22px 24px;background:#fff;border:1px solid #e1e4f1;border-radius:16px}'
-        '.contact h2{font-size:18px;margin:0 0 8px}.contact p{color:#68708f;font-size:14px;line-height:1.55;margin:0 0 16px}'
-        '.link{display:inline-block;color:#4134b2;text-decoration:none;font-weight:800;font-size:12px;letter-spacing:.035em}'
-        '.steps{margin-top:26px;padding:22px 24px;background:#f0f2fa;border-radius:16px}.steps h2{font-size:16px;margin:0 0 14px}'
-        '.steps ol{margin:0;padding-left:21px;color:#59617d}.steps li{padding:5px 0 5px 4px;font-size:13px;line-height:1.5}'
-        '.result{max-width:660px;margin:26px auto 0;padding:30px;background:#fff;border:1px solid #e1e4f1;border-radius:18px;box-shadow:0 8px 24px rgba(24,29,82,.055)}'
-        '.result h2{font-size:11px;letter-spacing:.12em;color:#6556d9;margin:0 0 7px}.result .price{margin:0 0 24px}'
-        '.result .split{display:grid;grid-template-columns:1fr 1fr;gap:15px;border-top:1px solid #e8e9f2;padding-top:20px;margin-top:20px}'
+        '.copy{font-size:14px;line-height:1.6;color:#626b88;margin:16px 0 22px}'
+        'form{margin:auto 0 0}.button{display:flex;align-items:center;justify-content:center;min-height:48px;width:100%;padding:12px 16px;border:0;border-radius:9px;background:#332a91;color:#fff;text-decoration:none;text-align:center;font-size:12px;font-weight:800;letter-spacing:.035em;cursor:pointer;transition:background-color 180ms ease,box-shadow 180ms ease,color 180ms ease,transform 180ms ease}'
+        '.button-primary{box-shadow:0 3px 9px rgba(38,31,111,.13)}.button-primary:hover{background:#292176;box-shadow:0 6px 13px rgba(38,31,111,.18);transform:translateY(-1px)}.button-primary:active{transform:translateY(0);box-shadow:0 2px 5px rgba(38,31,111,.13)}'
+        '.secondary .button{background:#fff;color:#342d85;border:1px solid #c8c5e8;box-shadow:0 1px 3px rgba(45,39,110,.04)}.secondary .button:hover{background:#f7f6ff;color:#28216f;border-color:#aaa4dc;box-shadow:0 2px 6px rgba(45,39,110,.07)}.secondary .button:active{background:#f1effb;transform:translateY(0)}'
+        '.button:focus-visible,.link:focus-visible{outline:3px solid #8d82e8;outline-offset:3px}'
+        '.contact{margin-top:18px;padding:21px 24px;background:#fff;border:1px solid #e1e4f1;border-radius:14px}'
+        '.contact h2{font-size:18px;margin:0 0 8px}.contact p{color:#68708f;font-size:14px;line-height:1.55;margin:0 0 12px}'
+        '.link{display:inline-flex;align-items:center;gap:5px;padding:7px 9px;margin-left:-9px;border:1px solid transparent;border-radius:7px;color:#4134b2;text-decoration:none;font-weight:800;font-size:12px;letter-spacing:.035em;transition:background-color 180ms ease,border-color 180ms ease,color 180ms ease}'
+        '.link:hover{background:#f8f7ff;border-color:#e7e4fb;color:#30258d}.link-arrow{display:inline-block;transition:transform 180ms ease}.link:hover .link-arrow{transform:translateX(2px)}'
+        '.steps{margin-top:18px;padding:21px 24px;background:#f0f2fa;border-radius:14px}.steps h2{font-size:16px;margin:0 0 12px}'
+        '.steps ol{margin:0;padding-left:21px;color:#59617d}.steps li{padding:4px 0 4px 4px;font-size:13px;line-height:1.5}'
+        '.result{max-width:660px;margin:22px auto 0;padding:29px 30px;background:#fff;border:1px solid #e1e4f1;border-radius:16px;box-shadow:0 5px 18px rgba(24,29,82,.045)}'
+        '.result h2{font-size:11px;letter-spacing:.12em;color:#6556d9;margin:0 0 8px}.result .percent{margin:0 0 25px}.result .price{margin:0 0 21px}'
         '.already{margin-top:18px;padding:15px;background:#f4f3fc;border-radius:10px;color:#4e5070;font-size:14px;line-height:1.6}'
-        '@media(max-width:600px){.shell{padding:28px 16px 36px}h1{font-size:27px;margin-top:18px}.subtitle{font-size:15px;margin-bottom:22px}.options{grid-template-columns:1fr;gap:14px}.card{padding:21px;border-radius:15px}.percent{font-size:43px}.contact{padding:20px}.steps{padding:20px}.result{padding:23px 20px}.result .split{grid-template-columns:1fr}}'
+        '@media(max-width:600px){.shell{padding:28px 16px 36px}.brand-logo{max-width:220px;max-height:66px;margin-bottom:20px}.brand{margin-bottom:20px}h1{font-size:27px}.subtitle{font-size:15px;margin-bottom:22px}.options,.options.one-option{grid-template-columns:1fr;gap:14px}.card{min-height:0;padding:21px;border-radius:14px}.percent{font-size:43px}.card form{margin-top:16px}.contact{padding:19px}.steps{padding:19px}.result{padding:23px 20px}}'
+        '@media(prefers-reduced-motion:reduce){.button,.link,.link-arrow{transition:none}.button-primary:hover,.button-primary:active,.secondary .button:active,.link:hover .link-arrow{transform:none}}'
         f'</style></head><body><main class="shell"><header>{brand}'
         f'<h1>{escape(title)}</h1><p class="subtitle">{escape(subtitle)}</p></header>{content}'
         '</main></body></html>'
@@ -47,9 +59,9 @@ def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> st
 def render_decision_page(
     *, recommended_pct: int, recommended_price: str, current_price: str,
     gradual_pct: int | None, gradual_price: str, recommended_url: str,
-    gradual_url: str, advisor_url: str, logo_url: str = "",
+    gradual_url: str, advisor_url: str, logo_url: str = "", gradual_enabled: bool = False,
 ) -> str:
-    gradual_available = gradual_pct is not None and int(gradual_pct) != int(recommended_pct)
+    gradual_available = gradual_enabled and gradual_pct is not None and int(gradual_pct) != int(recommended_pct)
     recommendation = (
         '<section class="card primary"><div class="eyebrow">RECOMENDACIÓN PROCASA</div>'
         '<h2>Ajuste recomendado</h2>'
@@ -61,7 +73,7 @@ def render_decision_page(
         '<p class="copy">Esta recomendación considera principalmente la respuesta comercial de tu '
         'propiedad durante los últimos 90 días, complementada por las referencias de mercado y '
         'antecedentes disponibles.</p>'
-        f'<form method="post" action="{escape(recommended_url, quote=True)}"><button class="button" type="submit">'
+        f'<form method="post" action="{escape(recommended_url, quote=True)}"><button class="button button-primary" type="submit">'
         'AUTORIZAR AJUSTE RECOMENDADO</button></form></section>'
     )
     if gradual_available:
@@ -71,9 +83,9 @@ def render_decision_page(
             f'<p class="percent">{int(gradual_pct)}%</p>'
             '<span class="value-label">NUEVO VALOR SUGERIDO</span>'
             f'<div class="price">{gradual_price}</div>'
-            '<p class="copy">Si prefieres avanzar con un ajuste más moderado, esta alternativa permite '
-            'mejorar el posicionamiento de forma gradual, manteniendo abierta la posibilidad de revisar '
-            'nuevamente su desempeño.</p>'
+            f'<p class="copy">Si prefieres realizar un cambio más acotado, esta alternativa permite comenzar '
+            f'con un ajuste inicial del {int(gradual_pct)}%. Así podremos observar la respuesta comercial '
+            'de la propiedad antes de evaluar nuevos cambios de posicionamiento.</p>'
             f'<form method="post" action="{escape(gradual_url, quote=True)}"><button class="button" type="submit">'
             'AUTORIZAR AJUSTE GRADUAL</button></form></section>'
         )
@@ -85,10 +97,10 @@ def render_decision_page(
             f'<a class="button" href="{escape(advisor_url, quote=True)}">QUIERO PROPONER OTRO AJUSTE</a></section>'
         )
     content = (
-        f'<div class="options">{recommendation}{option}</div>'
+        f'<div class="options{"" if gradual_available else " one-option"}">{recommendation}{option if gradual_available else ""}</div>'
         '<section class="contact"><h2>¿Prefieres conversarlo antes de decidir?</h2>'
         '<p>Si deseas revisar la propuesta antes de autorizar un cambio, puedes solicitar que tu ejecutivo te contacte.</p>'
-        f'<a class="link" href="{escape(advisor_url, quote=True)}">SOLICITAR CONTACTO DE MI EJECUTIVO →</a></section>'
+        f'<a class="link" href="{escape(advisor_url, quote=True)}">SOLICITAR CONTACTO DE MI EJECUTIVO <span class="link-arrow" aria-hidden="true">→</span></a></section>'
         '<section class="steps"><h2>¿Qué ocurrirá después?</h2><ol>'
         '<li>Tu decisión quedará registrada de forma segura.</li>'
         '<li>Tu ejecutivo será informado automáticamente.</li>'
@@ -113,16 +125,15 @@ def render_success_page(
         )
     elif selected_type == "ADVISOR_REVIEW":
         title = "Solicitud enviada"
-        subtitle = "Hemos registrado tu solicitud. Tu ejecutivo será informado para que pueda contactarte y revisar la propuesta contigo."
-        body = '<section class="result"><h2>SOLICITUD REGISTRADA</h2><p class="copy">Tu ejecutivo se pondrá en contacto contigo para revisar la propuesta.</p></section>'
+        subtitle = "Tu solicitud quedó registrada. Tu ejecutivo será informado para revisar la propuesta contigo."
+        body = '<section class="result"><h2>SOLICITUD REGISTRADA</h2></section>'
     elif selected_type == "GRADUAL":
         title = "Ajuste gradual autorizado"
-        subtitle = "Hemos registrado el ajuste gradual que seleccionaste."
+        subtitle = "Hemos registrado correctamente el ajuste gradual que seleccionaste."
         body = (
-            '<section class="result"><div class="split"><div><h2>RECOMENDACIÓN PROCASA</h2>'
-            f'<div class="price">{int(recommended_pct or 0)}% → {recommended_price}</div></div>'
-            '<div><h2>TU AJUSTE AUTORIZADO</h2>'
-            f'<div class="price">{int(selected_pct or 0)}% → {selected_price}</div></div></div>'
+            '<section class="result"><h2>AJUSTE AUTORIZADO</h2>'
+            f'<p class="percent">{int(selected_pct or 0)}%</p><h2>NUEVO VALOR AUTORIZADO</h2>'
+            f'<div class="price">{selected_price}</div>'
             '<p class="copy">Tu ejecutivo será informado y revisará la actualización antes de que el cambio se vea reflejado en la publicación.</p></section>'
         )
     else:

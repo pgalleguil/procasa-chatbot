@@ -60,7 +60,7 @@ def _decode_token_claims(token: str, secret: str, *, now_epoch: int | None = Non
     claims = decode_test_token(token, secret=secret, now_epoch=now_epoch)
     if claims is None or claims.get("action") != REPORT_ACTION:
         return None
-    return {
+    result = {
         "campaign_id": str(claims["campaign_id"]),
         "property_code": str(claims["property_code"]),
         "action": REPORT_ACTION,
@@ -69,6 +69,9 @@ def _decode_token_claims(token: str, secret: str, *, now_epoch: int | None = Non
         "test_mode": True,
         "document_type": str(claims["document_type"]),
     }
+    if claims.get("qa_run_id"):
+        result["qa_run_id"] = str(claims["qa_run_id"])
+    return result
 
 
 def _path(document: Mapping[str, Any], dotted: str) -> Any:

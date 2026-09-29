@@ -615,7 +615,7 @@ def _resolve_test_report_response(*, token: str):
     claims = verify_test_token(
         token,
         secret=secret,
-        campaign_id=private_report.TEST_CAMPAIGN_ID,
+        campaign_id=decoded["campaign_id"],
         property_code=decoded["property_code"],
         action=private_report.REPORT_ACTION,
         recipient=private_report.TEST_RECIPIENT,

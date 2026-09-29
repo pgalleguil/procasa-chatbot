@@ -18,6 +18,7 @@ from email.message import EmailMessage
 from html.parser import HTMLParser
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import parse_qs, quote, urlsplit
+from uuid import uuid4
 
 from config import Config
 
@@ -87,6 +88,8 @@ class OwnerCampaignTestCase:
     property_type: str = ""
     render_context: Mapping[str, Any] = field(default_factory=dict)
     portfolio_cases: tuple["OwnerCampaignTestCase", ...] = ()
+    campaign_id: str = TEST_CAMPAIGN_ID
+    qa_run_id: str = TEST_RUN_ID
 
 
 @dataclass(frozen=True)
@@ -100,6 +103,13 @@ class PreparedTestMessage:
     property_cases: tuple[OwnerCampaignTestCase, ...] = ()
     advisor_token: str | None = None
     price_token: str | None = None
+
+
+def new_qa_run_identity(*, now: datetime | None = None) -> tuple[str, str]:
+    """Return a unique run/campaign pair for one isolated QA execution."""
+    timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%S")
+    suffix = uuid4().hex[:12]
+    return f"qa_run_{timestamp}_{suffix}", f"owner_price_campaign_qa_{timestamp}_{suffix}"
 
 
 def _property_cases(case: OwnerCampaignTestCase) -> tuple[OwnerCampaignTestCase, ...]:
@@ -116,16 +126,24 @@ def build_test_links(case: OwnerCampaignTestCase) -> dict[str, str]:
             property_code=case.property_code,
             action=REPORT_ACTION,
             document_type=case.document_type,
+            campaign_id=case.campaign_id,
+            qa_run_id=case.qa_run_id,
         )
         links["report"] = f"{SERVICE_BASE_URL}/campana/informe?token={quote(report_token, safe='')}"
     primary_action = {
         "PRICE_AUTHORIZATION": ACCEPT_PRICE_ACTION,
         "ADVISOR_REVIEW": ADVISOR_ACTION,
     }.get(case.cta_type)
-    advisor_token = issue_campaign_test_token(property_code=case.property_code, action=ADVISOR_ACTION)
+    advisor_token = issue_campaign_test_token(
+        property_code=case.property_code, action=ADVISOR_ACTION,
+        campaign_id=case.campaign_id, qa_run_id=case.qa_run_id,
+    )
     links["advisor"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(advisor_token, safe='')}"
     if primary_action == ACCEPT_PRICE_ACTION:
-        price_token = issue_campaign_test_token(property_code=case.property_code, action=ACCEPT_PRICE_ACTION)
+        price_token = issue_campaign_test_token(
+            property_code=case.property_code, action=ACCEPT_PRICE_ACTION,
+            campaign_id=case.campaign_id, qa_run_id=case.qa_run_id,
+        )
         links["price"] = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(price_token, safe='')}"
         links["action"] = links["price"]
     elif primary_action == ADVISOR_ACTION:
@@ -342,7 +360,13 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
             claims = _token_from_link(href, path)
             code = str(claims.get("property_code") or "")
             matching = [item for item in property_cases if item.property_code == code]
-            if len(matching) != 1 or claims.get("action") != REPORT_ACTION or claims.get("document_type") != matching[0].document_type:
+            if (
+                len(matching) != 1
+                or claims.get("action") != REPORT_ACTION
+                or claims.get("document_type") != matching[0].document_type
+                or claims.get("campaign_id") != matching[0].campaign_id
+                or claims.get("qa_run_id") != matching[0].qa_run_id
+            ):
                 raise TestSenderError("test_report_link_mismatch")
             token_value = parse_qs(parsed.query)["token"][0]
             if code in report_tokens and report_tokens[code] != token_value:
@@ -355,7 +379,12 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
             code = str(claims.get("property_code") or "")
             matching = [item for item in property_cases if item.property_code == code]
             action = str(claims.get("action") or "")
-            if len(matching) != 1 or action not in {ACCEPT_PRICE_ACTION, ADVISOR_ACTION}:
+            if (
+                len(matching) != 1
+                or action not in {ACCEPT_PRICE_ACTION, ADVISOR_ACTION}
+                or claims.get("campaign_id") != matching[0].campaign_id
+                or claims.get("qa_run_id") != matching[0].qa_run_id
+            ):
                 raise TestSenderError("test_action_link_mismatch")
             token_value = parse_qs(parsed.query)["token"][0]
             token_key = (code, action)
@@ -414,9 +443,30 @@ def prepare_test_messages(
     cases: Sequence[OwnerCampaignTestCase],
     *,
     render_case: Callable[[OwnerCampaignTestCase], Mapping[str, Any]] | None = None,
+    campaign_id: str | None = None,
+    qa_run_id: str | None = None,
 ) -> list[PreparedTestMessage]:
     """Render and validate every explicit case before any SMTP connection."""
-    validated_cases = validate_explicit_cases(cases)
+    from dataclasses import replace
+
+    if campaign_id is None or qa_run_id is None:
+        generated_run_id, generated_campaign_id = new_qa_run_identity()
+        campaign_id = campaign_id or generated_campaign_id
+        qa_run_id = qa_run_id or generated_run_id
+
+    isolated_cases = [
+        replace(
+            case,
+            campaign_id=campaign_id,
+            qa_run_id=qa_run_id,
+            portfolio_cases=tuple(
+                replace(child, campaign_id=campaign_id, qa_run_id=qa_run_id)
+                for child in case.portfolio_cases
+            ),
+        )
+        for case in cases
+    ]
+    validated_cases = validate_explicit_cases(isolated_cases)
     renderer = render_case or render_owner_campaign_v2_test_case
     prepared = [_validate_rendered_case(case, renderer(case)) for case in validated_cases]
     for _ in prepared:
@@ -430,7 +480,7 @@ def prepare_test_messages(
 
 
 def _qa_ledger_snapshot(case: OwnerCampaignTestCase) -> dict[str, Any]:
-    model = (case.render_context or {}).get("property_model") or {}
+    model = (getattr(case, "render_context", None) or {}).get("property_model") or {}
     recommendation = model.get("pricing_recommendation") if isinstance(model, Mapping) else {}
     recommendation = recommendation if isinstance(recommendation, Mapping) else {}
     current = float(case.current_price)
@@ -446,7 +496,7 @@ def _qa_ledger_snapshot(case: OwnerCampaignTestCase) -> dict[str, Any]:
         recommended_pct = int(round(float(recommendation["recommended_adjustment_pct"])))
     gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
     gradual_price = round(current * (100 - gradual_pct) / 100, 4) if gradual_pct is not None else None
-    executives = (case.render_context or {}).get("executives") or []
+    executives = (getattr(case, "render_context", None) or {}).get("executives") or []
     executive = executives[0] if executives and isinstance(executives[0], Mapping) else {}
     return {
         "operation": case.operation,
@@ -480,7 +530,9 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
     entries = []
     for item in prepared:
         for case in item.property_cases or _property_cases(item.case):
-            query = {"campaign_id": TEST_CAMPAIGN_ID, "property_code": case.property_code}
+            campaign_id = str(getattr(case, "campaign_id", TEST_CAMPAIGN_ID) or TEST_CAMPAIGN_ID)
+            qa_run_id = str(getattr(case, "qa_run_id", TEST_RUN_ID) or TEST_RUN_ID)
+            query = {"campaign_id": campaign_id, "property_code": case.property_code}
             existing = ledger.find_one(query)
             if existing:
                 if existing.get("test_mode") is not True or existing.get("actual_recipient_email") != TEST_RECIPIENT:
@@ -488,8 +540,8 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 raise TestSenderError("test_campaign_case_already_registered")
             snapshot = _qa_ledger_snapshot(case)
             entries.append((query, {
-                "campaign_id": TEST_CAMPAIGN_ID,
-                "test_run_id": TEST_RUN_ID,
+                "campaign_id": campaign_id,
+                "test_run_id": qa_run_id,
                 "campaign_version": TEST_CAMPAIGN_VERSION,
                 "property_code": case.property_code,
                 "intended_owner_email": case.intended_owner_email.strip(),
@@ -506,7 +558,7 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 "delivery_status": "pending_test_send",
             }))
     for query, payload in entries:
-        deterministic_id = f"{TEST_CAMPAIGN_ID}:{payload['property_code']}"
+        deterministic_id = f"{payload['campaign_id']}:{payload['property_code']}"
         result = ledger.update_one(
             {"_id": deterministic_id},
             {"$setOnInsert": payload},
@@ -521,9 +573,13 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
 def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str) -> dict[str, Any] | None:
     """Reserve a changed-HTML resend for one allowlisted single-property QA case.
 
-    The original QA ledger row is reused. An identical accepted HTML is
-    blocked, and an ambiguous in-flight attempt remains fail-closed.
+    Legacy campaign reuse is disabled. Every new test send must go through a
+    fresh campaign_id so old QA responses remain immutable.
     """
+    raise TestSenderError("qa_campaign_reuse_disabled")
+
+    # Kept below for historical reference only; the guard above intentionally
+    # prevents any new QA message from modifying a previously used campaign.
     property_code = str(item.case.property_code)
     if property_code not in TARGETED_QA_RESEND_PROPERTY_CODES:
         raise TestSenderError("targeted_qa_resend_property_not_allowed")
@@ -622,6 +678,8 @@ def send_test_messages(
     render_case: Callable[[OwnerCampaignTestCase], Mapping[str, Any]] | None = None,
     db: Any = None,
     smtp_factory: Callable[..., Any] | None = None,
+    campaign_id: str | None = None,
+    qa_run_id: str | None = None,
 ) -> list[dict[str, str]]:
     """Send only up to five fully validated cases to the fixed test inbox.
 
@@ -633,7 +691,12 @@ def send_test_messages(
     if not Config.GMAIL_USER or not Config.GMAIL_PASSWORD:
         raise TestSenderError("test_smtp_credentials_unavailable")
     validated_cases = validate_explicit_cases(cases)
-    prepared = prepare_test_messages(validated_cases, render_case=render_case)
+    generated_run_id, generated_campaign_id = new_qa_run_identity()
+    run_id = qa_run_id or generated_run_id
+    campaign = campaign_id or generated_campaign_id
+    prepared = prepare_test_messages(
+        validated_cases, render_case=render_case, campaign_id=campaign, qa_run_id=run_id,
+    )
     return _send_prepared_test_messages(prepared, db=db, smtp_factory=smtp_factory)
 
 
@@ -716,7 +779,7 @@ def _send_prepared_test_messages(
                         for property_case in item.property_cases or _property_cases(item.case):
                             database[TEST_LEDGER_COLLECTION].update_one(
                                 {
-                                    "campaign_id": TEST_CAMPAIGN_ID,
+                                    "campaign_id": item.case.campaign_id,
                                     "property_code": property_case.property_code,
                                     "test_mode": True,
                                     "actual_recipient_email": TEST_RECIPIENT,
@@ -768,7 +831,7 @@ def _send_prepared_test_messages(
                     else:
                         database[TEST_LEDGER_COLLECTION].update_one(
                             {
-                                "campaign_id": TEST_CAMPAIGN_ID,
+                                "campaign_id": item.case.campaign_id,
                                 "property_code": property_case.property_code,
                                 "test_mode": True,
                                 "actual_recipient_email": TEST_RECIPIENT,
@@ -796,6 +859,8 @@ def _send_prepared_test_messages(
                     "rfc_message_id": rfc_message_id,
                     "sent_at": sent_at.isoformat(),
                     "recipient": TEST_RECIPIENT,
+                    "campaign_id": item.case.campaign_id,
+                    "qa_run_id": item.case.qa_run_id,
                     "final_html_sha256": final_hash,
                     "preview_html_sha256": final_hash,
                     "smtp_html_sha256": final_hash,

@@ -168,6 +168,8 @@ def issue_test_link_token(
     document_type: str | None = None,
     expires_in_seconds: int = 86400,
     now_epoch: int | None = None,
+    campaign_id: str = TEST_CAMPAIGN_ID,
+    qa_run_id: str | None = None,
 ) -> str:
     """Compatibility wrapper around the canonical campaign token issuer."""
     try:
@@ -177,6 +179,8 @@ def issue_test_link_token(
             document_type=document_type,
             expires_in_seconds=expires_in_seconds,
             now_epoch=now_epoch,
+            campaign_id=campaign_id,
+            qa_run_id=qa_run_id,
         )
     except ValueError as exc:
         raise OwnerCampaignTestError(str(exc)) from exc
@@ -200,10 +204,10 @@ def _database(db: Any = None):
     return get_db()
 
 
-def _test_ledger(db: Any, property_code: str) -> Mapping[str, Any] | None:
+def _test_ledger(db: Any, campaign_id: str, property_code: str) -> Mapping[str, Any] | None:
     return db[LEDGER_COLLECTION].find_one(
         {
-            "campaign_id": TEST_CAMPAIGN_ID,
+            "campaign_id": campaign_id,
             "property_code": property_code,
             "test_mode": True,
         }
@@ -373,7 +377,8 @@ def process_test_action(
     action = str(claims["action"])
     mongo_started = time.perf_counter()
     database = _database(db)
-    ledger = _test_ledger(database, code)
+    campaign_id = str(claims["campaign_id"])
+    ledger = _test_ledger(database, campaign_id, code)
     if not ledger:
         raise OwnerCampaignTestError("test_campaign_ledger_missing")
     price_before = price_after = None
@@ -420,7 +425,7 @@ def process_test_action(
         if operation_after != operation or price_after != price_before:
             raise OwnerCampaignTestError("test_price_mutation_detected")
         timings["price_safety_check_ms"] = (time.perf_counter() - price_check_started) * 1000
-    refreshed = _test_ledger(database, code) or {}
+    refreshed = _test_ledger(database, campaign_id, code) or {}
     expected_ids = list(stored.get("event_ids") or [])
     if expected_ids and not stored.get("duplicate"):
         persisted_ids = {
@@ -452,7 +457,8 @@ def process_test_action(
         else str(executive_value or "").strip()
     )
     return {
-        "campaign_id": TEST_CAMPAIGN_ID,
+        "campaign_id": campaign_id,
+        "qa_run_id": claims.get("qa_run_id"),
         "property_code": code,
         "event": event_type,
         "event_ids": stored.get("event_ids", []),
@@ -509,6 +515,8 @@ def _handle_test_action_legacy(token: str, *, db: Any = None, confirmed: bool = 
                 property_code=str(result["property_code"]),
                 action=REPORT_ACTION,
                 document_type=str(result["document_type"]),
+                campaign_id=str(result["campaign_id"]),
+                qa_run_id=result.get("qa_run_id"),
             )
             report_url = "/campana/informe?token=" + quote(report_token, safe="")
         except (KeyError, ValueError, OwnerCampaignTestError):
@@ -639,7 +647,11 @@ def handle_test_action(
     logo_url = (Config.CRM_BASE_URL or "https://procasa.cl").rstrip("/") + "/static/logo.png"
     code = str(result.get("property_code") or "")
     advisor_url = "/campana/test-accion?token=" + quote(
-        issue_test_link_token(property_code=code, action=ADVISOR_ACTION), safe="",
+        issue_test_link_token(
+            property_code=code, action=ADVISOR_ACTION,
+            campaign_id=str(result.get("campaign_id") or TEST_CAMPAIGN_ID),
+            qa_run_id=result.get("qa_run_id"),
+        ), safe="",
     )
     if result.get("requires_confirmation"):
         if result.get("already_registered"):

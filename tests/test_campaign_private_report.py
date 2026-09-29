@@ -45,6 +45,17 @@ def _token(*, document_type="INDIVIDUAL_APPRAISAL", exp=2_000_000_000, **extra):
     return f"t1.{encoded}.{signature}"
 
 
+def test_private_report_decoder_preserves_fresh_qa_campaign_and_run_identity(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    campaign_id = "owner_price_campaign_qa_20260929T120000_a1b2c3d4e5f6"
+    qa_run_id = "qa_run_20260929T120000_a1b2c3d4e5f6"
+    claims = private_report._decode_token_claims(
+        _token(campaign_id=campaign_id, qa_run_id=qa_run_id), SECRET,
+    )
+    assert claims["campaign_id"] == campaign_id
+    assert claims["qa_run_id"] == qa_run_id
+
+
 class _Request:
     def __init__(self, result):
         self.result = result

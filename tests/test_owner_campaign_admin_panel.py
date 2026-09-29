@@ -246,58 +246,54 @@ def _existing_qa_row(property_code, *, previous_hash="old-html-hash"):
 
 
 @pytest.mark.parametrize("property_code", ["5641", "6132", "16486", "6873"])
-def test_allowlisted_targeted_resend_reuses_ledger_only_for_changed_html(property_code):
-    from campanas.owner_campaign_test_sender import _begin_targeted_qa_resend
-
-    db = _ExistingQaDb(_existing_qa_row(property_code))
-    item = SimpleNamespace(case=SimpleNamespace(property_code=property_code))
-    reserved = _begin_targeted_qa_resend(db, item, "new-html-hash")
-
-    assert reserved["last_test_resend_status"] == "sending"
-    assert db.ledger.row["rendered_html_sha256"] == "old-html-hash"
-    assert db.ledger.row["last_test_resend_attempt_html_sha256"] == "new-html-hash"
-    assert db.ledger.row["test_resend_recipient_email"] == "p.galleguil@gmail.com"
-    assert len(db.ledger.updates) == 1
-
-
-@pytest.mark.parametrize("property_code", ["5641", "6132", "16486", "6873"])
-def test_allowlisted_targeted_resend_blocks_identical_html_before_smtp(property_code):
+def test_legacy_targeted_qa_campaign_cannot_be_reused(property_code):
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
     db = _ExistingQaDb(_existing_qa_row(property_code))
     item = SimpleNamespace(case=SimpleNamespace(property_code=property_code))
-    with pytest.raises(TestSenderError, match="same_visual_test_already_sent"):
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
+        _begin_targeted_qa_resend(db, item, "new-html-hash")
+    assert db.ledger.updates == []
+
+
+@pytest.mark.parametrize("property_code", ["5641", "6132", "16486", "6873"])
+def test_legacy_targeted_qa_campaign_cannot_be_reused_even_for_changed_html(property_code):
+    from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
+
+    db = _ExistingQaDb(_existing_qa_row(property_code))
+    item = SimpleNamespace(case=SimpleNamespace(property_code=property_code))
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
         _begin_targeted_qa_resend(db, item, "old-html-hash")
     assert db.ledger.updates == []
 
 
-def test_targeted_qa_resend_rejects_non_allowlisted_property_and_ambiguous_attempt():
+def test_targeted_qa_resend_path_is_disabled_for_historical_campaigns():
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
     item = SimpleNamespace(case=SimpleNamespace(property_code="99999"))
-    with pytest.raises(TestSenderError, match="property_not_allowed"):
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
         _begin_targeted_qa_resend(_ExistingQaDb(_existing_qa_row("99999")), item, "new")
 
     row = _existing_qa_row("6132")
     row["last_test_resend_status"] = "sending"
     item = SimpleNamespace(case=SimpleNamespace(property_code="6132"))
-    with pytest.raises(TestSenderError, match="requires_review"):
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
         _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new")
 
 
-def test_missing_hash_override_is_one_time_and_scoped_to_16486():
+def test_missing_hash_does_not_allow_reuse_of_old_qa_campaign():
     from campanas.owner_campaign_test_sender import TestSenderError, _begin_targeted_qa_resend
 
     row = _existing_qa_row("16486", previous_hash=None)
     row.pop("rendered_html_sha256")
     item = SimpleNamespace(case=SimpleNamespace(property_code="16486"))
-    reserved = _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
-    assert reserved["last_test_missing_hash_override_attempt"] is True
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
+        _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
 
     row = _existing_qa_row("5641", previous_hash=None)
     row.pop("rendered_html_sha256")
     item = SimpleNamespace(case=SimpleNamespace(property_code="5641"))
-    with pytest.raises(TestSenderError, match="previous_qa_html_hash_unavailable"):
+    with pytest.raises(TestSenderError, match="qa_campaign_reuse_disabled"):
         _begin_targeted_qa_resend(_ExistingQaDb(row), item, "new-html-hash")
 
 

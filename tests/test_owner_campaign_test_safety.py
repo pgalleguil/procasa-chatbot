@@ -202,6 +202,8 @@ def _render(case):
             property_code=case.property_code,
             action=actions.REPORT_ACTION,
             document_type=case.document_type,
+            campaign_id=case.campaign_id,
+            qa_run_id=case.qa_run_id,
         )
         links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/informe?token={quote(report_token)}">Ver informe</a>')
     primary_action = {
@@ -209,9 +211,15 @@ def _render(case):
         "ADVISOR_REVIEW": actions.ADVISOR_ACTION,
     }.get(case.cta_type)
     if primary_action == actions.ACCEPT_PRICE_ACTION:
-        price_token = actions.issue_test_link_token(property_code=case.property_code, action=actions.ACCEPT_PRICE_ACTION)
+        price_token = actions.issue_test_link_token(
+            property_code=case.property_code, action=actions.ACCEPT_PRICE_ACTION,
+            campaign_id=case.campaign_id, qa_run_id=case.qa_run_id,
+        )
         links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token={quote(price_token)}">Precio</a>')
-    advisor_token = actions.issue_test_link_token(property_code=case.property_code, action=actions.ADVISOR_ACTION)
+    advisor_token = actions.issue_test_link_token(
+        property_code=case.property_code, action=actions.ADVISOR_ACTION,
+        campaign_id=case.campaign_id, qa_run_id=case.qa_run_id,
+    )
     links.append(f'<a href="https://procasa-chatbot-yr8d.onrender.com/campana/test-accion?token={quote(advisor_token)}">Ejecutivo</a>')
     return {
         "subject": "Seguimiento comercial PROCASA",
@@ -1347,11 +1355,30 @@ def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     assert "Bcc:" not in raw_message
     assert OWNER_EMAIL not in raw_message
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["actual_recipient_email"] == sender.TEST_RECIPIENT
+    ledger_row = db.docs[sender.TEST_LEDGER_COLLECTION][0]
+    assert ledger_row["campaign_id"].startswith("owner_price_campaign_qa_")
+    assert ledger_row["campaign_id"] != sender.TEST_CAMPAIGN_ID
+    assert ledger_row["test_run_id"].startswith("qa_run_")
+    assert result[0]["campaign_id"] == ledger_row["campaign_id"]
+    assert result[0]["qa_run_id"] == ledger_row["test_run_id"]
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["intended_owner_email"] == OWNER_EMAIL
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["delivery_status"] == "test_sent"
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["smtp_accepted"] is True
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["rfc_message_id"] == result[0]["rfc_message_id"]
     assert db.docs[sender.TEST_LEDGER_COLLECTION][0]["recipient"] == sender.TEST_RECIPIENT
+
+
+def test_prepared_test_email_links_match_new_qa_campaign_and_run():
+    campaign_id = "owner_price_campaign_qa_20260929T120000_a1b2c3d4e5f6"
+    qa_run_id = "qa_run_20260929T120000_a1b2c3d4e5f6"
+    prepared = sender.prepare_test_messages(
+        [_case("A")], render_case=_render, campaign_id=campaign_id, qa_run_id=qa_run_id,
+    )
+    action_tokens = re.findall(r"/campana/test-accion\?token=([A-Za-z0-9._-]+)", prepared[0].html)
+    assert action_tokens
+    claims = [test_mode.verify_campaign_test_token(token) for token in action_tokens]
+    assert all(claim and claim["campaign_id"] == campaign_id for claim in claims)
+    assert all(claim and claim["qa_run_id"] == qa_run_id for claim in claims)
 
 
 def test_targeted_single_qa_accepts_only_fixed_none_cases():
@@ -1525,7 +1552,10 @@ def test_normal_owner_qa_duplicate_guard_still_blocks_existing_ledger_row(monkey
         "delivery_status": "test_sent",
     }]
     with pytest.raises(sender.TestSenderError, match="test_campaign_case_already_registered"):
-        sender.send_test_messages([_case("A")], render_case=_render, db=db, smtp_factory=FakeSMTP)
+        sender.send_test_messages(
+            [_case("A")], render_case=_render, db=db, smtp_factory=FakeSMTP,
+            campaign_id=sender.TEST_CAMPAIGN_ID, qa_run_id=sender.TEST_RUN_ID,
+        )
     assert FakeSMTP.instances == []
 
 
@@ -1587,7 +1617,7 @@ def test_test_ledger_id_is_deterministic_and_concurrent_duplicate_aborts_before_
             return original_collection.find_one(query, projection)
 
         def update_one(self, query, update, upsert=False):
-            assert query == {"_id": f"{actions.TEST_CAMPAIGN_ID}:5641"}
+            assert query["_id"].endswith(":5641")
             return SimpleNamespace(matched_count=1, modified_count=0, upserted_id=None)
 
     race_collection = ConcurrentInsertCollection()
@@ -1631,16 +1661,17 @@ def _action_db(code="16521", *, cta_type="PRICE_AUTHORIZATION", evidence_segment
     return db
 
 
-def _action_token(code="16521", action=actions.ACCEPT_PRICE_ACTION, *, recipient=actions.TEST_RECIPIENT, document_type=None):
+def _action_token(code="16521", action=actions.ACCEPT_PRICE_ACTION, *, recipient=actions.TEST_RECIPIENT, document_type=None, campaign_id=actions.TEST_CAMPAIGN_ID, qa_run_id=None):
     from campanas.test_mode import issue_test_token
     return issue_test_token(
-        campaign_id=actions.TEST_CAMPAIGN_ID,
+        campaign_id=campaign_id,
         property_code=code,
         action=action,
         secret=SECRET,
         expires_at=2_000_000_000,
         recipient=recipient,
         document_type=document_type,
+        qa_run_id=qa_run_id,
     )
 
 
@@ -1771,6 +1802,43 @@ def test_accept_price_http_get_and_post_render_confirmation_and_persist_events(m
     assert row["response_events"][-1]["property_code"] == "5641"
     price_after = db.docs[actions.PROPERTY_COLLECTION][0]["tipo_operacion"]["precio_venta"]
     assert price_before == price_after
+
+
+def test_fresh_qa_campaign_ignores_old_authorization_without_mutating_history(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    campaign_id = "owner_price_campaign_qa_20260929T120000_a1b2c3d4e5f6"
+    qa_run_id = "qa_run_20260929T120000_a1b2c3d4e5f6"
+    db = _action_db(code="5641")
+    fresh = dict(
+        _test_ledger(code="5641"), campaign_id=campaign_id, test_run_id=qa_run_id,
+        recommended_adjustment_pct=6, gradual_adjustment_pct=5, gradual_price=4750.0,
+    )
+    historical = dict(
+        _test_ledger(code="5641"),
+        owner_response={"status": "PRICE_AUTHORIZED", "authorized_value": 4700.0},
+        response_events=[{"event_id": "historic-auth", "event": "price_authorized"}],
+        response_event_ids=["historic-auth"],
+    )
+    db.docs[actions.LEDGER_COLLECTION] = [historical, fresh]
+    token = _action_token("5641", campaign_id=campaign_id, qa_run_id=qa_run_id)
+
+    response = actions.handle_test_action(token, db=db)
+
+    page = response.body.decode("utf-8")
+    assert response.status_code == 200
+    assert "Confirma tu ajuste de precio" in page
+    assert "AUTORIZAR AJUSTE RECOMENDADO" in page
+    assert "AUTORIZAR AJUSTE GRADUAL" in page
+    assert "Tu autorización ya fue registrada" not in page
+    assert [event["event"] for event in fresh["response_events"]] == [
+        "cta_clicked", "price_confirm_page_opened", "confirmation_page_opened",
+    ]
+    assert all(event["campaign_id"] == campaign_id for event in fresh["response_events"])
+    assert all(event["qa_run_id"] == qa_run_id for event in fresh["response_events"])
+    assert all(event["event"] != "price_authorized" for event in fresh["response_events"])
+    assert historical["owner_response"]["status"] == "PRICE_AUTHORIZED"
+    assert historical["response_events"] == [{"event_id": "historic-auth", "event": "price_authorized"}]
 
 
 def test_authorized_status_stays_sticky_after_reopening_report_and_contacting_advisor(monkeypatch):

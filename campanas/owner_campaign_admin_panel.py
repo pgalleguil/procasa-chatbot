@@ -487,7 +487,7 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
                 _send_prepared_test_messages,
                 prepared,
                 db=database,
-                allow_changed_qa_resend=property_code in TARGETED_QA_CASES,
+                allow_changed_qa_resend=False,
             )
         except Exception as exc:
             raise HTTPException(status_code=409, detail="El caso QA seleccionado no se envió; revise el estado del registro QA") from exc
@@ -503,6 +503,7 @@ async def handle_targeted_single_qa_send(request: Any) -> HTMLResponse:
             "<title>QA PROCASA completado</title><body><main><h1>QA individual enviado</h1>"
             f"<p>QA_SELECTED_PROPERTY={html.escape(property_code)} · QA_SKIPPED_5641={'NO' if property_code == '5641' else 'YES'}.</p>"
             f"<p>TEST_EMAIL_SENT=YES · TEST_RECIPIENT={html.escape(TEST_RECIPIENT)} · RFC_MESSAGE_ID={html.escape(sent['rfc_message_id'])}</p>"
+            f"<p>QA_CAMPAIGN_ID={html.escape(sent['campaign_id'])} · QA_RUN_ID={html.escape(sent['qa_run_id'])}</p>"
             f"<p>FINAL_HTML_SHA256={hashes[0]} · PREVIEW_HTML_SHA256={hashes[1]} · SMTP_HTML_SHA256={hashes[2]} · MIME_DECODED_HTML_SHA256={hashes[3]}</p>"
             f"<p>HTML_PARITY=PASS · FINAL_HTML_BYTES={sent['html_bytes']} · GMAIL_CLIPPING_SAFE={'YES' if int(sent['html_bytes']) < 95 * 1024 else 'NO'}</p>"
             "<p>EMAILS_SENT=1 · OWNER_EMAILS_SENT=0 · LIVE_PRICE_CHANGED=NO · NEW_MONGO_COLLECTIONS=0.</p></main></body></html>",
@@ -617,8 +618,6 @@ async def handle_panel_run(request: Any) -> HTMLResponse:
         from analytics.owner_campaign_test_sender import TestCampaignCLIError, run_test_batch
 
         database = await asyncio.to_thread(_mongo_db_and_ping)
-        if await asyncio.to_thread(_test_run_registered, database):
-            raise HTTPException(status_code=409, detail="El lote de prueba ya fue registrado; no se repetirá")
         previews = await asyncio.to_thread(build_rendered_test_previews, database)
         all_pass, _case_results = _all_preview_checks(previews)
         if not all_pass:

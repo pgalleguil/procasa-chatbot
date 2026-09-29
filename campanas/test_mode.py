@@ -19,6 +19,10 @@ QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873", "16521"})
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
+QA_CAMPAIGN_PREFIX = "owner_price_campaign_qa_"
+QA_CAMPAIGN_ID_RE = re.compile(r"^owner_price_campaign_(?:test_20260923|qa_[A-Za-z0-9_-]{12,80})$")
+QA_RUN_ID_RE = re.compile(r"^qa_run_[A-Za-z0-9_-]{12,80}$")
+LEGACY_TEST_RUN_ID = "owner_campaign_email_AE_20260924_v1"
 ACCEPT_PRICE_ACTION = "aceptar_rebaja"
 ADVISOR_ACTION = "contactar_ejecutivo"
 REPORT_ACTION = "ver_informe"
@@ -44,11 +48,17 @@ def test_mode_enabled() -> bool:
 def issue_test_token(
     *, campaign_id: str, property_code: str, action: str, secret: str,
     expires_at: int, recipient: str = TEST_RECIPIENT, document_type: str | None = None,
+    qa_run_id: str | None = None,
 ) -> str:
-    if campaign_id != TEST_CAMPAIGN_ID or not campaign_id.startswith(TEST_CAMPAIGN_PREFIX):
+    if not isinstance(campaign_id, str) or not QA_CAMPAIGN_ID_RE.fullmatch(campaign_id):
         raise ValueError("Test campaign id must match the isolated E2E campaign")
     if recipient.strip().casefold() != TEST_RECIPIENT:
         raise ValueError("Test tokens may only target the configured test recipient")
+    if qa_run_id is not None and (
+        not isinstance(qa_run_id, str)
+        or (qa_run_id != LEGACY_TEST_RUN_ID and not QA_RUN_ID_RE.fullmatch(qa_run_id))
+    ):
+        raise ValueError("Invalid QA run id")
     property_code = str(property_code or "").strip()
     if (
         action not in TEST_ACTIONS
@@ -71,6 +81,8 @@ def issue_test_token(
         "exp": int(expires_at),
         "test_mode": True,
     }
+    if qa_run_id:
+        payload["qa_run_id"] = qa_run_id
     if action == REPORT_ACTION:
         payload["document_type"] = normalized_document_type
     encoded = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
@@ -81,8 +93,10 @@ def issue_test_token(
 def issue_campaign_test_token(
     *, property_code: str, action: str, document_type: str | None = None,
     expires_in_seconds: int = 86400, now_epoch: int | None = None,
+    campaign_id: str = TEST_CAMPAIGN_ID,
+    qa_run_id: str | None = None,
 ) -> str:
-    """Issue a one-day token using the fixed QA campaign and recipient contract."""
+    """Issue a one-day token using a safe QA campaign and fixed recipient."""
     if not test_mode_enabled():
         raise ValueError("Test mode is disabled")
     if not isinstance(expires_in_seconds, int) or not 60 <= expires_in_seconds <= 86400:
@@ -90,13 +104,14 @@ def issue_campaign_test_token(
     secret = os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", "")
     expires_at = int(now_epoch if now_epoch is not None else time.time()) + expires_in_seconds
     return issue_test_token(
-        campaign_id=TEST_CAMPAIGN_ID,
+        campaign_id=campaign_id,
         property_code=property_code,
         action=action,
         secret=secret,
         expires_at=expires_at,
         recipient=TEST_RECIPIENT,
         document_type=document_type,
+        qa_run_id=qa_run_id,
     )
 
 
@@ -115,6 +130,7 @@ def decode_test_token(
         now = int(now_epoch if now_epoch is not None else datetime.now(timezone.utc).timestamp())
         document_type = str(payload.get("document_type") or "").strip().upper()
         campaign_id = str(payload.get("campaign_id") or "")
+        qa_run_id = payload.get("qa_run_id")
         property_code = str(payload.get("property_code") or "")
         action = str(payload.get("action") or "")
         if (
@@ -122,14 +138,20 @@ def decode_test_token(
             or payload.get("test_mode") is not True
             or payload.get("recipient") != TEST_RECIPIENT
             or payload.get("qa_recipient") != TEST_RECIPIENT
-            or campaign_id != TEST_CAMPAIGN_ID
-            or not campaign_id.startswith(TEST_CAMPAIGN_PREFIX)
+            or not QA_CAMPAIGN_ID_RE.fullmatch(campaign_id)
             or property_code not in QA_PROPERTY_ALLOWLIST
             or not PROPERTY_CODE_RE.fullmatch(property_code)
             or action not in TEST_ACTIONS
             or (action == REPORT_ACTION and document_type not in REPORT_DOCUMENT_TYPES)
             or (action != REPORT_ACTION and document_type)
             or int(payload.get("exp", 0)) <= now
+            or (
+                qa_run_id is not None
+                and (
+                    not isinstance(qa_run_id, str)
+                    or (qa_run_id != LEGACY_TEST_RUN_ID and not QA_RUN_ID_RE.fullmatch(qa_run_id))
+                )
+            )
         ):
             return None
         payload["document_type"] = document_type if document_type else None
@@ -416,6 +438,8 @@ def persist_test_event(
         "test_recipient": TEST_RECIPIENT,
         "recipient_email": TEST_RECIPIENT,
     }
+    if claims.get("qa_run_id"):
+        common["qa_run_id"] = claims["qa_run_id"]
     events = [{**common, **event, "event_type": event.get("event")} for event in desired_events]
     update: dict[str, Any] = {
         "$set": {

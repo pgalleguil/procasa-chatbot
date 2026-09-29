@@ -36,6 +36,7 @@ from campanas.owner_campaign_test_sender import (
     PreparedTestMessage,
     prepare_test_messages,
     send_test_messages,
+    new_qa_run_identity,
 )
 
 
@@ -198,7 +199,9 @@ def run_test_batch(
         raise TestCampaignCLIError("mass_send_must_remain_disabled")
 
     database = _database(db)
-    _validate_phase(database, selected)
+    test_run_id, campaign_id = new_qa_run_identity()
+    if database[TEST_LEDGER_COLLECTION].find_one({"campaign_id": campaign_id}):
+        raise TestCampaignCLIError("qa_campaign_id_already_registered")
     delivery_before: int | None = None
     delivery_before_error: str | None = None
     try:
@@ -216,13 +219,15 @@ def run_test_batch(
         raise TestCampaignCLIError(f"live_case_build_failed:{exc}") from exc
     if tuple(case.case_id for case in live_cases) != selected:
         raise TestCampaignCLIError("live_case_batch_incomplete")
-    prepared = prepare_test_messages(live_cases)
+    prepared = prepare_test_messages(
+        live_cases, campaign_id=campaign_id, qa_run_id=test_run_id,
+    )
     if tuple(item.case.case_id for item in prepared) != selected:
         raise TestCampaignCLIError("rendered_case_batch_incomplete")
 
     common = {
-        "campaign_id": TEST_CAMPAIGN_ID,
-        "test_run_id": TEST_RUN_ID,
+        "campaign_id": campaign_id,
+        "test_run_id": test_run_id,
         "test_mode": True,
         "actual_recipient_email": TEST_RECIPIENT,
         "cc": [],
@@ -245,7 +250,9 @@ def run_test_batch(
     if dry_run:
         return {**common, "status": "preflight_passed_no_send", "test_emails_sent": 0}
 
-    results = send_test_messages(live_cases, db=database)
+    results = send_test_messages(
+        live_cases, db=database, campaign_id=campaign_id, qa_run_id=test_run_id,
+    )
     if len(results) != len(selected) or any(
         row.get("status") != "sent_to_test_recipient"
         or row.get("smtp_accepted") is not True

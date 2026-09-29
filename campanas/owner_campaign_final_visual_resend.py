@@ -264,7 +264,11 @@ def resend_existing_test_case(
     db: Any = None,
     smtp_factory: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
-    """Dry-run or send exactly one fixed final visual QA email for existing case A."""
+    """Reject the legacy resend path; use the fresh-run QA sender instead."""
+    raise TestSenderError("qa_campaign_reuse_disabled")
+
+    # Legacy implementation retained temporarily for audit history. The guard
+    # above prevents it from reusing a campaign that may already have actions.
     if not test_mode_enabled():
         raise TestSenderError("test_mode_disabled")
     if not Config.GMAIL_USER or (not dry_run and not Config.GMAIL_PASSWORD):
@@ -281,7 +285,12 @@ def resend_existing_test_case(
     if len(prepared) != 1 or prepared[0].report_token is None or prepared[0].action_token is None:
         raise TestSenderError("final_resend_signed_links_missing")
     item = prepared[0]
-    advisor_review_token = issue_campaign_test_token(property_code=PROPERTY_CODE, action=ADVISOR_ACTION)
+    advisor_review_token = issue_campaign_test_token(
+        property_code=PROPERTY_CODE,
+        action=ADVISOR_ACTION,
+        campaign_id=item.case.campaign_id,
+        qa_run_id=item.case.qa_run_id,
+    )
     advisor_review_url = f"{SERVICE_BASE_URL}/campana/test-accion?token={quote(advisor_review_token, safe='')}"
     final_html = _final_visual_html(item, advisor_review_url=advisor_review_url)
     final_hash = _sha256(final_html)

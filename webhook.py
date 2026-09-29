@@ -1720,7 +1720,7 @@ async def api_owner_campaign_test_execute(
         raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
 
 
-@app.post("/internal/owner-campaign-signing-self-test", include_in_schema=False)
+@app.get("/internal/owner-campaign-signing-self-test", include_in_schema=False)
 async def api_owner_campaign_signing_self_test(request: Request):
     """Admin-authenticated, read-only production token and pilot link check."""
     user = await get_current_user_doc(request)
@@ -1728,19 +1728,8 @@ async def api_owner_campaign_signing_self_test(request: Request):
         raise HTTPException(status_code=401, detail="No autenticado")
     if str(user.get("rol") or "").strip().casefold() != "admin":
         raise HTTPException(status_code=403, detail="Permiso de administrador requerido")
-
-    origin = str(request.headers.get("origin") or "").strip()
-    if not origin or urlsplit(origin).netloc.casefold() != request.url.netloc.casefold():
-        raise HTTPException(status_code=403, detail="Origen no permitido")
-    if str(request.headers.get("content-type") or "").split(";", 1)[0].strip().casefold() != "application/json":
-        raise HTTPException(status_code=415, detail="Formato no permitido")
-    body = await request.body()
-    if len(body) > 4096:
-        raise HTTPException(status_code=413, detail="Solicitud inválida")
-    try:
-        payload = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise HTTPException(status_code=400, detail="Solicitud inválida") from None
+    if request.query_params:
+        raise HTTPException(status_code=400, detail="No se admiten parámetros en la URL")
 
     from campanas.owner_campaign_live_config import PRODUCTION_CAMPAIGN_ID
     from campanas.owner_campaign_live_events import (
@@ -1749,18 +1738,10 @@ async def api_owner_campaign_signing_self_test(request: Request):
         verify_live_token,
     )
 
-    expected_fields = {"campaign_id", "property_codes"}
-    codes = payload.get("property_codes") if isinstance(payload, dict) else None
-    if (
-        not isinstance(payload, dict)
-        or set(payload) != expected_fields
-        or payload.get("campaign_id") != PRODUCTION_CAMPAIGN_ID
-        or not isinstance(codes, list)
-        or len(codes) != 10
-        or any(not str(code).strip().isdigit() for code in codes)
-        or len({str(code).strip() for code in codes}) != 10
-    ):
-        raise HTTPException(status_code=400, detail="Piloto inválido")
+    # Fixed pilot scope; the GET accepts no owner-controlled or URL-supplied data.
+    codes = ("16469", "16479", "16486", "16492", "16520", "16521", "16523", "16527", "16533", "16548")
+    if not PRODUCTION_CAMPAIGN_ID or "test" in PRODUCTION_CAMPAIGN_ID.casefold():
+        raise HTTPException(status_code=503, detail="Campaña productiva no configurada")
 
     self_test = production_signing_self_test()
     signed_ok = bool(self_test["configured"] and self_test["sign_test"])
@@ -1828,7 +1809,10 @@ async def api_owner_campaign_signing_self_test(request: Request):
         "pilot_all_token_signed": bool(pilot_signed),
         "pilot_all_token_verified": bool(pilot_verified),
     }
-    return JSONResponse(result, headers={"Cache-Control": "private, no-store"})
+    return JSONResponse(result, headers={
+        "Cache-Control": "private, no-store",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+    })
 
 
 # ========================= 3. LOGIN CON GOOGLE =========================

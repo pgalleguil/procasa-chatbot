@@ -1720,7 +1720,7 @@ async def api_owner_campaign_test_execute(
         raise HTTPException(status_code=503, detail="runner_failed_closed") from exc
 
 
-@app.get("/internal/owner-campaign-signing-self-test", include_in_schema=False)
+@app.get("/owner-campaign-signing-self-test", include_in_schema=False)
 async def api_owner_campaign_signing_self_test(request: Request):
     """Admin-authenticated, read-only production token and pilot link check."""
     user = await get_current_user_doc(request)

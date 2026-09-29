@@ -897,7 +897,7 @@ def _render_portfolio_case(case: OwnerCampaignTestCase) -> Mapping[str, Any]:
         cta = dict(item.get("cta") or {})
         label = str(cta.get("primary_label") or "").casefold()
         if property_case.cta_type == "PRICE_AUTHORIZATION":
-            if "aceptar nuevo valor" not in label:
+            if "revisar / confirmar ajuste" not in label:
                 raise TestSenderError("approved_price_cta_label_missing")
             target = property_case.display_recommended_price
             if not _finite_positive(target) or float(target) >= property_case.current_price:
@@ -1040,7 +1040,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     links = build_test_links(case)
     cta = dict(property_model.get("cta") or {})
     label = str(cta.get("primary_label") or "").casefold()
-    if case.cta_type == "PRICE_AUTHORIZATION" and "aceptar nuevo valor" not in label:
+    if case.cta_type == "PRICE_AUTHORIZATION" and "revisar / confirmar ajuste" not in label:
         raise TestSenderError("approved_price_cta_label_missing")
     if case.cta_type == "ADVISOR_REVIEW" and ("revisar" not in label or "asesor" not in label):
         raise TestSenderError("approved_advisor_cta_label_missing")

@@ -35,7 +35,13 @@ QA_EVIDENCE_PATH = Path(__file__).resolve().parents[1] / "analytics" / "fixtures
 PROPERTY_CODES = {"A": "5641", "B": "16521", "C": "16486", "D": "16527"}
 # One-shot, fixed-code QA cases for the final single-property gates. These
 # identifiers are internal contracts, never caller-supplied property codes.
-TARGETED_SINGLE_CASE_CODES = {"SALE_NONE_6873": "6873", "RENT_NONE_6132": "6132"}
+TARGETED_SINGLE_CASE_CODES = {
+    "SALE_NONE_6873": "6873",
+    "RENT_NONE_6132": "6132",
+    "SALE_REPORT_16469": "16469",
+    "RENT_REPORT_16527": "16527",
+    "SALE_NONE_16492": "16492",
+}
 EXPLICITLY_EXCLUDED_CODES = frozenset({"6754"})
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 PLACEHOLDER_EMAIL_LOCALPARTS = frozenset({
@@ -1623,19 +1629,24 @@ def build_owner_campaign_test_cases_live(
             try:
                 segment = _campaign_segment(master)
                 if segment is None:
-                    # These fixed no-document QA cases validate operation copy,
-                    # contact resolution, and document omission. When the live
-                    # record has no campaign segment, render the existing
-                    # advisor-review QA scenario; never infer or persist a
-                    # production evidence segment or price authorization.
+                    # Targeted QA builds must not write an inferred campaign
+                    # segment to the source property. The render remains an
+                    # isolated test case and is validated before any email send.
                     segment = "TEST_ADVISOR_REVIEW"
                 case = _build_case(
                     db, master, case_id, segment=segment,
                     lead_percentiles_by_operation=lead_percentiles_by_operation,
                     now=now or datetime.now(timezone.utc),
                 )
-                expected_operation = VENTA if case_id == "SALE_NONE_6873" else ARRIENDO
-                if case.operation != expected_operation or case.document_type != "NONE":
+                expected_operation = ARRIENDO if case_id in {"RENT_NONE_6132", "RENT_REPORT_16527"} else VENTA
+                expected_document = {
+                    "SALE_NONE_6873": "NONE",
+                    "RENT_NONE_6132": "NONE",
+                    "SALE_REPORT_16469": "COMMUNAL_MARKET_REPORT",
+                    "RENT_REPORT_16527": "COMMUNAL_MARKET_REPORT",
+                    "SALE_NONE_16492": "NONE",
+                }[case_id]
+                if case.operation != expected_operation or case.document_type != expected_document:
                     raise LiveTestCaseBuildError("targeted_qa_live_contract_mismatch")
                 built.append(case)
             except LiveTestCaseBuildError as exc:

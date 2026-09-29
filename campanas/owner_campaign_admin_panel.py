@@ -31,6 +31,9 @@ TARGETED_QA_CASES = {
     "16486": "C",
     "6873": "SALE_NONE_6873",
     "6132": "RENT_NONE_6132",
+    "16469": "SALE_REPORT_16469",
+    "16527": "RENT_REPORT_16527",
+    "16492": "SALE_NONE_16492",
 }
 _SINGLE_QA_PREVIEWS: dict[str, tuple[float, str, Any]] = {}
 _SINGLE_QA_PREVIEWS_LOCK = threading.Lock()
@@ -360,7 +363,7 @@ def _validate_same_origin_post(request: Any) -> None:
 
 
 def _targeted_single_preflight(item: Any) -> dict[str, Any]:
-    """Check one of the two fixed no-document previews without exposing links."""
+    """Check one allowlisted single-property preview without exposing links."""
     case = item.case
     source_checks = dict((case.render_context or {}).get("source_checks") or {})
     visible = html.unescape(re.sub(r"<[^>]+>", " ", item.html))

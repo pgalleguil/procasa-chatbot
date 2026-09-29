@@ -40,8 +40,11 @@ MAX_TEST_EMAILS = 5
 MAX_TEST_HTML_BYTES = 95 * 1024
 TEST_CASE_IDS = frozenset({"A", "B", "C", "D", "E"})
 TARGETED_SINGLE_TEST_CONTRACTS = {
-    "SALE_NONE_6873": ("6873", "VENTA"),
-    "RENT_NONE_6132": ("6132", "ARRIENDO"),
+    "SALE_NONE_6873": ("6873", "VENTA", "NONE"),
+    "RENT_NONE_6132": ("6132", "ARRIENDO", "NONE"),
+    "SALE_REPORT_16469": ("16469", "VENTA", "COMMUNAL_MARKET_REPORT"),
+    "RENT_REPORT_16527": ("16527", "ARRIENDO", "COMMUNAL_MARKET_REPORT"),
+    "SALE_NONE_16492": ("16492", "VENTA", "NONE"),
 }
 TARGETED_QA_RESEND_PROPERTY_CODES = frozenset({"5641", "6132", "16486", "6873", "16521"})
 MISSING_HISTORICAL_HASH_OVERRIDE_CODES = frozenset({"16486"})
@@ -258,11 +261,11 @@ def validate_explicit_cases(cases: Sequence[OwnerCampaignTestCase]) -> list[Owne
         elif case.case_id == "E":
             continue
         elif case.case_id in TARGETED_SINGLE_TEST_CONTRACTS:
-            property_code, operation = TARGETED_SINGLE_TEST_CONTRACTS[case.case_id]
+            property_code, operation, document_type = TARGETED_SINGLE_TEST_CONTRACTS[case.case_id]
             if (
                 case.property_code != property_code
                 or case.operation != operation
-                or case.document_type != "NONE"
+                or case.document_type != document_type
                 or case.evidence_segment != "PRICE_AUTHORIZATION_READY"
                 or case.cta_type != "PRICE_AUTHORIZATION"
                 or not 5 <= _reduction_pct(case) <= 10

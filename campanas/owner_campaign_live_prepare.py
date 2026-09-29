@@ -27,8 +27,20 @@ from campanas import owner_campaign_test_runtime as runtime
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = BASE_DIR / "reports" / "owner_campaign_sucre_wave1_20260928_manifest.csv"
+MANIFEST_PATH = Path(os.getenv(
+    "OWNER_CAMPAIGN_MANIFEST_PATH",
+    str(BASE_DIR / "reports" / "owner_campaign_sucre_wave1_20260928_manifest.csv"),
+))
 MANIFEST_SIZE = 25
+DEFAULT_BATCH_ID = os.getenv("OWNER_CAMPAIGN_BATCH_ID", "wave1_full_20260928").strip()
+LIVE_MANIFEST_COLUMNS = [
+    "batch_id", "property_code", "operation_resolved", "owner_email", "owner_name",
+    "boss_cc", "executive_name", "executive_email", "leads_90d",
+    "comparables_available", "valuation_available", "document_type",
+    "recommendation_reason", "document_conflict", "recommended_adjustment_pct",
+    "current_price", "recommended_price", "current_price_clp", "recommended_price_clp",
+    "gradual_adjustment_pct", "gradual_price", "gradual_price_clp", "campaign_id", "send_status",
+]
 
 
 def _owner_name(master: dict[str, Any]) -> str:
@@ -71,7 +83,11 @@ def _row_for(db: Any, master: dict[str, Any], lead_percentiles: dict[str, Any], 
     if not runtime._valid_owner_email(BOSS_CC):
         raise runtime.LiveTestCaseBuildError("boss_cc_invalid")
 
-    operation = runtime.resolve_property_operation(master)
+    raw_operation = runtime.resolve_property_operation(master)
+    operation = (
+        runtime.resolve_property_operation(master, requested_operation=runtime.VENTA)
+        if raw_operation == runtime.VENTA_ARRIENDO else raw_operation
+    )
     if operation not in {runtime.VENTA, runtime.ARRIENDO}:
         raise runtime.LiveTestCaseBuildError("operation_unresolved")
     segment = runtime._campaign_segment(master) or "INSUFFICIENT_EVIDENCE"
@@ -81,6 +97,7 @@ def _row_for(db: Any, master: dict[str, Any], lead_percentiles: dict[str, Any], 
         "LIVE",
         segment=segment,
         lead_percentiles_by_operation=lead_percentiles,
+        requested_operation=operation,
         resolve_image=False,
         now=now,
     )
@@ -135,6 +152,7 @@ def _row_for(db: Any, master: dict[str, Any], lead_percentiles: dict[str, Any], 
         "gradual_price": (model.get("gradual_price_alternative") or {}).get("price"),
         "gradual_price_clp": (model.get("gradual_price_alternative") or {}).get("price_clp"),
         "campaign_id": PRODUCTION_CAMPAIGN_ID,
+        "batch_id": DEFAULT_BATCH_ID,
         "send_status": "READY",
         "_model": model,
         "_master": master,
@@ -235,16 +253,10 @@ def prepare(*, write_ledger: bool = True) -> dict[str, Any]:
                 }}, upsert=True)
 
         MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-        columns = [
-            "property_code", "operation_resolved", "owner_email", "owner_name", "boss_cc",
-            "executive_name", "executive_email", "leads_90d", "comparables_available",
-            "valuation_available", "document_type", "recommendation_reason",
-            "document_conflict", "recommended_adjustment_pct", "current_price", "recommended_price", "campaign_id", "send_status",
-        ]
         with MANIFEST_PATH.open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer = csv.DictWriter(handle, fieldnames=LIVE_MANIFEST_COLUMNS)
             writer.writeheader()
-            writer.writerows({key: row.get(key) for key in columns} for row in batch)
+            writer.writerows({key: row.get(key) for key in LIVE_MANIFEST_COLUMNS} for row in batch)
 
         for row in batch:
             # The render check uses the final template and real property model;
@@ -266,6 +278,110 @@ def prepare(*, write_ledger: bool = True) -> dict[str, Any]:
         }
     finally:
         client.close()
+
+
+def prepare_manifest_from_selection(
+    selection_path: str | Path,
+    output_path: str | Path,
+    *,
+    db: Any | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Build a complete send manifest from an explicit code/batch selection.
+
+    The selection file is a separate operator-owned artifact. This helper is
+    generic and contains no pilot property codes; it performs read-only Mongo
+    access and writes only the requested CSV.
+    """
+    from contextlib import nullcontext
+
+    from campanas.owner_campaign_live_sender import normalize_property_code
+
+    selection_path = Path(selection_path)
+    output_path = Path(output_path)
+    if not PRODUCTION_CAMPAIGN_ID or "test" in PRODUCTION_CAMPAIGN_ID.casefold():
+        raise RuntimeError("Production campaign id is empty or marked as test")
+    with selection_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        selected_rows = list(csv.DictReader(handle))
+    if not selected_rows:
+        raise RuntimeError("Selection manifest is empty")
+    batch_ids = {str(row.get("batch_id") or "").strip() for row in selected_rows}
+    campaign_ids = {str(row.get("campaign_id") or "").strip() for row in selected_rows}
+    codes = [normalize_property_code(row.get("property_code")) for row in selected_rows]
+    if "" in batch_ids or len(batch_ids) != 1 or campaign_ids != {PRODUCTION_CAMPAIGN_ID}:
+        raise RuntimeError("Selection manifest campaign or batch is inconsistent")
+    if any(not code for code in codes) or len(codes) != len(set(codes)):
+        raise RuntimeError("Selection manifest contains invalid or duplicate property codes")
+    batch_id = next(iter(batch_ids))
+
+    owned_client = None
+    if db is None:
+        if not Config.MONGO_URI:
+            raise RuntimeError("MONGO_URI is unavailable")
+        owned_client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=15000)
+        db = owned_client[Config.DB_NAME]
+    close_client = owned_client.close if owned_client is not None else nullcontext
+    try:
+        now = now or datetime.now(timezone.utc)
+        query = {
+            "estado.oficina": runtime.CAMPAIGN_OFFICE,
+            "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
+            "disponible_prop360": True,
+        }
+        properties = [
+            item for item in db[runtime.PROPERTY_COLLECTION].find(query)
+            if runtime._is_sucre(item) and runtime._active_available(item)
+        ]
+        by_code: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        by_owner: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for master in properties:
+            code = normalize_property_code(master.get("codigo"))
+            if code:
+                by_code[code].append(master)
+            email = runtime._email_from_property(master, required=False)
+            if email:
+                by_owner[email].append(master)
+        if any(len(by_code.get(code, [])) != 1 for code in codes):
+            raise RuntimeError("Selection includes missing or duplicate active PROCASA SUCRE properties")
+
+        percentile_data = runtime.calculate_owner_campaign_lead_percentiles(db, now=now)
+        prepared = []
+        banned_emails = {str(email).strip().casefold() for email in EXCLUDED_OWNER_EMAILS}
+        banned_codes = {
+            normalize_property_code(code)
+            for code in (MANUAL_CAMPAIGN_EXCLUDED_CODES | MANUAL_RECENT_EXCLUSION_CODES)
+        }
+        for code in codes:
+            master = by_code[code][0]
+            owner_email = runtime._email_from_property(master)
+            if code in banned_codes or owner_email.casefold() in banned_emails:
+                raise RuntimeError(f"Selection contains an excluded property: {code}")
+            if len(by_owner.get(owner_email, [])) != 1:
+                raise RuntimeError(f"Selection contains a multiproperty owner: {code}")
+            row = _row_for(db, master, percentile_data, now)
+            if normalize_property_code(row["property_code"]) != code:
+                raise RuntimeError("Property identity changed during preparation")
+            row["batch_id"] = batch_id
+            prepared.append(row)
+
+        owner_emails = [str(row["owner_email"]).strip().casefold() for row in prepared]
+        if len(owner_emails) != len(set(owner_emails)):
+            raise RuntimeError("Selection contains duplicate owner recipients")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=LIVE_MANIFEST_COLUMNS)
+            writer.writeheader()
+            writer.writerows({key: row.get(key) for key in LIVE_MANIFEST_COLUMNS} for row in prepared)
+        return {
+            "manifest_path": str(output_path),
+            "batch_id": batch_id,
+            "campaign_id": PRODUCTION_CAMPAIGN_ID,
+            "manifest_count": len(prepared),
+            "property_codes": [row["property_code"] for row in prepared],
+        }
+    finally:
+        if owned_client is not None:
+            close_client()
 
 
 def _render_one(row: dict[str, Any]) -> str:

@@ -1250,6 +1250,7 @@ def _build_case(
     qa_segments: Mapping[str, Any] | None = None,
     qa_manifest: Mapping[str, Any] | None = None,
     lead_percentiles_by_operation: Mapping[str, Mapping[str, Any]] | None = None,
+    requested_operation: str | None = None,
     resolve_image: bool = True,
     now: datetime,
 ) -> OwnerCampaignTestCase:
@@ -1267,7 +1268,7 @@ def _build_case(
     email = _email_from_property(master, required=case_id == "E")
     email_source = _email_source_from_property(master, required=case_id == "E")
     executive = _resolve_executive(db, master)
-    operation = resolve_property_operation(master)
+    operation = resolve_property_operation(master, requested_operation=requested_operation)
     if operation not in {VENTA, ARRIENDO}:
         raise LiveTestCaseBuildError("property_operation_unresolved")
     price_block = operation_price_block(master, requested_operation=operation)

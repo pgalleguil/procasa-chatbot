@@ -57,43 +57,6 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
     return _sign_payload(payload, secret)
 
 
-def production_signing_self_test() -> dict[str, bool]:
-    """Sign and verify an ephemeral synthetic claim without storing or returning it."""
-    secret = _secret()
-    if not secret:
-        return {"configured": False, "sign_test": False, "verify_test": False}
-
-    expires_at = int(datetime.now(timezone.utc).timestamp()) + 120
-    payload = {
-        "campaign_id": "__signing_self_test__",
-        "property_code": "__test__",
-        "action": "__test__",
-        "recipient": "self-test@example.invalid",
-        "exp": expires_at,
-        "test_mode": False,
-        "event_id": uuid4().hex,
-    }
-    try:
-        token = _sign_payload(payload, secret)
-        signed = token.startswith("p1.") and len(token.split(".")) == 3
-        verified = verify_live_token(
-            token,
-            campaign_id=payload["campaign_id"],
-            property_code=payload["property_code"],
-            recipient=payload["recipient"],
-            action=payload["action"],
-        )
-        valid = (
-            isinstance(verified, dict)
-            and verified == payload
-            and int(verified.get("exp", 0)) > int(datetime.now(timezone.utc).timestamp())
-        )
-        return {"configured": True, "sign_test": bool(signed), "verify_test": bool(valid)}
-    except Exception:
-        # The self-test is intentionally silent: no secret, token, or claim is logged.
-        return {"configured": True, "sign_test": False, "verify_test": False}
-
-
 def verify_live_token(token: str, *, campaign_id: str, property_code: str, recipient: str, action: str, now: datetime | None = None) -> dict[str, Any] | None:
     payload = decode_live_token(token, now=now)
     if payload is None:

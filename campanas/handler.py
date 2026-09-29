@@ -321,12 +321,12 @@ def _process_owner_campaign_action(
         advisor_url = action_url("contactar_ejecutivo", advisor_token)
         logo_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/") + "/static/logo.png"
 
+        from analytics.owner_campaign_email_v2 import _clp_price_label, _price_label
+
         def label(value: Any, *, clp: bool = False) -> str:
             if value is None:
                 return ""
-            amount = f"{float(value):,.0f}".replace(",", ".")
-            unit = ("CLP/mes" if monthly else "CLP") if clp else ("UF/mes" if monthly else "UF")
-            return ("$ " if clp else "") + amount + " " + unit
+            return _clp_price_label(value, operation) if clp else _price_label(value, operation)
 
         recommendation_price = label(recommended_price)
         if recommended_clp is not None:

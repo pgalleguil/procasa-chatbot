@@ -191,7 +191,7 @@ def _render(case):
     checks = {key: True for key in sender.REQUIRED_RENDER_CHECKS}
     if case.operation == "ARRIENDO":
         checks.update({
-            "rental_uf_per_month": True,
+            "rental_price_display": True,
             "rental_estimate": True,
             "rental_comparables": True,
             "sale_fields_present": False,

@@ -339,7 +339,7 @@ def _validate_rendered_case(case: OwnerCampaignTestCase, rendered: Mapping[str, 
         raise TestSenderError("intended_owner_email_leaked")
 
     if case.operation == "ARRIENDO":
-        rent_checks = {"rental_uf_per_month", "rental_comparables"}
+        rent_checks = {"rental_price_display", "rental_comparables"}
         if case.document_type == "INDIVIDUAL_APPRAISAL":
             rent_checks.add("rental_estimate")
         if checks.get("sale_fields_present") is not False or any(checks.get(key) is not True for key in rent_checks):
@@ -1102,13 +1102,24 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
         price_correct = False
     if not price_correct:
         raise TestSenderError("view_model_price_mismatch")
+    from analytics.owner_campaign_email_v2 import _price_label
+
+    canonical_current_label = _price_label(case.current_price, case.operation)
+    visible_clp_current_label = str(property_model.get("current_price_clp_label") or "")
+    if price_text not in {canonical_current_label, visible_clp_current_label}:
+        raise TestSenderError("view_model_price_formatter_mismatch")
     if case.cta_type == "PRICE_AUTHORIZATION":
-        target_match = re.search(r"([0-9][0-9.,]*)", str(property_model.get("recommended_price_label") or ""))
+        recommended_price_text = str(property_model.get("recommended_price_label") or "")
+        target_match = re.search(r"([0-9][0-9.,]*)", recommended_price_text)
         if not target_match:
             raise TestSenderError("view_model_recommended_price_missing")
         target_text = target_match.group(1).replace(".", "").replace(",", ".")
         if not math.isclose(float(target_text), float(case.display_recommended_price), rel_tol=0.001, abs_tol=0.05):
             raise TestSenderError("view_model_recommended_price_mismatch")
+        canonical_recommended_label = _price_label(case.display_recommended_price, case.operation)
+        visible_clp_recommended_label = str(property_model.get("recommended_price_clp_label") or "")
+        if recommended_price_text not in {canonical_recommended_label, visible_clp_recommended_label}:
+            raise TestSenderError("view_model_recommended_price_formatter_mismatch")
 
     links = build_test_links(case)
     cta = dict(property_model.get("cta") or {})
@@ -1138,8 +1149,19 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     text = "\n".join(text_parser.parts)
     lower_text = text.casefold()
     sale_terms = ("compradores", "comprador", "tasación", "precio de cierre", "precio final de venta", "subsidio", "publicación de venta")
+    canonical_current_label = _price_label(case.current_price, case.operation)
+    visible_clp_current_label = str(property_model.get("current_price_clp_label") or "")
+    canonical_recommended_label = _price_label(case.display_recommended_price, case.operation) if case.display_recommended_price is not None else ""
+    visible_clp_recommended_label = str(property_model.get("recommended_price_clp_label") or "")
+    recommended_price_text = str(property_model.get("recommended_price_label") or "")
     rental_checks = {
-        "rental_uf_per_month": expected_rent and ("/mes" in price_text.casefold() or "/ mes" in price_text.casefold()),
+        "rental_price_display": (
+            expected_rent
+            and "/mes" not in price_text.casefold()
+            and "/mes" not in recommended_price_text.casefold()
+            and price_text in {canonical_current_label, visible_clp_current_label}
+            and recommended_price_text in {canonical_recommended_label, visible_clp_recommended_label}
+        ),
         "rental_estimate": expected_rent and bool((property_model.get("appraisal") or {}).get("visible")),
         "rental_comparables": expected_rent and bool(comparable.get("visible")) and str(comparable.get("positioning_unit_label") or "").strip() == "CLP/m²/mes",
         "sale_fields_present": any(term in lower_text for term in sale_terms) if expected_rent else False,

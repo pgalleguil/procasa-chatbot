@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import hashlib
 import hmac
+import os
 import re
 import smtplib
 from dataclasses import dataclass, field
@@ -41,7 +42,7 @@ TARGETED_SINGLE_TEST_CONTRACTS = {
     "SALE_NONE_6873": ("6873", "VENTA"),
     "RENT_NONE_6132": ("6132", "ARRIENDO"),
 }
-TARGETED_QA_RESEND_PROPERTY_CODES = frozenset({"5641", "6132", "16486", "6873"})
+TARGETED_QA_RESEND_PROPERTY_CODES = frozenset({"5641", "6132", "16486", "6873", "16521"})
 MISSING_HISTORICAL_HASH_OVERRIDE_CODES = frozenset({"16486"})
 TEST_CASE_IDS = TEST_CASE_IDS | frozenset(TARGETED_SINGLE_TEST_CONTRACTS)
 TEST_LEDGER_COLLECTION = "ajuste_precio"
@@ -428,6 +429,52 @@ def prepare_test_messages(
     return prepared
 
 
+def _qa_ledger_snapshot(case: OwnerCampaignTestCase) -> dict[str, Any]:
+    model = (case.render_context or {}).get("property_model") or {}
+    recommendation = model.get("pricing_recommendation") if isinstance(model, Mapping) else {}
+    recommendation = recommendation if isinstance(recommendation, Mapping) else {}
+    current = float(case.current_price)
+    recommended_price = case.display_recommended_price
+    if recommended_price is None:
+        recommended_price = recommendation.get("recommended_price") or case.raw_recommended_price
+    try:
+        recommended_price = float(recommended_price)
+        recommended_pct = int(round((current - recommended_price) * 100 / current))
+    except (TypeError, ValueError, ZeroDivisionError):
+        recommended_pct = None
+    if recommended_pct is None and recommendation.get("recommended_adjustment_pct") is not None:
+        recommended_pct = int(round(float(recommendation["recommended_adjustment_pct"])))
+    gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
+    gradual_price = round(current * (100 - gradual_pct) / 100, 4) if gradual_pct is not None else None
+    executives = (case.render_context or {}).get("executives") or []
+    executive = executives[0] if executives and isinstance(executives[0], Mapping) else {}
+    return {
+        "operation": case.operation,
+        "property_type": case.property_type,
+        "commune": case.commune,
+        "productive_owner_to": str(case.intended_owner_email or "").strip().casefold(),
+        "productive_boss_cc": os.getenv("OWNER_CAMPAIGN_BOSS_CC", "jpcaro@procasa.cl").strip().casefold(),
+        "productive_executive_cc": str(executive.get("email") or "").strip().casefold(),
+        "executive": {"name": case.executive, "email": str(executive.get("email") or "").strip().casefold()},
+        "executive_name": case.executive,
+        "executive_email": str(executive.get("email") or "").strip().casefold(),
+        "current_price_at_send": current,
+        "previous_price": current,
+        "display_recommended_price": recommended_price,
+        "recommended_price": recommended_price,
+        "recommended_adjustment_pct": recommended_pct,
+        "adjustment_pct": recommended_pct,
+        "gradual_adjustment_pct": gradual_pct,
+        "gradual_price": gradual_price,
+        "document_type": case.document_type,
+        "supporting_document_type": case.document_type,
+        "test_mode": True,
+        "qa_mode": True,
+        "test_recipient": TEST_RECIPIENT,
+        "actual_recipient_email": TEST_RECIPIENT,
+    }
+
+
 def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage]) -> None:
     ledger = db[TEST_LEDGER_COLLECTION]
     entries = []
@@ -439,6 +486,7 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 if existing.get("test_mode") is not True or existing.get("actual_recipient_email") != TEST_RECIPIENT:
                     raise TestSenderError("non_test_ledger_collision")
                 raise TestSenderError("test_campaign_case_already_registered")
+            snapshot = _qa_ledger_snapshot(case)
             entries.append((query, {
                 "campaign_id": TEST_CAMPAIGN_ID,
                 "test_run_id": TEST_RUN_ID,
@@ -447,17 +495,14 @@ def _write_test_ledger_entries(db: Any, prepared: Sequence[PreparedTestMessage])
                 "intended_owner_email": case.intended_owner_email.strip(),
                 "actual_recipient_email": TEST_RECIPIENT,
                 "recipient": TEST_RECIPIENT,
-                "operation": case.operation,
-                "current_price_at_send": case.current_price,
+                **snapshot,
                 "raw_recommended_price": case.raw_recommended_price,
-                "display_recommended_price": case.display_recommended_price,
-                "adjustment_pct": case.adjustment_pct,
                 "evidence_segment": case.evidence_segment,
                 "cta_type": case.cta_type,
                 "evidence_version": case.evidence_version,
                 "document_type": case.document_type,
-                "executive": case.executive,
                 "test_mode": True,
+                "qa_mode": True,
                 "delivery_status": "pending_test_send",
             }))
     for query, payload in entries:
@@ -537,6 +582,16 @@ def _begin_targeted_qa_resend(db: Any, item: PreparedTestMessage, html_hash: str
     )
     if getattr(result, "matched_count", 0) != 1:
         raise TestSenderError("targeted_qa_resend_reservation_conflict")
+    snapshot = _qa_ledger_snapshot(item.case)
+    refreshed = ledger.update_one(
+        {"_id": row.get("_id"), "campaign_id": TEST_CAMPAIGN_ID,
+         "property_code": property_code, "test_mode": True,
+         "last_test_resend_status": "sending"},
+        {"$set": snapshot},
+        upsert=False,
+    )
+    if getattr(refreshed, "matched_count", 0) != 1:
+        raise TestSenderError("targeted_qa_snapshot_refresh_failed")
     return {"_id": row.get("_id"), **marker}
 
 

@@ -4270,13 +4270,28 @@ async def campana_informe(request: Request, token: str = Query(...)):
 
 
 @app.api_route("/campana/test-accion", methods=["GET", "POST"], include_in_schema=False)
-async def campana_test_accion(request: Request, token: str = Query(...)):
-    if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
+async def campana_test_accion(
+    request: Request,
+    token: str = Query(...),
+    selected_adjustment_type: str = Query("RECOMMENDED"),
+):
+    allowed_query_keys = {"token"} if request.method.upper() == "GET" else {
+        "token", "selected_adjustment_type"
+    }
+    if (
+        not set(request.query_params.keys()).issubset(allowed_query_keys)
+        or "token" not in request.query_params
+        or len(request.query_params.getlist("token")) != 1
+        or len(request.query_params.getlist("selected_adjustment_type")) > 1
+        or (request.method.upper() == "GET" and "selected_adjustment_type" in request.query_params)
+        or selected_adjustment_type not in {"RECOMMENDED", "GRADUAL"}
+    ):
         raise HTTPException(status_code=400, detail="Parámetros de acción inválidos")
     return await asyncio.to_thread(
         handle_test_action,
         token,
         confirmed=request.method.upper() == "POST",
+        selected_adjustment_type=selected_adjustment_type,
     )
 
 @app.get("/api/reporte_real")

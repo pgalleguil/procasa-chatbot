@@ -6,6 +6,7 @@ import math
 import re
 import time
 import unicodedata
+from datetime import datetime, timezone
 from html import escape
 from typing import Any, Mapping
 from urllib.parse import quote
@@ -20,6 +21,7 @@ from .test_mode import (
     ACCEPT_PRICE_ACTION,
     ADVISOR_ACTION,
     REPORT_ACTION,
+    _event_datetime,
     issue_campaign_test_token,
     persist_test_event,
     test_mode_enabled as _test_mode_enabled,
@@ -275,7 +277,84 @@ def _valid_lower_target(ledger: Mapping[str, Any], current_uf: Any) -> bool:
     return math.isfinite(current) and math.isfinite(recommended) and 0 < recommended < current
 
 
-def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> dict[str, Any]:
+def _qa_owner_name(db: Any, property_code: str) -> str:
+    try:
+        from .owner_campaign_live_prepare import _owner_name
+
+        master = db[PROPERTY_COLLECTION].find_one(
+            {"codigo": {"$in": [property_code, int(property_code)]}},
+        ) or {}
+        return _owner_name(master) or "Sin nombre"
+    except (KeyError, TypeError, ValueError):
+        return "Sin nombre"
+
+
+def notify_test_admin_after_persist(
+    db: Any, *, row: Mapping[str, Any], property_code: str, event: str, event_id: str,
+) -> dict[str, Any]:
+    """Send only the administrator WhatsApp after a QA event is read back."""
+    if event not in {"price_authorized", "advisor_review_requested"}:
+        return {"status": "not_applicable"}
+    from .owner_campaign_live_events import _send_admin_whatsapp
+
+    campaign_id = str(row.get("campaign_id") or TEST_CAMPAIGN_ID)
+    response = row.get("owner_response") if isinstance(row.get("owner_response"), Mapping) else {}
+    executive = row.get("executive")
+    executive_name = str(executive.get("name") or "") if isinstance(executive, Mapping) else str(executive or "")
+    notification_row = {
+        **dict(row),
+        "property_code": property_code,
+        "campaign_id": campaign_id,
+        "owner_email": row.get("intended_owner_email") or row.get("owner_email"),
+        "owner_name": _qa_owner_name(db, property_code),
+        "property_type": row.get("property_type") or "Propiedad",
+        "commune": row.get("commune") or "Comuna no disponible",
+        "operation": row.get("operation") or "VENTA",
+        "current_price": row.get("current_price_at_send"),
+        "previous_price": row.get("current_price_at_send"),
+        "recommended_price": row.get("display_recommended_price", row.get("recommended_price")),
+        "recommended_adjustment_pct": row.get("recommended_adjustment_pct"),
+        "selected_adjustment_type": response.get("selected_adjustment_type"),
+        "selected_adjustment_pct": response.get("selected_adjustment_pct"),
+        "selected_price": response.get("selected_price"),
+        "executive_name": row.get("executive_name") or executive_name,
+    }
+    ledger = db[LEDGER_COLLECTION]
+    base = f"notifications.admin_whatsapp.{event}"
+    reservation = ledger.update_one(
+        {"campaign_id": campaign_id, "property_code": property_code, "test_mode": True,
+         f"{base}.attempted": {"$ne": True}},
+        {"$set": {f"{base}.attempted": True, f"{base}.status": "sending",
+                  f"{base}.event_id": event_id, f"{base}.started_at": datetime.now(timezone.utc)}},
+        upsert=False,
+    )
+    if getattr(reservation, "modified_count", 0) != 1:
+        return {"status": "duplicate_suppressed", "event_id": event_id}
+    event_at = next(
+        (value.get("event_at") for value in (row.get("response_events") or [])
+         if isinstance(value, Mapping) and value.get("event_id") == event_id),
+        datetime.now(timezone.utc).isoformat(),
+    )
+    parsed_at = _event_datetime(event_at) or datetime.now(timezone.utc)
+    try:
+        result = _send_admin_whatsapp(notification_row, event, parsed_at)
+    except Exception as exc:
+        result = {"status": "failed", "error_type": type(exc).__name__, "provider_message_id": None}
+    ledger.update_one(
+        {"campaign_id": campaign_id, "property_code": property_code, "test_mode": True,
+         f"{base}.event_id": event_id},
+        {"$set": {f"{base}.status": result.get("status") or "unknown",
+                  f"{base}.finished_at": datetime.now(timezone.utc),
+                  f"{base}.provider_message_id": result.get("provider_message_id")}},
+        upsert=False,
+    )
+    return {**result, "event_id": event_id}
+
+
+def process_test_action(
+    token: str, *, db: Any = None, confirmed: bool = False,
+    selected_adjustment_type: str = "RECOMMENDED",
+) -> dict[str, Any]:
     request_started = time.perf_counter()
     timings: dict[str, float] = {}
     token_started = time.perf_counter()
@@ -323,8 +402,9 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
             database[LEDGER_COLLECTION],
             claims,
             stage="confirm" if confirmed else "click",
+            selected_adjustment_type=selected_adjustment_type,
         )
-        event_type = "price_authorized" if confirmed else "cta_clicked"
+        event_type = "price_authorized" if confirmed and not stored.get("duplicate") else "cta_clicked"
     else:
         stored = persist_test_event(database[LEDGER_COLLECTION], claims, stage="complete")
         event_type = "advisor_review_requested"
@@ -336,28 +416,75 @@ def process_test_action(token: str, *, db: Any = None, confirmed: bool = False) 
         if operation_after != operation or price_after != price_before:
             raise OwnerCampaignTestError("test_price_mutation_detected")
         timings["price_safety_check_ms"] = (time.perf_counter() - price_check_started) * 1000
+    refreshed = _test_ledger(database, code) or {}
+    expected_ids = list(stored.get("event_ids") or [])
+    if expected_ids and not stored.get("duplicate"):
+        persisted_ids = {
+            str(event.get("event_id")) for event in (refreshed.get("response_events") or [])
+            if isinstance(event, Mapping) and event.get("event_id")
+        }
+        if not set(expected_ids).issubset(persisted_ids):
+            raise OwnerCampaignTestError("test_event_readback_failed")
+        notification_event = "price_authorized" if confirmed and action == ACCEPT_PRICE_ACTION else "advisor_review_requested" if action == ADVISOR_ACTION else ""
+        if notification_event:
+            notify_test_admin_after_persist(
+                database, row=refreshed, property_code=code,
+                event=notification_event, event_id=str(expected_ids[-1] if action == ADVISOR_ACTION else expected_ids[0]),
+            )
     timings["total_ms"] = (time.perf_counter() - request_started) * 1000
+    recommendation = refreshed.get("recommended_adjustment_pct")
+    if recommendation is None:
+        try:
+            recommendation = int(round((float(refreshed["current_price_at_send"]) - float(refreshed.get("display_recommended_price"))) * 100 / float(refreshed["current_price_at_send"])))
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            recommendation = None
+    gradual_pct = refreshed.get("gradual_adjustment_pct")
+    gradual_price = refreshed.get("gradual_price")
+    selected = (refreshed.get("owner_response") or {}) if isinstance(refreshed.get("owner_response"), Mapping) else {}
+    executive_value = refreshed.get("executive")
+    executive_name = (
+        str(executive_value.get("name") or "").strip()
+        if isinstance(executive_value, Mapping)
+        else str(executive_value or "").strip()
+    )
     return {
         "campaign_id": TEST_CAMPAIGN_ID,
         "property_code": code,
         "event": event_type,
         "event_ids": stored.get("event_ids", []),
-        "requires_confirmation": action == ACCEPT_PRICE_ACTION and not confirmed,
+        "duplicate": bool(stored.get("duplicate")),
+        "already_registered": (selected.get("status") == "PRICE_AUTHORIZED" and not confirmed)
+        or (confirmed and bool(stored.get("duplicate")) and selected.get("status") == "PRICE_AUTHORIZED"),
+        "requires_confirmation": action == ACCEPT_PRICE_ACTION and not confirmed and selected.get("status") != "PRICE_AUTHORIZED",
         "test_mode": True,
         "live_price_before": price_before,
         "live_price_after": price_after,
         "test_price_mutation": False,
         "operation": str(ledger.get("operation") or "").strip().upper(),
         "document_type": str(ledger.get("document_type") or "NONE").strip().upper(),
-        "current_price": ledger.get("current_price_at_send"),
-        "proposed_price": ledger.get("display_recommended_price"),
-        "adjustment_pct": ledger.get("adjustment_pct"),
+        "current_price": refreshed.get("current_price_at_send"),
+        "proposed_price": refreshed.get("display_recommended_price"),
+        "adjustment_pct": recommendation,
+        "recommended_adjustment_pct": recommendation,
+        "recommended_price": refreshed.get("display_recommended_price"),
+        "gradual_adjustment_pct": gradual_pct,
+        "gradual_price": gradual_price,
+        "selected_adjustment_type": selected.get("selected_adjustment_type"),
+        "selected_adjustment_pct": selected.get("selected_adjustment_pct"),
+        "selected_price": selected.get("selected_price"),
+        "authorization_status": selected.get("authorization_status") or selected.get("status"),
+        "owner_response": selected,
+        "owner_name": _qa_owner_name(database, code),
+        "property_type": refreshed.get("property_type"),
+        "commune": refreshed.get("commune"),
+        "executive_name": executive_name,
+        "executive_email": refreshed.get("executive_email"),
         "executive_contact": _executive_contact(database, ledger) if action == ADVISOR_ACTION else {},
         "timings_ms": timings,
     }
 
 
-def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -> HTMLResponse:
+def _handle_test_action_legacy(token: str, *, db: Any = None, confirmed: bool = False) -> HTMLResponse:
     request_started = time.perf_counter()
     try:
         result = process_test_action(token, db=db, confirmed=confirmed)
@@ -479,4 +606,81 @@ def handle_test_action(token: str, *, db: Any = None, confirmed: bool = False) -
     response.headers["Server-Timing"] = ", ".join(f"{name};dur={value:.2f}" for name, value in timings.items())
     for name, value in timings.items():
         response.headers["X-Campaign-" + name.replace("_", "-").title()] = f"{value:.2f}"
+    return response
+
+
+def handle_test_action(
+    token: str, *, db: Any = None, confirmed: bool = False,
+    selected_adjustment_type: str = "RECOMMENDED",
+) -> HTMLResponse:
+    """Render the same private decision and success pages used by production."""
+    request_started = time.perf_counter()
+    try:
+        result = process_test_action(
+            token, db=db, confirmed=confirmed,
+            selected_adjustment_type=selected_adjustment_type,
+        )
+    except OwnerCampaignTestError:
+        return HTMLResponse(
+            "<main><h1>Acción no disponible</h1><p>Solicita un nuevo enlace a tu ejecutivo.</p></main>",
+            status_code=404,
+        )
+    except Exception:
+        return HTMLResponse("<main><h1>No pudimos registrar tu solicitud</h1></main>", status_code=503)
+
+    from .owner_campaign_confirmation_page import render_decision_page, render_success_page
+
+    logo_url = (Config.CRM_BASE_URL or "https://procasa.cl").rstrip("/") + "/static/logo.png"
+    code = str(result.get("property_code") or "")
+    advisor_url = "/campana/test-accion?token=" + quote(
+        issue_test_link_token(property_code=code, action=ADVISOR_ACTION), safe="",
+    )
+    if result.get("requires_confirmation"):
+        if result.get("already_registered"):
+            page = render_success_page(
+                selected_type="", selected_pct=None, selected_price="",
+                advisor_url=advisor_url, already_registered=True, logo_url=logo_url,
+            )
+        else:
+            token_url = "/campana/test-accion?token=" + quote(token, safe="")
+            gradual_pct = result.get("gradual_adjustment_pct")
+            if gradual_pct is not None and int(gradual_pct) == int(result["recommended_adjustment_pct"]):
+                gradual_pct = None
+            page = render_decision_page(
+                recommended_pct=int(result["recommended_adjustment_pct"]),
+                recommended_price=_campaign_value(result.get("recommended_price"), result.get("operation")),
+                current_price=_campaign_value(result.get("current_price"), result.get("operation")),
+                gradual_pct=int(gradual_pct) if gradual_pct is not None else None,
+                gradual_price=_campaign_value(result.get("gradual_price"), result.get("operation")),
+                recommended_url=token_url + "&selected_adjustment_type=RECOMMENDED",
+                gradual_url=token_url + "&selected_adjustment_type=GRADUAL",
+                advisor_url=advisor_url, logo_url=logo_url,
+            )
+    elif result.get("already_registered"):
+        page = render_success_page(
+            selected_type="", selected_pct=None, selected_price="",
+            advisor_url=advisor_url, already_registered=True, logo_url=logo_url,
+        )
+    elif result.get("event") == "price_authorized":
+        page = render_success_page(
+            selected_type=str(result.get("selected_adjustment_type") or selected_adjustment_type),
+            selected_pct=result.get("selected_adjustment_pct"),
+            selected_price=_campaign_value(result.get("selected_price"), result.get("operation")),
+            recommended_pct=result.get("recommended_adjustment_pct"),
+            recommended_price=_campaign_value(result.get("recommended_price"), result.get("operation")),
+            logo_url=logo_url,
+        )
+    else:
+        page = render_success_page(
+            selected_type="ADVISOR_REVIEW", selected_pct=None, selected_price="", logo_url=logo_url,
+        )
+
+    response = HTMLResponse(
+        page, status_code=200,
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+    elapsed = (time.perf_counter() - request_started) * 1000
+    response.headers["X-Campaign-Action-Stage"] = "confirmation-post" if confirmed else "action-get"
+    response.headers["Server-Timing"] = f"total;dur={elapsed:.2f}"
+    response.headers["X-Campaign-Total"] = f"{elapsed:.2f}"
     return response

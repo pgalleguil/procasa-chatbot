@@ -15,7 +15,7 @@ from uuid import uuid4
 
 
 TEST_RECIPIENT = "p.galleguil@gmail.com"
-QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873"})
+QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873", "16521"})
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"
@@ -192,6 +192,7 @@ def persist_test_event(
     *,
     now: datetime | None = None,
     stage: str = "complete",
+    selected_adjustment_type: str = "RECOMMENDED",
 ) -> dict[str, Any]:
     """Append to a pre-created test campaign/property row in ajuste_precio.
 
@@ -294,20 +295,66 @@ def persist_test_event(
                 "event": PRICE_CONFIRM_PAGE_OPENED,
                 "action": action,
             })
+            desired_events.append({
+                "event_id": hashlib.sha256(f"{token_id}|confirmation_page_opened".encode()).hexdigest()[:24],
+                "event": "confirmation_page_opened",
+                "action": action,
+            })
+        if action == REPORT_ACTION:
+            report_id = hashlib.sha256(f"{token_id}|report_opened".encode()).hexdigest()[:24]
+            if report_id not in event_ids:
+                desired_events.append({"event_id": report_id, "event": "report_opened", "action": action})
     elif stage == "confirm":
         if action != ACCEPT_PRICE_ACTION:
             raise ValueError("Only price authorization has a confirmation stage")
         if click_id not in event_ids:
             raise ValueError("Price authorization requires a prior CTA click")
-        desired_events = [] if authorization_id in event_ids else [{
-            "event_id": authorization_id,
-            "event": event_name,
-            "action": action,
-            "executive": existing.get("executive"),
-            "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
-            "authorized_value": existing.get("display_target", existing.get("display_recommended_price")),
-            "current_value_at_campaign": existing.get("current_price_at_send"),
-        }]
+        if owner_response.get("status") == "PRICE_AUTHORIZED" or historical_authorizations:
+            return {
+                "event": event_name, "event_ids": [], "stored_collection": "ajuste_precio",
+                "stored_record_id": str(existing.get("_id") or ""), "timestamp": timestamp.isoformat(),
+                "test_mode": True, "duplicate": True,
+                "proposed_value": existing.get("display_target", existing.get("display_recommended_price")),
+            }
+        recommended_price = existing.get("display_recommended_price", existing.get("display_target"))
+        try:
+            current_price = float(existing.get("current_price_at_send"))
+            recommended_price_value = float(recommended_price)
+            recommended_pct = int(round((current_price - recommended_price_value) * 100 / current_price))
+        except (TypeError, ValueError, ZeroDivisionError):
+            raise ValueError("QA recommendation values are invalid") from None
+        if not 5 <= recommended_pct <= 10:
+            raise ValueError("QA recommendation is outside the approved range")
+        gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
+        gradual_price = round(current_price * (100 - gradual_pct) / 100, 4) if gradual_pct is not None else None
+        selected_type = str(selected_adjustment_type or "RECOMMENDED").strip().upper()
+        if selected_type not in {"RECOMMENDED", "GRADUAL"}:
+            raise ValueError("Selected QA adjustment type is invalid")
+        if selected_type == "GRADUAL" and (gradual_pct is None or gradual_pct == recommended_pct):
+            raise ValueError("Gradual QA adjustment is unavailable")
+        selected_pct = recommended_pct if selected_type == "RECOMMENDED" else gradual_pct
+        selected_price = recommended_price_value if selected_type == "RECOMMENDED" else gradual_price
+        selection_event = "recommended_selected" if selected_type == "RECOMMENDED" else "gradual_selected"
+        selection_id = hashlib.sha256(f"{token_id}|{selection_event}".encode()).hexdigest()[:24]
+        details = {
+            "previous_price": current_price,
+            "recommended_adjustment_pct": recommended_pct,
+            "recommended_price": recommended_price_value,
+            "gradual_adjustment_pct": gradual_pct,
+            "gradual_price": gradual_price,
+            "selected_adjustment_type": selected_type,
+            "selected_adjustment_pct": selected_pct,
+            "selected_price": selected_price,
+            "authorization_status": "PRICE_AUTHORIZED",
+            "authorized_at": timestamp.isoformat(),
+            "executive_email": existing.get("executive_email"),
+        }
+        auth_event = {
+            "event_id": authorization_id, "event": event_name, "action": action,
+            "executive": existing.get("executive"), **details,
+        }
+        selection = {"event_id": selection_id, "event": selection_event, "action": action, **details}
+        desired_events = [auth_event, selection]
     else:
         desired_events = []
         if click_id not in event_ids:
@@ -329,6 +376,11 @@ def persist_test_event(
                 "event": event_name,
                 "action": action,
                 "executive": existing.get("executive"),
+                "selected_adjustment_type": "ADVISOR_REVIEW" if action == ADVISOR_ACTION else None,
+                "recommended_adjustment_pct": existing.get("recommended_adjustment_pct"),
+                "recommended_price": existing.get("display_recommended_price", existing.get("display_target")),
+                "previous_price": existing.get("current_price_at_send"),
+                "executive_email": existing.get("executive_email"),
             })
     desired_ids = [event["event_id"] for event in desired_events]
     if not desired_events:
@@ -376,15 +428,26 @@ def persist_test_event(
     }
     authorized = any(event.get("event") == EVENT_BY_ACTION[ACCEPT_PRICE_ACTION] for event in desired_events)
     if authorized:
-        target = existing.get("display_recommended_price", existing.get("display_target"))
+        selected_event = next(event for event in desired_events if event.get("event") == event_name)
         update["$set"].update({
             "owner_response.status": "PRICE_AUTHORIZED",
-            "owner_response.authorized_value": target,
+            "owner_response.authorized_value": selected_event.get("selected_price"),
             "owner_response.current_value_at_campaign": existing.get("current_price_at_send"),
+            "owner_response.selected_adjustment_type": selected_event.get("selected_adjustment_type"),
+            "owner_response.selected_adjustment_pct": selected_event.get("selected_adjustment_pct"),
+            "owner_response.selected_price": selected_event.get("selected_price"),
+            "owner_response.recommended_adjustment_pct": selected_event.get("recommended_adjustment_pct"),
+            "owner_response.recommended_price": selected_event.get("recommended_price"),
+            "owner_response.gradual_adjustment_pct": selected_event.get("gradual_adjustment_pct"),
+            "owner_response.gradual_price": selected_event.get("gradual_price"),
+            "owner_response.authorization_status": "PRICE_AUTHORIZED",
+            "owner_response.authorized_at": timestamp,
         })
         update["$min"] = {"owner_response.first_authorized_at": timestamp}
         update["$max"] = {"owner_response.last_authorized_at": timestamp}
     elif action == ADVISOR_ACTION:
+        if owner_response.get("status") != "PRICE_AUTHORIZED":
+            update["$set"] = {**update.get("$set", {}), "owner_response.selected_adjustment_type": "ADVISOR_REVIEW"}
         update["$max"] = {"owner_response.advisor_requested_at": timestamp}
     elif action == REPORT_ACTION:
         update["$max"] = {"owner_response.last_report_opened_at": timestamp}

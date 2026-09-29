@@ -166,6 +166,7 @@ def test_market_reference_uses_only_communal_source_values():
     )
     assert result == {
         "visible": True,
+        "duplicate_of_primary": False,
         "source": "COMMUNAL",
         "reference_value": "52,3",
         "reference_unit": "UF/m² de oferta",
@@ -417,7 +418,7 @@ def test_real_single_property_template_renders_approved_visual_content():
         "Revisión comercial de tu propiedad",
         "Buenas",
         "CHILE · SEPTIEMBRE 2026",
-        "Referencia comunal · contexto secundario",
+        "REFERENCIA COMPLEMENTARIA",
         "Tu propiedad frente a inmuebles comparables",
         "3 dorm",
         "1 baño",
@@ -429,12 +430,14 @@ def test_real_single_property_template_renders_approved_visual_content():
         "Mercado comparable",
     ):
         assert expected in html
+    assert "Referencia comparable · contexto secundario" not in html
     assert "Muy bajo" not in html
     rendered_root = lxml_html.fromstring(html)
     graph_text = " ".join(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' single-comparison-bar ')]//text()"))
     assert not any(tick in graph_text for tick in ("26,1", "34,3", "42,4", "50,6", "58,8", "66,9"))
     assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' position-metric ')]")) == 2
     assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' comp-card-single ')]")) == 3
+    assert ".position-metric { width:50%; height:116px;" in html
     assert ".comp-card-single { width:33.333%; height:116px;" in html
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
@@ -443,7 +446,7 @@ def test_real_single_property_template_renders_approved_visual_content():
         " ".join(cell.itertext()).strip()
         for cell in lxml_html.fromstring(html).xpath("//*[contains(concat(' ',normalize-space(@class),' '),' valuation-strip-single ')]//td")
     ]
-    assert "REFERENCIA DEL SEGMENTO 52,3 UF/m² Corte 18 de mayo de 2026" in valuation_cells[1]
+    assert "REFERENCIAS Análisis comparativo Detalle de la muestra más abajo" in valuation_cells[1]
     assert "POSICIONAMIENTO Sobre la muestra comparable Frente a publicaciones similares" in valuation_cells[2]
 
 

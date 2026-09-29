@@ -240,6 +240,176 @@ def _sync_process_campana_response(
     }
 
 
+def _process_owner_campaign_action(
+    *, email: str, accion: str, codigo: str, campana: str, token: str,
+    method: str, selected_adjustment_type: str = "",
+):
+    """Handle a signed single-property production campaign action."""
+    from html import escape
+    from urllib.parse import urlencode
+    from pymongo import MongoClient
+    from config import Config
+    from .owner_campaign_live_events import (
+        LIVE_ACTIONS, persist_live_event, verify_live_token,
+        notify_campaign_channels_after_persist,
+    )
+
+    email_lower = str(email or "").strip().casefold()
+    if accion not in {"aceptar_rebaja", "contactar_ejecutivo"} or not codigo.isdigit():
+        return HTMLResponse("Enlace de campaña inválido.", status_code=404)
+    claims = verify_live_token(
+        token, campaign_id=campana, property_code=codigo,
+        recipient=email_lower, action=accion,
+    )
+    if claims is None:
+        return HTMLResponse("Enlace de campaña inválido o vencido.", status_code=404)
+    client = MongoClient(Config.MONGO_URI)
+    try:
+        db = client[Config.DB_NAME]
+        ledger = db[Config.COLLECTION_CAMPANAS_LOG]
+        row = ledger.find_one({"_id": f"{campana}:{codigo}", "campaign_id": campana, "property_code": codigo})
+        if not row or str(row.get("owner_email") or "").casefold() != email_lower:
+            return HTMLResponse("Esta acción no está disponible para la propiedad indicada.", status_code=404)
+        from campanas import owner_campaign_test_runtime as runtime
+        property_doc = db[runtime.PROPERTY_COLLECTION].find_one(
+            {"codigo": {"$in": [codigo, int(codigo)] if codigo.isdigit() else [codigo]}},
+        ) or {}
+        operation = str(row.get("operation") or runtime.resolve_property_operation(property_doc)).upper()
+        if operation not in {"VENTA", "ARRIENDO"}:
+            return HTMLResponse("No se pudo verificar la operación de la propiedad.", status_code=409)
+        monthly = operation == "ARRIENDO"
+        prop_type = str(row.get("property_type") or runtime._property_type(property_doc))
+        commune = str(row.get("commune") or runtime._commune(property_doc))
+        price_block = runtime.operation_price_block(property_doc, requested_operation=operation) or {}
+        current_price = float(row.get("current_price"))
+        recommended_price = float(row.get("recommended_price"))
+        recommended_pct = int(row.get("recommended_adjustment_pct"))
+        current_clp = row.get("current_price_clp") or price_block.get("precio_clp")
+        recommended_clp = row.get("recommended_price_clp")
+        if recommended_clp is None and current_clp is not None:
+            recommended_clp = round(float(current_clp) * (100 - recommended_pct) / 100)
+        gradual_pct = row.get("gradual_adjustment_pct")
+        if gradual_pct is None:
+            gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
+        gradual_price = row.get("gradual_price")
+        if gradual_price is None and gradual_pct is not None:
+            from decimal import Decimal, ROUND_HALF_UP
+            gradual_price = float((Decimal(str(current_price)) * (Decimal("100") - Decimal(int(gradual_pct))) / Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+        gradual_clp = row.get("gradual_price_clp")
+        if gradual_clp is None and current_clp is not None and gradual_pct is not None:
+            gradual_clp = round(float(current_clp) * (100 - int(gradual_pct)) / 100)
+
+        if accion == "aceptar_rebaja" and row.get("authorization_status") == "PRICE_AUTHORIZED":
+            return HTMLResponse(
+                "<main><h1>Tu solicitud ya fue registrada.</h1><p>Si necesitas modificarla, comunícate con tu ejecutivo.</p></main>",
+                headers={"Cache-Control": "private, no-store"},
+            )
+        if accion == "aceptar_rebaja" and method == "GET":
+            persist_live_event(db, claims, event="cta_clicked", action=accion)
+            persist_live_event(db, claims, event="price_confirm_page_opened", action=accion)
+            base = {"email": email_lower, "campana": campana, "codigos": codigo, "mode": "owner_campaign", "token": token}
+            def action_url(action: str, action_token: str, *, selected_type: str = "") -> str:
+                query_args = {**base, "accion": action, "token": action_token}
+                if selected_type:
+                    query_args["selected_adjustment_type"] = selected_type
+                return (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/") + "/campana/respuesta?" + urlencode(query_args)
+
+            from .owner_campaign_live_events import issue_live_token
+            advisor_token = issue_live_token(
+                campaign_id=campana, property_code=codigo, action="contactar_ejecutivo",
+                recipient=email_lower, expires_at=int(claims["exp"]),
+            )
+            def label(value: Any, *, clp: bool = False) -> str:
+                if value is None:
+                    return ""
+                amount = f"{float(value):,.0f}".replace(",", ".")
+                unit = ("CLP/mes" if monthly else "CLP") if clp else ("UF/mes" if monthly else "UF")
+                return ("$ " if clp else "") + amount + " " + unit
+
+            recommendation_price = label(recommended_price)
+            if recommended_clp is not None:
+                recommendation_price += "<br><small>" + escape(label(recommended_clp, clp=True)) + "</small>"
+            current_price_label = label(current_price)
+            if current_clp is not None:
+                current_price_label += "<br><small>" + escape(label(current_clp, clp=True)) + "</small>"
+            recommended_form = action_url("aceptar_rebaja", token, selected_type="RECOMMENDED")
+            content = (
+                f'<p>{escape(prop_type)} · {escape(commune)} · Código {escape(codigo)}</p>'
+                f'<div class="summary"><div class="summary-cell"><span class="summary-label">PRECIO ACTUAL</span><strong class="summary-value">{current_price_label}</strong></div>'
+                f'<div class="summary-cell new"><span class="summary-label">RECOMENDACIÓN PROCASA · RECOMENDADO</span><strong class="summary-value">{recommendation_price}</strong>'
+                f'<div>{recommended_pct}% de ajuste</div></div></div>'
+                f'<form method="post" action="{escape(recommended_form, quote=True)}"><button class="button" type="submit">ACEPTAR RECOMENDACIÓN</button></form>'
+            )
+            if gradual_pct is not None and int(gradual_pct) != recommended_pct:
+                gradual_price_label = label(gradual_price)
+                if gradual_clp is not None:
+                    gradual_price_label += "<br><small>" + escape(label(gradual_clp, clp=True)) + "</small>"
+                gradual_form = action_url("aceptar_rebaja", token, selected_type="GRADUAL")
+                content += (
+                    f'<section class="contact"><strong class="contact-title">OPCIÓN GRADUAL</strong>'
+                    f'<p>{int(gradual_pct)}% de ajuste · nuevo precio: {gradual_price_label}</p>'
+                    f'<form method="post" action="{escape(gradual_form, quote=True)}"><button class="button-secondary" type="submit">ACEPTAR AJUSTE GRADUAL</button></form></section>'
+                )
+            else:
+                content += (
+                    '<section class="contact"><strong class="contact-title">¿PREFIERES PROPONER OTRO AJUSTE?</strong>'
+                    f'<a href="{escape(action_url("contactar_ejecutivo", advisor_token), quote=True)}">QUIERO PROPONER OTRO AJUSTE</a></section>'
+                )
+            content += (
+                '<div class="contact"><strong class="contact-title">REVISAR CON MI EJECUTIVO</strong>'
+                f'<a href="{escape(action_url("contactar_ejecutivo", advisor_token), quote=True)}">SOLICITAR CONTACTO</a></div>'
+            )
+            from .owner_campaign_test_actions import _campaign_test_page
+            page = _campaign_test_page(
+                "Revisa las opciones de ajuste", content, raw_content=True,
+                eyebrow="PROCASA · PROPUESTA DE AJUSTE",
+            )
+            return HTMLResponse(page, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+        if accion == "aceptar_rebaja" and method != "POST":
+            return HTMLResponse("Método no permitido.", status_code=405)
+        if accion == "contactar_ejecutivo" and method != "GET":
+            return HTMLResponse("Método no permitido.", status_code=405)
+        event = LIVE_ACTIONS[accion]
+        persist_live_event(db, claims, event="cta_clicked", action=accion)
+        details = {}
+        if event == "price_authorized":
+            selected_type = str(selected_adjustment_type or "").upper()
+            if selected_type not in {"RECOMMENDED", "GRADUAL"}:
+                return HTMLResponse("Selecciona una alternativa válida.", status_code=400)
+            if selected_type == "RECOMMENDED":
+                selected_pct, selected_price = recommended_pct, recommended_price
+                selected_clp = recommended_clp
+            elif gradual_pct is not None and int(gradual_pct) != recommended_pct:
+                selected_pct, selected_price, selected_clp = int(gradual_pct), float(gradual_price), gradual_clp
+            else:
+                return HTMLResponse("La opción gradual no está disponible; solicita revisión con tu ejecutivo.", status_code=400)
+            details = {
+                "selected_adjustment_type": selected_type,
+                "selected_adjustment_pct": int(selected_pct),
+                "selected_price": float(selected_price),
+                "selected_price_clp": float(selected_clp) if selected_clp is not None else None,
+                "recommended_adjustment_pct": recommended_pct,
+                "recommended_price": recommended_price,
+            }
+        stored, inserted = persist_live_event(db, claims, event=event, action=accion, details=details)
+        event_id = __import__("hashlib").sha256(f"{claims.get('event_id')}|{event}".encode()).hexdigest()
+        persisted = ledger.find_one({"_id": f"{campana}:{codigo}", "events.event_id": event_id})
+        if inserted and persisted:
+            notify_campaign_channels_after_persist(db, stored=persisted, event=event, claims=claims)
+        if not inserted:
+            result = "Tu solicitud ya fue registrada. Si necesitas modificarla, comunícate con tu ejecutivo."
+        elif event == "price_authorized":
+            result = f"Registramos tu autorización: {details['selected_adjustment_pct']}% ({details['selected_adjustment_type']})."
+        else:
+            result = "Tu solicitud ya fue enviada a tu ejecutivo responsable."
+        return HTMLResponse(
+            f'<!doctype html><html lang="es"><meta charset="utf-8"><body style="font-family:Arial,sans-serif;color:#25205f"><main style="max-width:560px;margin:12vh auto;padding:32px;background:#fff;text-align:center"><h1>PROCASA</h1><p>{escape(result)}</p></main></body></html>',
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+    finally:
+        client.close()
+
+
 async def handle_campana_respuesta(
     request: Request,
     email: str,
@@ -248,6 +418,7 @@ async def handle_campana_respuesta(
     campana: str,
     mode: str = "live",
     token: str = "",
+    selected_adjustment_type: str = "",
 ):
     accion = normalize_accion(accion)
     valid = {"aceptar_rebaja", "contactar_ejecutivo", "mantener_precio", "no_disponible", "unsubscribe"}
@@ -256,7 +427,10 @@ async def handle_campana_respuesta(
     if accion not in valid:
         return HTMLResponse("Accion no valida", status_code=400)
 
-    if request.method.upper() == "POST" and not (mode == "test" and accion == "aceptar_rebaja"):
+    if request.method.upper() == "POST" and not (
+        (mode == "test" and accion == "aceptar_rebaja")
+        or (mode == "owner_campaign" and accion == "aceptar_rebaja")
+    ):
         return HTMLResponse("Método no permitido.", status_code=405)
 
     if mode == "test" and accion == "aceptar_rebaja":
@@ -267,6 +441,19 @@ async def handle_campana_respuesta(
             campana=campana,
             token=token,
             confirmed=request.method.upper() == "POST",
+        )
+
+    if mode == "owner_campaign":
+        codigos_lista = [c.strip() for c in (codigos or "").split(",") if c.strip() and c.strip() != "N/A"]
+        return await asyncio.to_thread(
+            _process_owner_campaign_action,
+            email=email,
+            accion=accion,
+            codigo=codigos_lista[0] if len(codigos_lista) == 1 else "",
+            campana=campana,
+            token=token,
+            method=request.method.upper(),
+            selected_adjustment_type=selected_adjustment_type,
         )
 
     try:

@@ -46,3 +46,52 @@ Sistema automático Procasa
         logger.info(f"Email de alerta enviado → {email}")
     except Exception as e:
         logger.error(f"Error enviando email al equipo: {e}")
+
+
+def enviar_notificacion_owner_campaign(
+    *, owner_name: str, owner_email: str, property_code: str,
+    current_price, recommended_price, adjustment_pct, action: str,
+    executive_name: str, executive_email: str, boss_cc: str,
+) -> bool:
+    """Notify assigned staff after a persisted single-property campaign event."""
+    import re
+    from email.message import EmailMessage
+
+    recipients = [value.strip().casefold() for value in (boss_cc, executive_email) if value and value.strip()]
+    if (
+        not Config.GMAIL_USER or not Config.GMAIL_PASSWORD or not owner_email
+        or not property_code or not executive_name or len(recipients) != 2
+        or len(set(recipients)) != 2
+        or any(not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value) for value in recipients)
+    ):
+        logger.error("Owner campaign internal notification is not configured or has invalid recipients")
+        return False
+    body = (
+        "Respuesta a campaña PROCASA\n\n"
+        f"Propietario: {owner_name}\n"
+        f"Email propietario: {owner_email}\n"
+        f"Propiedad: {property_code}\n"
+        f"Precio actual: {current_price} UF\n"
+        f"Precio recomendado: {recommended_price} UF\n"
+        f"Ajuste: {adjustment_pct}%\n"
+        f"Acción: {action}\n"
+        f"Ejecutivo responsable: {executive_name} ({executive_email})\n"
+    )
+    message = EmailMessage()
+    message["From"] = f"Procasa Alertas <{Config.GMAIL_USER}>"
+    message["To"] = recipients[0]
+    message["Cc"] = recipients[1]
+    message["Subject"] = f"Respuesta campaña de precio · Propiedad {property_code}"
+    message.set_content(body)
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+            server.starttls()
+            server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
+            refused = server.send_message(message, to_addrs=recipients)
+        if refused:
+            logger.error("Owner campaign internal notification was refused by SMTP")
+            return False
+        return True
+    except Exception as exc:
+        logger.error("Owner campaign internal notification failed (%s)", type(exc).__name__)
+        return False

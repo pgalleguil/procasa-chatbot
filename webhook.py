@@ -4253,9 +4253,13 @@ async def campana_respuesta(
     codigos: str = Query("N/A"),
     campana: str = Query(...),
     token: str = Query(""),
-    mode: str = Query("live")
+    mode: str = Query("live"),
+    selected_adjustment_type: str = Query(""),
 ):
-    return await handle_campana_respuesta(request, email, accion, codigos, campana, mode, token)
+    return await handle_campana_respuesta(
+        request, email, accion, codigos, campana, mode, token,
+        selected_adjustment_type,
+    )
 
 
 @app.get("/campana/informe", include_in_schema=False)

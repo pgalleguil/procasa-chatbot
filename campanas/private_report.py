@@ -85,8 +85,10 @@ def _canonical_operation(property_doc: Mapping[str, Any]) -> str | None:
     operation_text = str(operation or "").strip().casefold()
     mentions_sale = "venta" in operation_text
     mentions_rent = "arriend" in operation_text
-    if mentions_sale != mentions_rent:
-        return "VENTA" if mentions_sale else "ARRIENDO"
+    if mentions_sale:
+        return "VENTA"
+    if mentions_rent:
+        return "ARRIENDO"
 
     operation_data = property_doc.get("tipo_operacion")
     if isinstance(operation_data, Mapping):
@@ -489,16 +491,48 @@ def _serve_campaign_report(token: str) -> Response:
         return response
 
     token_started = time.perf_counter()
-    claims = _decode_token_claims(
-        token,
-        os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", ""),
-    )
+    is_live = token.startswith("p1.")
+    if is_live:
+        from .owner_campaign_live_events import decode_live_token
+
+        claims = decode_live_token(token)
+        if (
+            claims is None or claims.get("action") != "ver_informe"
+            or claims.get("document_type") not in REPORT_TYPES
+            or "test" in str(claims.get("campaign_id") or "").casefold()
+        ):
+            claims = None
+    else:
+        claims = _decode_token_claims(
+            token,
+            os.getenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", ""),
+        )
     timings["token_validation_ms"] = (time.perf_counter() - token_started) * 1000
     if claims is None:
         return finish(_response(404, "Documento no disponible."))
 
     property_code = claims["property_code"]
     try:
+        if is_live:
+            client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=8000)
+            try:
+                db = client[Config.DB_NAME]
+                ledger = db[Config.COLLECTION_CAMPANAS_LOG]
+                row = ledger.find_one({
+                    "_id": f"{claims['campaign_id']}:{property_code}",
+                    "campaign_id": claims["campaign_id"],
+                    "property_code": property_code,
+                    "owner_email": claims.get("recipient"),
+                    "document_type": claims.get("document_type"),
+                })
+                if not row:
+                    return finish(_response(404, "Documento no disponible."))
+                from .owner_campaign_live_events import persist_live_event
+
+                persist_live_event(db, claims, event="cta_clicked", action="ver_informe")
+                persist_live_event(db, claims, event="report_opened", action="ver_informe")
+            finally:
+                client.close()
         mongo_started = time.perf_counter()
         identity = _load_property_identity(property_code)
         timings["mongo_lookup_ms"] = (time.perf_counter() - mongo_started) * 1000
@@ -521,9 +555,10 @@ def _serve_campaign_report(token: str) -> Response:
         pdf_bytes = _download_pdf(service, str(file_record["id"]), timings)
         if not pdf_bytes.startswith(b"%PDF-"):
             raise CampaignReportError(502, "invalid_pdf_content")
-        tracking_started = time.perf_counter()
-        _record_test_report_opened(claims)
-        timings["tracking_write_ms"] = (time.perf_counter() - tracking_started) * 1000
+        if not is_live:
+            tracking_started = time.perf_counter()
+            _record_test_report_opened(claims)
+            timings["tracking_write_ms"] = (time.perf_counter() - tracking_started) * 1000
         logger.info(
             "[CAMPAIGN_REPORT_DRIVE] status=read_ok document_type=%s bytes=%s",
             claims["document_type"], len(pdf_bytes),

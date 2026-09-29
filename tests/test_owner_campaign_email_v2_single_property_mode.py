@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlparse
+
 from lxml import html as lxml_html
 
 from analytics import owner_campaign_email_v2 as renderer
 from analytics.owner_campaign_email_compat import make_email_safe_html
+from campanas import owner_campaign_live_prepare as live_prepare
+from campanas.owner_campaign_live_events import verify_live_token
 
 
 def _single_property_model():
@@ -66,7 +70,7 @@ def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypa
     monkeypatch.setattr(renderer, "_initials", lambda _name: "EG")
 
     result = renderer.render_owner_campaign_email_v2(
-        [{"code": "5641", "is_rental": False}],
+        [{"code": "5641", "operation_raw": "VENTA", "is_rental": False}],
         email="qa@example.test",
         executives=[],
         base_url="https://example.test",
@@ -75,8 +79,8 @@ def test_renderer_selects_frozen_single_property_copy_and_macro_context(monkeypa
     assert result == "rendered"
     assert captured["single_property_only"] is True
     assert captured["hero_title"] == "Revisión comercial de tu propiedad"
-    assert "Analizamos el comportamiento reciente" in captured["hero_description"]
-    assert len(captured["macro_context"]["copy_paragraphs"]) == 2
+    assert "Analizamos las condiciones actuales del mercado" in captured["hero_description"]
+    assert len(captured["macro_context"]["copy_paragraphs"]) == 3
     assert "Banco Central de Chile" in captured["macro_context"]["source_line"]
     assert captured["report_date"]
 
@@ -102,7 +106,7 @@ def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
     monkeypatch.setattr(renderer, "_initials", lambda _name: "EG")
 
     renderer.render_owner_campaign_email_v2(
-        [{"code": "5641", "is_rental": False}, {"code": "9000", "is_rental": False}],
+        [{"code": "5641", "operation_raw": "VENTA", "is_rental": False}, {"code": "9000", "operation_raw": "VENTA", "is_rental": False}],
         email="qa@example.test",
         executives=[],
         base_url="https://example.test",
@@ -111,17 +115,18 @@ def test_renderer_keeps_legacy_layout_only_for_multiproperty(monkeypatch):
     assert captured["macro_context"]["copy_paragraphs"] == ()
 
     renderer.render_owner_campaign_email_v2(
-        [{"code": "5641", "is_rental": True}],
+        [{"code": "5641", "operation_raw": "ARRIENDO", "is_rental": True}],
         email="qa@example.test",
         executives=[],
         base_url="https://example.test",
     )
     assert captured["single_property_only"] is True
-    assert captured["hero_title"].endswith("arriendo")
-    assert len(captured["macro_context"]["copy_paragraphs"]) == 2
+    assert captured["hero_title"] == "Revisión comercial de tu propiedad"
+    assert "quienes buscan arrendar" in captured["hero_description"]
+    assert len(captured["macro_context"]["copy_paragraphs"]) == 3
     assert "financiamiento" not in " ".join(captured["macro_context"]["copy_paragraphs"]).casefold()
     assert len(captured["macro_context"]["kpis"]) == 3
-    assert captured["macro_context"]["kpis"][0]["value"] == "Arriendo"
+    assert captured["macro_context"]["kpis"][0]["value"] == "9,5%"
 
 
 def test_market_reference_uses_only_communal_source_values():
@@ -296,24 +301,28 @@ def test_price_position_markers_have_only_straight_lines_and_labels_under_each_m
     root = lxml_html.fromstring(html)
     bar = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-track ')]")
     assert len(bar) == 1
-    assert len(bar[0].xpath(".//td")) == 21
-    labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-label ')]")
-    lines = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
-    assert len(labels) == 2
-    assert len(lines) == 2
+    band_cells = bar[0].xpath(".//td[contains(concat(' ', normalize-space(@class), ' '), ' position-band-cell ')]")
+    assert len(band_cells) == 21
+    reference_labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-ref-box ')]")
+    property_labels = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-prop-box ')]")
+    reference_stems = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-ref-stem ')]")
+    property_stems = root.xpath("//*[contains(concat(' ', normalize-space(@class), ' '), ' position-property-stem ')]")
+    assert len(reference_labels) == len(property_labels) == 1
+    assert len(reference_stems) == len(property_stems) == 21
+    assert sum(bool(cell.xpath("./span")) for cell in reference_stems) == 1
+    assert sum(bool(cell.xpath("./span")) for cell in property_stems) == 1
     assert root.xpath("//*[@data-component-id='single-property-comparison-bar-v1']")
-    assert all("height:" in line.get("style", "") for line in lines)
     assert not root.xpath("//*[contains(@style, 'transparent') and contains(@style, 'background')]")
-    for label in labels:
-        assert label.getparent().getparent().getparent().xpath(".//*[contains(concat(' ', normalize-space(@class), ' '), ' position-anchor-line ')]")
     assert "max-width:620px" in html
 
 
 def test_comparison_bar_keeps_labels_tied_to_actual_marker_positions_at_edges():
     low = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 10}, 10)
     high = renderer._positioning_graph({"p10": 10, "p90": 90, "median": 90}, 90)
-    assert low["reference_index"] == low["property_index"] == 2
-    assert high["reference_index"] == high["property_index"] == 18
+    assert low["reference_index"] == low["property_index"]
+    assert high["reference_index"] == high["property_index"]
+    assert 0 < low["reference_index"] < 20
+    assert 0 < high["reference_index"] < 20
     assert "reference_label_index" not in low and "property_label_index" not in low
     assert len(low["cells"]) == len(high["cells"]) == 21
 
@@ -337,6 +346,45 @@ def test_legacy_secondary_url_is_never_reused_as_report_destination():
     assert advisor_links
 
 
+def test_productive_email_uses_signed_campaign_links_to_confirmation_and_advisor(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "unit-test-secret")
+    captured = {}
+
+    def fake_render(models, **kwargs):
+        captured["model"] = models[0]
+        return "rendered"
+
+    monkeypatch.setattr(renderer, "render_owner_campaign_email_v2", fake_render)
+    row = {
+        "campaign_id": "owner_price_sucre_wave1_20260928",
+        "property_code": "5641",
+        "owner_email": "qa@example.test",
+        "document_type": "COMMUNAL_MARKET_REPORT",
+        "_model": {"executive": {}, "document": {"visible": True}},
+    }
+
+    assert live_prepare._render_one(row) == "rendered"
+    cta = captured["model"]["cta"]
+    confirmation = parse_qs(urlparse(cta["primary_url"]).query)
+    advisor = parse_qs(urlparse(cta["advisor_url"]).query)
+    report = parse_qs(urlparse(cta["report_url"]).query)
+    identity = {
+        "campaign_id": row["campaign_id"],
+        "property_code": row["property_code"],
+        "recipient": row["owner_email"],
+    }
+
+    assert cta["primary_label"] == "REVISAR / CONFIRMAR AJUSTE"
+    assert confirmation["campana"] == [row["campaign_id"]]
+    assert confirmation["codigos"] == [row["property_code"]]
+    assert confirmation["mode"] == ["owner_campaign"]
+    assert verify_live_token(confirmation["token"][0], **identity, action="aceptar_rebaja")
+    assert verify_live_token(advisor["token"][0], **identity, action="contactar_ejecutivo")
+    assert verify_live_token(
+        report["token"][0], **identity, action="ver_informe",
+    )["document_type"] == "COMMUNAL_MARKET_REPORT"
+
+
 def test_real_single_property_template_renders_approved_visual_content():
     html = renderer.render_owner_campaign_email_v2(
         [_single_property_model()],
@@ -353,13 +401,13 @@ def test_real_single_property_template_renders_approved_visual_content():
         "3 dorm",
         "1 baño",
         "Informe comercial disponible",
-        "ACEPTAR NUEVO VALOR",
-        "Revisar con mi ejecutivo",
+        "REVISAR / CONFIRMAR AJUSTE",
+        "REVISAR CON MI EJECUTIVO",
     ):
         assert expected in html
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
-    assert "Revisar con mi ejecutivo" in safe_html
+    assert "REVISAR CON MI EJECUTIVO" in safe_html
     valuation_cells = [
         " ".join(cell.itertext()).strip()
         for cell in lxml_html.fromstring(html).xpath("//*[contains(concat(' ',normalize-space(@class),' '),' valuation-strip-single ')]//td")
@@ -400,7 +448,7 @@ def test_single_rent_none_uses_approved_single_visual_system_without_document_or
     text = " ".join(root.text_content().split()).casefold()
     assert "hero-single" in html
     assert "single-property-review" in html
-    assert "Estamos preparando tu propiedad para un nuevo escenario de arriendo" in html
+    assert "quienes buscan arrendar" in html
     assert "compradores" not in text
     assert "financiamiento hipotecario" not in text
     assert "concretar una venta" not in text

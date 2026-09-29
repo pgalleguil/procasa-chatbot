@@ -26,6 +26,7 @@ from .test_mode import test_mode_enabled
 
 
 PROPERTY_COLLECTION = "universo_cartera_prop360"
+CAMPAIGN_OFFICE = "PROCASA SUCRE"
 APPRAISAL_COLLECTION = "tasaciones"
 COMMUNAL_COLLECTION = "mercado_comunal"
 QA_EVIDENCE_SOURCE = "FROZEN_APPROVED_REPORT"
@@ -52,6 +53,9 @@ ARRIENDO = "ARRIENDO"
 VENTA_ARRIENDO = "VENTA_ARRIENDO"
 UNKNOWN_OPERATION = "UNKNOWN"
 _SINGULAR_OPERATIONS = {VENTA, ARRIENDO}
+# Require enough positive properties to populate each quartile with several
+# observations; smaller operation samples use the combined positive portfolio.
+MIN_POSITIVE_PERCENTILE_SAMPLE = 20
 logger = logging.getLogger(__name__)
 
 
@@ -200,7 +204,9 @@ def _operations_in_label(value: Any) -> set[str]:
 
 
 def _operation_result(operations: set[str]) -> str:
-    if operations == {VENTA}:
+    # Owner price campaign policy: a listing available in both operations is
+    # evaluated only as a sale. Never combine the rental price/evidence.
+    if VENTA in operations:
         return VENTA
     if operations == {ARRIENDO}:
         return ARRIENDO
@@ -321,12 +327,7 @@ def _active_available(master: Mapping[str, Any]) -> bool:
 
 
 def _is_sucre(master: Mapping[str, Any]) -> bool:
-    return any(
-        _fold(value) == "procasa sucre"
-        for value in (
-            _path(master, "estado.oficina"), _path(master, "resumen.oficina"), master.get("oficina_nombre")
-        )
-    )
+    return _fold(_path(master, "estado.oficina")) == "procasa sucre"
 
 
 def _property_type(master: Mapping[str, Any]) -> str:
@@ -603,11 +604,14 @@ def _primary_surface_value(dimensions: Mapping[str, Any], primary_surface: str) 
 
 def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[str, Any] | None = None) -> tuple[dict[str, Any], int, int]:
     analysis = master.get("analisis_comparables")
+    # Missing or operation-incompatible comparable evidence is not a campaign
+    # exclusion. In particular, a dual listing must never borrow rent comps for
+    # its sale recommendation.
     if not isinstance(analysis, Mapping) or str(analysis.get("version") or "") != "cluster_v2_20260921":
-        raise LiveTestCaseBuildError("current_v2_evidence_unavailable")
+        analysis = {}
     segment = analysis.get("segmento") if isinstance(analysis.get("segmento"), Mapping) else {}
     if str(segment.get("operacion") or "").strip().upper() != operation:
-        raise LiveTestCaseBuildError("comparable_operation_mismatch")
+        analysis = {}
     market = analysis.get("mercado") if isinstance(analysis.get("mercado"), Mapping) else {}
     client = analysis.get("client_evidence") if isinstance(analysis.get("client_evidence"), Mapping) else {}
     validation_v3 = analysis.get("client_validation_v3") if isinstance(analysis.get("client_validation_v3"), Mapping) else {}
@@ -679,9 +683,7 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
     if effective == "PARCEL_LAND_ONLY" and not integral:
         integral, land = land, []
         primary_surface = "land_m2"
-    own_excluded = bool(own_ids) and not any(str(item.get("listing_id") or "") in own_ids for item in ordered)
-    if not own_excluded:
-        raise LiveTestCaseBuildError("own_listing_exclusion_unverified")
+    own_excluded = not any(str(item.get("listing_id") or "") in own_ids for item in ordered)
     v3 = {
         "effective_type": effective,
         "primary_surface": primary_surface,
@@ -692,6 +694,7 @@ def _comparables(master: Mapping[str, Any], operation: str, appraisal: Mapping[s
         "land_reference_only_count": len(land),
         "comparable_display_status": "FULL" if level in {"HIGH", "MEDIUM"} else "LIMITED" if level == "LIMITED" else "HIDDEN",
         "evidence_conflict": bool(client.get("evidence_conflict")),
+        "own_listing_excluded": own_excluded,
         "integral_comparables": integral,
         "land_references": land,
     }
@@ -705,7 +708,7 @@ def _appraisal(db: Any, master: Mapping[str, Any], operation: str, current_price
         "tasacion_online": 1, "analisis_comercial": 1,
     }))
     if len(docs) > 1:
-        raise LiveTestCaseBuildError("appraisal_not_unique")
+        raise LiveTestCaseBuildError("document_conflict")
     doc = docs[0] if docs else None
     online = (doc or {}).get("tasacion_online") or {}
     if operation == VENTA:
@@ -819,7 +822,9 @@ def _communal(db: Any, master: Mapping[str, Any], operation: str) -> dict[str, A
     }):
         if _fold(row.get("comuna")) == _fold(commune) and _fold(row.get("tipo_propiedad")) == _fold(prop_type):
             matches.append(row)
-    if len(matches) != 1:
+    if len(matches) > 1:
+        raise LiveTestCaseBuildError("document_conflict")
+    if not matches:
         return None
     row = matches[0]
     section = row.get("mercado_venta" if operation == VENTA else "mercado_arriendo")
@@ -844,7 +849,16 @@ def _support(
     *,
     qa_fixture_case: Mapping[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    live_appraisal = _appraisal(db, master, operation, current)
+    document_conflict = False
+    try:
+        live_appraisal = _appraisal(db, master, operation, current)
+    except LiveTestCaseBuildError as exc:
+        if qa_fixture_case is not None or exc.error_code != "document_conflict":
+            raise
+        # Conflicting source records suppress all document links, but do not
+        # suppress the commercial recommendation. Source records are untouched.
+        live_appraisal = None
+        document_conflict = True
     if qa_fixture_case is not None:
         _assert_live_appraisal_matches_fixture(live_appraisal, qa_fixture_case, operation)
         appraisal = _fixture_appraisal(qa_fixture_case, operation, current)
@@ -856,7 +870,12 @@ def _support(
         communal = None
         doc_type = ""
     try:
-        communal = _communal(db, master, operation)
+        communal = None if document_conflict else _communal(db, master, operation)
+    except LiveTestCaseBuildError as exc:
+        if qa_fixture_case is not None or exc.error_code != "document_conflict":
+            raise
+        communal = None
+        document_conflict = True
     except Exception:
         # A communal report is secondary context; it must not block an
         # individually supported A/B/D test case.
@@ -870,7 +889,10 @@ def _support(
             raise LiveTestCaseBuildError("qa_fixture_document_type_conflicts_with_live_source")
     else:
         doc_type = "INDIVIDUAL_APPRAISAL" if appraisal else "COMMUNAL_MARKET_REPORT" if communal else "NONE"
-    support = {"operation": operation, "appraisal": appraisal, "communal_market": communal}
+    support = {
+        "operation": operation, "appraisal": appraisal,
+        "communal_market": communal, "document_conflict": document_conflict,
+    }
     if qa_fixture_case is not None:
         support["qa_evidence_source"] = QA_EVIDENCE_SOURCE
         support["qa_evidence_lineage"] = dict(qa_fixture_case.get("source_lineage") or {})
@@ -923,32 +945,189 @@ def _origin(lead: Mapping[str, Any]) -> str:
     return "Otro"
 
 
-def _activity_90d(db: Any, code: str, now: datetime) -> dict[str, Any]:
+def _percentile_linear(values: Sequence[int], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile / 100.0
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return float(ordered[lower])
+    fraction = position - lower
+    return float(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction)
+
+
+def calculate_owner_campaign_lead_percentiles(db: Any, now: datetime) -> dict[str, dict[str, Any]]:
+    """Build per-operation lead thresholds from the currently eligible portfolio."""
+    eligible_operations: dict[str, set[str]] = defaultdict(set)
+    for master in db[PROPERTY_COLLECTION].find(
+        {
+            "estado.oficina": CAMPAIGN_OFFICE,
+            "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
+            "disponible_prop360": True,
+        },
+        {
+            "codigo": 1, "estado": 1, "disponible_prop360": 1,
+            "tipo_operacion": 1, "resumen": 1, "operacion": 1,
+            "email_propietario": 1, "correo_propietario": 1,
+            "propietario": 1, "datos_propietario": 1,
+        },
+    ):
+        code = str(master.get("codigo") or "").strip()
+        if not code or code in EXPLICITLY_EXCLUDED_CODES:
+            continue
+        try:
+            _email_from_property(master)
+        except LiveTestCaseBuildError:
+            continue
+        resolved = resolve_property_operation(master)
+        operations = (VENTA, ARRIENDO) if resolved == VENTA_ARRIENDO else (resolved,)
+        for operation in operations:
+            if operation not in _SINGULAR_OPERATIONS:
+                continue
+            price_block = operation_price_block(master, requested_operation=operation)
+            price = _number((price_block or {}).get("precio_uf"))
+            if price is not None and price > 0:
+                eligible_operations[code].add(operation)
+
+    identities: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
+    undated_codes: set[str] = set()
+    lead_query_codes = list(eligible_operations)
+    lead_query_values = [variant for code in lead_query_codes for variant in _variants(code)]
+    cutoff = now - timedelta(days=90)
+    leads = db["leads"].find(
+        {"prospecto.codigo": {"$in": lead_query_values}},
+        {"_id": 1, "prospecto.codigo": 1, "prospecto.operacion": 1,
+         "prospecto.origen": 1, "created_at": 1, "test_mode": 1,
+         "source": 1, "origen": 1, "portal": 1, "phone": 1,
+         "is_duplicate": 1, "duplicate": 1, "duplicate_of": 1},
+    )
+    for lead in leads:
+        code = str(_path(lead, "prospecto.codigo") or "").strip()
+        operations = eligible_operations.get(code)
+        if not operations:
+            continue
+        source_text = " ".join(str(value or "") for value in (
+            lead.get("source"), lead.get("origen"), lead.get("portal"),
+            _path(lead, "prospecto.origen"),
+        )).casefold()
+        if lead.get("test_mode") is True or any(term in source_text for term in ("test", "qa", "internal")):
+            continue
+        if lead.get("is_duplicate") is True or lead.get("duplicate") is True or lead.get("duplicate_of") not in (None, "", False):
+            continue
+        created = _date(lead.get("created_at"))
+        if created is None:
+            undated_codes.add(code)
+            continue
+        if not cutoff <= created <= now:
+            continue
+        lead_operation = str(_path(lead, "prospecto.operacion") or "").casefold()
+        if lead_operation:
+            matched_operation = ARRIENDO if "arriend" in lead_operation else VENTA if "venta" in lead_operation else None
+            if matched_operation is None:
+                continue
+            operations = operations.intersection({matched_operation})
+        elif len(operations) > 1:
+            continue
+        phone = "".join(character for character in str(lead.get("phone") or "") if character.isdigit())
+        if len(phone) == 11 and phone.startswith("56"):
+            phone = phone[2:]
+        identity = ("phone", phone) if phone else ("lead_id", str(lead.get("_id")))
+        for operation in operations:
+            identities[(code, operation)].add(identity)
+
+    counts_by_operation = {
+        operation: [
+            len(identities.get((code, operation), set()))
+            for code, operations in eligible_operations.items()
+            if operation in operations and code not in undated_codes
+        ]
+        for operation in (VENTA, ARRIENDO)
+    }
+    combined_positive = [
+        count for counts in counts_by_operation.values() for count in counts if count > 0
+    ]
+    output: dict[str, dict[str, Any]] = {}
+    for operation in (VENTA, ARRIENDO):
+        counts = counts_by_operation[operation]
+        positive = [count for count in counts if count > 0]
+        use_combined = len(positive) < MIN_POSITIVE_PERCENTILE_SAMPLE and bool(combined_positive)
+        sample = combined_positive if use_combined else positive
+        property_counts = {
+            code: (None if code in undated_codes else len(identities.get((code, operation), set())))
+            for code, operations in eligible_operations.items()
+            if operation in operations
+        }
+        output[operation] = {
+            "total": len(property_counts),
+            "known_total": len(counts),
+            "positive_count": len(positive),
+            "percentile_source": "COMBINED_POSITIVE" if use_combined else operation,
+            "p25": _percentile_linear(sample, 25),
+            "median": _percentile_linear(sample, 50),
+            "p75": _percentile_linear(sample, 75),
+            "p90": _percentile_linear(sample, 90),
+            "lead_counts_by_property": property_counts,
+        }
+    return output
+
+
+def _activity_90d(
+    db: Any, code: str, now: datetime, *, operation: str | None = None,
+    dual_operation: bool = False,
+) -> dict[str, Any]:
     cutoff = now - timedelta(days=90)
     values = _variants(code)
     unknown = False
+    lead_unknown = False
     counts: Counter[str] = Counter()
     conversations: set[str] = set()
     visits: set[str] = set()
     try:
-        leads = list(db["leads"].find({"prospecto.codigo": {"$in": values}}, {"_id": 1, "prospecto": 1, "created_at": 1, "conversation_id": 1, "origen": 1, "portal": 1, "source": 1, "test_mode": 1}))
+        leads = list(db["leads"].find({"prospecto.codigo": {"$in": values}}, {
+            "_id": 1, "prospecto": 1, "created_at": 1, "conversation_id": 1,
+            "origen": 1, "portal": 1, "source": 1, "test_mode": 1,
+            "is_duplicate": 1, "duplicate": 1, "duplicate_of": 1, "phone": 1,
+        }))
         lead_by_id: dict[str, str] = {}
         native_ids = []
         total = 0
+        unique_leads: set[tuple[str, str]] = set()
         for lead in leads:
-            if lead.get("test_mode") is True or str(lead.get("source") or "").casefold() == "owner_campaign_test":
+            source_text = " ".join(str(value or "") for value in (
+                lead.get("source"), lead.get("origen"), lead.get("portal"),
+                _path(lead, "prospecto.origen"),
+            )).casefold()
+            if lead.get("test_mode") is True or any(term in source_text for term in ("test", "qa", "internal")):
+                continue
+            if lead.get("is_duplicate") is True or lead.get("duplicate") is True or lead.get("duplicate_of") not in (None, "", False):
                 continue
             linked_code = str(_path(lead, "prospecto.codigo") or "").strip()
             if linked_code != code:
+                continue
+            lead_operation = _operations_in_label(_path(lead, "prospecto.operacion"))
+            if lead_operation and operation and operation not in lead_operation:
+                continue
+            if dual_operation and not lead_operation:
+                # An operation-untagged inquiry on a dual listing cannot safely
+                # be attributed to the Sale campaign.
                 continue
             lead_by_id[str(lead.get("_id"))] = linked_code
             native_ids.append(lead.get("_id"))
             created = _date(lead.get("created_at"))
             if created is None:
                 unknown = True
+                lead_unknown = True
             elif cutoff <= created <= now:
-                counts[_origin(lead)] += 1
-                total += 1
+                phone = "".join(character for character in str(lead.get("phone") or "") if character.isdigit())
+                if len(phone) == 11 and phone.startswith("56"):
+                    phone = phone[2:]
+                identity = ("phone", phone) if phone else ("lead_id", str(lead.get("_id")))
+                if identity not in unique_leads:
+                    unique_leads.add(identity)
+                    counts[_origin(lead)] += 1
+                    total += 1
         event_or = [{"property_code": {"$in": values}}]
         if native_ids:
             event_or.append({"lead_id": {"$in": native_ids}})
@@ -989,11 +1168,18 @@ def _activity_90d(db: Any, code: str, now: datetime) -> dict[str, Any]:
             elif cutoff <= accepted <= now:
                 visits.add(str(visit.get("visita_code") or visit.get("_id") or ""))
         if unknown:
-            return {"state": "UNKNOWN", "total_leads": None, "portals": [], "conversations": None, "visits": None}
+            return {
+                "state": "UNKNOWN", "total_leads": None, "portals": [],
+                "conversations": None, "visits": None,
+                "lead_state": "UNKNOWN" if lead_unknown else ("KNOWN_POSITIVE" if total else "KNOWN_ZERO"),
+                "lead_total": None if lead_unknown else total,
+            }
         state = "KNOWN_POSITIVE" if total else "KNOWN_ZERO"
         return {
             "state": state,
             "total_leads": total,
+            "lead_state": state,
+            "lead_total": total,
             "portals": [{"name": portal, "count": counts[portal]} for portal in PORTALS if counts[portal]],
             "conversations": len(conversations), "visits": len(visits),
         }
@@ -1063,6 +1249,8 @@ def _build_case(
     qa_fixture_case: Mapping[str, Any] | None = None,
     qa_segments: Mapping[str, Any] | None = None,
     qa_manifest: Mapping[str, Any] | None = None,
+    lead_percentiles_by_operation: Mapping[str, Mapping[str, Any]] | None = None,
+    resolve_image: bool = True,
     now: datetime,
 ) -> OwnerCampaignTestCase:
     code = str(master.get("codigo") or "").strip()
@@ -1087,7 +1275,7 @@ def _build_case(
     if current is None or current <= 0:
         raise LiveTestCaseBuildError("live_price_unavailable")
     prop_type, commune = _property_type(master), _commune(master)
-    analysis = master["analisis_comparables"]
+    analysis = master.get("analisis_comparables") if isinstance(master.get("analisis_comparables"), Mapping) else {}
     market = analysis.get("mercado") if isinstance(analysis.get("mercado"), Mapping) else {}
     quality = str((analysis.get("client_evidence") or {}).get("evidence_level") or "INSUFFICIENT").upper()
     percentile = _number(market.get("property_percentile"))
@@ -1178,9 +1366,19 @@ def _build_case(
     from analytics.owner_campaign_email_v2 import _initials, _property_context
 
     executive["initials"] = _initials(executive["name"])
-    image = _resolve_image(master, code)
-    activity = _activity_90d(db, code, now)
-    model = _property_context(prop, qa_row, support_view, executive, image, activity)
+    image = _resolve_image(master, code) if resolve_image else {
+        "available": False, "url": "", "source": "NOT_REQUIRED_FOR_PREFLIGHT", "count": 0,
+    }
+    live_operation_flags = master.get("tipo_operacion") if isinstance(master.get("tipo_operacion"), Mapping) else {}
+    dual_operation = (
+        _operation_flag(live_operation_flags.get("venta")) is True
+        and _operation_flag(live_operation_flags.get("arriendo")) is True
+    )
+    activity = _activity_90d(db, code, now, operation=operation, dual_operation=dual_operation)
+    model = _property_context(
+        prop, qa_row, support_view, executive, image, activity,
+        lead_percentiles=(lead_percentiles_by_operation or {}).get(operation),
+    )
     model["executive"] = executive
     model["activity_90d"] = activity
     model["campaign_segment"] = expected_segment
@@ -1256,6 +1454,7 @@ def _build_portfolio(
     *,
     qa_segments: Mapping[str, Any] | None = None,
     qa_manifest: Mapping[str, Any] | None = None,
+    lead_percentiles_by_operation: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> OwnerCampaignTestCase:
     fixed_case_codes = set(PROPERTY_CODES.values())
     candidates = []
@@ -1350,7 +1549,9 @@ def _build_portfolio(
                     continue
                 case = _build_case(
                     db, master, "E", segment=segment, qa_segments=qa_segments,
-                    qa_manifest=qa_manifest, now=now,
+                    qa_manifest=qa_manifest,
+                    lead_percentiles_by_operation=lead_percentiles_by_operation,
+                    now=now,
                 )
                 cases.append(case)
             except LiveTestCaseBuildError as exc:
@@ -1401,6 +1602,7 @@ def build_owner_campaign_test_cases_live(
     allowed_ids = {"A", "B", "C", "D", "E", *TARGETED_SINGLE_CASE_CODES}
     if not requested or len(requested) != len(set(requested)) or set(requested) - allowed_ids:
         raise LiveTestCaseBuildError("requested_test_cases_invalid")
+    lead_percentiles_by_operation = calculate_owner_campaign_lead_percentiles(db, now or datetime.now(timezone.utc))
     if set(requested).issubset(TARGETED_SINGLE_CASE_CODES):
         target_codes = {TARGETED_SINGLE_CASE_CODES[case_id] for case_id in requested}
         try:
@@ -1426,6 +1628,7 @@ def build_owner_campaign_test_cases_live(
                     segment = "TEST_ADVISOR_REVIEW"
                 case = _build_case(
                     db, master, case_id, segment=segment,
+                    lead_percentiles_by_operation=lead_percentiles_by_operation,
                     now=now or datetime.now(timezone.utc),
                 )
                 expected_operation = VENTA if case_id == "SALE_NONE_6873" else ARRIENDO
@@ -1465,27 +1668,36 @@ def build_owner_campaign_test_cases_live(
             raw_target=_number(qa_cases["A"].get("raw_recommended_price_uf")),
             display_target=_number(qa_cases["A"].get("display_recommended_price_uf")),
             qa_fixture_case=qa_cases["A"], qa_segments=qa_segments,
-            qa_manifest=qa_manifest, now=current_time,
+            qa_manifest=qa_manifest,
+            lead_percentiles_by_operation=lead_percentiles_by_operation,
+            now=current_time,
         ),
         "B": lambda: _build_case(
             db, docs[PROPERTY_CODES["B"]], "B",
             segment=qa_segments[PROPERTY_CODES["B"]],
             qa_fixture_case=qa_cases["B"], qa_segments=qa_segments,
-            qa_manifest=qa_manifest, now=current_time,
+            qa_manifest=qa_manifest,
+            lead_percentiles_by_operation=lead_percentiles_by_operation,
+            now=current_time,
         ),
         "C": lambda: _build_case(
             db, docs[PROPERTY_CODES["C"]], "C",
             segment=qa_segments[PROPERTY_CODES["C"]], qa_segments=qa_segments,
-            qa_manifest=qa_manifest, now=current_time,
+            qa_manifest=qa_manifest,
+            lead_percentiles_by_operation=lead_percentiles_by_operation,
+            now=current_time,
         ),
         "D": lambda: _build_case(
             db, docs[PROPERTY_CODES["D"]], "D",
             segment=qa_segments[PROPERTY_CODES["D"]],
             qa_fixture_case=qa_cases["D"], qa_segments=qa_segments,
-            qa_manifest=qa_manifest, now=current_time,
+            qa_manifest=qa_manifest,
+            lead_percentiles_by_operation=lead_percentiles_by_operation,
+            now=current_time,
         ),
         "E": lambda: _build_portfolio(
             db, current_time, qa_segments=qa_segments, qa_manifest=qa_manifest,
+            lead_percentiles_by_operation=lead_percentiles_by_operation,
         ),
     }
     built: list[OwnerCampaignTestCase] = []

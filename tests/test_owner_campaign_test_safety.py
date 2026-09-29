@@ -2361,3 +2361,11 @@ def test_preview_failure_reports_safe_per_case_error_codes(monkeypatch):
         "C_ERROR_CODE=NONE;D_ERROR_CODE=NONE;E_ERROR_CODE=NONE"
     )
     assert "@" not in str(exc.value)
+
+
+def test_approved_price_formatter_hides_rent_month_suffix_and_sale_decimals():
+    assert email_v2._price_label(7207.5, "VENTA") == "7.208 UF"
+    assert email_v2._price_label(1628.015, "VENTA") == "1.628 UF"
+    assert email_v2._price_label(19.53, "ARRIENDO") == "19,5 UF"
+    assert email_v2._price_label(21, "ARRIENDO") == "21 UF"
+    assert email_v2._clp_price_label(850000, "ARRIENDO") == "$850.000"

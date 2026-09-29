@@ -1087,9 +1087,11 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
 
     source_check_keys = {
         "real_property_image", "executive_name",
-        "reference_correct", "comparables_compatible", "own_listing_excluded", "cta_correct",
+        "reference_correct", "own_listing_excluded", "cta_correct",
     }
     if any(source_checks.get(key) is not True for key in source_check_keys):
+        raise TestSenderError("approved_evidence_check_failed")
+    if source_checks.get("comparables_compatible") is not True and comparable.get("visible") is not False:
         raise TestSenderError("approved_evidence_check_failed")
     price_text = str(property_model.get("price_label") or "")
     price_match = re.search(r"([0-9][0-9.,]*)", price_text)
@@ -1176,7 +1178,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
         "operation_correct": True,
         "price_correct": True,
         "reference_correct": source_checks.get("reference_correct") is True,
-        "comparables_compatible": source_checks.get("comparables_compatible") is True,
+        "comparables_compatible": source_checks.get("comparables_compatible") is True or comparable.get("visible") is False,
         "own_listing_excluded": source_checks.get("own_listing_excluded") is True,
         "cta_correct": source_checks.get("cta_correct") is True,
         **rental_checks,

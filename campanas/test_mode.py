@@ -15,7 +15,7 @@ from uuid import uuid4
 
 
 TEST_RECIPIENT = "p.galleguil@gmail.com"
-QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873", "16521"})
+QA_PROPERTY_ALLOWLIST = frozenset({"5641", "6132", "16486", "6873", "16521", "16469", "16527", "16492"})
 TEST_CAMPAIGN_ID = "owner_price_campaign_test_20260923"
 TEST_CAMPAIGN_VERSION = "owner_campaign_test_20260923"
 TEST_CAMPAIGN_PREFIX = "owner_price_campaign_test_"

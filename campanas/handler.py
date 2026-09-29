@@ -390,12 +390,15 @@ def _process_owner_campaign_action(
                 "selected_price_clp": float(selected_clp) if selected_clp is not None else None,
                 "recommended_adjustment_pct": recommended_pct,
                 "recommended_price": recommended_price,
-                "gradual_adjustment_pct": int(gradual_pct) if gradual_pct is not None else None,
-                "gradual_price": float(gradual_price) if gradual_price is not None else None,
-                "gradual_price_clp": float(gradual_clp) if gradual_clp is not None else None,
                 "previous_price": current_price,
                 "authorization_status": "PRICE_AUTHORIZED",
             }
+            if gradual_option_enabled(campana):
+                details.update({
+                    "gradual_adjustment_pct": int(gradual_pct) if gradual_pct is not None else None,
+                    "gradual_price": float(gradual_price) if gradual_price is not None else None,
+                    "gradual_price_clp": float(gradual_clp) if gradual_clp is not None else None,
+                })
         if event == "advisor_review_requested":
             details = {
                 "selected_adjustment_type": "ADVISOR_REVIEW",

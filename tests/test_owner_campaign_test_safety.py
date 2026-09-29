@@ -1719,7 +1719,7 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert click["requires_confirmation"] is True
     ledger_row = db.docs[actions.LEDGER_COLLECTION][0]
     assert [event["event"] for event in ledger_row["response_events"]] == [
-        "cta_clicked", "price_confirm_page_opened"
+        "cta_clicked", "price_confirm_page_opened", "confirmation_page_opened"
     ]
     assert ledger_row["owner_response"]["status"] == "PENDING"
     result = actions.process_test_action(token, db=db, confirmed=True)
@@ -1731,7 +1731,8 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert result["live_price_before"] == result["live_price_after"] == before
     assert after == before
     assert [event["event"] for event in events] == [
-        "cta_clicked", "price_confirm_page_opened", "price_authorized"
+        "cta_clicked", "price_confirm_page_opened", "confirmation_page_opened",
+        "price_authorized", "recommended_selected",
     ]
     summary = ledger_row["owner_response"]
     assert summary["status"] == "PRICE_AUTHORIZED"
@@ -1744,8 +1745,9 @@ def test_test_price_authorization_requires_confirmation_and_keeps_exact_live_pri
     assert authorization["campaign_id"] == "owner_price_campaign_test_20260923"
     assert authorization["campaign_version"] == "owner_campaign_test_20260923"
     assert authorization["action"] == actions.ACCEPT_PRICE_ACTION
-    assert authorization["current_value_at_campaign"] == 5000
-    assert authorization["proposed_value"] == 4700
+    assert authorization["previous_price"] == 5000
+    assert authorization["recommended_price"] == 4700
+    assert authorization["selected_price"] == 4700
     assert authorization["event_at"] is not None
     assert authorization["timestamp_utc"] == authorization["event_at"]
     assert authorization["event_type"] == "price_authorized"
@@ -1829,7 +1831,7 @@ def test_fresh_qa_campaign_ignores_old_authorization_without_mutating_history(mo
     assert response.status_code == 200
     assert "Confirma tu ajuste de precio" in page
     assert "AUTORIZAR AJUSTE RECOMENDADO" in page
-    assert "AUTORIZAR AJUSTE GRADUAL" in page
+    assert "AUTORIZAR AJUSTE GRADUAL" not in page
     assert "Tu autorización ya fue registrada" not in page
     assert [event["event"] for event in fresh["response_events"]] == [
         "cta_clicked", "price_confirm_page_opened", "confirmation_page_opened",
@@ -1839,6 +1841,60 @@ def test_fresh_qa_campaign_ignores_old_authorization_without_mutating_history(mo
     assert all(event["event"] != "price_authorized" for event in fresh["response_events"])
     assert historical["owner_response"]["status"] == "PRICE_AUTHORIZED"
     assert historical["response_events"] == [{"event_id": "historic-auth", "event": "price_authorized"}]
+
+
+def test_new_campaign_authorization_omits_disabled_gradual_values_from_events_and_response(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    monkeypatch.setenv("OWNER_CAMPAIGN_GRADUAL_OPTION_ENABLED", "false")
+    campaign_id = "owner_price_campaign_qa_20260929T140000_abcdef123456"
+    qa_run_id = "qa_run_20260929T140000_abcdef123456"
+    db = _action_db(code="5641")
+    fresh = dict(_test_ledger(code="5641"), campaign_id=campaign_id, test_run_id=qa_run_id)
+    db.docs[actions.LEDGER_COLLECTION] = [fresh]
+    token = _action_token("5641", campaign_id=campaign_id, qa_run_id=qa_run_id)
+
+    actions.process_test_action(token, db=db)
+    result = actions.process_test_action(token, db=db, confirmed=True)
+
+    assert result["event"] == "price_authorized"
+    events = fresh["response_events"]
+    authorization = next(event for event in events if event["event"] == "price_authorized")
+    assert authorization["recommended_adjustment_pct"] == 6
+    assert authorization["recommended_price"] == 4700
+    assert authorization["selected_adjustment_type"] == "RECOMMENDED"
+    assert authorization["selected_adjustment_pct"] == 6
+    assert authorization["selected_price"] == 4700
+    assert "gradual_adjustment_pct" not in authorization
+    assert "gradual_price" not in authorization
+    assert "gradual_adjustment_pct" not in fresh["owner_response"]
+    assert "gradual_price" not in fresh["owner_response"]
+
+
+def test_future_enabled_campaign_uses_canonical_gradual_offer(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_MODE", "true")
+    monkeypatch.setenv("OWNER_CAMPAIGN_TEST_TOKEN_SECRET", SECRET)
+    monkeypatch.setenv("OWNER_CAMPAIGN_GRADUAL_OPTION_ENABLED", "true")
+    campaign_id = "owner_price_campaign_qa_20260929T140100_abcdef654321"
+    qa_run_id = "qa_run_20260929T140100_abcdef654321"
+    db = _action_db(code="5641")
+    fresh = dict(_test_ledger(code="5641"), campaign_id=campaign_id, test_run_id=qa_run_id)
+    db.docs[actions.LEDGER_COLLECTION] = [fresh]
+    token = _action_token("5641", campaign_id=campaign_id, qa_run_id=qa_run_id)
+
+    actions.process_test_action(token, db=db)
+    actions.process_test_action(token, db=db, confirmed=True, selected_adjustment_type="GRADUAL")
+
+    authorization = next(event for event in fresh["response_events"] if event["event"] == "price_authorized")
+    assert authorization["recommended_adjustment_pct"] == 6
+    assert authorization["recommended_price"] == 4700
+    assert authorization["gradual_adjustment_pct"] == 2
+    assert authorization["gradual_price"] == 4900
+    assert authorization["selected_adjustment_type"] == "GRADUAL"
+    assert authorization["selected_adjustment_pct"] == 2
+    assert authorization["selected_price"] == 4900
+    assert fresh["owner_response"]["gradual_adjustment_pct"] == 2
+    assert fresh["owner_response"]["gradual_price"] == 4900
 
 
 def test_authorized_status_stays_sticky_after_reopening_report_and_contacting_advisor(monkeypatch):

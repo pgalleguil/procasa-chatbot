@@ -100,6 +100,13 @@ def test_current_campaign_selection_page_hides_gradual_and_keeps_recommended_and
     assert "OPCIÓN GRADUAL" not in page
     assert "AUTORIZAR AJUSTE GRADUAL" not in page
     assert "3.007 UF" not in page
+    assert ".options.one-option .card{min-height:0" in page
+    assert "AUTORIZAR AJUSTE RECOMENDADO" in page
+    assert "Tu decisión quedará registrada" in page
+    assert "min-height:48px" in page
+    assert "grid-template-columns:1fr" in page
+    assert "font-size:24px" in page
+    assert "max-width:170px" in page
 
 
 def test_future_gradual_path_keeps_5641_recommendation_and_selected_price_separate():

@@ -347,12 +347,24 @@ def persist_test_event(
             raise ValueError("QA recommendation values are invalid") from None
         if not 5 <= recommended_pct <= 10:
             raise ValueError("QA recommendation is outside the approved range")
-        gradual_pct = {10: 8, 9: 7, 8: 6, 7: 5, 6: 5}.get(recommended_pct)
-        gradual_price = round(current_price * (100 - gradual_pct) / 100, 4) if gradual_pct is not None else None
+        # Keep QA authorization data aligned with the one canonical offer
+        # calculator. Never recreate the retired 5–8% mapping in the ledger.
+        from analytics.owner_campaign_email_v2 import calculate_gradual_price_alternative
+        from campanas.owner_campaign_confirmation_page import gradual_option_enabled
+
+        gradual_enabled = gradual_option_enabled(campaign_id)
+        gradual = calculate_gradual_price_alternative(
+            current_price=current_price,
+            recommended_adjustment_pct=recommended_pct,
+        )
+        gradual_pct = gradual.get("adjustment_pct")
+        gradual_price = gradual.get("price")
         selected_type = str(selected_adjustment_type or "RECOMMENDED").strip().upper()
         if selected_type not in {"RECOMMENDED", "GRADUAL"}:
             raise ValueError("Selected QA adjustment type is invalid")
-        if selected_type == "GRADUAL" and (gradual_pct is None or gradual_pct == recommended_pct):
+        if selected_type == "GRADUAL" and (
+            not gradual_enabled or gradual_pct is None or gradual_pct == recommended_pct
+        ):
             raise ValueError("Gradual QA adjustment is unavailable")
         selected_pct = recommended_pct if selected_type == "RECOMMENDED" else gradual_pct
         selected_price = recommended_price_value if selected_type == "RECOMMENDED" else gradual_price
@@ -362,8 +374,6 @@ def persist_test_event(
             "previous_price": current_price,
             "recommended_adjustment_pct": recommended_pct,
             "recommended_price": recommended_price_value,
-            "gradual_adjustment_pct": gradual_pct,
-            "gradual_price": gradual_price,
             "selected_adjustment_type": selected_type,
             "selected_adjustment_pct": selected_pct,
             "selected_price": selected_price,
@@ -371,6 +381,11 @@ def persist_test_event(
             "authorized_at": timestamp.isoformat(),
             "executive_email": existing.get("executive_email"),
         }
+        if gradual_enabled:
+            details.update({
+                "gradual_adjustment_pct": gradual_pct,
+                "gradual_price": gradual_price,
+            })
         auth_event = {
             "event_id": authorization_id, "event": event_name, "action": action,
             "executive": existing.get("executive"), **details,
@@ -453,7 +468,7 @@ def persist_test_event(
     authorized = any(event.get("event") == EVENT_BY_ACTION[ACCEPT_PRICE_ACTION] for event in desired_events)
     if authorized:
         selected_event = next(event for event in desired_events if event.get("event") == event_name)
-        update["$set"].update({
+        response_fields = {
             "owner_response.status": "PRICE_AUTHORIZED",
             "owner_response.authorized_value": selected_event.get("selected_price"),
             "owner_response.current_value_at_campaign": existing.get("current_price_at_send"),
@@ -462,11 +477,15 @@ def persist_test_event(
             "owner_response.selected_price": selected_event.get("selected_price"),
             "owner_response.recommended_adjustment_pct": selected_event.get("recommended_adjustment_pct"),
             "owner_response.recommended_price": selected_event.get("recommended_price"),
-            "owner_response.gradual_adjustment_pct": selected_event.get("gradual_adjustment_pct"),
-            "owner_response.gradual_price": selected_event.get("gradual_price"),
             "owner_response.authorization_status": "PRICE_AUTHORIZED",
             "owner_response.authorized_at": timestamp,
-        })
+        }
+        if gradual_enabled:
+            response_fields.update({
+                "owner_response.gradual_adjustment_pct": selected_event.get("gradual_adjustment_pct"),
+                "owner_response.gradual_price": selected_event.get("gradual_price"),
+            })
+        update["$set"].update(response_fields)
         update["$min"] = {"owner_response.first_authorized_at": timestamp}
         update["$max"] = {"owner_response.last_authorized_at": timestamp}
     elif action == ADVISOR_ACTION:

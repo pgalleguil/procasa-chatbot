@@ -278,7 +278,7 @@
       .evidence-badge-single { display:inline-block; padding:5px 8px; color:#4232C5; background:#ECEBFF; border-radius:999px; font-size:9px; line-height:1.2; font-weight:700; white-space:nowrap; }
       .evidence-note-single { margin:5px 0 0; color:#62698A; font-size:10px; line-height:1.4; }
       .positioning-mode-title { margin:13px 0 0; color:#62698A; font-size:10px; line-height:1.35; font-weight:700; letter-spacing:.03em; }
-      .position-graph { width:100%; margin:10px 0 0; }
+      .position-graph { width:100%; margin:16px 0 0; }
       .position-graph-labels td { width:33.333%; color:#62698A; font-size:9px; line-height:1.25; }
       .position-track { width:100%; margin-top:4px; }
       .position-track { table-layout:fixed; }
@@ -324,9 +324,9 @@
       .caption-dot { display:inline-block; width:6px; height:6px; margin-right:3px; border-radius:50%; vertical-align:1px; }
       .caption-dot-reference { background:#B8B6D3; }
       .caption-dot-property { background:#4232C5; }
-      .position-metrics { width:100%; margin-top:8px; }
-      .position-metric { width:50%; height:92px; padding:11px 12px; border:1px solid #E5E6EF; border-radius:8px; background:#F7F6FF; vertical-align:middle; }
-      .position-metric + .position-metric { border-left:8px solid #ffffff; }
+      .position-metrics { width:100%; margin:16px 0 0; border-collapse:separate !important; border-spacing:9px 0; }
+      .position-metric { width:50%; height:116px; padding:9px 10px 7px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
+      .position-metric + .position-metric { border-left:1px solid #E5E6EF; }
       .position-metric strong { display:block; margin-top:3px; color:#17175F; font-size:17px; line-height:1.15; }
       .position-metric-caption { margin-top:5px; color:#62698A; font-size:9px; line-height:1.2; }
       .position-metric-icon { width:31px; color:#4232C5; font-size:20px; line-height:1; text-align:center; vertical-align:middle; }
@@ -338,7 +338,7 @@
       .position-fallback-values strong { display:block; margin-top:3px; color:#17175F; font-size:16px; }
       .position-unavailable-card { margin-top:14px; padding:14px; border:1px solid #E5E6EF; border-radius:8px; color:#62698A; background:#F7F6FF; font-size:10px; line-height:1.45; }
       .position-explanation { margin:0; padding-left:9px; border-left:1px solid #E5E6EF; color:#62698A; font-size:8px; line-height:1.25; }
-      .comparables-grid-single { width:100%; margin:10px 0 0; border-collapse:separate !important; border-spacing:9px 0; }
+      .comparables-grid-single { width:100%; margin:16px 0 0; border-collapse:separate !important; border-spacing:9px 0; }
       .comp-card-single { width:33.333%; height:116px; padding:9px 10px 7px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
       .comp-card-single .comparable-main-single { height:39px; min-height:39px; overflow:hidden; margin-top:6px; font-size:9px; line-height:1.35; }
       .comp-card-single .comp-attribute-row { white-space:nowrap; }
@@ -448,16 +448,16 @@
       .single-property-review .position-callout-first:before { left:5px; }
       .single-property-review .position-callout-last { margin-left:-108px; text-align:right; }
       .single-property-review .position-callout-last:before { left:auto; right:5px; }
-      .market-reference-single { margin:10px 0 0; padding:9px 11px; border:1px solid #E9E8F0; border-radius:8px; background:#FBFBFD; }
+      .market-reference-single { margin:16px 0 0; padding:0; border:0; border-radius:0; background:transparent; }
       .market-reference-title-single { color:#4F5570; font-size:10px; line-height:1.25; font-weight:700; letter-spacing:.035em; }
       .market-reference-subtitle-single { margin-top:2px; color:#62698A; font-size:9px; line-height:1.3; }
-      .market-reference-grid-single { width:100%; margin-top:7px; }
-      .market-reference-grid-single td { width:50%; padding:5px 8px 0 0; border-top:1px solid #E5E6EF; vertical-align:top; }
+      .market-reference-grid-single { width:100%; margin-top:10px; border-collapse:separate !important; border-spacing:9px 0; }
+      .market-reference-grid-single td { width:50%; height:116px; padding:9px 10px 7px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
       .market-reference-grid-single td + td { padding-left:10px; border-left:1px solid #E5E6EF; }
       .market-reference-label-single { color:#62698A; font-size:8px; line-height:1.25; letter-spacing:.04em; text-transform:uppercase; }
       .market-reference-value-single { margin-top:2px; color:#424967; font-size:12px; line-height:1.2; font-weight:700; }
       .market-reference-note-single { margin-top:2px; color:#62698A; font-size:8px; line-height:1.25; }
-      .market-reference-copy-single { margin:6px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
+      .market-reference-copy-single { margin:8px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
       .market-reference-date-single { margin-top:4px; color:#7A8192; font-size:8px; line-height:1.25; }
       .sample-note-single { margin:6px 0 0; color:#62698A; font-size:9px; line-height:1.35; }
       .sample-note-single strong { color:#41486C; }
@@ -716,7 +716,7 @@
                       <tr><td colspan="3"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="position-track"><tr>{% for cell in property.comparable.positioning_graph.cells %}<td style="height:14px;line-height:14px;text-align:center;background:{% if loop.index0 < 4 %}#ECEBFF{% elif loop.index0 < 8 %}#DCD9FA{% elif loop.index0 < 13 %}#BDB6F0{% elif loop.index0 < 17 %}#9185E2{% else %}#6252D0{% endif %};">{% if cell.reference %}<span style="display:inline-block;width:11px;height:11px;border:2px solid #ffffff;border-radius:50%;background:#6252D0;vertical-align:middle;"></span>{% endif %}{% if cell.marker %}<span style="display:inline-block;width:15px;height:15px;border:2px solid #ffffff;border-radius:50%;background:#17175F;vertical-align:middle;"></span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
                       <tr><td colspan="3"><table role="presentation" class="position-anchor-grid" cellspacing="0" cellpadding="0"><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.reference %}<span class="position-anchor-line" style="background:#6252D0;"></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.reference %}<span class="position-anchor-label" style="text-align:{% if loop.index0 <= 2 %}left{% elif loop.index0 >= 18 %}right{% else %}center{% endif %};margin-left:{% if loop.index0 <= 2 %}0{% elif loop.index0 >= 18 %}-117px{% else %}-58px{% endif %};">Referencia comparable<br /><strong>{{ property.comparable.positioning_reference_label }}</strong></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.marker %}<span class="position-anchor-line" style="background:#17175F;"></span>{% endif %}</td>{% endfor %}</tr><tr>{% for cell in property.comparable.positioning_graph.cells %}<td align="center">{% if cell.marker %}<span class="position-anchor-label" style="text-align:{% if loop.index0 <= 2 %}left{% elif loop.index0 >= 18 %}right{% else %}center{% endif %};margin-left:{% if loop.index0 <= 2 %}0{% elif loop.index0 >= 18 %}-117px{% else %}-58px{% endif %};"><strong>Tu propiedad</strong><br />{{ property.comparable.positioning_property_label }}</span>{% endif %}</td>{% endfor %}</tr></table></td></tr>
                     </table>{% endif %}
-                    <table role="presentation" width="100%" cellspacing="7" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong><div class="position-metric-caption">Mercado comparable</div></td><td class="position-metric"><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong>{% if property.comparable.positioning_delta_label %}<div class="position-metric-caption">{{ property.comparable.positioning_delta_label }} {{ property.comparable.positioning_delta_context }}</div>{% endif %}</td></tr></table>
+                    <table role="presentation" width="100%" cellspacing="9" cellpadding="0" class="position-metrics"><tr><td class="position-metric"><div class="label">{% if property.comparable.positioning_mode == "TOTAL_PRICE" %}Referencia de publicaciones{% else %}Referencia de mercado{% endif %}</div><strong>{{ property.comparable.positioning_reference_label }}</strong><div class="position-metric-caption">Mercado comparable</div></td><td class="position-metric"><div class="label">Tu propiedad</div><strong>{{ property.comparable.positioning_property_label }}</strong>{% if property.comparable.positioning_delta_label %}<div class="position-metric-caption">{{ property.comparable.positioning_delta_label }} {{ property.comparable.positioning_delta_context }}</div>{% endif %}</td></tr></table>
                     {% elif property.appraisal.visible and property.appraisal.kind == "INDIVIDUAL_APPRAISAL" %}
                       <div class="position-fallback-card"><div class="position-fallback-title">Posicionamiento frente a la valoración</div><table role="presentation" cellspacing="0" cellpadding="0" class="position-fallback-values"><tr><td>Precio publicado<strong>{{ property.price_label }}</strong></td><td>Tasación de referencia<strong>{{ property.appraisal.mid_label }}</strong></td></tr></table></div>
                     {% else %}

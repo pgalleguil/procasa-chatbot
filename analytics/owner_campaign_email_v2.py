@@ -187,16 +187,25 @@ def _is_rent(operation: Any) -> bool:
 
 
 def _price_label(value: Any, operation: Any) -> str:
-    label = fmt_uf(value)
-    return label + " / mes" if _is_rent(operation) and label != "No disponible" else label
+    parsed = number(value)
+    if parsed is None:
+        return "No disponible"
+    decimal_value = Decimal(str(parsed))
+    if _is_rent(operation):
+        rounded = decimal_value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        decimals = 1 if rounded != rounded.to_integral_value() else 0
+    else:
+        rounded = decimal_value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        decimals = 0
+    return fmt_number(rounded, decimals) + " UF"
 
 
 def _clp_price_label(value: Any, operation: Any) -> str:
     parsed = number(value)
     if parsed is None or parsed <= 0:
         return ""
-    label = "$ " + fmt_number(parsed, 0)
-    return label + " / mes" if _is_rent(operation) else label
+    label = "$" + fmt_number(parsed, 0) if _is_rent(operation) else "$ " + fmt_number(parsed, 0)
+    return label
 
 
 def _indicator(primary: Any) -> tuple[str, str]:
@@ -439,7 +448,7 @@ def _v3_reference_item(item: Mapping[str, Any], unit: str, price_key: str, opera
     return {
         "listing_id": str(item.get("listing_id") or ""),
         "portal": _portal_label(item.get("portal")),
-        "price_label": ("$ " + f"{rent_price_clp:,.0f}".replace(",", ".") + " / mes") if rent_price_clp is not None else _price_label(price, operation),
+        "price_label": _clp_price_label(rent_price_clp, operation) if rent_price_clp is not None else _price_label(price, operation),
         "unit_label": fmt_unit(price_m2, unit),
         "surface_label": _surface_label({"superficie_construida": item.get("built_m2"), "superficie_terreno": item.get("land_m2")}),
         "rooms_label": _rooms_label({"dormitorios": item.get("bedrooms")}),
@@ -988,7 +997,7 @@ def _property_context(
     diagnostic_text = _diagnostic_text(level, str(qa_row.get("diagnostic") or "sin diagnóstico"), comparable)
     single_diagnostic_text = diagnostic_text
     if appraisal.get("visible") and appraisal.get("kind") == "INDIVIDUAL_APPRAISAL":
-        diagnostic_parts = [f"El precio publicado es {fmt_uf(price)}; la tasación individual tiene una referencia central de {appraisal.get('mid_label') }."]
+        diagnostic_parts = [f"El precio publicado es {_price_label(price, operation)}; la tasación individual tiene una referencia central de {appraisal.get('mid_label') }."]
         if comparable.get("visible") and comparable.get("positioning_mode") == "TOTAL_PRICE":
             diagnostic_parts.append(
                 f"La mediana de {comparable.get('selected_n')} publicaciones comparables es {comparable.get('positioning_reference_label')}."

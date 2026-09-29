@@ -335,15 +335,27 @@ def _validate_row(
         raise SenderError("required_owner_campaign_cta_missing")
     if "opción gradual" in visible_text or "ajuste gradual" in visible_text or "autorizar ajuste gradual" in visible_text:
         raise SenderError("gradual_option_visible")
-    expected_price_labels = [
+    # The renderer's selected display labels are canonical. A CLP equivalent
+    # may exist in the data without being shown in the email, so validate the
+    # exact labels selected by the V2 model instead of requiring every currency
+    # representation to appear to the recipient.
+    current_label = str(model.get("price_label") or "")
+    recommended_label = str(model.get("recommended_price_label") or "")
+    canonical_current_options = {
         _price_label(row.get("current_price"), operation),
+        _clp_price_label(row.get("current_price_clp"), operation),
+    }
+    canonical_recommended_options = {
         _price_label(row.get("recommended_price"), operation),
-    ]
-    if row.get("current_price_clp") is not None:
-        expected_price_labels.append(_clp_price_label(row.get("current_price_clp"), operation))
-    if row.get("recommended_price_clp") is not None:
-        expected_price_labels.append(_clp_price_label(row.get("recommended_price_clp"), operation))
-    if any(label and label not in visible_text for label in expected_price_labels):
+        _clp_price_label(row.get("recommended_price_clp"), operation),
+    }
+    if (
+        (current_label and current_label not in canonical_current_options)
+        or (recommended_label and recommended_label not in canonical_recommended_options)
+    ):
+        raise SenderError("client_price_formatter_mismatch")
+    expected_price_labels = [label for label in (current_label, recommended_label) if label]
+    if any(label.casefold() not in visible_text for label in expected_price_labels):
         raise SenderError("client_price_formatter_mismatch")
     raw_price_values = (str(row.get("current_price")), str(row.get("recommended_price")))
     localized_price_values = tuple(label.replace(" ", "") for label in expected_price_labels if label)

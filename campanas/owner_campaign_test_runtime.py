@@ -1401,7 +1401,9 @@ def _build_case(
             raise LiveTestCaseBuildError("commercial_recommendation_unavailable")
         raw_target = display_target
         adjustment_pct = -float(pricing.get("recommended_adjustment_pct") or 0)
-        model["recommended_price_label"] = f"{display_target:,.0f} UF".replace(",", ".") + (" / mes" if operation == ARRIENDO else "")
+        from analytics.owner_campaign_email_v2 import _price_label
+
+        model["recommended_price_label"] = _price_label(display_target, operation)
         model["display_adjustment_label"] = f"-{int(pricing.get('recommended_adjustment_pct') or 0)}%"
         model["appraisal"] = dict(model.get("appraisal") or {})
         model["appraisal"]["recommended_label"] = model["recommended_price_label"]

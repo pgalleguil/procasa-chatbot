@@ -448,12 +448,12 @@
       .single-property-review .position-callout-first:before { left:5px; }
       .single-property-review .position-callout-last { margin-left:-108px; text-align:right; }
       .single-property-review .position-callout-last:before { left:auto; right:5px; }
-      .market-reference-single { margin:16px 0 0; padding:0; border:0; border-radius:0; background:transparent; }
-      .market-reference-title-single { color:#4F5570; font-size:10px; line-height:1.25; font-weight:700; letter-spacing:.035em; }
+      .market-reference-single { margin:8px 0 0; padding:8px 10px; border:1px solid #E5E6EF; border-radius:7px; background:#F8F7FC; }
+      .market-reference-title-single { color:#4F5570; font-size:9px; line-height:1.25; font-weight:700; letter-spacing:.06em; }
       .market-reference-subtitle-single { margin-top:2px; color:#62698A; font-size:9px; line-height:1.3; }
-      .market-reference-grid-single { width:100%; margin-top:10px; border-collapse:separate !important; border-spacing:9px 0; }
-      .market-reference-grid-single td { width:50%; height:116px; padding:9px 10px 7px; border:1px solid #E5E6EF; border-radius:9px; background:#ffffff; vertical-align:top; }
-      .market-reference-grid-single td + td { padding-left:10px; border-left:1px solid #E5E6EF; }
+      .market-reference-grid-single { width:100%; margin-top:5px; border-collapse:collapse; }
+      .market-reference-grid-single td { width:50%; padding:3px 9px 1px 0; border:0; vertical-align:top; }
+      .market-reference-grid-single td + td { padding-left:9px; border-left:1px solid #E5E6EF; }
       .market-reference-label-single { color:#62698A; font-size:8px; line-height:1.25; letter-spacing:.04em; text-transform:uppercase; }
       .market-reference-value-single { margin-top:2px; color:#424967; font-size:12px; line-height:1.2; font-weight:700; }
       .market-reference-note-single { margin-top:2px; color:#62698A; font-size:8px; line-height:1.25; }
@@ -682,18 +682,7 @@
                   <section class="activity-90-single"><div class="activity-title-single">ACTIVIDAD COMERCIAL · ÚLTIMOS 90 DÍAS</div><div class="activity-stat-value-single">0 leads registrados</div><p class="activity-copy-single">La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento. Las referencias de mercado y los antecedentes disponibles complementan la evaluación.</p></section>
                 {% endif %}
 
-                {% if single_property_only and property.market_reference is defined and property.market_reference.visible %}
-                  <div class="market-reference-single">
-                    <div class="market-reference-title-single">{% if property.market_reference.source == "COMPARABLES" %}Referencia comparable · contexto secundario{% else %}Referencia comunal · contexto secundario{% endif %}</div>
-                    <div class="market-reference-subtitle-single">{{ property.property_type }} · {{ property.commune }}</div>
-                    <table role="presentation" cellspacing="0" cellpadding="0" class="market-reference-grid-single"><tr>
-                      <td><div class="market-reference-label-single"><span class="market-small-icon market-small-icon-reference" aria-hidden="true"></span>Referencia del segmento</div><div class="market-reference-value-single">{{ property.market_reference.reference_value }}</div><div class="market-reference-note-single">{{ property.market_reference.reference_unit }}</div></td>
-                      <td><div class="market-reference-label-single"><span class="market-small-icon market-small-icon-universe" aria-hidden="true"></span>Universo observado</div><div class="market-reference-value-single">{{ property.market_reference.universe_value }} {{ property.market_reference.universe_unit }}</div><div class="market-reference-note-single">Universo amplio del mercado comunal</div></td>
-                    </tr></table>
-                    <p class="market-reference-copy-single">{% if property.market_reference.source == "COMPARABLES" %}Las publicaciones similares entregan una referencia observada del mercado para esta propiedad.{% else %}El universo comunal entrega una referencia amplia del mercado. Por separado, se seleccionaron 20 publicaciones con características estructurales más comparables para el análisis específico.{% endif %}</p>
-                    {% if property.market_reference.source_date %}<div class="market-reference-date-single">Último corte comunal disponible: {{ property.market_reference.source_date }}</div>{% endif %}
-                  </div>
-                {% elif property.appraisal.visible and property.appraisal.kind == "COMMUNAL_MARKET_REPORT" and property.appraisal.metrics %}
+                {% if not property.comparable.visible and not (single_property_only and property.market_reference is defined and property.market_reference.visible) and property.appraisal.visible and property.appraisal.kind == "COMMUNAL_MARKET_REPORT" and property.appraisal.metrics %}
                   <div class="communal-context-single">
                     <div class="communal-context-heading">Contexto de mercado</div>
                     <div class="communal-context-subtitle">{{ property.property_type }} en {{ property.commune }}</div>
@@ -737,8 +726,20 @@
                         {% endfor %}
                       </tr></table>
                     {% endif %}
+                    {% if single_property_only and property.market_reference is defined and property.market_reference.visible and not property.market_reference.duplicate_of_primary %}
+                      <div class="market-reference-single">
+                        <div class="market-reference-title-single">REFERENCIA COMPLEMENTARIA</div>
+                        <div class="market-reference-subtitle-single">Contexto comunal de publicaciones activas</div>
+                        <p class="market-reference-copy-single">Como contexto adicional, el segmento comunal resume publicaciones activas de la misma operación.</p>
+                        <table role="presentation" cellspacing="0" cellpadding="0" class="market-reference-grid-single"><tr>
+                          <td><div class="market-reference-label-single">Referencia de mercado</div><div class="market-reference-value-single">{{ property.market_reference.reference_value }} {{ property.market_reference.reference_unit }}</div></td>
+                          <td><div class="market-reference-label-single">Publicaciones activas</div><div class="market-reference-value-single">{{ property.market_reference.universe_value }}</div></td>
+                        </tr></table>
+                        {% if property.market_reference.source_date %}<div class="market-reference-date-single">Corte: {{ property.market_reference.source_date }}</div>{% endif %}
+                      </div>
+                    {% endif %}
                     {% if property.comparable.land_reference_visible %}
-                      <div class="land-reference-single"><div class="land-reference-title">Referencia de valor de suelo</div><p class="land-reference-note">Terrenos comparables analizados por separado de las propiedades con construcciones similares.</p><table role="presentation" cellspacing="0" cellpadding="0" class="land-references-grid"><tr>{% for comparable in property.comparable.land_top3[:2] %}<td><strong>{{ comparable.portal }}</strong> · {{ comparable.surface_label }} · {{ comparable.price_label }}{% if comparable.unit_label != "No disponible" %} · {{ comparable.unit_label }}{% endif %}</td>{% endfor %}</tr></table></div>
+                      <div class="land-reference-single"><div class="land-reference-title">REFERENCIA COMPLEMENTARIA · SUELO</div><p class="land-reference-note">{{ property.comparable.land_reference_count }} referencias · {{ property.comparable.land_reference_unit }}. Terrenos analizados por separado de propiedades con construcciones.</p><table role="presentation" cellspacing="0" cellpadding="0" class="land-references-grid"><tr>{% for comparable in property.comparable.land_top3[:2] %}<td><strong>{{ comparable.portal }}</strong> · {{ comparable.surface_label }} · {{ comparable.price_label }}{% if comparable.unit_label != "No disponible" %} · {{ comparable.unit_label }}{% endif %}</td>{% endfor %}</tr></table></div>
                     {% endif %}
                     <p class="disclaimer-single">{% if property.is_rental %}Las referencias corresponden a arriendos publicados y no representan valores de contratos cerrados.{% else %}Las referencias corresponden a publicaciones actualmente disponibles y no representan precios efectivos de cierre.{% endif %}</p>
                   </section>

@@ -516,7 +516,8 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         interpretation = "Las referencias disponibles muestran valores de suelo y algunas propiedades con construcciones similares, por lo que recomendamos revisar el posicionamiento junto al asesor."
     display_status = "REVIEW" if bool(v3.get("evidence_conflict")) or status == "REVIEW" else "OK"
     top3 = [_v3_reference_item(item, unit, price_key, (prop or {}).get("operacion")) for item in integral[:3]]
-    land_top3 = [_v3_reference_item(item, "CLP/m²/mes" if is_rent else "UF/m² terreno", "price_m2_land", (prop or {}).get("operacion")) for item in land[:3]]
+    land_unit = "CLP/m²/mes" if is_rent else "UF/m² terreno"
+    land_top3 = [_v3_reference_item(item, land_unit, "price_m2_land", (prop or {}).get("operacion")) for item in land[:3]]
     total_price_values = [float(number(item.get("price_uf"))) for item in integral if number(item.get("price_uf")) is not None and number(item.get("price_uf")) > 0]
     total_price_distribution = _distribution(total_price_values)
     if property_value is not None and distribution.get("median") is not None:
@@ -576,6 +577,8 @@ def _comparable_model(evidence: Mapping[str, Any], level: str, property_price_uf
         "top3": top3,
         "land_top3": land_top3,
         "land_reference_visible": bool(land_top3 and effective_type == "PARCEL_WITH_IMPROVEMENTS"),
+        "land_reference_count": len(land),
+        "land_reference_unit": land_unit,
         "land_reference_label": "Referencia de valor de suelo",
         "land_reference_note": "Estas publicaciones se muestran separadamente porque corresponden a terrenos sin una construcción comparable.",
         "graph": _graph(distribution, property_value),
@@ -824,25 +827,24 @@ def _market_reference_model(
     comparable = comparable if isinstance(comparable, Mapping) else {}
     comparable_count = number(comparable.get("selected_n"))
     comparable_reference = str(comparable.get("positioning_reference_label") or "").strip()
-    if comparable.get("visible") and comparable_count is not None and comparable_count >= 5 and comparable_reference:
-        match = re.match(r"^\s*([+-]?[\d. ]+(?:,\d+)?)", comparable_reference)
-        comparable_value = number(match.group(1)) if match else None
-        if comparable_value is not None and comparable_value > 0:
-            unit = str(comparable.get("positioning_unit_label") or "UF/m² de oferta")
-            source_date = str(comparable.get("source_date") or "")
-            return {
-                "visible": True,
-                "source": "COMPARABLES",
-                "reference_value": comparable_reference,
-                "reference_unit": unit,
-                "universe_value": fmt_number(comparable_count, 0),
-                "universe_unit": "publicaciones comparables",
-                "source_date": source_date,
-            }
+    comparable_match = re.match(r"^\s*([+-]?[\d. ]+(?:,\d+)?)", comparable_reference)
+    comparable_value = number(comparable_match.group(1)) if comparable_match else None
+    comparable_unit = str(comparable.get("positioning_unit_label") or "").strip()
     raw_reference = metrics.get(reference_key) or communal.get(reference_key)
     reference = number(raw_reference)
     universe = next((number(metrics.get(key) or communal.get(key)) for key in universe_keys if number(metrics.get(key) or communal.get(key)) is not None), None)
     if reference is None or universe is None or reference <= 0 or universe < 5:
+        if comparable.get("visible") and comparable_count is not None and comparable_count >= 5 and comparable_value is not None and comparable_value > 0:
+            return {
+                "visible": True,
+                "duplicate_of_primary": True,
+                "source": "COMPARABLES",
+                "reference_value": comparable_reference,
+                "reference_unit": comparable_unit or "UF/m² de oferta",
+                "universe_value": fmt_number(comparable_count, 0),
+                "universe_unit": "publicaciones comparables",
+                "source_date": str(comparable.get("source_date") or ""),
+            }
         return {"visible": False}
     source_date = communal.get("document_date")
     if source_date:
@@ -852,11 +854,16 @@ def _market_reference_model(
             source_date = f"{parsed_date.day} de {month_names[parsed_date.month - 1]} de {parsed_date.year}"
         except (TypeError, ValueError):
             source_date = str(source_date)
+    communal_unit = "UF/m²/mes de oferta" if is_rental else "UF/m² de oferta"
+    same_metric = communal_unit.casefold().replace(" de oferta", "") == comparable_unit.casefold().replace(" de oferta", "")
+    same_value = comparable_value is not None and abs(reference - comparable_value) < 0.05
+    same_universe = comparable_count is not None and abs(universe - comparable_count) < 0.5
     return {
         "visible": True,
+        "duplicate_of_primary": bool(comparable.get("visible") and same_metric and same_value and same_universe),
         "source": "COMMUNAL",
         "reference_value": fmt_number(reference, 1),
-        "reference_unit": "UF/m²/mes de oferta" if is_rental else "UF/m² de oferta",
+        "reference_unit": communal_unit,
         "universe_value": fmt_number(universe, 0),
         "universe_unit": "publicaciones activas",
         "source_date": str(source_date or ""),
@@ -1121,7 +1128,17 @@ def _single_property_valuation_slots(property_model: Mapping[str, Any]) -> list[
     market = property_model.get("market_reference") if isinstance(property_model.get("market_reference"), Mapping) else {}
     comparable = property_model.get("comparable") if isinstance(property_model.get("comparable"), Mapping) else {}
 
-    if market.get("visible"):
+    if comparable.get("visible"):
+        # The primary comparable section below already states its reference,
+        # sample size and property position. Keep this overview slot useful
+        # without repeating those values a second time.
+        slot2 = {
+            "label": "REFERENCIAS",
+            "value": "Análisis comparativo",
+            "note": "Detalle de la muestra más abajo",
+            "emphasis": False,
+        }
+    elif market.get("visible"):
         unit = str(market.get("reference_unit") or "UF/m²").replace(" de oferta", "")
         reference_value = str(market.get("reference_value") or "Revisar con asesor")
         source_date = str(market.get("source_date") or "").strip()

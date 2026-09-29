@@ -111,7 +111,19 @@ def persist_live_event(
     # An authorization is monotonic. The atomic update is scoped to one
     # campaign/property row and cannot change another property owner's state.
     query: dict[str, Any] = {"_id": key, "campaign_id": campaign_id, "property_code": code, "events.event_id": {"$ne": event_id}}
-    update: dict[str, Any] = {"$push": {"events": payload}}
+    event_push: Any = payload
+    if event == "price_authorized":
+        selected_type = str(payload.get("selected_adjustment_type") or "").upper()
+        selection_event = "gradual_selected" if selected_type == "GRADUAL" else "recommended_selected"
+        selection_payload = {
+            **payload,
+            "event_id": hashlib.sha256(
+                f"{claims.get('event_id') or uuid4().hex}|{selection_event}".encode("utf-8")
+            ).hexdigest(),
+            "event": selection_event,
+        }
+        event_push = {"$each": [payload, selection_payload]}
+    update: dict[str, Any] = {"$push": {"events": event_push}}
     if event == "price_authorized":
         query["authorization_status"] = {"$ne": "PRICE_AUTHORIZED"}
         update["$set"] = {
@@ -134,6 +146,8 @@ def persist_live_event(
         update["$set"] = {"last_cta_clicked_at": event_at}
     elif event == "price_confirm_page_opened":
         update["$set"] = {"last_price_confirm_page_opened_at": event_at}
+    elif event == "confirmation_page_opened":
+        update["$set"] = {"last_confirmation_page_opened_at": event_at}
     elif event == "report_opened":
         update["$set"] = {"last_report_opened_at": event_at}
     result = ledger.update_one(query, update)
@@ -216,17 +230,19 @@ def _campaign_whatsapp_text(row: Mapping[str, Any], event: str, event_at: dateti
     executive = str(row.get("executive_name") or "Sin ejecutivo")
     event_text = event_at.astimezone(timezone.utc).strftime("%d-%m-%Y %H:%M UTC")
     if event == "price_authorized":
+        selected_type = str(row.get("selected_adjustment_type") or "RECOMMENDED").upper()
+        gradual = selected_type == "GRADUAL"
         lines = [
-            "✅ AJUSTE DE PRECIO CONFIRMADO", "",
+            "✅ AJUSTE GRADUAL CONFIRMADO" if gradual else "✅ AJUSTE DE PRECIO CONFIRMADO", "",
             f"Código: {row.get('property_code')}", f"{property_name} · {commune}",
-            f"Propietario: {owner}", "", f"Precio actual: {current}",
+            f"Propietario: {owner}", "", f"Precio actual: {price(row.get('previous_price', row.get('current_price')))}",
             f"Recomendación PROCASA: {row.get('recommended_adjustment_pct')}% → {recommended}",
-            f"Ajuste aceptado: {row.get('selected_adjustment_pct')}% · {row.get('selected_adjustment_type')}",
-            f"Nuevo precio autorizado: {selected}", f"Ejecutivo responsable: {executive}",
+            f"Ajuste {'elegido' if gradual else 'autorizado'}: {row.get('selected_adjustment_pct')}% · {'GRADUAL' if gradual else 'RECOMENDADO'}",
+            f"Nuevo precio autorizado: {selected}", f"Ejecutivo: {executive}",
             f"Fecha: {event_text}", f"Campaña: {row.get('campaign_id')}",
         ]
-        if current_clp is not None:
-            lines.insert(7, f"Precio actual: {price(current_clp, clp=True)}")
+        if row.get("previous_price_clp", current_clp) is not None:
+            lines.insert(7, f"Precio actual: {price(row.get('previous_price_clp', current_clp), clp=True)}")
         if recommended_clp is not None:
             lines.insert(9, f"Recomendación PROCASA CLP: {price(recommended_clp, clp=True)}")
         if selected_clp is not None:

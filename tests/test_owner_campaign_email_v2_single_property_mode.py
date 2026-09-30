@@ -638,11 +638,20 @@ def test_diagnostic_does_not_describe_engaged_leads_as_limited_response():
 
 def test_diagnostic_and_recommendation_containers_share_border_system():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
-    assert ".insight-single { box-sizing:border-box; width:49%; padding:14px 13px; border:1px solid #E5E6EF; border-radius:9px; overflow:hidden;" in template
+    assert ".insight-cell-single { box-sizing:border-box; width:49%; padding:0; border:0; background:transparent; vertical-align:top; }" in template
+    assert ".insight-single { box-sizing:border-box; width:100%; min-height:215px; padding:14px 13px; border:1px solid #E5E6EF; border-radius:9px; overflow:hidden;" in template
     assert ".insight-recommendation { border-color:#EAE3D7; background:#FFFCF6; }" in template
     assert ".document-line-single { box-sizing:border-box; width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-collapse:separate; border-spacing:0; border-radius:9px; overflow:hidden;" in template
     assert ".document-line-single td { padding:14px 13px; vertical-align:middle; }" in template
-    assert "min-height" not in template[template.index(".insight-single {"):template.index(".insight-single .label")]
+    assert ".insight-single { display:block; width:100% !important; min-height:0; }" in template
+
+
+def test_single_context_and_comparable_disclaimer_align_to_property_content():
+    template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
+    assert ".shell-single .context-strip-single-shell { padding:0 14px 0 30px; border:0; background:#ffffff; }" in template
+    assert ".macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:9px; background:#ECEBFF;" in template
+    assert ".disclaimer-single { margin:7px 0 0 9px;" in template
+    assert ".disclaimer-single { margin-left:9px; }" in template
 
 
 def test_complementary_reference_has_requested_gap_and_compact_auto_height():

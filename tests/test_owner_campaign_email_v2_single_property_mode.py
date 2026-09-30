@@ -648,17 +648,25 @@ def test_diagnostic_and_recommendation_containers_share_border_system():
 
 def test_single_context_and_comparable_disclaimer_align_to_property_content():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
-    assert ".shell-single .context-strip-single-shell { padding:0 14px 0 30px; border:0; background:#ffffff; }" in template
+    assert ".shell-single .context-strip-single-shell { padding:0 14px; border:0; background:#ffffff; }" in template
     assert ".macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:0 0 9px 9px; background:#ECEBFF;" in template
-    assert ".disclaimer-single { margin:7px 0 0 9px;" in template
-    assert ".disclaimer-single { margin-left:9px; }" in template
+    assert ".disclaimer-single { margin:7px 9px 0;" in template
+    assert ".disclaimer-single { margin-left:9px; margin-right:9px; }" in template
 
 
 def test_single_hero_has_gap_after_header_and_property_card_is_rounded():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
-    assert ".hero-single-shell { padding:8px 14px 0 30px; background:#ffffff; }" in template
+    assert ".hero-single-shell { padding:8px 14px 0; background:#ffffff; }" in template
     assert ".hero-single-shell { padding:8px 12px 0; }" in template
     assert ".property-card-single { width:100%; border:1px solid #E5E6EF; border-collapse:separate; border-spacing:0; border-radius:9px; overflow:hidden; background:#FBFBFE; }" in template
+
+
+def test_single_email_outer_block_gutters_are_balanced():
+    template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
+    assert ".shell-single .header { padding:14px 25px 12px; }" in template
+    assert ".shell-single .context-strip-single-shell { padding:0 14px; border:0; background:#ffffff; }" in template
+    assert ".content-single { padding:14px 14px 16px; }" in template
+    assert ".disclaimer-single { margin:7px 9px 0;" in template
 
 
 def test_complementary_reference_has_requested_gap_and_compact_auto_height():

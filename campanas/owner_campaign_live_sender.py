@@ -15,6 +15,7 @@ import os
 import re
 import smtplib
 import socket
+import tempfile
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import make_msgid
@@ -777,6 +778,86 @@ def run_manifest(
             owned_client.close()
 
 
+def run_campaign_batch(
+    campaign_id: str,
+    batch_id: str,
+    *,
+    mode: str = "DRY_RUN",
+    confirm_send: bool = False,
+    db: Any | None = None,
+    smtp_factory: Any = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Run the existing sender against a durable campaign batch in Mongo.
+
+    The temporary CSV is only an in-process adapter for the existing sender;
+    Mongo remains the durable source of the prepared rows.
+    """
+    campaign_id = str(campaign_id or "").strip()
+    batch_id = str(batch_id or "").strip()
+    if not campaign_id or not batch_id:
+        raise SenderError("campaign_batch_identity_missing")
+    owned_client = None
+    if db is None:
+        if not Config.MONGO_URI:
+            raise SenderError("mongo_unavailable")
+        owned_client = MongoClient(Config.MONGO_URI, serverSelectionTimeoutMS=15000)
+        db = owned_client[Config.DB_NAME]
+    try:
+        ledger = db[Config.COLLECTION_CAMPANAS_LOG]
+        stored = list(ledger.find({
+            "campaign_id": campaign_id,
+            "batch_id": batch_id,
+            "campaign_stage": {"$in": ["PILOT", "REMAINDER"]},
+        }))
+        if not stored:
+            raise SenderError("campaign_batch_not_found")
+        if any(str(item.get("send_status") or "").upper() != "READY" for item in stored):
+            raise SenderError("campaign_batch_contains_non_ready_rows")
+        snapshots: list[dict[str, Any]] = []
+        for record in stored:
+            snapshot = record.get("campaign_snapshot")
+            snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+            row = {key: record.get(key, snapshot.get(key, "")) for key in REQUIRED_COLUMNS}
+            row.update({
+                "campaign_id": campaign_id,
+                "batch_id": batch_id,
+                "property_code": str(record.get("property_code") or ""),
+                "owner_email": record.get("owner_email", snapshot.get("owner_email", "")),
+                "operation_resolved": record.get("operation_resolved", record.get("operation", snapshot.get("operation_resolved", snapshot.get("operation", "")))),
+                "executive_name": record.get("executive_name", snapshot.get("executive_name", "")),
+                "executive_email": record.get("executive_email", snapshot.get("executive_email", "")),
+                "boss_cc": record.get("boss_cc", snapshot.get("boss_cc", "")),
+                "current_price": record.get("current_price", snapshot.get("current_price", "")),
+                "recommended_adjustment_pct": record.get("recommended_adjustment_pct", snapshot.get("recommended_adjustment_pct", "")),
+                "recommended_price": record.get("recommended_price", snapshot.get("recommended_price", "")),
+                "document_type": record.get("document_type", snapshot.get("document_type", "")),
+                "send_status": record.get("send_status", ""),
+            })
+            if not row["property_code"] or any(row.get(key) in (None, "") for key in REQUIRED_COLUMNS):
+                raise SenderError("campaign_batch_snapshot_incomplete")
+            snapshots.append(row)
+        codes = [normalize_property_code(row["property_code"]) for row in snapshots]
+        owners = [str(row["owner_email"]).strip().casefold() for row in snapshots]
+        if len(codes) != len(set(codes)) or len(owners) != len(set(owners)):
+            raise SenderError("campaign_batch_duplicate_rows")
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8-sig", newline="", suffix=".csv", delete=False) as handle:
+            temp_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=sorted(REQUIRED_COLUMNS))
+            writer.writeheader()
+            writer.writerows(snapshots)
+        try:
+            return run_manifest(
+                temp_path, mode=mode, confirm_send=confirm_send, db=db,
+                smtp_factory=smtp_factory, now=now,
+            )
+        finally:
+            temp_path.unlink(missing_ok=True)
+    finally:
+        if owned_client is not None:
+            owned_client.close()
+
+
 def hmac_compare(value: str, expected: str) -> bool:
     import hmac
 
@@ -785,12 +866,24 @@ def hmac_compare(value: str, expected: str) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate or send a prepared owner campaign manifest")
-    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
+    parser.add_argument("--manifest")
+    parser.add_argument("--campaign-id")
+    parser.add_argument("--batch-id")
     parser.add_argument("--mode", choices=("DRY_RUN", "SEND"), default="DRY_RUN")
     parser.add_argument("--confirm-send", action="store_true")
     args = parser.parse_args()
     try:
-        result = run_manifest(args.manifest, mode=args.mode, confirm_send=args.confirm_send)
+        if bool(args.campaign_id) != bool(args.batch_id):
+            raise SenderError("campaign_batch_identity_incomplete")
+        if args.campaign_id:
+            if args.manifest:
+                raise SenderError("manifest_and_campaign_batch_are_mutually_exclusive")
+            result = run_campaign_batch(
+                args.campaign_id, args.batch_id, mode=args.mode,
+                confirm_send=args.confirm_send,
+            )
+        else:
+            result = run_manifest(args.manifest or DEFAULT_MANIFEST, mode=args.mode, confirm_send=args.confirm_send)
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return 0 if result.get("all_eligible") else 2
     except SenderError as exc:

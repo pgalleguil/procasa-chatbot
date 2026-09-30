@@ -35,6 +35,8 @@ from campanas.owner_campaign_live_config import (
     MANUAL_CAMPAIGN_EXCLUDED_CODES,
     MANUAL_RECENT_EXCLUSION_CODES,
     PRODUCTION_CAMPAIGN_ID,
+    WAVE2_AMBIGUOUS_OWNER_CODES,
+    WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID,
 )
 
 
@@ -90,6 +92,28 @@ def _compose_subject(base_subject: str, office: str, property_code: Any) -> str:
 def _subject_matches_property(subject: str, property_code: Any, office: str = EMAIL_SUBJECT_OFFICE) -> bool:
     expected = _compose_subject(EMAIL_SUBJECT_BASE, office, property_code)
     return str(subject or "").strip() == expected
+
+
+def _allows_multiowner_single_property_email(campaign_id: str) -> bool:
+    """Wave 2 explicitly sends one independent email per property."""
+    return str(campaign_id or "").strip() == WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID
+
+
+def _owner_property_count_allowed(campaign_id: str, count: int) -> bool:
+    return count == 1 or _allows_multiowner_single_property_email(campaign_id)
+
+
+def _wave2_code_is_ambiguous(campaign_id: str, property_code: Any) -> bool:
+    return (
+        _allows_multiowner_single_property_email(campaign_id)
+        and normalize_property_code(property_code) in WAVE2_AMBIGUOUS_OWNER_CODES
+    )
+
+
+def _wave2_ready_rows(records: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    if any(str(item.get("send_status") or "").upper() == "SENDING" for item in records):
+        raise SenderError("campaign_batch_contains_sending_rows")
+    return [item for item in records if str(item.get("send_status") or "").upper() == "READY"]
 
 
 def _valid_email(value: Any) -> str | None:
@@ -166,13 +190,16 @@ def _read_manifest(path: str | Path) -> tuple[list[dict[str, str]], str, str]:
     if len(campaign_ids) != 1 or "" in campaign_ids or len(batch_ids) != 1 or "" in batch_ids:
         raise SenderError("manifest_campaign_or_batch_inconsistent")
     campaign_id, batch_id = next(iter(campaign_ids)), next(iter(batch_ids))
-    if campaign_id != PRODUCTION_CAMPAIGN_ID or not campaign_id or "test" in campaign_id.casefold():
+    allowed_campaigns = {PRODUCTION_CAMPAIGN_ID, WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID}
+    if campaign_id not in allowed_campaigns or not campaign_id or "test" in campaign_id.casefold():
         raise SenderError("manifest_campaign_mismatch")
     codes = [normalize_property_code(row.get("property_code")) for row in rows]
     owners = [str(row.get("owner_email") or "").strip().casefold() for row in rows]
     if any(not code for code in codes) or len(codes) != len(set(codes)):
         raise SenderError("manifest_duplicate_or_invalid_property")
-    if any(not owner for owner in owners) or len(owners) != len(set(owners)):
+    if any(not owner for owner in owners) or (
+        not _allows_multiowner_single_property_email(campaign_id) and len(owners) != len(set(owners))
+    ):
         raise SenderError("manifest_duplicate_or_invalid_owner")
     if any(str(row.get("send_status") or "").strip().upper() != "READY" for row in rows):
         raise SenderError("manifest_row_not_ready")
@@ -285,12 +312,14 @@ def _validate_row(
     excluded_emails = {str(value).strip().casefold() for value in EXCLUDED_OWNER_EMAILS}
     if code in normalized_excluded_codes or owner.casefold() in excluded_emails:
         raise SenderError("campaign_exclusion_applies")
+    if _wave2_code_is_ambiguous(campaign_id, code):
+        raise SenderError("ambiguous_owner_identity_shared_email")
 
     owner_properties = [
         item for item in all_properties
         if runtime._email_from_property(item, required=False).strip().casefold() == owner.casefold()
     ]
-    if len(owner_properties) != 1:
+    if not _owner_property_count_allowed(campaign_id, len(owner_properties)):
         raise SenderError("owner_is_not_single_property")
 
     row = _row_for(db, master, percentile_data, now)
@@ -648,14 +677,16 @@ def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, 
             db, {**row, "campaign_id": campaign_id}, attempt_id, status="FAILED",
             error_type=type(exc).__name__, error_message="SMTP rejected the message recipients or sender",
         )
-        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id,
+                  "error_type": type(exc).__name__}
     except (smtplib.SMTPDataError,) as exc:
         _log_smtp_event(row, attempt_id, "SMTP_REJECTED", exception=exc, exception_phase=phase)
         _finish_attempt(
             db, {**row, "campaign_id": campaign_id}, attempt_id, status="FAILED",
             error_type=type(exc).__name__, error_message="SMTP rejected message data",
         )
-        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id,
+                  "error_type": type(exc).__name__}
     except Exception as exc:
         if smtp_accepted:
             # SMTP accepted DATA; persistence failure is not an SMTP failure
@@ -669,7 +700,8 @@ def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, 
             error_type=type(exc).__name__,
             error_message="SMTP outcome requires manual review" if unknown else "SMTP failed before message submission",
         )
-        result = {"property_code": row["property_code"], "smtp_status": status, "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": status, "attempt_id": attempt_id,
+                  "error_type": type(exc).__name__}
     finally:
         if server is not None:
             try:
@@ -703,14 +735,11 @@ def _send_batch(
     smtp_factory: Any = None,
     send_one: Any = None,
 ) -> tuple[list[dict[str, Any]], str | None, int]:
-    """Send sequentially and stop at the first non-success or exception.
-
-    Rows after the stop point are never claimed, so their ledger state stays
-    READY. DELIVERY_UNKNOWN is terminal for this run and is never retried.
-    """
+    """Send sequentially; Wave 2 isolates row failures and never retries unknowns."""
     sender = send_one or _send_one
     results: list[dict[str, Any]] = []
     stop_reason: str | None = None
+    consecutive_transport_errors = 0
     for row in prepared:
         try:
             result = sender(db, row, campaign_id, batch_id, smtp_factory=smtp_factory)
@@ -725,8 +754,22 @@ def _send_batch(
         results.append(result)
         status = str(result.get("smtp_status") or "").strip().upper()
         if status != "SENT":
+            error_type = str(result.get("error_type") or "")
+            if _allows_multiowner_single_property_email(campaign_id) and status in {"FAILED", "DELIVERY_UNKNOWN"}:
+                if error_type in {"SMTPAuthenticationError", "SMTPConnectError", "SMTPSenderRefused"}:
+                    stop_reason = f"systemic_smtp_error:{error_type}"
+                    break
+                if error_type in {"SMTPServerDisconnected", "TimeoutError", "OSError"}:
+                    consecutive_transport_errors += 1
+                    if consecutive_transport_errors >= 3:
+                        stop_reason = f"repeated_smtp_transport_error:{error_type}"
+                        break
+                else:
+                    consecutive_transport_errors = 0
+                continue
             stop_reason = status or "invalid_send_result"
             break
+        consecutive_transport_errors = 0
     return results, stop_reason, max(0, len(prepared) - len(results))
 
 
@@ -916,15 +959,25 @@ def run_campaign_batch(
         db = owned_client[Config.DB_NAME]
     try:
         ledger = db[Config.COLLECTION_CAMPANAS_LOG]
-        stored = list(ledger.find({
+        stage_filter = ["PILOT", "REMAINDER"]
+        wave2 = _allows_multiowner_single_property_email(campaign_id)
+        if wave2:
+            stage_filter.append("WAVE2")
+        all_stored = list(ledger.find({
             "campaign_id": campaign_id,
             "batch_id": batch_id,
-            "campaign_stage": {"$in": ["PILOT", "REMAINDER"]},
+            "campaign_stage": {"$in": stage_filter},
         }))
-        if not stored:
+        if not all_stored:
             raise SenderError("campaign_batch_not_found")
-        if any(str(item.get("send_status") or "").upper() != "READY" for item in stored):
-            raise SenderError("campaign_batch_contains_non_ready_rows")
+        if wave2:
+            stored = _wave2_ready_rows(all_stored)
+            if not stored:
+                raise SenderError("campaign_batch_has_no_ready_rows")
+        else:
+            stored = all_stored
+            if any(str(item.get("send_status") or "").upper() != "READY" for item in stored):
+                raise SenderError("campaign_batch_contains_non_ready_rows")
         snapshots: list[dict[str, Any]] = []
         for record in stored:
             snapshot = record.get("campaign_snapshot")
@@ -950,7 +1003,7 @@ def run_campaign_batch(
             snapshots.append(row)
         codes = [normalize_property_code(row["property_code"]) for row in snapshots]
         owners = [str(row["owner_email"]).strip().casefold() for row in snapshots]
-        if len(codes) != len(set(codes)) or len(owners) != len(set(owners)):
+        if len(codes) != len(set(codes)) or (not wave2 and len(owners) != len(set(owners))):
             raise SenderError("campaign_batch_duplicate_rows")
         with tempfile.NamedTemporaryFile("w", encoding="utf-8-sig", newline="", suffix=".csv", delete=False) as handle:
             temp_path = Path(handle.name)

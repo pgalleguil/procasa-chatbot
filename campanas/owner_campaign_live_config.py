@@ -9,6 +9,10 @@ BOSS_CC = os.getenv("OWNER_CAMPAIGN_BOSS_CC", "jpcaro@procasa.cl").strip().casef
 PRODUCTION_CAMPAIGN_ID = os.getenv(
     "OWNER_CAMPAIGN_PRODUCTION_ID", "owner_price_sucre_wave1_20260928"
 ).strip()
+# One-property-per-email wave with owners who may have other active properties.
+# Keep this exception exact and campaign-scoped; Wave 1 remains single-property.
+WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID = "owner_price_sucre_wave2_20260930"
+WAVE2_AMBIGUOUS_OWNER_CODES = frozenset({"5923", "6841", "6854", "6856"})
 # Manually supplied recent additions for the current PROCASA SUCRE campaign.
 # Keep environment-provided exclusions additive so deployment configuration
 # cannot accidentally re-include a code already excluded by the campaign.

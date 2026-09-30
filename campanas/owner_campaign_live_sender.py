@@ -582,6 +582,42 @@ def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, 
         return {"property_code": row["property_code"], "smtp_status": status, "attempt_id": attempt_id}
 
 
+def _send_batch(
+    db: Any,
+    prepared: Sequence[Mapping[str, Any]],
+    campaign_id: str,
+    batch_id: str,
+    *,
+    smtp_factory: Any = None,
+    send_one: Any = None,
+) -> tuple[list[dict[str, Any]], str | None, int]:
+    """Send sequentially and stop at the first non-success or exception.
+
+    Rows after the stop point are never claimed, so their ledger state stays
+    READY. DELIVERY_UNKNOWN is terminal for this run and is never retried.
+    """
+    sender = send_one or _send_one
+    results: list[dict[str, Any]] = []
+    stop_reason: str | None = None
+    for row in prepared:
+        try:
+            result = sender(db, row, campaign_id, batch_id, smtp_factory=smtp_factory)
+        except Exception as exc:
+            stop_reason = _safe_validation_reason(exc)
+            results.append({
+                "property_code": str(row.get("property_code") or ""),
+                "smtp_status": "UNHANDLED_EXCEPTION",
+                "error_code": stop_reason,
+            })
+            break
+        results.append(result)
+        status = str(result.get("smtp_status") or "").strip().upper()
+        if status != "SENT":
+            stop_reason = status or "invalid_send_result"
+            break
+    return results, stop_reason, max(0, len(prepared) - len(results))
+
+
 def run_manifest(
     manifest_path: str | Path = DEFAULT_MANIFEST,
     *,
@@ -691,9 +727,13 @@ def run_manifest(
         if mode == "SEND" and len(prepared) != len(rows):
             raise SenderError("batch_preflight_failed_smtp_not_started")
         if mode == "SEND":
-            send_results = [_send_one(db, item, campaign_id, batch_id, smtp_factory=smtp_factory) for item in prepared]
+            send_results, send_stop_reason, send_unsent_count = _send_batch(
+                db, prepared, campaign_id, batch_id, smtp_factory=smtp_factory,
+            )
         else:
             send_results = []
+            send_stop_reason = None
+            send_unsent_count = 0
         passed = sum(item["eligibility_status"] == "PASS" for item in results)
         return {
             "mode": mode,
@@ -727,6 +767,9 @@ def run_manifest(
             "duplicates": 0,
             "smtp_called": mode == "SEND" and bool(send_results),
             "send_results": send_results,
+            "send_batch_stopped": send_stop_reason is not None,
+            "send_stop_reason": send_stop_reason,
+            "send_unsent_count": send_unsent_count,
             "rows": results,
         }
     finally:

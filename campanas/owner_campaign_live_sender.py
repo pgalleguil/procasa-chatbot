@@ -54,6 +54,8 @@ LIVE_ACTIONS = {
     "advisor": "contactar_ejecutivo",
     "report": "ver_informe",
 }
+EMAIL_SUBJECT_BASE = "Seguimiento comercial PROCASA"
+EMAIL_SUBJECT_OFFICE = os.getenv("OWNER_CAMPAIGN_OFFICE", "PROCASA SUCRE").strip()
 
 
 class SenderError(RuntimeError):
@@ -70,6 +72,21 @@ def normalize_property_code(value: Any) -> str:
         return ""
     compact = re.sub(r"[.\s]", "", raw)
     return compact if compact.isdigit() else raw.casefold()
+
+
+def _compose_subject(base_subject: str, office: str, property_code: Any) -> str:
+    """Append campaign office and property identity without changing the base."""
+    base = str(base_subject or "").strip()
+    office_label = str(office or "").strip()
+    code = str(property_code or "").strip()
+    if not base or not office_label or not code or any(ch in code for ch in "\r\n"):
+        raise SenderError("subject_identity_invalid")
+    return f"{base} · {office_label} · {code}"
+
+
+def _subject_matches_property(subject: str, property_code: Any, office: str = EMAIL_SUBJECT_OFFICE) -> bool:
+    expected = _compose_subject(EMAIL_SUBJECT_BASE, office, property_code)
+    return str(subject or "").strip() == expected
 
 
 def _valid_email(value: Any) -> str | None:
@@ -518,10 +535,14 @@ def _build_message(row: Mapping[str, Any]) -> tuple[EmailMessage, list[str]]:
     cc = list(row["final_cc_list"])
     if cc:
         message["Cc"] = ", ".join(cc)
-    message["Subject"] = "Seguimiento comercial PROCASA"
+    message["Subject"] = _compose_subject(
+        EMAIL_SUBJECT_BASE, EMAIL_SUBJECT_OFFICE, row.get("property_code")
+    )
     message["Message-ID"] = make_msgid(domain="procasa.cl")
     message.set_content(text_body)
     message.add_alternative(str(row["html"]), subtype="html")
+    if not _subject_matches_property(message["Subject"], row.get("property_code")):
+        raise SenderError("subject_property_code_mismatch")
     envelope = [row["owner_email"], *cc]
     if len({item.casefold() for item in envelope}) != len(envelope):
         raise SenderError("smtp_envelope_duplicate_recipient")
@@ -532,6 +553,8 @@ def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, 
     if not Config.GMAIL_USER or not Config.GMAIL_PASSWORD:
         raise SenderError("production_smtp_credentials_unavailable")
     message, envelope = _build_message(row)
+    if not _subject_matches_property(message.get("Subject", ""), row.get("property_code")):
+        raise SenderError("subject_property_code_mismatch")
     attempt_id = uuid4().hex
     if not _claim_send(db, row, campaign_id, batch_id, attempt_id):
         existing = db[Config.COLLECTION_CAMPANAS_LOG].find_one(

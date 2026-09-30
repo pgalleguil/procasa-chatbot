@@ -158,7 +158,9 @@
       .footer { padding:14px 28px 21px; color:#9a9eaa; font-size:9px; line-height:1.5; text-align:center; }
       .footer img { width:48px; height:auto; margin:0 auto 8px; opacity:.8; }
       .desktop-only { display:inline; }
-      .hero-single { padding:0; border-right:19px solid #ffffff; border-left:36px solid #ffffff; background-color:#F7F6FF; background-repeat:no-repeat; background-position:center, right center; background-size:100% 100%, 58% 100%; }
+      .hero-single-shell { padding:0 14px 0 30px; background:#ffffff; }
+      .hero-single { width:100%; border-collapse:separate; border-spacing:0; }
+      .hero-single-background { padding:0; border-radius:9px 9px 0 0; overflow:hidden; background-color:#F7F6FF; background-repeat:no-repeat; background-position:center, right center; background-size:100% 100%, 58% 100%; }
       .hero-single-copy { width:69%; padding:21px 10px 19px 22px; vertical-align:middle; }
       .hero-single-aside { width:31%; padding:10px 13px 12px 5px; color:#ffffff; font-family:Georgia,serif; font-size:13px; line-height:1.18; text-align:right; text-shadow:0 1px 3px rgba(20,20,55,.55); vertical-align:bottom; }
       .hero-aside-rule { display:block; width:22px; margin:7px 0 0 auto; border-top:2px solid #ffffff; }
@@ -168,7 +170,7 @@
       .context-strip { padding:8px 24px; color:#62698A; background:#ECEBFF; font-size:10px; line-height:1.4; }
       .context-icon { width:22px; height:22px; margin-right:9px; background:#ffffff; border:1px solid #DCD9FF; border-radius:5px; }
       .shell-single .context-strip-single-shell { padding:0 14px 0 30px; border:0; background:#ffffff; }
-      .macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:9px; background:#ECEBFF; color:#62698A; font-size:9px; line-height:1.35; }
+      .macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:0 0 9px 9px; background:#ECEBFF; color:#62698A; font-size:9px; line-height:1.35; }
       .shell-single .context-icon { width:20px; height:20px; line-height:20px; }
       .context-title { color:#4232C5; font-size:8px; letter-spacing:.08em; white-space:nowrap; }
       .macro-heading-single { display:block; margin-bottom:7px; color:#4232C5; font-size:8px; line-height:1.3; font-weight:700; letter-spacing:.08em; }
@@ -544,14 +546,15 @@
         .actions { width:96%; }
         .executive { padding-left:20px; padding-right:20px; }
         .desktop-only { display:none; }
-        .hero-single { border-right:0; border-left:0; background-image:none !important; }
+        .hero-single-shell { padding:0 12px; }
+        .hero-single-background { background-image:none !important; border-radius:9px 9px 0 0; }
         .hero-single-copy { display:block; width:auto !important; padding:17px 16px 15px; }
         .hero-single-aside { display:none; }
         .hero-single h1 { width:auto; font-size:23px; }
         .hero-single p { width:auto; }
         .context-strip { padding:8px 16px; }
         .shell-single .context-strip-single-shell { padding:0 12px; }
-        .macro-context-panel-single { padding:8px 16px; }
+        .macro-context-panel-single { padding:8px 16px; border-radius:0 0 9px 9px; }
         .macro-kpis-single td { padding:4px 5px; }
         .macro-kpi-label-single, .macro-kpi-note-single, .macro-source-single { font-size:6.5px; }
         .macro-kpi-value-single { font-size:11px; }
@@ -638,13 +641,13 @@
             </table>
           </td></tr>
           {% if single_property_only %}
-            <tr><td class="hero-single" style="background-image:linear-gradient(90deg,#F7F6FF 0%,#F7F6FF 35%,rgba(247,246,255,.98) 44%,rgba(247,246,255,.88) 51%,rgba(247,246,255,.65) 59%,rgba(247,246,255,.36) 68%,rgba(247,246,255,.10) 77%,rgba(34,34,67,.08) 88%,rgba(20,20,45,.38) 100%),url('{{ logo_url|replace('logo.png', 'propiedades/pexels-alishalubben-2305747.jpg') }}');">
+            <tr><td class="hero-single-shell"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="hero-single"><tr><td colspan="2" class="hero-single-background" style="background-image:linear-gradient(90deg,#F7F6FF 0%,#F7F6FF 35%,rgba(247,246,255,.98) 44%,rgba(247,246,255,.88) 51%,rgba(247,246,255,.65) 59%,rgba(247,246,255,.36) 68%,rgba(247,246,255,.10) 77%,rgba(34,34,67,.08) 88%,rgba(20,20,45,.38) 100%),url('{{ logo_url|replace('logo.png', 'propiedades/pexels-alishalubben-2305747.jpg') }}');">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td class="hero-single-copy" width="69%">
                 <div class="eyebrow">SEGUIMIENTO COMERCIAL · PROCASA</div>
                 <h1>{{ hero_title }}</h1>
                 <p>{{ hero_description }}</p>
               </td><td class="hero-single-aside" width="31%">Buenas<br />propiedades<br />crean grandes<br />historias<span class="hero-aside-rule"></span></td></tr></table>
-            </td></tr>
+            </td></tr></table></td></tr>
           {% else %}
             <tr><td class="hero">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>

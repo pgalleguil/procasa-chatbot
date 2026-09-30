@@ -649,7 +649,7 @@ def test_diagnostic_and_recommendation_containers_share_border_system():
 def test_single_context_and_comparable_disclaimer_align_to_property_content():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
     assert ".shell-single .context-strip-single-shell { padding:0 14px 0 30px; border:0; background:#ffffff; }" in template
-    assert ".macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:9px; background:#ECEBFF;" in template
+    assert ".macro-context-panel-single { box-sizing:border-box; padding:8px 24px; border-radius:0 0 9px 9px; background:#ECEBFF;" in template
     assert ".disclaimer-single { margin:7px 0 0 9px;" in template
     assert ".disclaimer-single { margin-left:9px; }" in template
 

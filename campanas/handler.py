@@ -649,4 +649,8 @@ def _resolve_test_report_response(*, token: str):
 
 
 async def handle_campana_informe(*, token: str):
+    # Production links use their own signed-token decoder, live campaign ledger,
+    # and document resolver. Keep the historical QA path isolated to test tokens.
+    if str(token or "").startswith("p1."):
+        return await private_report.handle_campaign_report(token)
     return await asyncio.to_thread(_resolve_test_report_response, token=token)

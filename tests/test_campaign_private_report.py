@@ -12,6 +12,8 @@ from urllib.parse import unquote
 import pytest
 from googleapiclient.errors import HttpError
 from campanas import private_report
+from campanas import handler as campaign_handler
+from campanas import owner_campaign_live_events
 
 
 SECRET = "campaign-test-signing-secret-for-unit-tests"
@@ -501,3 +503,217 @@ def test_startup_no_longer_schedules_drive_permission_repair():
     source = (Path(__file__).parents[1] / "webhook.py").read_text(encoding="utf-8-sig")
     assert "_fix_existing_drive_permissions" not in source
     assert "STARTUP_DRIVE_PERMISSION_MUTATION=0" in source
+
+
+LIVE_SECRET = "campaign-live-signing-secret-for-unit-tests"
+LIVE_CAMPAIGN = "owner_price_sucre_wave1_20260928"
+LIVE_CODE = "6772"
+LIVE_OWNER = "owner@example.com"
+
+
+def _live_report_token(document_type):
+    return owner_campaign_live_events.issue_live_token(
+        campaign_id=LIVE_CAMPAIGN,
+        property_code=LIVE_CODE,
+        action="ver_informe",
+        recipient=LIVE_OWNER,
+        document_type=document_type,
+        expires_at=2_000_000_000,
+    )
+
+
+def _patch_live_report_runtime(monkeypatch, service, *, document_type="COMMUNAL_MARKET_REPORT", ledger_matches=True):
+    monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", LIVE_SECRET)
+    row = {
+        "_id": f"{LIVE_CAMPAIGN}:{LIVE_CODE}",
+        "campaign_id": LIVE_CAMPAIGN,
+        "property_code": LIVE_CODE,
+        "owner_email": LIVE_OWNER,
+        "document_type": document_type,
+    }
+
+    class FakeLedger:
+        def find_one(self, query):
+            if not ledger_matches:
+                return None
+            return row if all(row.get(key) == value for key, value in query.items()) else None
+
+    class FakeDatabase:
+        def __getitem__(self, _collection_name):
+            return FakeLedger()
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __getitem__(self, _db_name):
+            return FakeDatabase()
+
+        def close(self):
+            pass
+
+    event_calls = []
+    monkeypatch.setattr(private_report, "MongoClient", FakeClient)
+    monkeypatch.setattr(private_report, "_load_property_identity", lambda _code: PROPERTY_IDENTITY)
+    monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=service))
+    monkeypatch.setattr(private_report, "MediaIoBaseDownload", _Downloader)
+    monkeypatch.setattr(
+        owner_campaign_live_events,
+        "persist_live_event",
+        lambda _db, claims, *, event, action: event_calls.append((claims["property_code"], event, action)),
+    )
+    return event_calls
+
+
+@pytest.mark.parametrize("document_type", ["COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"])
+@pytest.mark.asyncio
+async def test_production_report_route_dispatches_live_tokens_for_both_document_types(monkeypatch, document_type):
+    live_response = object()
+    qa_calls = []
+
+    async def fake_live(token):
+        assert token.startswith("p1.")
+        return live_response
+
+    monkeypatch.setattr(campaign_handler.private_report, "handle_campaign_report", fake_live)
+    monkeypatch.setattr(
+        campaign_handler,
+        "_resolve_test_report_response",
+        lambda **kwargs: qa_calls.append(kwargs),
+    )
+
+    result = await campaign_handler.handle_campana_informe(token=f"p1.test-{document_type}")
+
+    assert result is live_response
+    assert qa_calls == []
+
+
+@pytest.mark.asyncio
+async def test_qa_report_route_keeps_existing_test_resolver(monkeypatch):
+    qa_result = object()
+    live_calls = []
+
+    async def fake_live(token):
+        live_calls.append(token)
+
+    monkeypatch.setattr(campaign_handler.private_report, "handle_campaign_report", fake_live)
+    monkeypatch.setattr(campaign_handler, "_resolve_test_report_response", lambda **_kwargs: qa_result)
+
+    result = await campaign_handler.handle_campana_informe(token="t1.qa-token")
+
+    assert result is qa_result
+    assert live_calls == []
+
+
+@pytest.mark.parametrize(
+    ("action", "method"),
+    [("aceptar_rebaja", "POST"), ("contactar_ejecutivo", "GET")],
+)
+@pytest.mark.asyncio
+async def test_owner_campaign_accept_and_advisor_routes_dispatch_to_live_handler_without_executing(
+    monkeypatch, action, method
+):
+    calls = []
+
+    async def capture_to_thread(function, **kwargs):
+        calls.append((function, kwargs))
+        return object()
+
+    monkeypatch.setattr(campaign_handler.asyncio, "to_thread", capture_to_thread)
+    request = SimpleNamespace(method=method, headers={}, client=None)
+
+    await campaign_handler.handle_campana_respuesta(
+        request,
+        email=LIVE_OWNER,
+        accion=action,
+        codigos=LIVE_CODE,
+        campana=LIVE_CAMPAIGN,
+        mode="owner_campaign",
+        token="p1.original-signed-token",
+    )
+
+    assert len(calls) == 1
+    function, kwargs = calls[0]
+    assert function is campaign_handler._process_owner_campaign_action
+    assert kwargs["accion"] == action
+    assert kwargs["codigo"] == LIVE_CODE
+    assert kwargs["token"] == "p1.original-signed-token"
+
+
+@pytest.mark.parametrize(
+    ("document_type", "folder", "filename"),
+    [
+        ("COMMUNAL_MARKET_REPORT", private_report.COMMUNAL_FOLDER_ID, "Talca - Casa.pdf"),
+        ("INDIVIDUAL_APPRAISAL", private_report.APPRAISALS_FOLDER_ID, f"{LIVE_CODE}.pdf"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_valid_live_report_token_serves_private_drive_pdf_and_tracks_open(
+    monkeypatch, document_type, folder, filename
+):
+    service = _Service({folder: [_pdf("live-private-pdf", filename)]})
+    events = _patch_live_report_runtime(monkeypatch, service, document_type=document_type)
+    monkeypatch.setattr(
+        campaign_handler.private_report,
+        "_load_property_identity",
+        lambda _code: {
+            "property_code": LIVE_CODE,
+            "commune": "Talca",
+            "property_type": "Casa",
+            "operation": "VENTA",
+        },
+    )
+
+    response = await campaign_handler.handle_campana_informe(token=_live_report_token(document_type))
+
+    assert response.status_code == 200
+    assert response.media_type == "application/pdf"
+    assert response.body.startswith(b"%PDF-")
+    assert response.headers["x-campaign-report-resolution"] == "drive"
+    assert service._files.media_calls == [{"fileId": "live-private-pdf", "supportsAllDrives": True}]
+    assert events == [
+        (LIVE_CODE, "cta_clicked", "ver_informe"),
+        (LIVE_CODE, "report_opened", "ver_informe"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_valid_live_report_without_drive_file_returns_fallback_and_tracks_open(monkeypatch):
+    service = _Service({private_report.COMMUNAL_FOLDER_ID: []})
+    events = _patch_live_report_runtime(monkeypatch, service)
+    monkeypatch.setattr(
+        campaign_handler.private_report,
+        "_load_property_identity",
+        lambda _code: {**PROPERTY_IDENTITY, "property_code": LIVE_CODE},
+    )
+
+    response = await campaign_handler.handle_campana_informe(
+        token=_live_report_token("COMMUNAL_MARKET_REPORT")
+    )
+
+    assert response.status_code == 200
+    assert response.media_type == "application/pdf"
+    assert response.headers["x-campaign-report-resolution"] == "procasa_fallback"
+    assert response.body.startswith(b"%PDF-")
+    assert events == [
+        (LIVE_CODE, "cta_clicked", "ver_informe"),
+        (LIVE_CODE, "report_opened", "ver_informe"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_invalid_live_token_and_ledger_identity_mismatch_return_404(monkeypatch):
+    mongo_calls = []
+    monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", LIVE_SECRET)
+    monkeypatch.setattr(private_report, "MongoClient", lambda *_args, **_kwargs: mongo_calls.append("mongo"))
+    invalid = await campaign_handler.handle_campana_informe(token="p1.invalid")
+    assert invalid.status_code == 404
+    assert mongo_calls == []
+
+    service = _Service({private_report.COMMUNAL_FOLDER_ID: [_pdf("unreachable", "Talca - Casa.pdf")]})
+    _patch_live_report_runtime(monkeypatch, service, ledger_matches=False)
+    mismatch = await campaign_handler.handle_campana_informe(
+        token=_live_report_token("COMMUNAL_MARKET_REPORT")
+    )
+    assert mismatch.status_code == 404
+    assert service._files.media_calls == []

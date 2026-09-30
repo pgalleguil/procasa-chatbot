@@ -10,11 +10,11 @@ import argparse
 import csv
 import html
 import json
+import logging
 import math
 import os
 import re
 import smtplib
-import socket
 import tempfile
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -56,6 +56,9 @@ LIVE_ACTIONS = {
 }
 EMAIL_SUBJECT_BASE = "Seguimiento comercial PROCASA"
 EMAIL_SUBJECT_OFFICE = os.getenv("OWNER_CAMPAIGN_OFFICE", "PROCASA SUCRE").strip()
+SMTP_CONNECT_TIMEOUT_SECONDS = 30
+SMTP_SEND_TIMEOUT_SECONDS = 60
+_SMTP_LOGGER = logging.getLogger("owner_campaign.smtp")
 
 
 class SenderError(RuntimeError):
@@ -549,6 +552,30 @@ def _build_message(row: Mapping[str, Any]) -> tuple[EmailMessage, list[str]]:
     return message, envelope
 
 
+def _log_smtp_event(
+    row: Mapping[str, Any], attempt_id: str, phase: str, *,
+    exception: BaseException | None = None, exception_phase: str | None = None,
+) -> None:
+    """Emit a credential-free, content-free SMTP lifecycle event."""
+    record = {
+        "property_code": str(row.get("property_code") or ""),
+        "send_attempt_id": attempt_id,
+        "smtp_phase": phase,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    if exception is not None:
+        record["exception_type"] = type(exception).__name__
+        record["exception_phase"] = exception_phase or phase
+    _SMTP_LOGGER.info("owner_campaign_smtp %s", json.dumps(record, ensure_ascii=False, sort_keys=True))
+
+
+def _smtp_response_ok(code: Any, expected: int) -> bool:
+    try:
+        return int(code) == expected
+    except (TypeError, ValueError):
+        return False
+
+
 def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, smtp_factory: Any = None) -> dict[str, Any]:
     if not Config.GMAIL_USER or not Config.GMAIL_PASSWORD:
         raise SenderError("production_smtp_credentials_unavailable")
@@ -562,48 +589,109 @@ def _send_one(db: Any, row: Mapping[str, Any], campaign_id: str, batch_id: str, 
         ) or {}
         raise SenderError(f"send_claim_unavailable_{str(existing.get('send_status') or 'UNKNOWN').casefold()}")
     smtp_factory = smtp_factory or smtplib.SMTP
-    send_started = False
+    server = None
+    phase = "CONNECTING"
+    data_started = False
+    smtp_accepted = False
+    result: dict[str, Any]
     try:
-        with smtp_factory("smtp.gmail.com", 587, timeout=30) as server:
-            server.starttls()
-            server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
-            send_started = True
-            refused = server.send_message(message, from_addr=Config.GMAIL_USER, to_addrs=envelope)
+        _log_smtp_event(row, attempt_id, "CONNECTING")
+        server = smtp_factory("smtp.gmail.com", 587, timeout=SMTP_CONNECT_TIMEOUT_SECONDS)
+        phase = "CONNECTED"
+        _log_smtp_event(row, attempt_id, phase)
+        phase = "STARTTLS"
+        server.starttls()
+        phase = "AUTHENTICATING"
+        server.login(Config.GMAIL_USER, Config.GMAIL_PASSWORD)
+        if getattr(server, "sock", None) is not None:
+            server.sock.settimeout(SMTP_SEND_TIMEOUT_SECONDS)
+        phase = "AUTHENTICATED"
+        _log_smtp_event(row, attempt_id, phase)
+
+        phase = "MAIL_STARTED"
+        _log_smtp_event(row, attempt_id, phase)
+        code, response = server.mail(Config.GMAIL_USER)
+        if not _smtp_response_ok(code, 250):
+            raise smtplib.SMTPSenderRefused(code, response, Config.GMAIL_USER)
+
+        phase = "RCPT_STARTED"
+        _log_smtp_event(row, attempt_id, phase)
+        refused: dict[str, tuple[int, bytes]] = {}
+        for recipient in envelope:
+            code, response = server.rcpt(recipient)
+            if not 200 <= int(code) < 300:
+                refused[recipient] = (int(code), response)
         if refused:
-            # Partial acceptance can mean the owner received the message, so
-            # it is not safe to retry this campaign/property automatically.
-            _finish_attempt(
-                db, {**row, "campaign_id": campaign_id}, attempt_id, status="DELIVERY_UNKNOWN",
-                error_type="SMTPRecipientsRefused", error_message="SMTP refused one or more envelope recipients",
-            )
-            return {"property_code": row["property_code"], "smtp_status": "DELIVERY_UNKNOWN", "attempt_id": attempt_id}
+            # No DATA was issued, so the message cannot have been accepted.
+            raise smtplib.SMTPRecipientsRefused(refused)
+
+        phase = "DATA_STARTED"
+        data_started = True
+        _log_smtp_event(row, attempt_id, phase)
+        # Pass text so smtplib normalizes newlines to CRLF before SMTP DATA.
+        code, response = server.data(message.as_string())
+        if not _smtp_response_ok(code, 250):
+            raise smtplib.SMTPDataError(code, response)
+
         message_id = str(message.get("Message-ID") or "") or None
+        smtp_accepted = True
+        phase = "SMTP_ACCEPTED"
+        _log_smtp_event(row, attempt_id, phase)
         _finish_attempt(db, {**row, "campaign_id": campaign_id}, attempt_id, status="SENT", message_id=message_id)
-        return {
+        result = {
             "property_code": row["property_code"], "smtp_status": "SENT",
             "attempt_id": attempt_id, "message_id": message_id,
         }
     except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused) as exc:
+        _log_smtp_event(row, attempt_id, "SMTP_REJECTED", exception=exc, exception_phase=phase)
         _finish_attempt(
             db, {**row, "campaign_id": campaign_id}, attempt_id, status="FAILED",
             error_type=type(exc).__name__, error_message="SMTP rejected the message recipients or sender",
         )
-        return {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
     except (smtplib.SMTPDataError,) as exc:
+        _log_smtp_event(row, attempt_id, "SMTP_REJECTED", exception=exc, exception_phase=phase)
         _finish_attempt(
             db, {**row, "campaign_id": campaign_id}, attempt_id, status="FAILED",
             error_type=type(exc).__name__, error_message="SMTP rejected message data",
         )
-        return {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": "FAILED", "attempt_id": attempt_id}
     except Exception as exc:
-        unknown = send_started or isinstance(exc, (socket.timeout, TimeoutError, ConnectionError, OSError, smtplib.SMTPServerDisconnected))
+        if smtp_accepted:
+            # SMTP accepted DATA; persistence failure is not an SMTP failure
+            # and must never trigger a second delivery attempt.
+            raise
+        _log_smtp_event(row, attempt_id, "SMTP_EXCEPTION", exception=exc, exception_phase=phase)
+        unknown = data_started
         status = "DELIVERY_UNKNOWN" if unknown else "FAILED"
         _finish_attempt(
             db, {**row, "campaign_id": campaign_id}, attempt_id, status=status,
             error_type=type(exc).__name__,
             error_message="SMTP outcome requires manual review" if unknown else "SMTP failed before message submission",
         )
-        return {"property_code": row["property_code"], "smtp_status": status, "attempt_id": attempt_id}
+        result = {"property_code": row["property_code"], "smtp_status": status, "attempt_id": attempt_id}
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception as exc:
+                # Once SMTP returned 250 for DATA, a QUIT failure must not
+                # downgrade the accepted message or cause a resend.
+                _log_smtp_event(row, attempt_id, "QUIT_ERROR", exception=exc, exception_phase="QUIT")
+                try:
+                    server.close()
+                except Exception as close_exc:
+                    _log_smtp_event(row, attempt_id, "CLOSE_ERROR", exception=close_exc, exception_phase="CLOSE")
+                else:
+                    _log_smtp_event(row, attempt_id, "CONNECTION_CLOSED")
+            else:
+                try:
+                    server.close()
+                except Exception as exc:
+                    _log_smtp_event(row, attempt_id, "CLOSE_ERROR", exception=exc, exception_phase="CLOSE")
+                else:
+                    _log_smtp_event(row, attempt_id, "CONNECTION_CLOSED")
+    return result
 
 
 def _send_batch(

@@ -638,18 +638,20 @@ def test_diagnostic_does_not_describe_engaged_leads_as_limited_response():
 
 def test_diagnostic_and_recommendation_containers_share_border_system():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
-    assert ".insight-single { box-sizing:border-box; width:49%; padding:14px 13px; border:1px solid #E5E6EF; border-radius:9px;" in template
+    assert ".insight-single { box-sizing:border-box; width:49%; padding:14px 13px; border:1px solid #E5E6EF; border-radius:9px; overflow:hidden;" in template
     assert ".insight-recommendation { border-color:#EAE3D7; background:#FFFCF6; }" in template
+    assert ".document-line-single { box-sizing:border-box; width:100%; margin:12px 0 0; border:1px solid #E5E6EF; border-collapse:separate; border-spacing:0; border-radius:9px; overflow:hidden;" in template
+    assert ".document-line-single td { padding:14px 13px; vertical-align:middle; }" in template
     assert "min-height" not in template[template.index(".insight-single {"):template.index(".insight-single .label")]
 
 
 def test_complementary_reference_has_requested_gap_and_compact_auto_height():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
     style = next(line.strip() for line in template.splitlines() if ".market-reference-single {" in line)
-    assert "margin:17px -15px 0" in style
+    assert "margin:17px 9px 0" in style
     assert "box-sizing:border-box" in style and "padding:8px 10px" in style
     assert "height:" not in style and "min-height:" not in style
-    assert ".market-reference-single { margin:9px -12px 0; }" in template
+    assert ".market-reference-single { margin:7px 9px 0; }" in template
 
 
 def test_local_render_sale_16469_and_rent_16527_share_visual_template_and_copy_context():

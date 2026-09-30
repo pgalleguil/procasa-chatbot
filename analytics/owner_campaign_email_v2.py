@@ -628,6 +628,83 @@ def _recommendation_title(recommendation: str) -> str:
     return "Mantener la estrategia y observar el mercado"
 
 
+def _single_comparable_summary(comparable: Mapping[str, Any]) -> str:
+    """Build a short, evidence-backed sentence for the single-property email."""
+    if not comparable.get("visible"):
+        return ""
+    count = number(comparable.get("selected_n"))
+    reference = str(comparable.get("positioning_reference_label") or "").strip()
+    subject = str(comparable.get("positioning_property_label") or "").strip()
+    if count is None or not reference or not subject:
+        return ""
+    count_label = fmt_number(count, 0)
+    delta = number(comparable.get("positioning_delta_pct"))
+    if delta is None:
+        label = str(comparable.get("positioning_delta_label") or "").strip()
+        match = re.search(r"[+−-]?\s*([\d.,]+)", label)
+        delta = number(match.group(1)) if match else None
+        if delta is not None and label.startswith(("−", "-")):
+            delta = -delta
+    if delta is None:
+        return (
+            f"Analizamos {count_label} publicaciones similares. La referencia de mercado "
+            f"se sitúa en {reference} y tu propiedad en {subject}."
+        )
+    if abs(delta) < 0.05:
+        position = "en línea con esa referencia"
+    else:
+        magnitude = fmt_number(abs(delta), 0)
+        direction = "sobre" if delta > 0 else "bajo"
+        position = f"un {magnitude}% {direction} esa referencia"
+    return (
+        f"Analizamos {count_label} publicaciones similares. La referencia de mercado "
+        f"se sitúa en {reference} y tu propiedad en {subject}, {position}."
+    )
+
+
+def _activity_90d_sentence(activity: Mapping[str, Any]) -> str:
+    state = str(activity.get("state") or "UNKNOWN").upper()
+    if state == "KNOWN_POSITIVE":
+        count = number(activity.get("total_leads"))
+        if count is not None:
+            count_label = fmt_number(count, 0)
+            return f"En los últimos 90 días, la propiedad registró {count_label} {'lead' if count == 1 else 'leads'}."
+    if state == "KNOWN_ZERO":
+        return "En los últimos 90 días, la propiedad no registró leads."
+    return "La actividad comercial de los últimos 90 días no está disponible para esta propiedad."
+
+
+def _single_diagnostic_copy(
+    comparable: Mapping[str, Any],
+    market_reference: Mapping[str, Any],
+    activity: Mapping[str, Any],
+) -> str:
+    activity_sentence = _activity_90d_sentence(activity)
+    if comparable.get("visible"):
+        # Comparable values and positioning already appear above the bar; keep
+        # the diagnostic complementary by using only the 90-day activity signal.
+        return activity_sentence
+    if market_reference.get("visible"):
+        value = str(market_reference.get("reference_value") or "").strip()
+        unit = str(market_reference.get("reference_unit") or "").strip()
+        universe = str(market_reference.get("universe_value") or "").strip()
+        universe_unit = str(market_reference.get("universe_unit") or "").strip()
+        reference_sentence = "La referencia comunal disponible aporta contexto de mercado."
+        if value and unit:
+            reference_sentence = f"La referencia comunal disponible es {value} {unit}."
+        if universe and universe_unit:
+            reference_sentence = f"{reference_sentence[:-1]} y considera {universe} {universe_unit}."
+        return (
+            "No contamos con una muestra suficiente de publicaciones similares para una "
+            "comparación primaria. " + reference_sentence + " " + activity_sentence
+        )
+    return (
+        "No contamos con una muestra suficiente de publicaciones similares ni con una "
+        "referencia comunal disponible. " + activity_sentence +
+        " La evaluación considera los antecedentes disponibles y puede revisarse con tu ejecutivo."
+    )
+
+
 def calculate_commercial_price_recommendation(
     *, current_price: Any, leads_90d: Any, comparable_subject: Any = None,
     comparable_reference: Any = None, valuation_reference: Any = None,
@@ -941,6 +1018,16 @@ def _property_context(
         commercial_signal = f"La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento: la propiedad {lead_summary}."
     else:
         commercial_signal = "La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento, aunque su registro no está disponible."
+    communal_reference_signal = "Los antecedentes disponibles complementan esta evaluación."
+    if market_reference.get("visible"):
+        reference_value = str(market_reference.get("reference_value") or "").strip()
+        reference_unit = str(market_reference.get("reference_unit") or "").strip()
+        universe_value = str(market_reference.get("universe_value") or "").strip()
+        universe_unit = str(market_reference.get("universe_unit") or "").strip()
+        if reference_value and reference_unit:
+            communal_reference_signal = f"La referencia comunal disponible es {reference_value} {reference_unit}."
+        if universe_value and universe_unit:
+            communal_reference_signal = f"{communal_reference_signal[:-1]} y considera {universe_value} {universe_unit}."
     price_term = "canon mensual de arriendo" if is_rental else "precio de venta"
     alternatives = "otras alternativas de arriendo" if is_rental else "otras propiedades similares"
     gradual_alternative = calculate_gradual_price_alternative(
@@ -982,7 +1069,7 @@ def _property_context(
             )
         else:
             recommendation_copy = (
-                f"{commercial_signal} Las referencias de mercado y antecedentes disponibles complementan esta evaluación. "
+                f"{commercial_signal} {communal_reference_signal} "
                 f"Recomendamos reducir el {price_term} en {adjustment}% para mejorar su posicionamiento frente a {alternatives}."
             )
     else:
@@ -1003,20 +1090,9 @@ def _property_context(
     summary_market = comparable.get("median_label") if comparable.get("visible") else "Sin referencia suficiente"
     summary_property = comparable.get("property_value_label") if comparable.get("visible") else None
     diagnostic_text = _diagnostic_text(level, str(qa_row.get("diagnostic") or "sin diagnóstico"), comparable)
-    single_diagnostic_text = diagnostic_text
-    if appraisal.get("visible") and appraisal.get("kind") == "INDIVIDUAL_APPRAISAL":
-        diagnostic_parts = [f"El precio publicado es {_price_label(price, operation)}; la tasación individual tiene una referencia central de {appraisal.get('mid_label') }."]
-        if comparable.get("visible") and comparable.get("positioning_mode") == "TOTAL_PRICE":
-            diagnostic_parts.append(
-                f"La mediana de {comparable.get('selected_n')} publicaciones comparables es {comparable.get('positioning_reference_label')}."
-            )
-        elif comparable.get("visible"):
-            diagnostic_parts.append(
-                f"{comparable.get('selected_n')} publicaciones similares aportan contexto de oferta para revisar el posicionamiento."
-            )
-        single_diagnostic_text = " ".join(diagnostic_parts)
     diagnostic_text = str(segment_content.get("body") or diagnostic_text)
-    single_diagnostic_text = diagnostic_text
+    single_diagnostic_text = _single_diagnostic_copy(comparable, market_reference, activity)
+    comparable_summary_text = _single_comparable_summary(comparable)
     cta = qa_row.get("cta") if isinstance(qa_row.get("cta"), Mapping) else {}
     primary_url = str(cta.get("primary_url") or "")
     primary_label = "REVISAR / CONFIRMAR AJUSTE" if recommended_price is not None else str(cta.get("primary_label") or "REVISAR CON MI EJECUTIVO")
@@ -1058,6 +1134,7 @@ def _property_context(
         ),
         "image": dict(property_image or {"available": False, "url": "", "source": "NONE", "count": 0}),
         "comparable": comparable,
+        "comparable_summary_text": comparable_summary_text,
         "diagnostic_text": diagnostic_text,
         "single_diagnostic_text": single_diagnostic_text,
         "single_document_copy": single_document_copy,
@@ -1334,7 +1411,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         hero_description = SINGLE_PROPERTY_RENT_HERO_DESCRIPTION if is_single_rental else SINGLE_PROPERTY_SALE_HERO_DESCRIPTION
         context_note = ""
         footer_disclaimer = (
-            "Las referencias de arriendo corresponden a publicaciones observadas y no garantizan un valor final de contrato."
+            "Las referencias corresponden a publicaciones observadas y no garantizan un valor final de arriendo."
             if is_single_rental else
             "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta."
         )
@@ -1342,7 +1419,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         hero_title = "Estamos preparando tu propiedad para un nuevo escenario de arriendo"
         hero_description = "Revisamos el mercado y las alternativas disponibles para ayudar a sostener un posicionamiento competitivo y captar nuevas oportunidades de arriendo."
         context_note = "El análisis utiliza referencias de arriendo y valores mensuales para esta propiedad."
-        footer_disclaimer = "Las referencias de arriendo corresponden a publicaciones observadas y no garantizan un valor final de contrato."
+        footer_disclaimer = "Las referencias corresponden a publicaciones observadas y no garantizan un valor final de arriendo."
     elif mixed_operations:
         hero_title = "Revisamos cada propiedad según su propio escenario de mercado"
         hero_description = "Cada análisis conserva su operación, evidencia y recomendación específica."

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from lxml import html as lxml_html
@@ -35,6 +36,7 @@ def _single_property_model():
                 {"portal": "Toctoc", "surface_label": "55 m² construidos", "rooms_label": "3 dorm.", "baths_label": "1 baño(s)", "price_label": "1.714 UF", "unit_label": "31,2 UF/m² útil", "parking_label": ""},
             ], "land_reference_visible": False, "land_top3": [],
         },
+        "comparable_summary_text": "Analizamos 20 publicaciones similares. La referencia de mercado se sitúa en 44,0 UF/m² útil y tu propiedad en 62,0 UF/m² útil, un 41% sobre esa referencia.",
         "activity_90d": {"state": "KNOWN_ZERO", "total_leads": 0, "conversations": 0, "visits": 0, "portals": []},
         "single_diagnostic_text": "Señal de mercado para revisar.",
         "single_document_copy": "Tu tasación individual está disponible.",
@@ -429,7 +431,6 @@ def test_real_single_property_template_renders_approved_visual_content():
         "REVISAR CON MI EJECUTIVO",
         "Comparamos tu propiedad con publicaciones disponibles que comparten características relevantes.",
         "Se muestran 3 referencias representativas; el cálculo utiliza la muestra completa.",
-        "Mercado comparable",
     ):
         assert expected in html
     assert "Referencia comparable · contexto secundario" not in html
@@ -437,10 +438,12 @@ def test_real_single_property_template_renders_approved_visual_content():
     rendered_root = lxml_html.fromstring(html)
     graph_text = " ".join(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' single-comparison-bar ')]//text()"))
     assert not any(tick in graph_text for tick in ("26,1", "34,3", "42,4", "50,6", "58,8", "66,9"))
-    assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' position-metric ')]")) == 2
+    assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' position-metric ')]")) == 0
+    assert "Analizamos 20 publicaciones similares. La referencia de mercado se sitúa en 44,0 UF/m² útil" in html
+    assert "Las referencias corresponden a publicaciones observadas y no garantizan un precio final de venta." in html
     assert len(rendered_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' comp-card-single ')]")) == 3
-    assert 'class="position-metric" style="width:50%; height:116px;' in html
-    assert 'class="comp-card-single" style="width:33.333%; height:116px;' in html
+    assert 'class="comp-card-single" style="width:33.333%;' in html
+    assert 'height:116px;' not in html.split('class="comp-card-single"', 1)[-1].split('>', 1)[0]
     safe_html = make_email_safe_html(html)
     assert "Revisión comercial de tu propiedad" in safe_html
     assert "REVISAR CON MI EJECUTIVO" in safe_html
@@ -563,7 +566,107 @@ def test_rent_heading_says_arriendo_and_visual_structure_is_shared():
     rent_text = " ".join(rent_root.text_content().split()).casefold()
     assert "Tu propiedad frente a inmuebles comparables" in rent_html
     assert "comprador" not in rent_text and "venta" not in rent_text
+    assert "las referencias corresponden a publicaciones observadas y no garantizan un valor final de arriendo." in rent_text
     assert single_structure(sale_root) == single_structure(rent_root)
+
+
+def test_single_property_comparable_copy_uses_live_values_and_position():
+    comparable = {
+        "visible": True,
+        "selected_n": 20,
+        "positioning_reference_label": "100,3 UF/m² útil",
+        "positioning_property_label": "110,7 UF/m² útil",
+        "positioning_delta_pct": 10.37,
+    }
+    summary = renderer._single_comparable_summary(comparable)
+    assert summary == (
+        "Analizamos 20 publicaciones similares. La referencia de mercado se sitúa en "
+        "100,3 UF/m² útil y tu propiedad en 110,7 UF/m² útil, un 10% sobre esa referencia."
+    )
+
+
+def test_single_property_fallback_copy_does_not_claim_primary_comparables():
+    diagnostic = renderer._single_diagnostic_copy(
+        {"visible": False},
+        {
+            "visible": True,
+            "reference_value": "91,6",
+            "reference_unit": "UF/m² de oferta",
+            "universe_value": "3.046",
+            "universe_unit": "publicaciones activas",
+        },
+        {"state": "KNOWN_ZERO", "total_leads": 0},
+    )
+    assert "muestra suficiente de publicaciones similares" in diagnostic
+    assert "referencia comunal disponible es 91,6 UF/m² de oferta" in diagnostic
+    assert "3.046 publicaciones activas" in diagnostic
+    assert "no registró leads" in diagnostic
+    assert "referencias comparables sitúan" not in diagnostic
+
+
+def test_local_render_sale_16469_and_rent_16527_share_visual_template_and_copy_context():
+    sale = _single_property_model()
+    sale.update({"code": "16469", "operation_raw": "VENTA", "operation_label": "Venta", "is_rental": False, "price_label": "7.750 UF"})
+    sale["market_reference"] = {"visible": False}
+    sale["activity_90d"] = {"state": "UNKNOWN", "total_leads": None, "portals": []}
+    sale["comparable"].update({
+        "selected_n": 20,
+        "positioning_reference_label": "100,3 UF/m² útil",
+        "positioning_property_label": "110,7 UF/m² útil",
+        "positioning_delta_pct": 10.37,
+        "positioning_delta_label": "+10%",
+        "positioning_delta_context": "sobre la referencia",
+    })
+    sale["comparable_summary_text"] = renderer._single_comparable_summary(sale["comparable"])
+    sale["single_diagnostic_text"] = renderer._single_diagnostic_copy(sale["comparable"], sale["market_reference"], sale["activity_90d"])
+    assert "100,3 UF/m² útil" not in sale["single_diagnostic_text"]
+    assert "actividad comercial de los últimos 90 días no está disponible" in sale["single_diagnostic_text"]
+
+    rent = _single_property_model()
+    rent.update({"code": "16527", "operation_raw": "ARRIENDO", "operation_label": "Arriendo", "is_rental": True, "price_label": "21 UF"})
+    rent["comparable"] = {"visible": False, "top3": [], "land_top3": [], "land_reference_visible": False}
+    rent["comparable_summary_text"] = ""
+    rent["market_reference"] = {"visible": False}
+    rent["activity_90d"] = {"state": "UNKNOWN", "total_leads": None, "portals": []}
+    rent["single_diagnostic_text"] = renderer._single_diagnostic_copy(rent["comparable"], rent["market_reference"], rent["activity_90d"])
+    rent["recommendation_text"] = "La respuesta comercial del arriendo y los antecedentes disponibles orientan el reposicionamiento."
+    rent["single_recommendation_text"] = rent["recommendation_text"]
+    rent["recommended_price_label"] = "19,5 UF"
+    rent["document"] = {"visible": True, "type": "COMMUNAL_MARKET_REPORT", "copy": "Informe de mercado comunal disponible."}
+    rent["cta"]["report_url"] = "https://example.test/report/qa"
+
+    executive = {"name": "Ejecutivo QA", "email": "qa@example.test", "phone": "+56900000000"}
+    sale_html = renderer.render_owner_campaign_email_v2([sale], email="qa@example.test", executives=[executive], base_url="https://example.test")
+    rent_html = renderer.render_owner_campaign_email_v2([rent], email="qa@example.test", executives=[executive], base_url="https://example.test")
+    sale_root, rent_root = lxml_html.fromstring(sale_html), lxml_html.fromstring(rent_html)
+    shared_classes = ("property-card-single", "valuation-strip-single", "insight-single", "executive-single", "footer-one")
+    for class_name in shared_classes:
+        xpath = f"//*[contains(concat(' ',normalize-space(@class),' '),' {class_name} ')]"
+        assert len(sale_root.xpath(xpath)) == len(rent_root.xpath(xpath))
+    assert "Analizamos 20 publicaciones similares" in sale_html
+    assert "100,3 UF/m² útil" in sale_html and "110,7 UF/m² útil" in sale_html
+    assert len(sale_root.xpath("//*[contains(concat(' ',normalize-space(@class),' '),' evidence-single ')]")) == 1
+    assert "Tu propiedad frente a inmuebles comparables" not in rent_html
+    rent_text = " ".join(rent_root.text_content().split()).casefold()
+    assert "venta" not in rent_text and "sobreprecio" not in rent_text
+    assert "las referencias corresponden a publicaciones observadas y no garantizan un valor final de arriendo." in rent_text
+    assert "muestra suficiente de publicaciones similares" in rent_text
+
+
+def test_compact_complementary_reference_and_single_mobile_rules_are_present():
+    html = renderer.render_owner_campaign_email_v2(
+        [_single_property_model()],
+        email="qa@example.test",
+        executives=[{"name": "Erika Garrido Varela", "email": "egarrido@procasa.cl", "phone": "+56991951317"}],
+        base_url="https://example.test",
+    )
+    assert "Mercado comunal" in html
+    assert "Como contexto adicional, el segmento comunal resume" not in html
+    template_source = (Path(renderer.__file__).resolve().parents[1] / "templates" / renderer.TEMPLATE_FILE).read_text(encoding="utf-8")
+    assert ".market-reference-compact-single { font-size:9px" in template_source
+    assert ".comp-card-single { display:block; width:auto !important" in template_source
+    assert ".actions-single { width:100%; }" in template_source
+    assert "min-height:82px" not in template_source
 
 
 def test_missing_comparable_source_date_does_not_leave_empty_sample_label():

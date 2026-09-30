@@ -1156,6 +1156,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
     canonical_recommended_label = _price_label(case.display_recommended_price, case.operation) if case.display_recommended_price is not None else ""
     visible_clp_recommended_label = str(property_model.get("recommended_price_clp_label") or "")
     recommended_price_text = str(property_model.get("recommended_price_label") or "")
+    market_reference = property_model.get("market_reference") if isinstance(property_model.get("market_reference"), Mapping) else {}
     rental_checks = {
         "rental_price_display": (
             expected_rent
@@ -1165,7 +1166,7 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
             and recommended_price_text in {canonical_recommended_label, visible_clp_recommended_label}
         ),
         "rental_estimate": expected_rent and bool((property_model.get("appraisal") or {}).get("visible")),
-        "rental_comparables": expected_rent and bool(comparable.get("visible")) and str(comparable.get("positioning_unit_label") or "").strip() == "CLP/m²/mes",
+        "rental_comparables": _rental_comparable_evidence_valid(expected_rent, comparable, market_reference),
         "sale_fields_present": any(term in lower_text for term in sale_terms) if expected_rent else False,
     }
     checks = {
@@ -1189,3 +1190,21 @@ def render_owner_campaign_v2_test_case(case: OwnerCampaignTestCase) -> Mapping[s
         "text": text,
         "checks": checks,
     }
+
+
+def _rental_comparable_evidence_valid(
+    expected_rent: bool,
+    comparable: Mapping[str, Any],
+    market_reference: Mapping[str, Any],
+) -> bool:
+    """Accept rental primary comparables or an operation-matched communal fallback."""
+    if not expected_rent:
+        return False
+    if comparable.get("visible"):
+        return str(comparable.get("positioning_unit_label") or "").strip() == "CLP/m²/mes"
+    unit = str(market_reference.get("reference_unit") or "").casefold().replace(" ", "")
+    return (
+        market_reference.get("visible") is True
+        and str(market_reference.get("source") or "").upper() == "COMMUNAL"
+        and ("/mes" in unit or "mes" in unit)
+    )

@@ -668,8 +668,27 @@ def _activity_90d_sentence(activity: Mapping[str, Any]) -> str:
         count = number(activity.get("total_leads"))
         if count is not None:
             count_label = fmt_number(count, 0)
-            return f"En los últimos 90 días, la propiedad registró {count_label} {'lead' if count == 1 else 'leads'}."
+            conversations = number(activity.get("conversations"))
+            visits = number(activity.get("visits"))
+            details = []
+            if conversations is not None:
+                details.append(f"{fmt_number(conversations, 0)} {'conversación' if conversations == 1 else 'conversaciones'}")
+            if visits is not None:
+                details.append(f"{fmt_number(visits, 0)} {'visita coordinada' if visits == 1 else 'visitas coordinadas'}")
+            sentence = f"En los últimos 90 días, la propiedad registró {count_label} {'lead' if count == 1 else 'leads'}"
+            if details:
+                sentence += ", " + " y ".join(details)
+            sentence += "."
+            if (conversations or 0) > 0 or (visits or 0) > 0:
+                return sentence + " La actividad muestra avances hacia conversaciones o visitas."
+            if conversations == 0 and visits == 0:
+                return sentence + " Las consultas todavía no se han traducido en conversaciones ni visitas coordinadas."
+            return sentence
     if state == "KNOWN_ZERO":
+        conversations = number(activity.get("conversations"))
+        visits = number(activity.get("visits"))
+        if conversations == 0 and visits == 0:
+            return "En los últimos 90 días, la propiedad no registró leads, conversaciones ni visitas coordinadas."
         return "En los últimos 90 días, la propiedad no registró leads."
     return "La actividad comercial de los últimos 90 días no está disponible para esta propiedad."
 
@@ -681,9 +700,39 @@ def _single_diagnostic_copy(
 ) -> str:
     activity_sentence = _activity_90d_sentence(activity)
     if comparable.get("visible"):
-        # Comparable values and positioning already appear above the bar; keep
-        # the diagnostic complementary by using only the 90-day activity signal.
-        return activity_sentence
+        subject = number(comparable.get("positioning_property_value"))
+        reference = number(comparable.get("positioning_reference_value"))
+        subject_label = str(comparable.get("positioning_property_label") or "").strip()
+        delta = number(comparable.get("positioning_delta_pct"))
+        metric_sentence = ""
+        if subject is not None and reference is not None and reference > 0:
+            if delta is None:
+                delta = (subject - reference) / reference * 100
+            if abs(delta) < 0.05:
+                position = "se ubica en línea con la referencia de inmuebles comparables"
+            else:
+                direction = "sobre" if delta > 0 else "bajo"
+                position = f"se ubica aproximadamente {fmt_number(abs(delta), 0)}% {direction} la referencia de inmuebles comparables"
+            value_part = f"Su valor de {subject_label} " if subject_label else "La propiedad "
+            metric_sentence = value_part + position + "."
+
+        state = str(activity.get("state") or "UNKNOWN").upper()
+        conv = number(activity.get("conversations"))
+        visits = number(activity.get("visits"))
+        no_progress = (
+            state in {"KNOWN_ZERO", "KNOWN_POSITIVE"}
+            and conv == 0
+            and visits == 0
+        )
+        if no_progress and subject is not None and reference is not None and subject > reference:
+            conclusion = "En conjunto, estas señales sugieren que el precio actual puede estar reduciendo su competitividad frente a alternativas similares."
+        elif (conv or 0) > 0 or (visits or 0) > 0:
+            conclusion = "La actividad y las referencias disponibles permiten evaluar el posicionamiento con evidencia de interés comercial."
+        elif subject is not None and reference is not None and subject <= reference:
+            conclusion = "La propiedad está competitivamente posicionada; la actividad observada permite orientar el seguimiento comercial."
+        else:
+            conclusion = "En conjunto, estas señales permiten evaluar el posicionamiento comercial de la propiedad."
+        return " ".join(part for part in (activity_sentence, metric_sentence, conclusion) if part)
     if market_reference.get("visible"):
         value = str(market_reference.get("reference_value") or "").strip()
         unit = str(market_reference.get("reference_unit") or "").strip()
@@ -694,12 +743,21 @@ def _single_diagnostic_copy(
             reference_sentence = f"La referencia comunal disponible es {value} {unit}."
         if universe and universe_unit:
             reference_sentence = f"{reference_sentence[:-1]} y considera {universe} {universe_unit}."
+        state = str(activity.get("state") or "UNKNOWN").upper()
+        conversations = number(activity.get("conversations"))
+        visits = number(activity.get("visits"))
+        if state in {"KNOWN_ZERO", "KNOWN_POSITIVE"} and conversations == 0 and visits == 0:
+            conclusion = "La actividad observada aún no muestra avances hacia conversaciones o visitas; junto con el contexto comunal, esto permite revisar el posicionamiento del precio."
+        elif (conversations or 0) > 0 or (visits or 0) > 0:
+            conclusion = "La actividad muestra interés comercial; el contexto comunal aporta una referencia adicional para evaluar el posicionamiento."
+        else:
+            conclusion = "La referencia comunal y los antecedentes disponibles permiten revisar el posicionamiento sin sustituir una muestra de propiedades similares."
         return (
-            "No contamos con una muestra suficiente de publicaciones similares para una "
-            "comparación primaria. " + reference_sentence + " " + activity_sentence
+            "No existe una muestra suficiente de inmuebles estructuralmente comparables para una "
+            "comparación primaria. " + reference_sentence + " " + activity_sentence + " " + conclusion
         )
     return (
-        "No contamos con una muestra suficiente de publicaciones similares ni con una "
+        "No contamos con una muestra suficiente de inmuebles estructuralmente comparables ni con una "
         "referencia comunal disponible. " + activity_sentence +
         " La evaluación considera los antecedentes disponibles y puede revisarse con tu ejecutivo."
     )
@@ -1013,21 +1071,17 @@ def _property_context(
     recommendation = "con ajuste de precio sustentado" if recommended_price is not None else "revisión con asesor"
     adjustment = int(pricing_recommendation["recommended_adjustment_pct"])
     adjustment_label = f"-{adjustment}%".replace(".", ",")
-    if lead_count is not None:
-        lead_summary = "no registró consultas" if int(lead_count) == 0 else f"registró {int(lead_count)} {'lead' if int(lead_count) == 1 else 'leads'}"
-        commercial_signal = f"La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento: la propiedad {lead_summary}."
+    activity_conversations = number(activity.get("conversations"))
+    activity_visits = number(activity.get("visits"))
+    if lead_count is None:
+        response_basis = "La actividad comercial registrada no está disponible"
+    elif int(lead_count) == 0:
+        response_basis = "La ausencia de consultas registradas"
+    elif (activity_conversations or 0) > 0 or (activity_visits or 0) > 0:
+        response_basis = "La respuesta comercial observada"
     else:
-        commercial_signal = "La respuesta comercial de los últimos 90 días es la señal principal para evaluar el reposicionamiento, aunque su registro no está disponible."
-    communal_reference_signal = "Los antecedentes disponibles complementan esta evaluación."
-    if market_reference.get("visible"):
-        reference_value = str(market_reference.get("reference_value") or "").strip()
-        reference_unit = str(market_reference.get("reference_unit") or "").strip()
-        universe_value = str(market_reference.get("universe_value") or "").strip()
-        universe_unit = str(market_reference.get("universe_unit") or "").strip()
-        if reference_value and reference_unit:
-            communal_reference_signal = f"La referencia comunal disponible es {reference_value} {reference_unit}."
-        if universe_value and universe_unit:
-            communal_reference_signal = f"{communal_reference_signal[:-1]} y considera {universe_value} {universe_unit}."
+        response_basis = "Las consultas recibidas y su avance comercial"
+    context_basis = "el contexto comunal disponible" if market_reference.get("visible") else "los antecedentes disponibles"
     price_term = "canon mensual de arriendo" if is_rental else "precio de venta"
     alternatives = "otras alternativas de arriendo" if is_rental else "otras propiedades similares"
     gradual_alternative = calculate_gradual_price_alternative(
@@ -1068,8 +1122,9 @@ def _property_context(
                 f"Recomendamos reducir el {price_term} en {adjustment}% para acercar su posicionamiento a {alternatives}."
             )
         else:
+            rationale = f"{response_basis} y {context_basis} orientan esta revisión."
             recommendation_copy = (
-                f"{commercial_signal} {communal_reference_signal} "
+                f"{rationale} "
                 f"Recomendamos reducir el {price_term} en {adjustment}% para mejorar su posicionamiento frente a {alternatives}."
             )
     else:

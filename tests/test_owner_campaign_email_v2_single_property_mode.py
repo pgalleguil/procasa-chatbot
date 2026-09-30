@@ -597,11 +597,59 @@ def test_single_property_fallback_copy_does_not_claim_primary_comparables():
         },
         {"state": "KNOWN_ZERO", "total_leads": 0},
     )
-    assert "muestra suficiente de publicaciones similares" in diagnostic
+    assert "muestra suficiente de inmuebles estructuralmente comparables" in diagnostic
     assert "referencia comunal disponible es 91,6 UF/m² de oferta" in diagnostic
     assert "3.046 publicaciones activas" in diagnostic
     assert "no registró leads" in diagnostic
     assert "referencias comparables sitúan" not in diagnostic
+
+
+def test_diagnostic_interprets_leads_and_comparable_position_without_repeating_recommendation():
+    comparable = {
+        "visible": True,
+        "positioning_property_value": 110.7,
+        "positioning_reference_value": 100.3,
+        "positioning_property_label": "110,7 UF/m² útil",
+        "positioning_delta_pct": 10.37,
+    }
+    diagnostic = renderer._single_diagnostic_copy(
+        comparable,
+        {"visible": False},
+        {"state": "KNOWN_POSITIVE", "total_leads": 2, "conversations": 0, "visits": 0},
+    )
+    assert "2 leads" in diagnostic
+    assert "0 conversaciones" in diagnostic and "0 visitas coordinadas" in diagnostic
+    assert "110,7 UF/m² útil" in diagnostic and "10% sobre" in diagnostic
+    assert "reduciendo su competitividad" in diagnostic
+    assert "Recomendamos reducir" not in diagnostic
+
+
+def test_diagnostic_does_not_describe_engaged_leads_as_limited_response():
+    diagnostic = renderer._single_diagnostic_copy(
+        {"visible": False},
+        {"visible": True, "source": "COMMUNAL", "reference_value": "91,6", "reference_unit": "UF/m²/mes de oferta"},
+        {"state": "KNOWN_POSITIVE", "total_leads": 8, "conversations": 3, "visits": 2},
+    )
+    assert "8 leads" in diagnostic and "3 conversaciones" in diagnostic and "2 visitas coordinadas" in diagnostic
+    assert "muestra suficiente de inmuebles estructuralmente comparables" in diagnostic
+    assert "muestra interés comercial" in diagnostic
+    assert "respuesta comercial limitada" not in diagnostic
+
+
+def test_diagnostic_and_recommendation_containers_share_border_system():
+    template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
+    assert ".insight-single { box-sizing:border-box; width:49%; padding:14px 13px; border:1px solid #E5E6EF; border-radius:9px;" in template
+    assert ".insight-recommendation { border-color:#EAE3D7; background:#FFFCF6; }" in template
+    assert "min-height" not in template[template.index(".insight-single {"):template.index(".insight-single .label")]
+
+
+def test_complementary_reference_has_requested_gap_and_compact_auto_height():
+    template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
+    style = next(line.strip() for line in template.splitlines() if ".market-reference-single {" in line)
+    assert "margin:17px -15px 0" in style
+    assert "box-sizing:border-box" in style and "padding:8px 10px" in style
+    assert "height:" not in style and "min-height:" not in style
+    assert ".market-reference-single { margin:9px -12px 0; }" in template
 
 
 def test_local_render_sale_16469_and_rent_16527_share_visual_template_and_copy_context():
@@ -626,7 +674,14 @@ def test_local_render_sale_16469_and_rent_16527_share_visual_template_and_copy_c
     rent.update({"code": "16527", "operation_raw": "ARRIENDO", "operation_label": "Arriendo", "is_rental": True, "price_label": "21 UF"})
     rent["comparable"] = {"visible": False, "top3": [], "land_top3": [], "land_reference_visible": False}
     rent["comparable_summary_text"] = ""
-    rent["market_reference"] = {"visible": False}
+    rent["market_reference"] = {
+        "visible": True,
+        "source": "COMMUNAL",
+        "reference_value": "0,40",
+        "reference_unit": "UF/m²/mes de oferta",
+        "universe_value": "325",
+        "universe_unit": "arriendos activos",
+    }
     rent["activity_90d"] = {"state": "UNKNOWN", "total_leads": None, "portals": []}
     rent["single_diagnostic_text"] = renderer._single_diagnostic_copy(rent["comparable"], rent["market_reference"], rent["activity_90d"])
     rent["recommendation_text"] = "La respuesta comercial del arriendo y los antecedentes disponibles orientan el reposicionamiento."
@@ -650,7 +705,8 @@ def test_local_render_sale_16469_and_rent_16527_share_visual_template_and_copy_c
     rent_text = " ".join(rent_root.text_content().split()).casefold()
     assert "venta" not in rent_text and "sobreprecio" not in rent_text
     assert "las referencias corresponden a publicaciones observadas y no garantizan un valor final de arriendo." in rent_text
-    assert "muestra suficiente de publicaciones similares" in rent_text
+    assert "muestra suficiente de inmuebles estructuralmente comparables" in rent_text
+    assert "0,40 uf/m²/mes de oferta" in rent_text
 
 
 def test_compact_complementary_reference_and_single_mobile_rules_are_present():

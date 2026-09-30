@@ -1333,6 +1333,29 @@ def test_case_d_sale_fields_are_a_hard_failure_before_smtp():
         sender.prepare_test_messages([_case("D")], render_case=lambda _case: rendered)
 
 
+def test_rent_guard_accepts_operation_matched_communal_fallback_without_primary_comparables():
+    assert sender._rental_comparable_evidence_valid(
+        True,
+        {"visible": False},
+        {"visible": True, "source": "COMMUNAL", "reference_unit": "UF/m²/mes de oferta"},
+    )
+    assert not sender._rental_comparable_evidence_valid(
+        False,
+        {"visible": False},
+        {"visible": True, "source": "COMMUNAL", "reference_unit": "UF/m²/mes de oferta"},
+    )
+    assert not sender._rental_comparable_evidence_valid(
+        True,
+        {"visible": False},
+        {"visible": True, "source": "COMMUNAL", "reference_unit": "UF/m² de oferta"},
+    )
+    assert not sender._rental_comparable_evidence_valid(
+        True,
+        {"visible": True, "positioning_unit_label": "UF/m²"},
+        {"visible": False},
+    )
+
+
 def test_sender_delivers_one_explicit_case_only_to_fixed_to_and_envelope():
     db = FakeDB()
     result = sender.send_test_messages(

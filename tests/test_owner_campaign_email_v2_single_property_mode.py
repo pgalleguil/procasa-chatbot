@@ -654,6 +654,13 @@ def test_single_context_and_comparable_disclaimer_align_to_property_content():
     assert ".disclaimer-single { margin-left:9px; }" in template
 
 
+def test_single_hero_has_gap_after_header_and_property_card_is_rounded():
+    template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
+    assert ".hero-single-shell { padding:8px 14px 0 30px; background:#ffffff; }" in template
+    assert ".hero-single-shell { padding:8px 12px 0; }" in template
+    assert ".property-card-single { width:100%; border:1px solid #E5E6EF; border-collapse:separate; border-spacing:0; border-radius:9px; overflow:hidden; background:#FBFBFE; }" in template
+
+
 def test_complementary_reference_has_requested_gap_and_compact_auto_height():
     template = (Path(__file__).parents[1] / "templates" / "owner_campaign_email_v2.html").read_text(encoding="utf-8")
     style = next(line.strip() for line in template.splitlines() if ".market-reference-single {" in line)

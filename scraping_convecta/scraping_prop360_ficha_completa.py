@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -386,7 +387,13 @@ def get_uf_rate():
     return None
 
 
-def canonicalize_prices(doc: dict, uf_info=_UNSET_UF_CONTEXT, *, fecha_esperada=None):
+def canonicalize_prices(
+    doc: dict,
+    uf_info=_UNSET_UF_CONTEXT,
+    *,
+    fecha_esperada=None,
+    verified_operations: set[str] | None = None,
+):
     """Completa la divisa derivada + metadata en cada precio de tipo_operacion.
 
     Usa el contexto UF fresco obtenido una vez al inicio de esta ejecución.
@@ -410,16 +417,51 @@ def canonicalize_prices(doc: dict, uf_info=_UNSET_UF_CONTEXT, *, fecha_esperada=
     uf_fuente = uf_info.get("fuente") if uf_info else None
 
     to = doc.get("tipo_operacion")
+    unverified_operations = []
+    conversion_pending_operations = []
     if isinstance(to, dict):
         for key in ("precio_venta", "precio_arriendo"):
             precio = to.get(key)
             if isinstance(precio, dict):
+                current_verified = (
+                    key in verified_operations
+                    if verified_operations is not None
+                    else _current_price_base_is_verified(precio)
+                )
+                if not current_verified:
+                    # An old Mongo price is not evidence that today's source
+                    # currency/base was verified. Preserve the entire price
+                    # object and record the verification requirement outside it.
+                    unverified_operations.append(key)
+                    continue
+                if not uf_ok:
+                    # The current contractual base is known, but without a
+                    # same-day UF quote neither the price object nor its UF
+                    # conversion metadata may be rewritten.
+                    conversion_pending_operations.append(key)
+                    continue
                 to[key] = completar_precio(precio, uf_valor, uf_fecha, uf_fuente)
-                if not uf_ok and to[key].get("moneda_publicada") in {"CLP", "UF"}:
-                    to[key]["revision_precio"] = {
-                        "status": "conversion_pending",
-                        "reason": uf_reason,
-                    }
+
+    if unverified_operations:
+        if not isinstance(doc.get("metadata"), dict):
+            doc["metadata"] = {}
+        doc["metadata"]["price_verification"] = {
+            "status": "PRICE_VERIFICATION_REQUIRED",
+            "reason": "CURRENCY_UNKNOWN",
+            "current_base_price_verified": False,
+            "operations": unverified_operations,
+        }
+    elif conversion_pending_operations:
+        if not isinstance(doc.get("metadata"), dict):
+            doc["metadata"] = {}
+        doc["metadata"]["price_verification"] = {
+            "status": "PRICE_VERIFICATION_REQUIRED",
+            "reason": uf_reason or "UF_STALE",
+            "current_base_price_verified": True,
+            "operations": conversion_pending_operations,
+        }
+    elif isinstance(doc.get("metadata"), dict):
+        doc["metadata"].pop("price_verification", None)
 
     # Resumen plano heredado: reflejar precios completados (solo informativo)
     res = doc.get("resumen")
@@ -1016,7 +1058,16 @@ def _source_price(raw: str, currency: str | None) -> dict:
             "precio_publicado_original": raw,
             "moneda_publicada": None,
             "fuente_moneda_publicacion": "form_currency_unresolved",
+            "price_base_verified": False,
             "revision_precio": {"status": "needs_review", "reason": "currency_not_explicit"},
+        }
+    if amount is None or amount <= 0:
+        return {
+            "precio_publicado_original": raw,
+            "moneda_publicada": None,
+            "fuente_moneda_publicacion": "form_currency_unresolved",
+            "price_base_verified": False,
+            "revision_precio": {"status": "needs_review", "reason": "base_price_missing_or_invalid"},
         }
     return {
         key: amount,
@@ -1025,7 +1076,27 @@ def _source_price(raw: str, currency: str | None) -> dict:
         "precio_publicado": amount,
         "precio_publicado_original": amount,
         "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+        # Execution-scoped evidence. upsert_ficha removes this transient marker
+        # before persistence; a later run must verify the base again.
+        "price_base_verified": True,
     }
+
+
+def _current_price_base_is_verified(price: dict) -> bool:
+    """Require explicit editable-form evidence from this scrape execution."""
+    if not isinstance(price, dict) or price.get("price_base_verified") is not True:
+        return False
+    if price.get("fuente_moneda_publicacion") != "prop360_editable_currency_radio":
+        return False
+    currency = str(price.get("moneda_publicada") or price.get("moneda_publicacion") or "").upper()
+    if currency not in {"CLP", "UF"}:
+        return False
+    amount = price.get("precio_publicado_original", price.get("precio_publicado"))
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return False
+    return amount > 0 and math.isfinite(amount)
 
 
 def parse_ubicacion(html: str, audit: dict) -> dict:
@@ -1909,45 +1980,16 @@ def _write_with_history(coll, history_coll, events: list[dict], update_filter: d
 
 
 def _merge_price_operation(existing_price: dict, incoming_price: dict, *, uf_ok: bool, uf_reason: str):
-    """Keep current contractual values unless new source evidence is usable.
-
-    An unresolved currency or a stale/missing UF quote is recorded as an
-    observation for review. It cannot replace the existing monetary values.
-    """
-    currency = str(
-        incoming_price.get("moneda_publicada")
-        or incoming_price.get("moneda_publicacion")
-        or ""
-    ).strip().upper()
-    source_unresolved = incoming_price.get("fuente_moneda_publicacion") == "form_currency_unresolved"
-    reason = "currency_not_explicit" if currency not in {"CLP", "UF"} or source_unresolved else None
-    if reason is None and not uf_ok:
-        reason = uf_reason or "uf_not_current"
-    if reason is None:
+    """Use only this-run verified editable bases; otherwise preserve history."""
+    current_verified = _current_price_base_is_verified(incoming_price)
+    if current_verified and uf_ok:
         merged = {**existing_price, **incoming_price}
         merged.pop("precio_observado_pendiente", None)
         merged.pop("revision_precio", None)
         return merged
-
-    observed_amount = incoming_price.get("precio_publicado_original")
-    if observed_amount is None:
-        observed_amount = incoming_price.get("precio_publicado")
-    if observed_amount is None:
-        observed_amount = incoming_price.get("precio_clp", incoming_price.get("precio_uf"))
-    printable_observation = incoming_price.get("precio_observado_imprimible")
-    if observed_amount is None and isinstance(printable_observation, dict):
-        observed_amount = printable_observation.get("monto_observado")
-    preserved = dict(existing_price)
-    preserved["precio_observado_pendiente"] = {
-        "moneda": currency if currency in {"CLP", "UF"} else None,
-        "monto": observed_amount,
-        "fuente": incoming_price.get("fuente_moneda_publicacion"),
-        "unidad_observada": (printable_observation or {}).get("unidad_indicada") if isinstance(printable_observation, dict) else None,
-        "texto_observado": (printable_observation or {}).get("texto") if isinstance(printable_observation, dict) else None,
-        "fecha_observacion": now_iso(),
-    }
-    preserved["revision_precio"] = {"status": "needs_review", "reason": reason}
-    return preserved
+    # Do not annotate or otherwise alter the historic price object. Review
+    # state is recorded in document metadata by canonicalize_prices().
+    return dict(existing_price)
 
 
 def upsert_ficha(
@@ -1965,6 +2007,13 @@ def upsert_ficha(
     if not existing:
         doc.setdefault("fecha_primera_deteccion", now_iso())
         doc.setdefault("fuente_incorporacion", source)
+    verified_operations = {
+        op_key
+        for op_key in ("precio_venta", "precio_arriendo")
+        if _current_price_base_is_verified(
+            ((doc.get("tipo_operacion") or {}).get(op_key) or {})
+        )
+    }
     for section in (
         "publicaciones",
         "datos_propietario",
@@ -1986,12 +2035,23 @@ def upsert_ficha(
                 for op_key in ("precio_venta", "precio_arriendo"):
                     old_price = existing_sec.get(op_key)
                     new_price = new_sec.get(op_key)
-                    if isinstance(old_price, dict) and isinstance(new_price, dict):
+                    if isinstance(new_price, dict):
                         merged[op_key] = _merge_price_operation(
-                            old_price, new_price, uf_ok=uf_ok, uf_reason=uf_reason
+                            old_price if isinstance(old_price, dict) else {},
+                            new_price,
+                            uf_ok=uf_ok,
+                            uf_reason=uf_reason,
                         )
             doc[section] = merged
-    doc = canonicalize_prices(doc, uf_info)
+    doc = canonicalize_prices(
+        doc, uf_info, verified_operations=verified_operations
+    )
+    # The verification token is execution-scoped and must not become historic
+    # evidence that authorizes a later run to re-canonicalize an old price.
+    for op_key in ("precio_venta", "precio_arriendo"):
+        price = (doc.get("tipo_operacion") or {}).get(op_key)
+        if isinstance(price, dict):
+            price.pop("price_base_verified", None)
     previous_hash = existing.get("audit_hash")
     current_hash = audit_hash(doc)
     changed = previous_hash != current_hash

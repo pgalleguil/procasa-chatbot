@@ -16,6 +16,7 @@ from chatbot.uf_service import (
     convertir_precio, completar_precio, obtener_uf_actual, validar_uf_vigente,
 )
 from chatbot.uf_migration import _clasificar
+import mongomock
 from scraping_convecta.scraping_prop360_ficha_completa import (
     _detect_print_price,
     canonicalize_prices,
@@ -24,6 +25,7 @@ from scraping_convecta.scraping_prop360_ficha_completa import (
     build_doc,
     clean_price_uf,
     _merge_price_operation,
+    upsert_ficha,
 )
 
 UF = 40846.11
@@ -165,15 +167,21 @@ def test_prop360_print_price_with_ambiguous_decimal_comma_is_rejected():
 
 
 def test_prop360_unknown_currency_is_not_converted():
-    doc = {"tipo_operacion": {"precio_venta": {
+    original_price = {
         "precio_publicado_original": "140000000", "moneda_publicada": None,
-    }}}
+        "fuente_moneda_publicacion": "form_currency_unresolved",
+        "price_base_verified": False,
+    }
+    doc = {"tipo_operacion": {"precio_venta": original_price}}
     canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
     price = doc["tipo_operacion"]["precio_venta"]
-    assert price["moneda_publicada"] is None
-    assert "precio_clp" not in price
-    assert "precio_uf" not in price
-    assert price["revision_precio"]["status"] == "needs_review"
+    assert price == original_price
+    assert doc["metadata"]["price_verification"] == {
+        "status": "PRICE_VERIFICATION_REQUIRED",
+        "reason": "CURRENCY_UNKNOWN",
+        "current_base_price_verified": False,
+        "operations": ["precio_venta"],
+    }
 
 
 def test_clp_base_does_not_change_when_uf_rate_changes():
@@ -231,61 +239,252 @@ def test_invalid_uf_does_not_create_a_conversion():
     doc = {"tipo_operacion": {"precio_venta": {
         "precio_clp": 140_000_000, "moneda_publicada": "CLP",
         "precio_publicado_original": 140_000_000,
+        "moneda_publicacion": "CLP",
+        "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+        "price_base_verified": True,
     }}}
     canonicalize_prices(doc, {"valor": float("nan"), "fecha": "2026-10-01"},
                         fecha_esperada="2026-10-01")
     price = doc["tipo_operacion"]["precio_venta"]
     assert price["precio_clp"] == 140_000_000
     assert "precio_uf" not in price
-    assert price["revision_precio"]["status"] == "conversion_pending"
+    assert "revision_precio" not in price
+    assert doc["metadata"]["price_verification"]["reason"] == "uf_value_invalid"
 
 
 def test_stale_uf_date_skips_conversion_and_preserves_source_amount():
     doc = {"tipo_operacion": {"precio_venta": {
         "precio_clp": 140_000_000, "moneda_publicada": "CLP",
         "precio_publicado_original": 140_000_000,
+        "moneda_publicacion": "CLP",
+        "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+        "price_base_verified": True,
     }}}
     canonicalize_prices(doc, {"valor": 41_000, "fecha": "2026-09-30T03:00:00+00:00"},
                         fecha_esperada="2026-10-01")
     price = doc["tipo_operacion"]["precio_venta"]
     assert price["precio_clp"] == 140_000_000
     assert "precio_uf" not in price
-    assert price["revision_precio"]["reason"] == "uf_date_stale_or_mismatched"
+    assert doc["metadata"]["price_verification"]["reason"] == "uf_date_stale_or_mismatched"
     assert not validar_uf_vigente({"valor": 41_000, "fecha": "2026-09-30"}, "2026-10-01")[0]
 
 
 def test_ambiguous_currency_preserves_existing_base_for_manual_review():
     existing = {"precio_uf": 100.0, "precio_clp": 4_000_000,
-                "moneda_publicada": "UF", "precio_publicado_original": 100.0}
+                "moneda_publicada": "UF", "precio_publicado_original": 100.0,
+                "uf_valor_conversion": 40_000, "uf_fecha_conversion": "2026-08-10"}
     incoming = {"precio_publicado_original": "100000000", "moneda_publicada": None,
                 "fuente_moneda_publicacion": "form_currency_unresolved"}
     merged = _merge_price_operation(existing, incoming, uf_ok=True, uf_reason="current")
-    assert merged["precio_uf"] == 100.0
-    assert merged["precio_clp"] == 4_000_000
-    assert merged["revision_precio"]["status"] == "needs_review"
-    assert merged["precio_observado_pendiente"]["monto"] == "100000000"
+    assert merged == existing
+    doc = {"tipo_operacion": {"precio_venta": merged}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert doc["tipo_operacion"]["precio_venta"] == existing
+    assert doc["metadata"]["price_verification"]["reason"] == "CURRENCY_UNKNOWN"
 
 
 def test_stale_uf_does_not_replace_existing_price_base():
     existing = {"precio_clp": 140_000_000, "precio_uf": 3500.0,
-                "moneda_publicada": "CLP", "precio_publicado_original": 140_000_000}
+                "moneda_publicada": "CLP", "precio_publicado_original": 140_000_000,
+                "uf_valor_conversion": 40_000, "uf_fecha_conversion": "2026-08-10"}
     incoming = {"precio_clp": 150_000_000, "moneda_publicada": "CLP",
-                "precio_publicado_original": 150_000_000}
+                "moneda_publicacion": "CLP", "precio_publicado_original": 150_000_000,
+                "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+                "price_base_verified": True}
     merged = _merge_price_operation(existing, incoming, uf_ok=False,
                                     uf_reason="uf_date_stale_or_mismatched")
-    assert merged["precio_clp"] == 140_000_000
-    assert merged["precio_observado_pendiente"]["monto"] == 150_000_000
+    assert merged == existing
 
 
 def test_real_contractual_price_change_uses_new_explicit_base():
     old = {"precio_clp": 100_000_000, "moneda_publicada": "CLP",
            "precio_publicado_original": 100_000_000}
     observed = {"precio_clp": 120_000_000, "moneda_publicada": "CLP",
-                "moneda_publicacion": "CLP", "precio_publicado_original": 120_000_000}
+                "moneda_publicacion": "CLP", "precio_publicado_original": 120_000_000,
+                "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+                "price_base_verified": True}
     merged = _merge_price_operation(old, observed, uf_ok=True, uf_reason="current")
     out = completar_precio(merged, 41_065.38, "2026-10-01", "mindicador.cl")
     assert out["precio_clp"] == 120_000_000
     assert out["precio_uf"] == round(120_000_000 / 41_065.38, 1)
+
+
+def test_verified_current_clp_base_recalculates_uf_after_rate_change():
+    incoming = {
+        "precio_clp": 140_000_000, "moneda_publicada": "CLP",
+        "moneda_publicacion": "CLP", "precio_publicado_original": 140_000_000,
+        "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+        "price_base_verified": True,
+    }
+    doc = {"tipo_operacion": {"precio_venta": incoming}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"},
+                        fecha_esperada="2026-10-01")
+    assert doc["tipo_operacion"]["precio_venta"]["precio_clp"] == 140_000_000
+    assert doc["tipo_operacion"]["precio_venta"]["precio_uf"] == 3409.2
+
+
+def test_verified_current_uf_base_recalculates_clp_after_rate_change():
+    incoming = {
+        "precio_uf": 118.037, "moneda_publicada": "UF",
+        "moneda_publicacion": "UF", "precio_publicado_original": 118.037,
+        "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+        "price_base_verified": True,
+    }
+    doc = {"tipo_operacion": {"precio_venta": incoming}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"},
+                        fecha_esperada="2026-10-01")
+    price = doc["tipo_operacion"]["precio_venta"]
+    assert price["precio_uf"] == 118.037
+    assert price["precio_clp"] == round(118.037 * 41_065.38)
+
+
+def test_historical_clp_without_current_verification_is_byte_value_preserved():
+    historical = {
+        "precio_clp": 12_254_622, "precio_uf": 300,
+        "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+        "uf_valor_conversion": 40_846.11,
+        "uf_fecha_conversion": "2026-08-10T04:00:00+00:00",
+        "precio_derivado": 300, "precio_derivado_moneda": "UF",
+    }
+    merged = _merge_price_operation(historical, {
+        "precio_observado_imprimible": {"unidad_indicada": "UF", "monto_observado": 300},
+    }, uf_ok=True, uf_reason="current")
+    doc = {"tipo_operacion": {"precio_venta": merged}}
+    before = dict(historical)
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert doc["tipo_operacion"]["precio_venta"] == before
+    assert doc["metadata"]["price_verification"]["status"] == "PRICE_VERIFICATION_REQUIRED"
+    assert doc["metadata"]["price_verification"]["reason"] == "CURRENCY_UNKNOWN"
+
+
+def test_historical_uf_without_current_verification_is_preserved_exactly():
+    historical = {
+        "precio_uf": 132.57, "precio_clp": 5_444_037,
+        "moneda_publicada": "UF", "precio_publicado_original": 132.57,
+        "uf_valor_conversion": 40_846.11,
+        "uf_fecha_conversion": "2026-08-10T04:00:00+00:00",
+        "precio_derivado": 5_444_037, "precio_derivado_moneda": "CLP",
+    }
+    merged = _merge_price_operation(historical, {"precio_uf": None}, uf_ok=True,
+                                    uf_reason="current")
+    doc = {"tipo_operacion": {"precio_arriendo": merged}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert doc["tipo_operacion"]["precio_arriendo"] == historical
+
+
+def test_printable_uf_300_with_inaccessible_editable_skips_price_write():
+    parsed = parse_ficha_imprimible(
+        '<h4 class="text-right">Venta <label>UF 300</label></h4>'
+    )["tipo_operacion"]["precio_venta"]
+    historical = {"precio_clp": 12_254_622, "precio_uf": 300,
+                  "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+                  "uf_valor_conversion": 40_846.11,
+                  "uf_fecha_conversion": "2026-08-10T04:00:00+00:00"}
+    merged = _merge_price_operation(historical, parsed, uf_ok=True, uf_reason="current")
+    doc = {"tipo_operacion": {"precio_venta": merged}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert parsed.get("moneda_publicada") is None
+    assert parsed["precio_observado_imprimible"]["monto_observado"] == 300
+    assert doc["tipo_operacion"]["precio_venta"] == historical
+    assert doc["metadata"]["price_verification"]["reason"] == "CURRENCY_UNKNOWN"
+
+
+def test_listing_clp_uf_pair_with_inaccessible_editable_preserves_mongo():
+    historical = {"precio_clp": 12_254_622, "precio_uf": 300,
+                  "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+                  "uf_valor_conversion": 40_846.11,
+                  "uf_fecha_conversion": "2026-08-10T04:00:00+00:00"}
+    parsed = parse_tipo_operacion('<input id="tbPrecioVenta" value="12319614">', {})["precio_venta"]
+    doc = build_doc("16346", {"estado": "Activa", "operacion": "Venta",
+                               "precio": "UF 300 $ 12.319.614"}, {
+        "tipo_operacion": {"precio_venta": parsed}, "estado": {},
+        "datos_propietario": {}, "ubicacion": {}, "caracteristicas": {},
+        "observaciones": {}, "publicaciones": {}, "bitacora": [], "metadata": {},
+    })
+    merged = _merge_price_operation(historical, doc["tipo_operacion"]["precio_venta"],
+                                    uf_ok=True, uf_reason="current")
+    price_doc = {"tipo_operacion": {"precio_venta": merged}}
+    canonicalize_prices(price_doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert doc["resumen"]["moneda_publicacion"] is None
+    assert price_doc["tipo_operacion"]["precio_venta"] == historical
+
+
+def test_unknown_historical_price_is_idempotently_skipped_twice():
+    historical = {"precio_clp": 12_254_622, "precio_uf": 300,
+                  "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+                  "uf_valor_conversion": 40_846.11,
+                  "uf_fecha_conversion": "2026-08-10T04:00:00+00:00"}
+    for _ in range(2):
+        merged = _merge_price_operation(historical, {
+            "fuente_moneda_publicacion": "form_currency_unresolved",
+            "price_base_verified": False,
+        }, uf_ok=True, uf_reason="current")
+        doc = {"tipo_operacion": {"precio_venta": merged}}
+        canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+        assert doc["tipo_operacion"]["precio_venta"] == historical
+
+
+def test_code_16346_anonymized_snapshot_skips_price_update():
+    historical = {"precio_clp": 12_254_622, "precio_uf": 300,
+                  "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+                  "uf_valor_conversion": 40_846.11,
+                  "uf_fecha_conversion": "2026-08-10T04:00:00+00:00",
+                  "precio_derivado": 300, "precio_derivado_moneda": "UF"}
+    incoming = {"precio_observado_imprimible": {
+        "texto": "UF 300", "unidad_indicada": "UF", "monto_observado": 300,
+        "fuente": "prop360_print_primary_price_label"}}
+    merged = _merge_price_operation(historical, incoming, uf_ok=True, uf_reason="current")
+    doc = {"tipo_operacion": {"precio_venta": merged}}
+    canonicalize_prices(doc, {"valor": 41_065.38, "fecha": "2026-10-01"})
+    assert incoming.get("moneda_publicada") is None
+    assert merged == historical
+    assert doc["tipo_operacion"]["precio_venta"] == historical
+    assert doc["metadata"]["price_verification"]["reason"] == "CURRENCY_UNKNOWN"
+    assert {k: v for k, v in merged.items() if k.startswith("uf_")} == {
+        "uf_valor_conversion": 40_846.11,
+        "uf_fecha_conversion": "2026-08-10T04:00:00+00:00",
+    }
+    assert incoming.get("price_base_verified") is not True
+
+
+def test_code_16346_full_upsert_path_skips_historical_price_write():
+    db = mongomock.MongoClient().test_db
+    coll = db.properties
+    historical = {
+        "precio_clp": 12_254_622, "precio_uf": 300,
+        "moneda_publicada": "CLP", "precio_publicado_original": 12_254_622,
+        "uf_valor_conversion": 40_846.11,
+        "uf_fecha_conversion": "2026-08-10T04:00:00+00:00",
+        "precio_derivado": 300, "precio_derivado_moneda": "UF",
+    }
+    coll.insert_one({
+        "codigo": "16346",
+        "tipo_operacion": {"precio_venta": dict(historical)},
+        "resumen": {"precio_clp": 12_254_622, "precio_uf": 300},
+        "metadata": {"source": "prior_scrape"},
+    })
+    parsed_price = parse_ficha_imprimible(
+        '<h4 class="text-right">Venta <label>UF 300</label></h4>'
+    )["tipo_operacion"]["precio_venta"]
+    doc = build_doc("16346", {"estado": "Activa", "operacion": "Venta",
+                               "precio": "UF 300 $ 12.319.614"}, {
+        "tipo_operacion": {"precio_venta": parsed_price}, "estado": {},
+        "datos_propietario": {}, "ubicacion": {}, "caracteristicas": {},
+        "observaciones": {}, "publicaciones": {}, "bitacora": [], "metadata": {},
+    })
+    upsert_ficha(coll, doc, uf_info={
+        "valor": 41_065.38, "fecha": "2026-10-01", "fuente": "mindicador.cl"
+    })
+    saved = coll.find_one({"codigo": "16346"})
+    assert saved["tipo_operacion"]["precio_venta"] == historical
+    assert saved["metadata"]["price_verification"]["status"] == "PRICE_VERIFICATION_REQUIRED"
+    assert saved["metadata"]["price_verification"]["reason"] == "CURRENCY_UNKNOWN"
+    first_saved_price = dict(saved["tipo_operacion"]["precio_venta"])
+    upsert_ficha(coll, doc, uf_info={
+        "valor": 41_065.38, "fecha": "2026-10-01", "fuente": "mindicador.cl"
+    })
+    saved_twice = coll.find_one({"codigo": "16346"})
+    assert saved_twice["tipo_operacion"]["precio_venta"] == first_saved_price
 
 
 def test_migrated_document_compatibility_preserves_contractual_base():

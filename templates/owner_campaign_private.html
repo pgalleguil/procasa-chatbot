@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Revisión comercial de tu propiedad · PROCASA</title>
+  <style>
+    :root { color-scheme:light; --ink:#17145c; --body:#52617e; --brand:#4433d5; --line:#e1e3f0; --lav:#f0efff; --paper:#f7f8fc; --white:#fff; --warm:#fbf8f2; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:16px/1.5 Arial,Helvetica,sans-serif; }
+    .shell { width:min(100% - 32px, 760px); margin:0 auto; padding:22px 0 44px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 4px 18px; }
+    .logo { display:block; width:112px; height:auto; max-height:48px; object-fit:contain; object-position:left center; }
+    .campaign-label { color:var(--body); text-align:right; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    .hero { padding:30px; border:1px solid var(--line); border-radius:22px; background:linear-gradient(120deg,#f2f0ff,#fff 76%); }
+    .eyebrow { color:var(--brand); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 7px; font-size:clamp(27px,5vw,38px); line-height:1.12; letter-spacing:-.035em; }
+    .subhead { margin:0; color:var(--body); font-size:16px; }
+    .property-meta { margin-top:13px; color:var(--body); font-size:14px; }
+    .card { margin-top:14px; padding:23px; border:1px solid var(--line); border-radius:18px; background:var(--white); box-shadow:0 5px 20px #1d24600a; }
+    .card h2 { margin:0 0 13px; font-size:18px; letter-spacing:.04em; }
+    .price-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    .price { min-width:0; padding:15px; border:1px solid var(--line); border-radius:14px; background:#fbfbfe; }
+    .price.recommended { background:var(--warm); border-color:#e8dfcd; }
+    .label { color:var(--body); font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+    .value { margin-top:5px; font-size:clamp(18px,3.8vw,24px); line-height:1.2; font-weight:800; overflow-wrap:anywhere; }
+    .equivalent { display:block; margin-top:4px; color:var(--body); font-size:12px; font-weight:400; }
+    .diagnostic { color:var(--body); margin:0; }
+    .activity { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .activity-number { font-size:28px; font-weight:800; }
+    .executive { color:var(--body); }
+    .doc-link { color:var(--brand); font-weight:700; text-decoration:none; }
+    .actions { display:grid; gap:10px; margin-top:16px; }
+    .button { min-height:52px; display:flex; align-items:center; justify-content:center; padding:14px 18px; border-radius:999px; text-align:center; text-decoration:none; font-weight:800; transition:background-color .15s ease,transform .15s ease,box-shadow .15s ease; }
+    .button:focus-visible { outline:3px solid #958dff; outline-offset:3px; }
+    .button:hover { transform:translateY(-1px); }
+    .primary { color:#fff; background:var(--ink); box-shadow:0 5px 14px #17145c25; }
+    .primary:hover { background:#2a267f; }
+    .secondary { color:var(--brand); background:var(--lav); }
+    .secondary:hover { background:#e7e5ff; }
+    .safe { padding:16px; border:1px solid #e8dfcd; border-radius:14px; background:var(--warm); color:#66583d; }
+    .safe strong { display:block; margin-bottom:4px; color:#42381f; }
+    footer { padding:18px 8px 0; color:var(--body); text-align:center; font-size:12px; }
+    @media (max-width:560px) {
+      .shell { width:min(100% - 24px, 760px); padding-top:13px; }
+      header { padding-bottom:13px; }
+      .hero { padding:22px 19px; border-radius:18px; }
+      .card { padding:18px; border-radius:16px; }
+      .price-grid { grid-template-columns:1fr; gap:8px; }
+      .price { padding:12px 14px; }
+      .value { font-size:22px; }
+      .activity { align-items:flex-start; }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <img class="logo" src="{{ view.logo_url }}" alt="PROCASA">
+    <div class="campaign-label">Seguimiento comercial<br>PROCASA SUCRE</div>
+  </header>
+
+  <section class="hero" aria-labelledby="page-title">
+    <div class="eyebrow">Revisión comercial de tu propiedad</div>
+    <h1 id="page-title">{{ view.property_type }} en {{ view.commune }}</h1>
+    <p class="subhead">Revisamos el posicionamiento de tu propiedad y preparamos una recomendación para acompañar tu decisión.</p>
+    <div class="property-meta">{{ view.operation }}{% if view.property_code %} · Código {{ view.property_code }}{% endif %}</div>
+  </section>
+
+  {% if view.safe_mode %}
+  <section class="card safe" role="status">
+    <strong>Estamos actualizando la recomendación comercial de esta propiedad.</strong>
+    No autorizaremos un ajuste desde esta página mientras verificamos los datos.
+  </section>
+  {% elif view.already_authorized %}
+  <section class="card safe" role="status"><strong>Ajuste autorizado</strong>Tu decisión ya quedó registrada para esta propiedad.</section>
+  {% endif %}
+
+  {% if not view.safe_mode %}
+  <section class="card" aria-labelledby="price-heading">
+    <h2 id="price-heading">RECOMENDACIÓN PROCASA</h2>
+    <div class="price-grid">
+      <div class="price"><div class="label">Valor actual</div><div class="value">{{ view.current_price_label }}{% if view.current_price_clp_label != 'No disponible' %}<span class="equivalent">{{ view.current_price_clp_label }}</span>{% endif %}</div></div>
+      <div class="price"><div class="label">Ajuste recomendado</div><div class="value">{% if view.recommended_adjustment_pct is not none %}{{ view.recommended_adjustment_pct }}%{% else %}Revisar{% endif %}</div></div>
+      <div class="price recommended"><div class="label">Nuevo valor sugerido</div><div class="value">{{ view.recommended_price_label }}{% if view.recommended_price_clp_label != 'No disponible' %}<span class="equivalent">{{ view.recommended_price_clp_label }}</span>{% endif %}</div></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="diagnostic-heading">
+    <h2 id="diagnostic-heading">DIAGNÓSTICO PROCASA</h2>
+    <p class="diagnostic">{{ view.recommendation_reason }}</p>
+  </section>
+  {% endif %}
+
+  {% if not view.safe_mode and view.leads_90d is not none %}
+  <section class="card activity" aria-label="Actividad comercial de los últimos 90 días">
+    <div><div class="label">Actividad comercial · últimos 90 días</div><div class="value">{{ view.leads_90d }} leads</div></div>
+  </section>
+  {% endif %}
+
+  {% if not view.safe_mode and view.document_available %}
+  <section class="card" aria-labelledby="document-heading">
+    <h2 id="document-heading">INFORME COMERCIAL DISPONIBLE</h2>
+    <a class="doc-link" href="{{ view.report_url }}" rel="noreferrer">{{ view.document_label }} →</a>
+  </section>
+  {% endif %}
+
+  <section class="card" aria-labelledby="executive-heading">
+    <h2 id="executive-heading">TU EJECUTIVO PROCASA</h2>
+    <div class="executive">{{ view.executive_name }}</div>
+    <div class="actions">
+      {% if view.primary_url %}<a class="button primary" href="{{ view.primary_url }}">REVISAR / CONFIRMAR AJUSTE</a>
+      {% elif view.already_authorized %}<span class="button secondary" aria-disabled="true">AJUSTE AUTORIZADO</span>{% endif %}
+      <a class="button secondary" href="{{ view.advisor_url }}">REVISAR CON MI EJECUTIVO</a>
+    </div>
+  </section>
+  <footer>La recomendación corresponde a la campaña de revisión comercial de esta propiedad.</footer>
+</main>
+</body>
+</html>

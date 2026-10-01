@@ -17,6 +17,7 @@ from config import Config
 
 
 LIVE_ACTIONS = {
+    "portal_opened": "portal_opened",
     "aceptar_rebaja": "price_authorized",
     "contactar_ejecutivo": "advisor_review_requested",
     "ver_informe": "report_opened",
@@ -37,10 +38,12 @@ def _secret() -> str:
     return os.getenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "")
 
 
-def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int) -> str:
+def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, event_id: str | None = None) -> str:
     secret = _secret()
     if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened"}:
         raise ValueError("production_action_token_not_configured")
+    if source is not None and source not in {"EMAIL", "WHATSAPP"}:
+        raise ValueError("invalid_campaign_token_source")
     payload = {
         "campaign_id": campaign_id,
         "property_code": str(property_code),
@@ -48,8 +51,10 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
         "recipient": str(recipient).strip().casefold(),
         "exp": int(expires_at),
         "test_mode": False,
-        "event_id": uuid4().hex,
+        "event_id": str(event_id or uuid4().hex),
     }
+    if source is not None:
+        payload["source"] = source
     if action == "ver_informe":
         if document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
             raise ValueError("invalid_live_document_type")
@@ -110,6 +115,9 @@ def persist_live_event(
     }
     if details:
         payload.update(dict(details))
+    source = claims.get("source")
+    if source in {"EMAIL", "WHATSAPP"}:
+        payload["source"] = source
     ledger = db[Config.COLLECTION_CAMPANAS_LOG]
     key = f"{campaign_id}:{code}"
     # An authorization is monotonic. The atomic update is scoped to one

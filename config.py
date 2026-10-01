@@ -30,11 +30,6 @@ class Config:
     UF_FECHA = os.getenv("UF_FECHA", "")
     UF_CACHE_COLLECTION = os.getenv("UF_CACHE_COLLECTION", "uf_cache")
 
-    # === UF sync diario ===
-    UF_SYNC_ENABLED = os.getenv("UF_SYNC_ENABLED", "true").lower() == "true"
-    UF_SYNC_HOUR = int(os.getenv("UF_SYNC_HOUR", "4"))
-    UF_SYNC_WINDOW_MINUTES = int(os.getenv("UF_SYNC_WINDOW", "30"))
-
     # === PROXIES ===
     USE_PROXIES = os.getenv("USE_PROXIES", "false").lower() == "true"
     PROXIES = os.getenv("PROXIES", "")  # Lista de proxies separados por coma

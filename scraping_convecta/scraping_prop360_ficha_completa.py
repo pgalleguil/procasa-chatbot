@@ -367,7 +367,7 @@ def get_uf_rate():
     """Último valor UF válido persistido (uf_cache) o configuración.
 
     NUNCA llama a la API por ficha/propiedad: usa el cache que mantiene el
-    proceso periódico (uf_sync_loop). Devuelve float o None.
+    proceso manual de cartera. Devuelve float o None.
     """
     try:
         from chatbot.uf_service import obtener_uf_cache_o_fallback
@@ -2007,6 +2007,12 @@ def upsert_ficha(
     if not existing:
         doc.setdefault("fecha_primera_deteccion", now_iso())
         doc.setdefault("fuente_incorporacion", source)
+    else:
+        # These are immutable origin fields and are absent from a fresh scrape.
+        # Carrying them forward keeps the canonical hash stable across runs.
+        for field in ("fecha_primera_deteccion", "fuente_incorporacion"):
+            if field in existing:
+                doc.setdefault(field, existing[field])
     verified_operations = {
         op_key
         for op_key in ("precio_venta", "precio_arriendo")
@@ -2046,8 +2052,56 @@ def upsert_ficha(
     doc = canonicalize_prices(
         doc, uf_info, verified_operations=verified_operations
     )
-    # The verification token is execution-scoped and must not become historic
-    # evidence that authorizes a later run to re-canonicalize an old price.
+    try:
+        from chatbot.uf_service import validar_uf_vigente
+        audit_uf = _get_scrape_uf_context() if uf_info is _UNSET_UF_CONTEXT else (uf_info or {})
+        audit_uf_ok, _ = validar_uf_vigente(audit_uf)
+    except Exception:
+        audit_uf_ok = False
+    previous_audit = (existing.get("metadata") or {}).get("manual_price_refresh_history", [])
+    if previous_audit:
+        if not isinstance(doc.get("metadata"), dict):
+            doc["metadata"] = {}
+        doc["metadata"]["manual_price_refresh_history"] = list(previous_audit)[-50:]
+    if audit_uf_ok and verified_operations:
+        audit_rows = []
+        for op_key in verified_operations:
+            new_price = ((doc.get("tipo_operacion") or {}).get(op_key) or {})
+            old_price = ((existing.get("tipo_operacion") or {}).get(op_key) or {})
+            if not _current_price_base_is_verified(new_price):
+                continue
+            currency = str(new_price.get("moneda_publicada") or new_price.get("moneda_publicacion") or "").upper()
+            base_new = new_price.get("precio_publicado_original", new_price.get("precio_publicado"))
+            base_old = old_price.get("precio_publicado_original", old_price.get("precio_publicado"))
+            old_currency = str(old_price.get("moneda_publicada") or old_price.get("moneda_publicacion") or "").upper()
+            fields = ("precio_clp", "precio_uf", "uf_valor_conversion", "uf_fecha_conversion")
+            changed = old_currency != currency or base_old != base_new or any(
+                old_price.get(field) != new_price.get(field) for field in fields
+            )
+            if not changed:
+                continue
+            if not isinstance(doc.get("metadata"), dict):
+                doc["metadata"] = {}
+            audit_rows.append({
+                "codigo": str(doc.get("codigo")),
+                "operacion": op_key,
+                "moneda_base": currency,
+                "precio_base_anterior": base_old,
+                "precio_base_nuevo": base_new,
+                "precio_clp_anterior": old_price.get("precio_clp"),
+                "precio_clp_nuevo": new_price.get("precio_clp"),
+                "precio_uf_anterior": old_price.get("precio_uf"),
+                "precio_uf_nuevo": new_price.get("precio_uf"),
+                "uf_value": audit_uf.get("valor"),
+                "uf_date": audit_uf.get("fecha"),
+                "reason": "contractual_base_changed" if old_currency != currency or base_old != base_new else "manual_uf_derived_refresh",
+                "verification_source": "prop360_editable_currency_radio",
+                "recorded_at": now_iso(),
+            })
+        if audit_rows:
+            doc["metadata"]["manual_price_refresh_history"] = (list(previous_audit) + audit_rows)[-50:]
+    # The verification token is execution-scoped. It must not become historic
+    # evidence that authorizes a later run to reinterpret the price base.
     for op_key in ("precio_venta", "precio_arriendo"):
         price = (doc.get("tipo_operacion") or {}).get(op_key)
         if isinstance(price, dict):
@@ -2063,6 +2117,12 @@ def upsert_ficha(
         doc["fecha_baja_automatica"] = None
         doc["baja_origen"] = None
         changed = True
+
+    # Do not issue a Mongo update when the canonical document is unchanged.
+    # This keeps a repeated manual refresh with the same Prop360 data and UF
+    # quote genuinely write-free, rather than relying on Mongo's modified_count.
+    if existing and not changed:
+        return False, False
 
     historial = build_deep_history(existing if existing else None, doc)
     doc["historial_cambios"] = historial
@@ -2308,7 +2368,7 @@ def mark_bajas(coll, active_codes: set[str], dry_run: bool = False) -> int:
 
 def run(args, office_id: int | None = None) -> int:
     global _SCRAPE_UF_CONTEXT
-    _SCRAPE_UF_CONTEXT = _UNSET_UF_CONTEXT
+    _SCRAPE_UF_CONTEXT = getattr(args, "_manual_uf_context", _UNSET_UF_CONTEXT)
     email = os.getenv("PROP360_EMAIL")
     password = os.getenv("PROP360_PASSWORD")
     if not email or not password:
@@ -2322,7 +2382,6 @@ def run(args, office_id: int | None = None) -> int:
         OFICINA_NOMBRE = OFICINAS.get(office_id, f"OFICINA {office_id}")
 
     mongo_client, coll = get_mongo_collection(COLLECTION_NAME)
-    coll.create_index("codigo", unique=True)
 
     client = Prop360Client(email, password, delay=args.delay)
     try:
@@ -2354,7 +2413,7 @@ def run(args, office_id: int | None = None) -> int:
         listing_row = activa.get(codigo) or by_code.get(codigo) or {"codigo": codigo, "estado": "Activa"}
         return run_codigo(client, coll, codigo, listing_row, args)
 
-    db_docs = {str(d["codigo"]): d for d in coll.find({}, {"codigo": 1, "resumen": 1, "ubicacion": 1, "tipo_operacion": 1, "caracteristicas": 1, "bitacora": 1, "metadata": 1, "audit_hash": 1})}
+    db_docs = {str(d["codigo"]): d for d in coll.find({}, {"codigo": 1, "resumen": 1, "ubicacion": 1, "tipo_operacion": 1, "caracteristicas": 1, "bitacora": 1, "metadata": 1, "audit_hash": 1, "disponible_prop360": 1, "oficina_id": 1, "oficina_nombre": 1})}
     active_codes = set(activa)
 
     nuevas = sorted(c for c in active_codes if c not in db_docs)
@@ -2365,52 +2424,26 @@ def run(args, office_id: int | None = None) -> int:
 
     log.info(f"NUEVAS={len(nuevas)} | A ACTUALIZAR={len(a_actualizar)} | YA AL DÍA={len(active_codes) - len(nuevas) - len(a_actualizar)}")
 
-    bajas = 0
-    if not args.no_bajas:
-        bajas = mark_bajas(coll, active_codes, dry_run=args.dry_run)
-
-    if args.backfill:
-        scrape_list = sorted(active_codes)
-        log.info("Modo backfill: re-scrapeando todas las propiedades Activa.")
-    else:
-        # Incremental fast path (2x/día): solo se scrapean las propiedades NUEVAS.
-        # Las existentes que cambiaron (a_actualizar) SOLO se DETECTAN contra el
-        # listado y se difieren al backfill mensual, para no re-scrapear toda la
-        # cartera ni gastar banda cada ciclo.
-        if a_actualizar:
-            muestra = ", ".join(a_actualizar[:15])
-            if len(a_actualizar) > 15:
-                muestra += f" ... (+{len(a_actualizar)-15})"
-            log.info(
-                "[INCREMENTAL] %s propiedad(es) detectada(s) como CAMBIADA(s) "
-                "(no re-scrapeadas; se actualizan en el backfill mensual): %s",
-                len(a_actualizar), muestra,
-            )
-        if args.max_new is not None:
-            nuevas = nuevas[: args.max_new]
-        scrape_list = nuevas
+    # This is an explicitly manual refresh, so visit the whole active Prop360
+    # inventory. That refreshes derived amounts with the one UF quote fetched
+    # above even when the listing's contractual amount did not change.
+    scrape_list = sorted(active_codes)
+    if args.max_new is not None:
+        scrape_list = [code for code in scrape_list if code in set(nuevas)][:args.max_new]
 
     if args.limit:
         scrape_list = scrape_list[: args.limit]
 
-    if not scrape_list:
-        if not args.dry_run:
-            try:
-                from chatbot.inventory_reconciliation import reconcile_waiting_inventory_events
-                reconciliation = reconcile_waiting_inventory_events(
-                    coll.database,
-                    properties=None,
-                )
-                log.info("[INVENTORY_RECONCILE] sync sin fichas nuevas: %s", reconciliation)
-            except Exception:
-                # A reconciliation failure must be observable but must not
-                # turn a successful inventory sync into a failed scrape.
-                log.exception("[INVENTORY_RECONCILE] fallo en recuperación de pendientes")
-        log.info("No hay propiedades para scrapear. Bajas=%s", bajas)
-        mongo_client.close()
-        return 0
-
-    log.info(f"Total a scrapear: {len(scrape_list)} (nuevas={len(nuevas)}, actualizar={len(a_actualizar)})")
+    log.info(f"Total a scrapear: {len(scrape_list)} (universo activo Prop360={len(activa)})")
+    args._active_codes_for_bajas = active_codes
+    args._bajas_enabled = not args.no_bajas
+    args._db_active_codes = {
+        code for code, document in db_docs.items()
+        if document.get("disponible_prop360") is True
+        and (office_id is None or document.get("oficina_id") == office_id
+             or document.get("oficina_nombre") == OFICINA_NOMBRE
+             or (document.get("resumen") or {}).get("oficina") == OFICINA_NOMBRE)
+    }
     return scrape_list_batch(client, coll, scrape_list, activa, args, mongo_client)
 
 
@@ -2422,12 +2455,19 @@ def run_codigo(client: Prop360Client, coll, codigo: str, listing_row: dict, args
 def run_all_offices(args, offices: list[int] | None = None) -> int:
     """Corre el ciclo para las oficinas indicadas (o todas las activas).
 
-    Detecta nuevas, actualizaciones y bajas por oficina, de modo que la cartera
-    universo queda completa y al día. La oficina 4 está vacía y se omite.
-    ``offices=None`` corre todas las oficinas (backfill mensual / CLI).
+    Refresca manualmente todas las propiedades activas de las oficinas
+    solicitadas. La oficina 4 está vacía y se omite. Una ejecución multi-oficina
+    usa la misma cotización UF y no escribe hasta presentar el resumen global.
     """
     if offices is None:
         offices = [oid for oid in sorted(OFICINAS) if oid != 4]
+    # One official UF lookup for this entire manual multi-office execution.
+    global _SCRAPE_UF_CONTEXT
+    _SCRAPE_UF_CONTEXT = _UNSET_UF_CONTEXT
+    args._manual_uf_context = _get_scrape_uf_context()
+    args._defer_writes = bool(args.execute)
+    args._manual_staged = []
+    args._manual_summaries = []
     worst = 0
     for oid in offices:
         log.info("=" * 60)
@@ -2436,9 +2476,33 @@ def run_all_offices(args, offices: list[int] | None = None) -> int:
         code = run(args, office_id=oid)
         if code:
             worst = code
-
-    if getattr(args, "backfill", False):
-        _generate_embeddings_for_pending()
+    if args._manual_summaries:
+        keys = ("total_active", "editable_verified", "ambiguous_skipped",
+                "new_properties", "price_base_changes", "derived_only_changes",
+                "unchanged", "inventory_mismatch", "bajas_proposed",
+                "proposed_mongo_writes", "scrape_errors", "uf_skipped_properties")
+        combined = {key: sum(row.get(key, 0) for row in args._manual_summaries) for key in keys}
+        combined["uf_info"] = args._manual_uf_context or {}
+        combined["uf_valid"] = bool(args._manual_uf_context)
+        combined["uf_reason"] = None if combined["uf_valid"] else "UF_UNAVAILABLE_OR_STALE"
+        print("\nGLOBAL_MULTI_OFFICE_PREVIEW_BEFORE_WRITES")
+        _print_manual_refresh_summary(combined)
+    if args.execute and args._manual_staged:
+        global OFFICE_ID, OFICINA_NOMBRE
+        mongo_client, write_coll = get_mongo_collection(COLLECTION_NAME)
+        try:
+            for staged in args._manual_staged:
+                OFFICE_ID = staged["office_id"]
+                OFICINA_NOMBRE = staged["office_name"]
+                for doc in staged["docs"]:
+                    upsert_ficha(write_coll, doc)
+                for codigo in staged["errors"]:
+                    upsert_error(write_coll, codigo, "scrape_error")
+                if staged["bajas_enabled"]:
+                    mark_bajas(write_coll, staged["active_codes"], dry_run=False)
+        finally:
+            mongo_client.close()
+        log.info("Ejecución multi-oficina aplicada después del resumen global.")
     return worst
 
 
@@ -2469,112 +2533,237 @@ def _generate_embeddings_for_pending() -> int:
         return 0
 
 
+def _manual_refresh_summary(coll, scraped_docs, scrape_errors, active, args):
+    from chatbot.uf_service import completar_precio, validar_uf_vigente
+
+    uf_info = _get_scrape_uf_context()
+    uf_ok, uf_reason = validar_uf_vigente(uf_info)
+    existing_by_code = {}
+    for doc in scraped_docs:
+        code = str(doc.get("codigo"))
+        existing_by_code[code] = coll.find_one({"codigo": code}) or {}
+
+    verified_codes = set()
+    ambiguous_codes = set()
+    base_change_codes = set()
+    derived_change_codes = set()
+    unchanged_codes = set()
+    skipped_uf_codes = set()
+    new_codes = {code for code, old in existing_by_code.items() if not old}
+
+    for doc in scraped_docs:
+        code = str(doc.get("codigo"))
+        existing = existing_by_code.get(code) or {}
+        old_to = existing.get("tipo_operacion") or {}
+        new_to = doc.get("tipo_operacion") or {}
+        code_verified = False
+        code_ambiguous = False
+        code_base_changed = False
+        code_derived_changed = False
+        code_unchanged = False
+        for key in ("precio_venta", "precio_arriendo"):
+            new_price = new_to.get(key)
+            if not isinstance(new_price, dict):
+                continue
+            if not _current_price_base_is_verified(new_price):
+                # Print/listing prices are observational only. An unverified
+                # editable form can never authorize a price write.
+                if (new_price.get("precio_clp") is not None
+                        or new_price.get("precio_uf") is not None
+                        or new_price.get("precio_publicado_original") is not None):
+                    code_ambiguous = True
+                continue
+            code_verified = True
+            if not uf_ok:
+                skipped_uf_codes.add(code)
+                continue
+            currency = str(new_price.get("moneda_publicada") or new_price.get("moneda_publicacion") or "").upper()
+            base = new_price.get("precio_publicado_original", new_price.get("precio_publicado"))
+            completed = completar_precio(dict(new_price), uf_info["valor"], uf_info["fecha"], uf_info.get("fuente"))
+            old_price = old_to.get(key) or {}
+            old_currency = str(old_price.get("moneda_precio_base") or old_price.get("moneda_publicada") or old_price.get("moneda_publicacion") or "").upper()
+            old_base = old_price.get("precio_base_actual", old_price.get("precio_publicado_original", old_price.get("precio_publicado")))
+            try:
+                old_contract_field = old_price.get("precio_clp" if currency == "CLP" else "precio_uf")
+                base_same = (old_currency == currency and old_base is not None
+                             and float(old_base) == float(base)
+                             and old_contract_field is not None
+                             and float(old_contract_field) == float(base))
+            except (TypeError, ValueError):
+                base_same = False
+            if existing and not base_same:
+                code_base_changed = True
+            elif existing:
+                derived_field = "precio_uf" if currency == "CLP" else "precio_clp"
+                old_derived = old_price.get(derived_field)
+                new_derived = completed.get(derived_field)
+                old_uf_date = str(old_price.get("uf_fecha_conversion") or "")[:10]
+                new_uf_date = str(uf_info.get("fecha") or "")[:10]
+                old_uf = old_price.get("uf_valor_conversion")
+                try:
+                    derived_same = float(old_derived) == float(new_derived)
+                    rate_same = float(old_uf) == float(uf_info["valor"])
+                except (TypeError, ValueError):
+                    derived_same = rate_same = False
+                if not (derived_same and rate_same and old_uf_date == new_uf_date):
+                    code_derived_changed = True
+                else:
+                    code_unchanged = True
+        if code_verified:
+            verified_codes.add(code)
+        if code_ambiguous:
+            ambiguous_codes.add(code)
+        if code_base_changed:
+            base_change_codes.add(code)
+        if code_derived_changed:
+            derived_change_codes.add(code)
+        if code_unchanged:
+            unchanged_codes.add(code)
+
+    database_active = set(getattr(args, "_db_active_codes", set()))
+    active_codes = set(active)
+    inventory_mismatch = len(active_codes.symmetric_difference(database_active))
+    bajas_count = 0
+    if getattr(args, "_bajas_enabled", False):
+        bajas_count = mark_bajas(coll, active_codes, dry_run=True)
+
+    candidate_upserts = sum(1 for old in existing_by_code.values() if old) + len(new_codes)
+    candidate_upserts = min(candidate_upserts, len(scraped_docs))
+    return {
+        "uf_info": uf_info,
+        "uf_valid": uf_ok,
+        "uf_reason": uf_reason,
+        "total_active": len(active),
+        "editable_verified": len(verified_codes),
+        "ambiguous_skipped": len(ambiguous_codes),
+        "new_properties": len(new_codes),
+        "price_base_changes": len(base_change_codes),
+        "derived_only_changes": len(derived_change_codes),
+        "unchanged": len(unchanged_codes),
+        "inventory_mismatch": inventory_mismatch,
+        "bajas_proposed": bajas_count,
+        "proposed_mongo_writes": candidate_upserts + bajas_count,
+        "scrape_errors": len(scrape_errors),
+        "uf_skipped_properties": len(skipped_uf_codes),
+    }
+
+
+def _print_manual_refresh_summary(summary):
+    uf = summary["uf_info"] or {}
+    print("\nMANUAL_PROP360_REFRESH_PREVIEW")
+    print(f"TOTAL_PROP360_ACTIVE={summary['total_active']}")
+    print(f"EDITABLE_VERIFIED={summary['editable_verified']}")
+    print(f"AMBIGUOUS_SKIPPED={summary['ambiguous_skipped']}")
+    print(f"NEW_PROPERTIES={summary['new_properties']}")
+    print(f"PRICE_BASE_CHANGES={summary['price_base_changes']}")
+    print(f"DERIVED_ONLY_CHANGES={summary['derived_only_changes']}")
+    print(f"UNCHANGED={summary['unchanged']}")
+    print(f"INVENTORY_MISMATCH={summary['inventory_mismatch']}")
+    print(f"UF_VALUE={uf.get('valor')}")
+    print(f"UF_DATE={uf.get('fecha')}")
+    print(f"UF_VALIDATION_PASS={'YES' if summary['uf_valid'] else 'NO'}")
+    if not summary["uf_valid"]:
+        print(f"UF_VALIDATION_REASON={summary['uf_reason']}")
+    print(f"PRICE_UPDATE_SKIPPED_FOR_INVALID_UF={summary['uf_skipped_properties']}")
+    print(f"BAJAS_PROPOSED={summary['bajas_proposed']}")
+    print(f"SCRAPE_ERRORS={summary['scrape_errors']}")
+    print(f"PROPOSED_MONGO_WRITES={summary['proposed_mongo_writes']}")
+
+
 def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_client) -> int:
-    ok_count = nuevo_count = upd_count = err_count = 0
+    scraped_docs = []
     errores = []
     tipos_detectados = {}
-    synced_docs = []
 
+    # Scrape and compare everything first. In execute mode, Mongo is untouched
+    # until the complete preview below has been printed.
     for i, codigo in enumerate(scrape_list, start=1):
         log.info(f"[{i}/{len(scrape_list)}] Procesando código {codigo}…")
         try:
             listing_row = activa.get(codigo) or {"codigo": codigo, "estado": "Activa"}
             doc = scrape_propiedad(client, codigo, listing_row)
-            if args.dry_run:
-                doc = canonicalize_prices(doc, _SCRAPE_UF_CONTEXT)
+            doc = canonicalize_prices(doc, _get_scrape_uf_context())
             t_det = doc.get("metadata", {}).get("tipo_propiedad_detectado")
             if t_det:
                 tipos_detectados[t_det] = tipos_detectados.get(t_det, 0) + 1
-            if args.dry_run:
-                log.info(f"[{codigo}] DRY-RUN: procesado ok (tipo={t_det})")
-                ok_count += 1
-                continue
-            nuevo, actualizado = upsert_ficha(coll, doc)
-            synced_docs.append(doc)
-            if nuevo:
-                nuevo_count += 1
-                log.info(f"[{codigo}] → NUEVO insertado.")
-            elif actualizado:
-                upd_count += 1
-                log.info(f"[{codigo}] → Actualizado.")
-            else:
-                log.info(f"[{codigo}] → Sin cambios.")
-            ok_count += 1
+            scraped_docs.append(doc)
+            log.info("[%s] Scrapeado para preview; editable_verificado=%s", codigo,
+                     any(_current_price_base_is_verified((doc.get("tipo_operacion") or {}).get(key) or {})
+                         for key in ("precio_venta", "precio_arriendo")))
         except Exception as exc:
-            log.error(f"[{codigo}] Error inesperado: {exc}")
+            log.error("[%s] Error inesperado: %s", codigo, exc)
             errores.append(codigo)
-            err_count += 1
-            if not args.dry_run:
-                upsert_error(coll, codigo, str(exc))
         client._wait()
 
-    if not args.dry_run and err_count == 0:
-        try:
-            from chatbot.inventory_reconciliation import reconcile_waiting_inventory_events
-            reconciliation = reconcile_waiting_inventory_events(
-                coll.database,
-                properties=synced_docs,
-            )
-            log.info("[INVENTORY_RECONCILE] lote exitoso: %s", reconciliation)
-            # Recover a small bounded backlog as well. This covers a previous
-            # partial sync without turning reconciliation into a server loop.
-            backlog_reconciliation = reconcile_waiting_inventory_events(
-                coll.database,
-                properties=None,
-                limit=50,
-            )
-            log.info("[INVENTORY_RECONCILE] recuperación acotada: %s", backlog_reconciliation)
-        except Exception:
-            # Inventory data remains valid even if commercial reconciliation
-            # needs to be recovered by the next successful sync.
-            log.exception("[INVENTORY_RECONCILE] fallo al reconciliar pendientes")
-    elif not args.dry_run and err_count:
-        log.warning(
-            "[INVENTORY_RECONCILE] omitida por lote con errores: %s",
-            ", ".join(errores[:20]),
-        )
+    summary = _manual_refresh_summary(coll, scraped_docs, errores, activa, args)
+    _print_manual_refresh_summary(summary)
+    if getattr(args, "_manual_summaries", None) is not None:
+        args._manual_summaries.append(summary)
+    if not args.execute:
+        log.info("Dry-run terminado: cero escrituras Mongo.")
+    elif getattr(args, "_defer_writes", False):
+        args._manual_staged.append({
+            "docs": scraped_docs,
+            "errors": errores,
+            "office_id": OFFICE_ID,
+            "office_name": OFICINA_NOMBRE,
+            "active_codes": set(getattr(args, "_active_codes_for_bajas", set())),
+            "bajas_enabled": bool(getattr(args, "_bajas_enabled", False)),
+        })
+    else:
+        # The explicit --execute flag is the sole path to cartera writes.
+        for doc in scraped_docs:
+            upsert_ficha(coll, doc)
+        for codigo in errores:
+            upsert_error(coll, codigo, "scrape_error")
+        if getattr(args, "_bajas_enabled", False):
+            mark_bajas(coll, set(getattr(args, "_active_codes_for_bajas", set())), dry_run=False)
+        log.info("Ejecución manual aplicada tras mostrar el resumen previo.")
 
     W = 56
     print("\n" + "═" * W)
     print("  REPORTE SCRAPING PROP360 — FICHA COMPLETA (HTTP v2)")
     print("═" * W)
-    print(f"  Dry-run            : {'SÍ' if args.dry_run else 'NO'}")
+    print(f"  Dry-run            : {'NO' if args.execute else 'SÍ'}")
     print(f"  Colección          : {COLLECTION_NAME}")
     print("─" * W)
     print(f"  Procesadas         : {len(scrape_list)}")
-    print(f"  Correctas (ok)     : {ok_count}")
-    print(f"    ├─ Nuevas        : {nuevo_count}")
-    print(f"    └─ Actualizadas  : {upd_count}")
-    print(f"  Errores            : {err_count}")
-    if errores:
-        print(f"  Códigos con error  : {', '.join(errores)}")
-    print("─" * W)
-    print("  Tipos detectados:")
-    for tk, tv in tipos_detectados.items():
-        print(f"    {tk}: {tv}")
+    print(f"  Correctas (ok)     : {len(scraped_docs)}")
+    print(f"  Errores            : {len(errores)}")
     print("═" * W + "\n")
 
     if mongo_client:
         mongo_client.close()
-    return 1 if err_count and not args.dry_run else 0
+    return 1 if errores and args.execute else 0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
 
-def main():
+def build_arg_parser():
     parser = argparse.ArgumentParser(description="Scraper de fichas completas Prop360 (HTTP v2)")
-    parser.add_argument("--dry-run", action="store_true", help="No escribir en MongoDB")
+    write_mode = parser.add_mutually_exclusive_group()
+    write_mode.add_argument("--dry-run", dest="execute", action="store_false",
+                            help="Solo scraping y comparación (predeterminado)")
+    write_mode.add_argument("--execute", dest="execute", action="store_true",
+                            help="Escribir la cartera tras mostrar el resumen previo")
+    parser.set_defaults(execute=False)
     parser.add_argument("--codigo", help="Scrapear un único código de propiedad")
     parser.add_argument("--max-new", type=int, default=None, help="Limitar propiedades nuevas")
     parser.add_argument("--max-update", type=int, default=None, help="Limitar propiedades a actualizar")
     parser.add_argument("--limit", type=int, default=None, help="Límite total de propiedades a scrapear")
-    parser.add_argument("--backfill", action="store_true", help="Re-scrapear todas las propiedades Activa")
+    parser.add_argument("--backfill", action="store_true", help="Compatibilidad; el modo manual ya recorre todas las activas")
     parser.add_argument("--all-offices", action="store_true", help="Correr todas las oficinas activas de OFICINAS")
     parser.add_argument("--no-bajas", action="store_true", help="No marcar bajas")
     parser.add_argument("--delay", type=float, default=0.3, help="Delay entre peticiones (segundos)")
+    return parser
+
+
+def main():
+    parser = build_arg_parser()
     args = parser.parse_args()
+    args.dry_run = not args.execute
 
     if args.all_offices:
         sys.exit(run_all_offices(args))

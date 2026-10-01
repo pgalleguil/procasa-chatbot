@@ -204,7 +204,12 @@ def test_dry_run_never_writes_portfolio_or_applies_bajas(monkeypatch):
 
 def test_endpoint_is_admin_only_and_server_forces_dry_run():
     source = open("webhook.py", encoding="utf-8").read()
-    start = source.index('@app.post("/api/crm/portfolio-sync/sucre/dry-run")')
+    route_marker = '@app.post("/api/crm/portfolio-sync/sucre/dry-run")'
+    if route_marker not in source:
+        # The local-only manual refresh is the supported workflow. An absent
+        # API route cannot trigger a portfolio update from Render.
+        return
+    start = source.index(route_marker)
     route = source[start: source.index('\n\n@app.post("/api/session/renew")', start)]
     assert "Depends(get_current_user_doc)" in route
     assert "is_admin_user(user_doc)" in route
@@ -217,8 +222,9 @@ def test_endpoint_is_admin_only_and_server_forces_dry_run():
 
 def test_scheduler_stays_disabled_and_leads_loop_stays_started():
     source = open("webhook.py", encoding="utf-8").read()
-    start = source.index("# PROCASA SUCRE ficha sync")
-    end = source.index("# UF sync diario", start)
-    block = source[start:end]
-    assert "asyncio.create_task" not in block
+    assert "from chatbot.ficha_sync_loop import ficha_sync_loop" not in source
+    assert "from chatbot.uf_sync_loop import uf_sync_loop" not in source
+    assert "asyncio.create_task(_usl())" not in source
+    assert "Automatic portfolio sync disabled" in source
+    assert "Automatic portfolio UF/price sync disabled" in source
     assert "prop360_task = asyncio.create_task(_ppl())" in source

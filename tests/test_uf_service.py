@@ -16,6 +16,7 @@ from chatbot.uf_service import (
     convertir_precio, completar_precio, obtener_uf_actual, validar_uf_vigente,
 )
 from chatbot.uf_migration import _clasificar
+from chatbot.uf_migration import migrar as legacy_uf_migrator
 import mongomock
 from scraping_convecta.scraping_prop360_ficha_completa import (
     _detect_print_price,
@@ -26,6 +27,7 @@ from scraping_convecta.scraping_prop360_ficha_completa import (
     clean_price_uf,
     _merge_price_operation,
     upsert_ficha,
+    build_arg_parser,
 )
 
 UF = 40846.11
@@ -499,6 +501,88 @@ def test_migrated_document_compatibility_preserves_contractual_base():
     assert updated["precio_clp"] == migrated["precio_clp"]
     assert updated["precio_publicado_original"] == migrated["precio_publicado_original"]
     assert updated["precio_uf"] == round(140_000_000 / 41_200, 1)
+
+
+def test_manual_portfolio_scraper_is_dry_run_by_default_and_execute_is_explicit():
+    parser = build_arg_parser()
+    assert parser.parse_args([]).execute is False
+    assert parser.parse_args(["--dry-run"]).execute is False
+    assert parser.parse_args(["--execute"]).execute is True
+
+
+def test_manual_verified_price_change_is_audited_and_repeat_is_idempotent():
+    coll = mongomock.MongoClient().test_db.properties
+
+    def make_doc():
+        return build_doc("17005", {"estado": "Activa", "operacion": "Venta",
+                                   "precio": "$140.000.000"}, {
+            "tipo_operacion": {"precio_venta": {
+                "precio_clp": 140_000_000,
+                "moneda_publicada": "CLP",
+                "moneda_publicacion": "CLP",
+                "precio_publicado": 140_000_000,
+                "precio_publicado_original": 140_000_000,
+                "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+                "price_base_verified": True,
+            }},
+            "estado": {}, "datos_propietario": {}, "ubicacion": {},
+            "caracteristicas": {}, "observaciones": {}, "publicaciones": {},
+            "bitacora": [], "metadata": {},
+        })
+
+    quote = {"valor": 41_065.38, "fecha": "2026-10-01", "fuente": "mindicador.cl"}
+    upsert_ficha(coll, make_doc(), uf_info=quote)
+    first = coll.find_one({"codigo": "17005"})
+    history = first["metadata"]["manual_price_refresh_history"]
+    assert len(history) == 1
+    assert history[0]["codigo"] == "17005"
+    assert history[0]["moneda_base"] == "CLP"
+    assert history[0]["precio_base_nuevo"] == 140_000_000
+    assert history[0]["precio_clp_nuevo"] == 140_000_000
+    assert history[0]["precio_uf_nuevo"] == 3409.2
+    assert history[0]["reason"] == "contractual_base_changed"
+
+    writes = []
+    original_update_one = coll.update_one
+
+    def counted_update_one(*args, **kwargs):
+        writes.append((args, kwargs))
+        return original_update_one(*args, **kwargs)
+
+    coll.update_one = counted_update_one
+    upsert_ficha(coll, make_doc(), uf_info=quote)
+    assert writes == []
+    second = coll.find_one({"codigo": "17005"})
+    assert len(second["metadata"]["manual_price_refresh_history"]) == 1
+    assert second["tipo_operacion"]["precio_venta"]["precio_clp"] == 140_000_000
+
+
+def test_legacy_price_migrator_is_disabled_even_if_execute_requested():
+    class NoMongoAccess:
+        def __getitem__(self, key):
+            raise AssertionError("disabled migrator must not access Mongo")
+
+    result = legacy_uf_migrator(NoMongoAccess(), 41_065.38, "2026-10-01", dry_run=False)
+    assert result["status"] == "disabled"
+    assert result["writes"] == 0
+
+
+def test_webhook_does_not_start_uf_or_price_scheduler():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "webhook.py").read_text(encoding="utf-8")
+    assert "create_task(_usl())" not in source
+    assert "from chatbot.uf_sync_loop import uf_sync_loop" not in source
+    assert "Automatic portfolio UF/price sync disabled" in source
+
+
+def test_legacy_ficha_scheduler_is_a_no_io_disabled_stub():
+    from chatbot.ficha_sync_loop import run_ficha_sync_cycle
+
+    result = run_ficha_sync_cycle(db=object())
+    assert result["status"] == "disabled"
+    assert result["portfolio_reads"] == 0
+    assert result["portfolio_writes"] == 0
 
 
 def test_second_price_conversion_is_idempotent():

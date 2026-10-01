@@ -1292,24 +1292,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("[PROP360_POLL] Loop import failed — disabled", exc_info=True)
     
-    # PROCASA SUCRE ficha sync — ejecución automática temporalmente desactivada.
-    # La lógica y el runner manual permanecen disponibles en ficha_sync_loop.py.
+    # Automatic portfolio sync is disabled permanently. Property updates run
+    # only from the explicit local Prop360 scraper CLI.
     ficha_task = None
-    logger.info("[FICHA_SYNC] Automatic loop disabled — manual runner remains available")
+    logger.info("[FICHA_SYNC] Automatic portfolio sync disabled")
 
-    # UF sync diario — actualiza uf_cache y derivados de precio (BUG E)
-    uf_sync_task = None
-    try:
-        from chatbot.uf_sync_loop import uf_sync_loop as _usl
-        uf_sync_task = asyncio.create_task(_usl())
-        import os as _os
-        logger.info(
-            "[UF_SYNC] Loop scheduled. enabled=%s hour=%s",
-            _os.getenv("UF_SYNC_ENABLED", "false"),
-            _os.getenv("UF_SYNC_HOUR", "4"),
-        )
-    except Exception:
-        logger.warning("[UF_SYNC] Loop import failed — disabled", exc_info=True)
+    # Portfolio prices are refreshed only by the explicitly invoked local
+    # Prop360 scraper. No UF loop, scheduler, or startup task may touch them.
+    logger.info("[UF_SYNC] Automatic portfolio UF/price sync disabled")
     
     # Iniciar Consumers
     c1_task = asyncio.create_task(lead_consumer_worker(1))

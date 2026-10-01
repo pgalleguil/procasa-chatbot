@@ -93,6 +93,8 @@ OFICINA_NOMBRE = OFICINAS.get(OFFICE_ID, f"OFICINA {OFFICE_ID}")
 COLLECTION_NAME = getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
 HISTORY_COLLECTION_NAME = "universo_cartera_prop360_historial"
 SCRAPER_VERSION = "2.0.0"
+_UNSET_UF_CONTEXT = object()
+_SCRAPE_UF_CONTEXT = _UNSET_UF_CONTEXT
 
 _CARACTERISTICAS_INT = {
     "formsuites": "suite",
@@ -384,29 +386,40 @@ def get_uf_rate():
     return None
 
 
-def canonicalize_prices(doc: dict):
+def canonicalize_prices(doc: dict, uf_info=_UNSET_UF_CONTEXT, *, fecha_esperada=None):
     """Completa la divisa derivada + metadata en cada precio de tipo_operacion.
 
-    Usa el ÚLTIMO valor UF válido persistido (uf_service), nunca llama la API
-    por ficha. Regla: la divisa publicada es ORIGINAL; solo se genera la otra.
-    Si no hay UF cache válida, deja el precio original sin derivado (warning);
-    el proceso periódico (uf_sync_loop) completa el derivado después.
+    Usa el contexto UF fresco obtenido una vez al inicio de esta ejecución.
+    El valor se obtiene una vez por proceso desde la fuente vigente. No usa un
+    cache con fecha desconocida/antigua para generar un derivado nuevo.
     """
     try:
-        from chatbot.uf_service import obtener_uf_cache_o_fallback, completar_precio
+        from chatbot.uf_service import completar_precio, validar_uf_vigente
     except Exception:
         return doc
 
-    uf_info = obtener_uf_cache_o_fallback()
+    if uf_info is _UNSET_UF_CONTEXT:
+        uf_info = _get_scrape_uf_context()
+    uf_info = uf_info or {}
+    uf_ok, uf_reason = validar_uf_vigente(uf_info, fecha_esperada=fecha_esperada)
+    if not uf_ok:
+        log.warning("UF omitida para conversión: %s", uf_reason)
+        uf_info = {}
     uf_valor = uf_info["valor"] if uf_info else None
     uf_fecha = uf_info.get("fecha") if uf_info else None
+    uf_fuente = uf_info.get("fuente") if uf_info else None
 
     to = doc.get("tipo_operacion")
     if isinstance(to, dict):
         for key in ("precio_venta", "precio_arriendo"):
             precio = to.get(key)
             if isinstance(precio, dict):
-                to[key] = completar_precio(precio, uf_valor, uf_fecha)
+                to[key] = completar_precio(precio, uf_valor, uf_fecha, uf_fuente)
+                if not uf_ok and to[key].get("moneda_publicada") in {"CLP", "UF"}:
+                    to[key]["revision_precio"] = {
+                        "status": "conversion_pending",
+                        "reason": uf_reason,
+                    }
 
     # Resumen plano heredado: reflejar precios completados (solo informativo)
     res = doc.get("resumen")
@@ -426,6 +439,23 @@ def canonicalize_prices(doc: dict):
         if uf is not None:
             res["precio_uf"] = uf
     return doc
+
+
+def _get_scrape_uf_context() -> dict:
+    """Get one fresh UF quote per process; never silently fall back to stale cache."""
+    global _SCRAPE_UF_CONTEXT
+    if _SCRAPE_UF_CONTEXT is _UNSET_UF_CONTEXT:
+        try:
+            from chatbot.uf_service import obtener_uf_actual, validar_uf_vigente
+            candidate = obtener_uf_actual() or {}
+            valid, reason = validar_uf_vigente(candidate)
+            _SCRAPE_UF_CONTEXT = candidate if valid else {}
+            if not valid:
+                log.warning("UF omitida para esta ejecución: %s", reason)
+        except Exception as exc:
+            log.warning("No se pudo obtener UF vigente; no se calcularán derivados: %s", exc)
+            _SCRAPE_UF_CONTEXT = {}
+    return _SCRAPE_UF_CONTEXT
 
 
 def get_tracked_value(doc: dict, field: str):
@@ -949,21 +979,53 @@ def parse_tipo_operacion(html: str, audit: dict) -> dict:
 
     pv = _input_val(soup, "tbPrecioVenta")
     if pv is not None:
-        if _radio_checked(soup, "rbDiv2"):
-            result["precio_venta"] = {"precio_uf": clean_price_uf(pv)}
-        else:
-            result["precio_venta"] = {"precio_clp": clean_price(pv)}
+        currency = _selected_currency(soup, "rbDiv1", "rbDiv2")
+        result["precio_venta"] = _source_price(pv, currency)
 
     pa = _input_val(soup, "tbPrecioArriendo")
     if pa is not None:
-        if _radio_checked(soup, "rbDivA2"):
-            result["precio_arriendo"] = {"precio_uf": clean_price_uf(pa)}
-        else:
-            result["precio_arriendo"] = {"precio_clp": clean_price(pa)}
+        currency = _selected_currency(soup, "rbDivA1", "rbDivA2")
+        result["precio_arriendo"] = _source_price(pa, currency)
 
     gc = _input_val(soup, "tbGastosComunes")
     result["gastos_comunes"] = clean_price(gc)
     return result
+
+
+def _selected_currency(soup, clp_radio_id: str, uf_radio_id: str) -> str | None:
+    """Return currency only when the editable form explicitly marks one radio."""
+    clp = soup.find(id=clp_radio_id) if soup else None
+    uf = soup.find(id=uf_radio_id) if soup else None
+    clp_checked = bool(clp is not None and clp.has_attr("checked"))
+    uf_checked = bool(uf is not None and uf.has_attr("checked"))
+    if clp_checked == uf_checked:  # neither or both checked: evidence is ambiguous
+        return None
+    return "UF" if uf_checked else "CLP"
+
+
+def _source_price(raw: str, currency: str | None) -> dict:
+    """Represent the original amount and its explicit currency evidence."""
+    if currency == "UF":
+        amount = clean_price_uf(raw)
+        key = "precio_uf"
+    elif currency == "CLP":
+        amount = clean_price(raw)
+        key = "precio_clp"
+    else:
+        return {
+            "precio_publicado_original": raw,
+            "moneda_publicada": None,
+            "fuente_moneda_publicacion": "form_currency_unresolved",
+            "revision_precio": {"status": "needs_review", "reason": "currency_not_explicit"},
+        }
+    return {
+        key: amount,
+        "moneda_publicada": currency,
+        "moneda_publicacion": currency,
+        "precio_publicado": amount,
+        "precio_publicado_original": amount,
+        "fuente_moneda_publicacion": "prop360_editable_currency_radio",
+    }
 
 
 def parse_ubicacion(html: str, audit: dict) -> dict:
@@ -1381,12 +1443,20 @@ def _detect_print_price(txt: str | None):
 
     ``UF 57.836`` → ("uf", 57836); ``$ 2.362.299.274`` → ("clp", ...);
     ``UF 118,03`` (comma decimal) → ("uf", 118.03) — UF reales, no centésimas.
-    ``$ 68,55`` (comma decimal) → ("uf", 68.55).
+    Ambiguous decimal values without an explicit UF marker are rejected.
     """
     if not txt:
         return None, None
-    if "UF" in txt.upper():
+    has_uf = bool(re.search(r"\bUF\b", txt, re.IGNORECASE))
+    has_clp = "$" in txt
+    if has_uf and has_clp:
+        # The printable view may pair the contractual amount with a visual
+        # conversion; only the editable currency selector can disambiguate it.
+        return None, None
+    if has_uf:
         return "uf", clean_price_uf(txt)
+    if "$" in txt and re.search(r"\d,\d", txt):
+        return None, None
     num = re.search(r"([\d.,]+)", txt)
     if not num:
         return None, None
@@ -1419,7 +1489,7 @@ def clean_price_uf(raw: str | None) -> float | int | None:
             val = float(s)
         except Exception:
             return None
-        return round(val, 2)
+        return int(val) if val.is_integer() else val
     # Sin coma: entero UF puro ("57.836" → 57836)
     digits = re.sub(r"[^\d]", "", s)
     if not digits:
@@ -1501,7 +1571,15 @@ def parse_ficha_imprimible(html: str, audit: dict | None = None) -> dict:
         arriendo_p if tipo_op["arriendo"] and not tipo_op["venta"] else venta_p)
     unit, val = _detect_print_price(primary_price_txt)
     if unit and val is not None:
-        target[f"precio_{unit}"] = val
+        currency = unit.upper()
+        target.update({
+            f"precio_{unit}": val,
+            "moneda_publicada": currency,
+            "moneda_publicacion": currency,
+            "precio_publicado": val,
+            "precio_publicado_original": val,
+            "fuente_moneda_publicacion": "prop360_print_primary_price_label",
+        })
     if any(v is not None for v in venta_p.values()):
         tipo_op["precio_venta"] = venta_p
     if any(v is not None for v in arriendo_p.values()):
@@ -1552,7 +1630,6 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
     estado = parsed["estado"]
     datos_propietario = parsed["datos_propietario"]
 
-    published_uf, published_clp = parse_listing_price(listing_row.get("precio"))
     published_currency = None
     published_amount = None
     # The ficha's selected currency is authoritative for new properties.  A
@@ -1570,13 +1647,9 @@ def build_doc(codigo: str, listing_row: dict, parsed: dict) -> dict:
             published_currency = "UF"
             published_amount = price["precio_uf"]
             break
-    if published_currency is None:
-        if published_uf is not None and published_clp is None:
-            published_currency = "UF"
-            published_amount = published_uf
-        elif published_clp is not None and published_uf is None:
-            published_currency = "CLP"
-            published_amount = published_clp
+    # If the ficha did not identify its source currency, keep it unknown. The
+    # list view may show converted pairs and is not a safe substitute for the
+    # editable field/primary explicit label.
 
     precio_clp = None
     precio_uf = None
@@ -1836,6 +1909,43 @@ def _write_with_history(coll, history_coll, events: list[dict], update_filter: d
     return coll.update_one(update_filter, update, upsert=True)
 
 
+def _merge_price_operation(existing_price: dict, incoming_price: dict, *, uf_ok: bool, uf_reason: str):
+    """Keep current contractual values unless new source evidence is usable.
+
+    An unresolved currency or a stale/missing UF quote is recorded as an
+    observation for review. It cannot replace the existing monetary values.
+    """
+    currency = str(
+        incoming_price.get("moneda_publicada")
+        or incoming_price.get("moneda_publicacion")
+        or ""
+    ).strip().upper()
+    source_unresolved = incoming_price.get("fuente_moneda_publicacion") == "form_currency_unresolved"
+    reason = "currency_not_explicit" if currency not in {"CLP", "UF"} or source_unresolved else None
+    if reason is None and not uf_ok:
+        reason = uf_reason or "uf_not_current"
+    if reason is None:
+        merged = {**existing_price, **incoming_price}
+        merged.pop("precio_observado_pendiente", None)
+        merged.pop("revision_precio", None)
+        return merged
+
+    observed_amount = incoming_price.get("precio_publicado_original")
+    if observed_amount is None:
+        observed_amount = incoming_price.get("precio_publicado")
+    if observed_amount is None:
+        observed_amount = incoming_price.get("precio_clp", incoming_price.get("precio_uf"))
+    preserved = dict(existing_price)
+    preserved["precio_observado_pendiente"] = {
+        "moneda": currency if currency in {"CLP", "UF"} else None,
+        "monto": observed_amount,
+        "fuente": incoming_price.get("fuente_moneda_publicacion"),
+        "fecha_observacion": now_iso(),
+    }
+    preserved["revision_precio"] = {"status": "needs_review", "reason": reason}
+    return preserved
+
+
 def upsert_ficha(
     coll,
     doc: dict,
@@ -1843,6 +1953,7 @@ def upsert_ficha(
     history_coll=None,
     source: str = "Prop360",
     sync_run_id: str | None = None,
+    uf_info=_UNSET_UF_CONTEXT,
 ) -> tuple[bool, bool]:
     existing = coll.find_one({"codigo": doc["codigo"]}) or {}
     if history_coll is None:
@@ -1863,8 +1974,20 @@ def upsert_ficha(
         existing_sec = existing.get(section)
         new_sec = doc.get(section)
         if isinstance(existing_sec, dict) and isinstance(new_sec, dict):
-            doc[section] = {**existing_sec, **new_sec}
-    doc = canonicalize_prices(doc)
+            merged = {**existing_sec, **new_sec}
+            if section == "tipo_operacion":
+                from chatbot.uf_service import validar_uf_vigente
+                effective_uf = _get_scrape_uf_context() if uf_info is _UNSET_UF_CONTEXT else (uf_info or {})
+                uf_ok, uf_reason = validar_uf_vigente(effective_uf)
+                for op_key in ("precio_venta", "precio_arriendo"):
+                    old_price = existing_sec.get(op_key)
+                    new_price = new_sec.get(op_key)
+                    if isinstance(old_price, dict) and isinstance(new_price, dict):
+                        merged[op_key] = _merge_price_operation(
+                            old_price, new_price, uf_ok=uf_ok, uf_reason=uf_reason
+                        )
+            doc[section] = merged
+    doc = canonicalize_prices(doc, uf_info)
     previous_hash = existing.get("audit_hash")
     current_hash = audit_hash(doc)
     changed = previous_hash != current_hash
@@ -2120,6 +2243,8 @@ def mark_bajas(coll, active_codes: set[str], dry_run: bool = False) -> int:
 
 
 def run(args, office_id: int | None = None) -> int:
+    global _SCRAPE_UF_CONTEXT
+    _SCRAPE_UF_CONTEXT = _UNSET_UF_CONTEXT
     email = os.getenv("PROP360_EMAIL")
     password = os.getenv("PROP360_PASSWORD")
     if not email or not password:
@@ -2142,6 +2267,17 @@ def run(args, office_id: int | None = None) -> int:
         log.error(f"Error de autenticación: {e}")
         mongo_client.close()
         return 2
+
+    # One authoritative UF lookup per scraper execution. A stale Mongo cache
+    # must never silently create a new derived amount. If the source is down,
+    # preserve the published amount/currency and leave the conversion absent.
+    uf_context = _get_scrape_uf_context()
+    if not uf_context:
+        log.warning("UF vigente no disponible; se conservará solo el precio original")
+    else:
+        log.info("UF para esta ejecución: %s (%s; fuente=%s)",
+                 uf_context.get("valor"), uf_context.get("fecha"),
+                 uf_context.get("fuente"))
 
     log.info("Descargando listado Activa de la oficina…")
     rows = client.fetch_listing(OFFICE_ID)
@@ -2280,6 +2416,8 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
         try:
             listing_row = activa.get(codigo) or {"codigo": codigo, "estado": "Activa"}
             doc = scrape_propiedad(client, codigo, listing_row)
+            if args.dry_run:
+                doc = canonicalize_prices(doc, _SCRAPE_UF_CONTEXT)
             t_det = doc.get("metadata", {}).get("tipo_propiedad_detectado")
             if t_det:
                 tipos_detectados[t_det] = tipos_detectados.get(t_det, 0) + 1

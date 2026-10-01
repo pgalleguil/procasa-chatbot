@@ -3,11 +3,12 @@
 Fuente única para obtener, validar, cachear y convertir la UF.
 
 REGLAS DE ARQUITECTURA:
-  - La API Mindicador se consulta UNA VEZ por ejecución del proceso periódico.
+  - La API Mindicador se consulta UNA VEZ por ejecución de scraping/sync.
   - NUNCA se llama la API desde una búsqueda RAG.
   - NUNCA se llama la API una vez por propiedad.
-  - El scraper usa SOLO el último valor válido persistido (uf_cache), no la API.
-  - Si no hay UF cache válida, se guarda el precio original sin derivado (warning).
+  - Nunca se llama la API por propiedad ni durante una consulta del chatbot.
+  - Si no hay UF vigente, se guarda el precio original sin derivado (warning);
+    una cache vencida no se usa para crear conversiones nuevas.
 
 Conversión (regla absoluta):
   - moneda_publicada=CLP -> precio_clp=ORIGINAL (jamás cambia), precio_uf=DERIVADO.
@@ -17,9 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("uf.service")
 
@@ -27,6 +30,7 @@ UF_API_URL = "https://mindicador.cl/api/uf"
 UF_HTTP_TIMEOUT = 8  # segundos, corto y explícito
 UF_CACHE_COLLECTION = "uf_cache"
 UF_CACHE_ID = "uf_actual"
+CHILE_TZ = ZoneInfo("America/Santiago")
 
 
 def _utcnow() -> datetime:
@@ -79,6 +83,49 @@ def obtener_uf_actual(timeout: int = UF_HTTP_TIMEOUT):
     candidatos.sort(key=lambda x: x[0], reverse=True)
     fecha, valor = candidatos[0]
     return {"valor": valor, "fecha": fecha.isoformat(), "fuente": "mindicador.cl"}
+
+
+def validar_uf_vigente(uf_info, fecha_esperada=None):
+    """Validate a UF quote before a scraper creates a new conversion.
+
+    The effective quote date must match the Chilean scrape date. This is
+    intentionally conservative: weekends, holidays, missing quotes, and stale
+    API responses skip conversion rather than reusing an older rate.
+    Returns ``(ok, reason)``.
+    """
+    if not isinstance(uf_info, dict):
+        return False, "uf_context_missing"
+    try:
+        value = float(uf_info.get("valor"))
+    except (TypeError, ValueError):
+        return False, "uf_value_invalid"
+    if not math.isfinite(value) or value <= 0:
+        return False, "uf_value_invalid"
+    raw_date = uf_info.get("fecha")
+    if not raw_date:
+        return False, "uf_date_missing"
+    try:
+        if isinstance(raw_date, date) and not isinstance(raw_date, datetime):
+            quote_date = raw_date
+        else:
+            text = str(raw_date).strip()
+            if len(text) == 10:
+                quote_date = date.fromisoformat(text)
+            else:
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=CHILE_TZ)
+                quote_date = parsed.astimezone(CHILE_TZ).date()
+    except (TypeError, ValueError):
+        return False, "uf_date_invalid"
+    try:
+        expected = (date.fromisoformat(fecha_esperada) if isinstance(fecha_esperada, str)
+                    else fecha_esperada or datetime.now(CHILE_TZ).date())
+    except (TypeError, ValueError):
+        return False, "expected_uf_date_invalid"
+    if quote_date != expected:
+        return False, "uf_date_stale_or_mismatched"
+    return True, "current"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -170,27 +217,33 @@ def convertir_precio(moneda_publicada, precio_publicado, uf_valor):
     if moneda == "CLP":
         return round(p / float(uf_valor), 1), int(round(p))
     if moneda == "UF":
-        return round(p, 1), int(round(p * float(uf_valor)))
+        # UF is the contractual/source amount in this branch. Preserve its
+        # precision exactly; only CLP is derived from the UF rate.
+        return p, int(round(p * float(uf_valor)))
     return None, None
 
 
 def build_metadata(moneda_publicada, precio_publicado, uf_valor, uf_fecha,
-                   precio_uf, precio_clp) -> dict:
+                   precio_uf, precio_clp, fuente_conversion=None) -> dict:
     """Metadata de auditoría de la conversión (se guarda junto al precio)."""
     moneda = str(moneda_publicada or "").strip().upper()
     derivado = precio_uf if moneda == "CLP" else precio_clp
     moneda_derivado = "UF" if moneda == "CLP" else "CLP"
     return {
         "moneda_publicada": moneda,
+        "moneda_publicacion": moneda,
         "precio_publicado": float(precio_publicado),
+        "precio_publicado_original": float(precio_publicado),
         "uf_valor_conversion": float(uf_valor),
         "uf_fecha_conversion": uf_fecha or "",
+        "fuente_conversion": fuente_conversion or "UF vigente",
         "precio_derivado": derivado,
         "precio_derivado_moneda": moneda_derivado,
     }
 
 
-def completar_precio(precio_obj: dict | None, uf_valor, uf_fecha):
+def completar_precio(precio_obj: dict | None, uf_valor, uf_fecha,
+                     fuente_conversion=None):
     """Toma un precio_venta/precio_arriendo crudo del scraper y lo completa.
 
     El objeto de entrada refleja SOLO la divisa publicada (ej. {"precio_uf": X}).
@@ -201,43 +254,69 @@ def completar_precio(precio_obj: dict | None, uf_valor, uf_fecha):
     if not isinstance(precio_obj, dict):
         return precio_obj
 
-    uf_precio = precio_obj.get("precio_uf")
-    clp_val = precio_obj.get("precio_clp")
-    moneda = None
-    publicado = None
-    if clp_val is not None and str(clp_val).strip() not in ("", "None") and float(clp_val or 0) > 0:
-        moneda = "CLP"
-        publicado = float(clp_val)
-    elif uf_precio is not None and str(uf_precio).strip() not in ("", "None") and float(uf_precio or 0) > 0:
-        moneda = "UF"
-        publicado = float(uf_precio)
+    explicit_currency = str(
+        precio_obj.get("moneda_publicada") or precio_obj.get("moneda_publicacion") or ""
+    ).strip().upper()
+    currency_was_declared = "moneda_publicada" in precio_obj or "moneda_publicacion" in precio_obj
+    if explicit_currency in {"CLP", "UF"}:
+        moneda = explicit_currency
+    elif currency_was_declared or precio_obj.get("fuente_moneda_publicacion") == "form_currency_unresolved":
+        # Explicitly unresolved is not permission to infer from a display pair.
+        out = dict(precio_obj)
+        out["revision_precio"] = {"status": "needs_review", "reason": "currency_not_explicit"}
+        return out
+    else:
+        # Legacy single-currency field names carry explicit units. Both fields
+        # without publication metadata are ambiguous and are never guessed.
+        has_clp = precio_obj.get("precio_clp") is not None
+        has_uf = precio_obj.get("precio_uf") is not None
+        if has_clp == has_uf:
+            out = dict(precio_obj)
+            out["revision_precio"] = {"status": "needs_review", "reason": "currency_ambiguous"}
+            return out
+        moneda = "CLP" if has_clp else "UF"
 
-    if moneda is None:
-        return precio_obj
+    # Prefer the preserved contractual amount. Only fall back to the field
+    # explicitly carrying the selected base currency; never use the derivative.
+    publicado = precio_obj.get("precio_publicado_original")
+    if publicado is None:
+        publicado = precio_obj.get("precio_publicado")
+    if publicado is None:
+        publicado = precio_obj.get("precio_clp" if moneda == "CLP" else "precio_uf")
+    try:
+        publicado = float(publicado)
+    except (TypeError, ValueError):
+        publicado = None
+    if publicado is None or not math.isfinite(publicado) or publicado <= 0:
+        out = dict(precio_obj)
+        out["revision_precio"] = {"status": "needs_review", "reason": "base_price_missing_or_invalid"}
+        return out
 
-    # Si ya hay metadata de conversión previa, la moneda publicada es la que
-    # quedó registrada (no se re-deriva desde el derivado).
-    meta_prev = precio_obj.get("moneda_publicada")
-    if meta_prev and meta_prev in ("UF", "CLP"):
-        moneda = meta_prev
-        publicado = precio_obj.get("precio_publicado") or publicado
-
-    if not uf_valor or float(uf_valor) <= 0:
+    try:
+        uf_number = float(uf_valor)
+    except (TypeError, ValueError):
+        uf_number = 0
+    if not math.isfinite(uf_number) or uf_number <= 0:
         logger.warning("[UF] Sin UF cache válida; precio original sin derivado: "
                        "moneda=%s publicado=%s", moneda, publicado)
         return precio_obj
 
-    precio_uf, precio_clp = convertir_precio(moneda, publicado, uf_valor)
+    precio_uf, precio_clp = convertir_precio(moneda, publicado, uf_number)
     if precio_uf is None:
         return precio_obj
 
     out = dict(precio_obj)
+    out.pop("revision_precio", None)
+    out.pop("precio_observado_pendiente", None)
     out["precio_uf"] = precio_uf
     out["precio_clp"] = precio_clp
     out["moneda_publicada"] = moneda
+    out["moneda_publicacion"] = moneda
     out["precio_publicado"] = float(publicado)
+    out["precio_publicado_original"] = float(publicado)
     out["uf_valor_conversion"] = float(uf_valor)
     out["uf_fecha_conversion"] = uf_fecha or ""
+    out["fuente_conversion"] = fuente_conversion or "UF vigente"
     derivado = precio_uf if moneda == "CLP" else precio_clp
     out["precio_derivado"] = derivado
     out["precio_derivado_moneda"] = "UF" if moneda == "CLP" else "CLP"

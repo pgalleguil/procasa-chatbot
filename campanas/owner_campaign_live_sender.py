@@ -116,6 +116,44 @@ def _wave2_ready_rows(records: Sequence[Mapping[str, Any]]) -> list[Mapping[str,
     return [item for item in records if str(item.get("send_status") or "").upper() == "READY"]
 
 
+def _find_wave2_master(db: Any, runtime: Any, property_code: Any) -> dict[str, Any]:
+    """Load one exact, active Wave 2 property instead of scanning the portfolio."""
+    code = normalize_property_code(property_code)
+    if not code:
+        raise SenderError("property_code_invalid")
+    variants = list(runtime._variants(code))
+    query = {
+        "codigo": {"$in": variants},
+        "estado.oficina": runtime.CAMPAIGN_OFFICE,
+        "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
+        "disponible_prop360": True,
+    }
+    collection = db[runtime.PROPERTY_COLLECTION]
+    if collection.count_documents(query, limit=2) != 1:
+        raise SenderError("property_missing_or_ambiguous")
+    master = collection.find_one(query)
+    if not isinstance(master, Mapping) or not runtime._active_available(master) or not runtime._is_sucre(master):
+        raise SenderError("property_missing_or_ambiguous")
+    return dict(master)
+
+
+def _record_wave2_preflight_skip(db: Any, campaign_id: str, property_code: Any, reason: str) -> str:
+    """Keep a failed Wave 2 row out of future sends without touching its snapshot."""
+    stale = str(reason).startswith("manifest_") or str(reason) == "operation_rebuild_mismatch"
+    status = "SKIPPED_STALE_OR_MISMATCH" if stale else "SKIPPED_PREFLIGHT"
+    db[Config.COLLECTION_CAMPANAS_LOG].update_one(
+        {
+            "_id": f"{campaign_id}:{property_code}",
+            "campaign_id": campaign_id,
+            "property_code": str(property_code),
+            "send_status": "READY",
+        },
+        {"$set": {"send_status": status, "preflight_status": status,
+                  "preflight_error_code": str(reason)}},
+    )
+    return status
+
+
 def _valid_email(value: Any) -> str | None:
     email = str(value or "").strip().casefold()
     if not email or len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
@@ -807,12 +845,17 @@ def run_manifest(
         from campanas import owner_campaign_test_runtime as runtime
 
         now = now or datetime.now(timezone.utc)
-        all_properties = list(db[runtime.PROPERTY_COLLECTION].find({
-            "estado.oficina": runtime.CAMPAIGN_OFFICE,
-            "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
-            "disponible_prop360": True,
-        }))
-        all_properties = [item for item in all_properties if runtime._active_available(item) and runtime._is_sucre(item)]
+        wave2 = _allows_multiowner_single_property_email(campaign_id)
+        # Wave 1 retains its historic single-owner portfolio validation. Wave 2
+        # loads only the exact READY property for each iteration below.
+        all_properties: list[Mapping[str, Any]] = []
+        if not wave2:
+            all_properties = list(db[runtime.PROPERTY_COLLECTION].find({
+                "estado.oficina": runtime.CAMPAIGN_OFFICE,
+                "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
+                "disponible_prop360": True,
+            }))
+            all_properties = [item for item in all_properties if runtime._active_available(item) and runtime._is_sucre(item)]
         percentile_data = runtime.calculate_owner_campaign_lead_percentiles(db, now=now)
         results: list[dict[str, Any]] = []
         prepared: list[dict[str, Any]] = []
@@ -826,8 +869,9 @@ def run_manifest(
                 manifest_cc = []
                 recipient_checks_valid = False
             try:
+                row_properties = [_find_wave2_master(db, runtime, code)] if wave2 else all_properties
                 valid = _validate_row(
-                    manifest_row, db=db, all_properties=all_properties,
+                    manifest_row, db=db, all_properties=row_properties,
                     percentile_data=percentile_data, now=now,
                     campaign_id=campaign_id, batch_id=batch_id,
                 )
@@ -855,6 +899,19 @@ def run_manifest(
                     "recipient_checks_valid": True,
                 })
             except Exception as exc:
+                failure_reason = _safe_validation_reason(exc)
+                is_stale_mismatch = (
+                    failure_reason.startswith("manifest_")
+                    or failure_reason == "operation_rebuild_mismatch"
+                )
+                if wave2 and is_stale_mismatch:
+                    failure_status = _record_wave2_preflight_skip(db, campaign_id, code, failure_reason)
+                elif wave2:
+                    # Isolate this row for the current run; leave READY intact
+                    # unless its frozen snapshot demonstrably changed.
+                    failure_status = "SKIPPED_PREFLIGHT"
+                else:
+                    failure_status = failure_reason
                 current_value = _number(manifest_row.get("current_price"))
                 recommended_value = _number(manifest_row.get("recommended_price"))
                 adjustment_value = _number(manifest_row.get("recommended_adjustment_pct"))
@@ -875,11 +932,12 @@ def run_manifest(
                     "advisor_token_valid": False, "document_routing_valid": False,
                     "gmail_safe": False,
                     "price_valid": price_valid,
-                    "eligibility_status": _safe_validation_reason(exc),
+                    "eligibility_status": failure_status,
+                    "validation_error_code": failure_reason,
                     "recipient_checks_valid": recipient_checks_valid,
                 })
 
-        if mode == "SEND" and len(prepared) != len(rows):
+        if mode == "SEND" and len(prepared) != len(rows) and not wave2:
             raise SenderError("batch_preflight_failed_smtp_not_started")
         if mode == "SEND":
             send_results, send_stop_reason, send_unsent_count = _send_batch(

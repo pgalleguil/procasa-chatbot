@@ -185,3 +185,73 @@ def test_wave2_resume_refuses_a_row_left_sending():
 
     with pytest.raises(sender.SenderError, match="campaign_batch_contains_sending_rows"):
         sender._wave2_ready_rows(rows)
+
+
+def test_wave2_master_lookup_is_scoped_to_one_active_property_code():
+    class Collection:
+        def __init__(self):
+            self.count_query = None
+            self.find_query = None
+
+        def count_documents(self, query, limit=0):
+            self.count_query = (query, limit)
+            return 1
+
+        def find_one(self, query):
+            self.find_query = query
+            return {
+                "codigo": "6581",
+                "estado": {"oficina": "PROCASA SUCRE", "estado_prop360": "Activa"},
+                "disponible_prop360": True,
+            }
+
+        def find(self, *_args, **_kwargs):
+            raise AssertionError("Wave 2 must not scan the active portfolio")
+
+    class DB:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def __getitem__(self, _name):
+            return self.collection
+
+    from campanas import owner_campaign_test_runtime as runtime
+
+    collection = Collection()
+    master = sender._find_wave2_master(DB(collection), runtime, "6581")
+
+    assert master["codigo"] == "6581"
+    query, limit = collection.count_query
+    assert limit == 2
+    assert query["codigo"]["$in"] == runtime._variants("6581")
+    assert query["estado.oficina"] == runtime.CAMPAIGN_OFFICE
+    assert query["disponible_prop360"] is True
+    assert collection.find_query == query
+
+
+def test_wave2_preflight_skip_only_changes_ready_status_without_touching_snapshot():
+    class Collection:
+        def __init__(self):
+            self.call = None
+
+        def update_one(self, query, update):
+            self.call = (query, update)
+
+    class DB:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def __getitem__(self, _name):
+            return self.collection
+
+    collection = Collection()
+    status = sender._record_wave2_preflight_skip(
+        DB(collection), WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID, "6581",
+        "manifest_recommended_price_stale_or_mismatch",
+    )
+
+    assert status == "SKIPPED_STALE_OR_MISMATCH"
+    query, update = collection.call
+    assert query["send_status"] == "READY"
+    assert update["$set"]["send_status"] == "SKIPPED_STALE_OR_MISMATCH"
+    assert "campaign_snapshot" not in update["$set"]

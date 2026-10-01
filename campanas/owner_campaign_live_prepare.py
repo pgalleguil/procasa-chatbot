@@ -22,6 +22,8 @@ from campanas.owner_campaign_live_config import (
     MANUAL_RECENT_EXCLUSION_CODES,
     MANUAL_RECENT_EXCLUSION_PENDING,
     PRODUCTION_CAMPAIGN_ID,
+    WAVE2_AMBIGUOUS_OWNER_CODES,
+    WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID,
 )
 from campanas import owner_campaign_test_runtime as runtime
 
@@ -299,7 +301,8 @@ def prepare_manifest_from_selection(
 
     selection_path = Path(selection_path)
     output_path = Path(output_path)
-    if not PRODUCTION_CAMPAIGN_ID or "test" in PRODUCTION_CAMPAIGN_ID.casefold():
+    allowed_campaigns = {PRODUCTION_CAMPAIGN_ID, WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID}
+    if any(not campaign or "test" in campaign.casefold() for campaign in allowed_campaigns):
         raise RuntimeError("Production campaign id is empty or marked as test")
     with selection_path.open("r", encoding="utf-8-sig", newline="") as handle:
         selected_rows = list(csv.DictReader(handle))
@@ -308,8 +311,10 @@ def prepare_manifest_from_selection(
     batch_ids = {str(row.get("batch_id") or "").strip() for row in selected_rows}
     campaign_ids = {str(row.get("campaign_id") or "").strip() for row in selected_rows}
     codes = [normalize_property_code(row.get("property_code")) for row in selected_rows]
-    if "" in batch_ids or len(batch_ids) != 1 or campaign_ids != {PRODUCTION_CAMPAIGN_ID}:
+    if "" in batch_ids or len(batch_ids) != 1 or len(campaign_ids) != 1 or not campaign_ids <= allowed_campaigns:
         raise RuntimeError("Selection manifest campaign or batch is inconsistent")
+    campaign_id = next(iter(campaign_ids))
+    wave2 = campaign_id == WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID
     if any(not code for code in codes) or len(codes) != len(set(codes)):
         raise RuntimeError("Selection manifest contains invalid or duplicate property codes")
     batch_id = next(iter(batch_ids))
@@ -328,6 +333,10 @@ def prepare_manifest_from_selection(
             "estado.estado_prop360": {"$regex": "^activa$", "$options": "i"},
             "disponible_prop360": True,
         }
+        if wave2:
+            query["codigo"] = {
+                "$in": [variant for code in codes for variant in runtime._variants(code)]
+            }
         properties = [
             item for item in db[runtime.PROPERTY_COLLECTION].find(query)
             if runtime._is_sucre(item) and runtime._active_available(item)
@@ -356,16 +365,18 @@ def prepare_manifest_from_selection(
             owner_email = runtime._email_from_property(master)
             if code in banned_codes or owner_email.casefold() in banned_emails:
                 raise RuntimeError(f"Selection contains an excluded property: {code}")
-            if len(by_owner.get(owner_email, [])) != 1:
+            if wave2 and code in WAVE2_AMBIGUOUS_OWNER_CODES:
+                raise RuntimeError(f"Selection contains an ambiguous Wave 2 property: {code}")
+            if not wave2 and len(by_owner.get(owner_email, [])) != 1:
                 raise RuntimeError(f"Selection contains a multiproperty owner: {code}")
             row = _row_for(db, master, percentile_data, now)
             if normalize_property_code(row["property_code"]) != code:
                 raise RuntimeError("Property identity changed during preparation")
-            row["batch_id"] = batch_id
+            row.update({"batch_id": batch_id, "campaign_id": campaign_id, "send_status": "READY"})
             prepared.append(row)
 
         owner_emails = [str(row["owner_email"]).strip().casefold() for row in prepared]
-        if len(owner_emails) != len(set(owner_emails)):
+        if not wave2 and len(owner_emails) != len(set(owner_emails)):
             raise RuntimeError("Selection contains duplicate owner recipients")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
@@ -375,7 +386,7 @@ def prepare_manifest_from_selection(
         return {
             "manifest_path": str(output_path),
             "batch_id": batch_id,
-            "campaign_id": PRODUCTION_CAMPAIGN_ID,
+            "campaign_id": campaign_id,
             "manifest_count": len(prepared),
             "property_codes": [row["property_code"] for row in prepared],
         }

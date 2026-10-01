@@ -22,6 +22,13 @@ class VisibleTextParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.parts = []
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.links.append(href)
 
     def handle_data(self, data):
         self.parts.append(data)
@@ -76,6 +83,19 @@ def registered_link(monkeypatch, db, *, source="EMAIL"):
     monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "local-test-secret")
     result = campaign.materialize_portal_accesses(
         db, campaign_id=CAMPAIGN, base_url="https://www.procasa.cl",
+        source=source, persist=True,
+    )
+    assert result["counts"]["eligible"] == 1
+    row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    expires_at = int(campaign._as_utc(row["portal_access"]["expires_at"]).timestamp())
+    token = campaign.issue_portal_token(row, expires_at=expires_at)
+    return campaign.build_portal_url("https://www.procasa.cl", CODE, token, source=source)
+
+
+def registered_short_link(monkeypatch, db, *, source="EMAIL", campaign_id=CAMPAIGN):
+    monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "local-test-secret")
+    result = campaign.materialize_portal_accesses(
+        db, campaign_id=campaign_id, base_url="https://www.procasa.cl",
         source=source, persist=True,
     )
     assert result["counts"]["eligible"] == 1
@@ -188,6 +208,7 @@ def test_private_portal_access_materialization_is_idempotent(monkeypatch):
         db, campaign_id=CAMPAIGN, base_url="https://www.procasa.cl", source="EMAIL",
         now=datetime(2026, 10, 1, tzinfo=timezone.utc), persist=True,
     )
+    issued_before = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["portal_access"]["issued_at"]
     second = campaign.materialize_portal_accesses(
         db, campaign_id=CAMPAIGN, base_url="https://www.procasa.cl", source="EMAIL",
         now=datetime(2026, 10, 2, tzinfo=timezone.utc), persist=True,
@@ -195,6 +216,8 @@ def test_private_portal_access_materialization_is_idempotent(monkeypatch):
     assert first["records"][0]["private_url"] == second["records"][0]["private_url"]
     assert second["counts"]["created"] == 0
     assert second["counts"]["reused"] == 1
+    stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    assert stored["portal_access"]["issued_at"] == issued_before
 
 
 def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
@@ -210,7 +233,7 @@ def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
     )
     email_url = email["records"][0]["private_url"]
     whatsapp_url = whatsapp["records"][0]["private_url"]
-    assert parse_qs(urlsplit(email_url).query)["token"] == parse_qs(urlsplit(whatsapp_url).query)["token"]
+    assert urlsplit(email_url).path == urlsplit(whatsapp_url).path == f"/p/{campaign.short_key_for_token_hash(db[campaign.LEDGER_COLLECTION].find_one({'_id': f'{CAMPAIGN}:{CODE}'})['portal_access']['token_hash'])}"
     assert parse_qs(urlsplit(email_url).query)["source"] == ["EMAIL"]
     assert parse_qs(urlsplit(whatsapp_url).query)["source"] == ["WHATSAPP"]
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
@@ -224,7 +247,117 @@ def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
         db, stored, base_url="https://www.procasa.cl", source="WHATSAPP",
         now=datetime(2026, 10, 3, tzinfo=timezone.utc),
     )
-    assert parse_qs(urlsplit(email_resolved).query)["token"] == parse_qs(urlsplit(whatsapp_resolved).query)["token"]
+    assert urlsplit(email_resolved).path == urlsplit(whatsapp_resolved).path
+
+
+def test_short_landing_reuses_signed_access_and_approved_single_email_renderer(monkeypatch):
+    db = make_test_db()
+    url = registered_short_link(monkeypatch, db, source="WHATSAPP")
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+
+    assert response.status_code == 200
+    assert "SEGUIMIENTO COMERCIAL · PROCASA" in response.text
+    assert "Departamento · Santiago" in response.text
+    assert "Código 17005" in response.text
+    assert "3.428 UF" in response.text
+    assert "$ 140.000.000" in response.text
+    assert "3.119 UF" in response.text
+    assert "disponible al momento de la campaña" in response.text
+    assert "REVISAR / CONFIRMAR AJUSTE" in response.text
+    assert "REVISAR CON MI EJECUTIVO" in response.text
+    assert "/campana/informe?token=" in response.text
+    assert "90 días" not in response.text
+    visible = VisibleTextParser()
+    visible.feed(response.text)
+    visible_text = " ".join(visible.parts)
+    assert "owner@example.com" not in visible_text
+    assert CAMPAIGN not in visible_text
+    from campanas.owner_campaign_live_events import verify_live_token
+    parsed_links = [urlsplit(link) for link in visible.links]
+    action_tokens = {
+        parse_qs(link.query).get("accion", [""])[0]: parse_qs(link.query).get("token", [""])[0]
+        for link in parsed_links if link.path == "/campana/respuesta"
+    }
+    for action in ("aceptar_rebaja", "contactar_ejecutivo"):
+        assert verify_live_token(
+            action_tokens[action], campaign_id=CAMPAIGN, property_code=CODE,
+            recipient=EMAIL, action=action,
+        )
+    report_tokens = [parse_qs(link.query)["token"][0] for link in parsed_links if link.path == "/campana/informe"]
+    assert report_tokens and campaign.decode_live_token(report_tokens[0])["action"] == "ver_informe"
+    assert response.headers["cache-control"] == "private, no-store, max-age=0"
+    stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    assert any(event.get("event") == "portal_opened" and event.get("source") == "WHATSAPP" for event in stored["events"])
+
+
+def test_short_landing_rejects_unknown_expired_and_colliding_keys(monkeypatch):
+    db = make_test_db()
+    url = registered_short_link(monkeypatch, db)
+    key = urlsplit(url).path.rsplit("/", 1)[-1]
+    client = client_for(monkeypatch, db)
+    assert client.get("/p/00000000000000000000000000000000").status_code == 404
+    assert client.get(f"/p/{key}?source=WHATSAPP&extra=1").status_code == 404
+
+    row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    expired_access = dict(row["portal_access"], expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    db[campaign.LEDGER_COLLECTION].update_one({"_id": row["_id"]}, {"$set": {"portal_access": expired_access}})
+    assert client.get(f"/p/{key}").status_code == 404
+
+    collision_db = make_test_db()
+    collision_url = registered_short_link(monkeypatch, collision_db)
+    collision_key = urlsplit(collision_url).path.rsplit("/", 1)[-1]
+    second_code = "17006"
+    second = ledger_row(property_code=second_code, _id=f"{CAMPAIGN}:{second_code}", owner_email="second@example.com")
+    # Deliberately collide on the 128-bit lookup prefix. The router must fail closed before token verification.
+    second["portal_access"] = dict(collision_db[campaign.LEDGER_COLLECTION].find_one({"_id": row["_id"]})["portal_access"], token_hash=collision_key + "0" * 32)
+    collision_db[campaign.LEDGER_COLLECTION].insert_one(second)
+    collision_client = client_for(monkeypatch, collision_db)
+    assert collision_client.get(f"/p/{collision_key}").status_code == 404
+
+
+def test_short_landing_none_and_stale_status_rules(monkeypatch):
+    none_db = make_test_db(ledger_row(document_type="NONE"))
+    none_url = registered_short_link(monkeypatch, none_db)
+    none_response = client_for(monkeypatch, none_db).get(none_url.replace("https://www.procasa.cl", ""))
+    assert none_response.status_code == 200
+    assert "/campana/informe?token=" not in none_response.text
+    assert "VER INFORME" not in none_response.text
+
+    stale_db = make_test_db(ledger_row(send_status="SKIPPED_STALE_OR_MISMATCH"))
+    stale_url = registered_short_link(monkeypatch, stale_db)
+    stale_response = client_for(monkeypatch, stale_db).get(stale_url.replace("https://www.procasa.cl", ""))
+    assert stale_response.status_code == 200
+    assert "Estamos actualizando la recomendación comercial" in stale_response.text
+    assert "3.119 UF" not in stale_response.text
+    assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
+    assert "REVISAR CON MI EJECUTIVO" in stale_response.text
+    assert "/campana/informe?token=" in stale_response.text
+
+
+def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
+    for status in ("SENT", "DELIVERY_UNKNOWN"):
+        wave1 = "owner_price_sucre_wave1_20260928"
+        row = ledger_row(
+            _id=f"{wave1}:{CODE}", campaign_id=wave1, send_status=status,
+            document_type="COMMUNAL_MARKET_REPORT",
+        )
+        db = make_test_db(row)
+        url = registered_short_link(monkeypatch, db, campaign_id=wave1)
+        response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+        assert response.status_code == 200
+        assert "3.428 UF" in response.text
+        assert "REVISAR / CONFIRMAR AJUSTE" in response.text
+        assert "/campana/informe?token=" in response.text
+
+
+def test_landing_does_not_invent_missing_clp_snapshot_values(monkeypatch):
+    db = make_test_db(ledger_row(current_price_clp=None, recommended_price_clp=None))
+    url = registered_short_link(monkeypatch, db)
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+    assert response.status_code == 200
+    assert "3.428 UF" in response.text
+    assert "3.119 UF" in response.text
+    assert "$ 140.000.000" not in response.text
 
 
 def test_materialization_accepts_noncanonical_email_case_without_rewriting_send_data(monkeypatch):

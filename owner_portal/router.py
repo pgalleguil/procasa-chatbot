@@ -16,7 +16,13 @@ from chatbot.storage import get_db
 from analytics.pricing_intelligence.time_utils import BUSINESS_TZ
 
 from .security import require_internal_preview
-from .campaign import ACCESS_SOURCES, build_private_page_view, verify_portal_request
+from .campaign import (
+    ACCESS_SOURCES,
+    build_email_visual_landing_html,
+    build_private_page_view,
+    resolve_short_portal_request,
+    verify_portal_request,
+)
 from .service import get_owner_portal_property_view, select_preview_property_code
 
 router = APIRouter(tags=["owner-portal-preview"])
@@ -104,3 +110,55 @@ async def owner_campaign_private_property(
         },
     )
     return response
+
+
+@router.get("/p/{access_key}", response_class=HTMLResponse, include_in_schema=False)
+async def owner_campaign_short_landing(
+    access_key: str,
+    request: Request,
+    source: str = Query(default="EMAIL"),
+) -> HTMLResponse:
+    """Resolve an opaque short key to its campaign-bound signed portal identity."""
+    if (
+        not set(request.query_params.keys()).issubset({"source"})
+        or len(request.query_params.getlist("source")) > 1
+        or source not in ACCESS_SOURCES
+    ):
+        raise HTTPException(status_code=404, detail="Página no disponible")
+    db = get_db()
+    verified = await run_in_threadpool(
+        resolve_short_portal_request, db, access_key=access_key, source=source,
+    )
+    if verified is None:
+        raise HTTPException(status_code=404, detail="Página no disponible")
+    row, claims = verified
+    from campanas.owner_campaign_live_events import persist_live_event
+
+    try:
+        persist_live_event(
+            db, {**claims, "source": source},
+            event="portal_opened", action="portal_opened",
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Página no disponible") from exc
+    base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
+    view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
+    # Type and commune were not copied into the old campaign snapshot. Use only
+    # canonical identity labels; all financial and decision data stay snapshot-backed.
+    landing_row = {
+        **row,
+        "property_type": view.get("property_type"),
+        "commune": view.get("commune"),
+    }
+    rendered = await run_in_threadpool(
+        build_email_visual_landing_html, landing_row, view, base_url=base_url,
+    )
+    return HTMLResponse(
+        rendered,
+        headers={
+            "Cache-Control": "private, no-store, max-age=0",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
+    )

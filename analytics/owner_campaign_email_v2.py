@@ -1417,7 +1417,11 @@ def _portfolio_summary(property_model: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email: str, executives: list[Mapping[str, Any]], base_url: str | None = None) -> str:
+def render_owner_campaign_email_v2(
+    properties: list[Mapping[str, Any]], *, email: str, executives: list[Mapping[str, Any]],
+    base_url: str | None = None, portal_landing: bool = False,
+    portal_stale_notice: bool = False,
+) -> str:
     """Render V2 for one or several properties without changing sender state."""
     environment = Environment(
         loader=FileSystemLoader(str(ROOT / "templates")),
@@ -1450,6 +1454,15 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
                 ("price", "market", "position", "new-value"),
             )
         ]
+        if portal_landing and single_property_only:
+            pct = model.get("recommended_adjustment_pct")
+            visible_price = model.get("recommended_price_label")
+            model["single_valuation_slots"] = [
+                {"label": "PRECIO PUBLICADO", "value": str(model.get("price_label") or "No disponible"), "note": "Valor vigente", "emphasis": False, "icon": "price"},
+                {"label": "AJUSTE RECOMENDADO", "value": f"-{pct}%" if visible_price and pct is not None else "En revisión", "note": "Snapshot de campaña", "emphasis": False, "icon": "market"},
+                {"label": "CONTEXTO COMERCIAL", "value": "Revisión de campaña", "note": "Sin métricas históricas en el snapshot", "emphasis": False, "icon": "position"},
+                {"label": "NUEVO VALOR", "value": str(visible_price or "En revisión"), "note": "Snapshot de campaña", "emphasis": bool(visible_price), "icon": "new-value"},
+            ]
         model["portfolio_summary"] = _portfolio_summary(model)
         property_models.append(model)
     executive_models = []
@@ -1460,7 +1473,12 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
     all_rent = bool(property_models) and all(bool(item.get("is_rental")) for item in property_models)
     single_property_only = len(property_models) == 1
     mixed_operations = bool({bool(item.get("is_rental")) for item in property_models}) and len({bool(item.get("is_rental")) for item in property_models}) > 1
-    if single_property_only:
+    if portal_landing:
+        hero_title = "Revisamos el posicionamiento de tu propiedad"
+        hero_description = "Esta recomendación fue preparada con la información comercial disponible al momento de la campaña."
+        context_note = ""
+        footer_disclaimer = "Información comercial preparada para apoyar tu decisión."
+    elif single_property_only:
         is_single_rental = property_models[0]["operation_raw"] == "ARRIENDO"
         hero_title = SINGLE_PROPERTY_HERO_TITLE
         hero_description = SINGLE_PROPERTY_RENT_HERO_DESCRIPTION if is_single_rental else SINGLE_PROPERTY_SALE_HERO_DESCRIPTION
@@ -1490,7 +1508,7 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
-    if single_property_only:
+    if single_property_only and not portal_landing:
         macro_context = (
             SINGLE_PROPERTY_RENT_MACRO_CONTEXT
             if property_models[0]["operation_raw"] == "ARRIENDO"
@@ -1517,6 +1535,8 @@ def render_owner_campaign_email_v2(properties: list[Mapping[str, Any]], *, email
         hero_description=hero_description,
         context_note=context_note,
         footer_disclaimer=footer_disclaimer,
+        portal_landing=portal_landing,
+        portal_stale_notice=portal_stale_notice,
     )
     from analytics.owner_campaign_email_compat import make_email_safe_html
 

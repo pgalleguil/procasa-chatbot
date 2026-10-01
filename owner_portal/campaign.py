@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -34,6 +35,8 @@ REPORT_TYPES = frozenset({"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"})
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 LEDGER_COLLECTION = Config.COLLECTION_CAMPANAS_LOG
 MASTER_COLLECTION = "universo_cartera_prop360"
+SHORT_KEY_HEX_LENGTH = 32  # 128 bits derived from the registered signed-token SHA-256.
+logger = logging.getLogger(__name__)
 
 
 def _clean(value: Any) -> str:
@@ -47,6 +50,23 @@ def _safe_code(value: Any) -> str:
 
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def short_key_for_token_hash(token_hash: Any) -> str:
+    """Use a non-enumerable 128-bit prefix of the existing signed-token hash."""
+    value = _clean(token_hash).casefold()
+    if not re.fullmatch(r"[0-9a-f]{64}", value):
+        return ""
+    return value[:SHORT_KEY_HEX_LENGTH]
+
+
+def build_short_portal_url(base_url: str, token_hash: Any, *, source: str = "EMAIL") -> str:
+    if source not in ACCESS_SOURCES:
+        raise ValueError("invalid_portal_source")
+    key = short_key_for_token_hash(token_hash)
+    if not key:
+        raise ValueError("invalid_portal_token_hash")
+    return f"{base_url.rstrip('/')}/p/{key}?{urlencode({'source': source})}"
 
 
 def _valid_email(value: Any) -> str:
@@ -157,7 +177,7 @@ def materialize_portal_accesses(
             counts["reused"] += 1
         else:
             counts["created"] += 1
-        if persist:
+        if persist and not old_active:
             result = ledger.update_one(
                 {"_id": row["_id"], "campaign_id": campaign_id, "property_code": code,
                  "owner_email": row.get("owner_email"), "send_status": status},
@@ -166,7 +186,7 @@ def materialize_portal_accesses(
             if result.modified_count != 1 and not old_active:
                 counts["created"] -= 1
                 counts["blocked"] += 1
-        url = build_portal_url(base_url, code, token, source=source)
+        url = build_short_portal_url(base_url, access.get("token_hash"), source=source)
         records.append({"campaign_id": campaign_id, "property_code": code, "source": source,
                         "send_status": status, "document_type": _clean(row.get("document_type")).upper(),
                         "executive": _clean(row.get("executive_name") or row.get("executive")),
@@ -206,7 +226,7 @@ def get_or_create_portal_url(
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     if not hmac.compare_digest(digest, str(access.get("token_hash") or "")):
         raise LookupError("campaign_portal_access_integrity_error")
-    return build_portal_url(base_url, str(row["property_code"]), token, source=source)
+    return build_short_portal_url(base_url, digest, source=source)
 
 
 def _master_identity(db: Any, code: str) -> dict[str, str]:
@@ -253,11 +273,50 @@ def verify_portal_request(db: Any, *, property_code: str, token: str) -> tuple[d
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     expiry = access.get("expires_at")
     if (access.get("status") != "ACTIVE" or not isinstance(expiry, datetime)
+            or access.get("revoked_at") is not None
             or _as_utc(expiry) <= datetime.now(timezone.utc)
             or int(claims.get("exp", 0)) != int(_as_utc(expiry).timestamp())
             or not hmac.compare_digest(digest, str(access.get("token_hash") or ""))):
         return None
     return row, claims
+
+
+def resolve_short_portal_request(
+    db: Any, *, access_key: str, source: str = "EMAIL",
+    now: datetime | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Resolve a short key only when exactly one active, unexpired signed access matches."""
+    key = _clean(access_key).casefold()
+    if (not re.fullmatch(rf"[0-9a-f]{{{SHORT_KEY_HEX_LENGTH}}}", key)
+            or source not in ACCESS_SOURCES):
+        return None
+    current = now or datetime.now(timezone.utc)
+    cursor = db[LEDGER_COLLECTION].find({
+        "portal_access.status": "ACTIVE",
+        "portal_access.revoked_at": None,
+        "portal_access.expires_at": {"$gt": current},
+        "portal_access.token_hash": {"$regex": "^" + re.escape(key)},
+    }).limit(2)
+    matches = list(cursor)
+    if len(matches) != 1:
+        if len(matches) > 1:
+            logger.warning("owner_portal_short_key_collision match_count=%s", len(matches))
+        return None
+    row = matches[0]
+    access = row.get("portal_access") or {}
+    expiry = access.get("expires_at")
+    if not isinstance(expiry, datetime) or _as_utc(expiry) <= _as_utc(current):
+        return None
+    try:
+        token = issue_portal_token(row, expires_at=int(_as_utc(expiry).timestamp()))
+    except (ValueError, KeyError, TypeError):
+        return None
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    stored_digest = str(access.get("token_hash") or "").casefold()
+    if (not hmac.compare_digest(digest, stored_digest)
+            or not hmac.compare_digest(short_key_for_token_hash(stored_digest), key)):
+        return None
+    return verify_portal_request(db, property_code=str(row.get("property_code") or ""), token=token)
 
 
 def build_private_page_view(
@@ -338,6 +397,84 @@ def build_private_page_view(
         "source": source,
         "document_type": document_type,
     }
+
+
+def build_email_visual_landing_html(
+    row: Mapping[str, Any], view: Mapping[str, Any], *, base_url: str,
+) -> str:
+    """Render the approved single-property email template from frozen campaign fields."""
+    from analytics.owner_campaign_email_v2 import render_owner_campaign_email_v2, _price_label, _clp_price_label
+
+    operation = _clean(row.get("operation_resolved") or row.get("operation")).upper()
+    is_rental = operation == "ARRIENDO"
+    document_type = _clean(row.get("document_type")).upper() or "NONE"
+    report_visible = document_type in REPORT_TYPES
+    stale = _clean(row.get("send_status")).upper() in STALE_STATUSES
+    can_authorize = bool(view.get("primary_url")) and not stale
+    if not can_authorize:
+        # The approved template's non-price branch presents only the advisor action.
+        display_recommended_price = None
+    else:
+        display_recommended_price = view.get("recommended_price_label")
+    neutral = "Esta recomendación fue preparada con la información comercial disponible al momento de la campaña."
+    model = {
+        "code": str(row.get("property_code") or ""),
+        "property_type": _clean(row.get("property_type")) or "Propiedad",
+        "commune": _clean(row.get("commune")) or "Comuna no disponible",
+        "property_heading": f"{_clean(row.get('property_type')) or 'Propiedad'} · {_clean(row.get('commune')) or 'Comuna no disponible'}",
+        "operation_label": "Arriendo" if is_rental else "Venta",
+        "operation_raw": operation,
+        "is_rental": is_rental,
+        "price_label": view.get("current_price_label") or "No disponible",
+        "current_price_clp_label": view.get("current_price_clp_label") or "No disponible",
+        "portal_current_clp_label": "",
+        "portal_recommended_clp_label": "",
+        "recommended_price_label": display_recommended_price,
+        "recommended_adjustment_pct": row.get("recommended_adjustment_pct"),
+        "recommended_price_clp_label": view.get("recommended_price_clp_label") or "No disponible",
+        "display_adjustment_label": (f"-{row.get('recommended_adjustment_pct')}%" if can_authorize and row.get("recommended_adjustment_pct") is not None else ""),
+        "feature_cards": [],
+        "image": {"available": False, "url": "", "source": "NONE", "count": 0},
+        "comparable": {"visible": False, "top3": [], "land_top3": [], "land_reference_visible": False},
+        "comparable_summary_text": "",
+        "diagnostic_text": neutral,
+        "single_diagnostic_text": neutral,
+        "single_document_copy": "El informe comercial disponible puede revisarse de forma privada desde esta página." if report_visible else "",
+        "single_recommendation_text": neutral,
+        "recommendation_title": "Ajuste de precio sugerido" if can_authorize else "Revisión con tu ejecutivo",
+        "recommendation_text": neutral,
+        "document": {"visible": report_visible, "copy": "", "type": document_type},
+        "appraisal": {"visible": False, "kind": "NONE", "metrics": [], "adjustment_label": ""},
+        "market_reference": {"visible": False},
+        "activity_90d": {"state": "UNKNOWN", "total_leads": None, "portals": [], "conversations": None, "visits": None},
+        "portfolio_summary": {"authorized_price": bool(can_authorize and display_recommended_price), "adjustment_label": f"-{row.get('recommended_adjustment_pct')}%" if row.get("recommended_adjustment_pct") is not None else "", "executive_name": _clean(row.get("executive_name") or row.get("executive")), "report_url": str(view.get("report_url") or ""), "activity_text": "Actividad comercial no incluida en el snapshot", "activity_origins": "", "positioning_text": neutral, "reference_label": "", "reference_value": ""},
+        "cta": {"primary_url": str(view.get("primary_url") or ""), "advisor_url": str(view.get("advisor_url") or ""), "report_url": str(view.get("report_url") or "") if report_visible else ""},
+    }
+    # Prices shown to the client come exclusively from the ledger snapshot.
+    current_raw = row.get("current_price")
+    recommended_raw = row.get("recommended_price")
+    current_clp = row.get("current_price_clp")
+    recommended_clp = row.get("recommended_price_clp")
+    if current_raw is not None:
+        model["price_label"] = _price_label(current_raw, operation)
+    if recommended_raw is not None and can_authorize:
+        model["recommended_price_label"] = _price_label(recommended_raw, operation)
+    if current_clp is not None:
+        model["current_price_clp_label"] = _clp_price_label(current_clp, operation)
+        model["portal_current_clp_label"] = _clp_price_label(current_clp, operation)
+    if recommended_clp is not None and can_authorize:
+        model["recommended_price_clp_label"] = _clp_price_label(recommended_clp, operation)
+        model["portal_recommended_clp_label"] = _clp_price_label(recommended_clp, operation)
+    executive = {
+        "name": _clean(row.get("executive_name") or row.get("executive")) or "Tu ejecutivo PROCASA",
+        "email": _clean(row.get("executive_email")),
+        "phone": "",
+    }
+    return render_owner_campaign_email_v2(
+        [model], email=_clean(row.get("owner_email")), executives=[executive],
+        base_url=base_url, portal_landing=True,
+        portal_stale_notice=stale,
+    )
 
 
 def _format_client_price(value: Any, operation: str, *, clp: bool = False) -> str:

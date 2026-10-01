@@ -20,6 +20,7 @@ from scraping_convecta.scraping_prop360_ficha_completa import (
     _detect_print_price,
     canonicalize_prices,
     parse_tipo_operacion,
+    parse_ficha_imprimible,
     build_doc,
     clean_price_uf,
     _merge_price_operation,
@@ -199,6 +200,17 @@ def test_editable_uf_parser_preserves_all_entered_decimal_precision():
 
 def test_printable_pair_of_clp_and_uf_is_observation_not_currency_evidence():
     assert _detect_print_price("UF 3.427,28 $ 140.000.000") == (None, None)
+
+
+def test_printable_single_explicit_price_is_observation_not_contract_base():
+    parsed = parse_ficha_imprimible(
+        '<h4 class="text-right">Venta <label>UF 118,037</label></h4>'
+    )
+    price = parsed["tipo_operacion"]["precio_venta"]
+    assert price.get("precio_uf") is None
+    assert price.get("precio_clp") is None
+    assert price.get("moneda_publicada") is None
+    assert price["precio_observado_imprimible"]["monto_observado"] == 118.037
 
 
 def test_build_doc_does_not_use_listing_currency_when_editable_is_ambiguous():

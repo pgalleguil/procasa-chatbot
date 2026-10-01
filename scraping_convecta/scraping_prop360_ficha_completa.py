@@ -1570,19 +1570,18 @@ def parse_ficha_imprimible(html: str, audit: dict | None = None) -> dict:
     target = venta_p if tipo_op["venta"] and not tipo_op["arriendo"] else (
         arriendo_p if tipo_op["arriendo"] and not tipo_op["venta"] else venta_p)
     unit, val = _detect_print_price(primary_price_txt)
-    if unit and val is not None:
-        currency = unit.upper()
-        target.update({
-            f"precio_{unit}": val,
-            "moneda_publicada": currency,
-            "moneda_publicacion": currency,
-            "precio_publicado": val,
-            "precio_publicado_original": val,
-            "fuente_moneda_publicacion": "prop360_print_primary_price_label",
-        })
-    if any(v is not None for v in venta_p.values()):
+    if primary_price_txt:
+        target["precio_observado_imprimible"] = {
+            "texto": primary_price_txt,
+            "unidad_indicada": unit.upper() if unit else None,
+            "monto_observado": val,
+            "fuente": "prop360_print_primary_price_label",
+        }
+    # A printable label is observational only; only propEditar's selected
+    # currency radio can set a contract price for automatic conversion.
+    if tipo_op["venta"] and (any(v is not None for v in venta_p.values()) or target.get("precio_observado_imprimible")):
         tipo_op["precio_venta"] = venta_p
-    if any(v is not None for v in arriendo_p.values()):
+    if tipo_op["arriendo"] and (any(v is not None for v in arriendo_p.values()) or target.get("precio_observado_imprimible")):
         tipo_op["precio_arriendo"] = arriendo_p
 
     # Caracteristicas: <b>Label: </b>value + checkmark features
@@ -1935,11 +1934,16 @@ def _merge_price_operation(existing_price: dict, incoming_price: dict, *, uf_ok:
         observed_amount = incoming_price.get("precio_publicado")
     if observed_amount is None:
         observed_amount = incoming_price.get("precio_clp", incoming_price.get("precio_uf"))
+    printable_observation = incoming_price.get("precio_observado_imprimible")
+    if observed_amount is None and isinstance(printable_observation, dict):
+        observed_amount = printable_observation.get("monto_observado")
     preserved = dict(existing_price)
     preserved["precio_observado_pendiente"] = {
         "moneda": currency if currency in {"CLP", "UF"} else None,
         "monto": observed_amount,
         "fuente": incoming_price.get("fuente_moneda_publicacion"),
+        "unidad_observada": (printable_observation or {}).get("unidad_indicada") if isinstance(printable_observation, dict) else None,
+        "texto_observado": (printable_observation or {}).get("texto") if isinstance(printable_observation, dict) else None,
         "fecha_observacion": now_iso(),
     }
     preserved["revision_precio"] = {"status": "needs_review", "reason": reason}

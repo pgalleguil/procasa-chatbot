@@ -52,6 +52,20 @@ def resolve_executive_user(db, user_id: str) -> dict | None:
     return None
 
 
+def executive_wants_immediate_assignment_notification(db, user_id: str) -> bool:
+    """Return the canonical user's opt-in for after-hours assignment notices.
+
+    ``user_id`` may be a canonical ID or a legacy exact-name value; resolution
+    is deliberately shared with delivery so callers do not implement their
+    own identity matching rules.
+    """
+    user = resolve_executive_user(db, str(user_id or ""))
+    if not user:
+        return False
+    preferences = user.get("notification_preferences") or {}
+    return preferences.get("assignment_immediate_outside_business_hours") is True
+
+
 def get_executive_phone(user: dict) -> str | None:
     """Get the canonical phone from a user dict."""
     phone = str(user.get("telefono") or user.get("tel") or user.get("movil") or "").strip()

@@ -1714,6 +1714,80 @@ def test_non_hot_digest_after_hours_uses_next_business_open():
     assert wd == get_next_business_slot(ws)
 
 
+def test_non_hot_opt_in_is_due_now_and_keeps_prior_pending_digest_untouched():
+    from chatbot.crm_non_hot_digest import accumulate_non_hot_lead, process_one_digest
+    from chatbot.lead_router import get_next_business_slot
+
+    db, lead, cycle = default_db()
+    after_hours = local(21, 0)
+    cycle["assigned_at"] = after_hours
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+        {"$set": {"assigned_at": after_hours}},
+    )
+    # Simulate a digest already pending before the preference is activated.
+    with _patch_config():
+        old_notification = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
+    old_due = old_notification["send_after"]
+    assert old_due == get_next_business_slot(after_hours)
+
+    db["usuarios"].docs[0]["notification_preferences"] = {
+        "assignment_immediate_outside_business_hours": True,
+    }
+    lead2 = make_lead(lead_id="lead-2", phone="56987654321", nombre="Ana Lopez")
+    db["leads"].docs.append(deepcopy(lead2))
+    new_assignment_at = after_hours + timedelta(minutes=1)
+    cycle2 = make_cycle(cycle_id="cycle-2", lead_id="lead-2", assigned_at=new_assignment_at)
+    db["crm_assignment_cycles"].docs.append(deepcopy(cycle2))
+
+    with _patch_config():
+        new_notification = accumulate_non_hot_lead(db, lead=lead2, cycle=cycle2)
+    assert new_notification["send_after"] == new_assignment_at
+    assert new_notification["assignment_immediate_outside_business_hours"] is True
+    assert old_notification["send_after"] == old_due
+    assert len(db["crm_notifications_v1"].docs) == 2
+    assert cycle2["assigned_at"] == new_assignment_at
+    assert cycle2["assignment_cycle_id"] == "cycle-2"
+    assert len(db["crm_events"].docs) == 0
+    calls = []
+    def fake_sender(*args):
+        calls.append(args)
+        return {"success": True, "provider_message_id": "fake-immediate-non-hot"}
+
+    with _patch_config(), patch.object(FakeConfig, "CRM_NON_HOT_DIGEST_SHADOW_MODE", False), \
+            patch("chatbot.lead_router.should_send_now", return_value=False), \
+            patch("chatbot.crm_non_hot_digest._throttle_provider_send", return_value=None):
+        delivered = process_one_digest(
+            db, worker_id="after-hours", now=new_assignment_at, sender=fake_sender,
+        )
+        restarted = process_one_digest(
+            db, worker_id="restart", now=new_assignment_at + timedelta(minutes=1), sender=fake_sender,
+        )
+    assert delivered["status"] == "sent"
+    assert restarted["status"] == "idle"
+    assert len(calls) == 1
+    assert len(db["crm_events"].docs) == 0
+
+
+def test_non_hot_two_opted_in_executives_both_get_immediate_due_notifications():
+    from chatbot.crm_non_hot_digest import accumulate_non_hot_lead
+
+    for recipient, name in (("user-erika", "Erika Garrido"), ("user-paula", "Paula Test")):
+        db, lead, cycle = default_db()
+        after_hours = local(21, 0)
+        cycle["assigned_to_user_id"] = recipient
+        cycle["assigned_at"] = after_hours
+        db["crm_assignment_cycles"].docs[0].update(cycle)
+        db["usuarios"].docs[0].update({
+            "_id": recipient,
+            "nombre": name,
+            "notification_preferences": {"assignment_immediate_outside_business_hours": True},
+        })
+        with _patch_config():
+            notification = accumulate_non_hot_lead(db, lead=lead, cycle=cycle)
+        assert notification["send_after"] == after_hours
+
+
 def test_hot_after_hours_excluded_from_digest():
     """HOT lead outside hours is excluded from the normal digest."""
     db, lead, cycle = default_db()

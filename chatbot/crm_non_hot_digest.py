@@ -218,6 +218,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     # a retry, restart or reconciliation time.
     now = coerce_utc_datetime(db_cycle.get("assigned_at")) or utc_now()
     window_minutes = max(int(getattr(Config, "CRM_NON_HOT_DIGEST_WINDOW_MINUTES", 10)), 1)
+    from .lead_router import is_business_hours
+    from .crm_delivery import executive_wants_immediate_assignment_notification
+    immediate_opt_in = (
+        not is_business_hours(now)
+        and executive_wants_immediate_assignment_notification(db, recipient)
+    )
 
     identity = digest_identity(
         recipient_user_id=recipient,
@@ -236,6 +242,12 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
         "schema_version": "crm_notification_v1",
         "state": "pending",
     }, sort=[("created_at", 1)])
+
+    # Keep already-pending notifications immutable.  An opted-in assignment
+    # outside hours gets its own idempotent notification rather than moving an
+    # older digest's due time forward.
+    if immediate_opt_in:
+        existing = None
 
     if existing and str(lead_id) in [str(lid) for lid in (existing.get("lead_ids") or [])]:
         return db[NOTIFICATION_COLLECTION].find_one({"_id": existing["_id"]})
@@ -295,7 +307,9 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
     # The digest window is 10 minutes from the first lead.  Temporary
     # immediate-send sends right away only inside business hours; outside
     # business hours it defers to the next opening.
-    if _immediate_send():
+    if immediate_opt_in:
+        send_after = now
+    elif _immediate_send():
         from .lead_router import should_send_now, get_next_business_slot
         send_after = now if should_send_now() else get_next_business_slot(now)
     else:
@@ -329,6 +343,7 @@ def accumulate_non_hot_lead(db, *, lead, cycle):
             "window_due_at": send_after_iso,
             "lead_count": 1,
             "notification_eligible": db_cycle.get("notification_eligible") is True,
+            "assignment_immediate_outside_business_hours": immediate_opt_in,
             "cycle_reasons": [db_cycle.get("reason")],
             "cycle_origins": [db_cycle.get("cycle_origin") or db_cycle.get("reason")],
         },
@@ -791,7 +806,16 @@ def send_digest(db, *, notification, worker_id, sender=None):
     # sending a stale notification at night.  It stays pending and the worker
     # delivers it once business hours resume.
     from .lead_router import should_send_now, get_next_business_slot
-    if not should_send_now():
+    from .crm_delivery import executive_wants_immediate_assignment_notification
+    recipient_id = str(notification.get("recipient_user_id") or "")
+    # The opt-in is honored only for notifications created by this feature.
+    # This prevents a worker restart or rollout from releasing an older
+    # pending digest that predates the preference.
+    recipient_opted_in = (
+        notification.get("assignment_immediate_outside_business_hours") is True
+        and executive_wants_immediate_assignment_notification(db, recipient_id)
+    )
+    if not should_send_now() and not recipient_opted_in:
         db[NOTIFICATION_COLLECTION].update_one(
             {"_id": notification["_id"]},
             {"$set": {"send_after": get_next_business_slot(utc_now()),

@@ -177,14 +177,19 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
     payload_with_context = dict(payload)
     payload_with_context["hot_context"] = effective_context
 
-    # After-hours handling: defer HOT notifications to next business slot
-    # unless the mode is ON_CALL_IMMEDIATE.
+    # After-hours handling is a per-recipient notification preference.  This
+    # changes only notification availability; assignment and SLA timestamps
+    # remain those of the canonical cycle.
     final_send_after = due
     from .lead_router import is_business_hours, after_hours_hot_mode, get_next_business_slot
     if not is_business_hours(due):
-        mode = after_hours_hot_mode()
-        if mode == "NEXT_BUSINESS_OPEN":
-            final_send_after = get_next_business_slot(due)
+        from .crm_delivery import executive_wants_immediate_assignment_notification
+        if executive_wants_immediate_assignment_notification(db, recipient_user_id):
+            final_send_after = due
+        else:
+            mode = after_hours_hot_mode()
+            if mode == "NEXT_BUSINESS_OPEN":
+                final_send_after = get_next_business_slot(due)
             logger.info(
                 "[HOT_DELIVERY] Fuera de horario. Hot diferido a %s (modo=%s)",
                 final_send_after, mode,
@@ -238,7 +243,13 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
                                             "notification_eligible": True,
                                             "cycle_reason": {"$in": list(ALLOWED_COMMERCIAL_REASONS)},
                                             "cycle_origin": {"$in": list(ALLOWED_COMMERCIAL_ORIGINS)},
-                                            "provider_message_id": {"$in": [None]},
+                                            # Equivalent to Mongo's {"$in": [None]}:
+                                            # accept absent or explicitly-null provider IDs,
+                                            # while keeping the claim_next retry $or intact.
+                                            "$and": [{"$or": [
+                                                {"provider_message_id": {"$exists": False}},
+                                                {"provider_message_id": None},
+                                            ]}],
                                             "actually_delivered": {"$ne": True}})
     if not notification:
         return {"status": "idle"}

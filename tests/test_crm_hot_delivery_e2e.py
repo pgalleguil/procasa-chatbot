@@ -69,6 +69,99 @@ def test_hot_outside_hours_waits_until_business_start_and_restart_does_not_dupli
     assert db["crm_assignment_cycles"].docs[0]["assigned_at"] == next_start
 
 
+def test_hot_opt_in_is_due_immediately_at_monday_night_and_sunday():
+    from chatbot.lead_router import get_next_business_slot
+
+    for day, hour in ((20, 22), (26, 22)):
+        db, lead = setup_db()
+        db["usuarios"].docs[0]["notification_preferences"] = {
+            "assignment_immediate_outside_business_hours": True,
+        }
+        assigned_at = local(day, hour)
+        result = assign_and_enqueue_hot(
+            db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+            payload={}, assigned_at=assigned_at, send_after=assigned_at,
+        )
+        notification = result["notification"]
+        assert notification["send_after"] == assigned_at
+        assert result["cycle"]["assigned_at"] == assigned_at
+        assert result["cycle"]["assignment_cycle_id"] == notification["assignment_cycle_id"]
+        assert get_next_business_slot(assigned_at) != notification["send_after"]
+
+
+def test_hot_opt_in_does_not_change_business_hours_notification_timing():
+    db, lead = setup_db()
+    db["usuarios"].docs[0]["notification_preferences"] = {
+        "assignment_immediate_outside_business_hours": True,
+    }
+    assigned_at = local(20, 10)
+    result = assign_and_enqueue_hot(
+        db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+        payload={}, assigned_at=assigned_at, send_after=assigned_at,
+    )
+    assert result["notification"]["send_after"] == assigned_at
+    assert result["cycle"]["assigned_at"] == assigned_at
+
+
+def test_hot_no_opt_in_keeps_monday_night_and_sunday_next_opening():
+    from chatbot.lead_router import get_next_business_slot
+
+    for day, hour in ((20, 22), (26, 22)):
+        db, lead = setup_db()
+        assigned_at = local(day, hour)
+        result = assign_and_enqueue_hot(
+            db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+            payload={}, assigned_at=assigned_at, send_after=assigned_at,
+        )
+        assert result["notification"]["send_after"] == get_next_business_slot(assigned_at)
+        assert result["cycle"]["assigned_at"] == assigned_at
+
+
+def test_hot_opt_in_send_survives_restart_without_second_provider_call():
+    db, lead = setup_db()
+    db["usuarios"].docs[0]["notification_preferences"] = {
+        "assignment_immediate_outside_business_hours": True,
+    }
+    assigned_at = local(20, 22)
+    created = assign_and_enqueue_hot(
+        db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111",
+        payload={}, assigned_at=assigned_at, send_after=assigned_at,
+    )
+    calls = []
+
+    def sender(*args):
+        calls.append(args)
+        return fake_sender(*args)
+
+    sent = _run_with_hot(process_one_hot(
+        db, sender=sender, worker_id="night", now=assigned_at, enabled=True,
+    ))
+    restarted = _run_with_hot(process_one_hot(
+        db, sender=sender, worker_id="restart", now=assigned_at + timedelta(minutes=1), enabled=True,
+    ))
+    assert sent["status"] == "sent"
+    assert restarted["status"] == "idle"
+    assert len(calls) == 1
+    assert len(db["crm_assignment_cycles"].docs) == 1
+    assert db["crm_assignment_cycles"].docs[0]["assigned_at"] == assigned_at
+    assert db["crm_assignment_cycles"].docs[0]["assignment_cycle_id"] == created["cycle"]["assignment_cycle_id"]
+    assert len(db["crm_events"].docs) == 0
+
+
+def test_two_executives_can_independently_opt_in_without_pipeline_changes():
+    from chatbot.crm_delivery import executive_wants_immediate_assignment_notification
+
+    db, _lead = setup_db()
+    db["usuarios"].docs.extend([
+        {"_id": "u2", "nombre": "Second Executive",
+         "notification_preferences": {"assignment_immediate_outside_business_hours": True}},
+        {"_id": "u3", "nombre": "Third Executive",
+         "notification_preferences": {"assignment_immediate_outside_business_hours": True}},
+    ])
+    assert executive_wants_immediate_assignment_notification(db, "u2") is True
+    assert executive_wants_immediate_assignment_notification(db, "u3") is True
+
+
 def test_cold_assignment_is_shadow_digest_only_and_never_sla_alert():
     lead = {"_id": "cold-1", "lead_temperature_effective": "COLD", "temperature_history": [{"at": local(20, 8), "value": "COLD"}]}
     db = DB(leads=Collection([lead]), crm_assignment_cycles=Collection(), crm_notifications_v1=Collection())

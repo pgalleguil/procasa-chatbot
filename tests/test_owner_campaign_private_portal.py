@@ -106,7 +106,7 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     event = next(item for item in stored["events"] if item["event"] == "portal_opened")
     assert event["source"] == "EMAIL"
-    assert "token_hash" in stored["portal_access"]["email"]
+    assert "token_hash" in stored["portal_access"]
     assert token not in str(stored["portal_access"])
 
 
@@ -116,9 +116,11 @@ def test_portal_actions_use_campaign_p1_tokens_for_same_property(monkeypatch):
     token = parse_qs(urlsplit(url).query)["token"][0]
     verified = campaign.verify_portal_request(db, property_code=CODE, token=token)
     row, claims = verified
-    view = campaign.build_private_page_view(db, row, claims, base_url="https://www.procasa.cl")
+    view = campaign.build_private_page_view(
+        db, row, claims, base_url="https://www.procasa.cl", source="WHATSAPP",
+    )
     client = client_for(monkeypatch, db)
-    response = client.get(f"/ajuste/{CODE}?token={token}")
+    response = client.get(f"/ajuste/{CODE}?token={token}&source=WHATSAPP")
     assert response.status_code == 200
 
     from campanas.owner_campaign_live_events import verify_live_token
@@ -195,6 +197,36 @@ def test_private_portal_access_materialization_is_idempotent(monkeypatch):
     assert second["counts"]["reused"] == 1
 
 
+def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
+    monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "local-test-secret")
+    db = make_test_db()
+    email = campaign.materialize_portal_accesses(
+        db, campaign_id=CAMPAIGN, base_url="https://www.procasa.cl",
+        source="EMAIL", now=datetime(2026, 10, 1, tzinfo=timezone.utc), persist=True,
+    )
+    whatsapp = campaign.materialize_portal_accesses(
+        db, campaign_id=CAMPAIGN, base_url="https://www.procasa.cl",
+        source="WHATSAPP", now=datetime(2026, 10, 2, tzinfo=timezone.utc), persist=True,
+    )
+    email_url = email["records"][0]["private_url"]
+    whatsapp_url = whatsapp["records"][0]["private_url"]
+    assert parse_qs(urlsplit(email_url).query)["token"] == parse_qs(urlsplit(whatsapp_url).query)["token"]
+    assert parse_qs(urlsplit(email_url).query)["source"] == ["EMAIL"]
+    assert parse_qs(urlsplit(whatsapp_url).query)["source"] == ["WHATSAPP"]
+    stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    assert "token_hash" in stored["portal_access"]
+    assert "email" not in stored["portal_access"] and "whatsapp" not in stored["portal_access"]
+    email_resolved = campaign.get_or_create_portal_url(
+        db, stored, base_url="https://www.procasa.cl", source="EMAIL",
+        now=datetime(2026, 10, 3, tzinfo=timezone.utc),
+    )
+    whatsapp_resolved = campaign.get_or_create_portal_url(
+        db, stored, base_url="https://www.procasa.cl", source="WHATSAPP",
+        now=datetime(2026, 10, 3, tzinfo=timezone.utc),
+    )
+    assert parse_qs(urlsplit(email_resolved).query)["token"] == parse_qs(urlsplit(whatsapp_resolved).query)["token"]
+
+
 def test_materialization_accepts_noncanonical_email_case_without_rewriting_send_data(monkeypatch):
     monkeypatch.setenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "local-test-secret")
     db = make_test_db(ledger_row(owner_email="Owner@Example.com"))
@@ -206,7 +238,7 @@ def test_materialization_accepts_noncanonical_email_case_without_rewriting_send_
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     assert stored["owner_email"] == "Owner@Example.com"
     assert stored["send_status"] == "SENT"
-    assert stored["portal_access"]["email"]["status"] == "ACTIVE"
+    assert stored["portal_access"]["status"] == "ACTIVE"
 
 
 def test_expired_or_wrong_recipient_access_rejected(monkeypatch):
@@ -215,16 +247,15 @@ def test_expired_or_wrong_recipient_access_rejected(monkeypatch):
     now = datetime.now(timezone.utc)
     expired = now - timedelta(seconds=5)
     row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
-    token = campaign.issue_portal_token(row, source="EMAIL", expires_at=int(expired.timestamp()))
+    token = campaign.issue_portal_token(row, expires_at=int(expired.timestamp()))
     claims = campaign.decode_live_token(token) if int(expired.timestamp()) > int(now.timestamp()) else None
     assert claims is None
     access = {
         "token_id": "expired-test", "token_hash": hashlib.sha256(token.encode()).hexdigest(),
         "issued_at": now - timedelta(days=91), "expires_at": expired,
         "revoked_at": None, "status": "ACTIVE", "purpose": "owner_portal_view",
-        "source": "EMAIL",
     }
-    db[campaign.LEDGER_COLLECTION].update_one({"_id": row["_id"]}, {"$set": {"portal_access.email": access}})
+    db[campaign.LEDGER_COLLECTION].update_one({"_id": row["_id"]}, {"$set": {"portal_access": access}})
     assert campaign.verify_portal_request(db, property_code=CODE, token=token) is None
 
 

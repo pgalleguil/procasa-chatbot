@@ -16,7 +16,7 @@ from chatbot.storage import get_db
 from analytics.pricing_intelligence.time_utils import BUSINESS_TZ
 
 from .security import require_internal_preview
-from .campaign import build_private_page_view, verify_portal_request
+from .campaign import ACCESS_SOURCES, build_private_page_view, verify_portal_request
 from .service import get_owner_portal_property_view, select_preview_property_code
 
 router = APIRouter(tags=["owner-portal-preview"])
@@ -65,9 +65,16 @@ async def owner_campaign_private_property(
     property_code: str,
     request: Request,
     token: str = Query(default=""),
+    source: str = Query(default="EMAIL"),
 ) -> HTMLResponse:
     """Serve the campaign's frozen recommendation only for a registered p1 link."""
-    if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
+    if (
+        not set(request.query_params.keys()).issubset({"token", "source"})
+        or "token" not in request.query_params
+        or len(request.query_params.getlist("token")) != 1
+        or len(request.query_params.getlist("source")) > 1
+        or source not in ACCESS_SOURCES
+    ):
         raise HTTPException(status_code=404, detail="Página no disponible")
     db = get_db()
     verified = await run_in_threadpool(verify_portal_request, db, property_code=property_code, token=token)
@@ -77,11 +84,14 @@ async def owner_campaign_private_property(
     from campanas.owner_campaign_live_events import persist_live_event
 
     try:
-        persist_live_event(db, claims, event="portal_opened", action="portal_opened")
+        persist_live_event(
+            db, {**claims, "source": source},
+            event="portal_opened", action="portal_opened",
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
-    view = build_private_page_view(db, row, claims, base_url=base_url)
+    view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
     response = _templates.TemplateResponse(
         request,
         "owner_campaign_private.html",

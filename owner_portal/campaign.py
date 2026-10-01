@@ -67,13 +67,13 @@ def _excluded(row: Mapping[str, Any]) -> bool:
     )
 
 
-def _token_event_id(campaign_id: str, property_code: str, recipient: str, source: str, expires_at: int) -> str:
-    raw = f"owner-portal-v1|{campaign_id}|{property_code}|{recipient}|{source}|{expires_at}"
+def _token_event_id(campaign_id: str, property_code: str, recipient: str, expires_at: int) -> str:
+    raw = f"owner-portal-v1|{campaign_id}|{property_code}|{recipient}|{expires_at}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
-def issue_portal_token(row: Mapping[str, Any], *, source: str, expires_at: int) -> str:
-    if source not in ACCESS_SOURCES or _excluded(row):
+def issue_portal_token(row: Mapping[str, Any], *, expires_at: int) -> str:
+    if _excluded(row):
         raise ValueError("portal_access_not_eligible")
     status = _clean(row.get("send_status")).upper()
     if status not in PUBLIC_ACCESS_STATUSES or status in EXCLUDED_STATUSES:
@@ -81,19 +81,18 @@ def issue_portal_token(row: Mapping[str, Any], *, source: str, expires_at: int) 
     campaign_id = _clean(row.get("campaign_id"))
     code = _safe_code(row.get("property_code"))
     email = _valid_email(row.get("owner_email"))
-    event_id = _token_event_id(campaign_id, code, email, source, int(expires_at))
+    event_id = _token_event_id(campaign_id, code, email, int(expires_at))
     return issue_live_token(
         campaign_id=campaign_id,
         property_code=code,
         action="portal_opened",
         recipient=email,
         expires_at=int(expires_at),
-        source=source,
         event_id=event_id,
     )
 
 
-def portal_access_record(token: str, *, source: str, expires_at: datetime) -> dict[str, Any]:
+def portal_access_record(token: str, *, expires_at: datetime) -> dict[str, Any]:
     claims = decode_live_token(token)
     if claims is None or claims.get("action") != "portal_opened":
         raise ValueError("portal_token_signing_failed")
@@ -105,14 +104,7 @@ def portal_access_record(token: str, *, source: str, expires_at: datetime) -> di
         "revoked_at": None,
         "status": "ACTIVE",
         "purpose": "owner_portal_view",
-        "source": source,
     }
-
-
-def _access_key(source: str) -> str:
-    if source not in ACCESS_SOURCES:
-        raise ValueError("invalid_portal_source")
-    return source.casefold()
 
 
 def materialize_portal_accesses(
@@ -125,7 +117,7 @@ def materialize_portal_accesses(
     ttl_days: int = 90,
     persist: bool = True,
 ) -> dict[str, Any]:
-    """Register/reuse signed URLs on ledger rows without touching send state."""
+    """Register/reuse one signed portal identity; source is link metadata only."""
     if not campaign_id or "test" in campaign_id.casefold() or ttl_days < 1 or ttl_days > 120:
         raise ValueError("invalid_campaign_portal_scope")
     if source not in ACCESS_SOURCES:
@@ -146,7 +138,7 @@ def materialize_portal_accesses(
             counts["blocked"] += 1
             continue
         counts["eligible"] += 1
-        old = ((row.get("portal_access") or {}).get(_access_key(source)) or {})
+        old = row.get("portal_access") or {}
         old_exp = old.get("expires_at")
         old_active = (
             old.get("status") == "ACTIVE"
@@ -155,8 +147,8 @@ def materialize_portal_accesses(
         )
         expiry = old_exp if old_active else current + timedelta(days=ttl_days)
         expiry_epoch = int(_as_utc(expiry).timestamp())
-        token = issue_portal_token(row, source=source, expires_at=expiry_epoch)
-        access = portal_access_record(token, source=source, expires_at=expiry)
+        token = issue_portal_token(row, expires_at=expiry_epoch)
+        access = portal_access_record(token, expires_at=expiry)
         if old_active:
             if old.get("token_hash") != access["token_hash"]:
                 counts["blocked"] += 1
@@ -169,12 +161,12 @@ def materialize_portal_accesses(
             result = ledger.update_one(
                 {"_id": row["_id"], "campaign_id": campaign_id, "property_code": code,
                  "owner_email": row.get("owner_email"), "send_status": status},
-                {"$set": {f"portal_access.{_access_key(source)}": access}},
+                {"$set": {"portal_access": access}},
             )
             if result.modified_count != 1 and not old_active:
                 counts["created"] -= 1
                 counts["blocked"] += 1
-        url = build_portal_url(base_url, code, token)
+        url = build_portal_url(base_url, code, token, source=source)
         records.append({"campaign_id": campaign_id, "property_code": code, "source": source,
                         "send_status": status, "document_type": _clean(row.get("document_type")).upper(),
                         "executive": _clean(row.get("executive_name") or row.get("executive")),
@@ -183,8 +175,10 @@ def materialize_portal_accesses(
             "records": records}
 
 
-def build_portal_url(base_url: str, property_code: str, token: str) -> str:
-    return f"{base_url.rstrip('/')}/ajuste/{property_code}?{urlencode({'token': token})}"
+def build_portal_url(base_url: str, property_code: str, token: str, *, source: str = "EMAIL") -> str:
+    if source not in ACCESS_SOURCES:
+        raise ValueError("invalid_portal_source")
+    return f"{base_url.rstrip('/')}/ajuste/{property_code}?{urlencode({'token': token, 'source': source})}"
 
 
 def get_or_create_portal_url(
@@ -193,24 +187,26 @@ def get_or_create_portal_url(
 ) -> str:
     """Return a reproducible URL only when its hash/expiry is ledger-registered."""
     current = now or datetime.now(timezone.utc)
-    access = ((row.get("portal_access") or {}).get(_access_key(source)) or {})
+    if source not in ACCESS_SOURCES:
+        raise ValueError("invalid_portal_source")
+    access = row.get("portal_access") or {}
     expiry = access.get("expires_at")
     if (access.get("status") != "ACTIVE" or not isinstance(expiry, datetime)
             or _as_utc(expiry) <= current):
         expiry = current + timedelta(days=ttl_days)
-        token = issue_portal_token(row, source=source, expires_at=int(_as_utc(expiry).timestamp()))
-        access = portal_access_record(token, source=source, expires_at=expiry)
+        token = issue_portal_token(row, expires_at=int(_as_utc(expiry).timestamp()))
+        access = portal_access_record(token, expires_at=expiry)
         key = {"_id": row.get("_id"), "campaign_id": row.get("campaign_id"),
                "property_code": row.get("property_code"), "owner_email": row.get("owner_email"),
                "send_status": row.get("send_status")}
-        result = db[LEDGER_COLLECTION].update_one(key, {"$set": {f"portal_access.{_access_key(source)}": access}})
+        result = db[LEDGER_COLLECTION].update_one(key, {"$set": {"portal_access": access}})
         if result.modified_count != 1:
             raise LookupError("campaign_portal_access_not_persisted")
-    token = issue_portal_token(row, source=source, expires_at=int(_as_utc(expiry).timestamp()))
+    token = issue_portal_token(row, expires_at=int(_as_utc(expiry).timestamp()))
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     if not hmac.compare_digest(digest, str(access.get("token_hash") or "")):
         raise LookupError("campaign_portal_access_integrity_error")
-    return build_portal_url(base_url, str(row["property_code"]), token)
+    return build_portal_url(base_url, str(row["property_code"]), token, source=source)
 
 
 def _master_identity(db: Any, code: str) -> dict[str, str]:
@@ -238,7 +234,7 @@ def verify_portal_request(db: Any, *, property_code: str, token: str) -> tuple[d
         return None
     if (claims.get("action") != "portal_opened" or claims.get("test_mode") is not False
             or str(claims.get("property_code")) != code
-            or claims.get("source") not in ACCESS_SOURCES):
+            or claims.get("source") not in (None, *ACCESS_SOURCES)):
         return None
     campaign_id = _clean(claims.get("campaign_id"))
     recipient = _valid_email(claims.get("recipient"))
@@ -253,7 +249,7 @@ def verify_portal_request(db: Any, *, property_code: str, token: str) -> tuple[d
     status = _clean(row.get("send_status")).upper()
     if status not in PUBLIC_ACCESS_STATUSES or status in EXCLUDED_STATUSES:
         return None
-    access = ((row.get("portal_access") or {}).get(_access_key(str(claims.get("source")))) or {})
+    access = row.get("portal_access") or {}
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     expiry = access.get("expires_at")
     if (access.get("status") != "ACTIVE" or not isinstance(expiry, datetime)
@@ -264,13 +260,18 @@ def verify_portal_request(db: Any, *, property_code: str, token: str) -> tuple[d
     return row, claims
 
 
-def build_private_page_view(db: Any, row: Mapping[str, Any], claims: Mapping[str, Any], *, base_url: str) -> dict[str, Any]:
+def build_private_page_view(
+    db: Any, row: Mapping[str, Any], claims: Mapping[str, Any], *,
+    base_url: str, source: str | None = None,
+) -> dict[str, Any]:
     from campanas.owner_campaign_live_events import issue_live_token
 
     code = _safe_code(row.get("property_code"))
     campaign_id = _clean(row.get("campaign_id"))
     recipient = _valid_email(row.get("owner_email"))
-    source = str(claims.get("source"))
+    source = source or str(claims.get("source") or "EMAIL")
+    if source not in ACCESS_SOURCES:
+        raise ValueError("invalid_portal_source")
     expiry = int(claims["exp"])
     identity = _master_identity(db, code)
     operation = _clean(row.get("operation_resolved") or row.get("operation")).upper()

@@ -32,7 +32,7 @@ from config import Config
 logger = logging.getLogger(__name__)
 TEMPLATE_VERSION = "OWNER_CAMPAIGN_EMAIL_V2"
 TEMPLATE_FILE = "owner_campaign_email_v2.html"
-OWNER_CAMPAIGN_VISUAL_BASELINE_SHA256 = "0a7c2d422ac5fbab8cbca794d144ae20151ed25a6cb0f4f386f9488ceace9eea"
+OWNER_CAMPAIGN_VISUAL_BASELINE_SHA256 = "9a4109513a9cce332f319d859307e272452e427bcb36461bb7cb6560016f5ff0"
 SINGLE_PROPERTY_HERO_TITLE = "Revisión comercial de tu propiedad"
 SINGLE_PROPERTY_SALE_HERO_DESCRIPTION = (
     "Analizamos las condiciones actuales del mercado, la respuesta comercial de tu propiedad y las alternativas disponibles para los compradores. "
@@ -1419,9 +1419,7 @@ def _portfolio_summary(property_model: Mapping[str, Any]) -> dict[str, Any]:
 
 def render_owner_campaign_email_v2(
     properties: list[Mapping[str, Any]], *, email: str, executives: list[Mapping[str, Any]],
-    base_url: str | None = None, portal_landing: bool = False,
-    portal_stale_notice: bool = False,
-    report_date_override: str | None = None,
+    base_url: str | None = None, report_date_override: str | None = None,
 ) -> str:
     """Render V2 for one or several properties without changing sender state."""
     environment = Environment(
@@ -1448,16 +1446,13 @@ def render_owner_campaign_email_v2(
         model["activity_90d"] = dict(activity)
         valuation_slots = _valuation_slots(model)
         model["valuation_slots"] = valuation_slots
-        if portal_landing and model.get("historical_snapshot_partial"):
-            model["single_valuation_slots"] = []
-        else:
-            model["single_valuation_slots"] = [
-                {**slot, "icon": icon}
-                for slot, icon in zip(
-                    _single_property_valuation_slots(model) if single_property_only else valuation_slots,
-                    ("price", "market", "position", "new-value"),
-                )
-            ]
+        model["single_valuation_slots"] = [
+            {**slot, "icon": icon}
+            for slot, icon in zip(
+                _single_property_valuation_slots(model) if single_property_only else valuation_slots,
+                ("price", "market", "position", "new-value"),
+            )
+        ]
         model["portfolio_summary"] = _portfolio_summary(model)
         property_models.append(model)
     executive_models = []
@@ -1525,8 +1520,6 @@ def render_owner_campaign_email_v2(
         hero_description=hero_description,
         context_note=context_note,
         footer_disclaimer=footer_disclaimer,
-        portal_landing=portal_landing,
-        portal_stale_notice=portal_stale_notice,
     )
     from analytics.owner_campaign_email_compat import make_email_safe_html
 

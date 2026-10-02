@@ -210,7 +210,6 @@ def test_none_document_hides_report_and_stale_status_hides_authorization(monkeyp
     stale_url = registered_link(monkeypatch, stale_db)
     stale_response = client_for(monkeypatch, stale_db).get(stale_url.replace("https://www.procasa.cl", ""))
     assert stale_response.status_code == 200
-    assert "Estamos actualizando la recomendación comercial" in stale_response.text
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
     assert "REVISAR CON MI EJECUTIVO" in stale_response.text
     assert "3.119 UF" not in stale_response.text
@@ -263,12 +262,12 @@ def test_portal_uses_the_same_v2_render_for_the_same_frozen_model():
     )
     portal_html = render_owner_campaign_email_v2(
         [frozen_model], email="owner@example.com", executives=[{"name": "Ejecutivo", "email": "exec@example.com", "phone": ""}],
-        base_url="https://www.procasa.cl", portal_landing=True,
+        base_url="https://www.procasa.cl",
     )
     assert portal_html == email_html
 
 
-def test_missing_historical_render_data_is_omitted_instead_of_reconstructed():
+def test_missing_historical_data_keeps_shared_template_without_inventing_signals():
     row = ledger_row(campaign_snapshot={
         "operation_resolved": "VENTA",
         "current_price": "3700.0",
@@ -292,13 +291,15 @@ def test_missing_historical_render_data_is_omitted_instead_of_reconstructed():
     )
     assert "3.700 UF" in html
     assert "3.478 UF" in html
+    assert "Revisión comercial de tu propiedad" in html
+    assert "Diagnóstico PROCASA" in html
+    assert "Recomendación PROCASA" in html
     assert "Snapshot de campaña" not in html
     assert "Sin métricas históricas" not in html
     assert "Revisión de campaña" not in html
     assert "Tu propiedad frente a inmuebles comparables" not in html
-    assert "Diagnóstico PROCASA" not in html
-    assert "MERCADO COMPARABLE" not in html
-    assert "ACTIVIDAD COMERCIAL" not in html
+    assert "MERCADO COMPARABLE" in html
+    assert "0 leads registrados" not in html
     assert "VER INFORME" not in html
 
 
@@ -432,7 +433,6 @@ def test_short_landing_none_and_stale_status_rules(monkeypatch):
     stale_url = registered_short_link(monkeypatch, stale_db)
     stale_response = client_for(monkeypatch, stale_db).get(stale_url.replace("https://www.procasa.cl", ""))
     assert stale_response.status_code == 200
-    assert "Estamos actualizando la recomendación comercial" in stale_response.text
     assert "3.119 UF" not in stale_response.text
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
     assert "REVISAR CON MI EJECUTIVO" in stale_response.text

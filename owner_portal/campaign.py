@@ -447,11 +447,6 @@ def build_email_visual_landing_html(
     saved_comparable = saved_model.get("comparable") if isinstance(saved_model.get("comparable"), Mapping) else {}
     saved_market_reference = saved_model.get("market_reference") if isinstance(saved_model.get("market_reference"), Mapping) else {}
     saved_appraisal = saved_model.get("appraisal") if isinstance(saved_model.get("appraisal"), Mapping) else {}
-    historical_model_keys = {
-        "property_type", "commune", "single_diagnostic_text", "single_recommendation_text",
-        "activity_90d", "comparable", "market_reference", "appraisal", "feature_cards",
-    }
-    historical_snapshot_partial = not historical_model_keys.issubset(saved_model.keys())
     leads = snapshot.get("leads_90d") if snapshot.get("leads_90d") is not None else row.get("leads_90d")
     activity = saved_model.get("activity_90d") if isinstance(saved_model.get("activity_90d"), Mapping) else {}
     if not activity and leads is not None:
@@ -490,13 +485,12 @@ def build_email_visual_landing_html(
         "single_diagnostic_text": str(saved_model.get("single_diagnostic_text") or snapshot.get("single_diagnostic_text") or ""),
         "single_document_copy": str(saved_model.get("single_document_copy") or snapshot.get("single_document_copy") or ""),
         "single_recommendation_text": recommendation_reason,
-        "recommendation_title": "Ajuste de precio sugerido" if can_authorize else "Revisión con tu ejecutivo",
+        "recommendation_title": "Ajuste de precio sugerido" if can_authorize else "Recomendación en revisión",
         "recommendation_text": recommendation_reason,
         "document": {**dict(saved_model.get("document") or {}), "visible": report_visible, "type": document_type},
         "appraisal": dict(saved_appraisal),
         "market_reference": dict(saved_market_reference),
         "activity_90d": dict(activity or {"state": "UNKNOWN"}),
-        "historical_snapshot_partial": historical_snapshot_partial,
         "portfolio_summary": dict(saved_model.get("portfolio_summary") or {}),
         "cta": {"primary_url": str(view.get("primary_url") or ""), "advisor_url": str(view.get("advisor_url") or ""), "report_url": str(view.get("report_url") or "") if report_visible else ""},
     })
@@ -513,12 +507,9 @@ def build_email_visual_landing_html(
         model["current_price_clp_label"] = _clp_price_label(current_clp, operation)
     if recommended_clp is not None and can_authorize:
         model["recommended_price_clp_label"] = _clp_price_label(recommended_clp, operation)
-    if not model.get("single_valuation_slots") and not model.get("historical_snapshot_partial"):
+    if not model.get("single_valuation_slots"):
         from analytics.owner_campaign_email_v2 import _single_property_valuation_slots
         model["single_valuation_slots"] = _single_property_valuation_slots(model)
-    elif model.get("historical_snapshot_partial"):
-        # Do not fill missing historical KPI cards with current data or generic copy.
-        model["single_valuation_slots"] = []
     executive = {
         "name": _clean(snapshot.get("executive_name") or row.get("executive_name") or row.get("executive")) or "Tu ejecutivo PROCASA",
         "email": _clean(snapshot.get("executive_email") or row.get("executive_email")),
@@ -526,8 +517,7 @@ def build_email_visual_landing_html(
     }
     return render_owner_campaign_email_v2(
         [model], email=_clean(row.get("owner_email")), executives=[executive],
-        base_url=base_url, portal_landing=True,
-        portal_stale_notice=stale,
+        base_url=base_url,
         report_date_override=_campaign_report_date(view.get("sent_at")),
     )
 

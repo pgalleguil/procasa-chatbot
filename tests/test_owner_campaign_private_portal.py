@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlsplit
@@ -10,6 +11,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from owner_portal import campaign
+from owner_portal.email_artifacts import (
+    EMAIL_ARTIFACT_COLLECTION,
+    masked_html_parity,
+    transform_sent_email_to_portal_html,
+)
 from owner_portal.router import router
 
 
@@ -100,6 +106,42 @@ def registered_short_link(monkeypatch, db, *, source="EMAIL", campaign_id=CAMPAI
     )
     assert result["counts"]["eligible"] == 1
     return result["records"][0]["private_url"]
+
+
+def insert_email_artifact(db, row, html=None):
+    html = html or (
+        '<!doctype html><html><head><style>.hero{color:#17175f}</style></head><body>'
+        '<table class="email-layout"><tr><td>Departamento · Santiago</td></tr>'
+        '<tr><td>3.428 UF · 3.119 UF · 9%</td></tr>'
+        f'<tr><td><a class="report" href="https://old.example/campana/informe?token=old-report">VER INFORME</a></td></tr>'
+        f'<tr><td><a class="primary" href="https://old.example/campana/respuesta?campana={row["campaign_id"]}&amp;codigos={row["property_code"]}&amp;accion=aceptar_rebaja&amp;token=old-primary">REVISAR / CONFIRMAR AJUSTE</a></td></tr>'
+        f'<tr><td><a class="advisor" href="https://old.example/campana/respuesta?campana={row["campaign_id"]}&amp;codigos={row["property_code"]}&amp;accion=contactar_ejecutivo&amp;token=old-advisor">REVISAR CON MI EJECUTIVO</a></td></tr>'
+        '</body></html>'
+    )
+    row["send_attempts"] = [{"attempt_id": "attempt-test", "message_id": "<sent-message@example.test>", "smtp_status": str(row.get("send_status") or "SENT")}]
+    db[campaign.LEDGER_COLLECTION].update_one(
+        {"_id": row["_id"]}, {"$set": {"send_attempts": row["send_attempts"]}},
+    )
+    encoded = html.encode("utf-8")
+    db[EMAIL_ARTIFACT_COLLECTION].insert_one({
+        "_id": f'{row["campaign_id"]}:{row["property_code"]}',
+        "campaign_id": row["campaign_id"],
+        "property_code": row["property_code"],
+        "owner_email": row["owner_email"],
+        "message_id": "<sent-message@example.test>",
+        "send_attempt_id": "attempt-test",
+        "gmail_message_id": "gmail-id-test",
+        "sent_at": datetime(2026, 10, 1, tzinfo=timezone.utc),
+        "html_gzip": gzip.compress(encoded),
+        "html_encoding": "utf-8",
+        "html_compression": "gzip",
+        "original_html_sha256": hashlib.sha256(encoded).hexdigest(),
+        "original_html_bytes": len(encoded),
+        "compressed_bytes": len(gzip.compress(encoded)),
+        "source": "GMAIL_SENT",
+        "created_at": datetime(2026, 10, 2, tzinfo=timezone.utc),
+    })
+    return html
 
 
 def test_private_portal_requires_registered_signed_token_and_logs_source(monkeypatch):
@@ -352,27 +394,22 @@ def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
     assert urlsplit(email_resolved).path == urlsplit(whatsapp_resolved).path
 
 
-def test_short_landing_reuses_signed_access_and_approved_single_email_renderer(monkeypatch):
+def test_short_landing_serves_exact_sent_email_with_only_campaign_hrefs_rewritten(monkeypatch):
     db = make_test_db()
+    row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    original_html = insert_email_artifact(db, row)
     url = registered_short_link(monkeypatch, db, source="WHATSAPP")
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
 
     assert response.status_code == 200
-    assert "SEGUIMIENTO COMERCIAL · PROCASA" in response.text
+    assert masked_html_parity(original_html, response.text)
+    assert "<style>.hero{color:#17175f}</style>" in response.text
     assert "Departamento · Santiago" in response.text
-    assert "Código 17005" in response.text
-    assert "3.428 UF" in response.text
-    # The email V2 renderer shows the frozen commercial UF price only.
-    assert "$ 140.000.000" not in response.text
-    assert "3.119 UF" in response.text
-    assert "Revisión comercial de tu propiedad" in response.text
-    assert "CONTEXTO DE MERCADO" in response.text
-    assert "Snapshot de campaña" not in response.text
-    assert "Sin métricas históricas en el snapshot" not in response.text
+    assert "Código 17005" not in response.text
+    assert "3.428 UF · 3.119 UF · 9%" in response.text
     assert "REVISAR / CONFIRMAR AJUSTE" in response.text
     assert "REVISAR CON MI EJECUTIVO" in response.text
     assert "/campana/informe?token=" in response.text
-    assert "Leads registrados" not in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
     visible_text = " ".join(visible.parts)
@@ -391,6 +428,10 @@ def test_short_landing_reuses_signed_access_and_approved_single_email_renderer(m
         )
     report_tokens = [parse_qs(link.query)["token"][0] for link in parsed_links if link.path == "/campana/informe"]
     assert report_tokens and campaign.decode_live_token(report_tokens[0])["action"] == "ver_informe"
+    for token in (*action_tokens.values(), *report_tokens):
+        claims = campaign.decode_live_token(token)
+        assert claims["source"] == "WHATSAPP"
+        assert claims["interaction_surface"] == "OWNER_PORTAL"
     assert response.headers["cache-control"] == "private, no-store, max-age=0"
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     assert any(event.get("event") == "portal_opened" and event.get("source") == "WHATSAPP" for event in stored["events"])
@@ -423,6 +464,10 @@ def test_short_landing_rejects_unknown_expired_and_colliding_keys(monkeypatch):
 
 def test_short_landing_none_and_stale_status_rules(monkeypatch):
     none_db = make_test_db(ledger_row(document_type="NONE"))
+    insert_email_artifact(none_db, none_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"}), html=(
+        '<html><body><a href="https://old.example/campana/respuesta?accion=aceptar_rebaja&amp;token=x">REVISAR / CONFIRMAR AJUSTE</a>'
+        '<a href="https://old.example/campana/respuesta?accion=contactar_ejecutivo&amp;token=y">REVISAR CON MI EJECUTIVO</a></body></html>'
+    ))
     none_url = registered_short_link(monkeypatch, none_db)
     none_response = client_for(monkeypatch, none_db).get(none_url.replace("https://www.procasa.cl", ""))
     assert none_response.status_code == 200
@@ -447,21 +492,108 @@ def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
             document_type="COMMUNAL_MARKET_REPORT",
         )
         db = make_test_db(row)
+        source_html = insert_email_artifact(db, db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{wave1}:{CODE}"}))
         url = registered_short_link(monkeypatch, db, campaign_id=wave1)
         response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
         assert response.status_code == 200
+        assert masked_html_parity(source_html, response.text)
         assert "3.428 UF" in response.text
         assert "REVISAR / CONFIRMAR AJUSTE" in response.text
         assert "/campana/informe?token=" in response.text
 
 
+def test_sent_short_portal_fails_closed_for_missing_or_corrupt_artifact(monkeypatch):
+    missing_db = make_test_db()
+    missing_url = registered_short_link(monkeypatch, missing_db)
+    assert client_for(monkeypatch, missing_db).get(missing_url.replace("https://www.procasa.cl", "")).status_code == 503
+
+    corrupt_db = make_test_db()
+    corrupt_row = corrupt_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    insert_email_artifact(corrupt_db, corrupt_row)
+    corrupt_db[EMAIL_ARTIFACT_COLLECTION].update_one(
+        {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"original_html_sha256": "0" * 64}},
+    )
+    corrupt_url = registered_short_link(monkeypatch, corrupt_db)
+    assert client_for(monkeypatch, corrupt_db).get(corrupt_url.replace("https://www.procasa.cl", "")).status_code == 503
+
+
+def test_sent_portal_artifact_identity_and_message_id_are_enforced(monkeypatch):
+    db = make_test_db()
+    row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    insert_email_artifact(db, row)
+    db[EMAIL_ARTIFACT_COLLECTION].update_one(
+        {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"owner_email": "other@example.test"}},
+    )
+    url = registered_short_link(monkeypatch, db)
+    assert client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", "")).status_code == 503
+
+    mid_db = make_test_db()
+    mid_row = mid_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    insert_email_artifact(mid_db, mid_row)
+    mid_db[EMAIL_ARTIFACT_COLLECTION].update_one(
+        {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"message_id": "<different-message@example.test>"}},
+    )
+    mid_url = registered_short_link(monkeypatch, mid_db)
+    assert client_for(monkeypatch, mid_db).get(mid_url.replace("https://www.procasa.cl", "")).status_code == 503
+
+
+def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
+    db = make_test_db()
+    row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    original = insert_email_artifact(db, row)
+    url = registered_short_link(monkeypatch, db, source="EMAIL")
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+    assert response.status_code == 200
+    assert masked_html_parity(original, response.text)
+    parser = VisibleTextParser()
+    parser.feed(response.text)
+    from campanas.owner_campaign_live_events import decode_live_token
+    for link in parser.links:
+        parsed = urlsplit(link)
+        query = parse_qs(parsed.query)
+        token = query.get("token", [""])[0]
+        if token:
+            claims = decode_live_token(token)
+            assert claims["source"] == "EMAIL"
+            assert claims["interaction_surface"] == "OWNER_PORTAL"
+
+
+def test_href_rewriter_preserves_all_non_href_markup_and_supports_email_source():
+    original = ('<table style="x"><a class="x" href="https://old/campana/respuesta?accion=aceptar_rebaja&amp;token=old" title="keep">'
+                'text</a><a href="https://old/campana/respuesta?accion=contactar_ejecutivo&amp;token=old">advisor</a></table>')
+    view = {"primary_url": "/campana/respuesta?accion=aceptar_rebaja&token=new1",
+            "advisor_url": "/campana/respuesta?accion=contactar_ejecutivo&token=new2",
+            "report_url": "", "document_available": False}
+    rewritten, count = transform_sent_email_to_portal_html(original, view, "EMAIL")
+    assert count == 2
+    assert masked_html_parity(original, rewritten)
+    assert "title=" in rewritten and ">text</a>" in rewritten
+
+
+def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(monkeypatch):
+    for i in range(33):
+        code = str(18000 + i)
+        stale = ledger_row(
+            _id=f"{CAMPAIGN}:{code}", property_code=code,
+            send_status="SKIPPED_STALE_OR_MISMATCH", document_type="NONE",
+        )
+        db = make_test_db(stale)
+        url = registered_short_link(monkeypatch, db)
+        response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+        assert response.status_code == 200
+        assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
+        assert "REVISAR CON MI EJECUTIVO" in response.text
+        assert "/campana/informe?token=" not in response.text
+
+
 def test_landing_does_not_invent_missing_clp_snapshot_values(monkeypatch):
     db = make_test_db(ledger_row(current_price_clp=None, recommended_price_clp=None))
+    original = insert_email_artifact(db, db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"}))
     url = registered_short_link(monkeypatch, db)
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
     assert response.status_code == 200
-    assert "3.428 UF" in response.text
-    assert "3.119 UF" in response.text
+    assert masked_html_parity(original, response.text)
+    assert "3.428 UF · 3.119 UF · 9%" in response.text
     assert "$ 140.000.000" not in response.text
 
 

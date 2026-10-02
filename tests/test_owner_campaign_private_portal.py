@@ -157,10 +157,12 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
 
     assert response.status_code == 200
     assert "3.428 UF" in response.text
-    assert "$ 140.000.000" in response.text
     assert "3.119 UF" in response.text
     assert "Resumen congelado de la campaña." not in response.text
     assert "Revisión comercial de tu propiedad" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "Informe comercial · Propietarios" in response.text
+    assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
     assert "Snapshot de campaña" not in response.text
     assert "Sin métricas históricas en el snapshot" not in response.text
     assert "portal_opened" not in response.text
@@ -255,7 +257,7 @@ def test_none_document_hides_report_and_stale_status_hides_authorization(monkeyp
     stale_response = client_for(monkeypatch, stale_db).get(stale_url.replace("https://www.procasa.cl", ""))
     assert stale_response.status_code == 200
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
-    assert "REVISAR CON MI EJECUTIVO" in stale_response.text
+    assert "HABLAR CON MI EJECUTIVO" in stale_response.text
     assert "3.119 UF" not in stale_response.text
 
 
@@ -396,7 +398,7 @@ def test_email_and_whatsapp_share_one_access_identity(monkeypatch):
     assert urlsplit(email_resolved).path == urlsplit(whatsapp_resolved).path
 
 
-def test_short_landing_serves_exact_sent_email_with_only_campaign_hrefs_rewritten(monkeypatch):
+def test_short_landing_serves_monthly_report_without_mutating_exact_sent_email(monkeypatch):
     db = make_test_db()
     row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     original_html = insert_email_artifact(db, row)
@@ -404,13 +406,14 @@ def test_short_landing_serves_exact_sent_email_with_only_campaign_hrefs_rewritte
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
 
     assert response.status_code == 200
-    assert masked_html_parity(original_html, response.text)
-    assert "<style>.hero{color:#17175f}</style>" in response.text
-    assert "Departamento · Santiago" in response.text
-    assert "Código 17005" not in response.text
-    assert "3.428 UF · 3.119 UF · 9%" in response.text
-    assert "REVISAR / CONFIRMAR AJUSTE" in response.text
-    assert "REVISAR CON MI EJECUTIVO" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "Informe comercial · Propietarios" in response.text
+    assert "<style>.hero{color:#17175f}</style>" not in response.text
+    assert "Departamento en Santiago" in response.text
+    assert "Código 17005" in response.text
+    assert "3.428 UF" in response.text
+    assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
+    assert "HABLAR CON MI EJECUTIVO" in response.text
     assert "/campana/informe?token=" in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
@@ -435,6 +438,8 @@ def test_short_landing_serves_exact_sent_email_with_only_campaign_hrefs_rewritte
         assert claims["source"] == "WHATSAPP"
         assert claims["interaction_surface"] == "OWNER_PORTAL"
     assert response.headers["cache-control"] == "private, no-store, max-age=0"
+    stored_artifact = db[EMAIL_ARTIFACT_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    assert gzip.decompress(stored_artifact["html_gzip"]).decode("utf-8") == original_html
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     assert any(event.get("event") == "portal_opened" and event.get("source") == "WHATSAPP" for event in stored["events"])
 
@@ -483,8 +488,8 @@ def test_short_landing_none_and_stale_status_rules(monkeypatch):
     assert stale_response.status_code == 200
     assert "3.119 UF" not in stale_response.text
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
-    assert "REVISAR CON MI EJECUTIVO" in stale_response.text
-    assert "/campana/informe?token=" in stale_response.text
+    assert "HABLAR CON MI EJECUTIVO" in stale_response.text
+    assert "/campana/informe?token=" not in stale_response.text
 
 
 def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
@@ -499,16 +504,21 @@ def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
         url = registered_short_link(monkeypatch, db, campaign_id=wave1)
         response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
         assert response.status_code == 200
-        assert masked_html_parity(source_html, response.text)
+        assert "Resumen en 30 segundos" in response.text
+        assert "Informe comercial · Propietarios" in response.text
         assert "3.428 UF" in response.text
-        assert "REVISAR / CONFIRMAR AJUSTE" in response.text
+        assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
         assert "/campana/informe?token=" in response.text
+        stored = db[EMAIL_ARTIFACT_COLLECTION].find_one({"_id": f"{wave1}:{CODE}"})
+        assert gzip.decompress(stored["html_gzip"]).decode("utf-8") == source_html
 
 
-def test_sent_short_portal_fails_closed_for_missing_or_corrupt_artifact(monkeypatch):
+def test_sent_short_portal_falls_back_to_verified_campaign_snapshot(monkeypatch):
     missing_db = make_test_db()
     missing_url = registered_short_link(monkeypatch, missing_db)
-    assert client_for(monkeypatch, missing_db).get(missing_url.replace("https://www.procasa.cl", "")).status_code == 503
+    missing_response = client_for(monkeypatch, missing_db).get(missing_url.replace("https://www.procasa.cl", ""))
+    assert missing_response.status_code == 200
+    assert "3.428 UF" in missing_response.text
 
     corrupt_db = make_test_db()
     corrupt_row = corrupt_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
@@ -517,10 +527,12 @@ def test_sent_short_portal_fails_closed_for_missing_or_corrupt_artifact(monkeypa
         {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"original_html_sha256": "0" * 64}},
     )
     corrupt_url = registered_short_link(monkeypatch, corrupt_db)
-    assert client_for(monkeypatch, corrupt_db).get(corrupt_url.replace("https://www.procasa.cl", "")).status_code == 503
+    corrupt_response = client_for(monkeypatch, corrupt_db).get(corrupt_url.replace("https://www.procasa.cl", ""))
+    assert corrupt_response.status_code == 200
+    assert "3.428 UF" in corrupt_response.text
 
 
-def test_sent_portal_artifact_identity_and_message_id_are_enforced(monkeypatch):
+def test_sent_portal_ignores_artifacts_with_identity_or_message_id_mismatch(monkeypatch):
     db = make_test_db()
     row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     insert_email_artifact(db, row)
@@ -528,7 +540,9 @@ def test_sent_portal_artifact_identity_and_message_id_are_enforced(monkeypatch):
         {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"owner_email": "other@example.test"}},
     )
     url = registered_short_link(monkeypatch, db)
-    assert client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", "")).status_code == 503
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+    assert response.status_code == 200
+    assert "Resumen en 30 segundos" in response.text
 
     mid_db = make_test_db()
     mid_row = mid_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
@@ -537,7 +551,9 @@ def test_sent_portal_artifact_identity_and_message_id_are_enforced(monkeypatch):
         {"_id": f"{CAMPAIGN}:{CODE}"}, {"$set": {"message_id": "<different-message@example.test>"}},
     )
     mid_url = registered_short_link(monkeypatch, mid_db)
-    assert client_for(monkeypatch, mid_db).get(mid_url.replace("https://www.procasa.cl", "")).status_code == 503
+    mid_response = client_for(monkeypatch, mid_db).get(mid_url.replace("https://www.procasa.cl", ""))
+    assert mid_response.status_code == 200
+    assert "Resumen en 30 segundos" in mid_response.text
 
 
 def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
@@ -547,7 +563,7 @@ def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
     url = registered_short_link(monkeypatch, db, source="EMAIL")
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
     assert response.status_code == 200
-    assert masked_html_parity(original, response.text)
+    assert "Resumen en 30 segundos" in response.text
     parser = VisibleTextParser()
     parser.feed(response.text)
     from campanas.owner_campaign_live_events import decode_live_token
@@ -562,8 +578,8 @@ def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
             assert claims["interaction_surface"] == "OWNER_PORTAL"
             placements_by_action[claims["action"]].append(claims["cta_placement"])
     assert {action: sorted(values) for action, values in placements_by_action.items()} == {
-        "aceptar_rebaja": ["ORIGINAL", "STICKY", "TOP"],
-        "contactar_ejecutivo": ["ORIGINAL", "STICKY"],
+        "aceptar_rebaja": ["STICKY", "TOP"],
+        "contactar_ejecutivo": ["STICKY", "TOP"],
         "ver_informe": ["ORIGINAL"],
     }
 
@@ -632,13 +648,13 @@ def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(mo
         response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
         assert response.status_code == 200
         assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
-        assert "REVISAR CON MI EJECUTIVO" in response.text
+        assert "HABLAR CON MI EJECUTIVO" in response.text
         assert "/campana/informe?token=" not in response.text
         parser = VisibleTextParser()
         parser.feed(response.text)
-        sticky = next(attrs for tag, attrs in parser.tags if attrs.get("data-owner-portal-ui") == "STICKY_ACTION_BAR")
-        assert sticky.get("aria-label") == "Acciones de tu propiedad"
-        assert "Ajuste en revisión" in " ".join(parser.parts)
+        sticky = next(attrs for tag, attrs in parser.tags if attrs.get("id") == "owner-portal-sticky-actions")
+        assert sticky.get("aria-label") == "Acciones rápidas"
+        assert "el ajuste de precio no está disponible" in " ".join(parser.parts)
         from campanas.owner_campaign_live_events import decode_live_token
         sticky_claims = [
             decode_live_token(parse_qs(urlsplit(link).query)["token"][0])
@@ -654,8 +670,8 @@ def test_landing_does_not_invent_missing_clp_snapshot_values(monkeypatch):
     url = registered_short_link(monkeypatch, db)
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
     assert response.status_code == 200
-    assert masked_html_parity(original, response.text)
-    assert "3.428 UF · 3.119 UF · 9%" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "3.428 UF" in response.text
     assert "$ 140.000.000" not in response.text
 
 

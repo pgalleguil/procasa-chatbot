@@ -381,6 +381,7 @@ def build_private_page_view(
     )
     safe_mode = stale or excluded
     advisor_url = action_url("contactar_ejecutivo", cta_placement="ORIGINAL")
+    top_advisor_url = action_url("contactar_ejecutivo", cta_placement="TOP")
     can_authorize = not safe_mode and not already_authorized and current is not None and recommended is not None
     top_primary_url = action_url("aceptar_rebaja", cta_placement="TOP") if can_authorize else ""
     sticky_primary_url = action_url("aceptar_rebaja", cta_placement="STICKY") if can_authorize else ""
@@ -413,6 +414,7 @@ def build_private_page_view(
         "document_label": report_label,
         "report_url": report_url,
         "advisor_url": advisor_url,
+        "top_advisor_url": top_advisor_url,
         "primary_url": action_url("aceptar_rebaja", cta_placement="ORIGINAL") if can_authorize else "",
         "top_primary_url": top_primary_url,
         "sticky_primary_url": sticky_primary_url,

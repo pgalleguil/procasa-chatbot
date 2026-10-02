@@ -19,7 +19,6 @@ from analytics.pricing_intelligence.time_utils import BUSINESS_TZ
 from .security import require_internal_preview
 from .campaign import (
     ACCESS_SOURCES,
-    build_email_visual_landing_html,
     build_private_page_view,
     resolve_short_portal_request,
     verify_portal_request,
@@ -27,11 +26,9 @@ from .campaign import (
 from .service import get_owner_portal_property_view, select_preview_property_code
 from .email_artifacts import (
     EMAIL_ARTIFACT_COLLECTION,
-    inject_owner_portal_controls,
-    masked_html_parity,
-    transform_sent_email_to_portal_html,
     verify_original_email_artifact,
 )
+from .monthly import build_monthly_portal_view
 
 router = APIRouter(tags=["owner-portal-preview"])
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
@@ -43,6 +40,48 @@ def _render(request: Request, view: dict) -> HTMLResponse:
         request,
         "owner_portal_preview.html",
         {"request": request, "view": view},
+    )
+
+
+def _verified_sent_email_html(db, row: dict, status: str) -> str | None:
+    """Return immutable sent HTML only after ledger/artifact identity checks."""
+    campaign_id = str(row.get("campaign_id") or "")
+    property_code = str(row.get("property_code") or "")
+    artifact = db[EMAIL_ARTIFACT_COLLECTION].find_one({
+        "_id": f"{campaign_id}:{property_code}",
+        "campaign_id": campaign_id,
+        "property_code": property_code,
+    })
+    if not artifact:
+        return None
+    if str(artifact.get("owner_email") or "").strip().casefold() != str(row.get("owner_email") or "").strip().casefold():
+        raise ValueError("historical_email_artifact_identity_mismatch")
+    attempts = row.get("send_attempts") if isinstance(row.get("send_attempts"), list) else []
+    sent_attempt = next((
+        item for item in reversed(attempts)
+        if isinstance(item, dict) and str(item.get("smtp_status") or "").upper() == status
+    ), {})
+    expected_attempt_id = str(sent_attempt.get("attempt_id") or "").strip()
+    if not expected_attempt_id or str(artifact.get("send_attempt_id") or "").strip() != expected_attempt_id:
+        raise ValueError("historical_email_artifact_attempt_mismatch")
+    expected_message_id = str(sent_attempt.get("message_id") or "").strip()
+    if expected_message_id and str(artifact.get("message_id") or "").strip().casefold() != expected_message_id.casefold():
+        raise ValueError("historical_email_artifact_message_id_mismatch")
+    return verify_original_email_artifact(artifact)
+
+
+def _monthly_response(request: Request, db, row: dict, view: dict, *, email_html: str | None = None) -> HTMLResponse:
+    report_view = build_monthly_portal_view(db, row, view, email_html=email_html)
+    return _templates.TemplateResponse(
+        request,
+        "owner_campaign_monthly_portal.html",
+        {"request": request, "view": report_view},
+        headers={
+            "Cache-Control": "private, no-store, max-age=0",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        },
     )
 
 
@@ -82,7 +121,7 @@ async def owner_campaign_private_property(
     token: str = Query(default=""),
     source: str = Query(default="EMAIL"),
 ) -> HTMLResponse:
-    """Serve the campaign's frozen recommendation only for a registered p1 link."""
+    """Serve the private monthly report only for a registered p1 link."""
     if (
         not set(request.query_params.keys()).issubset({"token", "source"})
         or "token" not in request.query_params
@@ -107,18 +146,17 @@ async def owner_campaign_private_property(
         raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
     view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
-    response = _templates.TemplateResponse(
-        request,
-        "owner_campaign_private.html",
-        {"request": request, "view": view},
-        headers={
-            "Cache-Control": "private, no-store, max-age=0",
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-        },
-    )
-    return response
+    status = str(row.get("send_status") or "").strip().upper()
+    email_html = None
+    if status in {"SENT", "DELIVERY_UNKNOWN"}:
+        try:
+            email_html = _verified_sent_email_html(db, row, status)
+        except (ValueError, TypeError):
+            logger.exception("owner_portal_historical_email_unavailable campaign_id=%s property_code=%s", row.get("campaign_id"), row.get("property_code"))
+            email_html = None
+    elif status != "SKIPPED_STALE_OR_MISMATCH":
+        raise HTTPException(status_code=404, detail="Página no disponible")
+    return _monthly_response(request, db, row, view, email_html=email_html)
 
 
 @router.get("/p/{access_key}", response_class=HTMLResponse, include_in_schema=False)
@@ -152,86 +190,20 @@ async def owner_campaign_short_landing(
         raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
     view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
+    # Sent rows retain immutable original HTML as evidence; the owner portal
+    # uses a separate monthly renderer. Stale rows remain advisor-only.
     status = str(row.get("send_status") or "").strip().upper()
+    email_html = None
     if status in {"SENT", "DELIVERY_UNKNOWN"}:
-        campaign_id = str(row.get("campaign_id") or "")
-        property_code = str(row.get("property_code") or "")
         try:
-            artifact = db[EMAIL_ARTIFACT_COLLECTION].find_one({
-                "_id": f"{campaign_id}:{property_code}",
-                "campaign_id": campaign_id,
-                "property_code": property_code,
-            })
-            if not artifact:
-                raise ValueError("historical_email_artifact_missing")
-            if str(artifact.get("owner_email") or "").strip().casefold() != str(row.get("owner_email") or "").strip().casefold():
-                raise ValueError("historical_email_artifact_identity_mismatch")
-            attempts = row.get("send_attempts") if isinstance(row.get("send_attempts"), list) else []
-            sent_attempt = next((
-                item for item in reversed(attempts)
-                if isinstance(item, dict)
-                and str(item.get("smtp_status") or "").upper() == status
-            ), {})
-            expected_attempt_id = str(sent_attempt.get("attempt_id") or "").strip()
-            if not expected_attempt_id or str(artifact.get("send_attempt_id") or "").strip() != expected_attempt_id:
-                raise ValueError("historical_email_artifact_attempt_mismatch")
-            expected_message_id = str(sent_attempt.get("message_id") or "").strip()
-            if expected_message_id and str(artifact.get("message_id") or "").strip().casefold() != expected_message_id.casefold():
-                raise ValueError("historical_email_artifact_message_id_mismatch")
-            original_html = verify_original_email_artifact(artifact)
-            rendered, _replacement_count = transform_sent_email_to_portal_html(original_html, view, source)
-            if not masked_html_parity(original_html, rendered):
-                raise ValueError("historical_email_non_href_diff")
+            email_html = _verified_sent_email_html(db, row, status)
         except (ValueError, TypeError):
             logger.exception(
                 "owner_portal_historical_email_unavailable campaign_id=%s property_code=%s",
-                campaign_id,
-                property_code,
+                row.get("campaign_id"), row.get("property_code"),
             )
-            return HTMLResponse(
-                "Página temporalmente no disponible",
-                status_code=503,
-                headers={
-                    "Cache-Control": "private, no-store, max-age=0",
-                    "Referrer-Policy": "no-referrer",
-                    "X-Content-Type-Options": "nosniff",
-                    "X-Frame-Options": "DENY",
-                },
-            )
-        return HTMLResponse(
-            rendered,
-            headers={
-                "Cache-Control": "private, no-store, max-age=0",
-                "Referrer-Policy": "no-referrer",
-                "X-Content-Type-Options": "nosniff",
-                "X-Frame-Options": "DENY",
-            },
-        )
-
-    # Stale rows never had an email artifact. Keep the safe renderer and its
-    # existing authorization guard for those records only.
+            email_html = None
     if status not in {"SKIPPED_STALE_OR_MISMATCH"}:
-        raise HTTPException(status_code=404, detail="Página no disponible")
-    # The shared email renderer consumes frozen campaign values. The portal does
-    # not replace stale-case report inputs with today's master-property data.
-    landing_row = {
-        **row,
-        "property_type": view.get("property_type"),
-        "commune": view.get("commune"),
-    }
-    rendered = await run_in_threadpool(
-        build_email_visual_landing_html, landing_row, view, base_url=base_url,
-    )
-    # Stale rows have no sent-email artifact. Add only the portal's persistent
-    # advisor affordance; the primary control remains visibly disabled and no
-    # top authorization CTA is introduced.
-    rendered = inject_owner_portal_controls(rendered, view, include_top_cta=False)
-    return HTMLResponse(
-        rendered,
-        headers={
-            "Cache-Control": "private, no-store, max-age=0",
-            "Referrer-Policy": "no-referrer",
-            "X-Content-Type-Options": "nosniff",
-            "X-Frame-Options": "DENY",
-        },
-    )
+        if status not in {"SENT", "DELIVERY_UNKNOWN"}:
+            raise HTTPException(status_code=404, detail="Página no disponible")
+    return _monthly_response(request, db, row, view, email_html=email_html)

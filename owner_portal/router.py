@@ -143,8 +143,8 @@ async def owner_campaign_short_landing(
         raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
     view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
-    # Type and commune were not copied into the old campaign snapshot. Use only
-    # canonical identity labels; all financial and decision data stay snapshot-backed.
+    # The shared email renderer consumes frozen campaign values. The portal does
+    # not replace historical report inputs with today's master-property data.
     landing_row = {
         **row,
         "property_type": view.get("property_type"),

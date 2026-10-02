@@ -1421,6 +1421,7 @@ def render_owner_campaign_email_v2(
     properties: list[Mapping[str, Any]], *, email: str, executives: list[Mapping[str, Any]],
     base_url: str | None = None, portal_landing: bool = False,
     portal_stale_notice: bool = False,
+    report_date_override: str | None = None,
 ) -> str:
     """Render V2 for one or several properties without changing sender state."""
     environment = Environment(
@@ -1447,21 +1448,15 @@ def render_owner_campaign_email_v2(
         model["activity_90d"] = dict(activity)
         valuation_slots = _valuation_slots(model)
         model["valuation_slots"] = valuation_slots
-        model["single_valuation_slots"] = [
-            {**slot, "icon": icon}
-            for slot, icon in zip(
-                _single_property_valuation_slots(model) if single_property_only else valuation_slots,
-                ("price", "market", "position", "new-value"),
-            )
-        ]
-        if portal_landing and single_property_only:
-            pct = model.get("recommended_adjustment_pct")
-            visible_price = model.get("recommended_price_label")
+        if portal_landing and model.get("historical_snapshot_partial"):
+            model["single_valuation_slots"] = []
+        else:
             model["single_valuation_slots"] = [
-                {"label": "PRECIO PUBLICADO", "value": str(model.get("price_label") or "No disponible"), "note": "Valor vigente", "emphasis": False, "icon": "price"},
-                {"label": "AJUSTE RECOMENDADO", "value": f"-{pct}%" if visible_price and pct is not None else "En revisión", "note": "Snapshot de campaña", "emphasis": False, "icon": "market"},
-                {"label": "CONTEXTO COMERCIAL", "value": "Revisión de campaña", "note": "Sin métricas históricas en el snapshot", "emphasis": False, "icon": "position"},
-                {"label": "NUEVO VALOR", "value": str(visible_price or "En revisión"), "note": "Snapshot de campaña", "emphasis": bool(visible_price), "icon": "new-value"},
+                {**slot, "icon": icon}
+                for slot, icon in zip(
+                    _single_property_valuation_slots(model) if single_property_only else valuation_slots,
+                    ("price", "market", "position", "new-value"),
+                )
             ]
         model["portfolio_summary"] = _portfolio_summary(model)
         property_models.append(model)
@@ -1473,12 +1468,7 @@ def render_owner_campaign_email_v2(
     all_rent = bool(property_models) and all(bool(item.get("is_rental")) for item in property_models)
     single_property_only = len(property_models) == 1
     mixed_operations = bool({bool(item.get("is_rental")) for item in property_models}) and len({bool(item.get("is_rental")) for item in property_models}) > 1
-    if portal_landing:
-        hero_title = "Revisamos el posicionamiento de tu propiedad"
-        hero_description = "Esta recomendación fue preparada con la información comercial disponible al momento de la campaña."
-        context_note = ""
-        footer_disclaimer = "Información comercial preparada para apoyar tu decisión."
-    elif single_property_only:
+    if single_property_only:
         is_single_rental = property_models[0]["operation_raw"] == "ARRIENDO"
         hero_title = SINGLE_PROPERTY_HERO_TITLE
         hero_description = SINGLE_PROPERTY_RENT_HERO_DESCRIPTION if is_single_rental else SINGLE_PROPERTY_SALE_HERO_DESCRIPTION
@@ -1508,7 +1498,7 @@ def render_owner_campaign_email_v2(
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
     )
-    if single_property_only and not portal_landing:
+    if single_property_only:
         macro_context = (
             SINGLE_PROPERTY_RENT_MACRO_CONTEXT
             if property_models[0]["operation_raw"] == "ARRIENDO"
@@ -1521,7 +1511,7 @@ def render_owner_campaign_email_v2(
             "source_line": "",
             "kpis": [],
         }
-    report_date = f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
+    report_date = report_date_override if report_date_override is not None else f"{now_chile.day} de {spanish_months[now_chile.month - 1]} de {now_chile.year}"
     rendered_html = template.render(
         template_version=TEMPLATE_VERSION,
         email=email,

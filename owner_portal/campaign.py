@@ -332,10 +332,10 @@ def build_private_page_view(
     if source not in ACCESS_SOURCES:
         raise ValueError("invalid_portal_source")
     expiry = int(claims["exp"])
-    identity = _master_identity(db, code)
-    operation = _clean(row.get("operation_resolved") or row.get("operation")).upper()
+    snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), Mapping) else {}
+    operation = _clean(snapshot.get("operation_resolved") or snapshot.get("operation") or row.get("operation_resolved") or row.get("operation")).upper()
     status = _clean(row.get("send_status")).upper()
-    document_type = _clean(row.get("document_type")).upper() or "NONE"
+    document_type = _clean(snapshot.get("document_type") or row.get("document_type")).upper() or "NONE"
     stale = status in STALE_STATUSES
     excluded = status in EXCLUDED_STATUSES or _excluded(row)
     already_authorized = _clean(row.get("authorization_status")).upper() == "PRICE_AUTHORIZED"
@@ -344,7 +344,7 @@ def build_private_page_view(
         token = issue_live_token(
             campaign_id=campaign_id, property_code=code, action=action,
             recipient=recipient, document_type=document, expires_at=expiry,
-            source=source,
+            source=source, interaction_surface="OWNER_PORTAL",
         )
         if action == "ver_informe":
             return f"{base_url.rstrip('/')}/campana/informe?{urlencode({'token': token})}"
@@ -355,36 +355,52 @@ def build_private_page_view(
         return f"{base_url.rstrip('/')}/campana/respuesta?{query}"
 
     report_url = action_url("ver_informe", document_type) if document_type in REPORT_TYPES else ""
-    current = row.get("current_price")
-    recommended = row.get("recommended_price")
-    current_clp = row.get("current_price_clp")
-    recommended_clp = row.get("recommended_price_clp")
+    def frozen_value(key: str) -> Any:
+        return snapshot.get(key) if snapshot.get(key) is not None else row.get(key)
+
+    current = frozen_value("current_price")
+    recommended = frozen_value("recommended_price")
+    current_clp = frozen_value("current_price_clp")
+    recommended_clp = frozen_value("recommended_price_clp")
     if not report_url:
         report_label = ""
     else:
         report_label = "VER / DESCARGAR INFORME"
-    recommendation_reason = _clean(row.get("recommendation_reason"))
-    if not recommendation_reason:
-        recommendation_reason = "Esta recomendación se preparó con la actividad comercial y las referencias disponibles al momento de la campaña."
+    saved_model = (
+        snapshot.get("email_render_model") if isinstance(snapshot.get("email_render_model"), Mapping)
+        else snapshot.get("render_model") if isinstance(snapshot.get("render_model"), Mapping)
+        else row.get("email_render_model") if isinstance(row.get("email_render_model"), Mapping)
+        else {}
+    )
+    recommendation_reason = _clean(
+        snapshot.get("single_recommendation_text") or snapshot.get("recommendation_text")
+        or saved_model.get("single_recommendation_text") or saved_model.get("recommendation_text")
+    )
     safe_mode = stale or excluded
     advisor_url = action_url("contactar_ejecutivo")
     can_authorize = not safe_mode and not already_authorized and current is not None and recommended is not None
+    attempts = row.get("send_attempts") if isinstance(row.get("send_attempts"), list) else []
+    dated_attempts = [
+        item for item in attempts if isinstance(item, Mapping)
+        and isinstance(item.get("sent_at") or item.get("attempted_at"), datetime)
+    ]
+    sent_at = (dated_attempts[-1].get("sent_at") or dated_attempts[-1].get("attempted_at")) if dated_attempts else None
     return {
         "logo_url": f"{base_url.rstrip('/')}/static/logo.png",
         "property_code": code,
         "operation": operation.title() if operation else "Operación no disponible",
-        "property_type": _clean(row.get("property_type")) or identity["property_type"],
-        "commune": _clean(row.get("commune")) or identity["commune"],
+        "property_type": _clean(snapshot.get("property_type") or row.get("property_type")),
+        "commune": _clean(snapshot.get("commune") or row.get("commune")),
         "current_price": current,
         "current_price_label": _format_client_price(current, operation),
         "current_price_clp_label": _format_client_price(current_clp, operation, clp=True),
-        "recommended_adjustment_pct": row.get("recommended_adjustment_pct"),
+        "recommended_adjustment_pct": frozen_value("recommended_adjustment_pct"),
         "recommended_price": recommended,
         "recommended_price_label": _format_client_price(recommended, operation),
         "recommended_price_clp_label": _format_client_price(recommended_clp, operation, clp=True),
-        "leads_90d": row.get("leads_90d"),
-        "comparable_mode": _clean(row.get("comparable_mode") or row.get("comparable_status")),
-        "comparable_count": row.get("comparable_count"),
+        "leads_90d": frozen_value("leads_90d"),
+        "comparable_mode": _clean(frozen_value("comparable_mode") or row.get("comparable_status")),
+        "comparable_count": frozen_value("comparable_count"),
         "recommendation_reason": recommendation_reason,
         "executive_name": _clean(row.get("executive_name") or row.get("executive")) or "Tu ejecutivo PROCASA",
         "document_available": document_type in REPORT_TYPES,
@@ -396,6 +412,8 @@ def build_private_page_view(
         "already_authorized": already_authorized,
         "source": source,
         "document_type": document_type,
+        "snapshot": dict(snapshot),
+        "sent_at": sent_at,
     }
 
 
@@ -405,9 +423,10 @@ def build_email_visual_landing_html(
     """Render the approved single-property email template from frozen campaign fields."""
     from analytics.owner_campaign_email_v2 import render_owner_campaign_email_v2, _price_label, _clp_price_label
 
-    operation = _clean(row.get("operation_resolved") or row.get("operation")).upper()
+    snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), Mapping) else {}
+    operation = _clean(snapshot.get("operation_resolved") or snapshot.get("operation") or row.get("operation_resolved") or row.get("operation")).upper()
     is_rental = operation == "ARRIENDO"
-    document_type = _clean(row.get("document_type")).upper() or "NONE"
+    document_type = _clean(snapshot.get("document_type") or row.get("document_type")).upper() or "NONE"
     report_visible = document_type in REPORT_TYPES
     stale = _clean(row.get("send_status")).upper() in STALE_STATUSES
     can_authorize = bool(view.get("primary_url")) and not stale
@@ -416,65 +435,110 @@ def build_email_visual_landing_html(
         display_recommended_price = None
     else:
         display_recommended_price = view.get("recommended_price_label")
-    neutral = "Esta recomendación fue preparada con la información comercial disponible al momento de la campaña."
-    model = {
+    saved_model = (
+        snapshot.get("email_render_model") if isinstance(snapshot.get("email_render_model"), Mapping)
+        else snapshot.get("render_model") if isinstance(snapshot.get("render_model"), Mapping)
+        else row.get("email_render_model") if isinstance(row.get("email_render_model"), Mapping)
+        else {}
+    )
+    recommendation_reason = _clean(view.get("recommendation_reason"))
+    prop_type = _clean(snapshot.get("property_type") or row.get("property_type"))
+    commune = _clean(snapshot.get("commune") or row.get("commune"))
+    saved_comparable = saved_model.get("comparable") if isinstance(saved_model.get("comparable"), Mapping) else {}
+    saved_market_reference = saved_model.get("market_reference") if isinstance(saved_model.get("market_reference"), Mapping) else {}
+    saved_appraisal = saved_model.get("appraisal") if isinstance(saved_model.get("appraisal"), Mapping) else {}
+    historical_model_keys = {
+        "property_type", "commune", "single_diagnostic_text", "single_recommendation_text",
+        "activity_90d", "comparable", "market_reference", "appraisal", "feature_cards",
+    }
+    historical_snapshot_partial = not historical_model_keys.issubset(saved_model.keys())
+    leads = snapshot.get("leads_90d") if snapshot.get("leads_90d") is not None else row.get("leads_90d")
+    activity = saved_model.get("activity_90d") if isinstance(saved_model.get("activity_90d"), Mapping) else {}
+    if not activity and leads is not None:
+        try:
+            lead_count = int(leads)
+            activity = {
+                "state": "KNOWN_POSITIVE" if lead_count > 0 else "KNOWN_ZERO",
+                "total_leads": lead_count,
+                "portals": [],
+                "conversations": None,
+                "visits": None,
+                "partial_snapshot": True,
+            }
+        except (TypeError, ValueError):
+            activity = {"state": "UNKNOWN"}
+    model = dict(saved_model)
+    model.update({
         "code": str(row.get("property_code") or ""),
-        "property_type": _clean(row.get("property_type")) or "Propiedad",
-        "commune": _clean(row.get("commune")) or "Comuna no disponible",
-        "property_heading": f"{_clean(row.get('property_type')) or 'Propiedad'} · {_clean(row.get('commune')) or 'Comuna no disponible'}",
+        "property_type": prop_type,
+        "commune": commune,
+        "property_heading": " · ".join(part for part in (prop_type, commune) if part),
         "operation_label": "Arriendo" if is_rental else "Venta",
         "operation_raw": operation,
         "is_rental": is_rental,
         "price_label": view.get("current_price_label") or "No disponible",
         "current_price_clp_label": view.get("current_price_clp_label") or "No disponible",
-        "portal_current_clp_label": "",
-        "portal_recommended_clp_label": "",
         "recommended_price_label": display_recommended_price,
-        "recommended_adjustment_pct": row.get("recommended_adjustment_pct"),
+        "recommended_adjustment_pct": snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct")),
         "recommended_price_clp_label": view.get("recommended_price_clp_label") or "No disponible",
-        "display_adjustment_label": (f"-{row.get('recommended_adjustment_pct')}%" if can_authorize and row.get("recommended_adjustment_pct") is not None else ""),
-        "feature_cards": [],
-        "image": {"available": False, "url": "", "source": "NONE", "count": 0},
-        "comparable": {"visible": False, "top3": [], "land_top3": [], "land_reference_visible": False},
-        "comparable_summary_text": "",
-        "diagnostic_text": neutral,
-        "single_diagnostic_text": neutral,
-        "single_document_copy": "El informe comercial disponible puede revisarse de forma privada desde esta página." if report_visible else "",
-        "single_recommendation_text": neutral,
+        "display_adjustment_label": (f"-{snapshot.get('recommended_adjustment_pct', row.get('recommended_adjustment_pct'))}%" if can_authorize and snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct")) is not None else ""),
+        "feature_cards": list(saved_model.get("feature_cards") or []),
+        "image": dict(saved_model.get("image") or {"available": False, "url": "", "source": "NONE", "count": 0}),
+        "comparable": dict(saved_comparable),
+        "comparable_summary_text": str(saved_model.get("comparable_summary_text") or ""),
+        "diagnostic_text": str(saved_model.get("diagnostic_text") or ""),
+        "single_diagnostic_text": str(saved_model.get("single_diagnostic_text") or snapshot.get("single_diagnostic_text") or ""),
+        "single_document_copy": str(saved_model.get("single_document_copy") or snapshot.get("single_document_copy") or ""),
+        "single_recommendation_text": recommendation_reason,
         "recommendation_title": "Ajuste de precio sugerido" if can_authorize else "Revisión con tu ejecutivo",
-        "recommendation_text": neutral,
-        "document": {"visible": report_visible, "copy": "", "type": document_type},
-        "appraisal": {"visible": False, "kind": "NONE", "metrics": [], "adjustment_label": ""},
-        "market_reference": {"visible": False},
-        "activity_90d": {"state": "UNKNOWN", "total_leads": None, "portals": [], "conversations": None, "visits": None},
-        "portfolio_summary": {"authorized_price": bool(can_authorize and display_recommended_price), "adjustment_label": f"-{row.get('recommended_adjustment_pct')}%" if row.get("recommended_adjustment_pct") is not None else "", "executive_name": _clean(row.get("executive_name") or row.get("executive")), "report_url": str(view.get("report_url") or ""), "activity_text": "Actividad comercial no incluida en el snapshot", "activity_origins": "", "positioning_text": neutral, "reference_label": "", "reference_value": ""},
+        "recommendation_text": recommendation_reason,
+        "document": {**dict(saved_model.get("document") or {}), "visible": report_visible, "type": document_type},
+        "appraisal": dict(saved_appraisal),
+        "market_reference": dict(saved_market_reference),
+        "activity_90d": dict(activity or {"state": "UNKNOWN"}),
+        "historical_snapshot_partial": historical_snapshot_partial,
+        "portfolio_summary": dict(saved_model.get("portfolio_summary") or {}),
         "cta": {"primary_url": str(view.get("primary_url") or ""), "advisor_url": str(view.get("advisor_url") or ""), "report_url": str(view.get("report_url") or "") if report_visible else ""},
-    }
+    })
     # Prices shown to the client come exclusively from the ledger snapshot.
-    current_raw = row.get("current_price")
-    recommended_raw = row.get("recommended_price")
-    current_clp = row.get("current_price_clp")
-    recommended_clp = row.get("recommended_price_clp")
+    current_raw = snapshot.get("current_price", row.get("current_price"))
+    recommended_raw = snapshot.get("recommended_price", row.get("recommended_price"))
+    current_clp = snapshot.get("current_price_clp", row.get("current_price_clp"))
+    recommended_clp = snapshot.get("recommended_price_clp", row.get("recommended_price_clp"))
     if current_raw is not None:
         model["price_label"] = _price_label(current_raw, operation)
     if recommended_raw is not None and can_authorize:
         model["recommended_price_label"] = _price_label(recommended_raw, operation)
     if current_clp is not None:
         model["current_price_clp_label"] = _clp_price_label(current_clp, operation)
-        model["portal_current_clp_label"] = _clp_price_label(current_clp, operation)
     if recommended_clp is not None and can_authorize:
         model["recommended_price_clp_label"] = _clp_price_label(recommended_clp, operation)
-        model["portal_recommended_clp_label"] = _clp_price_label(recommended_clp, operation)
+    if not model.get("single_valuation_slots") and not model.get("historical_snapshot_partial"):
+        from analytics.owner_campaign_email_v2 import _single_property_valuation_slots
+        model["single_valuation_slots"] = _single_property_valuation_slots(model)
+    elif model.get("historical_snapshot_partial"):
+        # Do not fill missing historical KPI cards with current data or generic copy.
+        model["single_valuation_slots"] = []
     executive = {
-        "name": _clean(row.get("executive_name") or row.get("executive")) or "Tu ejecutivo PROCASA",
-        "email": _clean(row.get("executive_email")),
+        "name": _clean(snapshot.get("executive_name") or row.get("executive_name") or row.get("executive")) or "Tu ejecutivo PROCASA",
+        "email": _clean(snapshot.get("executive_email") or row.get("executive_email")),
         "phone": "",
     }
     return render_owner_campaign_email_v2(
         [model], email=_clean(row.get("owner_email")), executives=[executive],
         base_url=base_url, portal_landing=True,
         portal_stale_notice=stale,
+        report_date_override=_campaign_report_date(view.get("sent_at")),
     )
+
+
+def _campaign_report_date(value: Any) -> str:
+    if not isinstance(value, datetime):
+        return ""
+    from zoneinfo import ZoneInfo
+    months = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    local = _as_utc(value).astimezone(ZoneInfo("America/Santiago"))
+    return f"{local.day} de {months[local.month - 1]} de {local.year}"
 
 
 def _format_client_price(value: Any, operation: str, *, clp: bool = False) -> str:

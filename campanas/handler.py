@@ -21,6 +21,11 @@ from . import private_report
 logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory="campanas/templates")
 
+
+def owner_campaign_authorization_is_stale(row: dict) -> bool:
+    """Fail closed for a stale price recommendation; advisor contact remains available."""
+    return str(row.get("send_status") or "").strip().upper() == "SKIPPED_STALE_OR_MISMATCH"
+
 def _find_contacto_by_email(contactos, email_lower: str):
     contacto = contactos.find_one({"email_propietario_lc": email_lower})
     if contacto:
@@ -271,6 +276,11 @@ def _process_owner_campaign_action(
         row = ledger.find_one({"_id": f"{campana}:{codigo}", "campaign_id": campana, "property_code": codigo})
         if not row or str(row.get("owner_email") or "").casefold() != email_lower:
             return HTMLResponse("Esta acción no está disponible para la propiedad indicada.", status_code=404)
+        if accion == "aceptar_rebaja" and owner_campaign_authorization_is_stale(row):
+            return HTMLResponse(
+                "La recomendación está en revisión. Solicita contacto con tu ejecutivo antes de autorizar un precio.",
+                status_code=409,
+            )
         from campanas import owner_campaign_test_runtime as runtime
         property_doc = db[runtime.PROPERTY_COLLECTION].find_one(
             {"codigo": {"$in": [codigo, int(codigo)] if codigo.isdigit() else [codigo]}},
@@ -313,10 +323,9 @@ def _process_owner_campaign_action(
                 query_args["selected_adjustment_type"] = selected_type
             return (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/") + "/campana/respuesta?" + urlencode(query_args)
 
-        from .owner_campaign_live_events import issue_live_token
-        advisor_token = issue_live_token(
-            campaign_id=campana, property_code=codigo, action="contactar_ejecutivo",
-            recipient=email_lower, expires_at=int(claims["exp"]),
+        from .owner_campaign_live_events import issue_attributed_followup_token
+        advisor_token = issue_attributed_followup_token(
+            claims, action="contactar_ejecutivo",
         )
         advisor_url = action_url("contactar_ejecutivo", advisor_token)
         logo_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/") + "/static/logo.png"

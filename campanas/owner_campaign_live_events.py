@@ -23,6 +23,47 @@ LIVE_ACTIONS = {
     "ver_informe": "report_opened",
 }
 
+INTERACTION_SURFACES = frozenset({"EMAIL_TEMPLATE", "OWNER_PORTAL"})
+INTERACTION_CHANNELS = frozenset({"EMAIL", "WHATSAPP"})
+HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS = frozenset({
+    "owner_price_sucre_wave1_20260928",
+    "owner_price_sucre_wave2_20260930",
+})
+
+
+def derive_interaction_attribution(claims: Mapping[str, Any]) -> dict[str, str]:
+    """Classify an interaction without rewriting historical event records.
+
+    `source` was introduced by the private owner portal. Historical email
+    action tokens for the two completed waves predate it, so those exact
+    campaign identities can be attributed to the email template. Other
+    source-less legacy flows stay UNKNOWN rather than being guessed.
+    """
+    source = str(claims.get("source") or "").strip().upper()
+    surface = str(claims.get("interaction_surface") or "").strip().upper()
+    channel = str(claims.get("interaction_channel") or "").strip().upper()
+
+    if surface == "OWNER_PORTAL":
+        resolved_channel = source if source in INTERACTION_CHANNELS else channel
+        return {
+            "interaction_surface": "OWNER_PORTAL",
+            "interaction_channel": resolved_channel if resolved_channel in INTERACTION_CHANNELS else "UNKNOWN",
+        }
+    if surface == "EMAIL_TEMPLATE":
+        resolved_channel = channel if channel in INTERACTION_CHANNELS else source
+        return {
+            "interaction_surface": "EMAIL_TEMPLATE",
+            "interaction_channel": resolved_channel if resolved_channel in INTERACTION_CHANNELS else "EMAIL",
+        }
+    if source in INTERACTION_CHANNELS:
+        # Backward compatibility: before interaction_surface was explicit,
+        # only the owner portal attached source to action tokens.
+        return {"interaction_surface": "OWNER_PORTAL", "interaction_channel": source}
+    campaign_id = str(claims.get("campaign_id") or "")
+    if campaign_id in HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS:
+        return {"interaction_surface": "EMAIL_TEMPLATE", "interaction_channel": "EMAIL"}
+    return {"interaction_surface": "UNKNOWN", "interaction_channel": "UNKNOWN"}
+
 
 def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
@@ -38,12 +79,14 @@ def _secret() -> str:
     return os.getenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "")
 
 
-def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, event_id: str | None = None) -> str:
+def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, event_id: str | None = None) -> str:
     secret = _secret()
     if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened"}:
         raise ValueError("production_action_token_not_configured")
     if source is not None and source not in {"EMAIL", "WHATSAPP"}:
         raise ValueError("invalid_campaign_token_source")
+    if interaction_surface is not None and interaction_surface not in INTERACTION_SURFACES:
+        raise ValueError("invalid_campaign_interaction_surface")
     payload = {
         "campaign_id": campaign_id,
         "property_code": str(property_code),
@@ -55,11 +98,28 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
     }
     if source is not None:
         payload["source"] = source
+    if interaction_surface is not None:
+        payload["interaction_surface"] = interaction_surface
     if action == "ver_informe":
         if document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
             raise ValueError("invalid_live_document_type")
         payload["document_type"] = document_type
     return _sign_payload(payload, secret)
+
+
+def issue_attributed_followup_token(claims: Mapping[str, Any], *, action: str) -> str:
+    """Issue a follow-up action link without dropping the origin dimensions."""
+    attribution = derive_interaction_attribution(claims)
+    surface = attribution["interaction_surface"]
+    return issue_live_token(
+        campaign_id=str(claims["campaign_id"]),
+        property_code=str(claims["property_code"]),
+        action=action,
+        recipient=str(claims["recipient"]),
+        expires_at=int(claims["exp"]),
+        source=(str(claims["source"]) if claims.get("source") in INTERACTION_CHANNELS else None),
+        interaction_surface=(surface if surface in INTERACTION_SURFACES else None),
+    )
 
 
 def verify_live_token(token: str, *, campaign_id: str, property_code: str, recipient: str, action: str, now: datetime | None = None) -> dict[str, Any] | None:
@@ -118,6 +178,7 @@ def persist_live_event(
     source = claims.get("source")
     if source in {"EMAIL", "WHATSAPP"}:
         payload["source"] = source
+    payload.update(derive_interaction_attribution(claims))
     ledger = db[Config.COLLECTION_CAMPANAS_LOG]
     key = f"{campaign_id}:{code}"
     # An authorization is monotonic. The atomic update is scoped to one

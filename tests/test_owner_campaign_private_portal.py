@@ -115,7 +115,10 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     assert "3.428 UF" in response.text
     assert "$ 140.000.000" in response.text
     assert "3.119 UF" in response.text
-    assert "Resumen congelado de la campaña." in response.text
+    assert "Resumen congelado de la campaña." not in response.text
+    assert "Revisión comercial de tu propiedad" in response.text
+    assert "Snapshot de campaña" not in response.text
+    assert "Sin métricas históricas en el snapshot" not in response.text
     assert "portal_opened" not in response.text
     assert "owner@example.com" not in response.text
     visible = VisibleTextParser()
@@ -126,6 +129,8 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     event = next(item for item in stored["events"] if item["event"] == "portal_opened")
     assert event["source"] == "EMAIL"
+    assert event["interaction_surface"] == "OWNER_PORTAL"
+    assert event["interaction_channel"] == "EMAIL"
     assert "token_hash" in stored["portal_access"]
     assert token not in str(stored["portal_access"])
 
@@ -153,6 +158,7 @@ def test_portal_actions_use_campaign_p1_tokens_for_same_property(monkeypatch):
         )
         assert parsed.path == "/campana/respuesta"
         assert token_claims and token_claims["source"] == "WHATSAPP"
+        assert token_claims["interaction_surface"] == "OWNER_PORTAL"
     report = parse_qs(urlsplit(view["report_url"]).query)["token"][0]
     report_claims = verify_live_token(
         report, campaign_id=CAMPAIGN, property_code=CODE,
@@ -160,6 +166,24 @@ def test_portal_actions_use_campaign_p1_tokens_for_same_property(monkeypatch):
     )
     assert report_claims["document_type"] == "COMMUNAL_MARKET_REPORT"
     assert report_claims["source"] == "WHATSAPP"
+    assert report_claims["interaction_surface"] == "OWNER_PORTAL"
+
+
+def test_portal_email_source_remains_distinct_from_original_email_template(monkeypatch):
+    db = make_test_db()
+    url = registered_link(monkeypatch, db, source="EMAIL")
+    token = parse_qs(urlsplit(url).query)["token"][0]
+    row, claims = campaign.verify_portal_request(db, property_code=CODE, token=token)
+    view = campaign.build_private_page_view(
+        db, row, claims, base_url="https://www.procasa.cl", source="EMAIL",
+    )
+
+    from campanas.owner_campaign_live_events import decode_live_token
+    for url_key in ("primary_url", "advisor_url", "report_url"):
+        action_token = parse_qs(urlsplit(view[url_key]).query)["token"][0]
+        action_claims = decode_live_token(action_token)
+        assert action_claims["source"] == "EMAIL"
+        assert action_claims["interaction_surface"] == "OWNER_PORTAL"
 
 
 def test_no_code_only_invalid_token_or_cross_property_access(monkeypatch):
@@ -198,7 +222,84 @@ def test_authorized_row_does_not_offer_another_authorization(monkeypatch):
     response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
     assert response.status_code == 200
     assert "Ajuste autorizado" in response.text
-    assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
+
+
+def test_portal_uses_the_same_v2_render_for_the_same_frozen_model():
+    from analytics.owner_campaign_email_v2 import render_owner_campaign_email_v2
+
+    frozen_model = {
+        "code": CODE,
+        "property_type": "Departamento",
+        "commune": "Santiago",
+        "property_heading": "Departamento · Santiago",
+        "operation_raw": "VENTA",
+        "operation_label": "Venta",
+        "is_rental": False,
+        "price_label": "3.428 UF",
+        "recommended_price_label": "3.119 UF",
+        "display_adjustment_label": "-9%",
+        "recommendation_title": "Ajuste de precio sugerido",
+        "single_diagnostic_text": "Diagnóstico congelado con sus señales originales.",
+        "single_recommendation_text": "Recomendación congelada sin recalcular datos.",
+        "single_document_copy": "Informe comercial disponible como contexto.",
+        "feature_cards": [],
+        "image": {"available": False, "url": "", "source": "NONE", "count": 0},
+        "comparable": {"visible": False, "top3": [], "land_top3": [], "land_reference_visible": False},
+        "market_reference": {"visible": False},
+        "appraisal": {"visible": False, "kind": "NONE", "metrics": [], "adjustment_label": ""},
+        "document": {"visible": True, "type": "COMMUNAL_MARKET_REPORT", "copy": ""},
+        "activity_90d": {"state": "KNOWN_ZERO", "total_leads": 0, "conversations": 0, "visits": 0, "portals": []},
+        "single_valuation_slots": [
+            {"label": "PRECIO PUBLICADO", "value": "3.428 UF", "note": "Valor vigente", "emphasis": False, "icon": "price"},
+            {"label": "REFERENCIAS", "value": "Análisis comparativo", "note": "Detalle de la muestra más abajo", "emphasis": False, "icon": "market"},
+            {"label": "ACTIVIDAD COMERCIAL", "value": "0 leads registrados", "note": "Últimos 90 días", "emphasis": False, "icon": "position"},
+            {"label": "NUEVO VALOR", "value": "3.119 UF", "note": "-9%", "emphasis": True, "icon": "new-value"},
+        ],
+        "cta": {"primary_url": "https://example.test/primary", "advisor_url": "https://example.test/advisor", "report_url": "https://example.test/report"},
+    }
+    email_html = render_owner_campaign_email_v2(
+        [frozen_model], email="owner@example.com", executives=[{"name": "Ejecutivo", "email": "exec@example.com", "phone": ""}],
+        base_url="https://www.procasa.cl",
+    )
+    portal_html = render_owner_campaign_email_v2(
+        [frozen_model], email="owner@example.com", executives=[{"name": "Ejecutivo", "email": "exec@example.com", "phone": ""}],
+        base_url="https://www.procasa.cl", portal_landing=True,
+    )
+    assert portal_html == email_html
+
+
+def test_missing_historical_render_data_is_omitted_instead_of_reconstructed():
+    row = ledger_row(campaign_snapshot={
+        "operation_resolved": "VENTA",
+        "current_price": "3700.0",
+        "recommended_adjustment_pct": "6",
+        "recommended_price": "3478.0",
+        "document_type": "NONE",
+        "comparable_mode": "COMMUNAL_FALLBACK",
+        "comparable_count": 0,
+    })
+    view = {
+        "primary_url": "https://example.test/primary",
+        "advisor_url": "https://example.test/advisor",
+        "report_url": "",
+        "current_price_label": "3.700 UF",
+        "recommended_price_label": "3.478 UF",
+        "recommendation_reason": "",
+        "sent_at": None,
+    }
+    html = campaign.build_email_visual_landing_html(
+        row, view, base_url="https://www.procasa.cl",
+    )
+    assert "3.700 UF" in html
+    assert "3.478 UF" in html
+    assert "Snapshot de campaña" not in html
+    assert "Sin métricas históricas" not in html
+    assert "Revisión de campaña" not in html
+    assert "Tu propiedad frente a inmuebles comparables" not in html
+    assert "Diagnóstico PROCASA" not in html
+    assert "MERCADO COMPARABLE" not in html
+    assert "ACTIVIDAD COMERCIAL" not in html
+    assert "VER INFORME" not in html
 
 
 def test_private_portal_access_materialization_is_idempotent(monkeypatch):
@@ -260,13 +361,17 @@ def test_short_landing_reuses_signed_access_and_approved_single_email_renderer(m
     assert "Departamento · Santiago" in response.text
     assert "Código 17005" in response.text
     assert "3.428 UF" in response.text
-    assert "$ 140.000.000" in response.text
+    # The email V2 renderer shows the frozen commercial UF price only.
+    assert "$ 140.000.000" not in response.text
     assert "3.119 UF" in response.text
-    assert "disponible al momento de la campaña" in response.text
+    assert "Revisión comercial de tu propiedad" in response.text
+    assert "CONTEXTO DE MERCADO" in response.text
+    assert "Snapshot de campaña" not in response.text
+    assert "Sin métricas históricas en el snapshot" not in response.text
     assert "REVISAR / CONFIRMAR AJUSTE" in response.text
     assert "REVISAR CON MI EJECUTIVO" in response.text
     assert "/campana/informe?token=" in response.text
-    assert "90 días" not in response.text
+    assert "Leads registrados" not in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
     visible_text = " ".join(visible.parts)

@@ -25,6 +25,7 @@ LIVE_ACTIONS = {
 
 INTERACTION_SURFACES = frozenset({"EMAIL_TEMPLATE", "OWNER_PORTAL"})
 INTERACTION_CHANNELS = frozenset({"EMAIL", "WHATSAPP"})
+CTA_PLACEMENTS = frozenset({"TOP", "STICKY", "ORIGINAL"})
 HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS = frozenset({
     "owner_price_sucre_wave1_20260928",
     "owner_price_sucre_wave2_20260930",
@@ -79,7 +80,7 @@ def _secret() -> str:
     return os.getenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "")
 
 
-def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, event_id: str | None = None) -> str:
+def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, cta_placement: str | None = None, event_id: str | None = None) -> str:
     secret = _secret()
     if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened"}:
         raise ValueError("production_action_token_not_configured")
@@ -87,6 +88,8 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
         raise ValueError("invalid_campaign_token_source")
     if interaction_surface is not None and interaction_surface not in INTERACTION_SURFACES:
         raise ValueError("invalid_campaign_interaction_surface")
+    if cta_placement is not None and cta_placement not in CTA_PLACEMENTS:
+        raise ValueError("invalid_campaign_cta_placement")
     payload = {
         "campaign_id": campaign_id,
         "property_code": str(property_code),
@@ -100,6 +103,8 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
         payload["source"] = source
     if interaction_surface is not None:
         payload["interaction_surface"] = interaction_surface
+    if cta_placement is not None:
+        payload["cta_placement"] = cta_placement
     if action == "ver_informe":
         if document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
             raise ValueError("invalid_live_document_type")
@@ -119,6 +124,7 @@ def issue_attributed_followup_token(claims: Mapping[str, Any], *, action: str) -
         expires_at=int(claims["exp"]),
         source=(str(claims["source"]) if claims.get("source") in INTERACTION_CHANNELS else None),
         interaction_surface=(surface if surface in INTERACTION_SURFACES else None),
+        cta_placement=(str(claims["cta_placement"]) if claims.get("cta_placement") in CTA_PLACEMENTS else None),
     )
 
 
@@ -178,6 +184,9 @@ def persist_live_event(
     source = claims.get("source")
     if source in {"EMAIL", "WHATSAPP"}:
         payload["source"] = source
+    cta_placement = claims.get("cta_placement")
+    if cta_placement in CTA_PLACEMENTS:
+        payload["cta_placement"] = cta_placement
     payload.update(derive_interaction_attribution(claims))
     ledger = db[Config.COLLECTION_CAMPANAS_LOG]
     key = f"{campaign_id}:{code}"

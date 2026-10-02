@@ -340,11 +340,14 @@ def build_private_page_view(
     excluded = status in EXCLUDED_STATUSES or _excluded(row)
     already_authorized = _clean(row.get("authorization_status")).upper() == "PRICE_AUTHORIZED"
 
-    def action_url(action: str, document: str | None = None) -> str:
+    def action_url(
+        action: str, document: str | None = None, *, cta_placement: str = "ORIGINAL",
+    ) -> str:
         token = issue_live_token(
             campaign_id=campaign_id, property_code=code, action=action,
             recipient=recipient, document_type=document, expires_at=expiry,
             source=source, interaction_surface="OWNER_PORTAL",
+            cta_placement=cta_placement,
         )
         if action == "ver_informe":
             return f"{base_url.rstrip('/')}/campana/informe?{urlencode({'token': token})}"
@@ -354,7 +357,7 @@ def build_private_page_view(
         })
         return f"{base_url.rstrip('/')}/campana/respuesta?{query}"
 
-    report_url = action_url("ver_informe", document_type) if document_type in REPORT_TYPES else ""
+    report_url = action_url("ver_informe", document_type, cta_placement="ORIGINAL") if document_type in REPORT_TYPES else ""
     def frozen_value(key: str) -> Any:
         return snapshot.get(key) if snapshot.get(key) is not None else row.get(key)
 
@@ -377,8 +380,11 @@ def build_private_page_view(
         or saved_model.get("single_recommendation_text") or saved_model.get("recommendation_text")
     )
     safe_mode = stale or excluded
-    advisor_url = action_url("contactar_ejecutivo")
+    advisor_url = action_url("contactar_ejecutivo", cta_placement="ORIGINAL")
     can_authorize = not safe_mode and not already_authorized and current is not None and recommended is not None
+    top_primary_url = action_url("aceptar_rebaja", cta_placement="TOP") if can_authorize else ""
+    sticky_primary_url = action_url("aceptar_rebaja", cta_placement="STICKY") if can_authorize else ""
+    sticky_advisor_url = action_url("contactar_ejecutivo", cta_placement="STICKY")
     attempts = row.get("send_attempts") if isinstance(row.get("send_attempts"), list) else []
     dated_attempts = [
         item for item in attempts if isinstance(item, Mapping)
@@ -407,7 +413,10 @@ def build_private_page_view(
         "document_label": report_label,
         "report_url": report_url,
         "advisor_url": advisor_url,
-        "primary_url": action_url("aceptar_rebaja") if can_authorize else "",
+        "primary_url": action_url("aceptar_rebaja", cta_placement="ORIGINAL") if can_authorize else "",
+        "top_primary_url": top_primary_url,
+        "sticky_primary_url": sticky_primary_url,
+        "sticky_advisor_url": sticky_advisor_url,
         "safe_mode": safe_mode,
         "already_authorized": already_authorized,
         "source": source,

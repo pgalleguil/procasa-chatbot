@@ -27,6 +27,7 @@ from .campaign import (
 from .service import get_owner_portal_property_view, select_preview_property_code
 from .email_artifacts import (
     EMAIL_ARTIFACT_COLLECTION,
+    inject_owner_portal_controls,
     masked_html_parity,
     transform_sent_email_to_portal_html,
     verify_original_email_artifact,
@@ -221,6 +222,10 @@ async def owner_campaign_short_landing(
     rendered = await run_in_threadpool(
         build_email_visual_landing_html, landing_row, view, base_url=base_url,
     )
+    # Stale rows have no sent-email artifact. Add only the portal's persistent
+    # advisor affordance; the primary control remains visibly disabled and no
+    # top authorization CTA is introduced.
+    rendered = inject_owner_portal_controls(rendered, view, include_top_cta=False)
     return HTMLResponse(
         rendered,
         headers={

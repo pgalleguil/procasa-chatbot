@@ -29,8 +29,10 @@ class VisibleTextParser(HTMLParser):
         super().__init__()
         self.parts = []
         self.links = []
+        self.tags = []
 
     def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
         if tag == "a":
             href = dict(attrs).get("href")
             if href:
@@ -111,8 +113,8 @@ def registered_short_link(monkeypatch, db, *, source="EMAIL", campaign_id=CAMPAI
 def insert_email_artifact(db, row, html=None):
     html = html or (
         '<!doctype html><html><head><style>.hero{color:#17175f}</style></head><body>'
-        '<table class="email-layout"><tr><td>Departamento · Santiago</td></tr>'
-        '<tr><td>3.428 UF · 3.119 UF · 9%</td></tr>'
+        '<table class="email-layout"><tr><td>Departamento · Santiago</td></tr></table>'
+        '<table class="valuation-strip-single"><tr><td>3.428 UF · 3.119 UF · 9%</td></tr></table>'
         f'<tr><td><a class="report" href="https://old.example/campana/informe?token=old-report">VER INFORME</a></td></tr>'
         f'<tr><td><a class="primary" href="https://old.example/campana/respuesta?campana={row["campaign_id"]}&amp;codigos={row["property_code"]}&amp;accion=aceptar_rebaja&amp;token=old-primary">REVISAR / CONFIRMAR AJUSTE</a></td></tr>'
         f'<tr><td><a class="advisor" href="https://old.example/campana/respuesta?campana={row["campaign_id"]}&amp;codigos={row["property_code"]}&amp;accion=contactar_ejecutivo&amp;token=old-advisor">REVISAR CON MI EJECUTIVO</a></td></tr>'
@@ -465,7 +467,8 @@ def test_short_landing_rejects_unknown_expired_and_colliding_keys(monkeypatch):
 def test_short_landing_none_and_stale_status_rules(monkeypatch):
     none_db = make_test_db(ledger_row(document_type="NONE"))
     insert_email_artifact(none_db, none_db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"}), html=(
-        '<html><body><a href="https://old.example/campana/respuesta?accion=aceptar_rebaja&amp;token=x">REVISAR / CONFIRMAR AJUSTE</a>'
+        '<html><head></head><body><table class="valuation-strip-single"><tr><td>3.428 UF</td></tr></table>'
+        '<a href="https://old.example/campana/respuesta?accion=aceptar_rebaja&amp;token=x">REVISAR / CONFIRMAR AJUSTE</a>'
         '<a href="https://old.example/campana/respuesta?accion=contactar_ejecutivo&amp;token=y">REVISAR CON MI EJECUTIVO</a></body></html>'
     ))
     none_url = registered_short_link(monkeypatch, none_db)
@@ -548,6 +551,7 @@ def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
     parser = VisibleTextParser()
     parser.feed(response.text)
     from campanas.owner_campaign_live_events import decode_live_token
+    placements_by_action = {"aceptar_rebaja": [], "contactar_ejecutivo": [], "ver_informe": []}
     for link in parser.links:
         parsed = urlsplit(link)
         query = parse_qs(parsed.query)
@@ -556,18 +560,64 @@ def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
             claims = decode_live_token(token)
             assert claims["source"] == "EMAIL"
             assert claims["interaction_surface"] == "OWNER_PORTAL"
+            placements_by_action[claims["action"]].append(claims["cta_placement"])
+    assert {action: sorted(values) for action, values in placements_by_action.items()} == {
+        "aceptar_rebaja": ["ORIGINAL", "STICKY", "TOP"],
+        "contactar_ejecutivo": ["ORIGINAL", "STICKY"],
+        "ver_informe": ["ORIGINAL"],
+    }
+
+
+def test_portal_cta_placements_keep_whatsapp_source_and_event_attribution(monkeypatch):
+    from campanas.owner_campaign_live_events import decode_live_token, persist_live_event
+
+    for source in ("EMAIL", "WHATSAPP"):
+        db = make_test_db()
+        row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+        insert_email_artifact(db, row)
+        url = registered_short_link(monkeypatch, db, source=source)
+        response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+        assert response.status_code == 200
+        parser = VisibleTextParser()
+        parser.feed(response.text)
+        claims_by_placement = {}
+        for link in parser.links:
+            token = parse_qs(urlsplit(link).query).get("token", [""])[0]
+            claims = decode_live_token(token) if token else None
+            assert claims and claims["source"] == source
+            assert claims["interaction_surface"] == "OWNER_PORTAL"
+            claims_by_placement.setdefault(claims.get("cta_placement"), []).append(claims)
+        assert {"ORIGINAL", "TOP", "STICKY"}.issubset(claims_by_placement)
+        assert {claims["action"] for claims in claims_by_placement["STICKY"]} == {
+            "aceptar_rebaja", "contactar_ejecutivo",
+        }
+        top = next(claims for claims in claims_by_placement["TOP"] if claims["action"] == "aceptar_rebaja")
+        assert top["action"] == "aceptar_rebaja"
+        event_claims = {**top, "cta_placement": "TOP"}
+        persist_live_event(db, event_claims, event="cta_clicked", action="aceptar_rebaja")
+        stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+        event = next(item for item in stored["events"] if item["event"] == "cta_clicked")
+        assert event["cta_placement"] == "TOP"
+        assert event["source"] == source
 
 
 def test_href_rewriter_preserves_all_non_href_markup_and_supports_email_source():
-    original = ('<table style="x"><a class="x" href="https://old/campana/respuesta?accion=aceptar_rebaja&amp;token=old" title="keep">'
-                'text</a><a href="https://old/campana/respuesta?accion=contactar_ejecutivo&amp;token=old">advisor</a></table>')
+    original = ('<html><head></head><body><table style="x" class="valuation-strip-single"><tr><td>value</td></tr></table>'
+                '<a class="x" href="https://old/campana/respuesta?accion=aceptar_rebaja&amp;token=old" title="keep">'
+                'text</a><a href="https://old/campana/respuesta?accion=contactar_ejecutivo&amp;token=old">advisor</a></body></html>')
     view = {"primary_url": "/campana/respuesta?accion=aceptar_rebaja&token=new1",
             "advisor_url": "/campana/respuesta?accion=contactar_ejecutivo&token=new2",
+            "top_primary_url": "/campana/respuesta?accion=aceptar_rebaja&token=top",
+            "sticky_primary_url": "/campana/respuesta?accion=aceptar_rebaja&token=sticky",
+            "sticky_advisor_url": "/campana/respuesta?accion=contactar_ejecutivo&token=advisor-sticky",
             "report_url": "", "document_available": False}
     rewritten, count = transform_sent_email_to_portal_html(original, view, "EMAIL")
     assert count == 2
     assert masked_html_parity(original, rewritten)
     assert "title=" in rewritten and ">text</a>" in rewritten
+    assert rewritten.index("valuation-strip-single") < rewritten.index("OWNER_PORTAL_UI:CTA_TOP:START") < rewritten.index("</body>")
+    assert rewritten.count('data-owner-portal-ui="CTA_TOP"') == 1
+    assert rewritten.count('data-owner-portal-ui="STICKY_ACTION_BAR"') == 1
 
 
 def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(monkeypatch):
@@ -584,6 +634,18 @@ def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(mo
         assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
         assert "REVISAR CON MI EJECUTIVO" in response.text
         assert "/campana/informe?token=" not in response.text
+        parser = VisibleTextParser()
+        parser.feed(response.text)
+        sticky = next(attrs for tag, attrs in parser.tags if attrs.get("data-owner-portal-ui") == "STICKY_ACTION_BAR")
+        assert sticky.get("aria-label") == "Acciones de tu propiedad"
+        assert "Ajuste en revisión" in " ".join(parser.parts)
+        from campanas.owner_campaign_live_events import decode_live_token
+        sticky_claims = [
+            decode_live_token(parse_qs(urlsplit(link).query)["token"][0])
+            for link in parser.links if "token=" in link
+        ]
+        assert any(item and item["action"] == "contactar_ejecutivo" and item["cta_placement"] == "STICKY" for item in sticky_claims)
+        assert not any(item and item["action"] == "aceptar_rebaja" for item in sticky_claims)
 
 
 def test_landing_does_not_invent_missing_clp_snapshot_values(monkeypatch):

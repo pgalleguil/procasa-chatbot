@@ -14,6 +14,8 @@ from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Mapping
 
+from .property_media import verified_historical_media, verified_media_for_property
+
 
 OWNER_PROPERTY_PORTAL_COLLECTION = "owner_property_portals"
 MONTHLY_SNAPSHOT_SCHEMA_VERSION = 1
@@ -358,6 +360,9 @@ def build_monthly_portal_view(
             "owner_key": owner_property_portal_id(property_code, owner_email),
         })
     monthly = _select_monthly_snapshot(record, property_code) or {}
+    property_media = verified_media_for_property(property_code, monthly=monthly, row=row)
+    if property_media is None:
+        property_media = verified_historical_media(email_html, property_code)
     evidence = extract_verified_email_evidence(email_html)
     property_state = monthly.get("property") if isinstance(monthly.get("property"), Mapping) else monthly
     raw_context = monthly.get("market_context") if isinstance(monthly.get("market_context"), Mapping) else evidence.get("market_context")
@@ -434,6 +439,10 @@ def build_monthly_portal_view(
     return {
         "logo_url": campaign_view.get("logo_url"),
         "property_code": property_code,
+        "property_image_url": (property_media or {}).get("hero_image_url"),
+        "property_public_page_url": (property_media or {}).get("public_page_url"),
+        "property_public_page_active": bool((property_media or {}).get("public_page_active")),
+        "property_image_source": (property_media or {}).get("image_source"),
         "property_type": _text(_value(property_state, snapshot, "property_type") or row.get("property_type") or campaign_view.get("property_type") or evidence.get("property_type")),
         "commune": _text(_value(property_state, snapshot, "commune") or row.get("commune") or campaign_view.get("commune") or evidence.get("commune")),
         "operation": operation,

@@ -198,10 +198,20 @@ def run_prop360_poll_cycle(db=None) -> dict:
         # without any DB lookup. Falls back to the identity dedup below when the
         # checkpoint is missing or the id is unknown.
         if cid is not None and last_id is not None and cid <= last_id:
-            metrics["skipped_stale_id"] += 1
-            if cid > max_confirmed_id:
-                max_confirmed_id = cid
-            continue
+            # A previously checkpointed event can still have unfinished
+            # commercial effects after an interrupted run. Let the ledger
+            # resume those stages; completed events remain stale-id skips.
+            ledger = db["lead_ingest_events"].find_one({
+                "source_system": "prop360", "source_event_id": str(cid),
+            })
+            resumable = bool(ledger and ledger.get("status") in {
+                "processing", "lead_persisted", "commercial_cycle_created", "notification_enqueued",
+            })
+            if not resumable:
+                metrics["skipped_stale_id"] += 1
+                if cid > max_confirmed_id:
+                    max_confirmed_id = cid
+                continue
 
         if _is_internal(norm):
             metrics["skipped_internal"] += 1
@@ -231,7 +241,9 @@ def run_prop360_poll_cycle(db=None) -> dict:
                 norm.get("idContacto"), traceback.format_exc(),
             )
             metrics["errors"] += 1
-            continue
+            # Do not advance the monotonic idContacto watermark past a failed
+            # commercial event. The next hourly poll must retry it.
+            break
 
         m = extractor.metrics
         metrics["leads_created"] = m["leads_created"]
@@ -330,7 +342,6 @@ async def prop360_poll_loop(sleep_seconds: int | None = None) -> None:
             tb = traceback.format_exc()
             await _persist_cycle_status_off_loop("error", {"traceback": tb[-2000:]})
             logger.error("[PROP360_POLL] Loop cycle error:\n%s", tb)
-        await _sleep_until_next_slot(interval)
 
 
 def _in_business_hours(now: datetime | None = None) -> bool:

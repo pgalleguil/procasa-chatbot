@@ -24,7 +24,7 @@ Uso:
 import hashlib
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field, asdict
 
@@ -199,26 +199,38 @@ def _atomic_reserve_event(source_system: str, source_event_id: str, _retry: bool
         })
         return True
     except Exception:
+        # Reclaim only reservations with no persisted lead. Once the lead is
+        # persisted, its ledger row is the recovery record for commercial work.
         if not _retry:
-            stuck = db[IDEMPOTENCY_COLLECTION].find_one({
-                "source_system": source_system,
-                "source_event_id": str(source_event_id),
-                "status": "processing",
-                "lead_id": {"$exists": False},
+            persisted = _find_by_source_event(source_system, str(source_event_id))
+            if persisted:
+                db[IDEMPOTENCY_COLLECTION].update_one(
+                    {"source_system": source_system, "source_event_id": str(source_event_id),
+                     "status": "processing", "lead_id": {"$exists": False}},
+                    {"$set": {"status": "lead_persisted", "lead_id": persisted["_id"]}},
+                )
+                return False
+            reservation = db[IDEMPOTENCY_COLLECTION].find_one({
+                "source_system": source_system, "source_event_id": str(source_event_id),
             })
-            if stuck:
-                logger.warning(f"[INGEST] Entrada trabada detectada, eliminando: {source_system}/{source_event_id}")
-                db[IDEMPOTENCY_COLLECTION].delete_one({"_id": stuck["_id"]})
-                try:
-                    db[IDEMPOTENCY_COLLECTION].insert_one({
-                        "source_system": source_system,
-                        "source_event_id": str(source_event_id),
-                        "reserved_at": datetime.now(CHILE_TZ).isoformat(),
-                        "status": "processing",
-                    })
-                    return True
-                except Exception:
-                    return False
+            if not reservation or reservation.get("status") != "processing":
+                return False
+            reserved_at = reservation.get("reserved_at")
+            try:
+                reserved_at = datetime.fromisoformat(str(reserved_at).replace("Z", "+00:00"))
+                if reserved_at.tzinfo is None:
+                    reserved_at = CHILE_TZ.localize(reserved_at)
+                stale = datetime.now(CHILE_TZ) - reserved_at.astimezone(CHILE_TZ) >= timedelta(minutes=15)
+            except (TypeError, ValueError):
+                stale = True
+            if not stale:
+                return False
+            claimed = db[IDEMPOTENCY_COLLECTION].update_one(
+                {"_id": reservation["_id"], "status": "processing",
+                 "reserved_at": reservation.get("reserved_at"), "lead_id": {"$exists": False}},
+                {"$set": {"reserved_at": datetime.now(CHILE_TZ).isoformat()}},
+            )
+            return bool(claimed.modified_count)
         return False
 
 
@@ -304,6 +316,26 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     contact_date = event.contact_date or now_iso
 
     if not _atomic_reserve_event(event.source_system, event.source_event_id):
+        ledger = db[IDEMPOTENCY_COLLECTION].find_one({
+            "source_system": event.source_system,
+            "source_event_id": str(event.source_event_id),
+        })
+        if (event.source_system == "prop360" and ledger
+                and ledger.get("status") != "completed" and ledger.get("lead_id")):
+            existing = db[COLLECTION_CONVERSATIONS].find_one({"_id": ledger["lead_id"]})
+            if not existing:
+                try:
+                    from bson import ObjectId
+                    existing = db[COLLECTION_CONVERSATIONS].find_one({"_id": ObjectId(str(ledger["lead_id"]))})
+                except Exception:
+                    existing = None
+            if existing:
+                return IngestResult(status="resume", lead_id=str(existing["_id"]),
+                                    identity_match="source_event",
+                                    executive=(existing.get("ejecutivo_asignado") or
+                                               (existing.get("prospecto") or {}).get("ejecutivo")),
+                                    property_found=bool(existing.get("property_found")),
+                                    temperature=str(existing.get("lead_temperature_effective") or "COLD").upper())
         existing_by_source = _find_by_source_event(event.source_system, event.source_event_id)
         if existing_by_source:
             return IngestResult(
@@ -431,7 +463,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         current_exec = target_lead.get("ejecutivo_asignado") or target_lead.get("prospecto", {}).get("ejecutivo")
         unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""}
 
-        if current_exec in unassigned or property_code != target_lead.get("prospecto", {}).get("codigo"):
+        if event.source_system == "prop360" or current_exec in unassigned or property_code != target_lead.get("prospecto", {}).get("codigo"):
             if _is_valid_property_code(property_code) and property_enrich["property_found"]:
                 exec_name, exec_phone, assignment_type = find_responsible_executive(
                     property_code=property_code,
@@ -476,7 +508,14 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         identity = "phone" if phone_normalized else ("email" if email else "none")
         if phone_normalized and email:
             identity = "both" if lead_by_phone and lead_by_email and str(lead_by_phone["_id"]) == str(lead_by_email["_id"]) else identity
-        _finalize_event(event.source_system, event.source_event_id, lead_id, "updated")
+        if event.source_system == "prop360":
+            db[IDEMPOTENCY_COLLECTION].update_one(
+                {"source_system": event.source_system, "source_event_id": str(event.source_event_id)},
+                {"$set": {"status": "lead_persisted", "lead_id": target_lead["_id"],
+                          "action": action, "property_code": property_code}},
+            )
+        else:
+            _finalize_event(event.source_system, event.source_event_id, lead_id, "updated")
         return IngestResult(
             status="updated",
             lead_id=lead_id,
@@ -602,7 +641,14 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         identity = "phone" if phone_normalized else ("email" if email else "none")
         if phone_normalized and email:
             identity = "both"
-        _finalize_event(event.source_system, event.source_event_id, lead_id, "created")
+        if event.source_system == "prop360":
+            db[IDEMPOTENCY_COLLECTION].update_one(
+                {"source_system": event.source_system, "source_event_id": str(event.source_event_id)},
+                {"$set": {"status": "lead_persisted", "lead_id": result.inserted_id,
+                          "action": "created", "property_code": property_code}},
+            )
+        else:
+            _finalize_event(event.source_system, event.source_event_id, lead_id, "created")
         return IngestResult(
             status="created",
             lead_id=lead_id,

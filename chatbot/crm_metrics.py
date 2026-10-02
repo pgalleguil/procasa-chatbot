@@ -272,7 +272,8 @@ def _assignment_cycle_selector(cycle: Mapping[str, Any]) -> dict[str, Any]:
 
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
                             reason, assigned_at=None, assigned_to_display_name=None,
-                            property_code=None) -> dict[str, Any]:
+                            property_code=None, force_new=False,
+                            source_system=None, source_event_id=None) -> dict[str, Any]:
     if not isinstance(lead, Mapping) or lead.get("_id") is None:
         raise ValueError("canonical lead document is required for assignment cycle")
     lead_id = lead["_id"]
@@ -290,10 +291,16 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
             raise ValueError("canonical lead document not found for assignment cycle")
 
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
+    if source_system and source_event_id:
+        prior_event_cycle = db["crm_assignment_cycles"].find_one({
+            "source_system": source_system, "source_event_id": str(source_event_id),
+        })
+        if prior_event_cycle:
+            return prior_event_cycle
     # Resolve canonical ObjectId cycles first, with a bounded legacy string
     # fallback, so a historical row cannot create a second active cycle.
     active = active_assignment_cycle(db, lead["_id"])
-    if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
+    if (not force_new and active and active.get("schema_version") == "crm_assignment_cycle_v1"
             and active.get("cycle_status") == "active"
             and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
         if property_code:
@@ -344,10 +351,22 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "cycle_origin": cycle_origin,
         "property_code": str(property_code).strip() if property_code else None,
     }
+    if source_system and source_event_id:
+        cycle.update({"source_system": source_system, "source_event_id": str(source_event_id)})
     try:
         db["crm_assignment_cycles"].insert_one(cycle)
     except DuplicateKeyError:
         # The partial unique active-cycle index resolves concurrent retries.
+        if source_system and source_event_id:
+            event_winner = db["crm_assignment_cycles"].find_one({
+                "source_system": source_system, "source_event_id": str(source_event_id),
+            })
+            if event_winner:
+                return event_winner
+            # A different event owns the concurrent active-cycle slot. Do not
+            # mislabel/reuse its opportunity; the source event can retry.
+            if force_new:
+                raise
         winner = active_assignment_cycle(db, lead["_id"])
         if winner and str(winner.get("assigned_to_user_id")) == str(assigned_to_user_id):
             return winner

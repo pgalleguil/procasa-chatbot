@@ -17,9 +17,8 @@ Uso (prueba con un solo lead, sin escribir):
     python scraping_convecta/extractor_prop360.py --dry-run --max-leads 1
 
 Deduplicación (antes de insertar en la colección `leads`):
-    - Busca por teléfono normalizado (o email si no hay teléfono).
-    - Omite el lead si ese cliente YA tiene registrada la MISMA propiedad.
-    - El mismo cliente con OTRA propiedad NO se omite (se permite).
+    - Usa source_system + source_event_id como identidad idempotente.
+    - La identidad de persona y la propiedad no colapsan eventos comerciales distintos.
 
 Variables de entorno requeridas:
     PROP360_EMAIL
@@ -291,57 +290,19 @@ class Prop360Extractor:
         return mapping.get(tipo_contacto, "form")
 
     def _is_duplicate(self, prop360_lead: Dict[str, Any]) -> bool:
-        """Verifica si ya existe un lead con el MISMO cliente Y la MISMA propiedad.
+        """Return true only for a source event whose ingest is complete.
 
-        Regla de deduplicación:
-          - Busca por teléfono normalizado; si no hay teléfono, por email.
-          - Se considera duplicado SOLO si ese cliente ya tiene registrada ESA
-            propiedad (en prospecto.codigo o prospecto.propiedades_vistas).
-          - El mismo cliente con OTRA propiedad NO es duplicado: se permite,
-            porque un cliente puede interesarse en varias propiedades.
-
-        El lead entrante debe estar normalizado (pasar por normalize_lead()).
+        Person or property equality is not event identity: a new Prop360
+        idContacto can represent a new commercial opportunity for the same
+        canonical lead and even the same property.
         """
-        db = get_db()
-        phone_raw = str(prop360_lead.get("contFono") or "").strip()
-        email = str(prop360_lead.get("contMail") or "").strip().lower()
-        property_code = str(prop360_lead.get("codigo") or "").strip()
-
-        phone = normalize_phone_strict(phone_raw) if phone_raw else None
-        existing = None
-        match_by = None
-
-        if phone:
-            existing = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
-            match_by = "phone"
-        if not existing and email and "@" in email:
-            existing = db[COLLECTION_CONVERSATIONS].find_one({"prospecto.email": email})
-            match_by = "email"
-
-        if not existing:
+        source_event_id = str(prop360_lead.get("idContacto") or "")
+        if not source_event_id:
             return False
-
-        if not property_code:
-            logger.info(
-                f"[DUP] Mismo cliente ya existe (por {match_by}), sin código de "
-                f"propiedad: idContacto={prop360_lead.get('idContacto')}"
-            )
-            return True
-
-        props = set(existing.get("prospecto", {}).get("propiedades_vistas") or [])
-        current_codigo = str(existing.get("prospecto", {}).get("codigo") or "").strip()
-        if property_code == current_codigo or property_code in props:
-            logger.info(
-                f"[DUP] Cliente+propiedad ya existe (por {match_by}): "
-                f"idContacto={prop360_lead.get('idContacto')} propiedad={property_code}"
-            )
-            return True
-
-        logger.info(
-            f"[OK] Cliente ya existe pero con OTRA propiedad (por {match_by}): "
-            f"idContacto={prop360_lead.get('idContacto')} propiedad={property_code}"
-        )
-        return False
+        ledger = get_db()["lead_ingest_events"].find_one({
+            "source_system": "prop360", "source_event_id": source_event_id,
+        })
+        return bool(ledger and ledger.get("status") in {"completed", "created", "updated"})
 
     def _enqueue_notification(
         self,
@@ -391,21 +352,27 @@ class Prop360Extractor:
         assigned_at = coerce_utc_datetime(
             (fresh_lead.get("lifecycle") or {}).get("assigned_at")
         ) or coerce_utc_datetime(fresh_lead.get("created_at"))
-
-        cycle = create_assignment_cycle(
-            db, lead=fresh_lead, assigned_to_user_id=assigned_to_user_id,
-            assigned_by="prop360_extractor", reason="lead_created",
-            assigned_at=assigned_at, assigned_to_display_name=exec_name,
-        )
-        cycle_id = cycle.get("assignment_cycle_id")
         source_event_id = str(prop360_lead.get("idContacto") or event.source_event_id)
-        db["crm_assignment_cycles"].update_one(
-            {"assignment_cycle_id": cycle_id},
-            {"$set": {
-                "source_event_id": source_event_id,
-                "source_event_verified": True,
-                "source_event_type": "PROP360_LEAD",
-            }},
+        cycle = db["crm_assignment_cycles"].find_one({
+            "source_system": "prop360", "source_event_id": source_event_id,
+        })
+        if cycle is None:
+            cycle = create_assignment_cycle(
+                db, lead=fresh_lead, assigned_to_user_id=assigned_to_user_id,
+                assigned_by="prop360_extractor", reason="lead_created",
+                assigned_at=assigned_at, assigned_to_display_name=exec_name,
+                property_code=event.property_code, force_new=True,
+                source_system="prop360", source_event_id=source_event_id,
+            )
+            db["crm_assignment_cycles"].update_one(
+                {"assignment_cycle_id": cycle["assignment_cycle_id"]},
+                {"$set": {"source_event_verified": True, "source_event_type": "PROP360_LEAD"}},
+            )
+        cycle_id = cycle.get("assignment_cycle_id")
+        db["lead_ingest_events"].update_one(
+            {"source_system": "prop360", "source_event_id": source_event_id},
+            {"$set": {"status": "commercial_cycle_created", "lead_id": fresh_lead["_id"],
+                      "assignment_cycle_id": cycle_id}},
         )
         db[COLLECTION_CONVERSATIONS].update_one(
             {"_id": fresh_lead["_id"]},
@@ -413,6 +380,19 @@ class Prop360Extractor:
         )
 
         temperature = str(fresh_lead.get("lead_temperature_effective") or "").upper()
+        existing_notification = db["crm_notifications_v1"].find_one({
+            "$or": [
+                {"assignment_cycle_id": cycle_id},
+                {"assignment_cycle_ids": cycle_id},
+            ]
+        })
+        if existing_notification:
+            self.metrics["notifications_enqueued"] += 1
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "completed"}},
+            )
+            return
         if temperature == "HOT":
             from chatbot.crm_hot_delivery import assign_and_enqueue_hot
             from chatbot.lead_router import get_executive_phone
@@ -461,6 +441,10 @@ class Prop360Extractor:
                     "[NOTIF] Lead no acumulado en digest (filtro) lead_id=%s exec=%s",
                     lead_id, exec_name,
                 )
+        db["lead_ingest_events"].update_one(
+            {"source_system": "prop360", "source_event_id": source_event_id},
+            {"$set": {"status": "completed"}},
+        )
 
     def process_lead(self, prop360_lead: Dict[str, Any]) -> None:
         prop360_lead = self.normalize_lead(prop360_lead)
@@ -531,17 +515,19 @@ class Prop360Extractor:
             self._enqueue_notification(result.lead_id, result.executive, event, prop360_lead)
             logger.info(f"[OK] Lead creado: idContacto={id_contacto} lead_id={result.lead_id} exec={result.executive}")
 
-        elif result.status == "updated":
+        elif result.status in {"updated", "resume"}:
             self.metrics["leads_updated"] += 1
             self.metrics["properties_found"] += 1 if result.property_found else 0
             self.metrics["properties_not_found"] += 0 if result.property_found else 1
-            if result.assignment_changed:
-                self._enqueue_notification(result.lead_id, result.executive, event, prop360_lead)
-            logger.info(f"[OK] Lead actualizado: idContacto={id_contacto} lead_id={result.lead_id} action={result.action}")
+            self._enqueue_notification(result.lead_id, result.executive, event, prop360_lead)
+            logger.info(f"[OK] Lead actualizado: idContacto={id_contacto} lead_id={result.lead_id} action={result.status}")
 
-        elif result.status == "duplicate":
+        elif result.status in {"duplicate", "duplicate_event"}:
             self.metrics["events_duplicate"] += 1
             logger.info(f"[DUP] Evento duplicado: idContacto={id_contacto} lead_id={result.lead_id}")
+
+        elif result.status == "rejected":
+            raise RuntimeError(result.error or f"Prop360 event {id_contacto} is still being processed")
 
         elif result.status == "conflict":
             self.metrics["identity_conflicts"] += 1

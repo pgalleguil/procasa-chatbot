@@ -11,6 +11,9 @@
   {% endif %}
 </svg>
 {%- endmacro %}
+{% macro expandable(text, limit=230, class_name='compact-copy') -%}
+{% if text|length > limit %}<details class="expandable"><summary><span class="text-preview">{{ text[:limit].rsplit(' ', 1)[0] }}…</span><span class="expand-open">Ver más</span><span class="expand-close">Ver menos</span></summary><p class="{{ class_name }}">{{ text }}</p></details>{% else %}<p class="{{ class_name }}">{{ text }}</p>{% endif %}
+{%- endmacro %}
 <!doctype html>
 <html lang="es">
 <head>
@@ -23,7 +26,7 @@
     :root { color-scheme:light; --ink:#19165f; --body:#566482; --brand:#4433d5; --line:#e2e5f1; --wash:#f4f3ff; --paper:#f6f7fb; --white:#fff; --warm:#fffaf3; --green:#117442; }
     * { box-sizing:border-box; }
     html { scroll-behavior:smooth; }
-    body { margin:0; padding:0 0 calc(22px + env(safe-area-inset-bottom)); color:var(--ink); background:var(--paper); font:15px/1.48 Arial,Helvetica,sans-serif; }
+    body { margin:0; padding:0 0 calc(22px + env(safe-area-inset-bottom)); color:var(--ink); background:var(--paper); font:15px/1.48 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
     .page { width:min(100% - 28px, 790px); margin:0 auto; padding:16px 0 28px; }
     .masthead { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:2px 4px 14px; }
     .logo { width:112px; max-height:45px; object-fit:contain; object-position:left center; }
@@ -32,7 +35,7 @@
     .hero { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; gap:14px; padding:18px 21px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(130deg,#f0efff,#fff 79%); }
     .hero.has-photo { position:relative; isolation:isolate; overflow:hidden; min-height:232px; display:flex; gap:0; padding:23px 28px; background:linear-gradient(112deg,#f0efff 0%,#faf9fd 58%,#fff 100%); }
     .hero.has-photo .hero-text { position:relative; z-index:1; width:54%; max-width:445px; }
-    .eyebrow { color:var(--brand); font-size:10px; line-height:1.3; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .eyebrow { color:var(--brand); font-size:10px; line-height:1.3; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
     h1 { margin:5px 0 4px; font-size:clamp(23px,5vw,31px); line-height:1.12; letter-spacing:-.025em; }
     .hero-copy { margin:0; max-width:570px; color:var(--body); font-size:14px; }
     .property-line { margin-top:8px; color:var(--body); font-size:12px; font-weight:600; }
@@ -41,7 +44,7 @@
     .hero-photo-wrap::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(90deg,#f4f3ff 0%,rgba(244,243,255,.9) 12%,rgba(244,243,255,.58) 34%,rgba(244,243,255,.2) 58%,rgba(244,243,255,0) 82%); pointer-events:none; }
     .hero-photo { display:block; width:100%; height:100%; object-fit:cover; }
     .actions-top { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:10px 0 0; }
-    .button { min-width:0; min-height:49px; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px 13px; border:1px solid transparent; border-radius:12px; text-align:center; text-decoration:none; font-size:12px; line-height:1.22; font-weight:800; transition:transform 200ms cubic-bezier(.2,.7,.2,1),box-shadow 200ms ease,background-color 200ms ease,border-color 200ms ease,color 200ms ease; }
+    .button { min-width:0; min-height:49px; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px 13px; border:1px solid transparent; border-radius:12px; text-align:center; text-decoration:none; font-size:12px; line-height:1.22; font-weight:700; transition:transform 200ms cubic-bezier(.2,.7,.2,1),box-shadow 200ms ease,background-color 200ms ease,border-color 200ms ease,color 200ms ease; }
     .button svg { width:14px; height:14px; flex:0 0 14px; }
     .button:focus-visible,.document-action:focus-visible { outline:3px solid #948bff; outline-offset:3px; box-shadow:0 0 0 5px #4433d526; }
     .button-primary { background:var(--ink); color:#fff; box-shadow:0 4px 12px #19165f26; }
@@ -60,29 +63,29 @@
     .kpi { min-width:0; padding:10px 9px; border:1px solid #eaebf3; border-radius:11px; background:#fbfbfe; }
     .kpi.recommended { border-color:#e9e1d3; background:var(--warm); }
     .kpi.adjustment { border-color:#dcecdf; background:#f3faf5; }
-    .kpi-label { color:var(--body); font-size:9px; line-height:1.25; font-weight:700; }
-    .kpi-value { margin-top:4px; overflow-wrap:anywhere; font-size:clamp(15px,3.3vw,21px); line-height:1.2; font-weight:800; }
+    .kpi-label { color:var(--body); font-size:10.5px; line-height:1.25; font-weight:700; }
+    .kpi-value { margin-top:4px; overflow-wrap:anywhere; font-size:clamp(15px,3.3vw,21px); line-height:1.2; font-weight:700; }
     .adjustment .kpi-value { color:var(--green); }
-    .kpi-note { margin-top:2px; color:#747d93; font-size:9px; line-height:1.25; }
+    .kpi-note { margin-top:2px; color:#747d93; font-size:10.5px; line-height:1.25; }
     .market-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
-    .market-period { padding:4px 8px; border-radius:999px; background:#f0efff; color:var(--body); font-size:9px; white-space:nowrap; }
+    .market-period { padding:4px 8px; border-radius:999px; background:#f0efff; color:var(--body); font-size:10.5px; white-space:nowrap; }
     .market-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
     .market-kpi { min-width:0; padding:9px; border:1px solid #e9eaf3; border-radius:10px; background:#fbfbfe; }
     .market-kpi small { display:block; color:var(--body); font-size:10px; line-height:1.25; }
     .market-kpi strong { display:block; margin-top:3px; font-size:15px; line-height:1.2; overflow-wrap:anywhere; }
-    .market-kpi small { color:var(--body); font-size:9px; }
-    .market-summary { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin:8px 0 0; color:var(--body); font-size:11px; }
-    .source-note { margin:6px 0 0; color:#7a8398; font-size:9px; }
-    .source-date-note { margin:-4px 0 8px 34px; color:#7a8398; font-size:9px; }
+    .market-kpi small { color:var(--body); font-size:10.5px; }
+    .market-summary { margin:8px 0 0; color:var(--body); font-size:11px; }
+    .source-note { margin:6px 0 0; color:#7a8398; font-size:10.5px; }
+    .source-date-note { margin:-4px 0 8px 34px; color:#7a8398; font-size:10.5px; }
     .activity-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr)); gap:7px; }
     .activity-item { padding:9px; border:1px solid #e9eaf3; border-radius:10px; background:#fcfcfe; }
-    .activity-label { color:var(--body); font-size:9px; line-height:1.2; font-weight:700; }
-    .activity-value { margin-top:4px; font-size:21px; line-height:1; font-weight:800; }
+    .activity-label { color:var(--body); font-size:10.5px; line-height:1.2; font-weight:700; }
+    .activity-value { margin-top:4px; font-size:21px; line-height:1; font-weight:700; }
     .activity-summary { margin:8px 0 0; color:var(--body); font-size:10px; }
     .position-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
-    .badge { flex:0 0 auto; padding:4px 8px; border-radius:999px; background:#eeedff; color:var(--brand); font-size:9px; font-weight:700; }
+    .badge { flex:0 0 auto; padding:4px 8px; border-radius:999px; background:#eeedff; color:var(--brand); font-size:10.5px; font-weight:700; }
     .position-figure { position:relative; height:126px; margin:9px 7px 11px; }
-    .position-callout { position:absolute; z-index:2; width:min(210px,48%); height:40px; padding:6px 9px; border:1px solid #dedaf8; border-radius:9px; background:#fff; box-shadow:0 2px 8px #19165f0d; color:var(--body); transform:translateX(-50%); font-size:9px; line-height:1.2; text-align:center; }
+    .position-callout { position:absolute; z-index:2; width:min(210px,48%); height:40px; padding:6px 9px; border:1px solid #dedaf8; border-radius:9px; background:#fff; box-shadow:0 2px 8px #19165f0d; color:var(--body); transform:translateX(-50%); font-size:10.5px; line-height:1.2; text-align:center; }
     .position-callout strong { display:block; margin-top:3px; color:var(--ink); font-size:12px; }
     .position-callout.reference { top:0; }
     .position-callout.subject { top:43px; border-color:#cbc7ef; }
@@ -96,22 +99,22 @@
     .gap-explanation { margin:8px 0 0; padding:9px 11px; border-left:3px solid #8172df; border-radius:0 9px 9px 0; background:#f6f5ff; color:var(--body); font-size:11px; line-height:1.4; }
     .complementary { padding:12px 14px; background:#faf9ff; }
     .complementary-line { display:flex; align-items:baseline; justify-content:space-between; gap:8px; flex-wrap:wrap; }
-    .complementary-title { font-size:12px; font-weight:800; }
+    .complementary-title { font-size:12px; font-weight:700; }
     .complementary-value { color:var(--body); font-size:11px; }
     .columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .columns .card { margin-top:10px; }
     .compact-copy { margin:0; color:var(--body); font-size:12px; }
-    .diagnosis-copy { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:5; overflow:hidden; }
+    .diagnosis-copy { }
     .recommendation { border-color:#e9e1d3; background:linear-gradient(145deg,#fffdf9,#fffaf3); }
-    .recommendation-title { margin:0 0 6px; font-size:14px; font-weight:800; }
+    .recommendation-title { margin:0 0 6px; font-size:14px; font-weight:700; }
     .recommendation-flow { display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); align-items:center; gap:7px; margin-top:11px; }
     .recommendation-step { min-width:0; padding:9px; border:1px solid #ede5d8; border-radius:10px; background:#fff; }
-    .recommendation-step span { display:block; color:var(--body); font-size:9px; line-height:1.25; font-weight:700; }
+    .recommendation-step span { display:block; color:var(--body); font-size:10.5px; line-height:1.25; font-weight:700; }
     .recommendation-step strong { display:block; margin-top:4px; font-size:clamp(14px,2.4vw,19px); line-height:1.2; overflow-wrap:anywhere; }
     .recommendation-arrow { width:20px; height:20px; color:var(--brand); }
     .adjustment-chip { grid-column:1/-1; justify-self:center; padding:5px 11px; border-radius:999px; background:#f1f8f2; color:#117442; font-size:11px; font-weight:700; }
     .document-copy { margin:0; color:var(--body); font-size:11px; }
-    .document-action { display:inline-flex; min-height:40px; align-items:center; justify-content:center; gap:6px; margin-top:9px; padding:9px 12px; border:1px solid #d0ccf5; border-radius:10px; background:#f3f2ff; color:var(--brand); font-size:11px; font-weight:800; text-decoration:none; white-space:nowrap; }
+    .document-action { display:inline-flex; min-height:40px; align-items:center; justify-content:center; gap:6px; margin-top:9px; padding:9px 12px; border:1px solid #d0ccf5; border-radius:10px; background:#f3f2ff; color:var(--brand); font-size:11px; font-weight:700; text-decoration:none; white-space:nowrap; }
     .executive { color:var(--body); font-size:12px; }
     .executive-contact { display:flex; flex-wrap:wrap; gap:9px 14px; margin-top:7px; color:var(--body); font-size:11px; }
     .executive-contact a { color:var(--brand); text-decoration:none; }
@@ -120,7 +123,7 @@
     .monthly-change strong { color:var(--ink); }
     .safe { border-color:#e8dfcd; background:var(--warm); color:#66583d; }
     .safe strong { display:block; margin-bottom:4px; color:#42381f; }
-    footer { padding:14px 8px 0; color:#737c91; text-align:center; font-size:9px; }
+    footer { padding:14px 8px 0; color:#737c91; text-align:center; font-size:10.5px; }
     .sticky { position:fixed; z-index:50; right:max(12px,env(safe-area-inset-right)); bottom:calc(8px + env(safe-area-inset-bottom)); left:max(12px,env(safe-area-inset-left)); display:grid; grid-template-columns:1fr 1fr; gap:7px; width:min(790px,calc(100% - 24px)); margin:0 auto; padding:7px; border:1px solid #dddeef; border-radius:15px; background:rgba(255,255,255,.97); box-shadow:0 -4px 18px #17145c1c; visibility:hidden; opacity:0; pointer-events:none; transition:opacity .15s ease; }
     .sticky.visible { visibility:visible; opacity:1; pointer-events:auto; }
     .sticky .button { min-height:43px; padding:8px 7px; font-size:10px; }
@@ -129,51 +132,132 @@
       .page { width:calc(100% - 24px); padding-top:10px; }
       .masthead { padding-bottom:10px; }
       .logo { width:94px; }
-      .masthead-label { font-size:8px; }
+      .masthead-label { font-size:10.5px; }
       .hero { gap:7px; padding:12px 11px; border-radius:15px; }
       .hero.has-photo { display:flex; flex-direction:column; align-items:stretch; gap:0; min-height:0; padding:16px 13px 0; }
       .hero.has-photo .hero-text { width:100%; max-width:none; padding-bottom:10px; }
       .hero-photo-wrap { position:relative; inset:auto; width:calc(100% + 26px); height:118px; margin:0 -13px; border-radius:0 0 15px 15px; }
       .hero-photo-wrap::after { background:linear-gradient(180deg,#f4f3ff 0%,rgba(244,243,255,.76) 20%,rgba(244,243,255,.24) 55%,rgba(244,243,255,0) 100%); }
-      .eyebrow { font-size:9px; letter-spacing:.08em; }
+      .eyebrow { font-size:10.5px; letter-spacing:.08em; }
       h1 { font-size:21px; line-height:1.08; }
       .hero-copy { font-size:11px; line-height:1.32; }
-      .property-line { margin-top:4px; font-size:9px; line-height:1.25; }
-      .updated { margin-top:2px; font-size:9px; line-height:1.25; }
+      .property-line { margin-top:4px; font-size:10.5px; line-height:1.25; }
+      .updated { margin-top:2px; font-size:10.5px; line-height:1.25; }
       .actions-top { gap:6px; margin-top:8px; }
       .button { min-height:47px; padding:9px 7px; border-radius:10px; font-size:10px; }
-      .action-note { font-size:9px; }
+      .action-note { font-size:10.5px; }
       .card { margin-top:8px; padding:12px; border-radius:13px; }
       .section-heading { gap:7px; margin-bottom:8px; font-size:12px; }
       .section-icon { width:23px; height:23px; flex-basis:23px; }
       .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
       .kpi { padding:8px; }
-      .kpi-label { font-size:8px; }
+      .kpi-label { font-size:10.5px; }
       .kpi-value { font-size:16px; }
-      .kpi-note { font-size:8px; }
+      .kpi-note { font-size:10.5px; }
       .market-kpis { gap:5px; }
       .market-kpi { padding:7px 6px; }
       .market-kpi strong { font-size:12px; }
-      .market-kpi small { font-size:8px; }
+      .market-kpi small { font-size:10.5px; }
       .activity-item { padding:7px 6px; }
-      .activity-label { font-size:8px; }
+      .activity-label { font-size:10.5px; }
       .activity-value { font-size:19px; }
       .position-figure { height:126px; margin-right:1px; margin-left:1px; }
-      .position-callout { width:min(170px,48%); padding:6px 5px; font-size:8px; }
+      .position-callout { width:min(170px,48%); padding:6px 5px; font-size:10.5px; }
       .position-callout strong { font-size:11px; }
       .columns { grid-template-columns:1fr; gap:0; }
       .columns .card { margin-top:8px; }
       .compact-copy { font-size:11px; }
       .recommendation-metrics { gap:4px; }
       .mini-metric { padding:7px 5px; }
-      .mini-metric span { font-size:7px; }
+      .mini-metric span { font-size:10.5px; }
       .mini-metric strong { font-size:11px; }
       .complementary { padding:10px 12px; }
       .sticky { right:8px; left:8px; bottom:calc(6px + env(safe-area-inset-bottom)); width:calc(100% - 16px); gap:5px; padding:6px; }
-      .sticky .button { min-height:42px; font-size:9px; }
+      .sticky .button { min-height:42px; font-size:10.5px; }
       body { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
     }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button,.document-action { transition:none; } }
+
+    /* Progressive enhancement: content stays visible before and without JavaScript. */
+    body { padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
+    h1,h2,h3 { font-weight:700; }
+    .masthead-label { text-transform:none; letter-spacing:0; }
+    .kpi-label,.activity-label,.recommendation-step span { font-weight:600; }
+    .updated,.kpi-note,.source-note,.source-date-note,footer,.action-note { color:#59647c; }
+    .button { font-weight:600; position:relative; overflow:hidden; white-space:nowrap; }
+    .button svg,.document-action svg { transition:transform 200ms ease; flex-shrink:0; }
+    .button-primary[href]::before { content:""; pointer-events:none; position:absolute; inset:0; background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.08) 50%,transparent 65%); transform:translateX(-110%); transition:transform 320ms ease; }
+    .button[href]:active,.document-action[href]:active { transform:translateY(0); box-shadow:0 2px 5px #19165f18; }
+    a:focus-visible,summary:focus-visible { outline:3px solid #4433d5; outline-offset:3px; border-radius:5px; }
+    .document-action { min-height:44px; font-weight:600; }
+    .document-action svg { width:16px; height:16px; }
+    .hero-photo { transition:transform 520ms cubic-bezier(.2,.7,.2,1); }
+    .card { transition:opacity 280ms ease,transform 280ms cubic-bezier(.2,.7,.2,1); }
+    .reveal-pending { opacity:0; transform:translateY(8px); }
+    .position-kpi.above { background:#f7f4ff; }
+    .position-kpi.below { background:#f3faf5; }
+    .market-head,.position-top { flex-wrap:wrap; }
+    .market-period { white-space:normal; }
+    .market-summary { margin:8px 0 0; }
+    .expandable { color:var(--body); font-size:12px; }
+    .expandable summary { cursor:pointer; display:block; list-style:none; }
+    .expandable summary::-webkit-details-marker { display:none; }
+    .expandable summary .text-preview { display:block; }
+    .expand-open,.expand-close { color:var(--brand); display:inline-flex; align-items:center; min-height:44px; font-weight:600; }
+    .expand-close { display:none; }
+    .expandable[open] .text-preview,.expandable[open] .expand-open { display:none; }
+    .expandable[open] .expand-close { display:inline-flex; }
+    .expandable[open] p { margin-top:0; }
+    .executive-card { display:flex; align-items:flex-start; gap:12px; }
+    .executive-avatar { position:relative; flex:0 0 52px; width:52px; height:52px; border-radius:50%; overflow:hidden; background:#eeedff; color:var(--brand); display:grid; place-items:center; font-weight:600; }
+    .executive-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .executive-info { min-width:0; }
+    .executive-name { margin:0; font-size:15px; }
+    .executive-role { margin:2px 0 5px; color:var(--body); font-size:11px; }
+    .executive-phone,.executive-email { display:flex; align-items:center; min-height:44px; color:var(--brand); font-size:12px; line-height:1.6; overflow-wrap:anywhere; text-decoration:none; }
+    .monthly-change .recommendation-arrow { width:14px; height:14px; vertical-align:middle; }
+    .sticky { transform:translateY(12px) scale(.985); transition:opacity 200ms ease,transform 200ms cubic-bezier(.2,.7,.2,1),visibility 200ms; background:rgba(255,255,255,.94); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 4px 18px #17145c1c; }
+    .sticky.visible { transform:translateY(0) scale(1); }
+    .sticky .button { min-height:44px; font-size:11px; }
+    .position-figure { --chart-opacity:1; }
+    .position-figure > * { opacity:var(--chart-opacity); }
+    .reveal-pending .position-figure { --chart-opacity:0; }
+    .revealed .position-track,.revealed .position-callout,.revealed .position-marker,.revealed .position-reference { animation:chart-appear 260ms ease both; }
+    .revealed .position-marker,.revealed .position-reference { animation-name:marker-appear; }
+    .revealed .position-callout { animation-name:callout-appear; }
+    @keyframes marker-appear { from { opacity:0; transform:translate(-50%,-50%) scale(.85); } to { opacity:1; transform:translate(-50%,-50%) scale(1); } }
+    @keyframes callout-appear { from { opacity:0; transform:translate(-50%,3px); } to { opacity:1; transform:translate(-50%,0); } }
+    @keyframes chart-appear { from { opacity:0; } to { opacity:1; } }
+    @media (hover:hover) and (pointer:fine) {
+      .hero:hover .hero-photo { transform:scale(1.015); }
+      .button-primary[href]:hover::before { transform:translateX(110%); }
+      .button-primary[href]:hover svg { transform:translateX(3px); }
+      .button-secondary[href]:hover svg,.document-action[href]:hover svg { transform:translateX(2px); }
+    }
+    @media (min-width:700px) {
+      .card { margin-top:12px; }
+      .sticky { left:50%; transform:translate(-50%,12px) scale(.985); }
+      .sticky.visible { transform:translate(-50%,0) scale(1); }
+    }
+    @media (max-width:480px) {
+      .button { font-size:11px; gap:4px; padding:9px 6px; }
+      .button svg { width:13px; height:13px; flex-basis:13px; }
+      .masthead-label { font-size:10.5px; }
+      .executive-avatar { flex-basis:46px; width:46px; height:46px; }
+      .market-kpi small,.kpi-label,.kpi-note,.activity-label,.source-date-note,.source-note { font-size:10.5px; }
+      .market-kpi strong { font-size:13px; }
+      .position-callout { height:44px; font-size:10.5px; }
+      .position-callout.subject { top:47px; }
+      .position-callout strong { font-size:11px; }
+      .sticky .button { font-size:11px; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+      .reveal-pending { opacity:1; transform:none; }
+      .position-figure { --chart-opacity:1!important; }
+      .hero:hover .hero-photo,.button:hover,.button:hover svg,.document-action:hover,.document-action:hover svg { transform:none!important; }
+      .button-primary::before { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -190,7 +274,7 @@
       <p class="hero-copy">Revisamos el posicionamiento de tu propiedad y preparamos una recomendación para acompañar tu decisión.</p>
       <div class="property-line">{{ view.operation or 'Operación no disponible' }}{% if view.property_code %} · Código {{ view.property_code }}{% endif %}<span class="updated">Seguimiento comercial actualizado al {{ view.updated_label }}</span></div>
     </div>
-    {% if view.property_image_url %}<div class="hero-photo-wrap"><img class="hero-photo" src="{{ view.property_image_url }}" alt="Fotografía de la propiedad {{ view.property_code }}" loading="lazy" width="640" height="480"></div>{% endif %}
+    {% if view.property_image_url %}<div class="hero-photo-wrap"><img class="hero-photo" src="{{ view.property_image_url }}" alt="Fotografía de la propiedad {{ view.property_code }}" loading="eager" fetchpriority="high" width="640" height="480"></div>{% endif %}
   </section>
 
   {% if view.safe_mode %}
@@ -201,9 +285,9 @@
 
   <nav class="actions-top" id="owner-portal-top-actions" aria-label="Acciones principales">
     {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }} </a>
-    {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">AJUSTE AUTORIZADO</span>
-    {% else %}<span class="button button-primary" aria-disabled="true">REVISIÓN EN CURSO</span>{% endif %}
-    <a class="button button-secondary" data-cta-placement="TOP" href="{{ view.top_advisor_url }}">HABLAR CON MI EJECUTIVO</a>
+    {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
+    {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
+    <a class="button button-secondary" data-cta-placement="TOP" href="{{ view.top_advisor_url }}">Hablar con mi ejecutivo</a>
   </nav>
   <p class="action-note">Revisar no modifica tu precio. Podrás confirmar después.</p>
 
@@ -214,15 +298,18 @@
       <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value">{{ view.current_price_label or 'No disponible' }}</div></div>
       <div class="kpi recommended"><div class="kpi-label">Nuevo valor sugerido</div><div class="kpi-value">{{ view.recommended_price_label or 'No disponible' }}</div></div>
       <div class="kpi adjustment"><div class="kpi-label">Ajuste sugerido</div><div class="kpi-value">{{ view.adjustment_label or 'No disponible' }}</div></div>
-      <div class="kpi"><div class="kpi-label">Comparables analizados</div><div class="kpi-value">{% if view.comparable_count is not none %}{{ view.comparable_count }}{% else %}No disponible{% endif %}</div></div>
+      {% if view.position.gap_pct is defined and view.position.gap_pct is not none %}<div class="kpi position-kpi {{ 'below' if view.position.gap_pct < 0 else 'above' }}"><div class="kpi-label">Posición vs mercado</div><div class="kpi-value">{{ view.position.gap_label }}</div><div class="kpi-note">{{ view.position.gap_note }}</div></div>{% elif view.comparable_count is not none %}<div class="kpi"><div class="kpi-label">Comparables analizados</div><div class="kpi-value">{{ view.comparable_count }}</div></div>{% endif %}
     </div>
   </section>
+
+  {% if view.monthly_changes %}<section class="card" aria-labelledby="monthly-changes-title"><h2 class="section-heading" id="monthly-changes-title">Qué cambió desde el último informe</h2>{% if view.monthly_unchanged %}<p class="compact-copy">Sin cambios relevantes respecto del informe anterior</p>{% else %}<div class="monthly-changes">{% for item in view.monthly_changes %}<div class="monthly-change">{{ item.label }}<br><strong>{{ item.before }} {{ ui_icon('arrow', 'recommendation-arrow') }} {{ item.after }}</strong></div>{% endfor %}</div>{% endif %}</section>{% endif %}
 
   {% if view.market_context %}
   <section class="card" aria-labelledby="market-title">
     <div class="market-head"><h2 class="section-heading" id="market-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Contexto del mercado inmobiliario</h2>{% if view.market_context.reference_month %}<span class="market-period">{{ view.market_context.reference_month }}</span>{% endif %}</div>
-    {% if view.market_context.kpis %}<div class="market-kpis">{% for item in view.market_context.kpis[:3] %}<div class="market-kpi"><small>{{ item.label or 'Indicador' }}</small><strong>{{ item.value or 'No disponible' }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}
-    {% if view.market_context.summary %}<p class="market-summary">{{ view.market_context.summary }}</p>{% endif %}
+    {% if view.market_context.kpis %}<div class="market-kpis" style="grid-template-columns:repeat({{ view.market_context.kpis|length }},minmax(0,1fr))">{% for item in view.market_context.kpis[:3] %}<div class="market-kpi"><small>{{ item.label or 'Indicador' }}</small><strong>{{ item.value or 'No disponible' }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}
+    {% if view.market_context.summary %}{{ expandable(view.market_context.summary, 180, 'market-summary') }}{% endif %}
+    {% if view.market_context.source_date %}<p class="source-note">Corte: {{ view.market_context.source_date }}</p>{% endif %}
     {% if view.market_context.sources %}<p class="source-note">Fuentes: {{ view.market_context.sources }}</p>{% endif %}
   </section>
   {% endif %}
@@ -264,38 +351,55 @@
 
   {% if view.diagnosis or view.recommendation_text %}
   <div class="columns">
-    {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2><p class="compact-copy diagnosis-copy">{{ view.diagnosis }}</p></section>{% endif %}
-    {% if view.recommendation_text %}<section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><h3 class="recommendation-title">{{ view.recommendation_title }}</h3><p class="compact-copy">{{ view.recommendation_text }}</p><div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Nuevo valor propuesto</span><strong>{{ view.recommended_price_label or 'No disponible' }}</strong></div><span class="adjustment-chip">Ajuste {{ view.adjustment_label or 'No disponible' }}</span></div>{% if view.gap_explanation %}<p class="gap-explanation">{{ view.gap_explanation }}</p>{% endif %}</section>{% endif %}
+    {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2>{{ expandable(view.diagnosis, 250, 'compact-copy diagnosis-copy') }}</section>{% endif %}
+    {% if view.recommendation_text %}<section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><h3 class="recommendation-title">{{ view.recommendation_title }}</h3>{{ expandable(view.recommendation_text, 230) }}<div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Nuevo valor propuesto</span><strong>{{ view.recommended_price_label or 'No disponible' }}</strong></div><span class="adjustment-chip">Ajuste {{ view.adjustment_label or 'No disponible' }}</span></div>{% if view.gap_explanation %}<p class="gap-explanation">{{ view.gap_explanation }}</p>{% endif %}</section>{% endif %}
   </div>
   {% endif %}
 
   {% if view.document_available %}
-  <section class="card" aria-labelledby="document-title"><h2 class="section-heading" id="document-title"><span class="section-icon">{{ ui_icon('document') }}</span>Informe comercial disponible</h2><p class="document-copy">{{ view.document_label }}{% if view.additional_documents %}{% for item in view.additional_documents %} · {{ item.label or item.type }}{% endfor %}{% endif %}</p><a class="document-action" data-cta-placement="ORIGINAL" href="{{ view.document_url }}" rel="noreferrer">VER INFORME {{ ui_icon('arrow') }}</a></section>
+  <section class="card" aria-labelledby="document-title"><h2 class="section-heading" id="document-title"><span class="section-icon">{{ ui_icon('document') }}</span>Respaldos del análisis</h2><p class="document-copy">{{ view.document_label }}{% if view.additional_documents %}{% for item in view.additional_documents %} · {{ item.label or item.type }}{% endfor %}{% endif %}</p><a class="document-action" data-cta-placement="ORIGINAL" href="{{ view.document_url }}" rel="noreferrer">Ver respaldo {{ ui_icon('arrow') }}</a></section>
   {% endif %}
   {% endif %}
 
-  {% if view.monthly_changes %}<section class="card" aria-labelledby="monthly-changes-title"><h2 class="section-heading" id="monthly-changes-title">Qué cambió desde el último informe</h2><div class="monthly-changes">{% for item in view.monthly_changes %}<div class="monthly-change">{{ item.label }}<br><strong>{{ item.before }} {{ ui_icon('arrow', 'recommendation-arrow') }} {{ item.after }}</strong></div>{% endfor %}</div></section>{% endif %}
-  <section class="card" aria-label="Ejecutivo responsable"><div class="section-heading"><span class="section-icon">{{ ui_icon('user') }}</span>Tu ejecutivo PROCASA</div><div class="executive">{{ view.executive_name or 'Ejecutivo PROCASA' }}</div>{% if view.executive_email or view.executive_whatsapp_url %}<div class="executive-contact">{% if view.executive_email %}<a href="mailto:{{ view.executive_email|e }}">{{ view.executive_email }}</a>{% endif %}{% if view.executive_whatsapp_url %}<a class="document-action" href="{{ view.executive_whatsapp_url|e }}" target="_blank" rel="noopener noreferrer">Hablar por WhatsApp</a>{% endif %}</div>{% endif %}</section>
+
+  <section class="card executive-card" aria-label="Ejecutivo responsable">
+    <div class="executive-avatar" aria-hidden="true"><span>{{ view.executive_initials or 'PC' }}</span>{% if view.executive_photo_url %}<img src="{{ view.executive_photo_url|e }}" alt="" width="52" height="52" loading="lazy">{% endif %}</div>
+    <div class="executive-info"><h2 class="executive-name">{{ view.executive_name or 'Ejecutivo PROCASA' }}</h2><p class="executive-role">{{ view.executive_role or 'Ejecutivo PROCASA' }}</p>
+      {% if view.executive_phone %}<a class="executive-phone" href="tel:{{ view.executive_phone|replace(' ', '')|e }}">{{ view.executive_phone }}</a>{% endif %}
+      {% if view.executive_email %}<a class="executive-email" href="mailto:{{ view.executive_email|e }}">{{ view.executive_email }}</a>{% endif %}
+      {% if view.executive_whatsapp_url %}<a class="document-action" data-cta-placement="EXECUTIVE" href="{{ view.executive_whatsapp_url|e }}" rel="noreferrer">Hablar por WhatsApp {{ ui_icon('arrow') }}</a>{% endif %}
+    </div>
+  </section>
   <footer>PROCASA · Información comercial para apoyar tu decisión. Las referencias de mercado se basan en publicaciones observadas y no representan precios efectivos de cierre.</footer>
 </main>
 
 <nav class="sticky" id="owner-portal-sticky-actions" aria-label="Acciones rápidas">
-  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">REVISAR AJUSTE {{ ui_icon('arrow') }}</a>
-  {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">AJUSTE AUTORIZADO</span>
-  {% else %}<span class="button button-primary" aria-disabled="true">REVISIÓN EN CURSO</span>{% endif %}
-  <a class="button button-secondary" data-cta-placement="STICKY" href="{{ view.sticky_advisor_url }}">HABLAR CON EJECUTIVO</a>
+  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }}</a>
+  {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
+  {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
+  <a class="button button-secondary" data-cta-placement="STICKY" href="{{ view.sticky_advisor_url }}">Hablar con ejecutivo</a>
 </nav>
 <script>
 (function(){
-  var top=document.getElementById('owner-portal-top-actions');
-  var sticky=document.getElementById('owner-portal-sticky-actions');
-  if(!top||!sticky||!('IntersectionObserver' in window)) return;
-  var observer=new IntersectionObserver(function(entries){
-    var visible=entries.some(function(entry){return entry.isIntersecting;});
-    sticky.classList.toggle('visible',!visible);
-    sticky.setAttribute('aria-hidden',visible?'true':'false');
-  },{threshold:[0,0.05,0.25]});
-  observer.observe(top);
+  document.querySelectorAll('.executive-avatar img').forEach(function(img){img.addEventListener('error',function(){img.remove();});});
+  var top=document.getElementById('owner-portal-top-actions'),sticky=document.getElementById('owner-portal-sticky-actions');
+  if(!('IntersectionObserver' in window)) return;
+  if(top&&sticky){
+    sticky.setAttribute('aria-hidden','true');
+    new IntersectionObserver(function(entries){
+      var visible=entries.some(function(entry){return entry.isIntersecting;});
+      sticky.classList.toggle('visible',!visible);
+      sticky.setAttribute('aria-hidden',visible?'true':'false');
+    },{threshold:[0,0.05,0.25]}).observe(top);
+  }
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var cards=Array.from(document.querySelectorAll('.card'));
+  try {
+    var reveal=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){if(entry.isIntersecting){entry.target.classList.remove('reveal-pending');entry.target.classList.add('revealed');reveal.unobserve(entry.target);}});
+    },{threshold:0.06});
+    cards.forEach(function(card){if(card.getBoundingClientRect().top>window.innerHeight){card.classList.add('reveal-pending');reveal.observe(card);}});
+  }catch(error){cards.forEach(function(card){card.classList.remove('reveal-pending');});}
 })();
 </script>
 </body>

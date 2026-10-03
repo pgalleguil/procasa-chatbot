@@ -8,7 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import Query
 
@@ -33,6 +33,52 @@ from .monthly import build_monthly_portal_view
 router = APIRouter(tags=["owner-portal-preview"])
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 logger = logging.getLogger(__name__)
+
+
+@router.get("/owner-portal/executive-whatsapp", include_in_schema=False)
+async def executive_whatsapp_click(request: Request, token: str = Query(default="")):
+    """A signed click intent only; never an advisor request or authorization."""
+    from campanas.owner_campaign_live_events import decode_live_token, persist_live_event
+    from .campaign import LEDGER_COLLECTION, short_key_for_token_hash
+    from .executive import resolve_executive_contact, whatsapp_destination
+    from .monthly import OWNER_PROPERTY_PORTAL_COLLECTION, owner_property_portal_id, _select_monthly_snapshot
+
+    if set(request.query_params) != {"token"} or len(request.query_params.getlist("token")) != 1:
+        raise HTTPException(404, "Página no disponible")
+    claims = decode_live_token(token)
+    if (not claims or not all(claims.get(key) for key in ("campaign_id", "property_code", "recipient"))
+            or claims.get("action") != "executive_whatsapp_clicked"
+            or claims.get("interaction_surface") != "OWNER_PORTAL"
+            or claims.get("cta_placement") != "EXECUTIVE" or claims.get("source") not in ACCESS_SOURCES):
+        raise HTTPException(404, "Página no disponible")
+    db = get_db()
+    row = await run_in_threadpool(db[LEDGER_COLLECTION].find_one, {
+        "_id": f"{claims['campaign_id']}:{claims['property_code']}",
+        "campaign_id": claims["campaign_id"], "property_code": claims["property_code"],
+    })
+    if not row:
+        raise HTTPException(404, "Página no disponible")
+    access_hash = (row.get("portal_access") or {}).get("token_hash")
+    if not access_hash:
+        raise HTTPException(404, "Página no disponible")
+    verified = await run_in_threadpool(resolve_short_portal_request, db,
+        access_key=short_key_for_token_hash(access_hash), source=claims["source"])
+    if not verified or verified[0].get("_id") != row.get("_id") or verified[1].get("recipient") != claims.get("recipient") or verified[1].get("exp") != claims.get("exp"):
+        raise HTTPException(404, "Página no disponible")
+    def destination():
+        code = str(row["property_code"])
+        key = owner_property_portal_id(code, row["owner_email"])
+        record = db[OWNER_PROPERTY_PORTAL_COLLECTION].find_one({"_id": key, "owner_key": key, "property_code": code})
+        monthly = _select_monthly_snapshot(record, code) or {}
+        contact = resolve_executive_contact(db, row, monthly, str(row.get("executive_name") or row.get("executive") or ""))
+        return contact, whatsapp_destination(contact, code)
+    contact, url = await run_in_threadpool(destination)
+    if not url:
+        raise HTTPException(404, "Página no disponible")
+    await run_in_threadpool(persist_live_event, db, claims,
+        event="executive_whatsapp_clicked", action="executive_whatsapp_clicked",
+        details={"executive_name": contact["name"]})
+    return RedirectResponse(url, status_code=302, headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
 
 
 def _render(request: Request, view: dict) -> HTMLResponse:

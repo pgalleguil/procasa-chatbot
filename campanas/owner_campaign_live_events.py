@@ -25,7 +25,7 @@ LIVE_ACTIONS = {
 
 INTERACTION_SURFACES = frozenset({"EMAIL_TEMPLATE", "OWNER_PORTAL"})
 INTERACTION_CHANNELS = frozenset({"EMAIL", "WHATSAPP"})
-CTA_PLACEMENTS = frozenset({"TOP", "STICKY", "ORIGINAL"})
+CTA_PLACEMENTS = frozenset({"TOP", "STICKY", "ORIGINAL", "EXECUTIVE"})
 HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS = frozenset({
     "owner_price_sucre_wave1_20260928",
     "owner_price_sucre_wave2_20260930",
@@ -82,7 +82,7 @@ def _secret() -> str:
 
 def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, cta_placement: str | None = None, event_id: str | None = None) -> str:
     secret = _secret()
-    if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened"}:
+    if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened", "executive_whatsapp_clicked"}:
         raise ValueError("production_action_token_not_configured")
     if source is not None and source not in {"EMAIL", "WHATSAPP"}:
         raise ValueError("invalid_campaign_token_source")

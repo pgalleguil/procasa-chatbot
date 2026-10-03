@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Mapping
-from urllib.parse import quote
+from urllib.parse import urlencode, urlsplit
 
 from .property_media import verified_historical_media, verified_media_for_property
 
@@ -277,10 +277,13 @@ def _contains_private_access_field(value: Any) -> bool:
 
 
 def _text(value: Any) -> str:
-    return html.unescape(str(value or "")).strip()
+    return html.unescape(str(value if value is not None else "")).strip()
 
 
 def _number_from_label(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        import math
+        return float(value) if math.isfinite(value) else None
     match = _NUMBER.search(_text(value))
     if not match:
         return None
@@ -291,6 +294,25 @@ def _number_from_label(value: Any) -> float | None:
         return None
 
 
+def _position_gap(reference: Any, subject: Any, unit: str = "") -> float | None:
+    """A display-only ratio, only for positively identified compatible units."""
+    def units(value: Any) -> str:
+        raw = _text(value).casefold().replace("m2", "m²").replace(" ", "")
+        match = re.search(r"(uf|clp|\$)/m²(?:útil|util|construid[oa]|total)?", raw)
+        return match.group(0).replace("util", "útil") if match else ""
+    left, right = units(reference), units(subject)
+    # An explicit shared unit binds bare numeric values; conflicting labels fail closed.
+    shared = units(unit)
+    left = left or shared
+    right = right or shared
+    if not left or left != right:
+        return None
+    ref, value = _number_from_label(reference), _number_from_label(subject)
+    if ref is None or value is None or ref <= 0 or value < 0:
+        return None
+    return (value / ref - 1) * 100
+
+
 def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> dict[str, Any]:
     comparable = monthly.get("comparables") if isinstance(monthly.get("comparables"), Mapping) else {}
     labels = evidence.get("position-anchor-label", [])
@@ -299,6 +321,10 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
     property_boxes = evidence.get("position-prop-box", [])
     reference = _text(comparable.get("reference_value")) or (reference_boxes[0] if reference_boxes else (labels[0] if labels else ""))
     subject = _text(comparable.get("property_value")) or (property_boxes[0] if property_boxes else (labels[1] if len(labels) > 1 else ""))
+    if isinstance(comparable.get("reference_value"), (int, float)):
+        reference = f"{comparable['reference_value']:g}".replace(".", ",") + " " + _text(comparable.get("unit"))
+    if isinstance(comparable.get("property_value"), (int, float)):
+        subject = f"{comparable['property_value']:g}".replace(".", ",") + " " + _text(comparable.get("unit"))
     reference = re.sub(r"^Referencia de mercado\s*", "", reference, flags=re.IGNORECASE)
     subject = re.sub(r"^Tu propiedad\s*", "", subject, flags=re.IGNORECASE)
     count = comparable.get("count")
@@ -309,9 +335,10 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
     ref_number = _number_from_label(reference)
     subject_number = _number_from_label(subject)
     marker_pct = None
-    if ref_number and subject_number and ref_number > 0:
+    gap_pct = _position_gap(reference, subject, _text(comparable.get("unit")))
+    if gap_pct is not None:
         # Display-only chart coordinate; no recommendation/pricing is derived here.
-        marker_pct = max(4.0, min(96.0, 50.0 + ((subject_number / ref_number) - 1) * 100 * 1.25))
+        marker_pct = max(4.0, min(96.0, 50.0 + gap_pct * 1.25))
     return {
         "count": count,
         "reference_value": reference or None,
@@ -320,6 +347,9 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
         "interpretation": _text(comparable.get("positioning")) or (evidence.get("comparable-summary-single") or [None])[0],
         "marker_pct": marker_pct,
         "marker_label_pct": max(25.0, min(75.0, marker_pct)) if marker_pct is not None else None,
+        "gap_pct": gap_pct,
+        "gap_label": f"{gap_pct:+.0f}%" if gap_pct is not None else "",
+        "gap_note": "sobre referencia" if gap_pct is not None and gap_pct > 0 else "bajo referencia" if gap_pct is not None and gap_pct < 0 else "en referencia",
     }
 
 
@@ -357,13 +387,17 @@ def _normalize_market_context(context: Mapping[str, Any] | None) -> dict[str, An
         item = next((entry for entry in kpis if isinstance(entry, Mapping) and any(
             needle in _text(entry.get("label")).casefold() for needle in needles
         )), None)
+        if not item or item.get("value") is None or not str(item.get("value")).strip() or _text(item.get("value")).casefold() in {"no disponible", "n/a"}:
+            continue
         normalized_kpis.append({
             "label": "TPM" if label == "tpm" else label.capitalize(),
-            "value": _text(item.get("value")) if item and item.get("value") is not None else "No disponible",
+            "value": str(item["value"]).strip(),
             "note": _text(item.get("note")) if item else None,
         })
     result["kpis"] = normalized_kpis
     result["reference_month"] = result.get("reference_month") or result.get("period")
+    if result.get("source_date"):
+        result["source_date"] = _source_date_label(result["source_date"])
     result["summary"] = result.get("summary") or result.get("context_summary")
     sources = result.get("sources") or result.get("source_names")
     if isinstance(sources, (list, tuple)):
@@ -398,7 +432,7 @@ def _previous_snapshot_changes(snapshots: Any, current: Mapping[str, Any]) -> li
         old, new = metric(prior, key, nested), metric(current, key, nested)
         if old is None or new is None:
             continue
-        changes.append({"label": label, "before": _text(old), "after": _text(new)})
+        changes.append({"label": label, "before": str(old), "after": str(new)})
     old_price, new_price = metric(prior, "current_price"), metric(current, "current_price")
     old_operation, new_operation = _text(prior.get("operation")), _text(current.get("operation"))
     if old_price is not None and new_price is not None and old_operation and old_operation == new_operation:
@@ -408,10 +442,19 @@ def _previous_snapshot_changes(snapshots: Any, current: Mapping[str, Any]) -> li
             "before": _format_client_price(old_price, old_operation),
             "after": _format_client_price(new_price, new_operation),
         })
+    old_comps = prior.get("comparables") or {}
+    new_comps = current.get("comparables") or {}
+    if isinstance(old_comps, Mapping) and isinstance(new_comps, Mapping):
+        old_gap = _position_gap(old_comps.get("reference_value"), old_comps.get("property_value"), _text(old_comps.get("unit")))
+        new_gap = _position_gap(new_comps.get("reference_value"), new_comps.get("property_value"), _text(new_comps.get("unit")))
+        if old_gap is not None and new_gap is not None:
+            changes.append({"label": "Posición vs mercado", "before": f"{old_gap:+.0f}%", "after": f"{new_gap:+.0f}%"})
     return changes
 
 
 def _gap_explanation(position: Mapping[str, Any], adjustment: Any) -> str:
+    if _position_gap(position.get("reference_value"), position.get("property_value"), _text(position.get("unit"))) is None:
+        return ""
     reference = _number_from_label(position.get("reference_value"))
     subject = _number_from_label(position.get("property_value"))
     if reference is None or subject is None or reference <= 0 or subject <= reference or adjustment is None:
@@ -535,15 +578,19 @@ def build_monthly_portal_view(
         recommended_price_label = campaign_view.get("recommended_price_label")
 
     gap_explanation = "" if stale else _gap_explanation(position, adjustment_value)
-    saved_executive = snapshot.get("executive") if isinstance(snapshot.get("executive"), Mapping) else {}
-    monthly_executive = monthly.get("executive") if isinstance(monthly.get("executive"), Mapping) else {}
-    executive_email = _text(monthly_executive.get("email") or saved_executive.get("email") or snapshot.get("executive_email"))
-    executive_phone = _text(monthly_executive.get("phone") or saved_executive.get("phone") or snapshot.get("executive_phone"))
-    phone_digits = re.sub(r"\D", "", executive_phone)
+    from .executive import resolve_executive_contact
+    executive = resolve_executive_contact(db, row, monthly, _text(campaign_view.get("executive_name")))
     whatsapp_url = ""
-    if phone_digits.startswith("569") and len(phone_digits) == 11:
-        message = f"Hola {campaign_view.get('executive_name') or 'tu ejecutivo'}, quiero conversar sobre la recomendación de mi propiedad código {property_code}."
-        whatsapp_url = f"https://wa.me/{phone_digits}?text={quote(message)}"
+    access_expiry = (row.get("portal_access") or {}).get("expires_at")
+    if executive["phone_digits"] and isinstance(access_expiry, datetime) and _as_utc(access_expiry) > datetime.now(timezone.utc):
+        from campanas.owner_campaign_live_events import issue_live_token
+        token = issue_live_token(campaign_id=str(row["campaign_id"]), property_code=property_code,
+            action="executive_whatsapp_clicked", recipient=owner_email,
+            expires_at=int(_as_utc(access_expiry).timestamp()), source=campaign_view.get("source"),
+            interaction_surface="OWNER_PORTAL", cta_placement="EXECUTIVE")
+        origin = urlsplit(str(campaign_view.get("advisor_url") or campaign_view.get("top_advisor_url") or ""))
+        base = f"{origin.scheme}://{origin.netloc}" if origin.scheme and origin.netloc else ""
+        whatsapp_url = f"{base}/owner-portal/executive-whatsapp?{urlencode({'token': token})}"
     current_period = _as_period(monthly.get("period") or monthly.get("generated_at"))
     monthly_changes = _previous_snapshot_changes(monthly_snapshots, monthly) if current_period else []
 
@@ -583,8 +630,12 @@ def build_monthly_portal_view(
         "document_type": document_type,
         "document_label": "Tasación individual" if document_type == "INDIVIDUAL_APPRAISAL" else "Informe de mercado comunal" if document_type == "COMMUNAL_MARKET_REPORT" else "",
         "additional_documents": [item for item in docs if isinstance(item, Mapping) and item.get("verified")],
-        "executive_name": campaign_view.get("executive_name"),
-        "executive_email": executive_email,
+        "executive_name": executive["name"],
+        "executive_email": executive["email"],
+        "executive_phone": executive["phone"],
+        "executive_photo_url": executive["photo_url"],
+        "executive_initials": executive["initials"],
+        "executive_role": executive["role"],
         "executive_whatsapp_url": whatsapp_url,
         "updated_label": updated_label,
         "data_period": _as_period(monthly.get("period") or monthly.get("generated_at")) or _as_period(snapshot.get("prepared_at")),
@@ -601,4 +652,5 @@ def build_monthly_portal_view(
         "historic_source": "MONTHLY_SNAPSHOT" if monthly else "CAMPAIGN_SNAPSHOT",
         "monthly_changes": monthly_changes,
         "previous_month_available": bool(monthly_changes),
+        "monthly_unchanged": bool(monthly_changes) and all(item["before"] == item["after"] for item in monthly_changes),
     }

@@ -257,7 +257,7 @@ def test_none_document_hides_report_and_stale_status_hides_authorization(monkeyp
     stale_response = client_for(monkeypatch, stale_db).get(stale_url.replace("https://www.procasa.cl", ""))
     assert stale_response.status_code == 200
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
-    assert "HABLAR CON MI EJECUTIVO" in stale_response.text
+    assert "Hablar con mi ejecutivo" in stale_response.text
     assert "3.119 UF" not in stale_response.text
 
 
@@ -413,7 +413,7 @@ def test_short_landing_serves_monthly_report_without_mutating_exact_sent_email(m
     assert "Código 17005" in response.text
     assert "3.428 UF" in response.text
     assert "Revisar ajuste" in response.text
-    assert "HABLAR CON MI EJECUTIVO" in response.text
+    assert "Hablar con mi ejecutivo" in response.text
     assert "/campana/informe?token=" in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
@@ -488,7 +488,7 @@ def test_short_landing_none_and_stale_status_rules(monkeypatch):
     assert stale_response.status_code == 200
     assert "3.119 UF" not in stale_response.text
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
-    assert "HABLAR CON MI EJECUTIVO" in stale_response.text
+    assert "Hablar con mi ejecutivo" in stale_response.text
     assert "/campana/informe?token=" not in stale_response.text
 
 
@@ -598,6 +598,8 @@ def test_portal_cta_placements_keep_whatsapp_source_and_event_attribution(monkey
         parser.feed(response.text)
         claims_by_placement = {}
         for link in parser.links:
+            if urlsplit(link).scheme in {"mailto", "tel"}:
+                continue
             token = parse_qs(urlsplit(link).query).get("token", [""])[0]
             claims = decode_live_token(token) if token else None
             assert claims and claims["source"] == source
@@ -648,7 +650,7 @@ def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(mo
         response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
         assert response.status_code == 200
         assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
-        assert "HABLAR CON MI EJECUTIVO" in response.text
+        assert "Hablar con mi ejecutivo" in response.text
         assert "/campana/informe?token=" not in response.text
         parser = VisibleTextParser()
         parser.feed(response.text)
@@ -719,3 +721,43 @@ def test_ambiguous_identity_never_gets_a_private_portal(monkeypatch):
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     assert "portal_access" not in stored
 
+
+
+def test_executive_whatsapp_is_signed_click_only_and_preserves_attribution(monkeypatch):
+    from bs4 import BeautifulSoup
+    from campanas.owner_campaign_live_events import decode_live_token
+    for source in ("EMAIL", "WHATSAPP"):
+        db = make_test_db(ledger_row(executive_phone="+56 9 1234 5678"))
+        url = registered_short_link(monkeypatch, db, source=source)
+        client = client_for(monkeypatch, db)
+        response = client.get(url.replace("https://www.procasa.cl", ""))
+        link = BeautifulSoup(response.text, "html.parser").select_one('a[data-cta-placement="EXECUTIVE"]')
+        assert link and "wa.me" not in link["href"]
+        token = parse_qs(urlsplit(link["href"]).query)["token"][0]
+        claims = decode_live_token(token)
+        assert claims["source"] == source and claims["cta_placement"] == "EXECUTIVE"
+        assert claims["action"] == "executive_whatsapp_clicked"
+        for _ in range(2):
+            click = client.get(link["href"].replace("https://www.procasa.cl", ""), follow_redirects=False)
+            assert click.status_code == 302
+            assert click.headers["location"].startswith("https://wa.me/56912345678?")
+        row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+        events = [event for event in row["events"] if event["event"] == "executive_whatsapp_clicked"]
+        assert len(events) == 1
+        assert events[0]["source"] == source
+        assert events[0]["interaction_surface"] == "OWNER_PORTAL"
+        assert events[0]["interaction_channel"] == source
+        assert events[0]["cta_placement"] == "EXECUTIVE"
+        assert row["authorization_status"] == "PENDING"
+        assert not any(event["event"] in {"price_authorized", "advisor_review_requested"} for event in row["events"])
+        db[campaign.LEDGER_COLLECTION].update_one({"_id": row["_id"]}, {"$set": {"portal_access.revoked_at": datetime.now(timezone.utc)}})
+        denied = client.get(link["href"].replace("https://www.procasa.cl", ""), follow_redirects=False)
+        assert denied.status_code == 404
+
+
+def test_executive_whatsapp_rejects_tampered_token(monkeypatch):
+    db = make_test_db(ledger_row(executive_phone="+56 9 1234 5678"))
+    registered_short_link(monkeypatch, db)
+    client = client_for(monkeypatch, db)
+    assert client.get("/owner-portal/executive-whatsapp?token=invalid").status_code == 404
+    assert db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"] == []

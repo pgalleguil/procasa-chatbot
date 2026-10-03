@@ -13,6 +13,7 @@ import re
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from .property_media import verified_historical_media, verified_media_for_property
 
@@ -147,6 +148,16 @@ def _as_period(value: Any) -> str:
 
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _source_date_label(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%d-%m-%Y")
+    if isinstance(value, date):
+        return value.strftime("%d-%m-%Y")
+    raw = _text(value)
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw)
+    return f"{match.group(3)}-{match.group(2)}-{match.group(1)}" if match else raw
 
 
 def _select_monthly_snapshot(record: Mapping[str, Any] | None, property_code: str) -> Mapping[str, Any] | None:
@@ -308,6 +319,7 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
         "unit": _text(comparable.get("unit")) or ("UF/m² útil" if ref_number is not None else ""),
         "interpretation": _text(comparable.get("positioning")) or (evidence.get("comparable-summary-single") or [None])[0],
         "marker_pct": marker_pct,
+        "marker_label_pct": max(25.0, min(75.0, marker_pct)) if marker_pct is not None else None,
     }
 
 
@@ -327,7 +339,30 @@ def _normalize_market_context(context: Mapping[str, Any] | None) -> dict[str, An
             {"label": label, "value": value, "note": note}
             for label, value, note in candidates if value is not None and str(value).strip()
         ]
-    result["kpis"] = kpis[:3]
+    has_metric = any(
+        isinstance(item, Mapping) and any(_text(item.get(key)) for key in ("value", "note"))
+        for item in kpis
+    )
+    has_metric = has_metric or any(_text(result.get(key)) for key in ("mortgage_rate", "tpm", "demand_status"))
+    has_summary = _text(result.get("summary") or result.get("context_summary"))
+    if not has_metric and not has_summary:
+        return None
+    aliases = {
+        "hipotecario": ("hipotecario", "financiamiento", "mortgage"),
+        "tpm": ("tpm", "tasa de política"),
+        "demanda": ("demanda", "demand"),
+    }
+    normalized_kpis = []
+    for label, needles in aliases.items():
+        item = next((entry for entry in kpis if isinstance(entry, Mapping) and any(
+            needle in _text(entry.get("label")).casefold() for needle in needles
+        )), None)
+        normalized_kpis.append({
+            "label": "TPM" if label == "tpm" else label.capitalize(),
+            "value": _text(item.get("value")) if item and item.get("value") is not None else "No disponible",
+            "note": _text(item.get("note")) if item else None,
+        })
+    result["kpis"] = normalized_kpis
     result["reference_month"] = result.get("reference_month") or result.get("period")
     result["summary"] = result.get("summary") or result.get("context_summary")
     sources = result.get("sources") or result.get("source_names")
@@ -335,6 +370,64 @@ def _normalize_market_context(context: Mapping[str, Any] | None) -> dict[str, An
         sources = ", ".join(str(item).strip() for item in sources if str(item).strip())
     result["sources"] = re.sub(r"^\s*Fuentes\s*:\s*", "", str(sources), flags=re.IGNORECASE) if sources else None
     return result if result["kpis"] or result.get("summary") else None
+
+
+def _previous_snapshot_changes(snapshots: Any, current: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Return only explicit metric pairs present in consecutive monthly snapshots."""
+    if not isinstance(snapshots, list):
+        return []
+    period = _as_period(current.get("period") or current.get("generated_at"))
+    previous = [item for item in snapshots if isinstance(item, Mapping)
+                and _as_period(item.get("period")) and _as_period(item.get("period")) < period]
+    if not previous:
+        return []
+    prior = max(previous, key=lambda item: _as_period(item.get("period")))
+
+    def metric(snapshot: Mapping[str, Any], key: str, nested: str | None = None) -> Any:
+        if key in snapshot:
+            return snapshot.get(key)
+        child = snapshot.get(nested) if nested else None
+        return child.get(key) if isinstance(child, Mapping) else None
+
+    changes: list[dict[str, str]] = []
+    definitions = (
+        ("Leads 90 días", "leads", "activity_90d"),
+        ("Visitas coordinadas", "visits", "activity_90d"),
+    )
+    for label, key, nested in definitions:
+        old, new = metric(prior, key, nested), metric(current, key, nested)
+        if old is None or new is None:
+            continue
+        changes.append({"label": label, "before": _text(old), "after": _text(new)})
+    old_price, new_price = metric(prior, "current_price"), metric(current, "current_price")
+    old_operation, new_operation = _text(prior.get("operation")), _text(current.get("operation"))
+    if old_price is not None and new_price is not None and old_operation and old_operation == new_operation:
+        from .campaign import _format_client_price
+        changes.append({
+            "label": "Precio",
+            "before": _format_client_price(old_price, old_operation),
+            "after": _format_client_price(new_price, new_operation),
+        })
+    return changes
+
+
+def _gap_explanation(position: Mapping[str, Any], adjustment: Any) -> str:
+    reference = _number_from_label(position.get("reference_value"))
+    subject = _number_from_label(position.get("property_value"))
+    if reference is None or subject is None or reference <= 0 or subject <= reference or adjustment is None:
+        return ""
+    try:
+        adjustment_pct = abs(float(str(adjustment).replace("%", "").replace(",", ".")))
+    except (TypeError, ValueError):
+        return ""
+    gap_pct = ((subject / reference) - 1) * 100
+    if gap_pct - adjustment_pct < 5:
+        return ""
+    return (
+        f"La propiedad está aproximadamente {gap_pct:.0f}% sobre la referencia disponible. "
+        f"El ajuste propuesto ({adjustment_pct:.0f}%) es menor que esa brecha: plantea una corrección acotada; "
+        "la respuesta de la demanda permitirá evaluar el nuevo posicionamiento."
+    )
 
 
 def build_monthly_portal_view(
@@ -360,6 +453,7 @@ def build_monthly_portal_view(
             "owner_key": owner_property_portal_id(property_code, owner_email),
         })
     monthly = _select_monthly_snapshot(record, property_code) or {}
+    monthly_snapshots = record.get("monthly_snapshots", []) if isinstance(record, Mapping) else []
     property_media = verified_media_for_property(property_code, monthly=monthly, row=row)
     if property_media is None:
         property_media = verified_historical_media(email_html, property_code)
@@ -382,6 +476,8 @@ def build_monthly_portal_view(
     if not communal:
         compact = (evidence.get("market-reference-compact-single") or [None])[0]
         communal = {"summary": compact} if compact else {}
+    if communal.get("source_date"):
+        communal = {**communal, "source_date": _source_date_label(communal.get("source_date"))}
     recommendation = monthly.get("recommendation") if isinstance(monthly.get("recommendation"), Mapping) else {}
     comparable_state = monthly.get("comparables") if isinstance(monthly.get("comparables"), Mapping) else {}
     position = _position_data(evidence, monthly)
@@ -411,6 +507,8 @@ def build_monthly_portal_view(
     if stale:
         diagnosis = ""
         recommendation_text = ""
+    elif not diagnosis and all(activity.get(key) is None for key in ("leads", "total_leads", "conversations", "visits")):
+        diagnosis = "No hay actividad comercial suficiente disponible para describir el comportamiento reciente de esta propiedad."
     adjustment_value = _value(recommendation, snapshot, "recommended_adjustment_pct")
     if adjustment_value is None:
         adjustment_value = campaign_view.get("recommended_adjustment_pct")
@@ -436,6 +534,19 @@ def build_monthly_portal_view(
         current_price_label = campaign_view.get("current_price_label")
         recommended_price_label = campaign_view.get("recommended_price_label")
 
+    gap_explanation = "" if stale else _gap_explanation(position, adjustment_value)
+    saved_executive = snapshot.get("executive") if isinstance(snapshot.get("executive"), Mapping) else {}
+    monthly_executive = monthly.get("executive") if isinstance(monthly.get("executive"), Mapping) else {}
+    executive_email = _text(monthly_executive.get("email") or saved_executive.get("email") or snapshot.get("executive_email"))
+    executive_phone = _text(monthly_executive.get("phone") or saved_executive.get("phone") or snapshot.get("executive_phone"))
+    phone_digits = re.sub(r"\D", "", executive_phone)
+    whatsapp_url = ""
+    if phone_digits.startswith("569") and len(phone_digits) == 11:
+        message = f"Hola {campaign_view.get('executive_name') or 'tu ejecutivo'}, quiero conversar sobre la recomendación de mi propiedad código {property_code}."
+        whatsapp_url = f"https://wa.me/{phone_digits}?text={quote(message)}"
+    current_period = _as_period(monthly.get("period") or monthly.get("generated_at"))
+    monthly_changes = _previous_snapshot_changes(monthly_snapshots, monthly) if current_period else []
+
     return {
         "logo_url": campaign_view.get("logo_url"),
         "property_code": property_code,
@@ -452,6 +563,7 @@ def build_monthly_portal_view(
         "adjustment_label": adjustment_label,
         "comparable_count": position.get("count") if position.get("count") is not None else (_value(comparable_state, snapshot, "comparable_count") if _value(comparable_state, snapshot, "comparable_count") is not None else campaign_view.get("comparable_count")),
         "position": position,
+        "gap_explanation": gap_explanation,
         "communal_reference": communal,
         "market_context": context if isinstance(context, Mapping) else None,
         "activity_90d": {
@@ -459,7 +571,10 @@ def build_monthly_portal_view(
             "conversations": activity.get("conversations"),
             "visits": activity.get("visits"),
             "summary": _text(activity.get("summary")),
+            "source_date": _source_date_label(activity.get("source_date") or activity.get("period")),
+            "source_label": "Actualizado al" if activity.get("source_date") else ("Período" if activity.get("period") else ""),
         },
+        "comparables_source_date": _source_date_label(comparable_state.get("source_date") or comparable_state.get("cutoff_date")),
         "diagnosis": diagnosis,
         "recommendation_text": recommendation_text,
         "recommendation_title": _text(recommendation.get("title")) or (evidence.get("recommendation-title") or ["Ajuste de precio sugerido"])[0],
@@ -469,6 +584,8 @@ def build_monthly_portal_view(
         "document_label": "Tasación individual" if document_type == "INDIVIDUAL_APPRAISAL" else "Informe de mercado comunal" if document_type == "COMMUNAL_MARKET_REPORT" else "",
         "additional_documents": [item for item in docs if isinstance(item, Mapping) and item.get("verified")],
         "executive_name": campaign_view.get("executive_name"),
+        "executive_email": executive_email,
+        "executive_whatsapp_url": whatsapp_url,
         "updated_label": updated_label,
         "data_period": _as_period(monthly.get("period") or monthly.get("generated_at")) or _as_period(snapshot.get("prepared_at")),
         "source": campaign_view.get("source"),
@@ -482,4 +599,6 @@ def build_monthly_portal_view(
         "sticky_advisor_url": campaign_view.get("sticky_advisor_url") or campaign_view.get("advisor_url"),
         "market_context_heading": _text((context or {}).get("reference_month")) if isinstance(context, Mapping) else "",
         "historic_source": "MONTHLY_SNAPSHOT" if monthly else "CAMPAIGN_SNAPSHOT",
+        "monthly_changes": monthly_changes,
+        "previous_month_available": bool(monthly_changes),
     }

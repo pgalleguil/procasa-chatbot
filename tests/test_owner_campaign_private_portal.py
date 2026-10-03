@@ -162,7 +162,7 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     assert "Revisión comercial de tu propiedad" in response.text
     assert "Resumen en 30 segundos" in response.text
     assert "Informe comercial · Propietarios" in response.text
-    assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
+    assert "Revisar ajuste" in response.text
     assert "Snapshot de campaña" not in response.text
     assert "Sin métricas históricas en el snapshot" not in response.text
     assert "portal_opened" not in response.text
@@ -412,7 +412,7 @@ def test_short_landing_serves_monthly_report_without_mutating_exact_sent_email(m
     assert "Departamento en Santiago" in response.text
     assert "Código 17005" in response.text
     assert "3.428 UF" in response.text
-    assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
+    assert "Revisar ajuste" in response.text
     assert "HABLAR CON MI EJECUTIVO" in response.text
     assert "/campana/informe?token=" in response.text
     visible = VisibleTextParser()
@@ -507,7 +507,7 @@ def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
         assert "Resumen en 30 segundos" in response.text
         assert "Informe comercial · Propietarios" in response.text
         assert "3.428 UF" in response.text
-        assert "REVISAR MIS OPCIONES DE AJUSTE" in response.text
+        assert "Revisar ajuste" in response.text
         assert "/campana/informe?token=" in response.text
         stored = db[EMAIL_ARTIFACT_COLLECTION].find_one({"_id": f"{wave1}:{CODE}"})
         assert gzip.decompress(stored["html_gzip"]).decode("utf-8") == source_html

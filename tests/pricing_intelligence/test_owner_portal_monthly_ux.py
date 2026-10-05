@@ -579,3 +579,29 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert "0 leads" in view["recommendation_summary"]
             assert "0 conversaciones" in view["recommendation_summary"]
             assert "0 visitas" in view["recommendation_summary"]
+
+
+def test_recommendation_prices_centered_procasa_logo_and_equal_simulation_buttons():
+    from bs4 import BeautifulSoup
+
+    template = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    )
+    html = template.render(view=premium_fixture("full"))
+    soup = BeautifulSoup(html, "html.parser")
+
+    recommendation = soup.select_one(".recommendation")
+    assert recommendation.select_one(".recommendation-logo[alt='PROCASA']")
+    price_boxes = recommendation.select(".recommendation-step")
+    assert len(price_boxes) == 2
+    assert [box.get_text(" ", strip=True) for box in price_boxes] == [
+        "Precio actual 18.507 UF", "Precio propuesto ≈ 16.650 UF",
+    ]
+
+    selector = soup.select_one(".position-simulation__selector")
+    options = selector.select(".position-simulation__option")
+    assert [option.get_text(" ", strip=True) for option in options] == [
+        "Precio actual", "Con ajuste (-10%)",
+    ]
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in html
+    assert ".recommendation-step { min-width:0; padding:10px; border:1px solid #e4e3f0; border-radius:11px; background:#fff; text-align:center; }" in html

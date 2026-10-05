@@ -271,7 +271,7 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
             "mode": "DOCUMENT_ONLY", "title": title,
             "subtitle": "Tasación individual disponible",
             "issued_label": "",
-            "copy": "Esta propiedad cuenta con una tasación individual. Revisa el documento completo para consultar su valor de referencia y los antecedentes utilizados en su elaboración.",
+            "body_copy": "Esta propiedad cuenta con una tasación individual. Revisa el documento completo para consultar su valor de referencia y los antecedentes utilizados en su elaboración.",
             "metrics": [], "markers": [], "interpretation": "", "details": [],
             "method_copy": method_copy, "document_url": document_url,
             "document_title": "Tasación individual", "document_metadata": document_metadata,
@@ -366,6 +366,27 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
         "method_copy": method_copy, "document_url": document_url,
         "document_title": "Tasación individual", "document_metadata": document_metadata,
         "property_code": property_code,
+        "market_position_reference": {
+            "property_code": property_code,
+            "verified": True,
+            "appraisal_value_uf": mid,
+            "currency_basis": "UF" if mid is not None else "",
+            "appraisal_uf_m2": _strict_appraisal_number(appraisal.get("appraisal_uf_m2")),
+            "source_date_label": date_label,
+            "area_basis": _position_area_basis(
+                appraisal.get("appraisal_uf_m2_unit") or appraisal.get("positioning_unit")
+                or appraisal.get("reference_unit") or appraisal.get("unit"),
+                appraisal.get("area_basis") or appraisal.get("surface_basis") or appraisal.get("surface_ref_basis"),
+            ),
+            "surface_m2": _strict_appraisal_number(
+                appraisal.get("surface_m2") or appraisal.get("appraisal_surface_m2")
+                or appraisal.get("surface_ref_m2")
+            ),
+            "appraisal_uf_m2_unit": _text(
+                appraisal.get("appraisal_uf_m2_unit") or appraisal.get("positioning_unit")
+                or appraisal.get("reference_unit") or appraisal.get("unit")
+            ),
+        },
     }
 
 
@@ -852,10 +873,10 @@ def _position_unit_label(value: Any) -> str:
         return "$/m²/mes"
     if re.search(r"[\d.,]+clp/m²/mes", compact):
         return "CLP/m²/mes"
-    match = re.search(r"(uf|clp)/m²(útil|util|construido|construida|total|terreno)?(/mes)?", compact)
+    match = re.search(r"(uf|clp)/m²(útil|util|useful|built|construido|construida|total|terreno|land)?(/mes)?", compact)
     if match:
         currency, basis, monthly = match.groups()
-        basis = "útil" if basis in {"util", "útil"} else basis or ""
+        basis = "útil" if basis in {"util", "útil", "useful"} else "construido" if basis == "built" else "terreno" if basis == "land" else basis or ""
         return f"{currency.upper()}/m²{(' ' + basis) if basis else ''}{'/mes' if monthly else ''}"
     if re.search(r"\$[\d.,]+/m²(?:/mes)?", compact):
         return "$/m²/mes" if "/mes" in compact else "$/m²"
@@ -883,7 +904,7 @@ def _position_unit_key(value: Any) -> str:
     if raw in {"$/m²/mes", "clp/m²/mes"}:
         return raw
     raw = raw.replace("deoferta", "")
-    match = re.fullmatch(r"(uf|clp|\$)/m²(?:útil|util|construido|construida|total|terreno)?", raw)
+    match = re.fullmatch(r"(uf|clp|\$)/m²(?:útil|util|useful|built|construido|construida|total|terreno|land)?", raw)
     return match.group(0).replace("util", "útil") if match else ""
 
 
@@ -892,6 +913,38 @@ def _position_unit_dimension(value: Any) -> str:
     if key.endswith("/mes"):
         return key
     return next((unit for unit in ("uf/m²", "clp/m²", "$/m²") if key.startswith(unit)), "")
+
+
+def _position_area_basis(value: Any = "", explicit: Any = None) -> str:
+    """Return an area basis only when the source states it explicitly."""
+    def normalize(source: Any) -> str:
+        raw = _text(source).casefold().replace("á", "a").replace("ú", "u")
+        compact = re.sub(r"[^a-z]+", " ", raw).strip()
+        if re.search(r"\b(util|utile|useful)\b", compact):
+            return "USEFUL"
+        if re.search(r"\b(built|construid[oa]?)\b", compact):
+            return "BUILT"
+        if re.search(r"\b(land|terreno)\b", compact):
+            return "LAND"
+        return ""
+    from_unit, from_field = normalize(value), normalize(explicit)
+    if from_unit and from_field and from_unit != from_field:
+        return ""
+    return from_field or from_unit
+
+
+def _position_currency_basis(value: Any = "", explicit: Any = None) -> str:
+    raw = _text(explicit or value).casefold()
+    if re.search(r"\buf\b", raw):
+        return "UF"
+    if re.search(r"\bclp\b|\$", raw):
+        return "CLP"
+    return ""
+
+
+def _position_basis_unit(currency: str, area_basis: str) -> str:
+    area_label = {"USEFUL": "útil", "BUILT": "construido", "LAND": "terreno"}.get(area_basis, "")
+    return f"{currency}/m² {area_label}".strip() if currency and area_label else ""
 
 
 def _format_position_value(value: Any) -> str:
@@ -1098,6 +1151,308 @@ def _position_simulation_data(
     }
 
 
+def _market_position_data(
+    *, position_simulation: Mapping[str, Any], position_static: Mapping[str, Any],
+    comparables: Mapping[str, Any], communal: Mapping[str, Any],
+    appraisal_card: Mapping[str, Any] | None, property_state: Mapping[str, Any],
+    property_code: str, current_price: Any, recommended_price: Any,
+    recommendation_is_monthly: bool, stale: bool,
+) -> dict[str, Any]:
+    """Combine only property-scoped references that share a verified UF/m² scale."""
+    unavailable = {"available": False, "simulation_available": False, "references": []}
+    if stale:
+        return {**unavailable, "reason": "STALE_PORTAL"}
+
+    comparable_ok = bool(position_static.get("available"))
+    scale_unit = _position_unit_label(position_static.get("unit")) if comparable_ok else ""
+    scale_currency = _position_currency_basis(scale_unit) if scale_unit else ""
+    scale_area_basis = _position_area_basis(scale_unit) if scale_unit else ""
+    if scale_currency != "UF" or not scale_area_basis:
+        comparable_ok = False
+        scale_unit = scale_currency = scale_area_basis = ""
+    comparable_surface = _number_from_label(
+        comparables.get("surface_ref_m2", comparables.get("surface_used_m2"))
+    ) if comparable_ok and isinstance(comparables, Mapping) else None
+    property_surface = _number_from_label(property_state.get("surface_ref_m2"))
+    if comparable_surface and property_surface and abs(comparable_surface - property_surface) > max(0.01, comparable_surface * 0.001):
+        comparable_ok = False
+        scale_unit = ""
+
+    references: list[dict[str, Any]] = []
+    if comparable_ok:
+        median = _number_from_label(position_static.get("reference_value"))
+        if median and median > 0:
+            references.append({
+                "kind": "COMPARABLE", "label": "Propiedades similares",
+                "value": median, "value_label": _format_position_value(median),
+                "unit": scale_unit, "area_basis": scale_area_basis, "count": position_static.get("count"),
+            })
+
+    appraisal_source = appraisal_card.get("market_position_reference") if isinstance(appraisal_card, Mapping) else None
+    if (
+        isinstance(appraisal_source, Mapping)
+        and appraisal_source.get("verified") is True
+        and str(appraisal_source.get("property_code") or "") == str(property_code)
+    ):
+        appraisal_mid = _number_from_label(appraisal_source.get("appraisal_value_uf"))
+        explicit_m2 = _number_from_label(appraisal_source.get("appraisal_uf_m2"))
+        explicit_raw_unit = _text(appraisal_source.get("appraisal_uf_m2_unit"))
+        appraisal_currency = _position_currency_basis(
+            explicit_raw_unit, appraisal_source.get("currency_basis")
+        )
+        appraisal_area_basis = _position_area_basis(
+            explicit_raw_unit, appraisal_source.get("area_basis")
+        )
+        explicit_unit = _position_basis_unit(appraisal_currency, appraisal_area_basis)
+        appraisal_value_m2 = None
+        appraisal_unit = ""
+        if explicit_m2 is not None and explicit_m2 > 0:
+            if (
+                appraisal_currency == "UF" and appraisal_area_basis
+                and (not scale_area_basis or appraisal_area_basis == scale_area_basis)
+                and (not scale_unit or explicit_unit == scale_unit)
+            ):
+                appraisal_value_m2, appraisal_unit = explicit_m2, explicit_unit
+        # An explicit appraisal UF/m² on a different basis is a hard mismatch.
+        # Do not silently replace it with a derived figure from a different
+        # denominator. Derivation is allowed only when no explicit UF/m² was
+        # supplied by the verified appraisal.
+        if explicit_m2 is None and appraisal_mid and appraisal_mid > 0 and appraisal_currency == "UF" and appraisal_area_basis:
+            # Derive only with the exact denominator already verified for the
+            # canonical primary comparable source, or an explicitly typed
+            # property surface whose basis matches the appraisal/comparison unit.
+            property_area_basis = _position_area_basis(
+                property_state.get("surface_ref_unit") or property_state.get("positioning_unit"),
+                property_state.get("surface_ref_basis"),
+            )
+            denominator = None
+            if comparable_ok and appraisal_area_basis == scale_area_basis:
+                denominator = comparable_surface
+            appraisal_surface = _number_from_label(appraisal_source.get("surface_m2"))
+            if appraisal_surface and appraisal_surface > 0 and appraisal_area_basis == property_area_basis:
+                denominator = appraisal_surface
+            if denominator is None and property_surface and property_surface > 0 and appraisal_area_basis == property_area_basis:
+                denominator = property_surface
+            if denominator and denominator > 0:
+                appraisal_value_m2 = appraisal_mid / denominator
+                appraisal_unit = _position_basis_unit("UF", appraisal_area_basis)
+        target_unit = scale_unit or _position_basis_unit(
+            _position_currency_basis(property_state.get("surface_ref_unit") or property_state.get("positioning_unit")),
+            _position_area_basis(
+                property_state.get("surface_ref_unit") or property_state.get("positioning_unit"),
+                property_state.get("surface_ref_basis"),
+            ),
+        )
+        if (
+            appraisal_value_m2 is not None and appraisal_value_m2 > 0 and appraisal_unit
+            and (not target_unit or appraisal_unit == target_unit)
+        ):
+            scale_unit = scale_unit or appraisal_unit
+            scale_currency = "UF"
+            scale_area_basis = appraisal_area_basis
+            references.insert(0, {
+                "kind": "APPRAISAL", "label": "Tasación individual",
+                "value": appraisal_value_m2, "value_label": _format_position_value(appraisal_value_m2),
+                "unit": appraisal_unit, "area_basis": appraisal_area_basis,
+            })
+
+    # Read only numeric, explicitly typed communal UF/m² fields. A prose summary
+    # is never parsed into a marker.
+    communal_value = None
+    communal_unit = ""
+    if isinstance(communal, Mapping):
+        communal_metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+        candidates = [
+            (communal.get(key), communal.get("reference_unit") or communal.get("unit"), communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
+            for key in ("offer_uf_m2", "uf_m2_offer", "value_uf_m2", "reference_value_uf_m2", "reference_value", "value")
+        ]
+        candidates.extend(
+            (communal_metrics.get(key), communal.get("reference_unit") or communal.get("unit"), communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
+            for key in ("uf_m2_publicacion_actual", "uf_m2_arriendo_actual")
+        )
+        for raw_value, raw_unit, raw_basis in candidates:
+            number = _number_from_label(raw_value)
+            currency_basis = _position_currency_basis(raw_unit)
+            area_basis = _position_area_basis(raw_unit, raw_basis)
+            normalized_unit = _position_basis_unit(currency_basis, area_basis)
+            if number and number > 0 and currency_basis == "UF" and area_basis and normalized_unit:
+                communal_value, communal_unit = number, normalized_unit
+                scale_currency = scale_currency or currency_basis
+                scale_area_basis = scale_area_basis or area_basis
+                break
+    if not scale_unit and communal_unit and scale_currency == "UF" and scale_area_basis:
+        scale_unit = communal_unit
+    if communal_value is not None and communal_unit and scale_unit:
+        # Keep the established communal scale control (currency and area
+        # dimension); communal values remain a separately labelled source.
+        established_compatibility = position_simulation.get("communal_on_same_scale")
+        communal_compatible = (
+            established_compatibility is not False
+            and _position_currency_basis(communal_unit) == "UF"
+            and _position_area_basis(communal_unit) == scale_area_basis
+            and (not scale_unit or communal_unit == scale_unit)
+        )
+        if communal_compatible:
+            references.append({
+                "kind": "COMMUNAL", "label": "Oferta comunal observada",
+                "value": communal_value, "value_label": _format_position_value(communal_value),
+                "unit": communal_unit, "area_basis": scale_area_basis,
+            })
+
+    # If no comparable source defines the scale, a verified explicit unit can
+    # still support an appraisal/communal-only synthesis with a same-basis
+    # current property value.
+    if not scale_unit and references:
+        scale_unit = _position_unit_label(references[0].get("unit"))
+        scale_currency = _position_currency_basis(scale_unit)
+        scale_area_basis = _position_area_basis(scale_unit)
+    if not scale_unit or scale_currency != "UF" or not scale_area_basis or not references:
+        return {**unavailable, "reason": "NO_VERIFIED_MARKET_REFERENCE_ON_SCALE"}
+    compatible_refs = [
+        ref for ref in references
+        if _position_currency_basis(ref.get("unit")) == scale_currency
+        and _position_area_basis(ref.get("unit"), ref.get("area_basis")) == scale_area_basis
+    ]
+    if not compatible_refs:
+        return {**unavailable, "reason": "NO_VERIFIED_MARKET_REFERENCE_ON_SCALE"}
+
+    current_value = None
+    if comparable_ok:
+        candidate = _number_from_label(position_static.get("property_value"))
+        candidate_unit = _position_basis_unit(
+            _position_currency_basis(position_static.get("unit")),
+            _position_area_basis(position_static.get("unit")),
+        )
+        if candidate and candidate > 0 and candidate_unit == scale_unit:
+            current_value = candidate
+    if current_value is None:
+        current_price_number = _number_from_label(current_price)
+        property_unit_source = property_state.get("surface_ref_unit") or property_state.get("positioning_unit")
+        current_unit = _position_basis_unit(
+            _position_currency_basis(property_unit_source),
+            _position_area_basis(property_unit_source, property_state.get("surface_ref_basis")),
+        )
+        basis_ok = _position_area_basis(property_state.get("surface_ref_basis")) == scale_area_basis
+        if (
+            current_price_number and current_price_number > 0 and property_surface and property_surface > 0
+            and current_unit == scale_unit and basis_ok
+        ):
+            current_value = current_price_number / property_surface
+    if current_value is None or current_value <= 0:
+        return {**unavailable, "reason": "PROPERTY_VALUE_NOT_VERIFIABLE_ON_SCALE"}
+
+    comparable_value = next((ref["value"] for ref in compatible_refs if ref["kind"] == "COMPARABLE"), None)
+    appraisal_value = next((ref["value"] for ref in compatible_refs if ref["kind"] == "APPRAISAL"), None)
+    communal_value_on_scale = next((ref["value"] for ref in compatible_refs if ref["kind"] == "COMMUNAL"), None)
+    primary_kind = "COMPARABLE" if comparable_value is not None else "APPRAISAL" if appraisal_value is not None else "COMMUNAL"
+
+    def gap_for(value: float, reference: float) -> float:
+        return (value / reference - 1) * 100
+
+    def gap_text(value: float, reference: float, kind: str) -> str:
+        pct = round(gap_for(value, reference), 1)
+        sign = "+" if pct > 0 else "" if pct == 0 else "-"
+        label = {"APPRAISAL": "tasación", "COMPARABLE": "similares", "COMMUNAL": "oferta comunal"}.get(kind, "referencia")
+        return f"{sign}{_format_position_value(abs(pct))}% vs {label}"
+
+    def copy_gap(value: float, reference: float, kind: str) -> str:
+        pct = round(gap_for(value, reference), 1)
+        label = {"APPRAISAL": "la referencia de tasación", "COMPARABLE": "las propiedades similares", "COMMUNAL": "la oferta comunal observada"}.get(kind, "la referencia")
+        if pct == 0:
+            return f"en línea con {label}"
+        direction = "sobre" if pct > 0 else "bajo"
+        return f"{_format_position_value(abs(pct))}% {direction} {label}"
+
+    def copy_for(value: float, prefix: str) -> str:
+        clauses = []
+        for ref in compatible_refs:
+            clauses.append(copy_gap(value, ref["value"], ref["kind"]))
+        if not clauses:
+            return ""
+        joined = clauses[0] if len(clauses) == 1 else ", ".join(clauses[:-1]) + " y " + clauses[-1]
+        return f"{prefix}, tu propiedad se publica en {_format_position_value(value)} {scale_unit}: {joined}."
+
+    simulation_available = bool(position_simulation.get("available"))
+    proposed_value = _number_from_label(position_simulation.get("proposed_m2")) if simulation_available else None
+    if proposed_value is None and recommendation_is_monthly:
+        proposed_price_number = _number_from_label(recommended_price)
+        current_price_number = _number_from_label(current_price)
+        property_unit_source = property_state.get("surface_ref_unit") or property_state.get("positioning_unit")
+        current_unit = _position_basis_unit(
+            _position_currency_basis(property_unit_source),
+            _position_area_basis(property_unit_source, property_state.get("surface_ref_basis")),
+        )
+        basis_ok = _position_area_basis(property_state.get("surface_ref_basis")) == scale_area_basis
+        if (
+            proposed_price_number and proposed_price_number > 0 and current_price_number and current_price_number > 0
+            and property_surface and property_surface > 0 and current_unit == scale_unit and basis_ok
+        ):
+            proposed_value = proposed_price_number / property_surface
+            simulation_available = True
+    if proposed_value is None or proposed_value <= 0:
+        simulation_available = False
+
+    # Bracket and headline focus on the primary reference; every available gap
+    # remains explicit in the changing text and accessible live label.
+    primary_reference = next(ref for ref in compatible_refs if ref["kind"] == primary_kind)
+    current_gap = gap_for(current_value, primary_reference["value"])
+    proposed_gap = gap_for(proposed_value, primary_reference["value"]) if simulation_available else None
+    domain_values = [current_value] + [ref["value"] for ref in compatible_refs]
+    if simulation_available and proposed_value is not None:
+        domain_values.append(proposed_value)
+    domain = _position_scale(domain_values)
+    if domain is None:
+        return {**unavailable, "reason": "POSITIONING_SCALE_UNAVAILABLE"}
+    property_x = _position_scale_pct(current_value, domain)
+    primary_x = _position_scale_pct(primary_reference["value"], domain)
+    for ref in compatible_refs:
+        ref["x"] = _position_scale_pct(ref["value"], domain)
+        ref["gap_pct"] = gap_for(current_value, ref["value"])
+        ref["gap_label"] = gap_text(current_value, ref["value"], ref["kind"])
+    for ref in compatible_refs:
+        ref["current_gap_label"] = gap_text(current_value, ref["value"], ref["kind"])
+        ref["proposed_gap_label"] = gap_text(proposed_value, ref["value"], ref["kind"]) if simulation_available and proposed_value is not None else ""
+    current_gap_label = next(ref["current_gap_label"] for ref in compatible_refs if ref["kind"] == primary_kind)
+    adjusted_gap_label = next(ref["proposed_gap_label"] for ref in compatible_refs if ref["kind"] == primary_kind) if simulation_available else ""
+
+    source_labels = []
+    if appraisal_value is not None and isinstance(appraisal_card, Mapping):
+        appraisal_source = appraisal_card.get("market_position_reference")
+        appraisal_date = _text(appraisal_source.get("source_date_label") or "") if isinstance(appraisal_source, Mapping) else ""
+        source_labels.append("Tasación" + (f" · emitida {appraisal_date}" if appraisal_date else ""))
+    if comparable_value is not None:
+        comparable_source_date = _source_date_label(comparables.get("source_date") or comparables.get("cutoff_date"))
+        comparable_analysis_date = _source_date_label(comparables.get("analysis_generated_at"))
+        comparable_label = f"Propiedades similares · {position_static.get('count')} seleccionadas"
+        if comparable_source_date:
+            comparable_label += f" · corte {comparable_source_date}"
+        if comparable_analysis_date and comparable_analysis_date != comparable_source_date:
+            comparable_label += f" · análisis {comparable_analysis_date}"
+        source_labels.append(comparable_label)
+    if communal_value_on_scale is not None:
+        communal_date = _source_date_label(communal.get("source_date") or communal.get("cutoff_date")) if isinstance(communal, Mapping) else ""
+        source_labels.append("Oferta comunal" + (f" · corte {communal_date}" if communal_date else ""))
+    return {
+        "available": True, "simulation_available": simulation_available,
+        "count": position_static.get("count") if comparable_ok else None,
+        "unit": scale_unit, "references": compatible_refs,
+        "sources_label": " · ".join(source_labels),
+        "current_value": current_value, "current_value_label": _format_position_value(current_value),
+        "current_x": property_x,
+        "proposed_value": proposed_value if simulation_available else None,
+        "proposed_value_label": _format_position_value(proposed_value) if simulation_available else "",
+        "proposed_x": _position_scale_pct(proposed_value, domain) if simulation_available and proposed_value is not None else None,
+        "primary_kind": primary_kind,
+        "primary_x": primary_x,
+        "gap_left": min(primary_x, property_x), "gap_width": abs(property_x - primary_x),
+        "current_gap_label": current_gap_label,
+        "proposed_gap_label": adjusted_gap_label,
+        "current_copy": copy_for(current_value, "Actualmente"),
+        "adjusted_copy": copy_for(proposed_value, "Con el ajuste recomendado") if simulation_available and proposed_value is not None else "",
+        "adjustment_label": position_simulation.get("adjustment_label") or "",
+    }
+
+
 def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> dict[str, Any]:
     comparable = monthly.get("comparables") if isinstance(monthly.get("comparables"), Mapping) else {}
     labels = evidence.get("position-anchor-label", [])
@@ -1213,13 +1568,14 @@ def _static_position_data(
     if gap is None:
         return {**unavailable, "reason": "COMPARABLE_GAP_NOT_VERIFIABLE"}
 
-    rounded_gap = int(round(gap))
+    rounded_gap = round(gap, 1)
+    gap_number = _format_position_value(abs(rounded_gap))
     if rounded_gap > 0:
-        gap_label = f"{rounded_gap:+d}% sobre propiedades similares"
+        gap_label = f"+{gap_number}% sobre propiedades similares"
     elif rounded_gap < 0:
-        gap_label = f"{rounded_gap:d}% bajo propiedades similares"
+        gap_label = f"-{gap_number}% bajo propiedades similares"
     else:
-        gap_label = "En línea con propiedades similares"
+        gap_label = f"{gap_number}% en línea con propiedades similares"
     return {
         "available": True,
         "count": int(count),
@@ -1721,6 +2077,13 @@ def build_monthly_portal_view(
         adjustment_headline_label = ""
         recommendation_summary = ""
         recommendation_details = []
+    appraisal_card = _appraisal_card(
+        monthly=monthly, snapshot=snapshot, campaign_view=campaign_view,
+        docs=docs, support_documents=support_documents,
+        property_code=property_code, operation=operation,
+        current_price=current_price, recommended_price=recommended_price,
+        extracted_appraisal=resolved_appraisal_analysis,
+    )
     historical_email_comparable = False
     simulation_comparables = comparable_state
     simulation_property_state = property_state
@@ -1813,13 +2176,35 @@ def build_monthly_portal_view(
         campaign_comparable_mode=campaign_comparable_mode,
         stale=stale,
     )
-    appraisal_card = _appraisal_card(
-        monthly=monthly, snapshot=snapshot, campaign_view=campaign_view,
-        docs=docs, support_documents=support_documents,
-        property_code=property_code, operation=operation,
-        current_price=current_price, recommended_price=recommended_price,
-        extracted_appraisal=resolved_appraisal_analysis,
+    market_position = _market_position_data(
+        position_simulation=position_simulation,
+        position_static=position_static,
+        comparables=simulation_comparables,
+        communal=communal,
+        appraisal_card=appraisal_card,
+        property_state=simulation_property_state,
+        property_code=property_code,
+        current_price=simulation_current_price,
+        recommended_price=simulation_recommended_price,
+        recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
+        stale=stale,
     )
+    # Keep the existing simulation contract while exposing the independently
+    # validated markers from the unified scale. The visual remains read-only.
+    market_reference_x = {
+        ref.get("kind"): ref.get("x")
+        for ref in market_position.get("references", [])
+        if isinstance(ref, Mapping)
+    } if market_position.get("available") else {}
+    position_simulation = {
+        **position_simulation,
+        "appraisal_x": market_reference_x.get("APPRAISAL"),
+        "median_x": market_reference_x.get("COMPARABLE"),
+        "communal_x": market_reference_x.get("COMMUNAL"),
+        "communal_on_same_scale": "COMMUNAL" in market_reference_x,
+        "current_x": market_position.get("current_x") if market_position.get("available") else None,
+        "proposed_x": market_position.get("proposed_x") if market_position.get("available") else None,
+    }
 
     return {
         "logo_url": campaign_view.get("logo_url"),
@@ -1845,6 +2230,7 @@ def build_monthly_portal_view(
         "position": position,
         "position_simulation": position_simulation,
         "position_static": position_static,
+        "market_position": market_position,
         "appraisal_card": appraisal_card,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,

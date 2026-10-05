@@ -415,7 +415,9 @@ def test_short_landing_serves_monthly_report_without_mutating_exact_sent_email(m
     assert "3.428 UF" in response.text
     assert "Revisar ajuste" in response.text
     assert "Escribir por WhatsApp" in response.text and "WhatsApp" in response.text
-    assert "/campana/informe?token=" in response.text
+    # This fixture has no verified communal/appraisal source, so no document
+    # link should be emitted now that the duplicate global support section is gone.
+    assert "/campana/informe?token=" not in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
     visible_text = " ".join(visible.parts)
@@ -441,7 +443,7 @@ def test_short_landing_serves_monthly_report_without_mutating_exact_sent_email(m
     assert {item["action"] for item in whatsapp_claims} == {"executive_whatsapp_clicked"}
     assert {item["cta_placement"] for item in whatsapp_claims} == {"TOP", "STICKY"}
     report_tokens = [parse_qs(link.query)["token"][0] for link in parsed_links if link.path == "/campana/informe"]
-    assert report_tokens and campaign.decode_live_token(report_tokens[0])["action"] == "ver_informe"
+    assert report_tokens == []  # No verified document source is present in this fixture.
     for token in (*action_tokens.values(), *report_tokens, *whatsapp_tokens):
         claims = campaign.decode_live_token(token)
         assert claims["source"] == "WHATSAPP"
@@ -517,7 +519,8 @@ def test_short_landing_wave1_sent_communal_and_delivery_unknown(monkeypatch):
         assert "Informe comercial · Propietarios" in response.text
         assert "3.428 UF" in response.text
         assert "Revisar ajuste" in response.text
-        assert "/campana/informe?token=" in response.text
+        # No matching communal dataset is present in this fixture.
+        assert "/campana/informe?token=" not in response.text
         stored = db[EMAIL_ARTIFACT_COLLECTION].find_one({"_id": f"{wave1}:{CODE}"})
         assert gzip.decompress(stored["html_gzip"]).decode("utf-8") == source_html
 
@@ -589,7 +592,7 @@ def test_short_landing_preserves_email_source_in_rewritten_tokens(monkeypatch):
     assert {action: sorted(values) for action, values in placements_by_action.items()} == {
         "aceptar_rebaja": ["STICKY", "TOP"],
         "executive_whatsapp_clicked": ["STICKY", "TOP"],
-        "ver_informe": ["ORIGINAL"],
+        "ver_informe": [],
     }
 
 
@@ -614,7 +617,8 @@ def test_portal_cta_placements_keep_whatsapp_source_and_event_attribution(monkey
             assert claims and claims["source"] == source
             assert claims["interaction_surface"] == "OWNER_PORTAL"
             claims_by_placement.setdefault(claims.get("cta_placement"), []).append(claims)
-        assert {"ORIGINAL", "TOP", "STICKY"}.issubset(claims_by_placement)
+        # No verified document source exists in this fixture, so ORIGINAL is absent.
+        assert {"TOP", "STICKY"}.issubset(claims_by_placement)
         assert {claims["action"] for claims in claims_by_placement["STICKY"]} == {
             "aceptar_rebaja", "executive_whatsapp_clicked",
         }

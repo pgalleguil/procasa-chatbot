@@ -33,7 +33,7 @@
     body { margin:0; padding:0 0 calc(22px + env(safe-area-inset-bottom)); color:var(--ink); background:var(--paper); font:15px/1.48 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
     .page { width:min(100% - 28px, 790px); margin:0 auto; padding:16px 0 28px; }
     .masthead { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:2px 4px 14px; }
-    .logo { width:112px; max-height:45px; object-fit:contain; object-position:left center; }
+    .logo { width:150px; height:56px; object-fit:cover; object-position:center 43%; }
     .masthead-label { color:var(--body); text-align:right; font-size:10px; line-height:1.4; letter-spacing:.075em; text-transform:uppercase; }
     .masthead-label strong { display:block; font-weight:700; }
     .hero { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; gap:14px; padding:18px 21px; border:1px solid var(--line); border-radius:19px; background:linear-gradient(130deg,#f0efff,#fff 79%); }
@@ -141,10 +141,9 @@
     .compact-copy { margin:0; color:var(--body); font-size:12px; }
     .diagnosis-copy { }
     .recommendation { border-color:#dcd9f5; background:linear-gradient(145deg,#fff,#faf9ff); box-shadow:0 4px 18px #19165f10; }
-    .recommendation-header { position:relative; display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; min-height:36px; margin-bottom:8px; padding-right:96px; }
+    .recommendation-header { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; margin-bottom:8px; }
     .recommendation-header .section-heading { margin:0; }
     .recommendation-period { color:#69728a; font-size:10.5px; font-weight:500; }
-    .recommendation-logo { position:absolute; top:0; right:0; display:block; width:88px; height:36px; object-fit:cover; object-position:center 43%; }
     .recommendation-headline { margin:0; color:var(--ink); font-size:16px; line-height:1.3; font-weight:700; }
     .recommendation-flow { display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); align-items:center; gap:7px; margin-top:10px; }
     .recommendation-step { min-width:0; padding:10px; border:1px solid #e4e3f0; border-radius:11px; background:#fff; text-align:center; }
@@ -177,7 +176,6 @@
     .executive-contact-label { display:flex; align-items:center; gap:5px; margin-bottom:2px; color:#68738b; font-size:10px; font-weight:600; }
     .executive-contact-label svg { width:13px; height:13px; color:var(--brand); }
     .executive-contact-value { display:block; color:var(--ink); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
-    .executive-description { margin:6px 0 0; color:var(--body); font-size:12px; line-height:1.45; }
     .monthly-changes { display:flex; flex-wrap:wrap; gap:8px; }
     .monthly-change { flex:1 1 150px; padding:10px; border:1px solid #e9eaf3; border-radius:10px; background:#fbfbfe; color:var(--body); font-size:11px; }
     .monthly-change strong { color:var(--ink); }
@@ -192,7 +190,7 @@
     @media (max-width:480px) {
       .page { width:calc(100% - 24px); padding-top:10px; }
       .masthead { padding-bottom:10px; }
-      .logo { width:94px; }
+      .logo { width:128px; height:48px; }
       .masthead-label { font-size:10.5px; }
       .hero { gap:7px; padding:12px 11px; border-radius:15px; }
       .hero.has-photo { display:flex; flex-direction:column; align-items:stretch; gap:0; min-height:0; padding:16px 13px 0; }
@@ -449,7 +447,7 @@
     {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2>{{ expandable(view.diagnosis, 250, 'compact-copy diagnosis-copy') }}</section>{% endif %}
     {% if view.recommendation_text or view.adjustment_headline_label or view.recommendation_summary %}
     <section class="card recommendation" aria-labelledby="recommendation-title">
-      <header class="recommendation-header"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2>{% if view.recommendation_period_label %}<span class="recommendation-period">{{ view.recommendation_period_label }}</span>{% endif %}{% if view.logo_url %}<img class="recommendation-logo" src="{{ view.logo_url|e }}" alt="PROCASA">{% endif %}</header>
+      <header class="recommendation-header"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2>{% if view.recommendation_period_label %}<span class="recommendation-period">{{ view.recommendation_period_label }}</span>{% endif %}</header>
       {% if view.adjustment_headline_label %}<h3 class="recommendation-headline">Recomendamos ajustar el precio un {{ view.adjustment_headline_label }}</h3>{% else %}<h3 class="recommendation-headline">Propuesta de ajuste de precio</h3>{% endif %}
       <div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Precio propuesto</span><strong>{{ view.recommended_price_display_label or view.recommended_price_label or 'No disponible' }}</strong></div></div>
       <div class="recommendation-meta"><span class="adjustment-chip">Ajuste: {{ view.adjustment_label or 'No disponible' }}</span>{% if view.recommendation_difference_label %}<span class="recommendation-difference">Diferencia aprox.: {{ view.recommendation_difference_label }}</span>{% endif %}</div>
@@ -480,7 +478,6 @@
   <section class="card executive-card" aria-label="Ejecutivo responsable">
     <div class="executive-avatar" aria-hidden="true"><span>{{ view.executive_initials or 'PC' }}</span>{% if view.executive_photo_url %}<img src="{{ view.executive_photo_url|e }}" alt="" width="52" height="52" loading="lazy">{% endif %}</div>
     <div class="executive-info"><h2 class="executive-name">{{ view.executive_name or 'Ejecutivo PROCASA' }}</h2><p class="executive-role">{{ view.executive_role or 'Ejecutivo PROCASA' }}</p>
-      <p class="executive-description">Te explico cómo llegamos a este precio y qué opciones tienes.</p>
       <div class="executive-contact">
         {% if view.executive_phone %}<div class="executive-contact-item"><span class="executive-contact-label">{{ ui_icon('phone') }}Teléfono</span><span class="executive-contact-value executive-phone">{{ view.executive_phone }}</span></div>{% endif %}
         {% if view.executive_email %}<div class="executive-contact-item"><span class="executive-contact-label">{{ ui_icon('mail') }}Correo</span><span class="executive-contact-value executive-email">{{ view.executive_email }}</span></div>{% endif %}

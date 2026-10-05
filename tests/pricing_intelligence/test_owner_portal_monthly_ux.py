@@ -591,7 +591,9 @@ def test_recommendation_prices_centered_procasa_logo_and_equal_simulation_button
     soup = BeautifulSoup(html, "html.parser")
 
     recommendation = soup.select_one(".recommendation")
-    assert recommendation.select_one(".recommendation-logo[alt='PROCASA']")
+    assert not recommendation.select_one(".recommendation-logo")
+    assert soup.select_one(".masthead img.logo[alt='PROCASA']")
+    assert ".logo { width:150px; height:56px; object-fit:cover; object-position:center 43%; }" in html
     price_boxes = recommendation.select(".recommendation-step")
     assert len(price_boxes) == 2
     assert [box.get_text(" ", strip=True) for box in price_boxes] == [
@@ -605,3 +607,27 @@ def test_recommendation_prices_centered_procasa_logo_and_equal_simulation_button
     ]
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in html
     assert ".recommendation-step { min-width:0; padding:10px; border:1px solid #e4e3f0; border-radius:11px; background:#fff; text-align:center; }" in html
+
+
+def test_executive_signature_uses_verified_gendered_role_and_omits_removed_pitch():
+    from bs4 import BeautifulSoup
+    from owner_portal.executive import resolve_executive_contact
+
+    db = mongomock.MongoClient().test
+    template = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    )
+    for source, expected in (
+        ({"role": "Ejecutiva PROCASA"}, "Agente Inmobiliaria · PROCASA Sucre"),
+        ({"gender": "masculino"}, "Agente Inmobiliario · PROCASA Sucre"),
+        ({"role": "Ejecutivo PROCASA"}, "Agente inmobiliario/a · PROCASA Sucre"),
+        ({}, "Agente inmobiliario/a · PROCASA Sucre"),
+    ):
+        contact = resolve_executive_contact(db, {"campaign_snapshot": {"executive": source}}, {}, "Alex")
+        assert contact["role"] == expected
+        view = premium_fixture("full")
+        view["executive_role"] = contact["role"]
+        soup = BeautifulSoup(template.render(view=view), "html.parser")
+        assert soup.select_one(".executive-role").get_text(" ", strip=True) == expected
+        assert not soup.select_one(".executive-description")
+        assert "Te explico cómo llegamos a este precio" not in soup.get_text(" ", strip=True)

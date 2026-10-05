@@ -87,7 +87,7 @@ def _support_document_link_is_safe(value: Any, reference_url: Any, *, campaign_i
 
 def _support_document_date(item: Mapping[str, Any]) -> str:
     # Only source/issue dates describe the document; generated_at is not provenance.
-    for key in ("source_date", "issued_at", "issued_on", "issue_date", "document_date"):
+    for key in ("source_date", "issued_at", "issued_on", "issue_date", "document_date", "appraisal_date"):
         value = item.get(key)
         if isinstance(value, (datetime, date)):
             return _source_date_label(value)
@@ -164,9 +164,12 @@ def _strict_appraisal_number(value: Any) -> float | None:
 
 
 def _appraisal_source_maps(monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
-                           campaign_view: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+                           campaign_view: Mapping[str, Any],
+                           extracted_appraisal: Mapping[str, Any] | None = None) -> list[Mapping[str, Any]]:
     """Return property-scoped appraisal maps in the approved source priority."""
     sources: list[Mapping[str, Any]] = []
+    if isinstance(extracted_appraisal, Mapping):
+        sources.append(extracted_appraisal)
     for container in (monthly,):
         for key in ("individual_appraisal", "appraisal"):
             value = container.get(key)
@@ -221,7 +224,8 @@ def _appraisal_date_label(appraisal: Mapping[str, Any], docs: list[Any]) -> str:
 def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
                     campaign_view: Mapping[str, Any], docs: list[Any], support_documents: list[dict[str, str]],
                     property_code: str, operation: str, current_price: Any,
-                    recommended_price: Any) -> dict[str, Any] | None:
+                    recommended_price: Any,
+                    extracted_appraisal: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
     """Build a verified appraisal view; PDF existence alone never implies a value."""
     appraisal_docs = [item for item in support_documents if item.get("type") == "INDIVIDUAL_APPRAISAL"]
     # Multiple distinct verified appraisal documents for a property are ambiguous.
@@ -231,15 +235,18 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
     document = appraisal_docs[0] if len(appraisal_docs) == 1 else None
 
     appraisal: Mapping[str, Any] | None = None
-    for candidate in _appraisal_source_maps(monthly, snapshot, campaign_view):
+    for candidate in _appraisal_source_maps(monthly, snapshot, campaign_view, extracted_appraisal):
         code = _text(candidate.get("property_code") or candidate.get("codigo"))
         if code and code != property_code:
             continue
         if candidate.get("verified") is not True and candidate.get("source_verified") is not True:
             continue
+        candidate_mid = candidate.get("estimated_mid_uf", candidate.get("appraisal_value"))
         if any(_strict_appraisal_number(candidate.get(key)) is not None for key in (
-            "estimated_low_uf", "estimated_mid_uf", "estimated_high_uf",
-        )):
+            "estimated_low_uf", "estimated_high_uf",
+        )) or _strict_appraisal_number(candidate_mid) is not None:
+            if candidate_mid is not None and candidate.get("estimated_mid_uf") is None:
+                candidate = {**candidate, "estimated_mid_uf": candidate_mid}
             appraisal = candidate
             break
 
@@ -262,9 +269,9 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
             document_metadata += f" · Emitida {date_label}"
         return {
             "mode": "DOCUMENT_ONLY", "title": title,
-            "subtitle": "Existe una tasación individual asociada específicamente a esta propiedad.",
+            "subtitle": "Tasación individual disponible",
             "issued_label": "",
-            "copy": "Puedes revisar el documento completo para conocer sus antecedentes, metodología y referencia de valor.",
+            "copy": "Esta propiedad cuenta con una tasación individual. Revisa el documento completo para consultar su valor de referencia y los antecedentes utilizados en su elaboración.",
             "metrics": [], "markers": [], "interpretation": "", "details": [],
             "method_copy": method_copy, "document_url": document_url,
             "document_title": "Tasación individual", "document_metadata": document_metadata,
@@ -289,14 +296,10 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
 
     gap_pct = ((current / mid) - 1) * 100 if current is not None and mid is not None else None
     gap_amount = current - mid if current is not None and mid is not None else None
-    stored_position = _text(appraisal.get("position_vs_appraisal")).upper()
-    conflict = bool(
-        current is not None and low is not None and high is not None and (
-            (stored_position == "ABOVE_RANGE" and current <= high)
-            or (stored_position == "WITHIN_RANGE" and not low <= current <= high)
-            or (stored_position == "BELOW_RANGE" and current >= low)
-        )
-    )
+    stored_position = ""
+    if current is not None and low is not None and high is not None:
+        stored_position = "ABOVE_RANGE" if current > high else "BELOW_RANGE" if current < low else "WITHIN_RANGE"
+    conflict = False
 
     metrics: list[dict[str, str]] = []
     if mid is not None:
@@ -314,31 +317,41 @@ def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
     interpretation = ""
     if current is not None:
         if low is not None and high is not None:
-            if not conflict:
-                if current > high:
-                    pct = f"{abs(gap_pct):.1f}%".replace(".", ",") if gap_pct is not None else ""
-                    interpretation = "El precio publicado se encuentra por encima del rango de referencia de la tasación." + (f" Frente al valor central estimado, la diferencia es aproximadamente {pct}." if pct else "")
-                elif current < low:
-                    interpretation = "El precio publicado se encuentra por debajo del rango de referencia de la tasación."
-                else:
-                    interpretation = "El precio publicado se encuentra dentro del rango estimado por la tasación."
+            if current > high:
+                pct = f"{abs(gap_pct):.1f}%".replace(".", ",") if gap_pct is not None else ""
+                interpretation = "El precio publicado se encuentra por encima del rango de referencia de la tasación." + (f" Frente al valor central estimado, la diferencia es aproximadamente {pct}." if pct else "")
+            elif current < low:
+                interpretation = "El precio publicado se encuentra por debajo del rango de referencia de la tasación."
+            else:
+                interpretation = "El precio publicado se encuentra dentro del rango estimado por la tasación."
         elif mid is not None and gap_pct is not None:
             direction = "sobre" if gap_pct > 0 else "bajo" if gap_pct < 0 else "en línea con"
-            interpretation = f"El precio publicado se encuentra aproximadamente {abs(gap_pct):.1f}% {direction} el valor de referencia de la tasación.".replace(".", ",", 1) if gap_pct != 0 else "El precio publicado se encuentra en línea con el valor de referencia de la tasación."
+            if abs(gap_pct) <= 0.05:
+                interpretation = "El precio publicado se encuentra en línea con el valor de referencia de la tasación."
+            else:
+                interpretation = f"El precio publicado se encuentra {abs(gap_pct):.1f}% {direction} el valor de referencia de la tasación.".replace(".", ",", 1)
     date_label = _appraisal_date_label(appraisal, docs)
     details = []
-    for label, value in (("Rango inferior", low), ("Valor central", mid),
-                         ("Rango superior", high), ("Precio publicado", current),
-                         ("Con ajuste recomendado", recommended)):
+    for label, value in (("Valor central", mid), ("Rango inferior", low),
+                         ("Rango superior", high), ("UF/m² tasado", _strict_appraisal_number(appraisal.get("appraisal_uf_m2"))),
+                         ("Precio recomendado PROCASA", recommended)):
         if value is None:
             continue
-        details.append({"label": label, "value": price_label(value)})
-    if stored_position and not conflict:
-        if stored_position in {"ABOVE_RANGE", "WITHIN_RANGE", "NEAR_RANGE", "BELOW_RANGE"}:
-            details.append({"label": "Posición frente al rango", "value": historical_model.get("position_label") or "Referencia disponible"})
+        detail_value = _communal_market_value(value, suffix=" UF/m²") if label == "UF/m² tasado" else price_label(value)
+        details.append({"label": label, "value": detail_value})
+    if recommended is not None and mid is not None:
+        recommended_gap = (recommended / mid - 1) * 100
+        direction = "sobre" if recommended_gap > 0.05 else "bajo" if recommended_gap < -0.05 else "en línea con"
+        recommended_position = "en línea con la tasación" if direction == "en línea con" else f"{abs(recommended_gap):.1f}% {direction} la tasación".replace(".", ",", 1)
+        details.append({"label": "Posición del precio recomendado frente a la tasación", "value": recommended_position})
+    if stored_position:
+        details.append({
+            "label": "Posición del precio publicado frente al rango",
+            "value": {"ABOVE_RANGE": "Por encima del rango", "WITHIN_RANGE": "Dentro del rango", "BELOW_RANGE": "Por debajo del rango"}[stored_position],
+        })
     if date_label:
         details.append({"label": "Fecha de tasación", "value": date_label})
-    methodology = _text(appraisal.get("methodology") or appraisal.get("method_label") or appraisal.get("method"))
+    methodology = _text(appraisal.get("appraisal_method") or appraisal.get("methodology") or appraisal.get("method_label") or appraisal.get("method"))
     if methodology:
         details.append({"label": "Metodología", "value": methodology})
     document_metadata = (document.get("metadata") if document else "") or f"Propiedad {property_code} · PDF"
@@ -1554,9 +1567,9 @@ def build_monthly_portal_view(
             ))
             seen_document_urls.add(extra_url)
 
-    # The monthly snapshot is the preferred source. If it has no usable,
-    # property-scoped appraisal link, resolve only this property's exact-code
-    # PDF through the existing private-report resolver. Never expose Drive URLs.
+    # Resolve only this property's exact-code PDF to enrich an unstructured
+    # appraisal. Never expose Drive URLs; an existing signed document link is
+    # retained and reused instead of issuing a duplicate link.
     has_appraisal_document = any(
         item.get("type") == "INDIVIDUAL_APPRAISAL" for item in support_documents
     )
@@ -1567,9 +1580,13 @@ def build_monthly_portal_view(
         and _as_utc(appraisal_access_expiry) > datetime.now(timezone.utc)
         and appraisal_campaign_id and owner_email
     )
-    if not stale and not has_appraisal_document and property_code and appraisal_access_is_valid:
+    resolved_appraisal_analysis: Mapping[str, Any] | None = None
+    if not stale and property_code and appraisal_access_is_valid:
         try:
-            from campanas.private_report import resolve_appraisal_document_cached
+            from campanas.private_report import (
+                resolve_appraisal_analysis_cached,
+                resolve_appraisal_document_cached,
+            )
 
             resolved_appraisal = resolve_appraisal_document_cached(property_code)
             file_record = resolved_appraisal.get("document") if isinstance(resolved_appraisal, Mapping) else None
@@ -1579,11 +1596,14 @@ def build_monthly_portal_view(
                 and isinstance(file_record, Mapping)
                 and file_record.get("id")
             ):
+                resolved_appraisal_analysis = resolve_appraisal_analysis_cached(property_code, file_record)
                 expiry = appraisal_access_expiry
                 campaign_id = appraisal_campaign_id
                 source = str(campaign_view.get("source") or "").upper()
                 source = source if source in {"EMAIL", "WHATSAPP"} else None
                 if (
+                    not has_appraisal_document
+                    and
                     isinstance(expiry, datetime)
                     and _as_utc(expiry) > datetime.now(timezone.utc)
                     and campaign_id and owner_email
@@ -1611,6 +1631,8 @@ def build_monthly_portal_view(
                     appraisal_metadata = {
                         "file_modified_at": file_record.get("modifiedTime"),
                     }
+                    if resolved_appraisal_analysis.get("appraisal_date"):
+                        appraisal_metadata["appraisal_date"] = resolved_appraisal_analysis["appraisal_date"]
                     support_documents.append(_support_document_item(
                         "INDIVIDUAL_APPRAISAL", property_code,
                         document_commune_label, appraisal_url, appraisal_metadata,
@@ -1796,6 +1818,7 @@ def build_monthly_portal_view(
         docs=docs, support_documents=support_documents,
         property_code=property_code, operation=operation,
         current_price=current_price, recommended_price=recommended_price,
+        extracted_appraisal=resolved_appraisal_analysis,
     )
 
     return {

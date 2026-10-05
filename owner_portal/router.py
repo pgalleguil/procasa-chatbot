@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -33,6 +34,65 @@ from .monthly import build_monthly_portal_view
 router = APIRouter(tags=["owner-portal-preview"])
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 logger = logging.getLogger(__name__)
+
+
+@router.get("/internal/owner-portal/appraisal-diagnostic/{property_code}", include_in_schema=False)
+async def owner_portal_appraisal_diagnostic(
+    property_code: str,
+    _user=Depends(require_internal_preview),
+):
+    """TEMPORARY authenticated, read-only diagnostics for one exact appraisal PDF."""
+    if not re.fullmatch(r"[0-9]+", property_code):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    from campanas.private_report import (
+        resolve_appraisal_analysis_cached,
+        resolve_appraisal_document_cached,
+    )
+
+    resolved = await run_in_threadpool(resolve_appraisal_document_cached, property_code)
+    resolver_status = str((resolved or {}).get("status") or "ERROR").upper()
+    file_record = (resolved or {}).get("document")
+    parsed = {}
+    if resolver_status == "FOUND" and isinstance(file_record, dict) and file_record.get("id"):
+        parsed = await run_in_threadpool(resolve_appraisal_analysis_cached, property_code, file_record)
+    elif resolver_status == "FOUND":
+        resolver_status = "ERROR"
+
+    raw_sources = parsed.get("field_sources") if isinstance(parsed, dict) else {}
+    labels = []
+    if isinstance(raw_sources, dict):
+        for value in raw_sources.values():
+            label = re.sub(r"\s+", " ", str(value or "").split(":", 1)[0]).strip()
+            label = re.sub(r"\s+", " ", label.splitlines()[0] if label else "").strip()
+            if label and len(label) <= 64 and not re.search(r"\d", label) and label.casefold() not in {
+                item.casefold() for item in labels
+            }:
+                labels.append(label)
+
+    def safe_number(*keys):
+        for key in keys:
+            value = parsed.get(key) if isinstance(parsed, dict) else None
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return value
+        return None
+
+    return {
+        "property_code": property_code,
+        "resolver_status": resolver_status,
+        "pdf_text_extracted": bool(parsed.get("text_extracted")) if isinstance(parsed, dict) else False,
+        "page_count": int(parsed.get("page_count") or 0) if isinstance(parsed, dict) else 0,
+        "appraisal_value": safe_number("appraisal_value"),
+        "estimated_mid_uf": safe_number("estimated_mid_uf", "appraisal_value"),
+        "estimated_low_uf": safe_number("estimated_low_uf"),
+        "estimated_high_uf": safe_number("estimated_high_uf"),
+        "appraisal_uf_m2": safe_number("appraisal_uf_m2"),
+        "appraisal_date": parsed.get("appraisal_date") if isinstance(parsed, dict) else None,
+        "methodology": parsed.get("methodology") if isinstance(parsed, dict) else None,
+        "matched_labels": labels,
+        "extraction_status": str(parsed.get("extraction_status") or "NOT_RUN") if isinstance(parsed, dict) else "NOT_RUN",
+        "extraction_confidence": str(parsed.get("extraction_confidence") or "LOW") if isinstance(parsed, dict) else "LOW",
+    }
 
 
 @router.get("/owner-portal/executive-whatsapp", include_in_schema=False)

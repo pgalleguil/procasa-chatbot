@@ -182,7 +182,7 @@ def _children(
         response = service.files().list(
             q=query,
             pageSize=1000,
-            fields="nextPageToken,files(id,name,mimeType,parents,createdTime,modifiedTime)",
+            fields="nextPageToken,files(id,name,mimeType,parents,size,createdTime,modifiedTime)",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
             corpora="allDrives",
@@ -258,6 +258,11 @@ def _resolve_appraisal(service: Any, property_code: str) -> dict[str, Any] | Non
 _APPRAISAL_CACHE_TTL_SECONDS = 60 * 60
 _APPRAISAL_CACHE: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
 _APPRAISAL_CACHE_LOCK = threading.Lock()
+_APPRAISAL_PARSE_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
+_APPRAISAL_PARSE_CACHE_LOCK = threading.Lock()
+_APPRAISAL_MAX_PDF_BYTES = 12 * 1024 * 1024
+_APPRAISAL_MAX_PDF_PAGES = 30
+_APPRAISAL_EXTRACTION_TIMEOUT_SECONDS = 6.0
 
 
 def resolve_appraisal_document_cached(property_code: str) -> dict[str, Any]:
@@ -301,6 +306,178 @@ def resolve_appraisal_document_cached(property_code: str) -> dict[str, Any]:
         )
     logger.info("[CAMPAIGN_REPORT_APPRAISAL_RESOLVE] status=%s", status.casefold())
     return {"status": status, "document": dict(document) if document else None}
+
+
+def _parse_uf_amount(raw: str) -> float | None:
+    value = re.sub(r"\s|UF", "", raw, flags=re.IGNORECASE)
+    if not value:
+        return None
+    if "," in value:
+        value = value.replace(".", "").replace(",", ".")
+    elif value.count(".") > 1 or re.search(r"\.\d{3}$", value):
+        value = value.replace(".", "")
+    try:
+        parsed = float(value)
+    except ValueError:
+        return None
+    return parsed if 0 < parsed < 1_000_000 else None
+
+
+def _extract_appraisal_fields(text: str, *, property_code: str, file_record: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract only explicitly labelled valuation data from selectable PDF text."""
+    normalized = unicodedata.normalize("NFC", text or "")
+    central_label = re.compile(
+        r"(?i)\b(valor\s+(?:de\s+tasaci[oó]n|(?:de\s+)?(?:comercial|mercado|estimad[oa]|referencial))|"
+        r"tasaci[oó]n(?:\s+(?:individual|comercial))?)\b"
+    )
+    amount = r"((?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?)\s*UF\b"
+    candidates: list[tuple[int, float, str]] = []
+    priorities = {
+        "valor de tasación": 0, "valor tasación": 0,
+        "valor comercial": 1, "valor de mercado": 2,
+        "valor estimado": 3, "valor estimada": 3,
+        "valor referencial": 4, "tasación individual": 5,
+        "tasación comercial": 5, "tasación": 6,
+    }
+    for match in central_label.finditer(normalized):
+        preceding = normalized[max(0, match.start() - 24):match.start()]
+        if re.search(r"(?i)\brango\s+(?:de\s+)?$", preceding):
+            continue
+        tail = normalized[match.end():match.end() + 90]
+        value_match = re.search(r"[^\d]{0,45}?" + amount, tail, flags=re.IGNORECASE)
+        if not value_match:
+            continue
+        value = _parse_uf_amount(value_match.group(1))
+        if value is None:
+            continue
+        label = re.sub(r"\s+", " ", match.group(0)).strip().casefold()
+        priority = priorities.get(label, priorities.get(label.replace("de ", ""), 8))
+        candidates.append((priority, value, match.group(0)))
+
+    result: dict[str, Any] = {
+        "property_code": str(property_code), "source_file_id": str(file_record.get("id") or ""),
+        "source_file_modified_at": file_record.get("modifiedTime"),
+        "extraction_status": "DOCUMENT_ONLY", "extraction_confidence": "LOW",
+        "text_extracted": bool(normalized.strip()), "field_sources": {},
+    }
+    if candidates:
+        _priority, central, source_label = sorted(candidates, key=lambda item: item[0])[0]
+        result.update({
+            "appraisal_value": central, "estimated_mid_uf": central,
+            "extraction_status": "STRUCTURED", "extraction_confidence": "HIGH",
+            "verified": True,
+            "field_sources": {"estimated_mid_uf": source_label},
+        })
+
+    range_label = re.compile(r"(?i)\b(rango\s+(?:de\s+)?(?:tasaci[oó]n|valor|estimaci[oó]n)|valor\s+m[ií]nimo\s+y\s+m[aá]ximo)\b")
+    for match in range_label.finditer(normalized):
+        snippet = normalized[match.start():match.start() + 180]
+        amounts = re.findall(amount, snippet, flags=re.IGNORECASE)
+        parsed = [_parse_uf_amount(item) for item in amounts[:2]]
+        if len(parsed) == 2 and all(item is not None for item in parsed):
+            low, high = sorted(parsed)
+            result["estimated_low_uf"] = low
+            result["estimated_high_uf"] = high
+            result["field_sources"].update({
+                "estimated_low_uf": match.group(0), "estimated_high_uf": match.group(0),
+            })
+            break
+
+    per_m2 = re.search(
+        r"(?i)(?:UF\s*/\s*m(?:2|²)|(?:UF|valor)\s+por\s+m(?:2|²))\s*[:=]?\s*"
+        r"(\d+(?:\.\d{3})*(?:,\d+)?)\s*UF?\b", normalized,
+    )
+    if per_m2:
+        value = _parse_uf_amount(per_m2.group(1))
+        if value is not None:
+            result["appraisal_uf_m2"] = value
+            result["field_sources"]["appraisal_uf_m2"] = per_m2.group(0)
+
+    date_match = re.search(
+        r"(?im)\b(?:fecha\s+de\s+tasaci[oó]n|fecha\s+del\s+informe|emitida\s+el)\b"
+        r"[^\d\n]{0,24}(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{4}-\d{2}-\d{2})", normalized,
+    )
+    if date_match:
+        result["appraisal_date"] = date_match.group(1)
+        result["field_sources"]["appraisal_date"] = date_match.group(0).splitlines()[0].strip()
+
+    method_match = re.search(r"(?im)\b(?:metodolog[ií]a|m[eé]todo de tasaci[oó]n)\b\s*[:\-]?\s*([^\n]{2,100})", normalized)
+    if method_match:
+        method = re.sub(r"\s+", " ", method_match.group(1)).strip(" :-")
+        if method:
+            result["appraisal_method"] = method
+            result["methodology"] = method
+            result["field_sources"]["methodology"] = method_match.group(0).strip()
+    return result
+
+
+def resolve_appraisal_analysis_cached(
+    property_code: str, file_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Parse the already-resolved exact PDF once per property/file/revision."""
+    code = str(property_code or "").strip()
+    file_id = str(file_record.get("id") or "").strip()
+    modified = str(file_record.get("modifiedTime") or "")
+    if not code or not file_id:
+        return {"extraction_status": "ERROR", "extraction_confidence": "LOW", "property_code": code}
+    key = (code, file_id, modified)
+    now = time.monotonic()
+    with _APPRAISAL_PARSE_CACHE_LOCK:
+        cached = _APPRAISAL_PARSE_CACHE.get(key)
+        if cached and cached[0] > now:
+            return dict(cached[1])
+        if cached:
+            _APPRAISAL_PARSE_CACHE.pop(key, None)
+
+    result: dict[str, Any] = {
+        "property_code": code, "source_file_id": file_id,
+        "source_file_modified_at": file_record.get("modifiedTime"),
+        "extraction_status": "ERROR", "extraction_confidence": "LOW",
+        "text_extracted": False, "page_count": 0, "field_sources": {},
+    }
+    try:
+        size = file_record.get("size")
+        if size is not None and int(size) > _APPRAISAL_MAX_PDF_BYTES:
+            result["extraction_status"] = "TOO_LARGE"
+        else:
+            drive = GDriveSync()
+            service = drive.service
+            if service is None:
+                raise RuntimeError("drive_service_unavailable")
+            http = getattr(service, "_http", None)
+            if http is not None and hasattr(http, "timeout"):
+                http.timeout = 8
+            pdf_bytes = _download_pdf(service, file_id, max_bytes=_APPRAISAL_MAX_PDF_BYTES)
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(pdf_bytes), strict=False)
+            result["page_count"] = len(reader.pages)
+            if len(reader.pages) > _APPRAISAL_MAX_PDF_PAGES:
+                result["extraction_status"] = "TOO_MANY_PAGES"
+            else:
+                started = time.monotonic()
+                pages: list[str] = []
+                for page in reader.pages:
+                    pages.append(page.extract_text() or "")
+                    if time.monotonic() - started > _APPRAISAL_EXTRACTION_TIMEOUT_SECONDS:
+                        raise TimeoutError("appraisal_text_extraction_timeout")
+                result = _extract_appraisal_fields("\n".join(pages), property_code=code, file_record=file_record)
+                result["page_count"] = len(reader.pages)
+    except Exception as exc:
+        result["extraction_status"] = "ERROR"
+        result["extraction_error"] = type(exc).__name__
+    with _APPRAISAL_PARSE_CACHE_LOCK:
+        if len(_APPRAISAL_PARSE_CACHE) >= 128:
+            oldest = min(_APPRAISAL_PARSE_CACHE, key=lambda item: _APPRAISAL_PARSE_CACHE[item][0])
+            _APPRAISAL_PARSE_CACHE.pop(oldest, None)
+        _APPRAISAL_PARSE_CACHE[key] = (
+            time.monotonic() + _APPRAISAL_CACHE_TTL_SECONDS, dict(result),
+        )
+    logger.info(
+        "[CAMPAIGN_REPORT_APPRAISAL_PARSE] status=%s text_extracted=%s",
+        str(result.get("extraction_status", "ERROR")).casefold(),
+        bool(result.get("text_extracted")),
+    )
+    return result
 
 
 def _resolve_communal_report(service: Any, identity: Mapping[str, str]) -> dict[str, Any] | None:
@@ -396,12 +573,29 @@ def _assert_private(service: Any, file_id: str) -> str:
             return "VERIFIED_PRIVATE"
 
 
-def _download_pdf(service: Any, file_id: str, timings: dict[str, float] | None = None) -> bytes:
+class _BoundedPdfBuffer(io.BytesIO):
+    def __init__(self, max_bytes: int | None):
+        super().__init__()
+        self.max_bytes = max_bytes
+
+    def write(self, value: bytes) -> int:
+        if self.max_bytes is not None and self.tell() + len(value) > self.max_bytes:
+            raise CampaignReportError(413, "pdf_too_large")
+        return super().write(value)
+
+
+def _download_pdf(
+    service: Any,
+    file_id: str,
+    timings: dict[str, float] | None = None,
+    *,
+    max_bytes: int | None = None,
+) -> bytes:
     acl_started = time.perf_counter()
     _assert_private(service, file_id)
     if timings is not None:
         timings["drive_acl_ms"] = (time.perf_counter() - acl_started) * 1000
-    stream = io.BytesIO()
+    stream = _BoundedPdfBuffer(max_bytes)
     fetch_started = time.perf_counter()
     downloader = MediaIoBaseDownload(
         stream,

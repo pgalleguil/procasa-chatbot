@@ -64,6 +64,51 @@ def internal_client(monkeypatch, db):
     return TestClient(app)
 
 
+def test_temporary_appraisal_diagnostic_is_read_only_and_returns_only_allowlisted_fields(monkeypatch):
+    from campanas import private_report
+    calls = []
+
+    def resolve(code):
+        calls.append(("resolve", code))
+        return {"status": "FOUND", "document": {"id": "private-drive-file-id", "modifiedTime": "2026-09-20T00:00:00Z"}}
+
+    def parse(code, document):
+        calls.append(("parse", code, document["id"]))
+        return {
+            "property_code": code, "source_file_id": document["id"], "text_extracted": True,
+            "page_count": 4, "appraisal_value": 3750, "estimated_mid_uf": 3750,
+            "estimated_low_uf": 3600, "estimated_high_uf": 3900, "appraisal_uf_m2": 42.5,
+            "appraisal_date": "15/09/2026", "methodology": "Comparación directa",
+            "extraction_status": "STRUCTURED", "extraction_confidence": "HIGH",
+            "field_sources": {"estimated_mid_uf": "Valor de tasación", "methodology": "Metodología: Comparación directa"},
+            "full_pdf_text": "must never escape",
+        }
+
+    monkeypatch.setattr(private_report, "resolve_appraisal_document_cached", resolve)
+    monkeypatch.setattr(private_report, "resolve_appraisal_analysis_cached", parse)
+    response = internal_client(monkeypatch, mongomock.MongoClient().test).get("/internal/owner-portal/appraisal-diagnostic/5994")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "property_code": "5994", "resolver_status": "FOUND", "pdf_text_extracted": True,
+        "page_count": 4, "appraisal_value": 3750, "estimated_mid_uf": 3750,
+        "estimated_low_uf": 3600, "estimated_high_uf": 3900, "appraisal_uf_m2": 42.5,
+        "appraisal_date": "15/09/2026", "methodology": "Comparación directa",
+        "matched_labels": ["Valor de tasación", "Metodología"],
+        "extraction_status": "STRUCTURED", "extraction_confidence": "HIGH",
+    }
+    assert calls == [("resolve", "5994"), ("parse", "5994", "private-drive-file-id")]
+    assert "private-drive-file-id" not in response.text
+    assert "full_pdf_text" not in response.text
+
+
+def test_temporary_appraisal_diagnostic_rejects_non_numeric_codes(monkeypatch):
+    from campanas import private_report
+    monkeypatch.setattr(private_report, "resolve_appraisal_document_cached", lambda _code: pytest.fail("must not resolve"))
+    response = internal_client(monkeypatch, mongomock.MongoClient().test).get("/internal/owner-portal/appraisal-diagnostic/5994x")
+    assert response.status_code == 404
+
+
 def test_sucre_identity_exact():
     assert service.is_procasa_sucre_property({"estado": {"oficina": "PROCASA SUCRE"}})
 

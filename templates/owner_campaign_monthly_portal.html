@@ -53,25 +53,15 @@
     .actions-top.actions-top-single { grid-template-columns:1fr; }
     .button { min-width:0; min-height:49px; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px 13px; border:1px solid transparent; border-radius:12px; text-align:center; text-decoration:none; font-size:12px; line-height:1.22; font-weight:700; transition:transform 200ms cubic-bezier(.2,.7,.2,1),box-shadow 200ms ease,background-color 200ms ease,border-color 200ms ease,color 200ms ease; }
     .button svg { width:14px; height:14px; flex:0 0 14px; }
-    .button:focus-visible,.support-row:focus-visible { outline:3px solid #948bff; outline-offset:3px; box-shadow:0 0 0 5px #4433d526; }
+    .button:focus-visible { outline:3px solid #948bff; outline-offset:3px; box-shadow:0 0 0 5px #4433d526; }
     .button-primary { background:var(--ink); color:#fff; box-shadow:0 4px 12px #19165f26; }
     .button-secondary { border-color:#ccc8f3; background:#fff; color:var(--brand); }
     .button-whatsapp { border-color:#25D366; background:#25D366; color:#fff; box-shadow:0 3px 10px #0000001a; }
     .button-whatsapp svg { color:#fff; }
     .button-whatsapp svg { width:17px; height:17px; flex-basis:17px; }
-    .support-row { transition:background-color 180ms ease,border-color 180ms ease,box-shadow 180ms ease; }
-    .support-list { display:grid; gap:7px; }
-    .support-row { display:grid; grid-template-columns:32px minmax(0,1fr) 16px; align-items:center; gap:9px; min-width:0; min-height:54px; padding:7px 9px; border:1px solid #e8e9f0; border-radius:10px; background:#fcfcfe; color:var(--ink); text-decoration:none; }
-    .support-row__icon { display:grid; width:30px; height:30px; place-items:center; border-radius:8px; background:#f1f0fa; color:#5146a8; }
-    .support-row__icon svg { width:16px; height:16px; }
-    .support-row__copy { min-width:0; }
-    .support-row__title { display:block; overflow-wrap:anywhere; font-size:11.5px; line-height:1.3; font-weight:650; }
-    .support-row__meta { display:block; margin-top:2px; overflow-wrap:anywhere; color:#68738b; font-size:10px; line-height:1.3; }
-    .support-row__chevron { width:15px; height:15px; color:#737b90; }
     @media (hover:hover) and (pointer:fine) {
       .button-primary[href]:hover { transform:translateY(-2px); background:#292477; box-shadow:0 9px 20px #19165f40; }
       .button-secondary[href]:hover { transform:translateY(-1px); border-color:#aaa3eb; background:#f3f1ff; box-shadow:0 6px 15px #19165f1c; }
-      .support-row[href]:hover { border-color:#c7c9db; background:#f7f8fc; box-shadow:0 3px 10px #18204a0c; }
       .button-whatsapp[href]:hover { transform:translateY(-1px); background:#22c55e; border-color:#22c55e; box-shadow:0 6px 15px #00000026; }
     }
     .action-note { margin:5px 2px 0; color:#727b91; text-align:center; font-size:10px; }
@@ -312,7 +302,7 @@
       body { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
     }
     @media (max-width:375px) { .complementary-market__grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button,.support-row { transition:none; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button { transition:none; } }
 
     /* Progressive enhancement: content stays visible before and without JavaScript. */
     body { padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
@@ -571,21 +561,6 @@
     </section>
     {% endif %}
   </div>
-  {% endif %}
-
-  {% if view.support_documents %}
-  <section class="card support-section" aria-labelledby="support-title">
-    <h2 class="section-heading" id="support-title"><span class="section-icon">{{ ui_icon('document') }}</span>Documentos de respaldo</h2>
-    <div class="support-list">
-      {% for document in view.support_documents %}
-      <a class="support-row" data-document-type="{{ document.type|e }}" href="{{ document.url|e }}" rel="noreferrer" aria-label="Abrir {{ document.title|e }}. {{ document.metadata|e }}">
-        <span class="support-row__icon">{{ ui_icon('document') }}</span>
-        <span class="support-row__copy"><span class="support-row__title">{{ document.title }}</span><span class="support-row__meta">{{ document.metadata }}</span></span>
-        {{ ui_icon('chevron', 'support-row__chevron') }}
-      </a>
-      {% endfor %}
-    </div>
-  </section>
   {% endif %}
 
   {% endif %}

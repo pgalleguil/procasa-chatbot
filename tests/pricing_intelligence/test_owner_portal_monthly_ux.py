@@ -224,7 +224,7 @@ def test_support_document_dates_are_never_inferred_from_generation_time():
     assert _support_document_date({"source_date": "28/04/2026"}) == "28-04-2026"
 
 
-def test_communal_report_document_is_full_row_clickable_and_listed_in_support_section():
+def test_communal_report_document_is_full_row_clickable_without_separate_support_section():
     from bs4 import BeautifulSoup
     template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
     view = premium_fixture("full")
@@ -239,7 +239,8 @@ def test_communal_report_document_is_full_row_clickable_and_listed_in_support_se
     assert row.select_one(".complementary-market__document-title").get_text(strip=True) == "Informe de mercado comunal"
     assert "Talca · PDF · Corte 28/04/2026" in row.select_one(".complementary-market__document-meta").get_text(" ", strip=True)
     assert row.select_one(".complementary-market__document-icon svg") and row.select_one(".complementary-market__document-chevron")
-    assert soup.select_one('.support-section [data-document-type="COMMUNAL_MARKET_REPORT"]')
+    assert not soup.select_one("#support-title")
+    assert not soup.select_one(".support-section")
     assert "Abrir informe completo" not in soup.get_text(" ", strip=True)
 
 
@@ -335,7 +336,8 @@ def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_sig
     assert document.select_one(".complementary-market__document-icon svg")
     assert document.select_one(".complementary-market__document-chevron")
     assert "Abrir informe completo" not in section.get_text(" ", strip=True)
-    assert soup.select_one('.support-section [data-document-type="COMMUNAL_MARKET_REPORT"]')
+    assert not soup.select_one("#support-title")
+    assert len(soup.select('[data-document-type="COMMUNAL_MARKET_REPORT"]')) == 1
     assert "propiedades comparables" not in section.get_text(" ", strip=True).casefold()
 
 
@@ -569,8 +571,8 @@ def test_appraisal_structured_values_render_with_existing_private_document():
         "Valor de referencia", "Rango estimado", "Precio publicado", "Diferencia frente a la tasación",
     }
     assert len(view["appraisal_card"]["metrics"]) == 4
-    assert any(item["label"] == "Con ajuste recomendado" for item in view["appraisal_card"]["details"])
-    assert {"Rango inferior", "Valor central", "Rango superior", "Precio publicado", "Con ajuste recomendado", "Fecha de tasación", "Metodología"}.issubset(
+    assert any(item["label"] == "Precio recomendado PROCASA" for item in view["appraisal_card"]["details"])
+    assert {"Rango inferior", "Valor central", "Rango superior", "Posición del precio publicado frente al rango", "Posición del precio recomendado frente a la tasación", "Fecha de tasación", "Metodología"}.issubset(
         {item["label"] for item in view["appraisal_card"]["details"]}
     )
     assert "por encima del rango" in view["appraisal_card"]["interpretation"]
@@ -710,17 +712,18 @@ def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_
         "class=\"hero", "class=\"actions-top", "id=\"summary-title\"",
         "id=\"activity-title\"", "id=\"position-title\"", "id=\"appraisal-title\"",
         "id=\"complementary-market-title\"", "id=\"diagnosis-title\"",
-        "id=\"recommendation-title\"", "id=\"support-title\"", "class=\"card executive-card\"",
+        "id=\"recommendation-title\"", "class=\"card executive-card\"",
     ]
     html = template.render(view=view)
     positions = [html.index(marker) for marker in section_ids]
     assert positions == sorted(positions)
     support_types = {row["type"] for row in view["support_documents"]}
     assert support_types == {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}
-    assert len(soup.select(".support-section .support-row")) == 2
-    assert [row.get("data-document-type") for row in soup.select(".support-section .support-row")] == [
-        "INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT",
-    ]
+    assert soup.select_one(".appraisal-card [data-document-type='INDIVIDUAL_APPRAISAL']")
+    assert soup.select_one(".complementary-market [data-document-type='COMMUNAL_MARKET_REPORT']")
+    assert not soup.select_one("#support-title")
+    assert len(soup.select('[data-document-type="INDIVIDUAL_APPRAISAL"]')) == 1
+    assert len(soup.select('[data-document-type="COMMUNAL_MARKET_REPORT"]')) == 1
 
 
 def test_appraisal_and_comparable_and_communal_sections_are_independent_in_all_combinations():
@@ -796,7 +799,7 @@ def test_appraisal_document_only_and_no_appraisal_states_render_correctly():
     assert "Tasación individual de tu propiedad" not in no_html
 
 
-def test_real_resolver_fallback_renders_one_private_appraisal_link_in_both_sections(monkeypatch):
+def test_exact_resolver_result_is_reused_for_one_private_appraisal_link(monkeypatch):
     import os
     from unittest.mock import patch
     from campanas.owner_campaign_live_events import decode_live_token
@@ -830,16 +833,23 @@ def test_real_resolver_fallback_renders_one_private_appraisal_link_in_both_secti
         return resolver
 
     monkeypatch.setattr("campanas.private_report.resolve_appraisal_document_cached", resolve_exact)
+    monkeypatch.setattr("campanas.private_report.resolve_appraisal_analysis_cached", lambda requested_code, record: {
+        "property_code": requested_code, "source_file_id": record["id"],
+        "source_file_modified_at": record["modifiedTime"],
+        "verified": True, "estimated_mid_uf": 3750, "appraisal_value": 3750,
+        "extraction_status": "STRUCTURED", "extraction_confidence": "HIGH",
+        "text_extracted": True, "field_sources": {"estimated_mid_uf": "Valor de tasación"},
+    })
     with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
         view = build_monthly_portal_view(db, row, campaign)
 
-    assert view["appraisal_card"]["mode"] == "DOCUMENT_ONLY"
+    assert view["appraisal_card"]["mode"] == "STRUCTURED"
     rendered = Environment(loader=FileSystemLoader("templates")).get_template(
         "owner_campaign_monthly_portal.html"
     ).render(view=view)
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(rendered, "html.parser")
-    appraisal_section = soup.select_one("[data-appraisal-mode='DOCUMENT_ONLY']")
+    appraisal_section = soup.select_one("[data-appraisal-mode='STRUCTURED']")
     assert appraisal_section is not None
     assert appraisal_section.select_one(".appraisal-card__heading").get_text(strip=True) == "Tasación individual de tu propiedad"
     appraisal_doc = next(item for item in view["support_documents"] if item["type"] == "INDIVIDUAL_APPRAISAL")
@@ -853,11 +863,45 @@ def test_real_resolver_fallback_renders_one_private_appraisal_link_in_both_secti
     assert claims["property_code"] == code and claims["recipient"] == owner
     assert claims["action"] == "ver_informe"
     assert appraisal_section.select_one("a.appraisal-card__document")["href"] == appraisal_doc["url"]
-    support_row = next(
-        link for link in soup.select(".support-row")
-        if link.get("href") == appraisal_doc["url"]
+    assert not soup.select_one("#support-title")
+    assert len(soup.select('[data-document-type="INDIVIDUAL_APPRAISAL"]')) == 1
+
+
+@pytest.mark.parametrize(
+    ("pdf_text", "expected_mid", "expected_range", "expected_date", "expected_method"),
+    [
+        (
+            "Valor de tasación: 2.050 UF\nUF/m²: 82,5 UF\nFecha de tasación: 15/09/2026\nMetodología: Comparación directa",
+            2050, False, "15/09/2026", "Comparación directa",
+        ),
+        ("Valor comercial\n3.900 UF", 3900, False, "", ""),
+        ("Rango de tasación: 3.600 UF - 4.100 UF", None, True, "", ""),
+    ],
+)
+def test_pdf_appraisal_parser_uses_only_explicit_labels(pdf_text, expected_mid, expected_range, expected_date, expected_method):
+    from campanas.private_report import _extract_appraisal_fields
+    parsed = _extract_appraisal_fields(
+        pdf_text, property_code="5994", file_record={"id": "qa-pdf-id", "modifiedTime": "2026-09-20T00:00:00Z"},
     )
-    assert support_row.select_one(".support-row__title").get_text(strip=True) == "Tasación comercial"
+    assert parsed["property_code"] == "5994"
+    assert parsed.get("estimated_mid_uf") == expected_mid
+    assert ("estimated_low_uf" in parsed and "estimated_high_uf" in parsed) is expected_range
+    assert parsed.get("appraisal_date", "") == expected_date
+    assert parsed.get("methodology", "") == expected_method
+    assert parsed["extraction_status"] == ("STRUCTURED" if expected_mid else "DOCUMENT_ONLY")
+    assert parsed["extraction_confidence"] == ("HIGH" if expected_mid else "LOW")
+
+
+def test_pdf_appraisal_parser_does_not_invent_midpoint_or_range():
+    from campanas.private_report import _extract_appraisal_fields
+    parsed = _extract_appraisal_fields(
+        "Precio publicado: 3.990 UF\nSuperficie útil: 88 m2",
+        property_code="5994", file_record={"id": "qa-pdf-id"},
+    )
+    assert "estimated_mid_uf" not in parsed
+    assert "estimated_low_uf" not in parsed
+    assert "estimated_high_uf" not in parsed
+    assert parsed["extraction_status"] == "DOCUMENT_ONLY"
 
 
 @pytest.mark.parametrize("status", ["NOT_FOUND", "AMBIGUOUS", "ERROR"])
@@ -928,7 +972,7 @@ def test_wrong_property_appraisal_data_is_rejected_and_duplicate_pdf_fails_close
     assert ambiguous_view["appraisal_card"] is None
 
 
-def test_appraisal_visibility_is_independent_of_authorization_and_position_conflicts_suppress_copy():
+def test_appraisal_visibility_is_independent_of_authorization_and_range_position_is_recomputed():
     authorized, _ = _verified_appraisal_fixture(
         mongomock.MongoClient().test,
         appraisal={"verified": True, "property_code": "5438", "estimated_mid_uf": 3750,
@@ -937,8 +981,13 @@ def test_appraisal_visibility_is_independent_of_authorization_and_position_confl
     )
     assert authorized["appraisal_card"]["mode"] == "STRUCTURED"
     assert authorized["can_authorize"] is False
-    assert authorized["appraisal_card"]["conflict"] is True
-    assert authorized["appraisal_card"]["interpretation"] == ""
+    assert authorized["appraisal_card"]["conflict"] is False
+    assert any(
+        item["label"] == "Posición del precio publicado frente al rango"
+        and item["value"] == "Por encima del rango"
+        for item in authorized["appraisal_card"]["details"]
+    )
+    assert "por encima del rango" in authorized["appraisal_card"]["interpretation"]
 
 
 def test_month_over_month_requires_real_metrics_in_both_snapshots():

@@ -8,6 +8,10 @@
   {% elif name == 'spark' %}<path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>
   {% elif name == 'user' %}<circle cx="12" cy="8" r="3.5"/><path d="M5 21a7 7 0 0 1 14 0"/>
   {% elif name == 'arrow' %}<path d="M4 12h15M13 5l7 7-7 7"/>
+  {% elif name == 'chevron' %}<path d="m9 18 6-6-6-6"/>
+  {% elif name == 'phone' %}<path d="M7 3h3l2 5-2 2a15 15 0 0 0 4 4l2-2 5 2v3c0 1.1-.9 2-2 2C10.7 19 5 13.3 5 6c0-1.7.3-3 2-3Z"/>
+  {% elif name == 'mail' %}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>
+  {% elif name == 'whatsapp' %}<path fill="currentColor" stroke="none" d="M12 2.25a9.6 9.6 0 0 0-8.2 14.58L2.5 21.5l4.8-1.26A9.6 9.6 0 1 0 12 2.25Zm0 17.3a7.67 7.67 0 0 1-3.9-1.06l-.28-.17-2.85.75.76-2.78-.18-.29A7.7 7.7 0 1 1 12 19.55Zm4.22-5.76c-.23-.12-1.36-.67-1.57-.75-.21-.08-.36-.12-.51.12-.15.23-.59.75-.72.9-.13.15-.26.17-.49.06-.23-.12-.97-.36-1.85-1.14-.68-.6-1.14-1.35-1.27-1.58-.13-.23-.01-.36.1-.47.1-.1.23-.26.34-.39.12-.13.15-.23.23-.38.08-.16.04-.29-.02-.4-.06-.12-.51-1.23-.7-1.69-.18-.44-.37-.38-.51-.39h-.43c-.15 0-.4.06-.61.29-.21.23-.8.78-.8 1.9s.82 2.2.93 2.35c.12.15 1.61 2.46 3.9 3.45.55.24.98.39 1.31.5.55.18 1.05.15 1.45.09.44-.07 1.36-.56 1.55-1.1.19-.55.19-1.02.13-1.11-.06-.1-.21-.16-.44-.27Z"/>
   {% endif %}
 </svg>
 {%- endmacro %}
@@ -44,15 +48,21 @@
     .hero-photo-wrap::after { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(90deg,#f4f3ff 0%,rgba(244,243,255,.9) 12%,rgba(244,243,255,.58) 34%,rgba(244,243,255,.2) 58%,rgba(244,243,255,0) 82%); pointer-events:none; }
     .hero-photo { display:block; width:100%; height:100%; object-fit:cover; }
     .actions-top { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:10px 0 0; }
+    .actions-top.actions-top-single { grid-template-columns:1fr; }
     .button { min-width:0; min-height:49px; display:flex; align-items:center; justify-content:center; gap:8px; padding:11px 13px; border:1px solid transparent; border-radius:12px; text-align:center; text-decoration:none; font-size:12px; line-height:1.22; font-weight:700; transition:transform 200ms cubic-bezier(.2,.7,.2,1),box-shadow 200ms ease,background-color 200ms ease,border-color 200ms ease,color 200ms ease; }
     .button svg { width:14px; height:14px; flex:0 0 14px; }
-    .button:focus-visible,.document-action:focus-visible { outline:3px solid #948bff; outline-offset:3px; box-shadow:0 0 0 5px #4433d526; }
+    .button:focus-visible,.support-row:focus-visible { outline:3px solid #948bff; outline-offset:3px; box-shadow:0 0 0 5px #4433d526; }
     .button-primary { background:var(--ink); color:#fff; box-shadow:0 4px 12px #19165f26; }
     .button-secondary { border-color:#ccc8f3; background:#fff; color:var(--brand); }
-    .document-action { transition:transform 200ms cubic-bezier(.2,.7,.2,1),box-shadow 200ms ease,background-color 200ms ease,border-color 200ms ease; }
+    .button-whatsapp { border-color:#25D366; background:#25D366; color:#fff; box-shadow:0 3px 10px #0000001a; }
+    .button-whatsapp svg { color:#fff; }
+    .button-whatsapp svg { width:17px; height:17px; flex-basis:17px; }
+    .support-row { transition:background-color 180ms ease,border-color 180ms ease,box-shadow 180ms ease; }
     @media (hover:hover) and (pointer:fine) {
       .button-primary[href]:hover { transform:translateY(-2px); background:#292477; box-shadow:0 9px 20px #19165f40; }
-      .button-secondary[href]:hover,.document-action[href]:hover { transform:translateY(-1px); border-color:#aaa3eb; background:#f3f1ff; box-shadow:0 6px 15px #19165f1c; }
+      .button-secondary[href]:hover { transform:translateY(-1px); border-color:#aaa3eb; background:#f3f1ff; box-shadow:0 6px 15px #19165f1c; }
+      .support-row[href]:hover { border-color:#c7c9db; background:#f7f8fc; box-shadow:0 3px 10px #18204a0c; }
+      .button-whatsapp[href]:hover { transform:translateY(-1px); background:#22c55e; border-color:#22c55e; box-shadow:0 6px 15px #00000026; }
     }
     .action-note { margin:5px 2px 0; color:#727b91; text-align:center; font-size:10px; }
     .card { margin-top:10px; padding:15px; border:1px solid var(--line); border-radius:15px; background:#fff; box-shadow:0 3px 14px #18204a08; }
@@ -105,19 +115,43 @@
     .columns .card { margin-top:10px; }
     .compact-copy { margin:0; color:var(--body); font-size:12px; }
     .diagnosis-copy { }
-    .recommendation { border-color:#e9e1d3; background:linear-gradient(145deg,#fffdf9,#fffaf3); }
-    .recommendation-title { margin:0 0 6px; font-size:14px; font-weight:700; }
-    .recommendation-flow { display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); align-items:center; gap:7px; margin-top:11px; }
-    .recommendation-step { min-width:0; padding:9px; border:1px solid #ede5d8; border-radius:10px; background:#fff; }
-    .recommendation-step span { display:block; color:var(--body); font-size:10.5px; line-height:1.25; font-weight:700; }
-    .recommendation-step strong { display:block; margin-top:4px; font-size:clamp(14px,2.4vw,19px); line-height:1.2; overflow-wrap:anywhere; }
+    .recommendation { border-color:#dcd9f5; background:linear-gradient(145deg,#fff,#faf9ff); box-shadow:0 4px 18px #19165f10; }
+    .recommendation-header { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; margin-bottom:8px; }
+    .recommendation-header .section-heading { margin:0; }
+    .recommendation-period { color:#69728a; font-size:10.5px; font-weight:500; }
+    .recommendation-headline { margin:0; color:var(--ink); font-size:16px; line-height:1.3; font-weight:700; }
+    .recommendation-flow { display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); align-items:center; gap:7px; margin-top:10px; }
+    .recommendation-step { min-width:0; padding:10px; border:1px solid #e4e3f0; border-radius:11px; background:#fff; }
+    .recommendation-step span { display:block; color:var(--body); font-size:10.5px; line-height:1.25; font-weight:600; }
+    .recommendation-step strong { display:block; margin-top:4px; font-size:clamp(16px,2.8vw,21px); line-height:1.18; overflow-wrap:anywhere; }
     .recommendation-arrow { width:20px; height:20px; color:var(--brand); }
-    .adjustment-chip { grid-column:1/-1; justify-self:center; padding:5px 11px; border-radius:999px; background:#f1f8f2; color:#117442; font-size:11px; font-weight:700; }
-    .document-copy { margin:0; color:var(--body); font-size:11px; }
-    .document-action { display:inline-flex; min-height:40px; align-items:center; justify-content:center; gap:6px; margin-top:9px; padding:9px 12px; border:1px solid #d0ccf5; border-radius:10px; background:#f3f2ff; color:var(--brand); font-size:11px; font-weight:700; text-decoration:none; white-space:nowrap; }
+    .recommendation-meta { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:7px 14px; margin-top:8px; }
+    .adjustment-chip { padding:5px 11px; border-radius:999px; background:#f1f8f2; color:#117442; font-size:11px; font-weight:700; }
+    .recommendation-difference { color:#59647c; font-size:11px; }
+    .recommendation-summary { margin:9px 0 0; color:var(--body); font-size:11.5px; line-height:1.45; }
+    .recommendation-details { margin-top:5px; border-top:1px solid #e8e7f1; }
+    .recommendation-details summary { display:flex; align-items:center; min-height:44px; color:var(--brand); font-size:11px; font-weight:650; cursor:pointer; list-style:none; }
+    .recommendation-details summary::-webkit-details-marker { display:none; }
+    .recommendation-details .view-less { display:none; }
+    .recommendation-details[open] .view-more { display:none; }
+    .recommendation-details[open] .view-less { display:inline; }
+    .recommendation-details ul { display:grid; gap:7px; margin:0; padding:0 0 2px 16px; color:var(--body); font-size:11px; line-height:1.45; }
+    .support-section { padding:13px 15px; background:#fff; }
+    .support-list { display:grid; gap:6px; }
+    .support-row { display:grid; grid-template-columns:34px minmax(0,1fr) 18px; align-items:center; gap:10px; min-width:0; min-height:60px; padding:8px 10px; border:1px solid #e5e7ef; border-radius:11px; background:#fcfcfe; color:var(--ink); text-decoration:none; }
+    .support-document-icon { display:grid; width:32px; height:32px; place-items:center; border-radius:9px; background:#f0effa; color:#5146a8; }
+    .support-document-icon svg { width:17px; height:17px; }
+    .support-document-copy { min-width:0; }
+    .support-document-title { display:block; overflow-wrap:anywhere; color:var(--ink); font-size:12px; line-height:1.3; font-weight:650; }
+    .support-document-meta { display:block; margin-top:2px; overflow-wrap:anywhere; color:#667087; font-size:10.5px; line-height:1.35; }
+    .support-chevron { width:16px; height:16px; color:#737b90; }
     .executive { color:var(--body); font-size:12px; }
-    .executive-contact { display:flex; flex-wrap:wrap; gap:9px 14px; margin-top:7px; color:var(--body); font-size:11px; }
-    .executive-contact a { color:var(--brand); text-decoration:none; }
+    .executive-contact { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 18px; margin-top:10px; color:var(--body); font-size:11px; }
+    .executive-contact-item { min-width:0; }
+    .executive-contact-label { display:flex; align-items:center; gap:5px; margin-bottom:2px; color:#68738b; font-size:10px; font-weight:600; }
+    .executive-contact-label svg { width:13px; height:13px; color:var(--brand); }
+    .executive-contact-value { display:block; color:var(--ink); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+    .executive-description { margin:6px 0 0; color:var(--body); font-size:12px; line-height:1.45; }
     .monthly-changes { display:flex; flex-wrap:wrap; gap:8px; }
     .monthly-change { flex:1 1 150px; padding:10px; border:1px solid #e9eaf3; border-radius:10px; background:#fbfbfe; color:var(--body); font-size:11px; }
     .monthly-change strong { color:var(--ink); }
@@ -127,6 +161,7 @@
     .sticky { position:fixed; z-index:50; right:max(12px,env(safe-area-inset-right)); bottom:calc(8px + env(safe-area-inset-bottom)); left:max(12px,env(safe-area-inset-left)); display:grid; grid-template-columns:1fr 1fr; gap:7px; width:min(790px,calc(100% - 24px)); margin:0 auto; padding:7px; border:1px solid #dddeef; border-radius:15px; background:rgba(255,255,255,.97); box-shadow:0 -4px 18px #17145c1c; visibility:hidden; opacity:0; pointer-events:none; transition:opacity .15s ease; }
     .sticky.visible { visibility:visible; opacity:1; pointer-events:auto; }
     .sticky .button { min-height:43px; padding:8px 7px; font-size:10px; }
+    .sticky.sticky-single { grid-template-columns:1fr; }
     @media (min-width:700px) { .page { padding-top:24px; } .hero { padding:18px 22px; } .card { padding:18px; } .sticky { left:50%; right:auto; transform:translateX(-50%); } }
     @media (max-width:480px) {
       .page { width:calc(100% - 24px); padding-top:10px; }
@@ -167,16 +202,18 @@
       .columns { grid-template-columns:1fr; gap:0; }
       .columns .card { margin-top:8px; }
       .compact-copy { font-size:11px; }
-      .recommendation-metrics { gap:4px; }
-      .mini-metric { padding:7px 5px; }
-      .mini-metric span { font-size:10.5px; }
-      .mini-metric strong { font-size:11px; }
+      .recommendation-headline { font-size:15px; }
+      .recommendation-flow { grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr); gap:4px; }
+      .recommendation-step { padding:8px 6px; }
+      .recommendation-step strong { font-size:clamp(15px,4vw,19px); }
+      .recommendation-arrow { width:17px; height:17px; }
+      .recommendation-meta { gap:6px 10px; }
       .complementary { padding:10px 12px; }
       .sticky { right:8px; left:8px; bottom:calc(6px + env(safe-area-inset-bottom)); width:calc(100% - 16px); gap:5px; padding:6px; }
       .sticky .button { min-height:42px; font-size:10.5px; }
       body { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
     }
-    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button,.document-action { transition:none; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button,.support-row { transition:none; } }
 
     /* Progressive enhancement: content stays visible before and without JavaScript. */
     body { padding-bottom:calc(90px + env(safe-area-inset-bottom)); }
@@ -185,12 +222,10 @@
     .kpi-label,.activity-label,.recommendation-step span { font-weight:600; }
     .updated,.kpi-note,.source-note,.source-date-note,footer,.action-note { color:#59647c; }
     .button { font-weight:600; position:relative; overflow:hidden; white-space:nowrap; }
-    .button svg,.document-action svg { transition:transform 200ms ease; flex-shrink:0; }
+    .button svg { transition:transform 200ms ease; flex-shrink:0; }
     .button-primary[href]::before { content:""; pointer-events:none; position:absolute; inset:0; background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.08) 50%,transparent 65%); transform:translateX(-110%); transition:transform 320ms ease; }
-    .button[href]:active,.document-action[href]:active { transform:translateY(0); box-shadow:0 2px 5px #19165f18; }
+    .button[href]:active { transform:translateY(0); box-shadow:0 2px 5px #19165f18; }
     a:focus-visible,summary:focus-visible { outline:3px solid #4433d5; outline-offset:3px; border-radius:5px; }
-    .document-action { min-height:44px; font-weight:600; }
-    .document-action svg { width:16px; height:16px; }
     .hero-photo { transition:transform 520ms cubic-bezier(.2,.7,.2,1); }
     .card { transition:opacity 280ms ease,transform 280ms cubic-bezier(.2,.7,.2,1); }
     .reveal-pending { opacity:0; transform:translateY(8px); }
@@ -214,7 +249,7 @@
     .executive-info { min-width:0; }
     .executive-name { margin:0; font-size:15px; }
     .executive-role { margin:2px 0 5px; color:var(--body); font-size:11px; }
-    .executive-phone,.executive-email { display:flex; align-items:center; min-height:44px; color:var(--brand); font-size:12px; line-height:1.6; overflow-wrap:anywhere; text-decoration:none; }
+    .executive-phone,.executive-email { display:block; min-height:0; color:var(--ink); font-size:12px; line-height:1.45; overflow-wrap:anywhere; text-decoration:none; }
     .monthly-change .recommendation-arrow { width:14px; height:14px; vertical-align:middle; }
     .sticky { transform:translateY(12px) scale(.985); transition:opacity 200ms ease,transform 200ms cubic-bezier(.2,.7,.2,1),visibility 200ms; background:rgba(255,255,255,.94); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 4px 18px #17145c1c; }
     .sticky.visible { transform:translateY(0) scale(1); }
@@ -232,7 +267,7 @@
       .hero:hover .hero-photo { transform:scale(1.015); }
       .button-primary[href]:hover::before { transform:translateX(110%); }
       .button-primary[href]:hover svg { transform:translateX(3px); }
-      .button-secondary[href]:hover svg,.document-action[href]:hover svg { transform:translateX(2px); }
+      .button-secondary[href]:hover svg { transform:translateX(2px); }
     }
     @media (min-width:700px) {
       .card { margin-top:12px; }
@@ -244,6 +279,8 @@
       .button svg { width:13px; height:13px; flex-basis:13px; }
       .masthead-label { font-size:10.5px; }
       .executive-avatar { flex-basis:46px; width:46px; height:46px; }
+      .executive-contact { grid-template-columns:1fr; gap:6px; }
+      .executive-contact-value { font-size:11px; }
       .market-kpi small,.kpi-label,.kpi-note,.activity-label,.source-date-note,.source-note { font-size:10.5px; }
       .market-kpi strong { font-size:13px; }
       .position-callout { height:44px; font-size:10.5px; }
@@ -255,7 +292,7 @@
       *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
       .reveal-pending { opacity:1; transform:none; }
       .position-figure { --chart-opacity:1!important; }
-      .hero:hover .hero-photo,.button:hover,.button:hover svg,.document-action:hover,.document-action:hover svg { transform:none!important; }
+      .hero:hover .hero-photo,.button:hover,.button:hover svg { transform:none!important; }
       .button-primary::before { display:none; }
     }
   </style>
@@ -283,11 +320,11 @@
   <section class="card safe" role="status"><strong>Ajuste autorizado</strong>Tu decisión ya quedó registrada para esta propiedad.</section>
   {% endif %}
 
-  <nav class="actions-top" id="owner-portal-top-actions" aria-label="Acciones principales">
+  <nav class="actions-top{% if not view.top_whatsapp_url %} actions-top-single{% endif %}" id="owner-portal-top-actions" aria-label="Acciones principales">
     {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }} </a>
     {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
     {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
-    <a class="button button-secondary" data-cta-placement="TOP" href="{{ view.top_advisor_url }}">Hablar con mi ejecutivo</a>
+    {% if view.top_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="TOP" data-cta-type="WHATSAPP" href="{{ view.top_whatsapp_url|e }}" aria-label="Escribir por WhatsApp a {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>Escribir por WhatsApp</span></a>{% endif %}
   </nav>
   <p class="action-note">Revisar no modifica tu precio. Podrás confirmar después.</p>
 
@@ -352,12 +389,32 @@
   {% if view.diagnosis or view.recommendation_text %}
   <div class="columns">
     {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2>{{ expandable(view.diagnosis, 250, 'compact-copy diagnosis-copy') }}</section>{% endif %}
-    {% if view.recommendation_text %}<section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><h3 class="recommendation-title">{{ view.recommendation_title }}</h3>{{ expandable(view.recommendation_text, 230) }}<div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Nuevo valor propuesto</span><strong>{{ view.recommended_price_label or 'No disponible' }}</strong></div><span class="adjustment-chip">Ajuste {{ view.adjustment_label or 'No disponible' }}</span></div>{% if view.gap_explanation %}<p class="gap-explanation">{{ view.gap_explanation }}</p>{% endif %}</section>{% endif %}
+    {% if view.recommendation_text or view.adjustment_headline_label or view.recommendation_summary %}
+    <section class="card recommendation" aria-labelledby="recommendation-title">
+      <header class="recommendation-header"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2>{% if view.recommendation_period_label %}<span class="recommendation-period">{{ view.recommendation_period_label }}</span>{% endif %}</header>
+      {% if view.adjustment_headline_label %}<h3 class="recommendation-headline">Recomendamos ajustar el precio un {{ view.adjustment_headline_label }}</h3>{% else %}<h3 class="recommendation-headline">Propuesta de ajuste de precio</h3>{% endif %}
+      <div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Precio propuesto</span><strong>{{ view.recommended_price_display_label or view.recommended_price_label or 'No disponible' }}</strong></div></div>
+      <div class="recommendation-meta"><span class="adjustment-chip">Ajuste: {{ view.adjustment_label or 'No disponible' }}</span>{% if view.recommendation_difference_label %}<span class="recommendation-difference">Diferencia aprox.: {{ view.recommendation_difference_label }}</span>{% endif %}</div>
+      <p class="recommendation-summary">{{ view.recommendation_summary or 'El ajuste propuesto es una alternativa de posicionamiento para revisar antes de decidir.' }}</p>
+      <details class="recommendation-details"><summary><span class="view-more">Ver más ↓</span><span class="view-less">Ver menos ↑</span></summary><ul>{% for detail in view.recommendation_details %}<li>{{ detail }}</li>{% endfor %}</ul></details>
+    </section>
+    {% endif %}
   </div>
   {% endif %}
 
-  {% if view.document_available %}
-  <section class="card" aria-labelledby="document-title"><h2 class="section-heading" id="document-title"><span class="section-icon">{{ ui_icon('document') }}</span>Respaldos del análisis</h2><p class="document-copy">{{ view.document_label }}{% if view.additional_documents %}{% for item in view.additional_documents %} · {{ item.label or item.type }}{% endfor %}{% endif %}</p><a class="document-action" data-cta-placement="ORIGINAL" href="{{ view.document_url }}" rel="noreferrer">Ver respaldo {{ ui_icon('arrow') }}</a></section>
+  {% if view.support_documents %}
+  <section class="card support-section" aria-labelledby="document-title">
+    <h2 class="section-heading" id="document-title"><span class="section-icon">{{ ui_icon('document') }}</span>Documentos de respaldo</h2>
+    <div class="support-list">
+      {% for item in view.support_documents %}
+      <a class="support-row" data-cta-placement="ORIGINAL" data-document-type="{{ item.type|e }}" href="{{ item.url|e }}" rel="noreferrer" aria-label="Abrir {{ item.title|e }}. {{ item.metadata|e }}">
+        <span class="support-document-icon">{{ ui_icon('document') }}</span>
+        <span class="support-document-copy"><span class="support-document-title">{{ item.title }}</span><span class="support-document-meta">{{ item.metadata }}</span></span>
+        {{ ui_icon('chevron', 'support-chevron') }}
+      </a>
+      {% endfor %}
+    </div>
+  </section>
   {% endif %}
   {% endif %}
 
@@ -365,19 +422,21 @@
   <section class="card executive-card" aria-label="Ejecutivo responsable">
     <div class="executive-avatar" aria-hidden="true"><span>{{ view.executive_initials or 'PC' }}</span>{% if view.executive_photo_url %}<img src="{{ view.executive_photo_url|e }}" alt="" width="52" height="52" loading="lazy">{% endif %}</div>
     <div class="executive-info"><h2 class="executive-name">{{ view.executive_name or 'Ejecutivo PROCASA' }}</h2><p class="executive-role">{{ view.executive_role or 'Ejecutivo PROCASA' }}</p>
-      {% if view.executive_phone %}<a class="executive-phone" href="tel:{{ view.executive_phone|replace(' ', '')|e }}">{{ view.executive_phone }}</a>{% endif %}
-      {% if view.executive_email %}<a class="executive-email" href="mailto:{{ view.executive_email|e }}">{{ view.executive_email }}</a>{% endif %}
-      {% if view.executive_whatsapp_url %}<a class="document-action" data-cta-placement="EXECUTIVE" href="{{ view.executive_whatsapp_url|e }}" rel="noreferrer">Hablar por WhatsApp {{ ui_icon('arrow') }}</a>{% endif %}
+      <p class="executive-description">Te explico cómo llegamos a este precio y qué opciones tienes.</p>
+      <div class="executive-contact">
+        {% if view.executive_phone %}<div class="executive-contact-item"><span class="executive-contact-label">{{ ui_icon('phone') }}Teléfono</span><span class="executive-contact-value executive-phone">{{ view.executive_phone }}</span></div>{% endif %}
+        {% if view.executive_email %}<div class="executive-contact-item"><span class="executive-contact-label">{{ ui_icon('mail') }}Correo</span><span class="executive-contact-value executive-email">{{ view.executive_email }}</span></div>{% endif %}
+      </div>
     </div>
   </section>
   <footer>PROCASA · Información comercial para apoyar tu decisión. Las referencias de mercado se basan en publicaciones observadas y no representan precios efectivos de cierre.</footer>
 </main>
 
-<nav class="sticky" id="owner-portal-sticky-actions" aria-label="Acciones rápidas">
+<nav class="sticky{% if not view.sticky_whatsapp_url %} sticky-single{% endif %}" id="owner-portal-sticky-actions" aria-label="Acciones rápidas">
   {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }}</a>
   {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
   {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
-  <a class="button button-secondary" data-cta-placement="STICKY" href="{{ view.sticky_advisor_url }}">Hablar con ejecutivo</a>
+  {% if view.sticky_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="STICKY" data-cta-type="WHATSAPP" href="{{ view.sticky_whatsapp_url|e }}" aria-label="WhatsApp de {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>WhatsApp</span></a>{% endif %}
 </nav>
 <script>
 (function(){

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 @router.get("/owner-portal/executive-whatsapp", include_in_schema=False)
 async def executive_whatsapp_click(request: Request, token: str = Query(default="")):
     """A signed click intent only; never an advisor request or authorization."""
-    from campanas.owner_campaign_live_events import decode_live_token, persist_live_event
+    from campanas.owner_campaign_live_events import decode_live_token, persist_owner_whatsapp_click
     from .campaign import LEDGER_COLLECTION, short_key_for_token_hash
     from .executive import resolve_executive_contact, whatsapp_destination
     from .monthly import OWNER_PROPERTY_PORTAL_COLLECTION, owner_property_portal_id, _select_monthly_snapshot
@@ -49,7 +49,8 @@ async def executive_whatsapp_click(request: Request, token: str = Query(default=
     if (not claims or not all(claims.get(key) for key in ("campaign_id", "property_code", "recipient"))
             or claims.get("action") != "executive_whatsapp_clicked"
             or claims.get("interaction_surface") != "OWNER_PORTAL"
-            or claims.get("cta_placement") != "EXECUTIVE" or claims.get("source") not in ACCESS_SOURCES):
+            or claims.get("cta_placement") not in {"TOP", "STICKY"}
+            or claims.get("source") not in ACCESS_SOURCES):
         raise HTTPException(404, "Página no disponible")
     db = get_db()
     row = await run_in_threadpool(db[LEDGER_COLLECTION].find_one, {
@@ -71,13 +72,28 @@ async def executive_whatsapp_click(request: Request, token: str = Query(default=
         record = db[OWNER_PROPERTY_PORTAL_COLLECTION].find_one({"_id": key, "owner_key": key, "property_code": code})
         monthly = _select_monthly_snapshot(record, code) or {}
         contact = resolve_executive_contact(db, row, monthly, str(row.get("executive_name") or row.get("executive") or ""))
-        return contact, whatsapp_destination(contact, code)
-    contact, url = await run_in_threadpool(destination)
+        snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), dict) else {}
+        owner_name = str(snapshot.get("owner_name") or row.get("owner_name") or "").strip()
+        url = whatsapp_destination(contact, code, owner_name=owner_name)
+        report_period = str(monthly.get("period") or "")
+        snapshot_hash = str(monthly.get("snapshot_hash") or monthly.get("content_sha256") or "")
+        return contact, url, report_period, snapshot_hash
+    contact, url, report_period, snapshot_hash = await run_in_threadpool(destination)
     if not url:
         raise HTTPException(404, "Página no disponible")
-    await run_in_threadpool(persist_live_event, db, claims,
-        event="executive_whatsapp_clicked", action="executive_whatsapp_clicked",
-        details={"executive_name": contact["name"]})
+    qa_mode = bool(row.get("qa_mode") or row.get("test_mode") or claims.get("qa_mode"))
+    event_details = {
+        "executive_name": contact["name"],
+        "executive_email": contact["email"],
+        "report_period": report_period or None,
+        "qa_mode": qa_mode,
+    }
+    if snapshot_hash:
+        event_details["snapshot_hash"] = snapshot_hash
+    try:
+        await run_in_threadpool(persist_owner_whatsapp_click, db, claims, details=event_details)
+    except LookupError as exc:
+        raise HTTPException(404, "Página no disponible") from exc
     return RedirectResponse(url, status_code=302, headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
 
 

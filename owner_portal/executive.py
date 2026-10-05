@@ -48,9 +48,22 @@ def resolve_executive_contact(db: Any, row: Mapping, monthly: Mapping, name: str
             "email": email, "phone": display_phone, "phone_digits": digits, "photo_url": photo, "initials": initials}
 
 
-def whatsapp_destination(contact: Mapping, property_code: str) -> str:
+def whatsapp_destination(contact: Mapping, property_code: str, *, owner_name: str = "") -> str:
     digits = str(contact.get("phone_digits") or "")
     if not re.fullmatch(r"569\d{8}", digits):
         return ""
-    message = f"Hola {contact['name']}, quiero conversar sobre la recomendación de mi propiedad código {property_code}."
+    executive_name = str(contact.get("name") or "").strip()
+    executive_first = executive_name.split()[0] if executive_name else "equipo PROCASA"
+    owner_first = str(owner_name or "").strip().split()[0] if str(owner_name or "").strip() else ""
+    if owner_first.casefold() in {"private", "owner", "propietario", "propietaria", "sin", "test"}:
+        owner_first = ""
+    if owner_first:
+        greeting = f"Hola {executive_first}, soy {owner_first}. Estoy revisando"
+    else:
+        greeting = f"Hola {executive_first}, estoy revisando"
+    property_reference = f" mi propiedad {property_code}" if str(property_code or "").strip() else " mi propiedad"
+    message = (
+        f"{greeting} el informe comercial de{property_reference} y quisiera conversar "
+        "contigo sobre la recomendación de precio y las alternativas disponibles."
+    )
     return f"https://wa.me/{digits}?text={quote(message)}"

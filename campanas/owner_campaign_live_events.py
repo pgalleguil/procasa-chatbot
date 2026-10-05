@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import uuid4
 
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 
 from config import Config
 
@@ -242,6 +242,92 @@ def persist_live_event(
     if not existing:
         raise LookupError("prepared_campaign_row_missing")
     return existing, False
+
+
+def persist_owner_whatsapp_click(
+    db: Any,
+    claims: Mapping[str, Any],
+    *,
+    details: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Atomically append every owner WhatsApp intent with a per-property sequence."""
+    campaign_id = str(claims["campaign_id"])
+    code = str(claims["property_code"])
+    recipient = str(claims.get("recipient") or "").strip().casefold()
+    event_at = datetime.now(timezone.utc)
+    event_id = uuid4().hex
+    secret = _secret()
+    if not recipient or not secret:
+        raise ValueError("owner_whatsapp_identity_unavailable")
+    owner_hash = hmac.new(secret.encode("utf-8"), recipient.encode("utf-8"), hashlib.sha256).hexdigest()
+    attribution = derive_interaction_attribution(claims)
+    placement = str(claims.get("cta_placement") or "").upper()
+    if placement not in {"TOP", "STICKY"}:
+        raise ValueError("invalid_owner_whatsapp_placement")
+
+    payload = {
+        **dict(details),
+        "event_id": event_id,
+        "event_at": event_at,
+        "event": "executive_whatsapp_clicked",
+        "event_type": "OWNER_WHATSAPP_CLICK",
+        "action": "executive_whatsapp_clicked",
+        "intent": "INTENT_TO_CONTACT",
+        "cta_type": "WHATSAPP",
+        "placement": placement,
+        "cta_placement": placement,
+        "property_code": code,
+        "campaign_id": campaign_id,
+        "owner_key": owner_hash,
+        "owner_identity_hash": owner_hash,
+        "source": claims.get("source"),
+        "channel": attribution["interaction_channel"],
+        "interaction_surface": "OWNER_PORTAL",
+        "interaction_channel": attribution["interaction_channel"],
+        "qa_mode": bool(details.get("qa_mode", False)),
+    }
+
+    ledger = db[Config.COLLECTION_CAMPANAS_LOG]
+    key = f"{campaign_id}:{code}"
+    current = ledger.find_one({"_id": key, "campaign_id": campaign_id, "property_code": code},
+        {"owner_whatsapp_click_count": 1, "events": 1})
+    if not current:
+        raise LookupError("prepared_campaign_row_missing")
+    if "owner_whatsapp_click_count" not in current:
+        # Seed the counter from historical clicks once, without rewriting events.
+        prior_events = current.get("events") if isinstance(current.get("events"), list) else []
+        historical_count = sum(
+            1 for item in prior_events
+            if isinstance(item, Mapping) and item.get("event") == "executive_whatsapp_clicked"
+        )
+        ledger.update_one(
+            {"_id": key, "campaign_id": campaign_id, "property_code": code,
+             "owner_whatsapp_click_count": {"$exists": False}},
+            {"$set": {"owner_whatsapp_click_count": historical_count}},
+        )
+
+    # The counter increment is atomic, so concurrent TOP/STICKY clicks receive
+    # distinct sequence numbers. The event must persist before redirecting.
+    sequenced_row = ledger.find_one_and_update(
+        {"_id": key, "campaign_id": campaign_id, "property_code": code},
+        {"$inc": {"owner_whatsapp_click_count": 1}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not sequenced_row:
+        raise LookupError("prepared_campaign_row_missing")
+    sequence = int(sequenced_row.get("owner_whatsapp_click_count") or 0)
+    payload["click_sequence_number"] = sequence
+    payload["is_first_whatsapp_click"] = sequence == 1
+    result = ledger.update_one(
+        {"_id": key, "campaign_id": campaign_id, "property_code": code, "events.event_id": {"$ne": event_id}},
+        {"$push": {"events": payload}},
+    )
+    if result.modified_count != 1:
+        raise LookupError("owner_whatsapp_click_event_not_persisted")
+    stored = ledger.find_one({"_id": key, "campaign_id": campaign_id, "property_code": code})
+    if not stored:
+        raise LookupError("prepared_campaign_row_missing")
+    return stored
 
 
 def notify_internal_after_persist(stored: Mapping[str, Any], *, event: str) -> bool:

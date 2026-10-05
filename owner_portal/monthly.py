@@ -10,10 +10,11 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
 from typing import Any, Mapping
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from .property_media import verified_historical_media, verified_media_for_property
 
@@ -53,6 +54,75 @@ def owner_property_portal_id(property_code: Any, owner_email: Any) -> str:
         raise ValueError("owner_property_portal_identity_missing")
     digest = hashlib.sha256(f"{email}\0{code}".encode("utf-8")).hexdigest()
     return f"opp1_{digest}"
+
+
+def _support_document_link_is_safe(value: Any, reference_url: Any, *, campaign_id: str,
+                                   property_code: str, owner_email: str, document_type: str) -> bool:
+    """Accept only an existing signed report route, on the same origin as the current report."""
+    candidate = urlsplit(str(value or ""))
+    reference = urlsplit(str(reference_url or ""))
+    tokens = parse_qs(candidate.query).get("token") or []
+    if candidate.path != "/campana/informe" or len(tokens) != 1:
+        return False
+    from campanas.owner_campaign_live_events import decode_live_token
+    claims = decode_live_token(tokens[0])
+    if not claims or (
+        claims.get("action") != "ver_informe"
+        or claims.get("campaign_id") != campaign_id
+        or str(claims.get("property_code")) != property_code
+        or claims.get("recipient") != owner_email.strip().casefold()
+        or claims.get("document_type") != document_type
+    ):
+        return False
+    if not candidate.scheme and not candidate.netloc:
+        return candidate.path.startswith("/")
+    return bool(
+        reference.scheme and reference.netloc
+        and candidate.scheme == reference.scheme
+        and candidate.netloc.casefold() == reference.netloc.casefold()
+    )
+
+
+def _support_document_date(item: Mapping[str, Any]) -> str:
+    # Only source/issue dates describe the document; generated_at is not provenance.
+    for key in ("source_date", "issued_at", "issued_on", "issue_date", "document_date"):
+        value = item.get(key)
+        if isinstance(value, (datetime, date)):
+            return _source_date_label(value)
+        raw = _text(value)
+        if not raw:
+            continue
+        try:
+            parsed = date.fromisoformat(raw[:10]) if re.match(r"^\d{4}-\d{2}-\d{2}", raw) else None
+            if parsed:
+                return parsed.strftime("%d-%m-%Y")
+            for date_format in ("%d-%m-%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(raw, date_format).strftime("%d-%m-%Y")
+                except ValueError:
+                    continue
+        except ValueError:
+            continue
+    return ""
+
+
+def _support_document_item(document_type: str, property_code: str, commune: str,
+                           url: str, metadata: Mapping[str, Any] | None = None) -> dict[str, str]:
+    metadata = metadata if isinstance(metadata, Mapping) else {}
+    if document_type == "COMMUNAL_MARKET_REPORT":
+        title = "Informe de mercado comunal"
+        parts = [commune, "PDF"] if commune else ["PDF"]
+        date_prefix = "Actualizado"
+    elif document_type == "INDIVIDUAL_APPRAISAL":
+        title = "Tasación comercial"
+        parts = [f"Propiedad {property_code}", "PDF"]
+        date_prefix = "Emitida"
+    else:
+        return {}
+    source_date = _support_document_date(metadata)
+    if source_date:
+        parts.append(f"{date_prefix} {source_date}")
+    return {"type": document_type, "title": title, "metadata": " · ".join(parts), "url": url}
 
 
 class _CampaignHtmlEvidence(HTMLParser):
@@ -473,6 +543,100 @@ def _gap_explanation(position: Mapping[str, Any], adjustment: Any) -> str:
     )
 
 
+def _recommendation_period_label(value: Any) -> str:
+    period = _as_period(value)
+    match = re.fullmatch(r"(\d{4})-(\d{2})", period)
+    if not match:
+        return ""
+    months = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    year, month = int(match.group(1)), int(match.group(2))
+    return f"{months[month - 1].capitalize()} {year}" if 1 <= month <= 12 else ""
+
+
+def _price_presentation(value: Any, exact_label: Any, operation: str, current_value: Any) -> tuple[str, str]:
+    """Create presentation-only rounded UF labels; leave stored/exact prices untouched."""
+    from .campaign import _format_client_price
+
+    exact = _text(exact_label)
+    if not exact.casefold().endswith("uf"):
+        return exact, ""
+    amount = _number_from_label(value)
+    if amount is None or amount <= 0:
+        return exact, ""
+    increment = Decimal("50") if amount >= 1000 else Decimal("10")
+    rounded = (Decimal(str(amount)) / increment).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * increment
+    proposed_label = "≈ " + _format_client_price(float(rounded), operation)
+    current_label = _text(_format_client_price(current_value, operation)) if current_value is not None else ""
+    current_amount = _number_from_label(current_value)
+    difference_label = ""
+    if current_label.casefold().endswith("uf") and current_amount is not None and current_amount > float(rounded):
+        difference = current_amount - float(rounded)
+        difference_label = "≈ " + _format_client_price(difference, operation)
+    return proposed_label, difference_label
+
+
+def _activity_count_signals(activity: Mapping[str, Any]) -> list[tuple[str, str]]:
+    signals: list[tuple[str, str]] = []
+    labels = (("leads", "lead", "leads"), ("conversations", "conversación", "conversaciones"), ("visits", "visita", "visitas"))
+    for key, singular, plural in labels:
+        value = activity.get(key)
+        if isinstance(value, bool) or value is None:
+            continue
+        number = _number_from_label(value)
+        if number is None or number < 0 or not re.fullmatch(
+            r"\s*\d+(?:[.,]\d+)?\s*(?:(?:leads?(?: registrados?)?|conversaciones?(?: registradas?)?|visitas?(?: coordinadas?)?))?\s*",
+            _text(value), flags=re.IGNORECASE,
+        ):
+            continue
+        shown = str(int(number)) if number.is_integer() else _text(value).strip()
+        signals.append((singular if number == 1 else plural, shown))
+    return signals
+
+
+def _recommendation_narrative(position: Mapping[str, Any], activity: Mapping[str, Any], adjustment: Any) -> tuple[str, list[str]]:
+    """Build concise copy only from comparable and 90-day signals present in the snapshot."""
+    gap_pct = position.get("gap_pct")
+    has_comparable_values = bool(position.get("reference_value") and position.get("property_value") and gap_pct is not None)
+    activity_signals = _activity_count_signals(activity)
+    activity_copy = ""
+    activity_detail = ""
+    if activity_signals:
+        counts = ", ".join(f"{value} {label}" for label, value in activity_signals)
+        activity_copy = "En 90 días: " + counts + "."
+        activity_detail = "Actividad registrada en los últimos 90 días: " + counts + "."
+
+    if has_comparable_values and gap_pct > 0:
+        summary = "El valor por m² de tu propiedad supera la referencia comparable."
+        if activity_copy:
+            summary = summary[:-1] + "; " + activity_copy[0].lower() + activity_copy[1:]
+        else:
+            summary = summary[:-1] + "; el ajuste busca reposicionar la publicación y observar su respuesta."
+    elif activity_copy:
+        summary = activity_copy[:-1] + "; el ajuste propone revisar el posicionamiento."
+    else:
+        summary = "El ajuste propuesto es una alternativa de posicionamiento para revisar antes de decidir."
+
+    details: list[str] = []
+    if has_comparable_values:
+        details.append(
+            f"Tu propiedad se publica en {position['property_value']} frente a {position['reference_value']} de referencia comparable."
+        )
+        try:
+            adjustment_pct = abs(float(str(adjustment).replace("%", "").replace(",", ".")))
+        except (TypeError, ValueError):
+            adjustment_pct = None
+        if gap_pct > 0 and adjustment_pct is not None and gap_pct - adjustment_pct >= 5:
+            details.append(
+                f"La brecha frente a la referencia comparable es aproximadamente {gap_pct:.0f}%; "
+                f"el ajuste de {adjustment_pct:g}% es menor y no busca cerrar toda esa diferencia de una vez."
+            )
+    if activity_copy:
+        details.append(activity_detail)
+    if not details:
+        details.append("El ajuste es una propuesta de revisión; no modifica el precio publicado por sí solo.")
+    return summary, details[:3]
+
+
 def build_monthly_portal_view(
     db: Any,
     row: Mapping[str, Any],
@@ -544,6 +708,41 @@ def build_monthly_portal_view(
     document_type = str(_value(property_state, snapshot, "document_type") or row.get("document_type") or "NONE").upper()
     document_available = bool(campaign_view.get("document_available")) and document_type in {"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"}
     document_url = campaign_view.get("report_url") if document_available and not stale else ""
+    commune_label = _text(_value(property_state, snapshot, "commune") or row.get("commune") or campaign_view.get("commune"))
+    support_documents: list[dict[str, str]] = []
+    support_reference_url = document_url or campaign_view.get("advisor_url") or campaign_view.get("top_advisor_url") or ""
+    seen_document_urls: set[str] = set()
+    if document_url:
+        primary_metadata = next((
+            item for item in docs
+            if isinstance(item, Mapping)
+            and item.get("verified")
+            and str(item.get("document_type") or item.get("type") or "").upper() == document_type
+        ), {})
+        support_documents.append(_support_document_item(
+            document_type, property_code, commune_label, str(document_url), primary_metadata,
+        ))
+        seen_document_urls.add(str(document_url))
+    if not stale and support_reference_url:
+        for item in docs:
+            if not isinstance(item, Mapping) or not item.get("verified"):
+                continue
+            extra_type = str(item.get("document_type") or item.get("type") or "").upper()
+            extra_url = str(item.get("url") or item.get("document_url") or item.get("report_url") or "")
+            if (extra_type not in {"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"}
+                    or not extra_url or extra_url in seen_document_urls
+                    or not _support_document_link_is_safe(
+                        extra_url, support_reference_url,
+                        campaign_id=str(row.get("campaign_id") or ""),
+                        property_code=property_code,
+                        owner_email=owner_email,
+                        document_type=extra_type,
+                    )):
+                continue
+            support_documents.append(_support_document_item(
+                extra_type, property_code, commune_label, extra_url, item,
+            ))
+            seen_document_urls.add(extra_url)
 
     diagnosis = _text(recommendation.get("diagnosis")) or (evidence.get("diagnostic-copy") or [None])[0]
     recommendation_text = _text(recommendation.get("text") or recommendation.get("recommendation_text")) or (evidence.get("recommendation-copy") or [None])[0] or _text(campaign_view.get("recommendation_reason"))
@@ -580,19 +779,40 @@ def build_monthly_portal_view(
     gap_explanation = "" if stale else _gap_explanation(position, adjustment_value)
     from .executive import resolve_executive_contact
     executive = resolve_executive_contact(db, row, monthly, _text(campaign_view.get("executive_name")))
-    whatsapp_url = ""
+    whatsapp_urls = {"TOP": "", "STICKY": ""}
     access_expiry = (row.get("portal_access") or {}).get("expires_at")
     if executive["phone_digits"] and isinstance(access_expiry, datetime) and _as_utc(access_expiry) > datetime.now(timezone.utc):
         from campanas.owner_campaign_live_events import issue_live_token
-        token = issue_live_token(campaign_id=str(row["campaign_id"]), property_code=property_code,
-            action="executive_whatsapp_clicked", recipient=owner_email,
-            expires_at=int(_as_utc(access_expiry).timestamp()), source=campaign_view.get("source"),
-            interaction_surface="OWNER_PORTAL", cta_placement="EXECUTIVE")
         origin = urlsplit(str(campaign_view.get("advisor_url") or campaign_view.get("top_advisor_url") or ""))
         base = f"{origin.scheme}://{origin.netloc}" if origin.scheme and origin.netloc else ""
-        whatsapp_url = f"{base}/owner-portal/executive-whatsapp?{urlencode({'token': token})}"
+        if base:
+            for placement in ("TOP", "STICKY"):
+                token = issue_live_token(
+                    campaign_id=str(row["campaign_id"]), property_code=property_code,
+                    action="executive_whatsapp_clicked", recipient=owner_email,
+                    expires_at=int(_as_utc(access_expiry).timestamp()), source=campaign_view.get("source"),
+                    interaction_surface="OWNER_PORTAL", cta_placement=placement,
+                )
+                whatsapp_urls[placement] = f"{base}/owner-portal/executive-whatsapp?{urlencode({'token': token})}"
     current_period = _as_period(monthly.get("period") or monthly.get("generated_at"))
     monthly_changes = _previous_snapshot_changes(monthly_snapshots, monthly) if current_period else []
+    recommendation_period_label = _recommendation_period_label(monthly.get("period") or monthly.get("generated_at"))
+    adjustment_headline_label = ""
+    if adjustment_value is not None:
+        try:
+            headline_adjustment = abs(float(str(adjustment_value).replace("%", "").replace(",", ".")))
+            if headline_adjustment == headline_adjustment and headline_adjustment != float("inf"):
+                adjustment_headline_label = f"{headline_adjustment:g}%"
+        except (TypeError, ValueError):
+            pass
+    recommended_price_display_label, recommendation_difference_label = _price_presentation(
+        recommended_price, recommended_price_label, operation, current_price,
+    )
+    recommendation_summary, recommendation_details = _recommendation_narrative(position, activity, adjustment_value)
+    if stale:
+        adjustment_headline_label = ""
+        recommendation_summary = ""
+        recommendation_details = []
 
     return {
         "logo_url": campaign_view.get("logo_url"),
@@ -606,8 +826,14 @@ def build_monthly_portal_view(
         "operation": operation,
         "current_price_label": current_price_label if not stale else "",
         "recommended_price_label": recommended_price_label if not stale else "",
+        "recommended_price_display_label": recommended_price_display_label if not stale else "",
+        "recommendation_difference_label": recommendation_difference_label if not stale else "",
         "adjustment_pct": adjustment_value,
         "adjustment_label": adjustment_label,
+        "adjustment_headline_label": adjustment_headline_label,
+        "recommendation_period_label": recommendation_period_label,
+        "recommendation_summary": recommendation_summary,
+        "recommendation_details": recommendation_details,
         "comparable_count": position.get("count") if position.get("count") is not None else (_value(comparable_state, snapshot, "comparable_count") if _value(comparable_state, snapshot, "comparable_count") is not None else campaign_view.get("comparable_count")),
         "position": position,
         "gap_explanation": gap_explanation,
@@ -630,13 +856,15 @@ def build_monthly_portal_view(
         "document_type": document_type,
         "document_label": "Tasación individual" if document_type == "INDIVIDUAL_APPRAISAL" else "Informe de mercado comunal" if document_type == "COMMUNAL_MARKET_REPORT" else "",
         "additional_documents": [item for item in docs if isinstance(item, Mapping) and item.get("verified")],
+        "support_documents": support_documents,
         "executive_name": executive["name"],
         "executive_email": executive["email"],
         "executive_phone": executive["phone"],
         "executive_photo_url": executive["photo_url"],
         "executive_initials": executive["initials"],
         "executive_role": executive["role"],
-        "executive_whatsapp_url": whatsapp_url,
+        "top_whatsapp_url": whatsapp_urls["TOP"],
+        "sticky_whatsapp_url": whatsapp_urls["STICKY"],
         "updated_label": updated_label,
         "data_period": _as_period(monthly.get("period") or monthly.get("generated_at")) or _as_period(snapshot.get("prepared_at")),
         "source": campaign_view.get("source"),

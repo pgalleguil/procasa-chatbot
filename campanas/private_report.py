@@ -7,6 +7,7 @@ import io
 import logging
 import os
 import re
+import threading
 import time
 import unicodedata
 from functools import lru_cache
@@ -181,7 +182,7 @@ def _children(
         response = service.files().list(
             q=query,
             pageSize=1000,
-            fields="nextPageToken,files(id,name,mimeType,parents)",
+            fields="nextPageToken,files(id,name,mimeType,parents,createdTime,modifiedTime)",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
             corpora="allDrives",
@@ -245,12 +246,61 @@ def _named_pdfs(
 
 
 def _resolve_appraisal(service: Any, property_code: str) -> dict[str, Any] | None:
-    return _named_pdfs(
-        service,
-        APPRAISALS_FOLDER_ID,
-        (property_code,),
-        "appraisal_ambiguous",
-    )
+    code = str(property_code or "").strip()
+    if not code:
+        return None
+    # Appraisals are property-code named. Keep this lookup scoped to that exact
+    # filename; a miss must never turn into a folder-wide Drive listing.
+    exact = _children(service, APPRAISALS_FOLDER_ID, PDF_MIME_TYPE, f"{code}.pdf")
+    return _one_pdf(exact, (code,), "appraisal_ambiguous")
+
+
+_APPRAISAL_CACHE_TTL_SECONDS = 60 * 60
+_APPRAISAL_CACHE: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
+_APPRAISAL_CACHE_LOCK = threading.Lock()
+
+
+def resolve_appraisal_document_cached(property_code: str) -> dict[str, Any]:
+    """Resolve one exact-code appraisal PDF with a bounded, read-only cache.
+
+    Cache states include FOUND, NOT_FOUND, AMBIGUOUS and ERROR so repeated
+    portal visits do not repeat Drive requests during transient failures.
+    """
+    code = str(property_code or "").strip()
+    if not code:
+        return {"status": "ERROR", "document": None}
+    now = time.monotonic()
+    with _APPRAISAL_CACHE_LOCK:
+        cached = _APPRAISAL_CACHE.get(code)
+        if cached and cached[0] > now:
+            return {"status": cached[1], "document": dict(cached[2]) if cached[2] else None}
+        if cached:
+            _APPRAISAL_CACHE.pop(code, None)
+
+    status = "ERROR"
+    document = None
+    try:
+        drive = GDriveSync()
+        service = drive.service
+        if service is None:
+            raise RuntimeError("drive_service_unavailable")
+        http = getattr(service, "_http", None)
+        if http is not None and hasattr(http, "timeout"):
+            http.timeout = 5
+        document = _resolve_appraisal(service, code)
+        status = "FOUND" if document else "NOT_FOUND"
+    except CampaignReportError as exc:
+        status = "AMBIGUOUS" if exc.reason == "appraisal_ambiguous" else "ERROR"
+    except Exception:
+        status = "ERROR"
+    with _APPRAISAL_CACHE_LOCK:
+        _APPRAISAL_CACHE[code] = (
+            time.monotonic() + _APPRAISAL_CACHE_TTL_SECONDS,
+            status,
+            dict(document) if document else None,
+        )
+    logger.info("[CAMPAIGN_REPORT_APPRAISAL_RESOLVE] status=%s", status.casefold())
+    return {"status": status, "document": dict(document) if document else None}
 
 
 def _resolve_communal_report(service: Any, identity: Mapping[str, str]) -> dict[str, Any] | None:
@@ -526,9 +576,19 @@ def _serve_campaign_report(token: str) -> Response:
                     "campaign_id": claims["campaign_id"],
                     "property_code": property_code,
                     "owner_email": claims.get("recipient"),
-                    "document_type": claims.get("document_type"),
                 })
-                if not row:
+                # The ledger's document_type identifies the campaign's primary
+                # attachment. A signed appraisal link may also be issued for a
+                # separately resolved exact-code appraisal PDF. Communal reports
+                # retain the historical primary-document restriction.
+                primary_document_type = str((row or {}).get("document_type") or "").upper()
+                if (
+                    not row
+                    or (
+                        claims.get("document_type") == "COMMUNAL_MARKET_REPORT"
+                        and primary_document_type != "COMMUNAL_MARKET_REPORT"
+                    )
+                ):
                     return finish(_response(404, "Documento no disponible."))
                 from .owner_campaign_live_events import persist_live_event
 

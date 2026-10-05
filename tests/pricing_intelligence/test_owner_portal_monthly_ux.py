@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from jinja2 import Environment, FileSystemLoader
 import mongomock
+import pytest
 
 from owner_portal.monthly import (
     _gap_explanation,
@@ -193,6 +194,11 @@ def test_verified_support_documents_keep_existing_links_and_source_dates():
     })
     appraisal_primary_monthly = {
         "period": "2026-10", "document_type": "INDIVIDUAL_APPRAISAL",
+        "current_price": 3990,
+        "individual_appraisal": {
+            "verified": True, "property_code": "5438", "estimated_low_uf": 3500,
+            "estimated_mid_uf": 3700, "estimated_high_uf": 3900,
+        },
         "documents": [
             {"document_type": "COMMUNAL_MARKET_REPORT", "verified": True,
              "url": communal_url, "source_date": "2026-04-28"},
@@ -208,6 +214,7 @@ def test_verified_support_documents_keep_existing_links_and_source_dates():
     assert [item["type"] for item in both["support_documents"]] == [
         "INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT",
     ]
+    assert both["appraisal_card"]["mode"] == "STRUCTURED"
     assert both["market_reference_card"]["title"] == "Mercado de departamentos en Talca"
 
 
@@ -217,7 +224,7 @@ def test_support_document_dates_are_never_inferred_from_generation_time():
     assert _support_document_date({"source_date": "28/04/2026"}) == "28-04-2026"
 
 
-def test_communal_report_document_is_full_row_clickable_without_separate_support_section():
+def test_communal_report_document_is_full_row_clickable_and_listed_in_support_section():
     from bs4 import BeautifulSoup
     template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
     view = premium_fixture("full")
@@ -232,7 +239,7 @@ def test_communal_report_document_is_full_row_clickable_without_separate_support
     assert row.select_one(".complementary-market__document-title").get_text(strip=True) == "Informe de mercado comunal"
     assert "Talca · PDF · Corte 28/04/2026" in row.select_one(".complementary-market__document-meta").get_text(" ", strip=True)
     assert row.select_one(".complementary-market__document-icon svg") and row.select_one(".complementary-market__document-chevron")
-    assert soup.select_one(".support-section") is None
+    assert soup.select_one('.support-section [data-document-type="COMMUNAL_MARKET_REPORT"]')
     assert "Abrir informe completo" not in soup.get_text(" ", strip=True)
 
 
@@ -328,7 +335,7 @@ def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_sig
     assert document.select_one(".complementary-market__document-icon svg")
     assert document.select_one(".complementary-market__document-chevron")
     assert "Abrir informe completo" not in section.get_text(" ", strip=True)
-    assert not soup.select_one(".support-section")
+    assert soup.select_one('.support-section [data-document-type="COMMUNAL_MARKET_REPORT"]')
     assert "propiedades comparables" not in section.get_text(" ", strip=True).casefold()
 
 
@@ -517,33 +524,421 @@ def test_duplicate_communal_match_keys_fail_closed():
     ) is None
 
 
-def test_appraisal_is_document_only_and_never_renders_an_enriched_card():
+def test_appraisal_structured_values_render_with_existing_private_document():
     from bs4 import BeautifulSoup
+    import os
+    from unittest.mock import patch
+    from campanas.owner_campaign_live_events import issue_live_token
     db = mongomock.MongoClient().test
-    appraisal_url = "/campana/informe?token=signed-appraisal"
-    view = _view(
-        db,
-        snapshot={"document_type": "INDIVIDUAL_APPRAISAL"},
-        monthly={
-            "period": "2026-10", "document_type": "INDIVIDUAL_APPRAISAL",
-            "individual_appraisal": {
-                "verified": True, "mid_uf": 2500, "low_uf": 2300,
-                "high_uf": 2700, "source_date": "2026-09-15",
-            },
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        token = issue_live_token(
+            campaign_id="owner_price_sucre_wave2_20260930", property_code="5438",
+            action="ver_informe", recipient="owner@example.test",
+            document_type="INDIVIDUAL_APPRAISAL",
+            expires_at=int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp()),
+            source="EMAIL", interaction_surface="OWNER_PORTAL", cta_placement="ORIGINAL",
+        )
+    appraisal_url = f"https://www.procasa.cl/campana/informe?token={token}"
+    current = {
+        "period": "2026-10", "current_price": 3990, "recommended_price": 3591,
+        "recommendation": {"recommended_price": 3591, "recommended_adjustment_pct": 10},
+        "individual_appraisal": {
+            "verified": True, "property_code": "5438", "estimated_mid_uf": 3750,
+            "estimated_low_uf": 3600, "estimated_high_uf": 3900,
+            "position_vs_appraisal": "ABOVE_RANGE", "source_date": "2026-09-15",
+            "methodology": "Análisis comercial individual",
         },
-        campaign_view={"document_available": True, "report_url": appraisal_url},
-    )
+        "documents": [{"type": "INDIVIDUAL_APPRAISAL", "verified": True, "url": appraisal_url}],
+    }
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        view = _view(db, snapshot={"document_type": "NONE"}, monthly=current, campaign_view={
+            "document_available": True, "document_type": "INDIVIDUAL_APPRAISAL", "report_url": appraisal_url,
+        })
     html = Environment(loader=FileSystemLoader("templates")).get_template(
         "owner_campaign_monthly_portal.html"
     ).render(view=view)
     soup = BeautifulSoup(html, "html.parser")
     assert view["market_reference_card"] is None
-    assert len(view["support_documents"]) == 1
-    assert view["support_documents"][0]["type"] == "INDIVIDUAL_APPRAISAL"
-    assert view["support_documents"][0]["url"] == appraisal_url
-    assert "Tasación de la propiedad" not in soup.get_text(" ", strip=True)
-    assert "Valor de tasación" not in soup.get_text(" ", strip=True)
-    assert "2.500 UF" not in soup.get_text(" ", strip=True)
+    assert view["appraisal_card"]["mode"] == "STRUCTURED"
+    assert view["appraisal_card"]["document_url"] == appraisal_url
+    assert view["appraisal_card"]["issued_label"] == ""
+    assert view["appraisal_card"]["markers"] == []
+    assert view["appraisal_card"]["range_band"] is None
+    assert next(item for item in view["appraisal_card"]["metrics"] if item["label"] == "Diferencia frente a la tasación")["value"] == "+6,4%"
+    assert {metric["label"] for metric in view["appraisal_card"]["metrics"]} == {
+        "Valor de referencia", "Rango estimado", "Precio publicado", "Diferencia frente a la tasación",
+    }
+    assert len(view["appraisal_card"]["metrics"]) == 4
+    assert any(item["label"] == "Con ajuste recomendado" for item in view["appraisal_card"]["details"])
+    assert {"Rango inferior", "Valor central", "Rango superior", "Precio publicado", "Con ajuste recomendado", "Fecha de tasación", "Metodología"}.issubset(
+        {item["label"] for item in view["appraisal_card"]["details"]}
+    )
+    assert "por encima del rango" in view["appraisal_card"]["interpretation"]
+    section = soup.select_one("[data-appraisal-mode='STRUCTURED']")
+    assert section is not None
+    assert "3.750 UF" in section.get_text(" ", strip=True)
+    document_row = section.select_one("a.appraisal-card__document")
+    assert document_row["href"] == appraisal_url
+    assert document_row.select_one(".appraisal-card__document-title").get_text(strip=True) == "Tasación individual"
+    assert "Propiedad 5438 · PDF · Emitida 15-09-2026" in document_row.get_text(" ", strip=True)
+    assert section.select_one(".appraisal-card__plot") is None
+    view["market_reference_card"] = {"title": "Mercado comunal", "metrics": [], "details": []}
+    ordered = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    assert ordered.index("id=\"appraisal-title\"") < ordered.index("id=\"complementary-market-title\"")
+
+
+def _full_data_appraisal_view(*, comparable=True, appraisal=True, communal=True):
+    """One coherent, local-only fixture for independent section composition QA."""
+    import os
+    from unittest.mock import patch
+    from campanas.owner_campaign_live_events import issue_live_token
+
+    db = mongomock.MongoClient().test
+    code = "QA-FULL-5438"
+    owner = "owner@example.test"
+    campaign_id = "owner_price_sucre_wave2_20260930"
+    secret = "local-full-data-composition-secret"
+    expiry = int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp())
+
+    def report_url(document_type):
+        token = issue_live_token(
+            campaign_id=campaign_id, property_code=code, action="ver_informe",
+            recipient=owner, document_type=document_type, expires_at=expiry,
+            source="EMAIL", interaction_surface="OWNER_PORTAL", cta_placement="ORIGINAL",
+        )
+        return f"https://www.procasa.cl/campana/informe?token={token}"
+
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": secret}):
+        appraisal_url = report_url("INDIVIDUAL_APPRAISAL") if appraisal else ""
+        communal_url = report_url("COMMUNAL_MARKET_REPORT") if communal else ""
+    current = {
+        "period": "2026-10",
+        "property": {
+            "property_type": "Departamento", "commune": "Talca", "operation": "VENTA",
+            "current_price": 3990, "surface_ref_m2": 100,
+        },
+        "activity_90d": {"leads": 1, "conversations": 1, "visits": 0, "source_date": "2026-10-02"},
+        "recommendation": {
+            "recommended_price": 3591, "recommended_adjustment_pct": 10,
+            "text": "Recomendación de prueba basada en el caso QA coherente.",
+            "diagnosis": "Diagnóstico de prueba basado en actividad y referencias verificadas.",
+        },
+        "documents": [],
+    }
+    if comparable:
+        current["comparables"] = {
+            "count": 7, "evidence_level": "HIGH", "version": "cluster_v2",
+            "positioning_mode": "PRICE_M2", "reference_value": 35.0,
+            "property_value": 39.9, "surface_ref_m2": 100,
+            "unit": "UF/m² útil", "source_date": "2026-09-30",
+        }
+    if communal:
+        current["communal_reference"] = {
+            "offer_uf_m2": 37.0, "reference_unit": "UF/m² de oferta",
+            "universe_value": "1.250", "universe_unit": "publicaciones activas",
+            "source_date": "2026-04-28",
+        }
+        db["mercado_comunal"].insert_one({
+            "match_key": "talca|departamento", "comuna": "Talca",
+            "tipo_propiedad": "Departamento",
+            "mercado_venta": {
+                "uf_m2_publicacion_actual": 37.0, "variacion_uf_m2_12m": -2.0,
+                "publicaciones_activas": 1250, "publicaciones_totales": 2500,
+            },
+            "indicadores_mercado": {
+                "nivel_competencia": "alto", "liquidez": "baja",
+                "tendencia_mercado": "desaceleracion", "presion_baja_precio": "alta",
+            },
+            "rangos_precio_venta": {"min_uf": 1800, "max_uf": 5000},
+            "source": {"fecha_reporte": "28/04/2026"},
+        })
+        current["documents"].append({
+            "document_type": "COMMUNAL_MARKET_REPORT", "verified": True,
+            "url": communal_url, "source_date": "2026-04-28",
+        })
+    if appraisal:
+        current["individual_appraisal"] = {
+            "verified": True, "property_code": code,
+            "estimated_low_uf": 3600, "estimated_mid_uf": 3750,
+            "estimated_high_uf": 3900, "source_date": "2026-09-15",
+        }
+        current["documents"].append({
+            "document_type": "INDIVIDUAL_APPRAISAL", "verified": True,
+            "url": appraisal_url, "source_date": "2026-09-15",
+        })
+
+    primary_type = "INDIVIDUAL_APPRAISAL" if appraisal else "COMMUNAL_MARKET_REPORT"
+    primary_url = appraisal_url if appraisal else communal_url
+    snapshot = {
+        "document_type": primary_type if primary_url else "NONE",
+        "commune": "Talca", "property_type": "Departamento", "operation": "VENTA",
+        "current_price": 3990, "recommended_price": 3591,
+        "recommended_adjustment_pct": 10,
+    }
+    campaign_view = {
+        "document_available": bool(primary_url), "document_type": primary_type,
+        "report_url": primary_url, "commune": "Talca",
+        "property_type": "Departamento", "operation": "Venta",
+        "logo_url": "/static/logo.png", "source": "EMAIL",
+        "top_primary_url": "/accept", "sticky_primary_url": "/accept",
+        "advisor_url": "https://www.procasa.cl/advisor",
+    }
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": secret}):
+        return _view(db, snapshot=snapshot, monthly=current, campaign_view=campaign_view, code=code)
+
+
+def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_sections():
+    from bs4 import BeautifulSoup
+
+    view = _full_data_appraisal_view()
+    template = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    )
+    soup = BeautifulSoup(template.render(view=view), "html.parser")
+
+    assert view["position_simulation"]["available"] is True
+    assert view["appraisal_card"]["mode"] == "STRUCTURED"
+    assert view["market_reference_card"]["title"] == "Mercado de departamentos en Talca"
+    assert soup.select_one("#position-title")
+    assert soup.select_one("#appraisal-title")
+    assert soup.select_one("#complementary-market-title")
+    assert soup.select_one("#diagnosis-title")
+    assert soup.select_one("#recommendation-title")
+    section_ids = [
+        "class=\"hero", "class=\"actions-top", "id=\"summary-title\"",
+        "id=\"activity-title\"", "id=\"position-title\"", "id=\"appraisal-title\"",
+        "id=\"complementary-market-title\"", "id=\"diagnosis-title\"",
+        "id=\"recommendation-title\"", "id=\"support-title\"", "class=\"card executive-card\"",
+    ]
+    html = template.render(view=view)
+    positions = [html.index(marker) for marker in section_ids]
+    assert positions == sorted(positions)
+    support_types = {row["type"] for row in view["support_documents"]}
+    assert support_types == {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}
+    assert len(soup.select(".support-section .support-row")) == 2
+    assert [row.get("data-document-type") for row in soup.select(".support-section .support-row")] == [
+        "INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT",
+    ]
+
+
+def test_appraisal_and_comparable_and_communal_sections_are_independent_in_all_combinations():
+    from bs4 import BeautifulSoup
+
+    template = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    )
+    cases = [
+        (True, True, True, (True, True, True)),
+        (True, False, True, (True, False, True)),
+        (True, True, False, (True, True, False)),
+        (False, True, True, (False, True, True)),
+        (False, False, True, (False, False, True)),
+    ]
+    for comparable, appraisal, communal, expected in cases:
+        view = _full_data_appraisal_view(comparable=comparable, appraisal=appraisal, communal=communal)
+        soup = BeautifulSoup(template.render(view=view), "html.parser")
+        actual = (
+            soup.select_one("#position-title") is not None,
+            soup.select_one("#appraisal-title") is not None,
+            soup.select_one("#complementary-market-title") is not None,
+        )
+        assert actual == expected
+        assert actual[0] == comparable
+        assert actual[1] == appraisal
+        assert actual[2] == communal
+
+
+def _verified_appraisal_fixture(db, *, appraisal=None, docs=True, snapshot=None, campaign_view=None):
+    import os
+    from unittest.mock import patch
+    from campanas.owner_campaign_live_events import issue_live_token
+    document_url = ""
+    monthly_docs = []
+    if docs:
+        with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+            token = issue_live_token(
+                campaign_id="owner_price_sucre_wave2_20260930", property_code="5438",
+                action="ver_informe", recipient="owner@example.test",
+                document_type="INDIVIDUAL_APPRAISAL",
+                expires_at=int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp()),
+                source="EMAIL", interaction_surface="OWNER_PORTAL", cta_placement="ORIGINAL",
+            )
+        document_url = f"https://www.procasa.cl/campana/informe?token={token}"
+        monthly_docs = [{"type": "INDIVIDUAL_APPRAISAL", "verified": True, "url": document_url, "source_date": "2026-09-15"}]
+    current = {"period": "2026-10", "current_price": 3990, "documents": monthly_docs, **(snapshot or {})}
+    if appraisal is not None:
+        current["individual_appraisal"] = appraisal
+    campaign = {"document_available": bool(docs), "document_type": "INDIVIDUAL_APPRAISAL", "report_url": document_url, **(campaign_view or {})}
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        view = _view(db, snapshot={"document_type": "NONE"}, monthly=current, campaign_view=campaign)
+    return view, document_url
+
+
+def test_appraisal_document_only_and_no_appraisal_states_render_correctly():
+    from bs4 import BeautifulSoup
+    db = mongomock.MongoClient().test
+    document_only, document_url = _verified_appraisal_fixture(db)
+    html = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html").render(view=document_only)
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one("[data-appraisal-mode='DOCUMENT_ONLY']")
+    assert section is not None and section.select_one("a.appraisal-card__document")["href"] == document_url
+    assert "PDF" in section.select_one(".appraisal-card__document-meta").get_text(" ", strip=True)
+    assert "Propiedad 5438" in section.select_one(".appraisal-card__document-meta").get_text(" ", strip=True)
+    assert "Emitida 15-09-2026" in section.select_one(".appraisal-card__document-meta").get_text(" ", strip=True)
+    assert not section.select_one(".appraisal-card__metrics")
+    assert "No hay tasación" not in section.get_text(" ", strip=True)
+
+    no_appraisal, _ = _verified_appraisal_fixture(mongomock.MongoClient().test, docs=False)
+    no_html = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html").render(view=no_appraisal)
+    assert no_appraisal["appraisal_card"] is None
+    assert "Tasación individual de tu propiedad" not in no_html
+
+
+def test_real_resolver_fallback_renders_one_private_appraisal_link_in_both_sections(monkeypatch):
+    import os
+    from unittest.mock import patch
+    from campanas.owner_campaign_live_events import decode_live_token
+
+    db = mongomock.MongoClient().test
+    owner = "owner@example.test"
+    code = "5438"
+    expiry = datetime.now(timezone.utc) + timedelta(days=30)
+    key = owner_property_portal_id(code, owner)
+    monthly = {"period": "2026-10", "current_price": 3990, "documents": []}
+    db["owner_property_portals"].insert_one({
+        "_id": key, "owner_key": key, "property_code": code,
+        "current_portal_state": monthly, "monthly_snapshots": [monthly],
+    })
+    row = {
+        "campaign_id": "owner_price_sucre_wave2_20260930", "property_code": code,
+        "owner_email": owner, "send_status": "SENT",
+        "portal_access": {"expires_at": expiry},
+        "campaign_snapshot": {"owner_email": owner, "document_type": "COMMUNAL_MARKET_REPORT"},
+    }
+    campaign = {
+        "source": "WHATSAPP", "safe_mode": False, "document_available": False,
+        "advisor_url": "https://procasa-chatbot-yr8d.onrender.com/advisor",
+        "top_advisor_url": "https://procasa-chatbot-yr8d.onrender.com/advisor",
+    }
+    resolver = {"status": "FOUND", "document": {
+        "id": "private-drive-id", "name": f"{code}.pdf", "modifiedTime": "2026-09-15T18:30:00Z",
+    }}
+    def resolve_exact(requested_code):
+        assert requested_code == code
+        return resolver
+
+    monkeypatch.setattr("campanas.private_report.resolve_appraisal_document_cached", resolve_exact)
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        view = build_monthly_portal_view(db, row, campaign)
+
+    assert view["appraisal_card"]["mode"] == "DOCUMENT_ONLY"
+    rendered = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(rendered, "html.parser")
+    appraisal_section = soup.select_one("[data-appraisal-mode='DOCUMENT_ONLY']")
+    assert appraisal_section is not None
+    assert appraisal_section.select_one(".appraisal-card__heading").get_text(strip=True) == "Tasación individual de tu propiedad"
+    appraisal_doc = next(item for item in view["support_documents"] if item["type"] == "INDIVIDUAL_APPRAISAL")
+    assert view["appraisal_card"]["document_url"] == appraisal_doc["url"]
+    assert appraisal_doc["url"].startswith("https://procasa-chatbot-yr8d.onrender.com/campana/informe?")
+    assert "private-drive-id" not in appraisal_doc["url"]
+    assert appraisal_doc["metadata"] == "Propiedad 5438 · PDF · Archivo actualizado 15/09/2026"
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        claims = decode_live_token(appraisal_doc["url"].split("token=", 1)[1])
+    assert claims["document_type"] == "INDIVIDUAL_APPRAISAL"
+    assert claims["property_code"] == code and claims["recipient"] == owner
+    assert claims["action"] == "ver_informe"
+    assert appraisal_section.select_one("a.appraisal-card__document")["href"] == appraisal_doc["url"]
+    support_row = next(
+        link for link in soup.select(".support-row")
+        if link.get("href") == appraisal_doc["url"]
+    )
+    assert support_row.select_one(".support-row__title").get_text(strip=True) == "Tasación comercial"
+
+
+@pytest.mark.parametrize("status", ["NOT_FOUND", "AMBIGUOUS", "ERROR"])
+def test_real_resolver_fail_closed_keeps_monthly_portal_available(monkeypatch, status):
+    from unittest.mock import patch
+    db = mongomock.MongoClient().test
+    monkeypatch.setattr(
+        "campanas.private_report.resolve_appraisal_document_cached",
+        lambda _code: {"status": status, "document": None},
+    )
+    row = {
+        "campaign_id": "owner_price_sucre_wave2_20260930", "property_code": "5438",
+        "owner_email": "owner@example.test", "send_status": "SENT",
+        "portal_access": {"expires_at": datetime.now(timezone.utc) + timedelta(days=30)},
+        "campaign_snapshot": {"owner_email": "owner@example.test"},
+    }
+    with patch.dict("os.environ", {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        view = build_monthly_portal_view(db, row, {
+            "safe_mode": False, "document_available": False,
+            "advisor_url": "https://procasa-chatbot-yr8d.onrender.com/advisor",
+        })
+    assert view["appraisal_card"] is None
+    assert view["support_documents"] == []
+
+
+def test_appraisal_mid_only_has_no_artificial_range_and_ignores_generated_date():
+    view, _ = _verified_appraisal_fixture(
+        mongomock.MongoClient().test,
+        appraisal={"verified": True, "property_code": "5438", "estimated_mid_uf": 3750},
+        snapshot={"generated_at": datetime(2026, 10, 5, tzinfo=timezone.utc)},
+    )
+    card = view["appraisal_card"]
+    assert card["mode"] == "STRUCTURED"
+    assert not any(item["label"] == "Rango estimado" for item in card["metrics"])
+    assert not card["issued_label"]
+
+
+def test_wrong_property_appraisal_data_is_rejected_and_duplicate_pdf_fails_closed():
+    from unittest.mock import patch
+    import os
+    from campanas.owner_campaign_live_events import issue_live_token
+    db = mongomock.MongoClient().test
+    wrong, _ = _verified_appraisal_fixture(db, appraisal={
+        "verified": True, "property_code": "9999", "estimated_mid_uf": 2500,
+        "estimated_low_uf": 2400, "estimated_high_uf": 2600,
+    })
+    assert wrong["appraisal_card"]["mode"] == "DOCUMENT_ONLY"
+    assert "2.500 UF" not in str(wrong["appraisal_card"])
+
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        second = issue_live_token(
+            campaign_id="owner_price_sucre_wave2_20260930", property_code="5438",
+            action="ver_informe", recipient="owner@example.test", document_type="INDIVIDUAL_APPRAISAL",
+            expires_at=int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp()),
+            source="EMAIL", interaction_surface="OWNER_PORTAL", cta_placement="ORIGINAL",
+        )
+    second_url = f"https://www.procasa.cl/campana/informe?token={second}"
+    ambiguous = {"period": "2026-10", "current_price": 3990, "individual_appraisal": {
+        "verified": True, "property_code": "5438", "estimated_mid_uf": 2500,
+    }, "documents": [
+        {"type": "INDIVIDUAL_APPRAISAL", "verified": True, "url": wrong["appraisal_card"]["document_url"]},
+        {"type": "INDIVIDUAL_APPRAISAL", "verified": True, "url": second_url},
+    ]}
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-appraisal-test-secret"}):
+        ambiguous_view = _view(mongomock.MongoClient().test, monthly=ambiguous, snapshot={"document_type": "NONE"}, campaign_view={
+            "document_available": False, "report_url": "",
+        })
+    assert ambiguous_view["appraisal_card"] is None
+
+
+def test_appraisal_visibility_is_independent_of_authorization_and_position_conflicts_suppress_copy():
+    authorized, _ = _verified_appraisal_fixture(
+        mongomock.MongoClient().test,
+        appraisal={"verified": True, "property_code": "5438", "estimated_mid_uf": 3750,
+                   "estimated_low_uf": 3600, "estimated_high_uf": 3900, "position_vs_appraisal": "BELOW_RANGE"},
+        campaign_view={"already_authorized": True, "top_primary_url": ""},
+    )
+    assert authorized["appraisal_card"]["mode"] == "STRUCTURED"
+    assert authorized["can_authorize"] is False
+    assert authorized["appraisal_card"]["conflict"] is True
+    assert authorized["appraisal_card"]["interpretation"] == ""
 
 
 def test_month_over_month_requires_real_metrics_in_both_snapshots():

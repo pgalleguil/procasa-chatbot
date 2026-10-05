@@ -60,6 +60,14 @@
     .button-whatsapp svg { color:#fff; }
     .button-whatsapp svg { width:17px; height:17px; flex-basis:17px; }
     .support-row { transition:background-color 180ms ease,border-color 180ms ease,box-shadow 180ms ease; }
+    .support-list { display:grid; gap:7px; }
+    .support-row { display:grid; grid-template-columns:32px minmax(0,1fr) 16px; align-items:center; gap:9px; min-width:0; min-height:54px; padding:7px 9px; border:1px solid #e8e9f0; border-radius:10px; background:#fcfcfe; color:var(--ink); text-decoration:none; }
+    .support-row__icon { display:grid; width:30px; height:30px; place-items:center; border-radius:8px; background:#f1f0fa; color:#5146a8; }
+    .support-row__icon svg { width:16px; height:16px; }
+    .support-row__copy { min-width:0; }
+    .support-row__title { display:block; overflow-wrap:anywhere; font-size:11.5px; line-height:1.3; font-weight:650; }
+    .support-row__meta { display:block; margin-top:2px; overflow-wrap:anywhere; color:#68738b; font-size:10px; line-height:1.3; }
+    .support-row__chevron { width:15px; height:15px; color:#737b90; }
     @media (hover:hover) and (pointer:fine) {
       .button-primary[href]:hover { transform:translateY(-2px); background:#292477; box-shadow:0 9px 20px #19165f40; }
       .button-secondary[href]:hover { transform:translateY(-1px); border-color:#aaa3eb; background:#f3f1ff; box-shadow:0 6px 15px #19165f1c; }
@@ -170,6 +178,37 @@
     .complementary-market__document-title { display:block; overflow-wrap:anywhere; color:var(--ink); font-size:12px; line-height:1.3; font-weight:650; }
     .complementary-market__document-meta { display:block; margin-top:2px; overflow-wrap:anywhere; color:#667087; font-size:10.5px; line-height:1.35; }
     .complementary-market__document-chevron { width:16px; height:16px; color:#737b90; }
+    .appraisal-card { border-color:#dcd9f5; background:linear-gradient(145deg,#fff,#fbfaff); }
+    .appraisal-card__header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .appraisal-card__heading { margin:0; color:var(--ink); font-size:14px; line-height:1.3; font-weight:700; }
+    .appraisal-card__subtitle,.appraisal-card__date { margin:3px 0 0; color:var(--body); font-size:10.5px; line-height:1.4; }
+    .appraisal-card__metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); gap:7px; }
+    .appraisal-card__metric { min-width:0; padding:9px; border:1px solid #e9e7f4; border-radius:10px; background:#fff; }
+    .appraisal-card__metric-label { display:block; color:var(--body); font-size:10px; line-height:1.3; }
+    .appraisal-card__metric-value { display:block; margin-top:3px; color:var(--ink); font-size:14px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
+    .appraisal-card__metric-note { display:block; margin-top:3px; color:#68738b; font-size:10px; line-height:1.35; }
+    .appraisal-card__interpretation,.appraisal-card__copy { margin:9px 0 0; color:var(--body); font-size:11px; line-height:1.45; }
+    .appraisal-card__details { margin-top:8px; border-top:1px solid #eeedf4; }
+    .appraisal-card__details summary { display:flex; align-items:center; min-height:42px; color:var(--brand); font-size:11px; font-weight:650; cursor:pointer; list-style:none; }
+    .appraisal-card__details summary::-webkit-details-marker { display:none; }
+    .appraisal-card__details summary:focus-visible { outline:3px solid #4433d5; outline-offset:2px; border-radius:5px; }
+    .appraisal-card__details summary::after { content:"↓"; margin-left:5px; }
+    .appraisal-card__details[open] summary::after { content:"↑"; }
+    .appraisal-card__details-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:0; }
+    .appraisal-card__detail { min-width:0; padding:7px; border-radius:8px; background:#f7f7fb; }
+    .appraisal-card__detail dt { color:#68738b; font-size:10px; line-height:1.3; }
+    .appraisal-card__detail dd { margin:2px 0 0; color:var(--ink); font-size:10.5px; line-height:1.35; font-weight:650; overflow-wrap:anywhere; }
+    .appraisal-card__document { display:grid; grid-template-columns:34px minmax(0,1fr) 18px; align-items:center; gap:10px; min-width:0; min-height:60px; margin-top:10px; padding:8px 10px; border:1px solid #e5e7ef; border-radius:11px; background:#fcfcfe; color:var(--ink); text-decoration:none; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
+    .appraisal-card__document:hover { transform:translateY(-1px); border-color:#d8d5ef; box-shadow:0 3px 12px #19165f0d; }
+    .appraisal-card__document:active { transform:translateY(0); }
+    .appraisal-card__document:focus-visible { outline:3px solid #4433d5; outline-offset:2px; }
+    .appraisal-card__document-icon { display:grid; width:32px; height:32px; place-items:center; border-radius:9px; background:#f0effa; color:#5146a8; }
+    .appraisal-card__document-icon svg { width:17px; height:17px; }
+    .appraisal-card__document-copy { min-width:0; }
+    .appraisal-card__document-title { display:block; overflow-wrap:anywhere; color:var(--ink); font-size:12px; line-height:1.3; font-weight:650; }
+    .appraisal-card__document-meta { display:block; margin-top:2px; overflow-wrap:anywhere; color:#667087; font-size:10.5px; line-height:1.35; }
+    .appraisal-card__document-chevron { width:16px; height:16px; color:#737b90; }
+    @media (prefers-reduced-motion: reduce) { .appraisal-card__document { transition:none; } .appraisal-card__document:hover,.appraisal-card__document:active { transform:none; } }
     .columns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .columns .card { margin-top:10px; }
     .compact-copy { margin:0; color:var(--body); font-size:12px; }
@@ -263,6 +302,11 @@
       .complementary-market__grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
       .complementary-market__metric { padding:8px 7px; }
       .complementary-market__metric-value { font-size:13px; }
+      .appraisal-card__header { display:block; }
+      .appraisal-card__date { display:block; margin-top:4px; }
+      .appraisal-card__metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+      .appraisal-card__metric { padding:8px; }
+      .appraisal-card__metric-value { font-size:13px; }
       .sticky { right:8px; left:8px; bottom:calc(6px + env(safe-area-inset-bottom)); width:calc(100% - 16px); gap:5px; padding:6px; }
       .sticky .button { min-height:42px; font-size:10.5px; }
       body { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
@@ -474,6 +518,18 @@
   </section>
   {% endif %}
 
+  {% if view.appraisal_card %}
+  <section class="card appraisal-card" aria-labelledby="appraisal-title" data-appraisal-mode="{{ view.appraisal_card.mode }}">
+    <header class="appraisal-card__header"><div><h2 class="appraisal-card__heading" id="appraisal-title">{{ view.appraisal_card.title }}</h2><p class="appraisal-card__subtitle">{{ view.appraisal_card.subtitle }}</p></div>{% if view.appraisal_card.issued_label %}<span class="appraisal-card__date">{{ view.appraisal_card.issued_label }}</span>{% endif %}</header>
+    {% if view.appraisal_card.mode == 'STRUCTURED' %}
+      {% if view.appraisal_card.metrics %}<div class="appraisal-card__metrics">{% for metric in view.appraisal_card.metrics %}<div class="appraisal-card__metric"><span class="appraisal-card__metric-label">{{ metric.label }}</span><strong class="appraisal-card__metric-value">{{ metric.value }}</strong>{% if metric.note %}<span class="appraisal-card__metric-note">{{ metric.note }}</span>{% endif %}</div>{% endfor %}</div>{% endif %}
+      {% if view.appraisal_card.interpretation %}<p class="appraisal-card__interpretation">{{ view.appraisal_card.interpretation }}</p>{% endif %}
+      <details class="appraisal-card__details"><summary>Ver más</summary>{% if view.appraisal_card.details %}<dl class="appraisal-card__details-list">{% for item in view.appraisal_card.details %}<div class="appraisal-card__detail"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>{% endfor %}</dl>{% endif %}{% if view.appraisal_card.method_copy %}<p class="appraisal-card__copy">{{ view.appraisal_card.method_copy }}</p>{% endif %}</details>
+    {% else %}<p class="appraisal-card__copy">{{ view.appraisal_card.copy }}</p>{% endif %}
+    {% if view.appraisal_card.document_url %}<a class="appraisal-card__document" data-document-type="INDIVIDUAL_APPRAISAL" href="{{ view.appraisal_card.document_url|e }}" rel="noreferrer" aria-label="Abrir {{ view.appraisal_card.document_title|e }}. {{ view.appraisal_card.document_metadata|e }}"><span class="appraisal-card__document-icon">{{ ui_icon('document') }}</span><span class="appraisal-card__document-copy"><span class="appraisal-card__document-title">{{ view.appraisal_card.document_title }}</span><span class="appraisal-card__document-meta">{{ view.appraisal_card.document_metadata }}</span></span>{{ ui_icon('chevron', 'appraisal-card__document-chevron') }}</a>{% endif %}
+  </section>
+  {% endif %}
+
   {% if view.market_reference_card %}
   <section class="card complementary-market" aria-labelledby="complementary-market-title">
     <h2 class="complementary-market__heading" id="complementary-market-title">{{ view.market_reference_card.title }}</h2>
@@ -515,6 +571,21 @@
     </section>
     {% endif %}
   </div>
+  {% endif %}
+
+  {% if view.support_documents %}
+  <section class="card support-section" aria-labelledby="support-title">
+    <h2 class="section-heading" id="support-title"><span class="section-icon">{{ ui_icon('document') }}</span>Documentos de respaldo</h2>
+    <div class="support-list">
+      {% for document in view.support_documents %}
+      <a class="support-row" data-document-type="{{ document.type|e }}" href="{{ document.url|e }}" rel="noreferrer" aria-label="Abrir {{ document.title|e }}. {{ document.metadata|e }}">
+        <span class="support-row__icon">{{ ui_icon('document') }}</span>
+        <span class="support-row__copy"><span class="support-row__title">{{ document.title }}</span><span class="support-row__meta">{{ document.metadata }}</span></span>
+        {{ ui_icon('chevron', 'support-row__chevron') }}
+      </a>
+      {% endfor %}
+    </div>
+  </section>
   {% endif %}
 
   {% endif %}

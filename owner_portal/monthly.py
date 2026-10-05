@@ -124,7 +124,236 @@ def _support_document_item(document_type: str, property_code: str, commune: str,
     source_date = _support_document_date(metadata)
     if source_date:
         parts.append(f"{date_prefix} {source_date}")
+    elif document_type == "INDIVIDUAL_APPRAISAL":
+        file_date = _file_date_label(metadata.get("file_modified_at"))
+        if file_date:
+            parts.append(f"Archivo actualizado {file_date}")
     return {"type": document_type, "title": title, "metadata": " · ".join(parts), "url": url}
+
+
+def _file_date_label(value: Any) -> str:
+    """Format a Drive file timestamp without presenting it as appraisal issue date."""
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw = _text(value)
+        if not raw:
+            return ""
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return ""
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc)
+    return parsed.strftime("%d/%m/%Y")
+
+
+def _strict_appraisal_number(value: Any) -> float | None:
+    """Parse an explicit numeric appraisal field, never a display label or prose."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        parsed = float(value)
+    else:
+        raw = _text(value).strip()
+        if not re.fullmatch(r"\d+(?:[.,]\d+)?", raw):
+            return None
+        parsed = float(raw.replace(",", "."))
+    import math
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _appraisal_source_maps(monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
+                           campaign_view: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Return property-scoped appraisal maps in the approved source priority."""
+    sources: list[Mapping[str, Any]] = []
+    for container in (monthly,):
+        for key in ("individual_appraisal", "appraisal"):
+            value = container.get(key)
+            if isinstance(value, Mapping):
+                sources.append(value)
+        evidence = container.get("supporting_evidence")
+        if isinstance(evidence, Mapping) and isinstance(evidence.get("appraisal"), Mapping):
+            sources.append(evidence["appraisal"])
+        nested_evidence = container.get("evidence")
+        nested_support = nested_evidence.get("supporting_evidence") if isinstance(nested_evidence, Mapping) else None
+        if isinstance(nested_support, Mapping) and isinstance(nested_support.get("appraisal"), Mapping):
+            sources.append(nested_support["appraisal"])
+
+    for container in (snapshot, campaign_view.get("snapshot") if isinstance(campaign_view.get("snapshot"), Mapping) else {}):
+        for key in ("individual_appraisal", "appraisal"):
+            value = container.get(key)
+            if isinstance(value, Mapping):
+                sources.append(value)
+        evidence = container.get("supporting_evidence")
+        if isinstance(evidence, Mapping) and isinstance(evidence.get("appraisal"), Mapping):
+            sources.append(evidence["appraisal"])
+        for model_key in ("email_render_model", "render_model"):
+            model = container.get(model_key)
+            if not isinstance(model, Mapping):
+                continue
+            nested = model.get("supporting_evidence")
+            if isinstance(nested, Mapping) and isinstance(nested.get("appraisal"), Mapping):
+                sources.append(nested["appraisal"])
+            model_evidence = model.get("evidence")
+            model_support = model_evidence.get("supporting_evidence") if isinstance(model_evidence, Mapping) else None
+            if isinstance(model_support, Mapping) and isinstance(model_support.get("appraisal"), Mapping):
+                sources.append(model_support["appraisal"])
+            # The historical renderer's `appraisal` is a display model, not the
+            # source evidence. Do not parse its formatted labels back into data.
+    return sources
+
+
+def _appraisal_date_label(appraisal: Mapping[str, Any], docs: list[Any]) -> str:
+    label = _support_document_date(appraisal)
+    if label:
+        return label
+    for item in docs:
+        if isinstance(item, Mapping) and item.get("verified") and str(
+            item.get("document_type") or item.get("type") or ""
+        ).upper() == "INDIVIDUAL_APPRAISAL":
+            label = _support_document_date(item)
+            if label:
+                return label
+    return ""
+
+
+def _appraisal_card(*, monthly: Mapping[str, Any], snapshot: Mapping[str, Any],
+                    campaign_view: Mapping[str, Any], docs: list[Any], support_documents: list[dict[str, str]],
+                    property_code: str, operation: str, current_price: Any,
+                    recommended_price: Any) -> dict[str, Any] | None:
+    """Build a verified appraisal view; PDF existence alone never implies a value."""
+    appraisal_docs = [item for item in support_documents if item.get("type") == "INDIVIDUAL_APPRAISAL"]
+    # Multiple distinct verified appraisal documents for a property are ambiguous.
+    urls = {item.get("url") for item in appraisal_docs if item.get("url")}
+    if len(urls) > 1:
+        return None
+    document = appraisal_docs[0] if len(appraisal_docs) == 1 else None
+
+    appraisal: Mapping[str, Any] | None = None
+    for candidate in _appraisal_source_maps(monthly, snapshot, campaign_view):
+        code = _text(candidate.get("property_code") or candidate.get("codigo"))
+        if code and code != property_code:
+            continue
+        if candidate.get("verified") is not True and candidate.get("source_verified") is not True:
+            continue
+        if any(_strict_appraisal_number(candidate.get(key)) is not None for key in (
+            "estimated_low_uf", "estimated_mid_uf", "estimated_high_uf",
+        )):
+            appraisal = candidate
+            break
+
+    if appraisal is None and document is None:
+        return None
+
+    is_rent = _text(operation).upper() in {"ARRIENDO", "RENT", "RENTAL"}
+    title = "Tasación individual de tu propiedad"
+    subtitle = "Referencia específica de valor para esta propiedad"
+    method_copy = (
+        "La estimación constituye una referencia comercial y no garantiza un canon final de arriendo."
+        if is_rent else
+        "La tasación constituye una referencia comercial basada en los antecedentes disponibles para la propiedad y no garantiza un precio final de venta."
+    )
+    document_url = document.get("url", "") if document else ""
+    if appraisal is None:
+        date_label = _appraisal_date_label({}, docs)
+        document_metadata = (document.get("metadata") if document else "") or f"Propiedad {property_code} · PDF"
+        if date_label and "Emitida " not in document_metadata:
+            document_metadata += f" · Emitida {date_label}"
+        return {
+            "mode": "DOCUMENT_ONLY", "title": title,
+            "subtitle": "Existe una tasación individual asociada específicamente a esta propiedad.",
+            "issued_label": "",
+            "copy": "Puedes revisar el documento completo para conocer sus antecedentes, metodología y referencia de valor.",
+            "metrics": [], "markers": [], "interpretation": "", "details": [],
+            "method_copy": method_copy, "document_url": document_url,
+            "document_title": "Tasación individual", "document_metadata": document_metadata,
+            "property_code": property_code,
+        }
+
+    low = _strict_appraisal_number(appraisal.get("estimated_low_uf"))
+    mid = _strict_appraisal_number(appraisal.get("estimated_mid_uf"))
+    high = _strict_appraisal_number(appraisal.get("estimated_high_uf"))
+    if low is not None and high is not None and low > high:
+        low, high = None, None
+    if mid is None and low is None and high is None:
+        return None
+    current = _strict_appraisal_number(current_price)
+    recommended = _strict_appraisal_number(recommended_price)
+    from .campaign import _format_client_price
+    from analytics.owner_campaign_email_v2 import _appraisal_model as historical_appraisal_model
+    historical_model = historical_appraisal_model({"appraisal": appraisal}, current, operation)
+
+    def price_label(amount: float | None) -> str:
+        return _format_client_price(amount, operation) if amount is not None else ""
+
+    gap_pct = ((current / mid) - 1) * 100 if current is not None and mid is not None else None
+    gap_amount = current - mid if current is not None and mid is not None else None
+    stored_position = _text(appraisal.get("position_vs_appraisal")).upper()
+    conflict = bool(
+        current is not None and low is not None and high is not None and (
+            (stored_position == "ABOVE_RANGE" and current <= high)
+            or (stored_position == "WITHIN_RANGE" and not low <= current <= high)
+            or (stored_position == "BELOW_RANGE" and current >= low)
+        )
+    )
+
+    metrics: list[dict[str, str]] = []
+    if mid is not None:
+        metrics.append({"label": "Valor de referencia", "value": historical_model.get("mid_label") or price_label(mid)})
+    if low is not None and high is not None:
+        metrics.append({"label": "Rango estimado", "value": historical_model.get("range_label") or f"{price_label(low)} – {price_label(high)}"})
+    if current is not None:
+        metrics.append({"label": "Precio publicado", "value": historical_model.get("current_label") or price_label(current)})
+    if gap_pct is not None:
+        metrics.append({
+            "label": "Diferencia frente a la tasación",
+            "value": historical_model.get("gap_label") or f"{gap_pct:+.1f}%".replace(".", ","),
+            "note": ((historical_model.get("gap_amount_label") or (("+" if gap_amount > 0 else "−" if gap_amount < 0 else "") + price_label(abs(gap_amount)))) + " frente al valor de referencia") if gap_amount is not None else "",
+        })
+    interpretation = ""
+    if current is not None:
+        if low is not None and high is not None:
+            if not conflict:
+                if current > high:
+                    pct = f"{abs(gap_pct):.1f}%".replace(".", ",") if gap_pct is not None else ""
+                    interpretation = "El precio publicado se encuentra por encima del rango de referencia de la tasación." + (f" Frente al valor central estimado, la diferencia es aproximadamente {pct}." if pct else "")
+                elif current < low:
+                    interpretation = "El precio publicado se encuentra por debajo del rango de referencia de la tasación."
+                else:
+                    interpretation = "El precio publicado se encuentra dentro del rango estimado por la tasación."
+        elif mid is not None and gap_pct is not None:
+            direction = "sobre" if gap_pct > 0 else "bajo" if gap_pct < 0 else "en línea con"
+            interpretation = f"El precio publicado se encuentra aproximadamente {abs(gap_pct):.1f}% {direction} el valor de referencia de la tasación.".replace(".", ",", 1) if gap_pct != 0 else "El precio publicado se encuentra en línea con el valor de referencia de la tasación."
+    date_label = _appraisal_date_label(appraisal, docs)
+    details = []
+    for label, value in (("Rango inferior", low), ("Valor central", mid),
+                         ("Rango superior", high), ("Precio publicado", current),
+                         ("Con ajuste recomendado", recommended)):
+        if value is None:
+            continue
+        details.append({"label": label, "value": price_label(value)})
+    if stored_position and not conflict:
+        if stored_position in {"ABOVE_RANGE", "WITHIN_RANGE", "NEAR_RANGE", "BELOW_RANGE"}:
+            details.append({"label": "Posición frente al rango", "value": historical_model.get("position_label") or "Referencia disponible"})
+    if date_label:
+        details.append({"label": "Fecha de tasación", "value": date_label})
+    methodology = _text(appraisal.get("methodology") or appraisal.get("method_label") or appraisal.get("method"))
+    if methodology:
+        details.append({"label": "Metodología", "value": methodology})
+    document_metadata = (document.get("metadata") if document else "") or f"Propiedad {property_code} · PDF"
+    if date_label and "Emitida " not in document_metadata:
+        document_metadata += f" · Emitida {date_label}"
+    return {
+        "mode": "STRUCTURED", "title": title, "subtitle": subtitle,
+        "issued_label": "",
+        "metrics": metrics[:4], "markers": [], "range_band": None,
+        "interpretation": interpretation,
+        "conflict": conflict, "details": details,
+        "method_copy": method_copy, "document_url": document_url,
+        "document_title": "Tasación individual", "document_metadata": document_metadata,
+        "property_code": property_code,
+    }
 
 
 class _CampaignHtmlEvidence(HTMLParser):
@@ -1325,6 +1554,72 @@ def build_monthly_portal_view(
             ))
             seen_document_urls.add(extra_url)
 
+    # The monthly snapshot is the preferred source. If it has no usable,
+    # property-scoped appraisal link, resolve only this property's exact-code
+    # PDF through the existing private-report resolver. Never expose Drive URLs.
+    has_appraisal_document = any(
+        item.get("type") == "INDIVIDUAL_APPRAISAL" for item in support_documents
+    )
+    appraisal_access_expiry = (row.get("portal_access") or {}).get("expires_at")
+    appraisal_campaign_id = str(row.get("campaign_id") or "")
+    appraisal_access_is_valid = bool(
+        isinstance(appraisal_access_expiry, datetime)
+        and _as_utc(appraisal_access_expiry) > datetime.now(timezone.utc)
+        and appraisal_campaign_id and owner_email
+    )
+    if not stale and not has_appraisal_document and property_code and appraisal_access_is_valid:
+        try:
+            from campanas.private_report import resolve_appraisal_document_cached
+
+            resolved_appraisal = resolve_appraisal_document_cached(property_code)
+            file_record = resolved_appraisal.get("document") if isinstance(resolved_appraisal, Mapping) else None
+            if (
+                isinstance(resolved_appraisal, Mapping)
+                and resolved_appraisal.get("status") == "FOUND"
+                and isinstance(file_record, Mapping)
+                and file_record.get("id")
+            ):
+                expiry = appraisal_access_expiry
+                campaign_id = appraisal_campaign_id
+                source = str(campaign_view.get("source") or "").upper()
+                source = source if source in {"EMAIL", "WHATSAPP"} else None
+                if (
+                    isinstance(expiry, datetime)
+                    and _as_utc(expiry) > datetime.now(timezone.utc)
+                    and campaign_id and owner_email
+                ):
+                    from campanas.owner_campaign_live_events import issue_live_token
+
+                    token = issue_live_token(
+                        campaign_id=campaign_id,
+                        property_code=property_code,
+                        action="ver_informe",
+                        recipient=owner_email,
+                        document_type="INDIVIDUAL_APPRAISAL",
+                        expires_at=int(_as_utc(expiry).timestamp()),
+                        source=source,
+                        interaction_surface="OWNER_PORTAL",
+                        cta_placement="ORIGINAL",
+                    )
+                    origin = urlsplit(str(
+                        campaign_view.get("report_url")
+                        or campaign_view.get("advisor_url")
+                        or campaign_view.get("top_advisor_url") or ""
+                    ))
+                    base = f"{origin.scheme}://{origin.netloc}" if origin.scheme and origin.netloc else ""
+                    appraisal_url = f"{base}/campana/informe?{urlencode({'token': token})}"
+                    appraisal_metadata = {
+                        "file_modified_at": file_record.get("modifiedTime"),
+                    }
+                    support_documents.append(_support_document_item(
+                        "INDIVIDUAL_APPRAISAL", property_code,
+                        document_commune_label, appraisal_url, appraisal_metadata,
+                    ))
+                    seen_document_urls.add(appraisal_url)
+        except Exception:
+            # Drive/token failures must never take down the owner portal.
+            pass
+
     diagnosis = _text(recommendation.get("diagnosis")) or (evidence.get("diagnostic-copy") or [None])[0]
     recommendation_text = _text(recommendation.get("text") or recommendation.get("recommendation_text")) or (evidence.get("recommendation-copy") or [None])[0] or _text(campaign_view.get("recommendation_reason"))
     if stale:
@@ -1496,6 +1791,12 @@ def build_monthly_portal_view(
         campaign_comparable_mode=campaign_comparable_mode,
         stale=stale,
     )
+    appraisal_card = _appraisal_card(
+        monthly=monthly, snapshot=snapshot, campaign_view=campaign_view,
+        docs=docs, support_documents=support_documents,
+        property_code=property_code, operation=operation,
+        current_price=current_price, recommended_price=recommended_price,
+    )
 
     return {
         "logo_url": campaign_view.get("logo_url"),
@@ -1521,6 +1822,7 @@ def build_monthly_portal_view(
         "position": position,
         "position_simulation": position_simulation,
         "position_static": position_static,
+        "appraisal_card": appraisal_card,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,
         "market_reference_card": market_reference_card,

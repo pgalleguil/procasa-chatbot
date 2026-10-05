@@ -177,6 +177,48 @@ async def test_individual_appraisal_is_resolved_by_property_code_and_never_by_to
     assert report_open_calls == [CODE]
 
 
+def test_appraisal_resolver_uses_only_exact_filename_and_caches_found(monkeypatch):
+    private_report._APPRAISAL_CACHE.clear()
+    service = _Service({
+        private_report.APPRAISALS_FOLDER_ID: [
+            {**_pdf("exact-pdf", f"{CODE}.pdf"), "modifiedTime": "2026-09-15T18:30:00Z"},
+            _pdf("other-pdf", "9999.pdf"),
+        ]
+    })
+    monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=service))
+
+    first = private_report.resolve_appraisal_document_cached(CODE)
+    second = private_report.resolve_appraisal_document_cached(CODE)
+
+    assert first["status"] == second["status"] == "FOUND"
+    assert first["document"]["id"] == second["document"]["id"] == "exact-pdf"
+    assert len(service._files.list_calls) == 1
+    query = service._files.list_calls[0]["q"]
+    assert f"name = '{CODE}.pdf'" in query
+    assert "name = '9999.pdf'" not in query
+    assert "not name" not in query
+
+
+def test_appraisal_resolver_caches_ambiguous_and_drive_errors_fail_closed(monkeypatch):
+    private_report._APPRAISAL_CACHE.clear()
+    ambiguous_service = _Service({
+        private_report.APPRAISALS_FOLDER_ID: [
+            _pdf("first", f"{CODE}.pdf"), _pdf("second", f"{CODE}.pdf"),
+        ]
+    })
+    monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=ambiguous_service))
+    assert private_report.resolve_appraisal_document_cached(CODE)["status"] == "AMBIGUOUS"
+    assert private_report.resolve_appraisal_document_cached(CODE)["status"] == "AMBIGUOUS"
+    assert len(ambiguous_service._files.list_calls) == 1
+
+    private_report._APPRAISAL_CACHE.clear()
+    failing = _Service({})
+    failing._files.list = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("drive unavailable"))
+    monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=failing))
+    assert private_report.resolve_appraisal_document_cached(CODE) == {"status": "ERROR", "document": None}
+    assert private_report.resolve_appraisal_document_cached(CODE) == {"status": "ERROR", "document": None}
+
+
 @pytest.mark.asyncio
 async def test_fallback_report_does_not_record_report_opened(monkeypatch):
     service = _Service({private_report.APPRAISALS_FOLDER_ID: []})

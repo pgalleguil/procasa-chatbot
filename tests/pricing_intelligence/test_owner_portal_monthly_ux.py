@@ -185,6 +185,7 @@ def test_verified_support_documents_keep_existing_links_and_source_dates():
         "metadata": {"tipo_propiedad": "Departamento"},
     })
     db_both["mercado_comunal"].insert_one({
+        "match_key": "talca|departamento",
         "comuna": "Talca", "tipo_propiedad": "Departamento",
         "mercado_venta": {"uf_m2_publicacion_actual": 55.2},
         "source": {"fecha_reporte": "28/04/2026"},
@@ -246,6 +247,7 @@ def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_sig
 
     db = mongomock.MongoClient().test
     db["mercado_comunal"].insert_one({
+        "match_key": "santiago|departamento",
         "comuna": "Santiago",
         "tipo_propiedad": "Departamento",
         "mercado_venta": {
@@ -332,6 +334,7 @@ def test_communal_market_card_is_operation_specific_and_fails_closed_on_identity
 
     db = mongomock.MongoClient().test
     db["mercado_comunal"].insert_one({
+        "match_key": "santiago|departamento",
         "comuna": "Santiago", "tipo_propiedad": "Departamento",
         "mercado_venta": {"uf_m2_publicacion_actual": 55.23},
         "mercado_arriendo": {
@@ -364,6 +367,7 @@ def test_historical_communal_card_resolves_missing_identity_from_exact_master_pr
         "metadata": {"tipo_propiedad": "Departamento"},
     })
     db["mercado_comunal"].insert_one({
+        "match_key": "concon|departamento",
         "comuna": "Concón", "tipo_propiedad": "Departamento",
         "mercado_venta": {
             "uf_m2_publicacion_actual": 83.58,
@@ -422,6 +426,7 @@ def test_master_property_code_mismatch_does_not_supply_communal_identity():
         "metadata": {"tipo_propiedad": "Departamento"},
     })
     db["mercado_comunal"].insert_one({
+        "match_key": "concon|departamento",
         "comuna": "Concón", "tipo_propiedad": "Departamento",
         "mercado_venta": {"uf_m2_publicacion_actual": 83.58},
     })
@@ -441,6 +446,7 @@ def test_no_exact_communal_match_hides_card_without_cross_property_communal_data
         "metadata": {"tipo_propiedad": "Departamento"},
     })
     db["mercado_comunal"].insert_one({
+        "match_key": "santiago|departamento",
         "comuna": "Santiago", "tipo_propiedad": "Departamento",
         "mercado_venta": {"uf_m2_publicacion_actual": 55.23, "publicaciones_activas": 9215},
     })
@@ -456,6 +462,53 @@ def test_no_exact_communal_match_hides_card_without_cross_property_communal_data
     assert view["market_reference_card"] is None
     assert "55,2 UF/m²" not in html
     assert "9.215" not in html
+
+
+def test_communal_match_key_normalizes_viña_del_mar_exactly_without_fuzzy_fallback():
+    from owner_portal.monthly import _communal_market_card, _communal_match_key
+
+    expected_key = "vina del mar|departamento"
+    assert _communal_match_key("Viña del Mar", "Departamento") == expected_key
+    assert _communal_match_key("Viña Del Mar", "Departamento") == expected_key
+    assert _communal_match_key("  VIÑA   DEL MAR  ", " departamento ") == expected_key
+    assert _communal_match_key("Viña del Mar Norte", "Departamento") != expected_key
+
+    db = mongomock.MongoClient().test
+    db["mercado_comunal"].insert_one({
+        "match_key": expected_key,
+        "comuna": "Viña Del Mar", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 83.58},
+    })
+    matched = _communal_market_card(
+        db, commune="Viña del Mar", property_type="Departamento",
+        operation="VENTA", document_url="/signed",
+    )
+    assert matched is not None
+    assert matched["metrics"][0]["value"] == "83,6 UF/m²"
+    assert _communal_market_card(
+        db, commune="Viña del Mar Norte", property_type="Departamento",
+        operation="VENTA", document_url="/signed",
+    ) is None
+    assert _communal_market_card(
+        db, commune="Valparaíso", property_type="Departamento",
+        operation="VENTA", document_url="/signed",
+    ) is None
+
+
+def test_duplicate_communal_match_keys_fail_closed():
+    from owner_portal.monthly import _communal_market_card
+
+    db = mongomock.MongoClient().test
+    record = {
+        "match_key": "vina del mar|departamento",
+        "comuna": "Viña Del Mar", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 83.58},
+    }
+    db["mercado_comunal"].insert_many([record, dict(record)])
+    assert _communal_market_card(
+        db, commune="Viña del Mar", property_type="Departamento",
+        operation="VENTA", document_url="/signed",
+    ) is None
 
 
 def test_appraisal_is_document_only_and_never_renders_an_enriched_card():
@@ -561,6 +614,7 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
         "documents": [{"type": "COMMUNAL_MARKET_REPORT", "verified": True}],
     }
     db["mercado_comunal"].insert_one({
+        "match_key": "santiago|departamento",
         "comuna": "Santiago", "tipo_propiedad": "Departamento",
         "mercado_venta": {
             "uf_m2_publicacion_actual": 55.23, "variacion_uf_m2_12m": -9.98,

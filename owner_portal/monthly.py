@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timezone
 from html.parser import HTMLParser
@@ -408,26 +409,29 @@ def _communal_market_card(
     market_field = {"VENTA": "mercado_venta", "ARRIENDO": "mercado_arriendo"}.get(operation_key)
     if not commune or not property_type or not market_field:
         return None
+    match_key = _communal_match_key(commune, property_type)
+    if not match_key:
+        return None
     projection = {
-        "_id": 0, "comuna": 1, "tipo_propiedad": 1, market_field: 1,
+        "_id": 0, "match_key": 1, "comuna": 1, "tipo_propiedad": 1, market_field: 1,
         "mercado_arriendo": 1, "indicadores_mercado": 1,
         "rangos_precio_venta": 1, "rangos_precio_arriendo": 1, "source": 1,
     }
     try:
-        # Limit two records so an accidental duplicate fails closed instead of
-        # arbitrarily selecting a different report.
+        # Match the dataset's normalized key exactly. Limiting to two makes
+        # duplicate keys fail closed instead of selecting a report arbitrarily.
         matches = list(db["mercado_comunal"].find(
-            {"comuna": commune, "tipo_propiedad": property_type}, projection,
+            {"match_key": match_key}, projection,
         ).limit(2))
-    except (AttributeError, TypeError):
-        found = db["mercado_comunal"].find_one(
-            {"comuna": commune, "tipo_propiedad": property_type}, projection,
-        )
-        matches = [found] if isinstance(found, Mapping) else []
+    except Exception:
+        return None
     if len(matches) != 1:
         return None
     record = matches[0]
-    if record.get("comuna") != commune or record.get("tipo_propiedad") != property_type:
+    if (
+        record.get("match_key") != match_key
+        or _communal_match_key(record.get("comuna"), record.get("tipo_propiedad")) != match_key
+    ):
         return None
     operation_data = record.get(market_field)
     if not isinstance(operation_data, Mapping):
@@ -538,6 +542,20 @@ def _communal_market_card(
         "source_label": f"Informe comunal · {commune} · {property_type}" + (f" · Corte {report_date}" if report_date else ""),
         "source_date": report_date, "document_url": document_url,
     }
+
+
+def _communal_match_key(commune: Any, property_type: Any) -> str:
+    """Normalize only case, diacritics and whitespace before exact key matching."""
+    def normalize_part(value: Any) -> str:
+        text = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+        text = "".join(char for char in text if not unicodedata.combining(char))
+        return re.sub(r"\s+", " ", text).strip()
+
+    normalized_commune = normalize_part(commune)
+    normalized_type = normalize_part(property_type)
+    if not normalized_commune or not normalized_type:
+        return ""
+    return f"{normalized_commune}|{normalized_type}"
 
 
 def _verified_master_identity(db: Any, property_code: str) -> dict[str, str]:

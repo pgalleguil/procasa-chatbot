@@ -103,8 +103,8 @@
     .position-connectors line { stroke:#6a59d4; stroke-width:.35; vector-effect:non-scaling-stroke; }
     .position-connectors .subject-line { stroke:var(--ink); }
     .position-track { position:absolute; right:0; bottom:10px; left:0; height:12px; margin:0; border-radius:999px; background:linear-gradient(90deg,#eeedff 0%,#d9d5fa 32%,#b5abef 58%,#8172df 80%,#5846c8 100%); }
-    .position-marker { position:absolute; top:50%; width:14px; height:14px; border:2px solid #fff; border-radius:50%; background:var(--ink); box-shadow:0 0 0 1px #19165f; transform:translate(-50%,-50%); }
-    .position-reference { position:absolute; top:50%; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#6a59d4; box-shadow:0 0 0 1px #6a59d4; transform:translate(-50%,-50%); }
+    .position-marker { position:absolute; top:50%; width:10px; height:10px; border:0; border-radius:50%; background:var(--ink); box-shadow:0 0 0 1px #19165f; transform:translate(-50%,-50%); }
+    .position-reference { position:absolute; top:50%; width:10px; height:10px; border:0; border-radius:50%; background:#6a59d4; box-shadow:0 0 0 1px #6a59d4; transform:translate(-50%,-50%); }
     .position-simulation { border:1px solid #e7e5f2; border-radius:12px; padding:12px; background:#fff; }
     .position-static { border:1px solid #e7e5f2; border-radius:12px; padding:12px; background:#fff; }
     .position-static__values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:0; }
@@ -119,22 +119,22 @@
     .position-simulation__option:focus-visible { outline:3px solid #4433d5; outline-offset:2px; }
     .position-simulation__plot { position:relative; height:58px; margin:5px 2px 7px; }
     .position-simulation__track { position:absolute; right:0; bottom:17px; left:0; height:12px; border-radius:999px; background:linear-gradient(90deg,#eeedff,#d9d5fa 36%,#b5abef 65%,#8172df 100%); }
-    .position-simulation__point { --marker-color:#7565d8; position:absolute; top:50%; display:block; box-sizing:border-box; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); transform:translate(-50%,-50%); }
+    .position-simulation__point { --marker-color:#7565d8; position:absolute; top:50%; display:block; box-sizing:border-box; width:10px; height:10px; border:0; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); transform:translate(-50%,-50%); }
     .position-simulation__point--appraisal { --marker-color:#c86c24; }
     .position-simulation__point--comparable { --marker-color:#6958cc; }
     .position-simulation__point--communal { --marker-color:#68758c; }
-    .position-simulation__point--property { --marker-color:#211c69; z-index:2; transition:left 350ms cubic-bezier(.22,.68,.2,1); }
-    .position-simulation__point--property::after { content:""; position:absolute; inset:-2px; box-sizing:border-box; border:1px solid var(--marker-color); border-radius:50%; opacity:0; transform:scale(1); pointer-events:none; }
-    .position-simulation[data-state="current"] .position-simulation__point--property::after,
-    .position-simulation[data-state="adjusted"] .position-simulation__point--property::after { animation:position-marker-halo 2.1s ease-in-out infinite; }
+    .position-simulation__point--property { --marker-color:#211c69; z-index:2; transition:left 620ms cubic-bezier(.22,.68,.2,1),background-color 260ms ease; }
+    .position-simulation__point--property::before { content:""; position:absolute; inset:-3px; border:1px solid var(--marker-color); border-radius:50%; opacity:.18; pointer-events:none; }
+    .position-simulation__point--property::after { content:""; position:absolute; inset:0; box-sizing:border-box; border:1px solid var(--marker-color); border-radius:50%; opacity:0; transform:scale(1); pointer-events:none; }
+    .position-simulation__point--property.is-arriving::after { animation:position-marker-arrival 1.8s cubic-bezier(.22,.68,.2,1) 1 both; }
     .position-simulation[data-state="adjusted"] .position-simulation__point--property { --marker-color:#21834d; }
-    @keyframes position-marker-halo { 0% { opacity:.34; transform:scale(1); } 75%,100% { opacity:0; transform:scale(1.45); } }
-    .position-simulation__point--ghost { --marker-color:#211c69; z-index:1; border:2px dashed #211c69; background:#fff; box-shadow:none; }
+    @keyframes position-marker-arrival { 0% { opacity:.52; transform:scale(1); } 100% { opacity:0; transform:scale(1.8); } }
+    .position-simulation__point--ghost { --marker-color:#211c69; z-index:1; opacity:.3; box-shadow:0 0 0 1px var(--marker-color); }
     .position-simulation__point[hidden] { display:none; }
     .position-simulation__legend { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
     .position-simulation__legend-item { min-width:0; padding:7px 6px; border:1px solid #eeedf4; border-radius:9px; background:#fcfcfe; }
     .position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:10px; line-height:1.2; }
-    .position-simulation__legend-marker { --marker-color:#6958cc; flex:0 0 10px; width:10px; height:10px; box-sizing:border-box; border:2px solid #fff; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); }
+    .position-simulation__legend-marker { --marker-color:#6958cc; flex:0 0 10px; width:10px; height:10px; box-sizing:border-box; border:0; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); }
     .position-simulation__legend-marker--appraisal { --marker-color:#c86c24; }
     .position-simulation__legend-marker--communal { --marker-color:#68758c; }
     .position-simulation__legend-marker--property { --marker-color:#211c69; }
@@ -142,6 +142,7 @@
     .position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:12px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
     .position-simulation__property-gaps { display:flex; flex-wrap:wrap; gap:3px 8px; margin-top:4px; }
     .position-simulation__property-gap { color:#505b73; font-size:9.5px; line-height:1.25; font-weight:600; overflow-wrap:anywhere; }
+    .position-simulation__classification { margin:12px 0 3px; color:var(--ink); font-size:13px; line-height:1.35; font-weight:700; }
     .position-simulation__legend-item--communal { background:#f8f8fb; }
     .position-simulation__summary { min-height:2.8em; margin:9px 0 0; color:var(--body); font-size:11.5px; line-height:1.4; }
     .position-simulation__note { margin:6px 0 0; color:#737d92; font-size:10px; line-height:1.35; }
@@ -431,7 +432,7 @@
   {% endif %}
 
   <nav class="actions-top{% if not view.top_whatsapp_url %} actions-top-single{% endif %}" id="owner-portal-top-actions" aria-label="Acciones principales">
-    {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }} </a>
+    {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url }}">Revisar ajuste</a>
     {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
     {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
     {% if view.top_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="TOP" data-cta-type="WHATSAPP" href="{{ view.top_whatsapp_url|e }}" aria-label="Escribir por WhatsApp a {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>Escribir por WhatsApp</span></a>{% endif %}
@@ -444,22 +445,10 @@
     <div class="kpis">
       <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value">{{ view.current_price_label or '—' }}</div></div>
       <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value">{{ view.recommended_price_display_label or view.recommended_price_label or '—' }}</div>{% if view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
-      <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value">{{ view.activity_90d.leads if view.activity_90d.leads is not none else '0' }}</div><div class="kpi-note">últimos 90 días</div></div>
-      <div class="kpi position-kpi{% if view.position.gap_pct is defined and view.position.gap_pct is not none %} {{ 'below' if view.position.gap_pct < 0 else 'above' }}{% endif %}"><div class="kpi-label">Posición vs similares</div>{% if view.position.gap_pct is defined and view.position.gap_pct is not none %}<div class="kpi-value">{{ view.position.gap_label }}</div><div class="kpi-note">{% if view.position.gap_pct > 0 %}sobre propiedades similares{% elif view.position.gap_pct < 0 %}bajo propiedades similares{% else %}en línea con propiedades similares{% endif %}</div>{% else %}<div class="kpi-value">—</div><div class="kpi-note">Sin dato comparable</div>{% endif %}</div>
+      <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value">{{ view.activity_90d.leads if view.activity_90d.leads is not none else '—' }}</div><div class="kpi-note">{{ 'últimos 90 días' if view.activity_90d.leads is not none else 'Sin dato consolidado' }}</div></div>
+      <div class="kpi position-kpi"><div class="kpi-label">Posición de mercado</div>{% if view.market_position and view.market_position.available %}<div class="kpi-value">{{ view.market_position.summary_position_label }}</div><div class="kpi-note">{{ view.market_position.summary_position_note }}</div>{% else %}<div class="kpi-value">—</div><div class="kpi-note">Sin referencias comparables</div>{% endif %}</div>
     </div>
   </section>
-
-  {% if view.monthly_changes %}<section class="card" aria-labelledby="monthly-changes-title"><h2 class="section-heading" id="monthly-changes-title">Qué cambió desde el último informe</h2>{% if view.monthly_unchanged %}<p class="compact-copy">Sin cambios relevantes respecto del informe anterior</p>{% else %}<div class="monthly-changes">{% for item in view.monthly_changes %}<div class="monthly-change">{{ item.label }}<br><strong>{{ item.before }} {{ ui_icon('arrow', 'recommendation-arrow') }} {{ item.after }}</strong></div>{% endfor %}</div>{% endif %}</section>{% endif %}
-
-  {% if view.market_context %}
-  <section class="card" aria-labelledby="market-title">
-    <div class="market-head"><h2 class="section-heading" id="market-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Contexto del mercado inmobiliario</h2>{% if view.market_context.reference_month %}<span class="market-period">{{ view.market_context.reference_month }}</span>{% endif %}</div>
-    {% if view.market_context.kpis %}<div class="market-kpis" style="grid-template-columns:repeat({{ view.market_context.kpis|length }},minmax(0,1fr))">{% for item in view.market_context.kpis[:3] %}<div class="market-kpi"><small>{{ item.label or 'Indicador' }}</small><strong>{{ item.value or 'No disponible' }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}
-    {% if view.market_context.summary %}{{ expandable(view.market_context.summary, 180, 'market-summary') }}{% endif %}
-    {% if view.market_context.source_date %}<p class="source-note">Corte: {{ view.market_context.source_date }}</p>{% endif %}
-    {% if view.market_context.sources %}<p class="source-note">Fuentes: {{ view.market_context.sources }}</p>{% endif %}
-  </section>
-  {% endif %}
 
   {% if view.activity_90d.leads is not none or view.activity_90d.conversations is not none or view.activity_90d.visits is not none %}
   <section class="card" aria-labelledby="activity-title">
@@ -473,6 +462,8 @@
     {% if view.activity_90d.summary %}<p class="activity-summary">{{ view.activity_90d.summary }}</p>{% endif %}
   </section>
   {% endif %}
+
+
 
   {% if view.appraisal_card %}
   <section class="card appraisal-card" aria-labelledby="appraisal-title" data-appraisal-mode="{{ view.appraisal_card.mode }}">
@@ -517,7 +508,7 @@
   {% set market_position = view.market_position %}
   <section class="card" aria-labelledby="position-title">
     <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a las referencias de mercado</h2>{% if market_position.count %}<span class="badge">{{ market_position.count }} propiedades similares</span>{% endif %}</div>
-    <div class="position-simulation" data-position-simulation data-state="current" data-current-x="{{ market_position.current_x }}" data-adjusted-x="{{ market_position.proposed_x if market_position.simulation_available else '' }}" data-current-value="{{ market_position.current_value_label }}" data-adjusted-value="{{ market_position.proposed_value_label }}" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-unit="{{ market_position.unit|e }}">
+    <div class="position-simulation" data-position-simulation data-state="current" data-current-x="{{ market_position.current_x }}" data-adjusted-x="{{ market_position.proposed_x if market_position.simulation_available else '' }}" data-current-value="{{ market_position.current_value_label }}" data-adjusted-value="{{ market_position.proposed_value_label }}" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
       {% if market_position.simulation_available %}<div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
         <button class="position-simulation__option" type="button" data-position-state="current" aria-pressed="true">Precio actual</button>
         <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Con ajuste ({{ market_position.adjustment_label }})</button>
@@ -533,11 +524,23 @@
         {% for reference in market_position.references %}<div class="position-simulation__legend-item position-simulation__legend-item--{{ reference.kind|lower }}"><span class="position-simulation__legend-label"><span class="position-simulation__legend-marker position-simulation__legend-marker--{{ reference.kind|lower }}" aria-hidden="true"></span>{{ reference.label }}</span><strong class="position-simulation__legend-value">{{ reference.value_label }} {{ reference.unit }}</strong></div>{% endfor %}
         <div class="position-simulation__legend-item position-simulation__legend-item--property"><span class="position-simulation__legend-label" data-property-label><span class="position-simulation__legend-marker position-simulation__legend-marker--property" aria-hidden="true"></span><span data-property-state-label>Tu propiedad</span></span><strong class="position-simulation__legend-value"><span data-property-value>{{ market_position.current_value_label }}</span> {{ market_position.unit }}</strong><span class="position-simulation__property-gaps" aria-live="polite">{% for reference in market_position.references %}<span class="position-simulation__property-gap" data-property-gap{% if reference.kind == market_position.primary_kind %} data-position-gap{% endif %} data-current-gap="{{ reference.current_gap_label|e }}" data-adjusted-gap="{{ reference.proposed_gap_label|e }}">{{ reference.current_gap_label }}</span>{% endfor %}</span></div>
       </div>
-      <p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
+      <p class="position-simulation__classification" data-position-classification aria-live="polite">{{ market_position.current_classification.label }}</p><p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
       {% if market_position.simulation_available %}<p class="position-simulation__note">Simulación visual. No modifica el precio de publicación.</p>{% else %}<p class="position-simulation__note">UF/m² permite comparar valores usando una misma unidad de superficie.</p>{% endif %}
       {% if market_position.count %}<p class="position-simulation__note">Referencia basada en {{ market_position.count }} propiedades similares seleccionadas.</p>{% endif %}
       {% if market_position.sources_label %}<p class="position-simulation__sources">{{ market_position.sources_label }}</p>{% endif %}
     </div>
+  </section>
+  {% endif %}
+
+  {% if view.monthly_changes %}<section class="card" aria-labelledby="monthly-changes-title"><h2 class="section-heading" id="monthly-changes-title">Qué cambió desde el último informe</h2>{% if view.monthly_unchanged %}<p class="compact-copy">Sin cambios relevantes respecto del informe anterior</p>{% else %}<div class="monthly-changes">{% for item in view.monthly_changes %}<div class="monthly-change">{{ item.label }}<br><strong>{{ item.before }} {{ ui_icon('arrow', 'recommendation-arrow') }} {{ item.after }}</strong></div>{% endfor %}</div>{% endif %}</section>{% endif %}
+
+  {% if view.market_context %}
+  <section class="card" aria-labelledby="market-title">
+    <div class="market-head"><h2 class="section-heading" id="market-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Contexto del mercado inmobiliario</h2>{% if view.market_context.reference_month %}<span class="market-period">{{ view.market_context.reference_month }}</span>{% endif %}</div>
+    {% if view.market_context.kpis %}<div class="market-kpis" style="grid-template-columns:repeat({{ view.market_context.kpis|length }},minmax(0,1fr))">{% for item in view.market_context.kpis[:3] %}<div class="market-kpi"><small>{{ item.label or 'Indicador' }}</small><strong>{{ item.value or 'No disponible' }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}
+    {% if view.market_context.summary %}{{ expandable(view.market_context.summary, 180, 'market-summary') }}{% endif %}
+    {% if view.market_context.source_date %}<p class="source-note">Corte: {{ view.market_context.source_date }}</p>{% endif %}
+    {% if view.market_context.sources %}<p class="source-note">Fuentes: {{ view.market_context.sources }}</p>{% endif %}
   </section>
   {% endif %}
 
@@ -573,7 +576,7 @@
 </main>
 
 <nav class="sticky{% if not view.sticky_whatsapp_url %} sticky-single{% endif %}" id="owner-portal-sticky-actions" aria-label="Acciones rápidas">
-  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">Revisar ajuste {{ ui_icon('arrow') }}</a>
+  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">Revisar ajuste</a>
   {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
   {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
   {% if view.sticky_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="STICKY" data-cta-type="WHATSAPP" href="{{ view.sticky_whatsapp_url|e }}" aria-label="WhatsApp de {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>WhatsApp</span></a>{% endif %}
@@ -586,6 +589,7 @@
     var marker=simulation.querySelector('[data-point="property"]');
     var ghost=simulation.querySelector('[data-point="ghost"]');
     var summary=simulation.querySelector('[data-position-summary]');
+    var classification=simulation.querySelector('[data-position-classification]');
     var propertyValue=simulation.querySelector('[data-property-value]');
     var propertyLabel=simulation.querySelector('[data-property-state-label]');
     if(!marker||!summary||!propertyValue||!propertyLabel) return;
@@ -596,10 +600,17 @@
     function setPosition(state){
       var adjusted=state==='adjusted';
       var propertyX=adjusted?adjustedX:currentX;
+      var changedState=simulation.getAttribute('data-state')!==(adjusted?'adjusted':'current');
       marker.style.left=propertyX+'%';
+      marker.classList.remove('is-arriving');
+      if(changedState&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+        void marker.offsetWidth;
+        marker.classList.add('is-arriving');
+      }
       if(ghost){ghost.style.left=currentX+'%';ghost.hidden=!adjusted;}
       simulation.setAttribute('data-state',adjusted?'adjusted':'current');
       summary.textContent=simulation.getAttribute(adjusted?'data-adjusted-copy':'data-current-copy')||'';
+      if(classification) classification.textContent=simulation.getAttribute(adjusted?'data-adjusted-classification':'data-current-classification')||'';
       propertyValue.textContent=simulation.getAttribute(adjusted?'data-adjusted-value':'data-current-value')||'';
       propertyLabel.textContent=adjusted?'Tu propiedad · con ajuste':'Tu propiedad';
       simulation.querySelectorAll('[data-property-gap]').forEach(function(item){

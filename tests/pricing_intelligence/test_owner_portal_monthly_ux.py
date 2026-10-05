@@ -132,6 +132,104 @@ def test_verified_snapshot_phone_is_rendered_without_unsigned_whatsapp_link():
     assert view["top_whatsapp_url"] == view["sticky_whatsapp_url"] == ""  # Requires a registered signed portal access.
 
 
+def test_activity_90d_falls_back_to_frozen_campaign_render_model_without_zero_filling():
+    db = mongomock.MongoClient().test
+    view = _view(
+        db,
+        monthly={"period": "2026-10", "activity_90d": {"state": "UNKNOWN"}},
+        campaign_view={"activity_90d": {
+            "state": "KNOWN_POSITIVE", "total_leads": 3,
+            "conversations": 2, "visits": 1, "source_date": "2026-10-02",
+        }},
+    )
+    assert view["activity_90d"]["leads"] == 3
+    assert view["activity_90d"]["conversations"] == 2
+    assert view["activity_90d"]["visits"] == 1
+    assert view["activity_90d"]["source_date"] == "02-10-2026"
+    rendered = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    assert rendered.index('id="summary-title"') < rendered.index('id="activity-title"')
+
+
+def test_market_position_uses_all_compatible_references_and_classifies_both_states():
+    from owner_portal.monthly import _market_position_data
+
+    result = _market_position_data(
+        position_simulation={"available": False, "communal_on_same_scale": True},
+        position_static={
+            "available": True, "unit": "UF/m² útil", "count": 7,
+            "reference_value": 35.0, "property_value": 39.9,
+        },
+        comparables={"surface_ref_m2": 100},
+        communal={"offer_uf_m2": 37.0, "unit": "UF/m²", "area_basis": "USEFUL"},
+        appraisal_card={"market_position_reference": {
+            "verified": True, "property_code": "5438", "appraisal_value_uf": 3750,
+            "appraisal_uf_m2": 37.5, "appraisal_uf_m2_unit": "UF/m² útil", "area_basis": "USEFUL",
+        }},
+        property_state={"surface_ref_m2": 100, "surface_ref_unit": "UF/m² útil", "surface_ref_basis": "USEFUL"},
+        property_code="5438", current_price=3990, recommended_price=3591,
+        recommendation_is_monthly=True, stale=False,
+    )
+    assert [ref["kind"] for ref in result["references"]] == ["APPRAISAL", "COMPARABLE", "COMMUNAL"]
+    assert [ref["current_gap_label"] for ref in result["references"]] == [
+        "+6,4% vs tasación", "+14,0% vs similares", "+7,8% vs oferta comunal",
+    ]
+    assert [ref["proposed_gap_label"] for ref in result["references"]] == [
+        "-4,2% vs tasación", "+2,6% vs similares", "-2,9% vs oferta comunal",
+    ]
+    assert result["current_classification"]["code"] == "ABOVE_ALL_REFERENCES"
+    assert result["current_classification"]["label"] == "Sobre 3 de 3 referencias"
+    assert result["proposed_classification"]["code"] == "WITHIN_REFERENCE_RANGE"
+    assert result["proposed_classification"]["label"] == "Dentro del rango"
+
+
+def test_comparable_surface_ref_preserves_historical_pair_and_requires_explicit_equivalence_for_other_sources():
+    from owner_portal.monthly import _market_position_data, _static_position_data
+
+    position = {
+        "source": "MONTHLY_COMPARABLES", "unit": "UF/m² útil/construido",
+        "count": 7, "reference_value": "35,0 UF/m² útil/construido",
+        "property_value": "39,9 UF/m² útil/construido",
+    }
+    comparables = {
+        "count": 7, "evidence_level": "HIGH", "version": "cluster_v2",
+        "positioning_mode": "PRICE_M2", "reference_value": 35.0,
+        "property_value": 39.9, "unit": "UF/m² útil/construido",
+    }
+    static = _static_position_data(
+        position=position, comparables=comparables,
+        historical_email_verified=False, campaign_comparable_mode="PRIMARY_COMPARABLES", stale=False,
+    )
+    assert static["available"] is True
+    assert static["unit"] == "UF/m² útil/construido"
+    common = {
+        "position_simulation": {"available": False, "communal_on_same_scale": True},
+        "position_static": static, "comparables": {},
+        "communal": {"offer_uf_m2": 37.0, "reference_unit": "UF/m²", "area_basis": "COMPARABLE_SURFACE_REF"},
+        "property_state": {"surface_ref_m2": 100}, "property_code": "5438",
+        "current_price": 3990, "recommended_price": 3591,
+        "recommendation_is_monthly": True, "stale": False,
+    }
+    appraisal = {"market_position_reference": {
+        "verified": True, "property_code": "5438", "appraisal_value_uf": 3750,
+        "appraisal_uf_m2": 37.5, "appraisal_uf_m2_unit": "UF/m² útil/construido",
+        "area_basis": "COMPARABLE_SURFACE_REF",
+    }}
+    compatible = _market_position_data(**common, appraisal_card=appraisal)
+    assert [ref["kind"] for ref in compatible["references"]] == ["APPRAISAL", "COMPARABLE", "COMMUNAL"]
+    assert all(ref["area_basis"] == "COMPARABLE_SURFACE_REF" for ref in compatible["references"])
+
+    mismatched = _market_position_data(
+        **{**common, "communal": {"offer_uf_m2": 37.0, "reference_unit": "UF/m²", "area_basis": "USEFUL"}},
+        appraisal_card={"market_position_reference": {
+            "verified": True, "property_code": "5438", "appraisal_value_uf": 3750,
+            "appraisal_uf_m2": 37.5, "appraisal_uf_m2_unit": "UF/m² útil", "area_basis": "USEFUL",
+        }},
+    )
+    assert [ref["kind"] for ref in mismatched["references"]] == ["COMPARABLE"]
+
+
 def test_verified_support_documents_keep_existing_links_and_source_dates():
     import os
     from unittest.mock import patch
@@ -755,14 +853,21 @@ def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_
     style = soup.find("style").get_text()
     assert ".position-simulation__point {" in style and "width:10px; height:10px" in style
     assert "border-radius:50%" in style
+    assert "border:2px solid #fff" not in style
     assert ".position-simulation__point--appraisal { --marker-color:#c86c24; }" in style
     assert ".position-simulation__point--comparable { --marker-color:#6958cc; }" in style
     assert ".position-simulation__point--communal { --marker-color:#68758c; }" in style
     assert '.position-simulation[data-state="adjusted"] .position-simulation__point--property { --marker-color:#21834d; }' in style
-    assert "animation:position-marker-halo 2.1s ease-in-out infinite" in style
+    assert "animation:position-marker-arrival 1.8s cubic-bezier(.22,.68,.2,1) 1 both" in style
+    assert ".position-simulation__point--property::before" in style and "inset:-3px" in style
+    assert "border:2px solid #fff" not in style
+    assert ".position-simulation__point--property { --marker-color:#211c69; z-index:2; transition:left 620ms cubic-bezier(.22,.68,.2,1),background-color 260ms ease; }" in style
     assert "@media (prefers-reduced-motion:reduce)" in style
     assert ".position-simulation__point--property::after { animation:none!important; opacity:0!important; }" in style
     assert "7 propiedades similares" in soup.get_text(" ", strip=True)
+    assert soup.select_one(".actions-top .button-primary").get_text(" ", strip=True) == "Revisar ajuste"
+    assert soup.select_one(".sticky .button-primary").get_text(" ", strip=True) == "Revisar ajuste"
+    assert not soup.select(".actions-top .button-primary svg, .sticky .button-primary svg")
     assert position.select_one(".position-simulation__sources")
     assert view["position_simulation"]["appraisal_x"] == view["market_position"]["references"][0]["x"]
     assert view["position_simulation"]["median_x"] is not None
@@ -1269,15 +1374,16 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     cards = summary.select(":scope > .kpis > .kpi")
     assert len(cards) == 4
     assert [card.select_one(".kpi-label").get_text(" ", strip=True) for card in cards] == [
-        "Precio actual", "Precio sugerido", "Consultas recibidas", "Posición vs similares",
+        "Precio actual", "Precio sugerido", "Consultas recibidas", "Posición de mercado",
     ]
     activity_section = soup.select_one("#activity-title").find_parent("section")
     summary_leads = cards[2].select_one(".kpi-value").get_text(strip=True)
     activity_leads = activity_section.select_one(".activity-value").get_text(strip=True)
     assert summary_leads == activity_leads == str(view["activity_90d"]["leads"])
     assert cards[1].select_one(".kpi-note").get_text(" ", strip=True) == "-10% recomendado"
-    assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición vs similares"
-    assert cards[3].select_one(".kpi-note").get_text(strip=True) == "sobre propiedades similares"
+    assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición de mercado"
+    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "+45,1% vs similares"
+    assert cards[3].select_one(".kpi-note").get_text(strip=True) == "similares"
     assert view["market_reference_card"]["source_label"].startswith("Informe comunal · Santiago · Departamento")
 
     missing_db = mongomock.MongoClient().test
@@ -1295,7 +1401,7 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     assert "55,2 UF/m²" not in missing_html
 
 
-def test_summary_displays_zero_when_no_leads_are_reported():
+def test_summary_keeps_unknown_leads_unavailable_instead_of_zero():
     from bs4 import BeautifulSoup
     view = _view(mongomock.MongoClient().test, monthly={"period": "2026-10"})
     soup = BeautifulSoup(Environment(loader=FileSystemLoader("templates")).get_template(
@@ -1305,9 +1411,9 @@ def test_summary_displays_zero_when_no_leads_are_reported():
     cards = summary.select(":scope > .kpis > .kpi")
     assert len(cards) == 4
     leads = next(card for card in cards if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas")
-    assert leads.select_one(".kpi-value").get_text(strip=True) == "0"
-    assert leads.select_one(".kpi-note").get_text(strip=True) == "últimos 90 días"
-    assert "Consultas recibidas 0" in leads.get_text(" ", strip=True)
+    assert leads.select_one(".kpi-value").get_text(strip=True) == "—"
+    assert leads.select_one(".kpi-note").get_text(strip=True) == "Sin dato consolidado"
+    assert "Consultas recibidas —" in leads.get_text(" ", strip=True)
 
 
 def test_top_and_sticky_whatsapp_render_only_when_signed_urls_exist():
@@ -1716,6 +1822,8 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert "Referencia basada en 13 propiedades similares seleccionadas." in position_section.get_text(" ", strip=True)
             assert "mediana comparable" not in position_section.get_text(" ", strip=True).lower()
             assert position_section.select_one('[data-position-summary]')
+            assert position_section.select_one('[data-position-classification]')
+            assert position_section.select_one('[data-position-classification]').get("aria-live") == "polite"
             assert "Simulación visual. No modifica el precio" in position_section.get_text(" ", strip=True)
             assert "Oferta comunal observada" not in position_section.get_text(" ", strip=True)
             assert "Referencia de mercado" not in position_section.get_text(" ", strip=True)

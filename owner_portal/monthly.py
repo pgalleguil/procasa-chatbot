@@ -869,6 +869,10 @@ def _position_unit_label(value: Any) -> str:
     """Return a unit only when it is explicitly present in a comparable label."""
     raw = _text(value).casefold().replace("m2", "m²")
     compact = re.sub(r"\s+", "", raw)
+    if re.search(r"(uf|clp)/m²(?:útil|util|useful)/(?:built|construido|construida)", compact):
+        currency_match = re.search(r"(uf|clp)/m²", compact)
+        currency = currency_match.group(1).upper() if currency_match else ""
+        return f"{currency}/m² útil/construido"
     if re.search(r"\$[\d.,]+/m²/mes", compact):
         return "$/m²/mes"
     if re.search(r"[\d.,]+clp/m²/mes", compact):
@@ -903,6 +907,8 @@ def _position_unit_key(value: Any) -> str:
     raw = label.casefold().replace(" ", "")
     if raw in {"$/m²/mes", "clp/m²/mes"}:
         return raw
+    if raw in {"uf/m²útil/construido", "uf/m²útil/built", "clp/m²útil/construido", "clp/m²útil/built"}:
+        return raw
     raw = raw.replace("deoferta", "")
     match = re.fullmatch(r"(uf|clp|\$)/m²(?:útil|util|useful|built|construido|construida|total|terreno|land)?", raw)
     return match.group(0).replace("util", "útil") if match else ""
@@ -919,6 +925,14 @@ def _position_area_basis(value: Any = "", explicit: Any = None) -> str:
     """Return an area basis only when the source states it explicitly."""
     def normalize(source: Any) -> str:
         raw = _text(source).casefold().replace("á", "a").replace("ú", "u")
+        canonical = re.sub(r"[^a-z0-9]+", "_", raw).strip("_")
+        if canonical == "comparable_surface_ref":
+            return "COMPARABLE_SURFACE_REF"
+        # Historical comparable snapshots sometimes explicitly label both
+        # sides of the same denominator as útil/construido. Preserve that as
+        # one opaque, shared basis; never reinterpret it as USEFUL or BUILT.
+        if re.search(r"util\s*/\s*(?:built|construid[oa]?)", raw):
+            return "COMPARABLE_SURFACE_REF"
         compact = re.sub(r"[^a-z]+", " ", raw).strip()
         if re.search(r"\b(util|utile|useful)\b", compact):
             return "USEFUL"
@@ -943,7 +957,10 @@ def _position_currency_basis(value: Any = "", explicit: Any = None) -> str:
 
 
 def _position_basis_unit(currency: str, area_basis: str) -> str:
-    area_label = {"USEFUL": "útil", "BUILT": "construido", "LAND": "terreno"}.get(area_basis, "")
+    area_label = {
+        "USEFUL": "útil", "BUILT": "construido", "LAND": "terreno",
+        "COMPARABLE_SURFACE_REF": "útil/construido",
+    }.get(area_basis, "")
     return f"{currency}/m² {area_label}".strip() if currency and area_label else ""
 
 
@@ -1432,6 +1449,42 @@ def _market_position_data(
     if communal_value_on_scale is not None:
         communal_date = _source_date_label(communal.get("source_date") or communal.get("cutoff_date")) if isinstance(communal, Mapping) else ""
         source_labels.append("Oferta comunal" + (f" · corte {communal_date}" if communal_date else ""))
+
+    def classify(value: float) -> dict[str, Any]:
+        categories = [
+            "INLINE" if abs(gap_for(value, ref["value"])) <= 3.0
+            else "ABOVE" if gap_for(value, ref["value"]) > 3.0 else "BELOW"
+            for ref in compatible_refs
+        ]
+        low, high = min(ref["value"] for ref in compatible_refs), max(ref["value"] for ref in compatible_refs)
+        if value > high and all(category == "ABOVE" for category in categories):
+            label = f"Sobre {len(categories)} de {len(categories)} referencias"
+            code = "ABOVE_ALL_REFERENCES"
+        elif value < low and all(category == "BELOW" for category in categories):
+            label = f"Bajo {len(categories)} de {len(categories)} referencias"
+            code = "BELOW_ALL_REFERENCES"
+        elif low <= value <= high:
+            label, code = "Dentro del rango", "WITHIN_REFERENCE_RANGE"
+        elif "INLINE" in categories:
+            label = f"En línea con {categories.count('INLINE')} de {len(categories)} referencias"
+            code = "INLINE_WITH_REFERENCES"
+        else:
+            label, code = "Entre referencias", "MIXED_REFERENCE_POSITION"
+        if len(compatible_refs) == 1 and compatible_refs[0]["kind"] == "COMPARABLE":
+            only_ref = compatible_refs[0]
+            only_gap = gap_for(value, only_ref["value"])
+            label = f"{gap_text(value, only_ref['value'], 'COMPARABLE')}"
+            code = "SINGLE_COMPARABLE_REFERENCE"
+        return {"code": code, "label": label, "above": categories.count("ABOVE"),
+                "inline": categories.count("INLINE"), "below": categories.count("BELOW"),
+                "count": len(categories)}
+
+    current_classification = classify(current_value)
+    proposed_classification = classify(proposed_value) if simulation_available and proposed_value is not None else None
+    summary_source_names = {
+        "APPRAISAL": "Tasación", "COMPARABLE": "similares", "COMMUNAL": "comunal",
+    }
+    summary_sources = " · ".join(summary_source_names[ref["kind"]] for ref in compatible_refs)
     return {
         "available": True, "simulation_available": simulation_available,
         "count": position_static.get("count") if comparable_ok else None,
@@ -1447,6 +1500,10 @@ def _market_position_data(
         "gap_left": min(primary_x, property_x), "gap_width": abs(property_x - primary_x),
         "current_gap_label": current_gap_label,
         "proposed_gap_label": adjusted_gap_label,
+        "current_classification": current_classification,
+        "proposed_classification": proposed_classification,
+        "summary_position_label": current_classification["label"],
+        "summary_position_note": summary_sources or "Sin referencias comparables",
         "current_copy": copy_for(current_value, "Actualmente"),
         "adjusted_copy": copy_for(proposed_value, "Con el ajuste recomendado") if simulation_available and proposed_value is not None else "",
         "adjustment_label": position_simulation.get("adjustment_label") or "",
@@ -1835,8 +1892,32 @@ def build_monthly_portal_view(
     property_state = monthly.get("property") if isinstance(monthly.get("property"), Mapping) else monthly
     raw_context = monthly.get("market_context") if isinstance(monthly.get("market_context"), Mapping) else evidence.get("market_context")
     context = _normalize_market_context(raw_context)
-    activity = monthly.get("activity_90d") if isinstance(monthly.get("activity_90d"), Mapping) else evidence.get("activity_90d", {})
-    activity = activity if isinstance(activity, Mapping) else {}
+    # Activity is frozen with the sent campaign render model for older portals,
+    # while newer monthly snapshots store it at the top level. Prefer the
+    # monthly record, then the exact campaign/email evidence; do not turn
+    # absent fields into zero.
+    campaign_snapshot = campaign_view.get("snapshot") if isinstance(campaign_view.get("snapshot"), Mapping) else snapshot
+    saved_email_model = next((
+        source.get(key) for source in (snapshot, campaign_snapshot, row)
+        for key in ("email_render_model", "render_model")
+        if isinstance(source.get(key), Mapping)
+    ), {})
+    campaign_activity = campaign_view.get("activity_90d")
+    if not isinstance(campaign_activity, Mapping):
+        campaign_activity = campaign_snapshot.get("activity_90d") if isinstance(campaign_snapshot.get("activity_90d"), Mapping) else {}
+    saved_activity = saved_email_model.get("activity_90d") if isinstance(saved_email_model, Mapping) else {}
+    activity_candidates = (
+        monthly.get("activity_90d"), evidence.get("activity_90d"),
+        campaign_activity, saved_activity, snapshot.get("activity_90d"),
+    )
+    activity = next((
+        candidate for candidate in activity_candidates
+        if isinstance(candidate, Mapping) and any(
+            candidate.get(key) is not None
+            for key in ("leads", "total_leads", "lead_total", "conversations", "visits")
+        )
+    ), {})
+    activity = dict(activity) if isinstance(activity, Mapping) else {}
     if activity.get("leads") is None:
         leads = campaign_view.get("leads_90d")
         if leads is None:
@@ -2104,7 +2185,11 @@ def build_monthly_portal_view(
         surfaces = evidence.get("verified_property_surfaces_m2")
         surfaces = surfaces if isinstance(surfaces, Mapping) else {}
         unit_key = _position_unit_key(position.get("unit"))
-        surface_basis = "useful" if "util" in unit_key or "útil" in unit_key else "built" if "const" in unit_key else "land" if "terreno" in unit_key else ""
+        raw_surface_label = _text(position.get("unit")).casefold().replace("ú", "u")
+        if "util" in raw_surface_label and ("construid" in raw_surface_label or "built" in raw_surface_label):
+            surface_basis = "comparable_surface_ref"
+        else:
+            surface_basis = "useful" if "util" in unit_key or "útil" in unit_key else "built" if "const" in unit_key else "land" if "terreno" in unit_key else ""
         surface_ref_m2 = surfaces.get(surface_basis) if surface_basis else None
         snapshot_count = _number_from_label(snapshot.get("comparable_count"))
         email_count = _number_from_label(position.get("count"))

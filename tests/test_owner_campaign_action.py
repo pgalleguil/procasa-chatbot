@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import mongomock
 
 from campanas import handler
@@ -53,3 +55,14 @@ def test_revisar_ajuste_get_renders_decision_page(monkeypatch):
 
     assert response.status_code == 200
     assert response.body.decode() == "decision-page"
+
+
+def test_owner_pages_use_the_crm_procasa_favicon():
+    favicon = '/static/favicon_procasa_mark.png?v=1.0.13'
+    for template_name in ("owner_campaign_monthly_portal.html", "owner_campaign_private.html"):
+        template = Path("templates", template_name).read_text(encoding="utf-8")
+        assert f'href="{favicon}"' in template
+
+    decision_page = owner_campaign_confirmation_page._document("title", "subtitle", "content")
+    assert f'href="{favicon}"' in decision_page
+    assert Path("static/favicon_procasa_mark.png").is_file()

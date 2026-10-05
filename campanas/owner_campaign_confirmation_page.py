@@ -19,6 +19,8 @@ def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> st
     return (
         '<!doctype html><html lang="es"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<link rel="icon" type="image/png" href="/static/favicon_procasa_mark.png?v=1.0.13">'
+        '<link rel="apple-touch-icon" href="/static/favicon_procasa_mark.png?v=1.0.13">'
         f'<title>PROCASA | {escape(title)}</title><style>'
         '*{box-sizing:border-box}body{margin:0;background:#f5f6fb;color:#171b4b;'
         'font-family:Arial,Helvetica,sans-serif}.shell{max-width:920px;margin:0 auto;padding:24px 24px 28px}'

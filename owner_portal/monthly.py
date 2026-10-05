@@ -602,15 +602,29 @@ def _number_from_label(value: Any) -> float | None:
         return None
 
 
+def _position_unit_label(value: Any) -> str:
+    """Return a unit only when it is explicitly present in a comparable label."""
+    raw = _text(value).casefold().replace("m2", "m²")
+    compact = re.sub(r"\s+", "", raw)
+    if re.search(r"\$[\d.,]+/m²/mes", compact):
+        return "$/m²/mes"
+    if re.search(r"[\d.,]+clp/m²/mes", compact):
+        return "CLP/m²/mes"
+    match = re.search(r"(uf|clp)/m²(útil|util|construido|construida|total|terreno)?(/mes)?", compact)
+    if match:
+        currency, basis, monthly = match.groups()
+        basis = "útil" if basis in {"util", "útil"} else basis or ""
+        return f"{currency.upper()}/m²{(' ' + basis) if basis else ''}{'/mes' if monthly else ''}"
+    if re.search(r"\$[\d.,]+/m²(?:/mes)?", compact):
+        return "$/m²/mes" if "/mes" in compact else "$/m²"
+    return ""
+
+
 def _position_gap(reference: Any, subject: Any, unit: str = "") -> float | None:
     """A display-only ratio, only for positively identified compatible units."""
-    def units(value: Any) -> str:
-        raw = _text(value).casefold().replace("m2", "m²").replace(" ", "")
-        match = re.search(r"(uf|clp|\$)/m²(?:útil|util|construid[oa]|total)?", raw)
-        return match.group(0).replace("util", "útil") if match else ""
-    left, right = units(reference), units(subject)
+    left, right = _position_unit_label(reference), _position_unit_label(subject)
     # An explicit shared unit binds bare numeric values; conflicting labels fail closed.
-    shared = units(unit)
+    shared = _position_unit_label(unit)
     left = left or shared
     right = right or shared
     if not left or left != right:
@@ -622,7 +636,10 @@ def _position_gap(reference: Any, subject: Any, unit: str = "") -> float | None:
 
 
 def _position_unit_key(value: Any) -> str:
-    raw = _text(value).casefold().replace("m2", "m²").replace(" ", "")
+    label = _position_unit_label(value)
+    raw = label.casefold().replace(" ", "")
+    if raw in {"$/m²/mes", "clp/m²/mes"}:
+        return raw
     raw = raw.replace("deoferta", "")
     match = re.fullmatch(r"(uf|clp|\$)/m²(?:útil|util|construido|construida|total|terreno)?", raw)
     return match.group(0).replace("util", "útil") if match else ""
@@ -630,6 +647,8 @@ def _position_unit_key(value: Any) -> str:
 
 def _position_unit_dimension(value: Any) -> str:
     key = _position_unit_key(value)
+    if key.endswith("/mes"):
+        return key
     return next((unit for unit in ("uf/m²", "clp/m²", "$/m²") if key.startswith(unit)), "")
 
 
@@ -663,7 +682,6 @@ def _position_simulation_data(
     communal: Mapping[str, Any], property_state: Mapping[str, Any],
     current_price: Any, recommended_price: Any, current_price_label: Any,
     recommended_price_label: Any, adjustment: Any, recommendation_is_monthly: bool, stale: bool,
-    already_authorized: bool,
 ) -> dict[str, Any]:
     """Build a visual-only scenario from one frozen comparable snapshot.
 
@@ -672,7 +690,7 @@ def _position_simulation_data(
     cross-checked against the canonical current UF/m² before it is exposed.
     """
     unavailable = {"available": False, "reason": "SNAPSHOT_EVIDENCE_INSUFFICIENT"}
-    if stale or already_authorized or not isinstance(comparables, Mapping):
+    if stale or not isinstance(comparables, Mapping):
         return unavailable
     if property_state.get("current_price") is None or recommended_price is None or not recommendation_is_monthly:
         return {**unavailable, "reason": "PRICE_VALUES_NOT_FROZEN_IN_MONTHLY_SNAPSHOT"}
@@ -844,23 +862,47 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
     labels = labels if isinstance(labels, list) else []
     reference_boxes = evidence.get("position-ref-box", [])
     property_boxes = evidence.get("position-prop-box", [])
-    reference = _text(comparable.get("reference_value")) or (reference_boxes[0] if reference_boxes else (labels[0] if labels else ""))
-    subject = _text(comparable.get("property_value")) or (property_boxes[0] if property_boxes else (labels[1] if len(labels) > 1 else ""))
-    if isinstance(comparable.get("reference_value"), (int, float)):
-        reference = f"{comparable['reference_value']:g}".replace(".", ",") + " " + _text(comparable.get("unit"))
-    if isinstance(comparable.get("property_value"), (int, float)):
-        subject = f"{comparable['property_value']:g}".replace(".", ",") + " " + _text(comparable.get("unit"))
+    email_reference = reference_boxes[0] if reference_boxes else (labels[0] if labels else "")
+    email_subject = property_boxes[0] if property_boxes else (labels[1] if len(labels) > 1 else "")
+    monthly_reference = _text(comparable.get("reference_value"))
+    monthly_subject = _text(comparable.get("property_value"))
+    monthly_unit = _text(comparable.get("unit"))
+    monthly_pair_valid = (
+        _number_from_label(monthly_reference) is not None
+        and _number_from_label(monthly_subject) is not None
+        and bool(monthly_unit or (_position_unit_label(monthly_reference) and
+                                  _position_unit_label(monthly_reference) == _position_unit_label(monthly_subject)))
+    )
+    if monthly_pair_valid:
+        reference, subject, selected_source = monthly_reference, monthly_subject, "MONTHLY_COMPARABLES"
+        if isinstance(comparable.get("reference_value"), (int, float)):
+            reference = f"{comparable['reference_value']:g}".replace(".", ",") + (f" {monthly_unit}" if monthly_unit else "")
+        if isinstance(comparable.get("property_value"), (int, float)):
+            subject = f"{comparable['property_value']:g}".replace(".", ",") + (f" {monthly_unit}" if monthly_unit else "")
+    elif _number_from_label(email_reference) is not None and _number_from_label(email_subject) is not None:
+        # Historical values stay paired to the same immutable sent-email source;
+        # do not fill one half of that pair from a different snapshot.
+        reference, subject, selected_source = email_reference, email_subject, "VERIFIED_SENT_EMAIL"
+    else:
+        reference = monthly_reference or email_reference
+        subject = monthly_subject or email_subject
+        selected_source = "PARTIAL"
     reference = re.sub(r"^Referencia de mercado\s*", "", reference, flags=re.IGNORECASE)
     subject = re.sub(r"^Tu propiedad\s*", "", subject, flags=re.IGNORECASE)
-    count = comparable.get("count")
+    count = comparable.get("count") if selected_source == "MONTHLY_COMPARABLES" else None
     if count is None:
         count = (evidence.get("evidence-badge-single") or [None])[0]
     if isinstance(count, str):
         count = int(_number_from_label(count)) if _number_from_label(count) is not None else count
     ref_number = _number_from_label(reference)
     subject_number = _number_from_label(subject)
+    reference_unit = _position_unit_label(reference)
+    subject_unit = _position_unit_label(subject)
+    unit = monthly_unit if selected_source == "MONTHLY_COMPARABLES" else (
+        reference_unit if reference_unit and reference_unit == subject_unit else ""
+    )
     marker_pct = None
-    gap_pct = _position_gap(reference, subject, _text(comparable.get("unit")))
+    gap_pct = _position_gap(reference, subject, unit)
     if gap_pct is not None:
         # Display-only chart coordinate; no recommendation/pricing is derived here.
         marker_pct = max(4.0, min(96.0, 50.0 + gap_pct * 1.25))
@@ -868,13 +910,85 @@ def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> d
         "count": count,
         "reference_value": reference or None,
         "property_value": subject or None,
-        "unit": _text(comparable.get("unit")) or ("UF/m² útil" if ref_number is not None else ""),
+        "unit": unit,
+        "source": selected_source,
         "interpretation": _text(comparable.get("positioning")) or (evidence.get("comparable-summary-single") or [None])[0],
         "marker_pct": marker_pct,
         "marker_label_pct": max(25.0, min(75.0, marker_pct)) if marker_pct is not None else None,
         "gap_pct": gap_pct,
         "gap_label": f"{gap_pct:+.0f}%" if gap_pct is not None else "",
         "gap_note": "sobre referencia" if gap_pct is not None and gap_pct > 0 else "bajo referencia" if gap_pct is not None and gap_pct < 0 else "en referencia",
+    }
+
+
+def _static_position_data(
+    *, position: Mapping[str, Any], comparables: Mapping[str, Any],
+    historical_email_verified: bool, campaign_comparable_mode: str, stale: bool,
+) -> dict[str, Any]:
+    """Expose validated current comparable evidence without requiring a price simulation."""
+    unavailable = {"available": False, "reason": "COMPARABLE_EVIDENCE_INSUFFICIENT"}
+    if stale:
+        return {**unavailable, "reason": "STALE_PORTAL"}
+    if not isinstance(comparables, Mapping) or comparables.get("evidence_conflict") is True:
+        return {**unavailable, "reason": "COMPARABLE_EVIDENCE_CONFLICT"}
+    if str(comparables.get("display_status") or "OK").upper() == "REVIEW":
+        return {**unavailable, "reason": "COMPARABLE_EVIDENCE_CONFLICT"}
+
+    source = str(position.get("source") or "").upper()
+    if source == "MONTHLY_COMPARABLES":
+        evidence_level = str(comparables.get("evidence_level") or "").upper()
+        version = _text(comparables.get("version") or comparables.get("algorithm_version"))
+        if evidence_level not in {"HIGH", "MEDIUM"} or (version and "cluster_v2" not in version.casefold()):
+            return {**unavailable, "reason": "COMPARABLE_SOURCE_NOT_CANONICAL"}
+        if str(comparables.get("positioning_mode") or "PRICE_M2").upper() != "PRICE_M2":
+            return {**unavailable, "reason": "COMPARABLE_POSITIONING_MODE_UNSUPPORTED"}
+        if str(comparables.get("comparable_mode") or "").upper() == "COMMUNAL_FALLBACK":
+            return {**unavailable, "reason": "NON_PRIMARY_COMPARABLE_MODE"}
+        count = _number_from_label(comparables.get("count") or comparables.get("selected_n"))
+    elif source == "VERIFIED_SENT_EMAIL":
+        if not historical_email_verified or campaign_comparable_mode != "PRIMARY_COMPARABLES":
+            return {**unavailable, "reason": "NON_PRIMARY_COMPARABLE_MODE"}
+        # Count and both displayed values are taken together from the same
+        # identity-verified immutable email; campaign totals are not mixed in.
+        count = _number_from_label(position.get("count"))
+    else:
+        return {**unavailable, "reason": "COMPARABLE_SOURCE_NOT_CANONICAL"}
+
+    reference = position.get("reference_value")
+    property_value = position.get("property_value")
+    reference_number = _number_from_label(reference)
+    property_number = _number_from_label(property_value)
+    reference_unit = _position_unit_label(reference)
+    property_unit = _position_unit_label(property_value)
+    unit = reference_unit or property_unit or _text(position.get("unit"))
+    if count is None or count < 5:
+        return {**unavailable, "reason": "COMPARABLE_SAMPLE_TOO_SMALL"}
+    if reference_number is None or reference_number <= 0 or property_number is None or property_number <= 0:
+        return {**unavailable, "reason": "COMPARABLE_VALUES_MISSING"}
+    if not unit or not reference_unit or reference_unit != property_unit:
+        return {**unavailable, "reason": "COMPARABLE_UNITS_INCOMPATIBLE"}
+    gap = _position_gap(reference, property_value)
+    if gap is None:
+        return {**unavailable, "reason": "COMPARABLE_GAP_NOT_VERIFIABLE"}
+
+    rounded_gap = int(round(gap))
+    if rounded_gap > 0:
+        gap_label = f"{rounded_gap:+d}% sobre propiedades similares"
+    elif rounded_gap < 0:
+        gap_label = f"{rounded_gap:d}% bajo propiedades similares"
+    else:
+        gap_label = "En línea con propiedades similares"
+    return {
+        "available": True,
+        "count": int(count),
+        "source": source,
+        "reference_value": reference,
+        "property_value": property_value,
+        "reference_label": f"{_format_position_value(reference_number)} {unit}",
+        "property_label": f"{_format_position_value(property_number)} {unit}",
+        "unit": unit,
+        "gap_pct": gap,
+        "gap_label": gap_label,
     }
 
 
@@ -1305,7 +1419,7 @@ def build_monthly_portal_view(
         and isinstance(email_html, str) and email_html.strip()
         and row_status in {"SENT", "DELIVERY_UNKNOWN"}
         and campaign_comparable_mode == "PRIMARY_COMPARABLES"
-        and not stale and not already_authorized
+        and not stale
     ):
         surfaces = evidence.get("verified_property_surfaces_m2")
         surfaces = surfaces if isinstance(surfaces, Mapping) else {}
@@ -1366,7 +1480,21 @@ def build_monthly_portal_view(
         adjustment=simulation_adjustment,
         recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
         stale=stale,
-        already_authorized=already_authorized,
+    )
+    historical_email_verified = bool(
+        not stale and row_status in {"SENT", "DELIVERY_UNKNOWN"}
+        and isinstance(email_html, str) and email_html.strip()
+    )
+    static_comparables = comparable_state or {
+        "source": "VERIFIED_SENT_EMAIL",
+        "campaign_comparable_mode": campaign_comparable_mode,
+    }
+    position_static = _static_position_data(
+        position=position,
+        comparables=static_comparables,
+        historical_email_verified=historical_email_verified,
+        campaign_comparable_mode=campaign_comparable_mode,
+        stale=stale,
     )
 
     return {
@@ -1392,6 +1520,7 @@ def build_monthly_portal_view(
         "comparable_count": position.get("count") if position.get("count") is not None else (_value(comparable_state, snapshot, "comparable_count") if _value(comparable_state, snapshot, "comparable_count") is not None else campaign_view.get("comparable_count")),
         "position": position,
         "position_simulation": position_simulation,
+        "position_static": position_static,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,
         "market_reference_card": market_reference_card,

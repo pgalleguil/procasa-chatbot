@@ -108,6 +108,13 @@
     .position-marker { position:absolute; top:50%; width:14px; height:14px; border:2px solid #fff; border-radius:50%; background:var(--ink); box-shadow:0 0 0 1px #19165f; transform:translate(-50%,-50%); }
     .position-reference { position:absolute; top:50%; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#6a59d4; box-shadow:0 0 0 1px #6a59d4; transform:translate(-50%,-50%); }
     .position-simulation { border:1px solid #e7e5f2; border-radius:12px; padding:12px; background:#fff; }
+    .position-static { border:1px solid #e7e5f2; border-radius:12px; padding:12px; background:#fff; }
+    .position-static__values { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:0; }
+    .position-static__item { min-width:0; padding:9px; border:1px solid #eeedf4; border-radius:9px; background:#fcfcfe; }
+    .position-static__item dt { color:var(--body); font-size:10.5px; line-height:1.25; }
+    .position-static__item dd { margin:4px 0 0; color:var(--ink); font-size:13px; line-height:1.3; font-weight:700; overflow-wrap:anywhere; }
+    .position-static__gap { margin:9px 0 0; color:var(--brand); font-size:11px; line-height:1.35; font-weight:650; }
+    .position-static__note { margin:5px 0 0; color:#737d92; font-size:10px; line-height:1.35; }
     .position-simulation__selector { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; padding:4px; border:1px solid #e9e7f4; border-radius:11px; background:#f6f5fb; }
     .position-simulation__option { min-width:0; min-height:44px; padding:7px 9px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--body); font-family:inherit; font-size:11.5px; line-height:1.2; font-weight:600; cursor:pointer; }
     .position-simulation__option[aria-pressed="true"] { border-color:#dedbf2; background:#fff; color:var(--ink); box-shadow:0 1px 4px #19165f0d; }
@@ -420,10 +427,11 @@
   </section>
   {% endif %}
 
-  {% if view.position.count is not none or view.position.reference_value or view.position.property_value %}
+  {% if (view.position_simulation and view.position_simulation.available) or (view.position_static and view.position_static.available) %}
   {% set sim = view.position_simulation if view.position_simulation is defined else none %}
+  {% set static_position = view.position_static if view.position_static is defined else none %}
   <section class="card" aria-labelledby="position-title">
-    <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a propiedades comparables</h2>{% if sim and sim.available %}<span class="badge">{{ sim.count }} comparables</span>{% elif view.position.count is not none %}<span class="badge">{{ view.position.count }} comparables</span>{% endif %}</div>
+    <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a propiedades comparables</h2>{% if sim and sim.available %}<span class="badge">{{ sim.count }} comparables</span>{% elif static_position and static_position.available %}<span class="badge">{{ static_position.count }} comparables</span>{% endif %}</div>
     {% if sim and sim.available %}
     <div class="position-simulation" data-position-simulation data-state="current" style="--gap-mid:{{ sim.gap_left + sim.gap_width / 2 }}%;" data-current-x="{{ sim.current_x }}" data-adjusted-x="{{ sim.proposed_x }}" data-median-x="{{ sim.median_x }}" data-communal-x="{{ sim.communal_x if sim.communal_x is not none else '' }}" data-gap-left="{{ sim.gap_left }}" data-gap-width="{{ sim.gap_width }}" data-current-value="{{ sim.current_m2_label }}" data-adjusted-value="{{ sim.proposed_m2_label }}" data-current-gap="{{ sim.current_gap_label|e }}" data-adjusted-gap="{{ sim.proposed_gap_label|e }}" data-current-copy="{{ sim.current_copy|e }}" data-adjusted-copy="{{ sim.adjusted_copy|e }}" data-unit="{{ sim.unit|e }}" data-communal-same-scale="{{ 'yes' if sim.communal_on_same_scale else 'no' }}">
       <div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
@@ -454,8 +462,14 @@
       </div>
       {% endif %}
     </div>
-    {% else %}
-    <p class="position-neutral">Aún no hay evidencia comparable suficiente y consistente para simular la posición con el ajuste recomendado.</p>
+    {% elif static_position and static_position.available %}
+    <div class="position-static" data-position-static>
+      <dl class="position-static__values">
+        <div class="position-static__item"><dt>Propiedades similares</dt><dd>{{ static_position.reference_label }}</dd></div>
+        <div class="position-static__item"><dt>Tu propiedad</dt><dd>{{ static_position.property_label }}</dd></div>
+      </dl>
+      <p class="position-static__gap">{{ static_position.gap_label }}</p>
+      <p class="position-static__note">Posición actual según comparables verificados. La simulación con el ajuste no está disponible para estos datos.</p>
     {% endif %}
   </section>
   {% endif %}

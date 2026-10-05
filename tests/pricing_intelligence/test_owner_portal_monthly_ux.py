@@ -7,6 +7,7 @@ import mongomock
 from owner_portal.monthly import (
     _gap_explanation,
     _normalize_market_context,
+    _static_position_data,
     _position_simulation_data,
     _recommendation_narrative,
     _recommendation_period_label,
@@ -784,7 +785,7 @@ def test_comparable_position_simulation_uses_frozen_cluster_and_same_surface():
         current_price=18507, recommended_price=16656,
         current_price_label="18.507 UF", recommended_price_label="16.656 UF",
         adjustment=10, recommendation_is_monthly=True,
-        stale=False, already_authorized=False,
+        stale=False,
     )
     assert result["available"] is True
     assert result["surface_ref_m2"] == 140
@@ -814,14 +815,54 @@ def test_comparable_position_simulation_fails_closed_on_weak_or_mismatched_data(
         "current_price": 18507, "recommended_price": 16656,
         "current_price_label": "18.507 UF", "recommended_price_label": "16.656 UF",
         "adjustment": 10, "recommendation_is_monthly": True,
-        "stale": False, "already_authorized": False,
+        "stale": False,
     }
     assert _position_simulation_data(**args)["available"] is True
     assert _position_simulation_data(**{**args, "comparables": {**base, "evidence_level": "LIMITED"}})["available"] is False
     assert _position_simulation_data(**{**args, "property_state": {**args["property_state"], "surface_ref_m2": 150}})["reason"] == "POSITIONING_SURFACE_DENOMINATOR_MISMATCH"
     assert _position_simulation_data(**{**args, "recommendation_is_monthly": False})["available"] is False
     assert _position_simulation_data(**{**args, "stale": True})["available"] is False
-    assert _position_simulation_data(**{**args, "already_authorized": True})["available"] is False
+    # Authorization status is deliberately outside comparable analytics.
+
+
+def test_static_comparables_render_without_simulation_and_keep_quality_gates():
+    position = {
+        "source": "VERIFIED_SENT_EMAIL", "count": 7,
+        "reference_value": "91,1 UF/m² útil", "property_value": "132,2 UF/m² útil",
+    }
+    comparable_mode = {"source": "VERIFIED_SENT_EMAIL", "campaign_comparable_mode": "PRIMARY_COMPARABLES"}
+    args = {
+        "position": position, "comparables": comparable_mode,
+        "historical_email_verified": True,
+        "campaign_comparable_mode": "PRIMARY_COMPARABLES", "stale": False,
+    }
+    result = _static_position_data(**args)  # No surface or proposed price needed for current position.
+    assert result["available"] is True
+    assert result["count"] == 7
+    assert result["reference_label"] == "91,1 UF/m² útil"
+    assert result["property_label"] == "132,2 UF/m² útil"
+    assert result["gap_label"] == "+45% sobre propiedades similares"
+    assert _static_position_data(**{**args, "position": {**position, "count": 4}})["reason"] == "COMPARABLE_SAMPLE_TOO_SMALL"
+    assert _static_position_data(**{**args, "position": {**position, "property_value": None}})["reason"] == "COMPARABLE_VALUES_MISSING"
+    assert _static_position_data(**{**args, "comparables": {**comparable_mode, "evidence_conflict": True}})["reason"] == "COMPARABLE_EVIDENCE_CONFLICT"
+    assert _static_position_data(**{**args, "campaign_comparable_mode": "COMMUNAL_FALLBACK"})["reason"] == "NON_PRIMARY_COMPARABLE_MODE"
+    communal_fallback = {**comparable_mode, "campaign_comparable_mode": "COMMUNAL_FALLBACK"}
+    assert _static_position_data(**{**args, "comparables": communal_fallback, "campaign_comparable_mode": "COMMUNAL_FALLBACK"})["available"] is False
+
+
+def test_authorization_does_not_hide_comparables_or_restore_price_cta():
+    from bs4 import BeautifulSoup
+    template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
+    for case, count in (("full", 7), ("authorized", 7), ("authorized", 20)):
+        view = premium_fixture(case, comparable_count=count)
+        soup = BeautifulSoup(template.render(view=view), "html.parser")
+        assert view["position_simulation"]["available"] is True
+        assert view["position_simulation"]["count"] == count
+        assert soup.select_one(".position-simulation") is not None
+        if case == "authorized":
+            assert view["already_authorized"] is True
+            assert soup.select_one('.button-primary[aria-disabled="true"]')
+            assert not soup.select_one('.button-primary[href]')
 
 
 def test_sent_email_comparable_fallback_restores_position_bar_without_monthly_comparables():
@@ -891,6 +932,36 @@ def test_sent_email_comparable_fallback_restores_position_bar_without_monthly_co
     assert section.select_one('[data-position-gap]').get_text(strip=True) == "45% sobre propiedades similares"
     assert section.select_one('[data-point="property"]') is not None
 
+    # A current comparison remains useful without the surface needed for the
+    # adjusted-price simulation.
+    email_without_surface = sent_email_html.replace(
+        '<div class="single-operation">Venta &#183; Codigo 5695 &#183; 2D &#183; 2B &#183; m&#178; 140 m&#178; &#250;tiles</div>',
+        "",
+    )
+    static_row = {**row, "campaign_snapshot": {**row["campaign_snapshot"]}}
+    static_row["campaign_snapshot"].pop("recommended_price")
+    static_view = build_monthly_portal_view(db, static_row, campaign, email_html=email_without_surface)
+    assert static_view["position_simulation"]["available"] is False
+    assert static_view["position_static"]["available"] is True
+    static_html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=static_view)
+    static_soup = BeautifulSoup(static_html, "html.parser")
+    static_section = static_soup.select_one("[data-position-static]")
+    assert static_section is not None
+    assert "91,1 UF/m² útil" in static_section.get_text(" ", strip=True)
+    assert "132,2 UF/m² útil" in static_section.get_text(" ", strip=True)
+    assert "45% sobre propiedades similares" in static_section.get_text(" ", strip=True)
+    assert not static_section.select_one(".position-simulation__selector")
+
+    communal_row = {**row, "campaign_snapshot": {**row["campaign_snapshot"], "comparable_mode": "COMMUNAL_FALLBACK"}}
+    communal_view = build_monthly_portal_view(db, communal_row, campaign, email_html=email_without_surface)
+    assert communal_view["position_static"]["available"] is False
+    communal_html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=communal_view)
+    assert BeautifulSoup(communal_html, "html.parser").select_one("#position-title") is None
+
 
 def test_sent_email_comparable_fallback_fails_closed_without_verified_surface():
     from owner_portal.monthly import extract_verified_email_evidence
@@ -929,7 +1000,7 @@ def test_executive_directory_matches_exact_identity_and_never_guesses_photo():
 PREMIUM_CASES = ("full", "zero", "no_previous", "previous", "no_phone", "no_photo", "photo_phone", "missing_macro", "material_gap", "no_gap", "historical_email", "stale", "authorized")
 
 
-def premium_fixture(case):
+def premium_fixture(case, comparable_count=13):
     import os
     db = mongomock.MongoClient().test
     code, owner = "5438", "owner@example.test"
@@ -939,7 +1010,7 @@ def premium_fixture(case):
         "property_media": {"public_page_url": "https://www.procasa.cl/5438", "hero_image_url": "https://demoazimg.prop360.cl/procasa/img/propiedades/5438_main.JPEG", "verified_property_code": code, "public_page_active": True, "image_source": "PROCASA_PUBLIC_PROPERTY"},
         "activity_90d": {"leads": 0 if case == "zero" else 1, "conversations": 0, "visits": 0, "source_date": "2026-10-02"},
         "market_context": {"mortgage_rate": "4,1%", "tpm": "4,5%", "demand_status": "Selectiva", "reference_month": "Octubre 2026", "source_date": "2026-10-01", "summary": "El financiamiento y una demanda más selectiva hacen que el posicionamiento de precio sea especialmente relevante. " * 3},
-        "comparables": {"count": 13, "evidence_level": "HIGH", "version": "cluster_v2", "positioning_mode": "PRICE_M2", "reference_value": 91.1, "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil", "source_date": "2026-09-30", "analysis_generated_at": "2026-09-30"},
+        "comparables": {"count": comparable_count, "evidence_level": "HIGH", "version": "cluster_v2", "positioning_mode": "PRICE_M2", "reference_value": 91.1, "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil", "source_date": "2026-09-30", "analysis_generated_at": "2026-09-30"},
         "communal_reference": {"offer_uf_m2": 102.8, "reference_unit": "UF/m² de oferta", "summary": "102,8 UF/m² de oferta · 2.867 publicaciones activas", "universe_value": "2.867", "universe_unit": "publicaciones activas", "source_date": "2026-04-28"},
         "diagnosis": "Las consultas todavía no se han traducido en conversaciones ni visitas coordinadas. Conviene observar la respuesta comercial y revisar el posicionamiento frente a alternativas disponibles. " * 3,
         "recommendation": {"text": "Proponemos revisar el posicionamiento comercial y evaluar las opciones de ajuste de precio disponibles para esta propiedad. " * 3, "recommended_price": 16656, "recommended_adjustment_pct": 10},
@@ -1007,10 +1078,10 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "—"
             assert not soup.select_one(".position-kpi.above, .position-kpi.below")
             assert not view["gap_explanation"]
-        if case in {"stale", "authorized", "no_gap"}:
+        if case in {"stale", "no_gap"}:
             assert view["position_simulation"]["available"] is False
-        if case in {"authorized", "no_gap"}:
-            assert soup.select_one(".position-neutral")
+        if case == "no_gap":
+            assert not soup.select_one("#position-title")
         if case in {"stale", "authorized"}: assert not soup.select_one('.button-primary[href]')
         if case in {"stale", "authorized"}:
             assert soup.select_one('[data-cta-placement="TOP"][data-cta-type="WHATSAPP"]')
@@ -1061,6 +1132,11 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert round(simulation["current_gap_pct"]) == 45
             assert round(simulation["proposed_gap_pct"]) == 31
             assert simulation["communal_value"] is None
+        if case == "authorized":
+            assert view["position_simulation"]["available"] is True
+            assert soup.select_one(".position-simulation")
+            assert soup.select_one('.button-primary[aria-disabled="true"]')
+            assert not soup.select_one('.button-primary[href]')
         if case == "zero":
             assert "0 leads" in view["recommendation_summary"]
             assert "0 conversaciones" in view["recommendation_summary"]

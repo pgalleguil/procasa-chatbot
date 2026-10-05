@@ -383,6 +383,218 @@ def _position_gap(reference: Any, subject: Any, unit: str = "") -> float | None:
     return (value / ref - 1) * 100
 
 
+def _position_unit_key(value: Any) -> str:
+    raw = _text(value).casefold().replace("m2", "m²").replace(" ", "")
+    raw = raw.replace("deoferta", "")
+    match = re.fullmatch(r"(uf|clp|\$)/m²(?:útil|util|construido|construida|total|terreno)?", raw)
+    return match.group(0).replace("util", "útil") if match else ""
+
+
+def _position_unit_dimension(value: Any) -> str:
+    key = _position_unit_key(value)
+    return next((unit for unit in ("uf/m²", "clp/m²", "$/m²") if key.startswith(unit)), "")
+
+
+def _format_position_value(value: Any) -> str:
+    number = _number_from_label(value)
+    if number is None:
+        return ""
+    whole, _, fraction = f"{number:,.1f}".partition(".")
+    return whole.replace(",", ".") + "," + fraction
+
+
+def _position_scale(values: list[float]) -> tuple[float, float] | None:
+    valid = [value for value in values if isinstance(value, (int, float)) and value >= 0 and value < float("inf")]
+    if len(valid) < 2:
+        return None
+    low, high = min(valid), max(valid)
+    span = high - low
+    padding = max(span * 0.14, abs(high) * 0.06, 0.1)
+    return low - padding, high + padding
+
+
+def _position_scale_pct(value: float, domain: tuple[float, float]) -> float:
+    low, high = domain
+    if high <= low:
+        return 50.0
+    return max(3.0, min(97.0, (value - low) / (high - low) * 100))
+
+
+def _position_simulation_data(
+    *, position: Mapping[str, Any], comparables: Mapping[str, Any],
+    communal: Mapping[str, Any], property_state: Mapping[str, Any],
+    current_price: Any, recommended_price: Any, current_price_label: Any,
+    recommended_price_label: Any, adjustment: Any, recommendation_is_monthly: bool, stale: bool,
+    already_authorized: bool,
+) -> dict[str, Any]:
+    """Build a visual-only scenario from one frozen comparable snapshot.
+
+    It intentionally does not inspect master-property/current comparables data.
+    The adjusted value uses the exact recorded surface denominator and is
+    cross-checked against the canonical current UF/m² before it is exposed.
+    """
+    unavailable = {"available": False, "reason": "SNAPSHOT_EVIDENCE_INSUFFICIENT"}
+    if stale or already_authorized or not isinstance(comparables, Mapping):
+        return unavailable
+    if property_state.get("current_price") is None or recommended_price is None or not recommendation_is_monthly:
+        return {**unavailable, "reason": "PRICE_VALUES_NOT_FROZEN_IN_MONTHLY_SNAPSHOT"}
+    evidence_level = str(comparables.get("evidence_level") or "").upper()
+    if evidence_level not in {"HIGH", "MEDIUM"}:
+        return {**unavailable, "reason": "COMPARABLE_EVIDENCE_NOT_STRONG_ENOUGH"}
+    if comparables.get("evidence_conflict") is True or str(comparables.get("display_status") or "OK").upper() == "REVIEW":
+        return {**unavailable, "reason": "COMPARABLE_EVIDENCE_REQUIRES_REVIEW"}
+    version = _text(comparables.get("version") or comparables.get("algorithm_version"))
+    if version and "cluster_v2" not in version.casefold():
+        return {**unavailable, "reason": "COMPARABLE_SNAPSHOT_NOT_CANONICAL_CLUSTER_V2"}
+    if str(comparables.get("positioning_mode") or "PRICE_M2").upper() != "PRICE_M2":
+        return {**unavailable, "reason": "COMPARABLE_POSITIONING_NOT_PER_SQUARE_METER"}
+    try:
+        count = int(_number_from_label(comparables.get("count") or comparables.get("selected_n")) or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count < 5:
+        return {**unavailable, "reason": "COMPARABLE_SAMPLE_TOO_SMALL"}
+
+    unit = _text(comparables.get("unit") or comparables.get("positioning_unit_label"))
+    unit_key = _position_unit_key(unit)
+    # This interactive view is specifically UF/m² and does not simulate total-price,
+    # CLP, or rentals with a different denominator.
+    if not unit_key.startswith("uf/m²") or "UF" not in _text(current_price_label).upper() or "UF" not in _text(recommended_price_label).upper():
+        return {**unavailable, "reason": "POSITIONING_UNIT_OR_PRICE_CURRENCY_INCOMPATIBLE"}
+    if str(property_state.get("operation") or "").strip().upper() not in {"VENTA", "VENTA "}:
+        return {**unavailable, "reason": "POSITIONING_OPERATION_NOT_SUPPORTED"}
+
+    median = _number_from_label(comparables.get("reference_value", comparables.get("positioning_reference_value")))
+    current_m2 = _number_from_label(comparables.get("property_value", comparables.get("positioning_property_value")))
+    surface = _number_from_label(comparables.get("surface_ref_m2", comparables.get("surface_used_m2")))
+    property_surface = _number_from_label(property_state.get("surface_ref_m2"))
+    if surface is not None and property_surface is not None and abs(surface - property_surface) > max(0.01, surface * 0.001):
+        return {**unavailable, "reason": "POSITIONING_SURFACE_DENOMINATOR_MISMATCH"}
+    if surface is None:
+        surface = property_surface
+    price = _number_from_label(current_price)
+    proposed = _number_from_label(recommended_price)
+    adjustment_number = _number_from_label(adjustment)
+    if any(value is None or value <= 0 for value in (median, current_m2, surface, price, proposed)):
+        return {**unavailable, "reason": "POSITIONING_REQUIRED_VALUE_MISSING"}
+    if adjustment_number is None or not 0 < abs(adjustment_number) <= 100:
+        return {**unavailable, "reason": "POSITIONING_ADJUSTMENT_MISSING"}
+    calculated_current = price / surface
+    # Canonical property_value is rounded to one decimal in the email. A wider
+    # disagreement indicates a different surface denominator or stale data.
+    if abs(calculated_current - current_m2) > max(0.11, current_m2 * 0.001):
+        return {**unavailable, "reason": "POSITIONING_SURFACE_DENOMINATOR_MISMATCH"}
+    proposed_m2 = proposed / surface
+    current_gap = (current_m2 / median - 1) * 100
+    proposed_gap = (proposed_m2 / median - 1) * 100
+
+    communal_value: float | None = None
+    communal_unit = ""
+    if isinstance(communal, Mapping):
+        candidate_unit = _text(communal.get("unit") or communal.get("reference_unit"))
+        candidate_key = _position_unit_key(candidate_unit)
+        communal_metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+        # Accept only a numeric, explicitly typed figure from the frozen snapshot.
+        # Narrative summaries are intentionally not parsed into chart data.
+        candidates = [
+            (communal.get(key), candidate_unit, candidate_key)
+            for key in ("offer_uf_m2", "uf_m2_offer", "value_uf_m2", "reference_value_uf_m2", "reference_value", "value")
+        ]
+        candidates.extend(
+            (communal_metrics.get(key), "UF/m² de oferta", "uf/m²")
+            for key in ("uf_m2_publicacion_actual", "uf_m2_arriendo_actual")
+            if communal_metrics.get(key) is not None
+        )
+        for candidate_value, candidate_label, candidate_unit_key in candidates:
+            candidate = _number_from_label(candidate_value)
+            if candidate is not None and candidate > 0 and candidate_unit_key:
+                communal_value, communal_unit = candidate, candidate_label
+                break
+
+    chart_values = [median, current_m2, proposed_m2]
+    # Both are plotted only when the numeric currency/area dimension agrees.
+    # The distinct denominator/source wording stays visible in the legend, and
+    # communal values are never used in the comparable-gap calculation.
+    communal_on_same_scale = bool(
+        communal_value is not None
+        and _position_unit_dimension(communal_unit) == _position_unit_dimension(unit)
+    )
+    if communal_on_same_scale and communal_value is not None:
+        chart_values.append(communal_value)
+    domain = _position_scale(chart_values)
+    if domain is None:
+        return {**unavailable, "reason": "POSITIONING_SCALE_UNAVAILABLE"}
+
+    def gap_label(value: float) -> str:
+        rounded = int(round(value))
+        if rounded == 0:
+            return "En línea con propiedades similares"
+        relation = "sobre" if rounded > 0 else "bajo"
+        return f"{abs(rounded)}% {relation} propiedades similares"
+
+    adjustment_label = f"-{abs(adjustment_number):g}%"
+    source_date = _source_date_label(comparables.get("source_date") or comparables.get("cutoff_date"))
+    analysis_date = _source_date_label(comparables.get("analysis_generated_at"))
+    communal_date = _source_date_label(communal.get("source_date") or communal.get("cutoff_date")) if isinstance(communal, Mapping) else ""
+    communal_count = _text(communal.get("universe_value") or communal.get("active_listing_count")) if isinstance(communal, Mapping) else ""
+    communal_count_unit = _text(communal.get("universe_unit") or "publicaciones activas") if communal_count else ""
+    current_m2_label = _format_position_value(current_m2)
+    proposed_m2_label = _format_position_value(proposed_m2)
+    median_label = _format_position_value(median)
+    communal_label = _format_position_value(communal_value) if communal_value is not None else ""
+    current_copy = (
+        f"Actualmente, tu propiedad se publica en {current_m2_label} {unit}, aproximadamente "
+        f"un {abs(current_gap):.0f}% {'por sobre el valor observado en' if current_gap > 0 else 'por debajo del valor observado en' if current_gap < 0 else 'en línea con'} "
+        "propiedades similares."
+    )
+    if proposed_gap < current_gap:
+        adjusted_copy = (
+            f"Con el ajuste recomendado, la publicación quedaría cerca de {proposed_m2_label} {unit} "
+            f"y la diferencia frente a propiedades similares bajaría aproximadamente a {abs(proposed_gap):.0f}%."
+        )
+    else:
+        adjusted_copy = (
+            f"Con el ajuste recomendado, la publicación quedaría cerca de {proposed_m2_label} {unit}, "
+            f"con una diferencia aproximada de {abs(proposed_gap):.0f}% frente a propiedades similares."
+        )
+    return {
+        "available": True,
+        "reason": "",
+        "evidence_level": evidence_level,
+        "count": count,
+        "unit": unit,
+        "surface_ref_m2": surface,
+        "adjustment_label": adjustment_label,
+        "current_m2": current_m2,
+        "proposed_m2": proposed_m2,
+        "current_m2_label": current_m2_label,
+        "proposed_m2_label": proposed_m2_label,
+        "median": median,
+        "median_label": median_label,
+        "communal_value": communal_value,
+        "communal_label": communal_label,
+        "communal_unit": communal_unit,
+        "communal_on_same_scale": communal_on_same_scale,
+        "communal_count": communal_count,
+        "communal_count_unit": communal_count_unit,
+        "current_gap_pct": current_gap,
+        "proposed_gap_pct": proposed_gap,
+        "current_gap_label": gap_label(current_gap),
+        "proposed_gap_label": gap_label(proposed_gap),
+        "current_copy": current_copy,
+        "adjusted_copy": adjusted_copy,
+        "current_x": _position_scale_pct(current_m2, domain),
+        "proposed_x": _position_scale_pct(proposed_m2, domain),
+        "median_x": _position_scale_pct(median, domain),
+        "communal_x": _position_scale_pct(communal_value, domain) if communal_on_same_scale and communal_value is not None else None,
+        "gap_left": min(_position_scale_pct(median, domain), _position_scale_pct(current_m2, domain)),
+        "gap_width": abs(_position_scale_pct(current_m2, domain) - _position_scale_pct(median, domain)),
+        "communal_source_date": communal_date,
+        "comparables_source_date": source_date,
+        "comparables_analysis_date": analysis_date,
+    }
+
+
 def _position_data(evidence: Mapping[str, Any], monthly: Mapping[str, Any]) -> dict[str, Any]:
     comparable = monthly.get("comparables") if isinstance(monthly.get("comparables"), Mapping) else {}
     labels = evidence.get("position-anchor-label", [])
@@ -813,6 +1025,20 @@ def build_monthly_portal_view(
         adjustment_headline_label = ""
         recommendation_summary = ""
         recommendation_details = []
+    position_simulation = _position_simulation_data(
+        position=position,
+        comparables=comparable_state,
+        communal=communal,
+        property_state=property_state,
+        current_price=current_price,
+        recommended_price=recommended_price,
+        current_price_label=current_price_label,
+        recommended_price_label=recommended_price_label,
+        adjustment=adjustment_value,
+        recommendation_is_monthly=recommendation.get("recommended_price") is not None,
+        stale=stale,
+        already_authorized=already_authorized,
+    )
 
     return {
         "logo_url": campaign_view.get("logo_url"),
@@ -836,6 +1062,7 @@ def build_monthly_portal_view(
         "recommendation_details": recommendation_details,
         "comparable_count": position.get("count") if position.get("count") is not None else (_value(comparable_state, snapshot, "comparable_count") if _value(comparable_state, snapshot, "comparable_count") is not None else campaign_view.get("comparable_count")),
         "position": position,
+        "position_simulation": position_simulation,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,
         "market_context": context if isinstance(context, Mapping) else None,

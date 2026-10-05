@@ -7,6 +7,7 @@ import mongomock
 from owner_portal.monthly import (
     _gap_explanation,
     _normalize_market_context,
+    _position_simulation_data,
     _recommendation_narrative,
     _recommendation_period_label,
     build_monthly_portal_view,
@@ -280,6 +281,66 @@ def test_market_position_requires_compatible_units_and_preserves_zero():
     assert round(position["gap_pct"], 2) == 1.60
 
 
+def test_comparable_position_simulation_uses_frozen_cluster_and_same_surface():
+    comparable = {
+        "count": 13, "evidence_level": "HIGH", "version": "cluster_v2",
+        "positioning_mode": "PRICE_M2", "reference_value": 91.1,
+        "property_value": 132.2, "surface_ref_m2": 140,
+        "unit": "UF/m² útil", "source_date": "2026-09-30",
+        "analysis_generated_at": "2026-09-30",
+    }
+    communal = {
+        "offer_uf_m2": 102.8, "reference_unit": "UF/m² de oferta",
+        "universe_value": "2.867", "universe_unit": "publicaciones activas",
+        "source_date": "2026-04-28",
+    }
+    result = _position_simulation_data(
+        position={"reference_value": "91,1 UF/m² útil", "property_value": "132,2 UF/m² útil"},
+        comparables=comparable, communal=communal,
+        property_state={"operation": "VENTA", "current_price": 18507, "surface_ref_m2": 140},
+        current_price=18507, recommended_price=16656,
+        current_price_label="18.507 UF", recommended_price_label="16.656 UF",
+        adjustment=10, recommendation_is_monthly=True,
+        stale=False, already_authorized=False,
+    )
+    assert result["available"] is True
+    assert result["surface_ref_m2"] == 140
+    assert round(18507 / result["surface_ref_m2"], 1) == round(result["current_m2"], 1) == 132.2
+    assert round(16656 / result["surface_ref_m2"], 1) == round(result["proposed_m2"], 1) == 119.0
+    assert round(result["current_gap_pct"]) == 45
+    assert round(result["proposed_gap_pct"]) == 31
+    assert result["current_gap_label"] == "45% sobre propiedades similares"
+    assert result["proposed_gap_label"] == "31% sobre propiedades similares"
+    assert result["communal_value"] == 102.8
+    assert result["communal_on_same_scale"] is True
+    assert result["communal_source_date"] == "28-04-2026"
+    assert result["comparables_source_date"] == "30-09-2026"
+    assert "por sobre el valor observado en propiedades similares" in result["current_copy"]
+    assert "la diferencia frente a propiedades similares bajaría aproximadamente a 31%" in result["adjusted_copy"]
+
+
+def test_comparable_position_simulation_fails_closed_on_weak_or_mismatched_data():
+    base = {
+        "count": 13, "evidence_level": "HIGH", "version": "cluster_v2",
+        "positioning_mode": "PRICE_M2", "reference_value": 91.1,
+        "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil",
+    }
+    args = {
+        "position": {}, "comparables": base, "communal": {},
+        "property_state": {"operation": "VENTA", "current_price": 18507, "surface_ref_m2": 140},
+        "current_price": 18507, "recommended_price": 16656,
+        "current_price_label": "18.507 UF", "recommended_price_label": "16.656 UF",
+        "adjustment": 10, "recommendation_is_monthly": True,
+        "stale": False, "already_authorized": False,
+    }
+    assert _position_simulation_data(**args)["available"] is True
+    assert _position_simulation_data(**{**args, "comparables": {**base, "evidence_level": "LIMITED"}})["available"] is False
+    assert _position_simulation_data(**{**args, "property_state": {**args["property_state"], "surface_ref_m2": 150}})["reason"] == "POSITIONING_SURFACE_DENOMINATOR_MISMATCH"
+    assert _position_simulation_data(**{**args, "recommendation_is_monthly": False})["available"] is False
+    assert _position_simulation_data(**{**args, "stale": True})["available"] is False
+    assert _position_simulation_data(**{**args, "already_authorized": True})["available"] is False
+
+
 def test_previous_month_zero_and_unchanged_metrics_are_not_missing():
     from owner_portal.monthly import _previous_snapshot_changes
     old = {"period": "2026-09", "activity_90d": {"leads": 0, "visits": 0}}
@@ -313,13 +374,14 @@ def premium_fixture(case):
     code, owner = "5438", "owner@example.test"
     key = owner_property_portal_id(code, owner)
     current = {
-        "period": "2026-10", "property": {"property_type": "Departamento", "commune": "Talca", "operation": "VENTA"},
+        "period": "2026-10", "property": {"property_type": "Departamento", "commune": "Talca", "operation": "VENTA", "current_price": 18507, "surface_ref_m2": 140},
         "property_media": {"public_page_url": "https://www.procasa.cl/5438", "hero_image_url": "https://demoazimg.prop360.cl/procasa/img/propiedades/5438_main.JPEG", "verified_property_code": code, "public_page_active": True, "image_source": "PROCASA_PUBLIC_PROPERTY"},
         "activity_90d": {"leads": 0 if case == "zero" else 1, "conversations": 0, "visits": 0, "source_date": "2026-10-02"},
         "market_context": {"mortgage_rate": "4,1%", "tpm": "4,5%", "demand_status": "Selectiva", "reference_month": "Octubre 2026", "source_date": "2026-10-01", "summary": "El financiamiento y una demanda más selectiva hacen que el posicionamiento de precio sea especialmente relevante. " * 3},
-        "comparables": {"count": 17, "reference_value": "56,1 UF/m² útil", "property_value": "82 UF/m² útil", "source_date": "2026-09-30"},
+        "comparables": {"count": 13, "evidence_level": "HIGH", "version": "cluster_v2", "positioning_mode": "PRICE_M2", "reference_value": 91.1, "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil", "source_date": "2026-09-30", "analysis_generated_at": "2026-09-30"},
+        "communal_reference": {"offer_uf_m2": 102.8, "reference_unit": "UF/m² de oferta", "summary": "102,8 UF/m² de oferta · 2.867 publicaciones activas", "universe_value": "2.867", "universe_unit": "publicaciones activas", "source_date": "2026-04-28"},
         "diagnosis": "Las consultas todavía no se han traducido en conversaciones ni visitas coordinadas. Conviene observar la respuesta comercial y revisar el posicionamiento frente a alternativas disponibles. " * 3,
-        "recommendation": {"text": "Proponemos revisar el posicionamiento comercial y evaluar las opciones de ajuste de precio disponibles para esta propiedad. " * 3},
+        "recommendation": {"text": "Proponemos revisar el posicionamiento comercial y evaluar las opciones de ajuste de precio disponibles para esta propiedad. " * 3, "recommended_price": 16656, "recommended_adjustment_pct": 10},
         "executive": {"name": "Ejecutivo QA", "email": "executive@example.test", "phone": "+56 9 1234 5678", "role": "Ejecutivo PROCASA", "photo_url": "/static/qa_executive.png", "photo_verified": True},
     }
     current["recommendation"]["diagnosis"] = current.pop("diagnosis")
@@ -368,11 +430,41 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
         if case == "missing_macro": assert len(soup.select(".market-kpi")) == 2
         if case == "no_gap": assert not soup.select_one(".position-kpi") and not view["gap_explanation"]
+        if case in {"stale", "authorized", "no_gap"}:
+            assert view["position_simulation"]["available"] is False
+        if case in {"authorized", "no_gap"}:
+            assert soup.select_one(".position-neutral")
         if case in {"stale", "authorized"}: assert not soup.select_one('.button-primary[href]')
         if case in {"stale", "authorized"}:
             assert soup.select_one('[data-cta-placement="TOP"][data-cta-type="WHATSAPP"]')
             assert soup.select_one('[data-cta-placement="STICKY"][data-cta-type="WHATSAPP"]')
         if case == "full":
+            simulation = view["position_simulation"]
+            assert simulation["available"] is True
+            assert simulation["count"] == 13
+            assert simulation["current_m2_label"] == "132,2"
+            assert simulation["proposed_m2_label"] == "119,0"
+            assert simulation["median_label"] == "91,1"
+            assert simulation["communal_label"] == "102,8"
+            assert simulation["communal_on_same_scale"] is True
+            assert round(simulation["current_gap_pct"]) == 45
+            assert round(simulation["proposed_gap_pct"]) == 31
+            assert simulation["current_gap_pct"] == (132.2 / 91.1 - 1) * 100
+            assert simulation["current_gap_pct"] != (132.2 / 102.8 - 1) * 100
+            assert simulation["comparables_source_date"] == "30-09-2026"
+            assert simulation["communal_source_date"] == "28-04-2026"
+            position_section = soup.select_one(".position-simulation")
+            assert position_section.select_one('[data-position-state="current"][aria-pressed="true"]')
+            assert position_section.select_one('[data-position-state="adjusted"][disabled]')
+            assert position_section.select_one('[data-position-gap]').get_text(strip=True) == "45% sobre propiedades similares"
+            assert "Propiedades similares" in position_section.get_text(" ", strip=True)
+            assert "Referencia basada en 13 propiedades similares seleccionadas." in position_section.get_text(" ", strip=True)
+            assert "mediana comparable" not in position_section.get_text(" ", strip=True).lower()
+            assert position_section.select_one('[data-position-summary]')
+            assert "Simulación visual. No modifica el precio" in position_section.get_text(" ", strip=True)
+            assert "Oferta comunal observada" in position_section.get_text(" ", strip=True)
+            assert "Referencia de mercado" not in position_section.get_text(" ", strip=True)
+            assert not soup.select_one(".complementary"), "Communal snapshot already shown in the interactive positioning section"
             recommendation = soup.select_one(".recommendation")
             assert recommendation.select_one(".recommendation-summary")
             assert recommendation.select_one(".recommendation-details summary .view-more").get_text(strip=True) == "Ver más ↓"

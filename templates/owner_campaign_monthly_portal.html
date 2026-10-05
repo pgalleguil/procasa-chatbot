@@ -105,6 +105,31 @@
     .position-track { position:absolute; right:0; bottom:10px; left:0; height:12px; margin:0; border-radius:999px; background:linear-gradient(90deg,#eeedff 0%,#d9d5fa 32%,#b5abef 58%,#8172df 80%,#5846c8 100%); }
     .position-marker { position:absolute; top:50%; width:14px; height:14px; border:2px solid #fff; border-radius:50%; background:var(--ink); box-shadow:0 0 0 1px #19165f; transform:translate(-50%,-50%); }
     .position-reference { position:absolute; top:50%; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#6a59d4; box-shadow:0 0 0 1px #6a59d4; transform:translate(-50%,-50%); }
+    .position-simulation { border:1px solid #e7e5f2; border-radius:12px; padding:12px; background:#fff; }
+    .position-simulation__selector { display:grid; grid-template-columns:1fr 1.35fr; gap:4px; padding:4px; border:1px solid #e9e7f4; border-radius:11px; background:#f6f5fb; }
+    .position-simulation__option { min-width:0; min-height:44px; padding:7px 9px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--body); font-family:inherit; font-size:11.5px; line-height:1.2; font-weight:600; cursor:pointer; }
+    .position-simulation__option[aria-pressed="true"] { border-color:#dedbf2; background:#fff; color:var(--ink); box-shadow:0 1px 4px #19165f0d; }
+    .position-simulation__option:focus-visible { outline:3px solid #4433d5; outline-offset:2px; }
+    .position-simulation__plot { position:relative; height:98px; margin:9px 2px 7px; }
+    .position-simulation__gap { position:absolute; z-index:2; top:9px; left:var(--gap-left); width:var(--gap-width); border-top:1px solid #6a59d4; transition:left 300ms cubic-bezier(.2,.7,.2,1),width 300ms cubic-bezier(.2,.7,.2,1); }
+    .position-simulation__gap::before,.position-simulation__gap::after { content:""; position:absolute; top:-1px; width:1px; height:10px; background:#6a59d4; }
+    .position-simulation__gap::before { left:0; }.position-simulation__gap::after { right:0; }
+    .position-simulation__gap-label { position:absolute; z-index:3; top:0; left:var(--gap-mid); max-width:calc(100% - 4px); padding:4px 8px; border:1px solid #e2def8; border-radius:999px; background:#f4f2ff; color:var(--brand); font-size:10.5px; line-height:1.2; font-weight:700; white-space:normal; text-align:center; transform:translateX(-50%); transition:left 300ms cubic-bezier(.2,.7,.2,1),opacity 140ms ease; }
+    .position-simulation__track { position:absolute; right:0; bottom:17px; left:0; height:12px; border-radius:999px; background:linear-gradient(90deg,#eeedff,#d9d5fa 36%,#b5abef 65%,#8172df 100%); }
+    .position-simulation__point { position:absolute; top:50%; display:block; width:10px; height:10px; border:2px solid #fff; border-radius:50%; background:#7565d8; box-shadow:0 0 0 1px #7565d8; transform:translate(-50%,-50%); }
+    .position-simulation__point--communal { width:8px; height:8px; border-radius:2px; background:#8d93a6; box-shadow:0 0 0 1px #8d93a6; }
+    .position-simulation__point--property { z-index:2; width:17px; height:17px; background:var(--ink); box-shadow:0 0 0 2px #fff,0 0 0 3px var(--ink); transition:left 300ms cubic-bezier(.2,.7,.2,1); }
+    .position-simulation__point--ghost { z-index:1; width:15px; height:15px; border:2px dashed #302b79; background:#fff; box-shadow:none; }
+    .position-simulation__point[hidden] { display:none; }
+    .position-simulation__legend { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+    .position-simulation__legend-item { min-width:0; padding:7px 6px; border:1px solid #eeedf4; border-radius:9px; background:#fcfcfe; }
+    .position-simulation__legend-label { display:block; color:var(--body); font-size:10px; line-height:1.2; }
+    .position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:12px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
+    .position-simulation__legend-item--communal { background:#f8f8fb; }
+    .position-simulation__summary { min-height:2.8em; margin:9px 0 0; color:var(--body); font-size:11.5px; line-height:1.4; }
+    .position-simulation__note { margin:6px 0 0; color:#737d92; font-size:10px; line-height:1.35; }
+    .position-simulation__sources { margin-top:8px; padding-top:7px; border-top:1px solid #f0eff5; color:#737d92; font-size:10px; line-height:1.4; }
+    .position-neutral { margin:0; padding:12px; border:1px dashed #dcdbe7; border-radius:10px; background:#fafafd; color:var(--body); font-size:11.5px; line-height:1.4; }
     .interpretation { margin:0; color:var(--body); text-align:center; font-size:10px; }
     .gap-explanation { margin:8px 0 0; padding:9px 11px; border-left:3px solid #8172df; border-radius:0 9px 9px 0; background:#f6f5ff; color:var(--body); font-size:11px; line-height:1.4; }
     .complementary { padding:12px 14px; background:#faf9ff; }
@@ -286,8 +311,16 @@
       .position-callout { height:44px; font-size:10.5px; }
       .position-callout.subject { top:47px; }
       .position-callout strong { font-size:11px; }
+      .position-simulation { padding:10px; }
+      .position-simulation__option { padding:7px 5px; font-size:10.5px; }
+      .position-simulation__legend { gap:4px; }
+      .position-simulation__legend-item { padding:6px 5px; }
+      .position-simulation__legend-label { font-size:10px; }
+      .position-simulation__legend-value { font-size:11.5px; }
+      .position-simulation__summary { font-size:11.5px; }
       .sticky .button { font-size:11px; }
     }
+    @media (prefers-reduced-motion:reduce) { .position-simulation__point--property { transition:none; } }
     @media (prefers-reduced-motion:reduce) {
       *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
       .reveal-pending { opacity:1; transform:none; }
@@ -365,22 +398,46 @@
   {% endif %}
 
   {% if view.position.count is not none or view.position.reference_value or view.position.property_value %}
+  {% set sim = view.position_simulation if view.position_simulation is defined else none %}
   <section class="card" aria-labelledby="position-title">
-    <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a inmuebles comparables</h2>{% if view.position.count is not none %}<span class="badge">{{ view.position.count }} analizados</span>{% endif %}</div>
-    {% if view.comparables_source_date %}<p class="source-date-note">Corte: {{ view.comparables_source_date }}</p>{% endif %}
-    {% if view.position.reference_value and view.position.property_value and view.position.marker_pct is not none %}
-    <div class="position-figure" role="img" aria-label="Referencia de mercado {{ view.position.reference_value }}; tu propiedad {{ view.position.property_value }}">
-      <div class="position-callout reference" style="left:50%">Referencia de mercado<strong>{{ view.position.reference_value }}</strong></div>
-      <div class="position-callout subject" style="left:{{ view.position.marker_label_pct }}%">Tu propiedad<strong>{{ view.position.property_value }}</strong></div>
-      <svg class="position-connectors" viewBox="0 0 100 126" preserveAspectRatio="none" aria-hidden="true" focusable="false"><line x1="50" y1="40" x2="50" y2="104"/><line class="subject-line" x1="{{ view.position.marker_label_pct }}" y1="83" x2="{{ view.position.marker_pct }}" y2="104"/></svg>
-      <div class="position-track"><span class="position-reference" style="left:50%"></span><span class="position-marker" style="left:{{ view.position.marker_pct }}%"></span></div>
+    <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a propiedades comparables</h2>{% if sim and sim.available %}<span class="badge">{{ sim.count }} comparables</span>{% elif view.position.count is not none %}<span class="badge">{{ view.position.count }} comparables</span>{% endif %}</div>
+    {% if sim and sim.available %}
+    <div class="position-simulation" data-position-simulation data-state="current" style="--gap-mid:{{ sim.gap_left + sim.gap_width / 2 }}%;" data-current-x="{{ sim.current_x }}" data-adjusted-x="{{ sim.proposed_x }}" data-median-x="{{ sim.median_x }}" data-communal-x="{{ sim.communal_x if sim.communal_x is not none else '' }}" data-gap-left="{{ sim.gap_left }}" data-gap-width="{{ sim.gap_width }}" data-current-value="{{ sim.current_m2_label }}" data-adjusted-value="{{ sim.proposed_m2_label }}" data-current-gap="{{ sim.current_gap_label|e }}" data-adjusted-gap="{{ sim.proposed_gap_label|e }}" data-current-copy="{{ sim.current_copy|e }}" data-adjusted-copy="{{ sim.adjusted_copy|e }}" data-unit="{{ sim.unit|e }}" data-communal-same-scale="{{ 'yes' if sim.communal_on_same_scale else 'no' }}">
+      <div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
+        <button class="position-simulation__option" type="button" data-position-state="current" aria-pressed="true">Precio actual</button>
+        <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Con ajuste recomendado ({{ sim.adjustment_label }})</button>
+      </div>
+      <div class="position-simulation__plot" aria-label="Escala comparativa de precios por superficie">
+        <div class="position-simulation__gap" style="--gap-left:{{ sim.gap_left }}%;--gap-width:{{ sim.gap_width }}%;" aria-hidden="true"></div>
+        <span class="position-simulation__gap-label" data-position-gap aria-live="polite">{{ sim.current_gap_label }}</span>
+        <div class="position-simulation__track" aria-hidden="true">
+          <span class="position-simulation__point" data-point="median" style="left:{{ sim.median_x }}%"></span>
+          {% if sim.communal_x is not none %}<span class="position-simulation__point position-simulation__point--communal" data-point="communal" style="left:{{ sim.communal_x }}%"></span>{% endif %}
+          <span class="position-simulation__point position-simulation__point--ghost" data-point="ghost" style="left:{{ sim.current_x }}%" hidden></span>
+          <span class="position-simulation__point position-simulation__point--property" data-point="property" style="left:{{ sim.current_x }}%"></span>
+        </div>
+      </div>
+      <div class="position-simulation__legend" aria-label="Valores comparados">
+        <div class="position-simulation__legend-item"><span class="position-simulation__legend-label">Propiedades similares</span><strong class="position-simulation__legend-value">{{ sim.median_label }} {{ sim.unit }}</strong></div>
+        <div class="position-simulation__legend-item"><span class="position-simulation__legend-label" data-property-label>Tu propiedad</span><strong class="position-simulation__legend-value"><span data-property-value>{{ sim.current_m2_label }}</span> {{ sim.unit }}</strong></div>
+        {% if sim.communal_label %}<div class="position-simulation__legend-item position-simulation__legend-item--communal"><span class="position-simulation__legend-label">Oferta comunal observada</span><strong class="position-simulation__legend-value">{{ sim.communal_label }} {{ sim.communal_unit }}</strong></div>{% endif %}
+      </div>
+      <p class="position-simulation__summary" data-position-summary aria-live="polite">{{ sim.current_copy }}</p>
+      <p class="position-simulation__note">Simulación visual. No modifica el precio de publicación. UF/m² permite comparar valores usando una misma unidad de superficie.</p>
+      {% if sim.comparables_source_date or sim.comparables_analysis_date or sim.communal_source_date or sim.communal_count %}
+      <div class="position-simulation__sources">
+        Referencia basada en {{ sim.count }} propiedades similares seleccionadas.{% if sim.comparables_source_date %} Corte de comparables: {{ sim.comparables_source_date }}{% endif %}{% if sim.comparables_analysis_date %} · análisis generado {{ sim.comparables_analysis_date }}{% endif %}
+        {% if sim.communal_label %}{% if sim.comparables_source_date or sim.comparables_analysis_date %}<br>{% endif %}Oferta comunal{% if sim.communal_count %}: {{ sim.communal_count }} {{ sim.communal_count_unit }}{% endif %}{% if sim.communal_source_date %} · corte {{ sim.communal_source_date }}{% endif %}{% endif %}
+      </div>
+      {% endif %}
     </div>
-    {% if view.position.interpretation %}<p class="interpretation">{{ view.position.interpretation }}</p>{% endif %}
+    {% else %}
+    <p class="position-neutral">Aún no hay evidencia comparable suficiente y consistente para simular la posición con el ajuste recomendado.</p>
     {% endif %}
   </section>
   {% endif %}
 
-  {% if view.communal_reference %}
+  {% if view.communal_reference and not (view.position_simulation is defined and view.position_simulation.available and view.position_simulation.communal_label) %}
   <section class="card complementary" aria-label="Referencia complementaria">
     <div class="complementary-line"><div><div class="complementary-title">Referencia complementaria</div><div class="kpi-note">Mercado comunal</div></div><div class="complementary-value">{{ view.communal_reference.summary or view.communal_reference.value or 'No disponible' }}{% if view.communal_reference.source_date %}<span class="source-note"> · Corte: {{ view.communal_reference.source_date }}</span>{% endif %}</div></div>
   </section>
@@ -441,6 +498,47 @@
 <script>
 (function(){
   document.querySelectorAll('.executive-avatar img').forEach(function(img){img.addEventListener('error',function(){img.remove();});});
+  document.querySelectorAll('[data-position-simulation]').forEach(function(simulation){
+    var buttons=Array.from(simulation.querySelectorAll('[data-position-state]'));
+    var marker=simulation.querySelector('[data-point="property"]');
+    var ghost=simulation.querySelector('[data-point="ghost"]');
+    var bracket=simulation.querySelector('.position-simulation__gap');
+    var gap=simulation.querySelector('[data-position-gap]');
+    var summary=simulation.querySelector('[data-position-summary]');
+    var propertyValue=simulation.querySelector('[data-property-value]');
+    var propertyLabel=simulation.querySelector('[data-property-label]');
+    if(!marker||!gap||!summary||!propertyValue||!propertyLabel) return;
+      var currentX=Number(simulation.getAttribute('data-current-x'));
+      var adjustedX=Number(simulation.getAttribute('data-adjusted-x'));
+      var medianX=Number(simulation.getAttribute('data-median-x'));
+      var gapUpdateTimer=null;
+      simulation.setAttribute('data-enhanced','true');
+    buttons.forEach(function(button){button.removeAttribute('disabled');});
+    function setPosition(state){
+      var adjusted=state==='adjusted';
+      var propertyX=adjusted?adjustedX:currentX;
+      var reducedMotion=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      marker.style.left=propertyX+'%';
+      if(ghost){ghost.style.left=currentX+'%';ghost.hidden=!adjusted;}
+      if(bracket){
+        var left=Math.min(medianX,propertyX),width=Math.abs(propertyX-medianX);
+        bracket.style.left=left+'%';bracket.style.width=width+'%';
+        simulation.style.setProperty('--gap-mid',(left+width/2)+'%');
+      }
+      simulation.setAttribute('data-state',adjusted?'adjusted':'current');
+      var nextGap=simulation.getAttribute(adjusted?'data-adjusted-gap':'data-current-gap')||'';
+      if(gapUpdateTimer) window.clearTimeout(gapUpdateTimer);
+      if(!reducedMotion&&gap.textContent!==nextGap){
+        gap.style.opacity='0.35';
+        gapUpdateTimer=window.setTimeout(function(){gap.textContent=nextGap;gap.style.opacity='1';gapUpdateTimer=null;},90);
+      }else{gap.textContent=nextGap;gap.style.opacity='1';}
+      summary.textContent=simulation.getAttribute(adjusted?'data-adjusted-copy':'data-current-copy')||'';
+      propertyValue.textContent=simulation.getAttribute(adjusted?'data-adjusted-value':'data-current-value')||'';
+      propertyLabel.textContent=adjusted?'Tu propiedad · con ajuste':'Tu propiedad';
+      buttons.forEach(function(item){item.setAttribute('aria-pressed',item.getAttribute('data-position-state')===state?'true':'false');});
+    }
+    buttons.forEach(function(button){button.addEventListener('click',function(){setPosition(button.getAttribute('data-position-state'));});});
+  });
   var top=document.getElementById('owner-portal-top-actions'),sticky=document.getElementById('owner-portal-sticky-actions');
   if(!('IntersectionObserver' in window)) return;
   if(top&&sticky){

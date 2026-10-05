@@ -108,7 +108,7 @@ def test_monthly_snapshot_drives_dashboard_without_recalculating_price():
     assert view["comparable_count"] == 17
     assert view["position"]["reference_value"] == "56,1 UF/m² útil"
     assert view["position"]["property_value"] == "57,0 UF/m² útil"
-    assert view["activity_90d"] == {"leads": 0, "conversations": 0, "visits": 0, "summary": ""}
+    assert view["activity_90d"] == {"leads": 0, "conversations": 0, "visits": 0, "summary": "", "source_date": "", "source_label": ""}
     assert view["market_context"]["kpis"][0]["value"] == "4,1%"
     assert view["market_context"]["kpis"][1]["value"] == "4,5%"
     assert view["market_context"]["kpis"][2]["value"] == "Selectiva"
@@ -154,7 +154,7 @@ def test_verified_email_evidence_fills_only_secondary_historical_blocks():
     """
     view = build_monthly_portal_view(db, _row(), _campaign_view(), email_html=email_html)
 
-    assert view["activity_90d"] == {"leads": 0, "conversations": None, "visits": None, "summary": "La propiedad no registró interacciones."}
+    assert view["activity_90d"] == {"leads": 0, "conversations": None, "visits": None, "summary": "La propiedad no registró interacciones.", "source_date": "", "source_label": ""}
     assert view["property_type"] == "Casa"
     assert view["commune"] == "Talca"
     assert view["market_context"]["sources"] == "Banco Central y MINVU · septiembre 2026"

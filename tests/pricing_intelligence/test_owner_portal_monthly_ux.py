@@ -216,30 +216,23 @@ def test_support_document_dates_are_never_inferred_from_generation_time():
     assert _support_document_date({"source_date": "28/04/2026"}) == "28-04-2026"
 
 
-def test_support_document_list_is_full_row_clickable_and_compact():
+def test_communal_report_document_is_full_row_clickable_without_separate_support_section():
     from bs4 import BeautifulSoup
     template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
     view = premium_fixture("full")
-    view["support_documents"] = [
-            {"type": "COMMUNAL_MARKET_REPORT", "title": "Informe de mercado comunal",
-             "metadata": "Talca · PDF · Actualizado 28-04-2026",
-             "url": "/campana/informe?token=communal-signed"},
-            {"type": "INDIVIDUAL_APPRAISAL", "title": "Tasación comercial",
-             "metadata": "Propiedad 5438 · PDF · Emitida 15-09-2026",
-             "url": "/campana/informe?token=appraisal-signed"},
-        ]
+    view["market_reference_card"] = {
+        "kind": "COMMUNAL_MARKET_REPORT", "document_url": "/campana/informe?token=communal-signed",
+        "document_title": "Informe de mercado comunal", "document_metadata": "Talca · PDF · Corte 28/04/2026",
+    }
     soup = BeautifulSoup(template.render(view=view), "html.parser")
-    section = soup.select_one(".support-section")
-    rows = section.select("a.support-row")
-    assert section.select_one("#document-title").get_text(" ", strip=True) == "Documentos de respaldo"
-    assert len(rows) == 2
-    assert [row["data-document-type"] for row in rows] == ["COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"]
-    assert [row["href"] for row in rows] == [item["url"] for item in view["support_documents"]]
-    assert all(row.select_one(".support-document-icon svg") and row.select_one(".support-chevron") for row in rows)
-    assert all(row.select_one(".support-document-title") and "PDF" in row.select_one(".support-document-meta").get_text() for row in rows)
-    assert not section.select("button, .document-action")
-    assert "Ver respaldo" not in section.get_text()
-    assert "min-height:60px" in template.render(view=view)
+    row = soup.select_one(".complementary-market a.complementary-market__document")
+    assert row["href"] == "/campana/informe?token=communal-signed"
+    assert row["data-document-type"] == "COMMUNAL_MARKET_REPORT"
+    assert row.select_one(".complementary-market__document-title").get_text(strip=True) == "Informe de mercado comunal"
+    assert "Talca · PDF · Corte 28/04/2026" in row.select_one(".complementary-market__document-meta").get_text(" ", strip=True)
+    assert row.select_one(".complementary-market__document-icon svg") and row.select_one(".complementary-market__document-chevron")
+    assert soup.select_one(".support-section") is None
+    assert "Abrir informe completo" not in soup.get_text(" ", strip=True)
 
 
 def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_signed_pdf_link():
@@ -325,7 +318,16 @@ def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_sig
     assert section.select_one(".complementary-market__source").get_text(" ", strip=True) == (
         "Informe comunal · Santiago · Departamento · Corte 28/04/2026"
     )
-    assert section.select_one(".complementary-market__link")["href"] == signed_report
+    document = section.select_one("a.complementary-market__document")
+    assert document["href"] == signed_report
+    assert document["data-cta-placement"] == "ORIGINAL"
+    assert document["data-document-type"] == "COMMUNAL_MARKET_REPORT"
+    assert document.select_one(".complementary-market__document-title").get_text(strip=True) == "Informe de mercado comunal"
+    assert "Santiago · PDF" in document.select_one(".complementary-market__document-meta").get_text(" ", strip=True)
+    assert document.select_one(".complementary-market__document-icon svg")
+    assert document.select_one(".complementary-market__document-chevron")
+    assert "Abrir informe completo" not in section.get_text(" ", strip=True)
+    assert not soup.select_one(".support-section")
     assert "propiedades comparables" not in section.get_text(" ", strip=True).casefold()
 
 
@@ -416,7 +418,10 @@ def test_historical_communal_card_resolves_missing_identity_from_exact_master_pr
     assert section.select_one(".complementary-market__interpretation")
     assert section.select_one(".complementary-market__details summary").get_text(" ", strip=True) == "Ver más"
     assert "Corte 29/04/2026" in section.select_one(".complementary-market__source").get_text(" ", strip=True)
-    assert section.select_one(".complementary-market__link")["href"] == report_url
+    row = section.select_one("a.complementary-market__document")
+    assert row["href"] == report_url
+    assert row.select_one(".complementary-market__document-title").get_text(strip=True) == "Informe de mercado comunal"
+    assert "Corte 29/04/2026" in row.select_one(".complementary-market__document-meta").get_text(" ", strip=True)
 
 
 def test_master_property_code_mismatch_does_not_supply_communal_identity():
@@ -693,7 +698,7 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     assert "55,2 UF/m²" not in missing_html
 
 
-def test_summary_missing_leads_are_not_fabricated_as_zero():
+def test_summary_displays_zero_when_no_leads_are_reported():
     from bs4 import BeautifulSoup
     view = _view(mongomock.MongoClient().test, monthly={"period": "2026-10"})
     soup = BeautifulSoup(Environment(loader=FileSystemLoader("templates")).get_template(
@@ -703,9 +708,9 @@ def test_summary_missing_leads_are_not_fabricated_as_zero():
     cards = summary.select(":scope > .kpis > .kpi")
     assert len(cards) == 4
     leads = next(card for card in cards if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas")
-    assert leads.select_one(".kpi-value").get_text(strip=True) == "—"
-    assert leads.select_one(".kpi-note").get_text(strip=True) == "Sin dato consolidado"
-    assert "Consultas recibidas —" in leads.get_text(" ", strip=True)
+    assert leads.select_one(".kpi-value").get_text(strip=True) == "0"
+    assert leads.select_one(".kpi-note").get_text(strip=True) == "últimos 90 días"
+    assert "Consultas recibidas 0" in leads.get_text(" ", strip=True)
 
 
 def test_top_and_sticky_whatsapp_render_only_when_signed_urls_exist():

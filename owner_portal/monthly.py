@@ -541,6 +541,10 @@ def _communal_market_card(
         "metrics": metrics, "interpretation": interpretation, "details": details,
         "source_label": f"Informe comunal · {commune} · {property_type}" + (f" · Corte {report_date}" if report_date else ""),
         "source_date": report_date, "document_url": document_url,
+        "document_title": "Informe de mercado comunal",
+        "document_metadata": " · ".join(
+            part for part in (commune, "PDF", f"Corte {report_date}" if report_date else "") if part
+        ),
     }
 
 

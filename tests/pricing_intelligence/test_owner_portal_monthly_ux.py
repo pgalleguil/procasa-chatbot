@@ -111,6 +111,15 @@ def test_zero_activity_is_preserved_and_unverified_whatsapp_is_hidden():
     assert "Conversaciones" in html
     assert "Visitas coordinadas" in html
     assert html.count('class="activity-value">0</div>') == 3
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    summary = soup.select_one("#summary-title").find_parent("section")
+    leads_card = next(
+        card for card in summary.select(":scope > .kpis > .kpi")
+        if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas"
+    )
+    assert leads_card.select_one(".kpi-value").get_text(strip=True) == "0"
+    assert leads_card.select_one(".kpi-note").get_text(strip=True) == "últimos 90 días"
 
 
 def test_verified_snapshot_phone_is_rendered_without_unsigned_whatsapp_link():
@@ -162,6 +171,40 @@ def test_verified_support_documents_keep_existing_links_and_source_dates():
          "metadata": "Propiedad 5438 · PDF · Emitida 15-09-2026", "url": appraisal_url},
     ]
 
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-support-document-test-secret"}):
+        communal_token = issue_live_token(
+            campaign_id="owner_price_sucre_wave2_20260930", property_code="5438",
+            action="ver_informe", recipient="owner@example.test",
+            document_type="COMMUNAL_MARKET_REPORT",
+            expires_at=int((datetime.now(timezone.utc) + timedelta(days=90)).timestamp()),
+            source="EMAIL", interaction_surface="OWNER_PORTAL", cta_placement="ORIGINAL",
+        )
+    communal_url = f"https://www.procasa.cl/campana/informe?token={communal_token}"
+    db_both = mongomock.MongoClient().test
+    db_both["mercado_comunal"].insert_one({
+        "comuna": "Talca", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 55.2},
+        "source": {"fecha_reporte": "28/04/2026"},
+    })
+    appraisal_primary_monthly = {
+        "period": "2026-10", "document_type": "INDIVIDUAL_APPRAISAL",
+        "documents": [
+            {"document_type": "COMMUNAL_MARKET_REPORT", "verified": True,
+             "url": communal_url, "source_date": "2026-04-28"},
+        ],
+    }
+    with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-support-document-test-secret"}):
+        both = _view(db_both, monthly=appraisal_primary_monthly,
+                     snapshot={"document_type": "INDIVIDUAL_APPRAISAL"},
+                     campaign_view={"document_available": True,
+                                    "document_type": "INDIVIDUAL_APPRAISAL",
+                                    "report_url": appraisal_url, "commune": "Talca",
+                                    "property_type": "Departamento", "operation": "Venta"})
+    assert [item["type"] for item in both["support_documents"]] == [
+        "INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT",
+    ]
+    assert both["market_reference_card"]["title"] == "Mercado de departamentos en Talca"
+
 
 def test_support_document_dates_are_never_inferred_from_generation_time():
     from owner_portal.monthly import _support_document_date
@@ -193,6 +236,148 @@ def test_support_document_list_is_full_row_clickable_and_compact():
     assert not section.select("button, .document-action")
     assert "Ver respaldo" not in section.get_text()
     assert "min-height:60px" in template.render(view=view)
+
+
+def test_communal_reference_card_uses_structured_exact_market_data_and_keeps_signed_pdf_link():
+    from bs4 import BeautifulSoup
+
+    db = mongomock.MongoClient().test
+    db["mercado_comunal"].insert_one({
+        "comuna": "Santiago",
+        "tipo_propiedad": "Departamento",
+        "mercado_venta": {
+            "uf_m2_publicacion_actual": 55.23,
+            "uf_m2_venta_efectiva_actual": 56.07,
+            "variacion_uf_m2_12m": -9.98,
+            "publicaciones_activas": 9215,
+            "publicaciones_totales": 68325,
+            "tendencia_publicaciones": "estable",
+        },
+        "mercado_arriendo": {
+            "uf_m2_arriendo_actual": 0.24,
+            "variacion_arriendo_12m": 4.35,
+            "publicaciones_arriendo_activas": 3379,
+            "publicaciones_arriendo_totales": 75115,
+        },
+        "indicadores_mercado": {
+            "liquidez": "baja", "presion_baja_precio": "alta",
+            "nivel_competencia": "alto", "tendencia_mercado": "desaceleracion",
+            "score_presion_comercial": 88,
+        },
+        "rangos_precio_venta": {"min_uf": 1288, "max_uf": 3799},
+        "source": {"filename": "santiago_departamento.pdf", "fecha_reporte": "28/04/2026"},
+    })
+    signed_report = "/campana/informe?token=existing-signed-report"
+    view = _view(
+        db,
+        snapshot={
+            "document_type": "COMMUNAL_MARKET_REPORT", "commune": "Santiago",
+            "property_type": "Departamento", "operation": "VENTA",
+        },
+        monthly={
+            "period": "2026-10", "commune": "Santiago",
+            "property_type": "Departamento", "operation": "VENTA",
+            "document_type": "COMMUNAL_MARKET_REPORT",
+        },
+        campaign_view={"document_available": True, "report_url": signed_report},
+    )
+    assert view["market_reference_card"]["title"] == "Mercado de departamentos en Santiago"
+    assert view["market_reference_card"]["metrics"] == [
+        {"label": "Precio publicado de referencia", "value": "55,2 UF/m²"},
+        {"label": "Variación de precios publicados · 12 meses", "value": "-10,0%"},
+        {"label": "Propiedades actualmente en oferta", "value": "9.215"},
+        {"label": "Competencia", "value": "Alta"},
+        {"label": "Liquidez", "value": "Baja"},
+    ]
+    assert view["market_reference_card"]["source_date"] == "28/04/2026"
+    assert view["market_reference_card"]["interpretation"] == (
+        "El mercado muestra una alta cantidad de propiedades compitiendo por compradores y una menor velocidad de absorción. "
+        "Además, los valores publicados han retrocedido durante los últimos 12 meses. "
+        "En este contexto, el posicionamiento de precio adquiere mayor importancia."
+    )
+    assert view["market_reference_card"]["details"] == [
+        {"label": "Tendencia del mercado", "value": "Desaceleración"},
+        {"label": "Presión sobre precios", "value": "Alta"},
+        {"label": "Rango observado", "value": "1.288–3.799 UF"},
+        {"label": "Publicaciones observadas", "value": "68.325"},
+    ]
+    assert view["market_reference_card"]["document_url"] == signed_report
+    assert db["mercado_comunal"].find_one({"comuna": "Santiago"})["indicadores_mercado"]["score_presion_comercial"] == 88
+
+    template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
+    soup = BeautifulSoup(template.render(view=view), "html.parser")
+    section = soup.select_one(".complementary-market")
+    assert section.select_one("h2").get_text(" ", strip=True) == "Mercado de departamentos en Santiago"
+    assert len(section.select(".complementary-market__metric")) == 5
+    details = section.select_one("details.complementary-market__details")
+    assert details is not None and "open" not in details.attrs
+    detail_text = details.get_text(" ", strip=True)
+    assert "Referencia efectiva" not in detail_text
+    assert "56,1 UF/m²" not in section.get_text(" ", strip=True)
+    assert not any(item["value"] == "88" for item in view["market_reference_card"]["details"])
+    assert "arriendo" not in detail_text.casefold()
+    assert "Presión sobre precios Alta" in detail_text
+    assert section.select_one(".complementary-market__source").get_text(" ", strip=True) == (
+        "Informe comunal · Santiago · Departamento · Corte 28/04/2026"
+    )
+    assert section.select_one(".complementary-market__link")["href"] == signed_report
+    assert "propiedades comparables" not in section.get_text(" ", strip=True).casefold()
+
+
+def test_communal_market_card_is_operation_specific_and_fails_closed_on_identity_mismatch():
+    from owner_portal.monthly import _communal_market_card
+
+    db = mongomock.MongoClient().test
+    db["mercado_comunal"].insert_one({
+        "comuna": "Santiago", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 55.23},
+        "mercado_arriendo": {
+            "uf_m2_arriendo_actual": 0.24,
+            "variacion_arriendo_12m": 4.35,
+            "publicaciones_arriendo_activas": 3379,
+        },
+        "source": {"fecha_reporte": "28/04/2026"},
+    })
+    rental = _communal_market_card(
+        db, commune="Santiago", property_type="Departamento",
+        operation="ARRIENDO", document_url="/signed",
+    )
+    assert rental and rental["metrics"][0] == {
+        "label": "Precio de arriendo publicado de referencia", "value": "0,24 UF/m²",
+    }
+    assert _communal_market_card(
+        db, commune="Providencia", property_type="Departamento",
+        operation="VENTA", document_url="/signed",
+    ) is None
+
+
+def test_appraisal_is_document_only_and_never_renders_an_enriched_card():
+    from bs4 import BeautifulSoup
+    db = mongomock.MongoClient().test
+    appraisal_url = "/campana/informe?token=signed-appraisal"
+    view = _view(
+        db,
+        snapshot={"document_type": "INDIVIDUAL_APPRAISAL"},
+        monthly={
+            "period": "2026-10", "document_type": "INDIVIDUAL_APPRAISAL",
+            "individual_appraisal": {
+                "verified": True, "mid_uf": 2500, "low_uf": 2300,
+                "high_uf": 2700, "source_date": "2026-09-15",
+            },
+        },
+        campaign_view={"document_available": True, "report_url": appraisal_url},
+    )
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    assert view["market_reference_card"] is None
+    assert len(view["support_documents"]) == 1
+    assert view["support_documents"][0]["type"] == "INDIVIDUAL_APPRAISAL"
+    assert view["support_documents"][0]["url"] == appraisal_url
+    assert "Tasación de la propiedad" not in soup.get_text(" ", strip=True)
+    assert "Valor de tasación" not in soup.get_text(" ", strip=True)
+    assert "2.500 UF" not in soup.get_text(" ", strip=True)
 
 
 def test_month_over_month_requires_real_metrics_in_both_snapshots():
@@ -228,6 +413,138 @@ def test_portal_template_has_svg_icons_one_disclaimer_and_short_top_cta():
     assert "<svg" in html
     assert 'data-cta-placement="TOP"' in html and "Revisar ajuste" in html
     assert html.count("Las referencias de mercado se basan en publicaciones observadas") == 1
+
+
+def test_missing_verified_update_date_is_omitted_instead_of_fabricated():
+    view = premium_fixture("full")
+    view["updated_label"] = ""
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    assert "Seguimiento comercial actualizado al" not in html
+    assert "Fecha no disponible" not in html
+
+
+def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
+    from bs4 import BeautifulSoup
+    db = mongomock.MongoClient().test
+    current = {
+        "period": "2026-10",
+        "property": {
+            "property_type": "Departamento", "commune": "Santiago", "operation": "VENTA",
+            "current_price": 18_507, "surface_ref_m2": 140,
+        },
+        "activity_90d": {"leads": 1, "conversations": 0, "visits": 0, "source_date": "2026-10-02"},
+        "comparables": {
+            "count": 13, "evidence_level": "HIGH", "version": "cluster_v2",
+            "positioning_mode": "PRICE_M2", "reference_value": 91.1,
+            "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil",
+            "source_date": "2026-09-30", "analysis_generated_at": "2026-09-30",
+        },
+        "communal_reference": {
+            "offer_uf_m2": 55.2, "reference_unit": "UF/m² de oferta",
+            "universe_value": "9.215", "universe_unit": "propiedades actualmente en oferta",
+            "source_date": "2026-04-28",
+        },
+        "recommendation": {
+            "recommended_price": 16_656, "recommended_adjustment_pct": 10,
+            "diagnosis": "Las consultas no se han convertido en visitas coordinadas.",
+            "text": "Proponemos evaluar el posicionamiento de precio.",
+        },
+        "documents": [{"type": "COMMUNAL_MARKET_REPORT", "verified": True}],
+    }
+    db["mercado_comunal"].insert_one({
+        "comuna": "Santiago", "tipo_propiedad": "Departamento",
+        "mercado_venta": {
+            "uf_m2_publicacion_actual": 55.23, "variacion_uf_m2_12m": -9.98,
+            "publicaciones_activas": 9_215, "publicaciones_totales": 68_325,
+        },
+        "indicadores_mercado": {
+            "liquidez": "baja", "nivel_competencia": "alto",
+            "tendencia_mercado": "desaceleracion", "presion_baja_precio": "alta",
+        },
+        "rangos_precio_venta": {"min_uf": 1_288, "max_uf": 3_799},
+        "source": {"fecha_reporte": "28/04/2026"},
+    })
+    report_url = "/campana/informe?token=coherent-qa-report"
+    view = _view(
+        db,
+        snapshot={
+            "document_type": "COMMUNAL_MARKET_REPORT", "commune": "Santiago",
+            "property_type": "Departamento", "operation": "VENTA",
+            "current_price": 18_507, "recommended_price": 16_656,
+            "recommended_adjustment_pct": 10,
+        },
+        monthly=current,
+        campaign_view={
+            "document_available": True, "document_type": "COMMUNAL_MARKET_REPORT",
+            "report_url": report_url, "commune": "Santiago",
+            "property_type": "Departamento", "operation": "Venta",
+        },
+    )
+
+    position = view["position_simulation"]
+    market = view["market_reference_card"]
+    assert view["commune"] == market["source_label"].split(" · ")[1] == "Santiago"
+    assert view["property_type"] == "Departamento" and "departamentos" in market["title"]
+    assert view["current_price_label"] == "18.507 UF"
+    assert view["recommended_price_label"] == "16.656 UF"
+    assert position["surface_ref_m2"] == 140
+    assert abs(position["current_m2"] - 18_507 / 140) < 0.02
+    assert abs(position["proposed_m2"] - 16_656 / 140) < 0.02
+    assert position["median"] == 91.1 and position["communal_value"] == 55.2
+    assert market["metrics"][0]["value"] == "55,2 UF/m²"
+    assert market["metrics"][1]["value"] == "-10,0%"
+    assert market["metrics"][2]["value"] == "9.215"
+    assert view["activity_90d"]["leads"] == 1
+
+    template = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    )
+    soup = BeautifulSoup(template.render(view=view), "html.parser")
+    summary = soup.select_one("#summary-title").find_parent("section")
+    cards = summary.select(":scope > .kpis > .kpi")
+    assert len(cards) == 4
+    assert [card.select_one(".kpi-label").get_text(" ", strip=True) for card in cards] == [
+        "Precio actual", "Precio sugerido", "Consultas recibidas", "Posición vs similares",
+    ]
+    activity_section = soup.select_one("#activity-title").find_parent("section")
+    summary_leads = cards[2].select_one(".kpi-value").get_text(strip=True)
+    activity_leads = activity_section.select_one(".activity-value").get_text(strip=True)
+    assert summary_leads == activity_leads == str(view["activity_90d"]["leads"])
+    assert cards[1].select_one(".kpi-note").get_text(" ", strip=True) == "-10% recomendado"
+    assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición vs similares"
+    assert cards[3].select_one(".kpi-note").get_text(strip=True) == "sobre propiedades similares"
+    assert view["market_reference_card"]["source_label"].startswith("Informe comunal · Santiago · Departamento")
+
+    missing_db = mongomock.MongoClient().test
+    missing_current = {**current, "property": {**current["property"], "commune": "Talca"}}
+    missing_current.pop("communal_reference")
+    missing = _view(
+        missing_db,
+        snapshot={"document_type": "COMMUNAL_MARKET_REPORT", "commune": "Talca", "property_type": "Departamento", "operation": "VENTA"},
+        monthly=missing_current,
+        campaign_view={"document_available": True, "report_url": report_url, "commune": "Talca", "property_type": "Departamento", "operation": "Venta"},
+    )
+    assert missing["market_reference_card"] is None
+    missing_html = template.render(view=missing)
+    assert "Mercado de departamentos en Talca" not in missing_html
+    assert "55,2 UF/m²" not in missing_html
+
+
+def test_summary_missing_leads_are_not_fabricated_as_zero():
+    from bs4 import BeautifulSoup
+    view = _view(mongomock.MongoClient().test, monthly={"period": "2026-10"})
+    soup = BeautifulSoup(Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view), "html.parser")
+    summary = soup.select_one("#summary-title").find_parent("section")
+    cards = summary.select(":scope > .kpis > .kpi")
+    assert len(cards) == 4
+    leads = next(card for card in cards if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas")
+    assert leads.select_one(".kpi-value").get_text(strip=True) == "—"
+    assert leads.select_one(".kpi-note").get_text(strip=True) == "Sin dato consolidado"
+    assert "Consultas recibidas —" in leads.get_text(" ", strip=True)
 
 
 def test_top_and_sticky_whatsapp_render_only_when_signed_urls_exist():
@@ -520,7 +837,10 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
         if case == "photo_phone":
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
         if case == "missing_macro": assert len(soup.select(".market-kpi")) == 2
-        if case == "no_gap": assert not soup.select_one(".position-kpi") and not view["gap_explanation"]
+        if case == "no_gap":
+            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "—"
+            assert not soup.select_one(".position-kpi.above, .position-kpi.below")
+            assert not view["gap_explanation"]
         if case in {"stale", "authorized", "no_gap"}:
             assert view["position_simulation"]["available"] is False
         if case in {"authorized", "no_gap"}:

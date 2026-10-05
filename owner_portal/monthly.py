@@ -369,6 +369,177 @@ def _text(value: Any) -> str:
     return html.unescape(str(value if value is not None else "")).strip()
 
 
+def _communal_market_value(value: Any, *, suffix: str = "") -> str:
+    """Format verified numeric market data without turning missing values into zero."""
+    number = _number_from_label(value)
+    if number is None:
+        return ""
+    if suffix in {"publications", "score"}:
+        rendered = f"{int(number):,}".replace(",", ".")
+    elif suffix == "range" and number.is_integer():
+        rendered = f"{int(number):,}".replace(",", ".")
+    elif suffix in {"rental-m2", "precise-percent"}:
+        rendered = f"{number:,.2f}".replace(",", "\0").replace(".", ",").replace("\0", ".")
+    else:
+        rendered = f"{number:,.1f}".replace(",", "\0").replace(".", ",").replace("\0", ".")
+    return f"{rendered}{suffix if suffix not in {'publications', 'range', 'score', 'rental-m2', 'precise-percent'} else ''}"
+
+
+def _communal_market_label(value: Any, mapping: Mapping[str, str]) -> str:
+    return mapping.get(_text(value).casefold(), "")
+
+
+def _communal_market_title(property_type: str, commune: str) -> str:
+    normalized = _text(property_type)
+    plural = {
+        "departamento": "departamentos", "casa": "casas", "parcela": "parcelas",
+        "terreno": "terrenos", "oficina": "oficinas", "local comercial": "locales comerciales",
+    }.get(normalized.casefold(), normalized.casefold())
+    if not plural or not commune:
+        return "Contexto del mercado comunal"
+    return f"Mercado de {plural} en {commune}"
+
+
+def _communal_market_card(
+    db: Any, *, commune: str, property_type: str, operation: str, document_url: str,
+) -> dict[str, Any] | None:
+    """Build a read-only context card from the exact communal/type/operation record."""
+    operation_key = _text(operation).upper()
+    market_field = {"VENTA": "mercado_venta", "ARRIENDO": "mercado_arriendo"}.get(operation_key)
+    if not commune or not property_type or not market_field:
+        return None
+    projection = {
+        "_id": 0, "comuna": 1, "tipo_propiedad": 1, market_field: 1,
+        "mercado_arriendo": 1, "indicadores_mercado": 1,
+        "rangos_precio_venta": 1, "rangos_precio_arriendo": 1, "source": 1,
+    }
+    try:
+        # Limit two records so an accidental duplicate fails closed instead of
+        # arbitrarily selecting a different report.
+        matches = list(db["mercado_comunal"].find(
+            {"comuna": commune, "tipo_propiedad": property_type}, projection,
+        ).limit(2))
+    except (AttributeError, TypeError):
+        found = db["mercado_comunal"].find_one(
+            {"comuna": commune, "tipo_propiedad": property_type}, projection,
+        )
+        matches = [found] if isinstance(found, Mapping) else []
+    if len(matches) != 1:
+        return None
+    record = matches[0]
+    if record.get("comuna") != commune or record.get("tipo_propiedad") != property_type:
+        return None
+    operation_data = record.get(market_field)
+    if not isinstance(operation_data, Mapping):
+        return None
+    indicators = record.get("indicadores_mercado") if isinstance(record.get("indicadores_mercado"), Mapping) else {}
+    ranges = record.get("rangos_precio_venta" if operation_key == "VENTA" else "rangos_precio_arriendo")
+    ranges = ranges if isinstance(ranges, Mapping) else {}
+    source = record.get("source") if isinstance(record.get("source"), Mapping) else {}
+    source_date_value = source.get("fecha_reporte")
+    report_date = ""
+    if isinstance(source_date_value, (datetime, date)):
+        report_date = source_date_value.strftime("%d/%m/%Y")
+    else:
+        source_date_raw = _text(source_date_value)
+        for date_format in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                report_date = datetime.strptime(source_date_raw[:10], date_format).strftime("%d/%m/%Y")
+                break
+            except ValueError:
+                continue
+    if not report_date:
+        report_date = _text(source_date_value)
+
+    competition_map = {
+        "alto": "Alta", "high": "Alta", "medio": "Media", "moderado": "Media",
+        "medium": "Media", "bajo": "Baja", "low": "Baja",
+    }
+    liquidity_map = {
+        "alta": "Alta", "high": "Alta", "media": "Media", "moderada": "Media",
+        "medium": "Media", "baja": "Baja", "low": "Baja",
+    }
+    if operation_key == "VENTA":
+        primary_candidates = [
+            ("Precio publicado de referencia", _communal_market_value(operation_data.get("uf_m2_publicacion_actual"), suffix=" UF/m²")),
+            ("Variación de precios publicados · 12 meses", _communal_market_value(operation_data.get("variacion_uf_m2_12m"), suffix="%")),
+            ("Propiedades actualmente en oferta", _communal_market_value(operation_data.get("publicaciones_activas"), suffix="publications")),
+            ("Competencia", _communal_market_label(indicators.get("nivel_competencia"), competition_map)),
+            ("Liquidez", _communal_market_label(indicators.get("liquidez"), liquidity_map)),
+        ]
+    else:
+        primary_candidates = [
+            ("Precio de arriendo publicado de referencia", _communal_market_value(operation_data.get("uf_m2_arriendo_actual"), suffix="rental-m2") + " UF/m²" if operation_data.get("uf_m2_arriendo_actual") is not None else ""),
+            ("Variación de precios publicados · 12 meses", _communal_market_value(operation_data.get("variacion_arriendo_12m"), suffix="precise-percent") + "%" if operation_data.get("variacion_arriendo_12m") is not None else ""),
+            ("Propiedades actualmente en oferta", _communal_market_value(operation_data.get("publicaciones_arriendo_activas"), suffix="publications")),
+            ("Competencia", _communal_market_label(indicators.get("nivel_competencia"), competition_map)),
+            ("Liquidez", _communal_market_label(indicators.get("liquidez"), liquidity_map)),
+        ]
+    metrics = [{"label": label, "value": value} for label, value in primary_candidates if value][:5]
+    if not metrics:
+        return None
+
+    trend_label = _communal_market_label(_text(indicators.get("tendencia_mercado")).casefold(), {
+        "desaceleracion": "desaceleración", "desaceleración": "desaceleración",
+        "aceleracion": "aceleración", "aceleración": "aceleración",
+        "estable": "estabilidad", "crecimiento": "crecimiento",
+    })
+    competition = next((item[1].casefold() for item in primary_candidates if item[0] == "Competencia" and item[1]), "")
+    liquidity = next((item[1].casefold() for item in primary_candidates if item[0] == "Liquidez" and item[1]), "")
+    variation_key = "variacion_uf_m2_12m" if operation_key == "VENTA" else "variacion_arriendo_12m"
+    variation = _number_from_label(operation_data.get(variation_key))
+    interpretation_parts = []
+    if competition == "alta" and liquidity == "baja":
+        interpretation_parts.append("El mercado muestra una alta cantidad de propiedades compitiendo por compradores y una menor velocidad de absorción.")
+    elif competition == "alta":
+        interpretation_parts.append("El mercado muestra una alta cantidad de propiedades compitiendo por compradores.")
+    elif liquidity == "baja":
+        interpretation_parts.append("El mercado presenta una menor velocidad de absorción.")
+    elif competition or liquidity:
+        signals = ([f"competencia {competition}"] if competition else [])
+        if liquidity:
+            signals.append(f"liquidez {liquidity}")
+        interpretation_parts.append("Los indicadores disponibles muestran " + " y ".join(signals) + ".")
+    if variation is not None and variation < 0:
+        interpretation_parts.append("Además, los valores publicados han retrocedido durante los últimos 12 meses.")
+    elif variation is not None and variation > 0:
+        interpretation_parts.append("Además, los valores publicados han aumentado durante los últimos 12 meses.")
+    elif trend_label == "desaceleración":
+        interpretation_parts.append("Además, el informe identifica una desaceleración en la tendencia del mercado.")
+    if interpretation_parts:
+        interpretation_parts.append("En este contexto, el posicionamiento de precio adquiere mayor importancia.")
+    interpretation = " ".join(interpretation_parts)
+
+    details: list[dict[str, str]] = []
+    if operation_key == "VENTA":
+        if trend_label:
+            details.append({"label": "Tendencia del mercado", "value": trend_label.capitalize()})
+        pressure = _communal_market_label(indicators.get("presion_baja_precio"), liquidity_map)
+        if pressure:
+            details.append({"label": "Presión sobre precios", "value": pressure})
+        low = _communal_market_value(ranges.get("min_uf"), suffix="range")
+        high = _communal_market_value(ranges.get("max_uf"), suffix="range")
+        if low and high:
+            details.append({"label": "Rango observado", "value": f"{low}–{high} UF"})
+        total = _communal_market_value(operation_data.get("publicaciones_totales"), suffix="publications")
+        if total:
+            details.append({"label": "Publicaciones observadas", "value": total})
+    else:
+        total = _communal_market_value(operation_data.get("publicaciones_arriendo_totales"), suffix="publications")
+        if total:
+            details.append({"label": "Publicaciones de arriendo totales", "value": total})
+        low = _communal_market_value(ranges.get("min_uf"), suffix="range")
+        high = _communal_market_value(ranges.get("max_uf"), suffix="range")
+        if low and high:
+            details.append({"label": "Rango de precios observado", "value": f"{low}–{high} UF"})
+    return {
+        "kind": "COMMUNAL_MARKET_REPORT", "title": _communal_market_title(property_type, commune),
+        "metrics": metrics, "interpretation": interpretation, "details": details,
+        "source_label": f"Informe comunal · {commune} · {property_type}" + (f" · Corte {report_date}" if report_date else ""),
+        "source_date": report_date, "document_url": document_url,
+    }
+
+
 def _number_from_label(value: Any) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         import math
@@ -934,7 +1105,7 @@ def build_monthly_portal_view(
     elif isinstance(prepared_at, date):
         updated_label = prepared_at.strftime("%d-%m-%Y")
     else:
-        updated_label = _text(prepared_at)[:10] or "Fecha no disponible"
+        updated_label = _text(prepared_at)[:10]
 
     status = str(row.get("send_status") or "").upper()
     stale = bool(campaign_view.get("safe_mode")) or status == "SKIPPED_STALE_OR_MISMATCH"
@@ -945,6 +1116,7 @@ def build_monthly_portal_view(
     document_available = bool(campaign_view.get("document_available")) and document_type in {"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"}
     document_url = campaign_view.get("report_url") if document_available and not stale else ""
     commune_label = _text(_value(property_state, snapshot, "commune") or row.get("commune") or campaign_view.get("commune"))
+    property_type_label = _text(_value(property_state, snapshot, "property_type") or row.get("property_type") or campaign_view.get("property_type") or evidence.get("property_type"))
     support_documents: list[dict[str, str]] = []
     support_reference_url = document_url or campaign_view.get("advisor_url") or campaign_view.get("top_advisor_url") or ""
     seen_document_urls: set[str] = set()
@@ -999,6 +1171,16 @@ def build_monthly_portal_view(
             adjustment_label = _text(adjustment_value)
 
     operation = _text(_value(property_state, snapshot, "operation") or snapshot.get("operation_resolved") or row.get("operation") or campaign_view.get("operation"))
+    market_reference_card = None
+    communal_document = next((
+        item for item in support_documents
+        if item.get("type") == "COMMUNAL_MARKET_REPORT"
+    ), None)
+    if communal_document:
+        market_reference_card = _communal_market_card(
+            db, commune=commune_label, property_type=property_type_label,
+            operation=operation, document_url=str(communal_document.get("url") or ""),
+        )
     current_price = _value(property_state, snapshot, "current_price")
     recommended_price = recommendation.get("recommended_price")
     if recommended_price is None:
@@ -1153,6 +1335,7 @@ def build_monthly_portal_view(
         "position_simulation": position_simulation,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,
+        "market_reference_card": market_reference_card,
         "market_context": context if isinstance(context, Mapping) else None,
         "activity_90d": {
             "leads": activity.get("leads", activity.get("total_leads")),

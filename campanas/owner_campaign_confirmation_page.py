@@ -42,8 +42,6 @@ def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> st
         '.button-primary{box-shadow:0 3px 9px rgba(38,31,111,.13)}.button-primary:hover{background:#292176;box-shadow:0 6px 13px rgba(38,31,111,.18);transform:translateY(-1px)}.button-primary:active{transform:translateY(0);box-shadow:0 2px 5px rgba(38,31,111,.13)}'
         '.secondary .button{background:#fff;color:#342d85;border:1px solid #c8c5e8;box-shadow:0 1px 3px rgba(45,39,110,.04)}.secondary .button:hover{background:#f7f6ff;color:#28216f;border-color:#aaa4dc;box-shadow:0 2px 6px rgba(45,39,110,.07)}.secondary .button:active{background:#f1effb;transform:translateY(0)}'
         '.button:focus-visible,.link:focus-visible{outline:3px solid #8d82e8;outline-offset:3px}'
-        '.contact{margin-top:14px;padding:16px 20px;background:#fff;border:1px solid #e1e4f1;border-radius:14px}'
-        '.contact h2{font-size:18px;margin:0 0 8px}.contact p{color:#68708f;font-size:14px;line-height:1.55;margin:0 0 12px}'
         '.link{display:inline-flex;align-items:center;gap:5px;padding:7px 9px;margin-left:-9px;border:1px solid transparent;border-radius:7px;color:#4134b2;text-decoration:none;font-weight:800;font-size:12px;letter-spacing:.035em;transition:background-color 180ms ease,border-color 180ms ease,color 180ms ease}'
         '.link:hover{background:#f8f7ff;border-color:#e7e4fb;color:#30258d}.link-arrow{display:inline-block;transition:transform 180ms ease}.link:hover .link-arrow{transform:translateX(2px)}'
         '.steps{margin-top:12px;padding:14px 20px;background:#f0f2fa;border-radius:14px}.steps h2{font-size:15px;margin:0 0 8px}'
@@ -51,7 +49,7 @@ def _document(title: str, subtitle: str, content: str, logo_url: str = "") -> st
         '.result{max-width:660px;margin:16px auto 0;padding:23px 26px;background:#fff;border:1px solid #e1e4f1;border-radius:16px;box-shadow:0 5px 18px rgba(24,29,82,.045)}'
         '.result h2{font-size:11px;letter-spacing:.12em;color:#6556d9;margin:0 0 8px}.result .percent{margin:0 0 25px}.result .price{margin:0 0 21px}'
         '.already{margin-top:18px;padding:15px;background:#f4f3fc;border-radius:10px;color:#4e5070;font-size:14px;line-height:1.6}'
-        '@media(max-width:600px){.shell{padding:15px 14px 24px}.brand-logo{max-width:170px;max-height:48px;margin-bottom:12px}.brand{margin-bottom:12px}h1{font-size:24px;line-height:1.16}.subtitle{font-size:14px;line-height:1.4;margin-bottom:13px}.options,.options.one-option{grid-template-columns:1fr;gap:10px}.card,.options.one-option .card{min-height:0;padding:16px 17px;border-radius:13px}.eyebrow{font-size:10px}.card h2{font-size:18px;margin:7px 0 8px}.percent{font-size:38px;margin-bottom:10px}.value-label{font-size:9px;margin-bottom:4px}.price{font-size:20px}.copy{font-size:12px;line-height:1.42;margin:9px 0 10px}.card form{margin-top:9px}.button{min-height:48px;padding:10px 12px;font-size:11px}.contact{margin-top:10px;padding:14px 16px}.contact h2{font-size:16px;margin-bottom:6px}.contact p{font-size:13px;line-height:1.42;margin-bottom:7px}.steps{margin-top:9px;padding:12px 15px}.steps h2{font-size:14px;margin-bottom:5px}.steps li{padding:2px 0 2px 2px;font-size:12px;line-height:1.35}.result{margin-top:10px;padding:20px 17px}.result .percent{margin-bottom:15px}.result .price{margin-bottom:13px}}'
+        '@media(max-width:600px){.shell{padding:15px 14px 24px}.brand-logo{max-width:170px;max-height:48px;margin-bottom:12px}.brand{margin-bottom:12px}h1{font-size:24px;line-height:1.16}.subtitle{font-size:14px;line-height:1.4;margin-bottom:13px}.options,.options.one-option{grid-template-columns:1fr;gap:10px}.card,.options.one-option .card{min-height:0;padding:16px 17px;border-radius:13px}.eyebrow{font-size:10px}.card h2{font-size:18px;margin:7px 0 8px}.percent{font-size:38px;margin-bottom:10px}.value-label{font-size:9px;margin-bottom:4px}.price{font-size:20px}.copy{font-size:12px;line-height:1.42;margin:9px 0 10px}.card form{margin-top:9px}.button{min-height:48px;padding:10px 12px;font-size:11px}.steps{margin-top:9px;padding:12px 15px}.steps h2{font-size:14px;margin-bottom:5px}.steps li{padding:2px 0 2px 2px;font-size:12px;line-height:1.35}.result{margin-top:10px;padding:20px 17px}.result .percent{margin-bottom:15px}.result .price{margin-bottom:13px}}'
         '@media(prefers-reduced-motion:reduce){.button,.link,.link-arrow{transition:none}.button-primary:hover,.button-primary:active,.secondary .button:active,.link:hover .link-arrow{transform:none}}'
         f'</style></head><body><main class="shell"><header>{brand}'
         f'<h1>{escape(title)}</h1><p class="subtitle">{escape(subtitle)}</p></header>{content}'
@@ -101,9 +99,6 @@ def render_decision_page(
         )
     content = (
         f'<div class="options{"" if gradual_available else " one-option"}">{recommendation}{option if gradual_available else ""}</div>'
-        '<section class="contact"><h2>¿Prefieres conversarlo antes de decidir?</h2>'
-        '<p>Si deseas revisar la propuesta antes de autorizar un cambio, puedes solicitar que tu ejecutivo te contacte.</p>'
-        f'<a class="link" href="{escape(advisor_url, quote=True)}">SOLICITAR CONTACTO DE MI EJECUTIVO <span class="link-arrow" aria-hidden="true">→</span></a></section>'
         '<section class="steps"><h2>¿Qué ocurrirá después?</h2><ol>'
         '<li>Tu decisión quedará registrada de forma segura.</li>'
         '<li>Tu ejecutivo será informado automáticamente.</li>'

@@ -27,8 +27,9 @@ from typing import Any, Iterable, Mapping
 
 from bson import ObjectId
 
+from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
 from .crm_metrics import INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime, event_evidence, normalize_result, utc_now
-from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, OUTREACH_RESULTS, add_business_minutes
+from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, add_business_minutes
 from .crm_sla_global_rescue import RescueParameters
 from .crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
@@ -737,28 +738,28 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
         if is_human and ev.get("management"):
             stop_times.append(occurred)
             evidence_types.append(f"event:{raw_type or 'management'}")
-        if is_human and raw_type in {
-            "CALL_COMPLETED_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD",
-            "WHATSAPP_SENT_LEAD", "EMAIL_SENT_LEAD", "HUMAN_NOTE",
-            "GESTION_LOG", "MANUAL_ENTRY",
-        }:
+        protection_type = classify_human_protection(event)
+        if protection_type:
             human_times.append(occurred)
-            evidence_types.append(f"human:{raw_type}")
+            evidence_types.append(f"human:{raw_type or protection_type.lower()}")
     for result in results:
         occurred = _utc(result.get("occurred_at"))
         if not occurred or (assigned_at and occurred < assigned_at):
             continue
         normalized = normalize_result(result.get("result_type"))
-        actor = result.get("actor_user_id") or result.get("actor")
         if normalized in SLA_STOP_RESULTS:
             stop_times.append(occurred)
-        if _human_actor(actor, result.get("actor_type")) and (normalized in SLA_STOP_RESULTS or normalized in OUTREACH_RESULTS or normalized):
+        protection_type = protection_type_for_management_result(
+            result.get("result_type") or result.get("result")
+        )
+        if protection_type:
             human_times.append(occurred)
-            evidence_types.append(f"result:{normalized or 'UNKNOWN'}")
+            evidence_types.append(f"result:{normalized or protection_type.lower()}")
     persisted = [
         ("cycle.first_valid_management_at", _utc(cycle.get("first_valid_management_at"))),
         ("cycle.first_contact_attempt_at", _utc(cycle.get("first_contact_attempt_at"))),
         ("cycle.reassignment_protection_at", _utc(cycle.get("reassignment_protection_at"))),
+        ("lifecycle.first_contact_attempt_at", _utc(((lead or {}).get("lifecycle") or {}).get("first_contact_attempt_at"))),
         ("lifecycle.first_valid_management_at", _utc(((lead or {}).get("lifecycle") or {}).get("first_valid_management_at"))),
     ]
     for field, value in persisted:

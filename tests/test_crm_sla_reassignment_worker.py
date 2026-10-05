@@ -14,7 +14,9 @@ import pytest
 from bson import ObjectId
 
 from config import Config
+from chatbot.crm_assignment_cycle_gate import classify_human_protection
 from chatbot.crm_sla_hybrid_rescue import REGION_JPC_MARIA_HERNAN, REGION_REVIEW_REQUIRED, RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGIONAL_POLICY_NOT_DEFINED, classify_policy
+from chatbot.crm_sla_reassignment_executor import _human_evidence_in_collections
 from chatbot.crm_sla_reassignment_worker import (
     COMMITTED_EVENT,
     POLICY_VERSION,
@@ -242,9 +244,9 @@ def test_human_management_at_or_before_breach_protects_but_late_does_not():
     row = cycle(1)
     deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
     before = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
-              "actor_type": "human", "timestamp": deadline - timedelta(seconds=1)}
+              "actor_type": "human", "confirmed": True, "timestamp": deadline - timedelta(seconds=1)}
     exact = {"lead_id": "lead-1", "type": "CALL_COMPLETED_LEAD", "actor": "owner",
-             "actor_type": "human", "timestamp": deadline}
+             "actor_type": "human", "confirmed": True, "timestamp": deadline}
     after = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
              "actor_type": "human", "timestamp": deadline + timedelta(seconds=1)}
     for event, expected_protected in ((before, 1), (exact, 1), (after, 0)):
@@ -252,6 +254,99 @@ def test_human_management_at_or_before_breach_protects_but_late_does_not():
         kwargs["context"] = context([row], [lead(1)], events={"lead-1": [event]})
         result = run(**kwargs)
         assert result["iteration"]["protected_skipped"] == expected_protected
+
+
+@pytest.mark.parametrize(
+    "event_type,confirmed,result,expected",
+    [
+        ("SEND_WA_LEAD", False, None, None),
+        ("SEND_EMAIL_LEAD", False, None, None),
+        ("CLICK_WHATSAPP_LEAD", True, None, None),
+        ("PAGE_VIEW", True, None, None),
+        ("INBOUND_MESSAGE", True, None, None),
+        ("SEND_WA_LEAD", True, None, "WHATSAPP"),
+        ("HUMAN_NOTE", True, "CONTACTADO", "CRM_MANAGEMENT_RESULT"),
+    ],
+)
+def test_worker_and_executor_share_canonical_protection_for_same_crm_event(
+    event_type, confirmed, result, expected,
+):
+    row = cycle(1)
+    deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+    event = {
+        "lead_id": "lead-1", "assignment_cycle_id": "cycle-1",
+        "type": event_type, "actor": "owner", "actor_type": "human",
+        "confirmed": confirmed, "result": result,
+        "timestamp": deadline - timedelta(seconds=1),
+    }
+    worker = _management_protection(row, lead(1), [event], [], breach_at=deadline)
+    db = mongomock.MongoClient().sla_protection_contract
+    db["crm_events"].insert_one(event)
+    executor = _human_evidence_in_collections(
+        db, lead_id="lead-1", cycle_id="cycle-1", assigned_at=row["assigned_at"],
+        breach_at=deadline, session=None,
+    )
+    canonical = classify_human_protection(event)
+
+    assert canonical == expected
+    assert worker.protected is (canonical is not None)
+    assert (executor is not None) is (canonical is not None)
+
+
+def test_post_breach_human_management_remains_executor_race_protection_only():
+    row = cycle(1)
+    deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+    event = {
+        "lead_id": "lead-1", "assignment_cycle_id": "cycle-1",
+        "type": "SEND_WA_LEAD", "actor": "owner", "actor_type": "human",
+        "confirmed": True, "timestamp": deadline + timedelta(seconds=1),
+    }
+    worker = _management_protection(row, lead(1), [event], [], breach_at=deadline)
+    db = mongomock.MongoClient().sla_protection_race
+    db["crm_events"].insert_one(event)
+    executor_predeadline = _human_evidence_in_collections(
+        db, lead_id="lead-1", cycle_id="cycle-1", assigned_at=row["assigned_at"],
+        breach_at=deadline, session=None,
+    )
+    executor_race = _human_evidence_in_collections(
+        db, lead_id="lead-1", cycle_id="cycle-1", assigned_at=row["assigned_at"],
+        breach_at=None, after_breach_at=deadline, session=None,
+    )
+
+    assert worker.human_after_breach is True
+    assert worker.protected is False
+    assert executor_predeadline is None
+    assert executor_race is not None
+
+
+def test_elvin_hot_unconfirmed_send_does_not_block_worker_reassignment():
+    assigned = datetime(2026, 10, 5, 12, 14, tzinfo=UTC)  # 09:14 Chile
+    now = datetime(2026, 10, 5, 13, 15, tzinfo=UTC)  # 10:15 Chile
+    row = cycle(1, assigned_at=assigned, temperature="HOT")
+    fixture_lead = lead(1)
+    fixture_lead["lead_temperature_effective"] = "HOT"
+    event = {
+        "lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
+        "actor_type": "human", "confirmed": False,
+        "evidence": {"management": False, "contact_attempt": False, "effective_contact": False},
+        "timestamp": datetime(2026, 10, 5, 13, 8, 30, tzinfo=UTC),  # 10:08:30 Chile
+    }
+    kwargs = base_kwargs(
+        [row], [fixture_lead], now=now,
+        cutover_at=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    kwargs["context"] = context([row], [fixture_lead], events={"lead-1": [event]})
+
+    result = run(**kwargs)
+    evaluation = result["evaluations"][0]
+
+    assert evaluation["temperature"] == "HOT"
+    assert evaluation["breach_at"]
+    assert evaluation["current_overdue_business_minutes"] > 0
+    assert evaluation["eligible"] is True
+    assert evaluation["exclusion_reason"] != "PROTECTED_BY_MANAGEMENT"
+    assert result["iteration"]["protected_skipped"] == 0
+    assert result["iteration"]["would_reassign"] == 1
 
 
 @pytest.mark.parametrize("branch,field", [(REGION_REVIEW_REQUIRED, "review_skipped")])
@@ -520,7 +615,7 @@ def test_active_destination_with_reassignment_decision_and_management_is_protect
     )
     management = {
         "lead_id": row["lead_id"], "type": "CALL_COMPLETED_LEAD",
-        "actor": "owner", "actor_type": "human",
+        "actor": "owner", "actor_type": "human", "confirmed": True,
         "timestamp": datetime(2026, 9, 10, 9, 17, tzinfo=UTC),
     }
     kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
@@ -537,7 +632,7 @@ def test_elizabeth_6496_delivered_then_attended_is_not_reassignable():
     )
     management = {
         "lead_id": row["lead_id"], "type": "CALL_COMPLETED_LEAD",
-        "actor": "owner", "actor_type": "human",
+        "actor": "owner", "actor_type": "human", "confirmed": True,
         "timestamp": datetime(2026, 9, 10, 9, 17, tzinfo=UTC),
     }
     kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
@@ -584,7 +679,7 @@ def test_71c2_late_management_is_attendance_evidence_not_retroactive_protection(
     expiration = canonical_expiration_recheck(row, fixture_lead, now=NOW)
     late_management = {
         "lead_id": row["lead_id"], "type": "SEND_WA_LEAD",
-        "actor": "owner", "actor_type": "human",
+        "actor": "owner", "actor_type": "human", "confirmed": True,
         "timestamp": expiration.breach_at + timedelta(minutes=17),
     }
     protection = _management_protection(

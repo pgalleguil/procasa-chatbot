@@ -540,6 +540,32 @@ def _communal_market_card(
     }
 
 
+def _verified_master_identity(db: Any, property_code: str) -> dict[str, str]:
+    """Read identity labels only from the canonical property with the exact code."""
+    code = str(property_code or "").strip()
+    if not code:
+        return {}
+    projection = {
+        "_id": 0,
+        "codigo": 1,
+        "ubicacion.comuna": 1,
+        "metadata.tipo_propiedad": 1,
+    }
+    try:
+        matches = list(db["universo_cartera_prop360"].find({"codigo": code}, projection).limit(2))
+    except Exception:
+        return {}
+    if len(matches) != 1 or str(matches[0].get("codigo") or "").strip() != code:
+        return {}
+    master = matches[0]
+    location = master.get("ubicacion") if isinstance(master.get("ubicacion"), Mapping) else {}
+    metadata = master.get("metadata") if isinstance(master.get("metadata"), Mapping) else {}
+    return {
+        "commune": _text(location.get("comuna")),
+        "property_type": _text(metadata.get("tipo_propiedad")),
+    }
+
+
 def _number_from_label(value: Any) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         import math
@@ -1115,8 +1141,19 @@ def build_monthly_portal_view(
     document_type = str(_value(property_state, snapshot, "document_type") or row.get("document_type") or "NONE").upper()
     document_available = bool(campaign_view.get("document_available")) and document_type in {"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"}
     document_url = campaign_view.get("report_url") if document_available and not stale else ""
-    commune_label = _text(_value(property_state, snapshot, "commune") or row.get("commune") or campaign_view.get("commune"))
-    property_type_label = _text(_value(property_state, snapshot, "property_type") or row.get("property_type") or campaign_view.get("property_type") or evidence.get("property_type"))
+    commune_label = _text(
+        property_state.get("commune") or monthly.get("commune")
+        or snapshot.get("commune") or row.get("commune")
+    )
+    property_type_label = _text(
+        property_state.get("property_type") or monthly.get("property_type")
+        or snapshot.get("property_type") or row.get("property_type")
+    )
+    if not commune_label or not property_type_label:
+        master_identity = _verified_master_identity(db, property_code)
+        commune_label = commune_label or master_identity.get("commune", "")
+        property_type_label = property_type_label or master_identity.get("property_type", "")
+    document_commune_label = commune_label or _text(campaign_view.get("commune"))
     support_documents: list[dict[str, str]] = []
     support_reference_url = document_url or campaign_view.get("advisor_url") or campaign_view.get("top_advisor_url") or ""
     seen_document_urls: set[str] = set()
@@ -1128,7 +1165,7 @@ def build_monthly_portal_view(
             and str(item.get("document_type") or item.get("type") or "").upper() == document_type
         ), {})
         support_documents.append(_support_document_item(
-            document_type, property_code, commune_label, str(document_url), primary_metadata,
+            document_type, property_code, document_commune_label, str(document_url), primary_metadata,
         ))
         seen_document_urls.add(str(document_url))
     if not stale and support_reference_url:
@@ -1148,7 +1185,7 @@ def build_monthly_portal_view(
                     )):
                 continue
             support_documents.append(_support_document_item(
-                extra_type, property_code, commune_label, extra_url, item,
+                extra_type, property_code, document_commune_label, extra_url, item,
             ))
             seen_document_urls.add(extra_url)
 
@@ -1317,8 +1354,8 @@ def build_monthly_portal_view(
         "property_public_page_url": (property_media or {}).get("public_page_url"),
         "property_public_page_active": bool((property_media or {}).get("public_page_active")),
         "property_image_source": (property_media or {}).get("image_source"),
-        "property_type": _text(_value(property_state, snapshot, "property_type") or row.get("property_type") or campaign_view.get("property_type") or evidence.get("property_type")),
-        "commune": _text(_value(property_state, snapshot, "commune") or row.get("commune") or campaign_view.get("commune") or evidence.get("commune")),
+        "property_type": property_type_label,
+        "commune": commune_label,
         "operation": operation,
         "current_price_label": current_price_label if not stale else "",
         "recommended_price_label": recommended_price_label if not stale else "",

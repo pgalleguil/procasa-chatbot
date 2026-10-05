@@ -15,9 +15,8 @@ from owner_portal.monthly import (
 )
 
 
-def _view(db, *, snapshot=None, monthly=None, campaign_view=None, history=None):
+def _view(db, *, snapshot=None, monthly=None, campaign_view=None, history=None, code="5438"):
     owner = "owner@example.test"
-    code = "5438"
     key = owner_property_portal_id(code, owner)
     current = monthly or {"period": "2026-10"}
     db["owner_property_portals"].insert_one({
@@ -181,6 +180,10 @@ def test_verified_support_documents_keep_existing_links_and_source_dates():
         )
     communal_url = f"https://www.procasa.cl/campana/informe?token={communal_token}"
     db_both = mongomock.MongoClient().test
+    db_both["universo_cartera_prop360"].insert_one({
+        "codigo": "5438", "ubicacion": {"comuna": "Talca"},
+        "metadata": {"tipo_propiedad": "Departamento"},
+    })
     db_both["mercado_comunal"].insert_one({
         "comuna": "Talca", "tipo_propiedad": "Departamento",
         "mercado_venta": {"uf_m2_publicacion_actual": 55.2},
@@ -349,6 +352,110 @@ def test_communal_market_card_is_operation_specific_and_fails_closed_on_identity
         db, commune="Providencia", property_type="Departamento",
         operation="VENTA", document_url="/signed",
     ) is None
+
+
+def test_historical_communal_card_resolves_missing_identity_from_exact_master_property_5806():
+    from bs4 import BeautifulSoup
+
+    db = mongomock.MongoClient().test
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": "5806",
+        "ubicacion": {"comuna": "Concón"},
+        "metadata": {"tipo_propiedad": "Departamento"},
+    })
+    db["mercado_comunal"].insert_one({
+        "comuna": "Concón", "tipo_propiedad": "Departamento",
+        "mercado_venta": {
+            "uf_m2_publicacion_actual": 83.58,
+            "variacion_uf_m2_12m": 2.16,
+            "publicaciones_activas": 1802,
+            "publicaciones_totales": 4200,
+        },
+        "indicadores_mercado": {
+            "nivel_competencia": "HIGH", "liquidez": "LOW",
+            "tendencia_mercado": "desaceleracion", "presion_baja_precio": "HIGH",
+        },
+        "rangos_precio_venta": {"min_uf": 1500, "max_uf": 8500},
+        "source": {"fecha_reporte": "29/04/2026"},
+    })
+    report_url = "/campana/informe?token=5806-communal-qa"
+    view = _view(
+        db, code="5806",
+        snapshot={"document_type": "COMMUNAL_MARKET_REPORT", "operation": "VENTA"},
+        monthly={"period": "2026-10", "documents": []},
+        campaign_view={
+            "document_available": True, "document_type": "COMMUNAL_MARKET_REPORT",
+            "report_url": report_url, "operation": "VENTA",
+        },
+    )
+
+    card = view["market_reference_card"]
+    assert view["commune"] == "Concón"
+    assert view["property_type"] == "Departamento"
+    assert card["title"] == "Mercado de departamentos en Concón"
+    assert card["metrics"] == [
+        {"label": "Precio publicado de referencia", "value": "83,6 UF/m²"},
+        {"label": "Variación de precios publicados · 12 meses", "value": "2,2%"},
+        {"label": "Propiedades actualmente en oferta", "value": "1.802"},
+        {"label": "Competencia", "value": "Alta"},
+        {"label": "Liquidez", "value": "Baja"},
+    ]
+    assert card["source_date"] == "29/04/2026"
+    assert card["document_url"] == report_url
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one(".complementary-market")
+    assert section.select_one("h2").get_text(" ", strip=True) == "Mercado de departamentos en Concón"
+    assert len(section.select(".complementary-market__metric")) == 5
+    assert section.select_one(".complementary-market__interpretation")
+    assert section.select_one(".complementary-market__details summary").get_text(" ", strip=True) == "Ver más"
+    assert "Corte 29/04/2026" in section.select_one(".complementary-market__source").get_text(" ", strip=True)
+    assert section.select_one(".complementary-market__link")["href"] == report_url
+
+
+def test_master_property_code_mismatch_does_not_supply_communal_identity():
+    db = mongomock.MongoClient().test
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": "5807", "ubicacion": {"comuna": "Concón"},
+        "metadata": {"tipo_propiedad": "Departamento"},
+    })
+    db["mercado_comunal"].insert_one({
+        "comuna": "Concón", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 83.58},
+    })
+    view = _view(
+        db, code="5806",
+        snapshot={"document_type": "COMMUNAL_MARKET_REPORT", "operation": "VENTA"},
+        monthly={"period": "2026-10"},
+        campaign_view={"document_available": True, "report_url": "/signed", "operation": "VENTA"},
+    )
+    assert view["market_reference_card"] is None
+
+
+def test_no_exact_communal_match_hides_card_without_cross_property_communal_data():
+    db = mongomock.MongoClient().test
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": "5806", "ubicacion": {"comuna": "Concón"},
+        "metadata": {"tipo_propiedad": "Departamento"},
+    })
+    db["mercado_comunal"].insert_one({
+        "comuna": "Santiago", "tipo_propiedad": "Departamento",
+        "mercado_venta": {"uf_m2_publicacion_actual": 55.23, "publicaciones_activas": 9215},
+    })
+    view = _view(
+        db, code="5806",
+        snapshot={"document_type": "COMMUNAL_MARKET_REPORT", "operation": "VENTA"},
+        monthly={"period": "2026-10"},
+        campaign_view={"document_available": True, "report_url": "/signed", "operation": "VENTA"},
+    )
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    assert view["market_reference_card"] is None
+    assert "55,2 UF/m²" not in html
+    assert "9.215" not in html
 
 
 def test_appraisal_is_document_only_and_never_renders_an_enriched_card():

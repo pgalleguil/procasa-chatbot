@@ -593,7 +593,8 @@ def test_recommendation_prices_centered_procasa_logo_and_equal_simulation_button
     recommendation = soup.select_one(".recommendation")
     assert not recommendation.select_one(".recommendation-logo")
     assert soup.select_one(".masthead img.logo[alt='PROCASA']")
-    assert ".logo { width:150px; height:56px; object-fit:cover; object-position:center 43%; }" in html
+    assert ".logo { width:136px; height:50px; object-fit:cover; object-position:center 43%; }" in html
+    assert ".logo { width:116px; height:44px; }" in html
     price_boxes = recommendation.select(".recommendation-step")
     assert len(price_boxes) == 2
     assert [box.get_text(" ", strip=True) for box in price_boxes] == [
@@ -609,7 +610,7 @@ def test_recommendation_prices_centered_procasa_logo_and_equal_simulation_button
     assert ".recommendation-step { min-width:0; padding:10px; border:1px solid #e4e3f0; border-radius:11px; background:#fff; text-align:center; }" in html
 
 
-def test_executive_signature_uses_verified_gendered_role_and_omits_removed_pitch():
+def test_executive_signature_uses_requested_role_and_omits_removed_pitch():
     from bs4 import BeautifulSoup
     from owner_portal.executive import resolve_executive_contact
 
@@ -617,12 +618,8 @@ def test_executive_signature_uses_verified_gendered_role_and_omits_removed_pitch
     template = Environment(loader=FileSystemLoader("templates")).get_template(
         "owner_campaign_monthly_portal.html"
     )
-    for source, expected in (
-        ({"role": "Ejecutiva PROCASA"}, "Agente Inmobiliaria · PROCASA Sucre"),
-        ({"gender": "masculino"}, "Agente Inmobiliario · PROCASA Sucre"),
-        ({"role": "Ejecutivo PROCASA"}, "Agente inmobiliario/a · PROCASA Sucre"),
-        ({}, "Agente inmobiliario/a · PROCASA Sucre"),
-    ):
+    expected = "Agente inmobiliario · PROCASA SUCRE"
+    for source in ({"role": "Ejecutiva PROCASA"}, {"role": "Ejecutivo PROCASA"}, {}):
         contact = resolve_executive_contact(db, {"campaign_snapshot": {"executive": source}}, {}, "Alex")
         assert contact["role"] == expected
         view = premium_fixture("full")

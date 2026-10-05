@@ -72,9 +72,7 @@ async def executive_whatsapp_click(request: Request, token: str = Query(default=
         record = db[OWNER_PROPERTY_PORTAL_COLLECTION].find_one({"_id": key, "owner_key": key, "property_code": code})
         monthly = _select_monthly_snapshot(record, code) or {}
         contact = resolve_executive_contact(db, row, monthly, str(row.get("executive_name") or row.get("executive") or ""))
-        snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), dict) else {}
-        owner_name = str(snapshot.get("owner_name") or row.get("owner_name") or "").strip()
-        url = whatsapp_destination(contact, code, owner_name=owner_name)
+        url = whatsapp_destination(contact, code)
         report_period = str(monthly.get("period") or "")
         snapshot_hash = str(monthly.get("snapshot_hash") or monthly.get("content_sha256") or "")
         return contact, url, report_period, snapshot_hash

@@ -769,9 +769,10 @@ def test_executive_whatsapp_is_signed_click_only_and_preserves_attribution(monke
             assert click.headers["location"].startswith("https://wa.me/56912345678?")
             message = parse_qs(urlsplit(click.headers["location"]).query)["text"][0]
             assert message == (
-                "Hola Mariela, soy Camila. Estoy revisando el informe comercial de mi propiedad 17005 "
-                "y quisiera conversar contigo sobre la recomendación de precio y las alternativas disponibles."
+                "Hola Mariela, te contacto por el informe comercial de la propiedad código 17005. "
+                "Quisiera conversar contigo sobre la recomendación de precio y las alternativas disponibles."
             )
+            assert "Camila" not in message and "soy Mariela" not in message
         row = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
         events = [event for event in row["events"] if event["event"] == "executive_whatsapp_clicked"]
         assert len(events) == 3

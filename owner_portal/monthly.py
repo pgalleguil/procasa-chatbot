@@ -42,6 +42,7 @@ _TARGET_CLASSES = frozenset({
     "macro-copy-single",
     "macro-source-single",
     "single-heading",
+    "single-operation",
 })
 _NUMBER = re.compile(r"(?<![\w])(-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?)(?![\w])")
 
@@ -192,6 +193,24 @@ def extract_verified_email_evidence(email_html: str | None) -> dict[str, Any]:
             result["property_type"] = parts[0]
         if len(parts) > 1:
             result["commune"] = parts[1]
+    operation_lines = result.get("single-operation", [])
+    if operation_lines:
+        # Feature text in the immutable sent email is a verified historical
+        # source for the denominator used by that email's UF/m² comparison.
+        surface_pattern = re.compile(
+            r"(?:m²|m2)\s*([0-9][0-9.,]*)\s*m²\s*(útil(?:es)?|construid[oa]s?|terreno)",
+            flags=re.IGNORECASE,
+        )
+        surfaces: dict[str, float] = {}
+        for line in operation_lines:
+            for match in surface_pattern.finditer(line):
+                value = _number_from_label(match.group(1))
+                kind = match.group(2).casefold()
+                key = "useful" if kind.startswith("útil") else "built" if kind.startswith("constru") else "land"
+                if value is not None and value > 0:
+                    surfaces.setdefault(key, value)
+        if surfaces:
+            result["verified_property_surfaces_m2"] = surfaces
     labels = result.get("macro-kpi-label-single", [])
     values = result.get("macro-kpi-value-single", [])
     notes = result.get("macro-kpi-note-single", [])
@@ -438,13 +457,18 @@ def _position_simulation_data(
         return unavailable
     if property_state.get("current_price") is None or recommended_price is None or not recommendation_is_monthly:
         return {**unavailable, "reason": "PRICE_VALUES_NOT_FROZEN_IN_MONTHLY_SNAPSHOT"}
+    historical_email = comparables.get("source") == "VERIFIED_SENT_EMAIL"
     evidence_level = str(comparables.get("evidence_level") or "").upper()
-    if evidence_level not in {"HIGH", "MEDIUM"}:
+    if historical_email:
+        if str(comparables.get("campaign_comparable_mode") or "").upper() != "PRIMARY_COMPARABLES":
+            return {**unavailable, "reason": "HISTORICAL_PRIMARY_COMPARABLE_EVIDENCE_MISSING"}
+        evidence_level = "VERIFIED_SENT_EMAIL"
+    elif evidence_level not in {"HIGH", "MEDIUM"}:
         return {**unavailable, "reason": "COMPARABLE_EVIDENCE_NOT_STRONG_ENOUGH"}
     if comparables.get("evidence_conflict") is True or str(comparables.get("display_status") or "OK").upper() == "REVIEW":
         return {**unavailable, "reason": "COMPARABLE_EVIDENCE_REQUIRES_REVIEW"}
     version = _text(comparables.get("version") or comparables.get("algorithm_version"))
-    if version and "cluster_v2" not in version.casefold():
+    if not historical_email and version and "cluster_v2" not in version.casefold():
         return {**unavailable, "reason": "COMPARABLE_SNAPSHOT_NOT_CANONICAL_CLUSTER_V2"}
     if str(comparables.get("positioning_mode") or "PRICE_M2").upper() != "PRICE_M2":
         return {**unavailable, "reason": "COMPARABLE_POSITIONING_NOT_PER_SQUARE_METER"}
@@ -1025,17 +1049,81 @@ def build_monthly_portal_view(
         adjustment_headline_label = ""
         recommendation_summary = ""
         recommendation_details = []
+    historical_email_comparable = False
+    simulation_comparables = comparable_state
+    simulation_property_state = property_state
+    simulation_current_price = current_price
+    simulation_recommended_price = recommended_price
+    simulation_adjustment = adjustment_value
+    simulation_current_price_label = current_price_label
+    simulation_recommended_price_label = recommended_price_label
+    row_status = str(row.get("send_status") or "").upper()
+    campaign_comparable_mode = str(snapshot.get("comparable_mode") or row.get("comparable_mode") or "").upper()
+    if (
+        not simulation_comparables
+        and isinstance(email_html, str) and email_html.strip()
+        and row_status in {"SENT", "DELIVERY_UNKNOWN"}
+        and campaign_comparable_mode == "PRIMARY_COMPARABLES"
+        and not stale and not already_authorized
+    ):
+        surfaces = evidence.get("verified_property_surfaces_m2")
+        surfaces = surfaces if isinstance(surfaces, Mapping) else {}
+        unit_key = _position_unit_key(position.get("unit"))
+        surface_basis = "useful" if "util" in unit_key or "útil" in unit_key else "built" if "const" in unit_key else "land" if "terreno" in unit_key else ""
+        surface_ref_m2 = surfaces.get(surface_basis) if surface_basis else None
+        snapshot_count = _number_from_label(snapshot.get("comparable_count"))
+        email_count = _number_from_label(position.get("count"))
+        count_consistent = not (snapshot_count is not None and email_count is not None and int(snapshot_count) != int(email_count))
+        frozen_count = int(snapshot_count if snapshot_count is not None else email_count or 0)
+        frozen_current_price = snapshot.get("current_price")
+        frozen_recommended_price = snapshot.get("recommended_price")
+        frozen_adjustment = snapshot.get("recommended_adjustment_pct")
+        if (
+            surface_ref_m2 is not None and frozen_count >= 5 and count_consistent
+            and position.get("reference_value") and position.get("property_value")
+            and frozen_current_price is not None and frozen_recommended_price is not None
+            and frozen_adjustment is not None
+        ):
+            # Wave1 did not persist a full comparable model in its monthly
+            # snapshot. Use only the verified exact sent-email artifact plus
+            # the campaign's immutable prices/mode; never fetch current comps.
+            simulation_comparables = {
+                "source": "VERIFIED_SENT_EMAIL",
+                "campaign_comparable_mode": campaign_comparable_mode,
+                "evidence_level": "VERIFIED_SENT_EMAIL",
+                "positioning_mode": "PRICE_M2",
+                "count": frozen_count,
+                "reference_value": position.get("reference_value"),
+                "property_value": position.get("property_value"),
+                "surface_ref_m2": surface_ref_m2,
+                "unit": position.get("unit"),
+            }
+            simulation_property_state = {
+                **property_state,
+                "current_price": frozen_current_price,
+                "operation": operation,
+                "surface_ref_m2": surface_ref_m2,
+            }
+            # Simulation uses the campaign's immutable prices and adjustment,
+            # even if the portal later receives a newer monthly price snapshot.
+            simulation_current_price = frozen_current_price
+            simulation_recommended_price = frozen_recommended_price
+            simulation_adjustment = frozen_adjustment
+            from .campaign import _format_client_price
+            simulation_current_price_label = _format_client_price(frozen_current_price, operation)
+            simulation_recommended_price_label = _format_client_price(frozen_recommended_price, operation)
+            historical_email_comparable = True
     position_simulation = _position_simulation_data(
         position=position,
-        comparables=comparable_state,
+        comparables=simulation_comparables,
         communal=communal,
-        property_state=property_state,
-        current_price=current_price,
-        recommended_price=recommended_price,
-        current_price_label=current_price_label,
-        recommended_price_label=recommended_price_label,
-        adjustment=adjustment_value,
-        recommendation_is_monthly=recommendation.get("recommended_price") is not None,
+        property_state=simulation_property_state,
+        current_price=simulation_current_price,
+        recommended_price=simulation_recommended_price,
+        current_price_label=simulation_current_price_label,
+        recommended_price_label=simulation_recommended_price_label,
+        adjustment=simulation_adjustment,
+        recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
         stale=stale,
         already_authorized=already_authorized,
     )

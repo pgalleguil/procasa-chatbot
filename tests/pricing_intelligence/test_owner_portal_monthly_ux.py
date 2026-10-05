@@ -341,6 +341,84 @@ def test_comparable_position_simulation_fails_closed_on_weak_or_mismatched_data(
     assert _position_simulation_data(**{**args, "already_authorized": True})["available"] is False
 
 
+def test_sent_email_comparable_fallback_restores_position_bar_without_monthly_comparables():
+    from bs4 import BeautifulSoup
+
+    db = mongomock.MongoClient().test
+    owner, code = "owner@example.test", "5695"
+    key = owner_property_portal_id(code, owner)
+    monthly = {
+        "period": "2026-10",
+        # Even if a later monthly price exists, the email comparison must stay
+        # bound to the price actually sent with this campaign.
+        "current_price": 19000,
+        "property_media": {"verified_property_code": code},
+    }
+    db["owner_property_portals"].insert_one({
+        "_id": key, "owner_key": key, "property_code": code,
+        "current_portal_state": monthly, "monthly_snapshots": [monthly],
+    })
+    row = {
+        "campaign_id": "owner_price_sucre_wave1_20260928",
+        "property_code": code, "owner_email": owner, "send_status": "SENT",
+        "campaign_snapshot": {
+            "owner_email": owner, "operation": "VENTA", "current_price": 18507,
+            "recommended_price": 16656.3, "recommended_adjustment_pct": 10,
+            "comparable_mode": "PRIMARY_COMPARABLES", "comparable_count": 13,
+        },
+    }
+    campaign = {
+        "source": "WHATSAPP", "safe_mode": False, "already_authorized": False,
+        "operation": "Venta", "current_price_label": "18.507 UF",
+        "recommended_price_label": "16.656 UF", "recommended_adjustment_pct": 10,
+        "document_available": False,
+    }
+    # Minimal text extracted from the immutable sent-email HTML. The production
+    # route passes HTML only after artifact/ledger identity verification.
+    sent_email_html = """
+      <div class="single-heading">Departamento &#183; Talca</div>
+      <div class="single-operation">Venta &#183; Codigo 5695 &#183; 2D &#183; 2B &#183; m&#178; 140 m&#178; &#250;tiles</div>
+      <div class="evidence-badge-single">13 publicaciones</div>
+      <div class="position-ref-box">Referencia de mercado <b>91,1 UF/m&#178; &#250;til</b></div>
+      <div class="position-prop-box">Tu propiedad <b>132,2 UF/m&#178; &#250;til</b></div>
+    """
+    from owner_portal.monthly import extract_verified_email_evidence, _position_data
+    extracted = extract_verified_email_evidence(sent_email_html)
+    assert extracted.get("verified_property_surfaces_m2") == {"useful": 140.0}, extracted
+    assert _position_data(extracted, {}).get("count") == 13, extracted
+
+    view = build_monthly_portal_view(db, row, campaign, email_html=sent_email_html)
+    simulation = view["position_simulation"]
+    assert simulation["available"] is True, simulation
+    assert round(simulation["current_m2"], 1) == round(18507 / 140, 1)  # frozen campaign price, not monthly 19,000 UF
+    assert simulation["count"] == 13
+    assert simulation["surface_ref_m2"] == 140
+    assert round(simulation["current_m2"], 1) == 132.2
+    assert round(simulation["proposed_m2"], 1) == 119.0
+    assert round(simulation["current_gap_pct"]) == 45
+    assert round(simulation["proposed_gap_pct"]) == 31
+    assert simulation["communal_value"] is None  # No unverified communal value is inferred.
+
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    section = BeautifulSoup(html, "html.parser").select_one("[data-position-simulation]")
+    assert section is not None
+    assert section.select_one('[data-position-state="adjusted"]') is not None
+    assert section.select_one('[data-position-gap]').get_text(strip=True) == "45% sobre propiedades similares"
+    assert section.select_one('[data-point="property"]') is not None
+
+
+def test_sent_email_comparable_fallback_fails_closed_without_verified_surface():
+    from owner_portal.monthly import extract_verified_email_evidence
+
+    evidence = extract_verified_email_evidence("""
+      <div class="position-ref-box">Propiedades similares <b>91,1 UF/m² útil</b></div>
+      <div class="position-prop-box">Tu propiedad <b>132,2 UF/m² útil</b></div>
+    """)
+    assert evidence.get("verified_property_surfaces_m2") is None
+
+
 def test_previous_month_zero_and_unchanged_metrics_are_not_missing():
     from owner_portal.monthly import _previous_snapshot_changes
     old = {"period": "2026-09", "activity_90d": {"leads": 0, "visits": 0}}
@@ -365,7 +443,7 @@ def test_executive_directory_matches_exact_identity_and_never_guesses_photo():
     assert resolve_executive_contact(db, {"campaign_snapshot": {}}, {}, "Ana")["phone"] == ""
 
 
-PREMIUM_CASES = ("full", "zero", "no_previous", "previous", "no_phone", "no_photo", "photo_phone", "missing_macro", "material_gap", "no_gap", "stale", "authorized")
+PREMIUM_CASES = ("full", "zero", "no_previous", "previous", "no_phone", "no_photo", "photo_phone", "missing_macro", "material_gap", "no_gap", "historical_email", "stale", "authorized")
 
 
 def premium_fixture(case):
@@ -387,6 +465,9 @@ def premium_fixture(case):
     current["recommendation"]["diagnosis"] = current.pop("diagnosis")
     if case == "missing_macro": current["market_context"].pop("tpm")
     if case == "no_gap": current["comparables"].pop("property_value")
+    if case == "historical_email":
+        current.pop("comparables")
+        current.pop("communal_reference")
     if case in {"no_phone", "no_photo", "zero", "no_previous"}: current["executive"].pop("photo_url")
     if case in {"no_phone", "no_previous"}: current["executive"].pop("phone")
     previous = {"period": "2026-09", "activity_90d": {"leads": 0, "visits": 0}}
@@ -395,15 +476,25 @@ def premium_fixture(case):
     row = {"campaign_id": "owner_price_sucre_wave2_20260930", "property_code": code, "owner_email": owner,
         "send_status": "SKIPPED_STALE_OR_MISMATCH" if case == "stale" else "SENT", "executive_name": "Ejecutivo QA", "executive_email": "executive@example.test",
         "portal_access": {"expires_at": datetime.now(timezone.utc) + timedelta(days=90)},
-        "campaign_snapshot": {"owner_email": owner, "current_price": 18507, "recommended_price": 16656, "recommended_adjustment_pct": 10, "document_type": "COMMUNAL_MARKET_REPORT"}}
+        "campaign_snapshot": {"owner_email": owner, "current_price": 18507, "recommended_price": 16656, "recommended_adjustment_pct": 10, "document_type": "COMMUNAL_MARKET_REPORT",
+            **({"comparable_mode": "PRIMARY_COMPARABLES", "comparable_count": 13} if case == "historical_email" else {})}}
     campaign = {"logo_url": "/static/logo.png", "source": "EMAIL", "safe_mode": case == "stale", "already_authorized": case == "authorized", "can_authorize": case not in {"stale", "authorized"},
         "executive_name": "Ejecutivo QA", "operation": "Venta", "property_type": "Departamento", "commune": "Talca", "updated_label": "02-10-2026",
         "current_price_label": "18.507 UF", "recommended_price_label": "16.656 UF", "recommended_adjustment_pct": 10,
         "document_available": True, "document_type": "COMMUNAL_MARKET_REPORT", "report_url": "/report",
         "top_primary_url": "/accept", "top_advisor_url": "https://www.procasa.cl/advisor", "advisor_url": "https://www.procasa.cl/advisor", "sticky_primary_url": "/accept", "sticky_advisor_url": "/advisor"}
     from unittest.mock import patch
+    sent_email_html = None
+    if case == "historical_email":
+        sent_email_html = """
+          <div class="single-heading">Departamento &#183; Talca</div>
+          <div class="single-operation">Venta &#183; Codigo 5438 &#183; 2D &#183; 2B &#183; m&#178; 140 m&#178; &#250;tiles</div>
+          <div class="evidence-badge-single">13 publicaciones</div>
+          <div class="position-ref-box">Referencia de mercado <b>91,1 UF/m&#178; &#250;til</b></div>
+          <div class="position-prop-box">Tu propiedad <b>132,2 UF/m&#178; &#250;til</b></div>
+        """
     with patch.dict(os.environ, {"OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET": "local-fixture-secret"}):
-        return build_monthly_portal_view(db, row, campaign)
+        return build_monthly_portal_view(db, row, campaign, email_html=sent_email_html)
 
 
 def test_premium_fixture_matrix_safe_fields_and_layout_order():
@@ -476,6 +567,14 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert view["adjustment_headline_label"] == "10%"
             assert "1 lead" in view["recommendation_summary"] and "90 días" in view["recommendation_summary"]
             assert len(view["recommendation_details"]) == 3
+        if case == "historical_email":
+            simulation = view["position_simulation"]
+            assert simulation["available"] is True
+            assert simulation["current_m2_label"] == "132,2"
+            assert simulation["proposed_m2_label"] == "119,0"
+            assert round(simulation["current_gap_pct"]) == 45
+            assert round(simulation["proposed_gap_pct"]) == 31
+            assert simulation["communal_value"] is None
         if case == "zero":
             assert "0 leads" in view["recommendation_summary"]
             assert "0 conversaciones" in view["recommendation_summary"]

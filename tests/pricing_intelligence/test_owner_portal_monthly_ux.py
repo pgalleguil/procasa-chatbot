@@ -9,6 +9,7 @@ from owner_portal.monthly import (
     _activity_funnel,
     _gap_explanation,
     _normalize_market_context,
+    _market_context_property_interpretation,
     _static_position_data,
     _position_simulation_data,
     _recommendation_narrative,
@@ -22,6 +23,7 @@ from owner_portal.monthly import (
     resolve_owner_activity_90d,
     resolve_owner_commercial_funnel_90d,
 )
+from owner_portal.market_context import SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT, SEPTEMBER_2026_SEED, plan_seed
 
 
 def _view(db, *, snapshot=None, monthly=None, campaign_view=None, history=None, code="5438",
@@ -52,18 +54,334 @@ def _view(db, *, snapshot=None, monthly=None, campaign_view=None, history=None, 
     return build_monthly_portal_view(db, row, campaign)
 
 
-def test_market_context_has_three_compact_canonical_kpis():
+def _verified_market_indicator(kind, value, geography_level, geography_label, source, *, region=None, period="jun-ago 2026", **extra):
+    return {
+        "kind": kind, "value": value, "available": True, "verified": True,
+        "geography_level": geography_level, "geography_label": geography_label,
+        "source": source, "period_label": period, **({"region": region} if region else {}), **extra,
+    }
+
+
+def test_market_context_sale_rm_ranks_three_primary_kpis_and_moves_tpm_to_detail():
     result = _normalize_market_context({
-        "kpis": [
-            {"label": "Financiamiento hipotecario", "value": "4,1%", "note": "Promedio"},
-            {"label": "TPM", "value": "4,5%"},
-            {"label": "Demanda interna", "value": "Selectiva"},
+        "period": "2026-09", "indicators": [
+            _verified_market_indicator("MORTGAGE_REFERENCE", "4,08%", "REGION", "Región Metropolitana", "Banco Central", region="RM"),
+            _verified_market_indicator("UNEMPLOYMENT_RATE", "9,8%", "REGION", "Región Metropolitana", "INE", region="Metropolitana de Santiago"),
+            _verified_market_indicator("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central", period="septiembre 2026"),
+            _verified_market_indicator("REGIONAL_HOME_SALES", "-2,9%", "MARKET", "Gran Santiago", "CChC", geography_code="GRAN_SANTIAGO"),
         ],
-        "summary": "Una conclusión breve.",
+    }, operation="VENTA", region="Metropolitana de Santiago", commune="Vitacura")
+    assert [item["kind"] for item in result["visible_kpis"]] == [
+        "MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES",
+    ]
+    assert [item["kind"] for item in result["indicators"]] == [
+        "MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES", "TPM",
+    ]
+    assert len(result["visible_kpis"]) == 3
+    assert result["visible_kpis"][1]["note"].startswith("Región Metropolitana · jun-ago 2026")
+    assert result["reference_month"] == "septiembre 2026"
+    assert result["sources"] == "Banco Central · INE · CChC"
+
+
+def test_sale_valparaiso_never_uses_gran_santiago_and_prefers_its_region_unemployment():
+    result = _normalize_market_context({
+        "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", region="Región Metropolitana"),
+            _verified_market_indicator("UNEMPLOYMENT", "10,2%", "REGION", "Región de Valparaíso", "INE", region="Valparaíso"),
+            _verified_market_indicator("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central"),
+            _verified_market_indicator("HOME_SALES", "-2,9%", "REGION", "Gran Santiago", "CChC", region="Región Metropolitana"),
+        ],
+    }, operation="VENTA", region="Valparaíso", commune="Concón")
+    kinds = [item["kind"] for item in result["visible_kpis"]]
+    assert kinds == ["UNEMPLOYMENT", "TPM"]
+    assert result["visible_kpis"][0]["value"] == "10,2%"
+    assert all("Gran Santiago" not in item["note"] for item in result["visible_kpis"])
+
+
+def test_national_unemployment_is_labeled_chile_only_when_region_series_is_absent():
+    result = _normalize_market_context({"indicators": [
+        _verified_market_indicator("UNEMPLOYMENT", "9,6%", "NATIONAL", "Chile", "INE", period="jun-ago 2026"),
+    ]}, operation="VENTA", region="Biobío")
+    assert result["visible_kpis"][0]["value"] == "9,6%"
+    assert result["visible_kpis"][0]["note"] == "Chile · jun-ago 2026"
+
+
+def test_rm_only_mortgage_series_is_not_used_for_valparaiso():
+    result = _normalize_market_context({"indicators": [
+        _verified_market_indicator("MORTGAGE_REFERENCE", "4,1%", "NATIONAL", "Chile", "Banco Central", methodology_region="Región Metropolitana"),
+    ]}, operation="VENTA", region="Valparaíso")
+    assert result is None
+
+
+@pytest.mark.parametrize("region", ["Región Metropolitana", "Valparaíso"])
+def test_rent_context_uses_unemployment_real_wages_and_cpi_without_sale_metrics(region):
+    result = _normalize_market_context({
+        "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", region="Región Metropolitana"),
+            _verified_market_indicator("UNEMPLOYMENT", "10,2%", "REGION", "Región de Valparaíso", "INE", region="Valparaíso"),
+            _verified_market_indicator("REAL_WAGES", "+4,1%", "NATIONAL", "Chile", "INE"),
+            _verified_market_indicator("CPI", "4,1%", "NATIONAL", "Chile", "INE"),
+            _verified_market_indicator("MORTGAGE_RATE", "4,1%", "NATIONAL", "Chile", "Banco Central"),
+            _verified_market_indicator("FOGAES", "Competencia", "NATIONAL", "Chile", "MINVU", verified=True),
+        ],
+    }, operation="ARRIENDO", region=region, commune="Santiago")
+    assert [item["kind"] for item in result["visible_kpis"]] == ["UNEMPLOYMENT", "REAL_WAGES", "CPI"]
+    assert result["visible_kpis"][0]["value"] == ("9,8%" if "Metropolitana" in region else "10,2%")
+    assert "capacidad de pago" in result["summary"]
+    assert "MORTGAGE_REFERENCE" not in [item["kind"] for item in result["indicators"]]
+    assert "NEW_HOUSING_COMPETITION" not in [item["kind"] for item in result["indicators"]]
+
+
+def test_market_context_formats_numeric_changes_and_unemployment_yoy_points():
+    result = _normalize_market_context({"indicators": [
+        _verified_market_indicator("UNEMPLOYMENT", 9.6, "NATIONAL", "Chile", "INE", period="jun-ago 2026", unemployment_yoy_change_pp=0.4),
+        _verified_market_indicator("REAL_WAGES", 104.1, "NATIONAL", "Chile", "INE", period="julio 2026", change=4.1),
+        _verified_market_indicator("CPI", 100, "NATIONAL", "Chile", "INE", period="agosto 2026", change=4.1),
+    ]}, operation="ARRIENDO", region="Biobío")
+    assert result["visible_kpis"][0]["value"] == "9,6%"
+    assert "Variación anual +0,4 pp" in result["visible_kpis"][0]["note"]
+    assert result["visible_kpis"][1]["value"] == "+4,1%"
+    assert result["visible_kpis"][2]["value"] == "+4,1%"
+
+
+def test_market_context_rejects_unverified_legacy_and_unmatched_region():
+    assert _normalize_market_context(
+        {"kpis": [{"label": "TPM", "value": "4,5%"}], "summary": "Dato antiguo."},
+        operation="VENTA", region="Valparaíso",
+    ) is None
+    result = _normalize_market_context({
+        "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", region="Región Metropolitana"),
+        ],
+    }, operation="VENTA", region="Valparaíso")
+    assert result is None
+
+
+def test_market_context_canonical_store_is_exact_period_and_operation_aware():
+    db = mongomock.MongoClient().test
+    sale_context = [item.copy() for item in SEPTEMBER_2026_SEED]
+    db.market_context_snapshots.insert_many(sale_context)
+    september = _view(db, monthly={
+        "period": "2026-09", "operation": "VENTA", "region": "Región Metropolitana",
+        "commune": "Vitacura", "property": {"current_price": 5000},
+    }, campaign_view={"operation": "Venta"})
+    assert [item["kind"] for item in september["market_context"]["visible_kpis"]] == [
+        "MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES",
+    ]
+    assert "TPM" in [item["kind"] for item in september["market_context"]["indicators"]]
+    assert september["market_context"]["visible_kpis"][0]["geography_label"] == "Región Metropolitana"
+
+    october = _view(db, monthly={
+        "period": "2026-10", "operation": "VENTA", "region": "Región Metropolitana", "commune": "Vitacura",
+    }, campaign_view={"operation": "Venta"}, code="5439")
+    assert october["market_context"] is None
+
+
+def test_market_context_canonical_rental_excludes_sale_only_series_and_qa_rental_data():
+    db = mongomock.MongoClient().test
+    db.market_context_snapshots.insert_many([item.copy() for item in SEPTEMBER_2026_SEED])
+    view = _view(db, monthly={
+        "period": "2026-09", "operation": "ARRIENDO", "region": "Región de Valparaíso", "commune": "Concón",
+    }, campaign_view={"operation": "Arriendo"})
+    kinds = [item["kind"] for item in view["market_context"]["visible_kpis"]]
+    assert kinds == ["UNEMPLOYMENT", "REAL_WAGES", "CPI"]
+    assert "MORTGAGE_REFERENCE" not in kinds
+    assert "REGIONAL_RENTAL_INDICATOR" not in kinds
+    assert all("Gran Santiago" not in item["note"] for item in view["market_context"]["visible_kpis"])
+    assert view["market_context"]["visible_kpis"][0]["value"] == "10,2%"
+
+    sale = _view(db, monthly={
+        "period": "2026-09", "operation": "VENTA", "region": "Región de Valparaíso", "commune": "Concón",
+    }, campaign_view={"operation": "Venta"}, code="5440")
+    sale_kpis = sale["market_context"]["visible_kpis"]
+    assert [item["kind"] for item in sale_kpis] == ["UNEMPLOYMENT", "TPM"]
+    assert all(item["geography_label"] != "Chile" or item["kind"] == "TPM" for item in sale_kpis)
+    assert all(item["kind"] != "MORTGAGE_REFERENCE" for item in sale_kpis)
+    assert all(item["kind"] != "REGIONAL_HOME_SALES" for item in sale_kpis)
+
+
+def test_market_context_seed_is_idempotent_and_conflicts_fail_closed():
+    empty_plan = plan_seed([])
+    assert len(SEPTEMBER_2026_SEED) == len(empty_plan["inserts"]) == 22
+    assert not empty_plan["updates"] and not empty_plan["unchanged"] and not empty_plan["conflicts"]
+    same_plan = plan_seed(SEPTEMBER_2026_SEED)
+    assert len(same_plan["unchanged"]) == 22
+    assert not same_plan["inserts"] and not same_plan["updates"]
+    duplicate_plan = plan_seed([*SEPTEMBER_2026_SEED, SEPTEMBER_2026_SEED[0]])
+    assert len(duplicate_plan["conflicts"]) == 1
+    assert len(SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT) == 16
+    assert len({item["geography_code"] for item in SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT}) == 16
+    assert all(
+        item["verified"] is True and item["active"] is True
+        and item["source_name"].startswith("INE")
+        and item["source_reference"].startswith("https://")
+        and item["observation_period"] == "jun-ago 2026"
+        for item in SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT
+    )
+    assert all(item["indicator_kind"] != "REGIONAL_RENTAL_INDICATOR" for item in SEPTEMBER_2026_SEED)
+    assert all(item["indicator_kind"] != "FOGAES_CONTEXT" for item in SEPTEMBER_2026_SEED)
+
+
+@pytest.mark.parametrize("operation,region", [
+    ("VENTA", "Región Metropolitana"),
+    ("VENTA", "Región de Valparaíso"),
+    ("ARRIENDO", "Región Metropolitana"),
+    ("ARRIENDO", "Región de Valparaíso"),
+])
+def test_every_sale_rent_region_fixture_caps_primary_kpis_at_three(operation, region):
+    context = {"period": "2026-09", "indicators": [
+        dict(item, kind=item["indicator_kind"], source=item["source_name"],
+             period_label=item["observation_period"], available=True,
+             relevant_for=item["relevant_operations"])
+        for item in SEPTEMBER_2026_SEED
+    ]}
+    result = _normalize_market_context(context, operation=operation, region=region, commune="Santiago")
+    assert result is not None
+    assert len(result["visible_kpis"]) <= 3
+    if operation == "VENTA" and region == "Región Metropolitana":
+        assert [item["kind"] for item in result["visible_kpis"]] == [
+            "MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES",
+        ]
+        assert "TPM" in [item["kind"] for item in result["indicators"]]
+    if operation == "ARRIENDO":
+        assert [item["kind"] for item in result["visible_kpis"]] == ["UNEMPLOYMENT", "REAL_WAGES", "CPI"]
+
+
+def test_rendered_market_context_template_hard_caps_kpis_even_if_view_contains_four():
+    from bs4 import BeautifulSoup
+    template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
+    view = premium_fixture("full")
+    view["market_context"]["visible_kpis"] = [
+        {"label": f"KPI {index}", "value": str(index), "note": "Chile", "meaning": "Contexto"}
+        for index in range(1, 5)
+    ]
+    soup = BeautifulSoup(template.render(view=view), "html.parser")
+    assert len(soup.select(".market-kpi")) == 3
+    assert soup.select_one(".market-kpis")["data-kpi-count"] == "3"
+
+
+def test_embedded_qa_rental_indicator_is_not_promoted_without_canonical_snapshot():
+    db = mongomock.MongoClient().URLS
+    view = _view(db, code="market-context-qa-rental", monthly={
+        "period": "2026-09", "operation": "ARRIENDO", "region": "Región Metropolitana",
+        "market_context": {"period": "2026-09", "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", period="jun-ago 2026", region="RM"),
+            _verified_market_indicator("REAL_WAGES", "+4,1%", "NATIONAL", "Chile", "INE", period="julio 2026"),
+            _verified_market_indicator("REGIONAL_RENTAL_INDICATOR", "Vacancia estable", "REGION", "Región Metropolitana", "QA visual", region="RM"),
+            _verified_market_indicator("CPI", "+4,1%", "NATIONAL", "Chile", "INE", period="agosto 2026"),
+        ]},
     })
-    assert [item["label"] for item in result["kpis"]] == ["Hipotecario", "TPM", "Demanda"]
-    assert [item["value"] for item in result["kpis"]] == ["4,1%", "4,5%", "Selectiva"]
-    assert len(result["kpis"]) == 3
+    context = view["market_context"]
+    assert "REGIONAL_RENTAL_INDICATOR" not in [item["kind"] for item in context["indicators"]]
+    assert [item["kind"] for item in context["visible_kpis"]] == ["UNEMPLOYMENT", "REAL_WAGES", "CPI"]
+    assert all("Vacancia estable" not in str(item) for item in context.values())
+
+
+def test_rental_indicator_requires_observation_period_and_explicit_region():
+    missing_period = _verified_market_indicator("REGIONAL_RENTAL_INDICATOR", "Vacancia estable", "REGION", "Región Metropolitana", "INE", region="RM")
+    missing_period.pop("period_label")
+    missing_geography = _verified_market_indicator("REGIONAL_RENTAL_INDICATOR", "Vacancia estable", "NATIONAL", "Chile", "INE")
+    for indicator in (missing_period, missing_geography):
+        assert _normalize_market_context({"indicators": [indicator]}, operation="ARRIENDO", region="Región Metropolitana") is None
+
+
+def test_market_context_disclosure_label_tracks_open_state():
+    from bs4 import BeautifulSoup
+    template = Environment(loader=FileSystemLoader("templates")).get_template("owner_campaign_monthly_portal.html")
+    view = premium_fixture("full")
+    soup = BeautifulSoup(template.render(view=view), "html.parser")
+    disclosure = soup.select_one("details.market-context-more")
+    assert disclosure is not None
+    assert len(soup.select(".market-kpi")) <= 3
+    assert soup.select_one(".market-property-reading strong").get_text(strip=True) == "Qué significa para tu propiedad"
+    assert disclosure.select_one("summary .market-context-more__closed").get_text(strip=True) == "Ver más"
+    assert disclosure.select_one("summary .market-context-more__open").get_text(strip=True) == "Ver menos"
+    css = template.render(view=view)
+    assert ".market-context-more[open] .market-context-more__open { display:inline; }" in css
+    assert '.market-context-more summary::after { content:"↓";' in css
+    assert '.market-context-more[open] summary::after { content:"↑";' in css
+
+
+def test_sale_property_interpretation_uses_verified_signals_and_current_recommended_gaps():
+    copy = _market_context_property_interpretation(
+        context={"operation": "VENTA", "visible_kpis": [
+            {"kind": "MORTGAGE_REFERENCE"}, {"kind": "UNEMPLOYMENT"},
+        ]},
+        funnel={"stages": [
+            {"key": "LEADS", "count": 1, "status": "VERIFIED"},
+            {"key": "VISITS", "count": 0, "status": "VERIFIED"},
+            {"key": "OFFERS", "count": None, "status": "NOT_INSTRUMENTED"},
+            {"key": "CLOSINGS", "count": None, "status": "NOT_INSTRUMENTED"},
+        ]},
+        publication_presence={"source_status": "VERIFIED", "publication_channel_count": 7},
+        market_position={
+            "count": 13, "unit": "UF/m² útil",
+            "property_current_gaps": [{"kind": "COMPARABLE", "text": "+45,1% vs similares"}],
+            "property_recommended_gaps": [{"kind": "COMPARABLE", "text": "+30,6% vs similares"}],
+        },
+    )
+    assert "1 consulta" in copy and "ninguna visita coordinada" in copy
+    assert "7 portales" in copy
+    assert "su precio por m² se encuentra 45,1% por sobre la referencia de 13 propiedades similares" in copy
+    assert "reduciría la diferencia frente a similares de +45,1% a +30,6%" in copy
+    assert "ofertas" not in copy and "cierres" not in copy
+    assert not any(term in copy.casefold() for term in ("causó", "debido al desempleo", "por culpa de"))
+
+
+def test_rent_property_interpretation_uses_rent_signals_without_sale_or_mortgage_claims():
+    copy = _market_context_property_interpretation(
+        context={"operation": "ARRIENDO", "visible_kpis": [
+            {"kind": "UNEMPLOYMENT"}, {"kind": "REAL_WAGES"}, {"kind": "CPI"},
+        ]},
+        funnel={"stages": [
+            {"key": "LEADS", "count": 2, "status": "VERIFIED"},
+            {"key": "VISITS", "count": None, "status": "NOT_INSTRUMENTED"},
+        ]},
+        publication_presence={"source_status": "VERIFIED", "publication_channel_count": 5},
+        market_position={
+            "count": 8, "unit": "UF/m²/mes",
+            "property_current_gaps": [{"kind": "COMPARABLE", "text": "+12,4% vs similares"}],
+            "property_recommended_gaps": [{"kind": "COMPARABLE", "text": "+4,2% vs similares"}],
+        },
+    )
+    assert copy.startswith("En arriendo, el empleo, la evolución de los ingresos reales y el costo de vida")
+    assert "2 consultas" in copy and "5 portales" in copy
+    assert "su valor de arriendo por m²" in copy
+    assert "financiamiento hipotecario" not in copy.casefold()
+    assert "ventas de viviendas" not in copy.casefold()
+    assert "0 visitas" not in copy
+
+
+def test_rent_regional_indicator_is_primary_and_cpi_moves_to_details():
+    result = _normalize_market_context({"indicators": [
+        _verified_market_indicator("UNEMPLOYMENT", 9.8, "REGION", "Región Metropolitana", "INE", region="RM"),
+        _verified_market_indicator("REAL_WAGES", 4.1, "NATIONAL", "Chile", "INE", change=4.1),
+        _verified_market_indicator("REGIONAL_RENTAL_INDICATOR", "3,2%", "REGION", "Región Metropolitana", "Fuente de arriendo", region="RM"),
+        _verified_market_indicator("CPI", 4.1, "NATIONAL", "Chile", "INE", change=4.1),
+    ]}, operation="ARRIENDO", region="Región Metropolitana")
+    assert [item["kind"] for item in result["visible_kpis"]] == [
+        "UNEMPLOYMENT", "REAL_WAGES", "REGIONAL_RENTAL_INDICATOR",
+    ]
+    assert len(result["visible_kpis"]) == 3
+    assert any("Costo de vida" == block["title"] for block in result["detail_blocks"])
+
+
+def test_fogaes_is_only_competition_context_for_verified_comparable_price_band():
+    context = {"indicators": [
+        _verified_market_indicator("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central"),
+        _verified_market_indicator(
+            "FOGAES", "Vivienda nueva elegible", "NATIONAL", "Chile", "MINVU",
+            program_eligible=True, price_range_comparable=True,
+            eligible_price_low_uf=1000, eligible_price_high_uf=4000,
+        ),
+    ]}
+    used = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500, property_condition="USED")
+    new = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500, property_condition="NEW")
+    assert any(item["title"] == "Competencia de vivienda nueva" for item in used["detail_blocks"])
+    assert any(item["title"] == "Competencia de vivienda nueva" for item in new["detail_blocks"])
+    assert all("beneficio" not in item["body"].casefold() for item in used["detail_blocks"])
+    unknown = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500)
+    assert all(item["title"] != "Competencia de vivienda nueva" for item in unknown["detail_blocks"])
 
 
 def test_gap_explanation_only_appears_for_material_verified_gap():
@@ -1921,10 +2239,12 @@ def test_top_and_sticky_whatsapp_render_only_when_signed_urls_exist():
 
 
 def test_missing_market_metrics_never_create_empty_cards():
-    context = _normalize_market_context({"kpis": [{"label": "TPM", "value": "4,5%"}], "summary": "Resumen verificado."})
-    assert len(context["kpis"]) == 1 and context["kpis"][0]["label"] == "TPM"
-    assert _normalize_market_context({"summary": "Resumen verificado."})["kpis"] == []
-    assert _normalize_market_context({"kpis": [{"label": "TPM", "value": None}]}) is None
+    assert _normalize_market_context(
+        {"kpis": [{"label": "TPM", "value": "4,5%"}], "summary": "Resumen no verificado."},
+        operation="VENTA", region="Valparaíso",
+    ) is None
+    assert _normalize_market_context({"summary": "Resumen verificado."}, operation="VENTA") is None
+    assert _normalize_market_context({"indicators": [{"kind": "TPM", "value": None}]}, operation="VENTA") is None
 
 
 def test_market_position_requires_compatible_units_and_preserves_zero():
@@ -2203,10 +2523,13 @@ def premium_fixture(case, comparable_count=13):
     code, owner = "5438", "owner@example.test"
     key = owner_property_portal_id(code, owner)
     current = {
-        "period": "2026-10", "property": {"property_type": "Departamento", "commune": "Talca", "operation": "VENTA", "current_price": 18507, "surface_ref_m2": 140},
+        "period": "2026-10", "property": {"property_type": "Departamento", "commune": "Talca", "region": "Región del Maule", "operation": "VENTA", "current_price": 18507, "surface_ref_m2": 140},
         "property_media": {"public_page_url": "https://www.procasa.cl/5438", "hero_image_url": "https://demoazimg.prop360.cl/procasa/img/propiedades/5438_main.JPEG", "verified_property_code": code, "public_page_active": True, "image_source": "PROCASA_PUBLIC_PROPERTY"},
         "activity_90d": {"leads": 0 if case == "zero" else 1, "conversations": 0, "visits": 0, "source_date": "2026-10-02"},
-        "market_context": {"mortgage_rate": "4,1%", "tpm": "4,5%", "demand_status": "Selectiva", "reference_month": "Octubre 2026", "source_date": "2026-10-01", "summary": "El financiamiento y una demanda más selectiva hacen que el posicionamiento de precio sea especialmente relevante. " * 3},
+        "market_context": {"period": "2026-10", "reference_month": "Octubre 2026", "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", "8,1%", "REGION", "Región del Maule", "INE", region="Región del Maule"),
+            _verified_market_indicator("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central"),
+        ]},
         "comparables": {"count": comparable_count, "evidence_level": "HIGH", "version": "cluster_v2", "positioning_mode": "PRICE_M2", "reference_value": 91.1, "property_value": 132.2, "surface_ref_m2": 140, "unit": "UF/m² útil", "area_basis": "USEFUL", "source_date": "2026-09-30", "analysis_generated_at": "2026-09-30"},
         "communal_reference": {"offer_uf_m2": 102.8, "reference_unit": "UF/m² de oferta", "summary": "102,8 UF/m² de oferta · 2.867 publicaciones activas", "universe_value": "2.867", "universe_unit": "publicaciones activas", "source_date": "2026-04-28"},
         "diagnosis": "Las consultas todavía no se han traducido en conversaciones ni visitas coordinadas. Conviene observar la respuesta comercial y revisar el posicionamiento frente a alternativas disponibles. " * 3,
@@ -2214,7 +2537,8 @@ def premium_fixture(case, comparable_count=13):
         "executive": {"name": "Ejecutivo QA", "email": "executive@example.test", "phone": "+56 9 1234 5678", "role": "Ejecutivo PROCASA", "photo_url": "/static/qa_executive.png", "photo_verified": True},
     }
     current["recommendation"]["diagnosis"] = current.pop("diagnosis")
-    if case == "missing_macro": current["market_context"].pop("tpm")
+    if case == "missing_macro":
+        current["market_context"]["indicators"] = [item for item in current["market_context"]["indicators"] if item["kind"] != "TPM"]
     if case == "no_gap": current["comparables"].pop("property_value")
     if case == "historical_email":
         current.pop("comparables")
@@ -2258,7 +2582,8 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
         assert soup.select_one(".hero-photo") and view["property_code"] == "5438"
         assert soup.select_one(".executive-avatar span")
         assert "-webkit-line-clamp" not in html
-        assert len(soup.select("details.expandable")) >= (0 if case == "stale" else 1)
+        assert len(soup.select("details.market-context-more")) >= (0 if case == "stale" else 1)
+        assert all(not details.has_attr("open") for details in soup.select("details.market-context-more"))
         diagnosis = soup.select_one("#diagnosis-title")
         if diagnosis:
             diagnosis_section = diagnosis.find_parent("section")
@@ -2275,7 +2600,7 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert not soup.select_one(".executive-avatar img")
         if case == "photo_phone":
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
-        if case == "missing_macro": assert len(soup.select(".market-kpi")) == 2
+        if case == "missing_macro": assert len(soup.select(".market-kpi")) == 1
         if case == "no_gap":
             assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "1 fuente disponible"
             assert not soup.select_one(".position-kpi.above, .position-kpi.below")

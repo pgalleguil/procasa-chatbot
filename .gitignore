@@ -59,6 +59,7 @@ scripts/
 scripts/*
 !scripts/run_crm_sla_alert_persist_canary.py
 !scripts/run_crm_sla_alert_send_canary.py
+!scripts/seed_market_context_snapshots.py
 !scripts/report_crm_sla_alerts.py
 !scripts/report_leads_por_canal.py
 !scripts/report_propiedades_problema.py

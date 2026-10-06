@@ -79,12 +79,28 @@
     .kpi-note { margin-top:2px; color:#747d93; font-size:10.5px; line-height:1.25; }
     .market-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:9px; }
     .market-period { padding:4px 8px; border-radius:999px; background:#f0efff; color:var(--body); font-size:10.5px; white-space:nowrap; }
-    .market-kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+    .market-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr)); gap:7px; }
     .market-kpi { min-width:0; padding:9px; border:1px solid #e9eaf3; border-radius:10px; background:#fbfbfe; }
     .market-kpi small { display:block; color:var(--body); font-size:10px; line-height:1.25; }
     .market-kpi strong { display:block; margin-top:3px; font-size:15px; line-height:1.2; overflow-wrap:anywhere; }
     .market-kpi small { color:var(--body); font-size:10.5px; }
-    .market-summary { margin:8px 0 0; color:var(--body); font-size:11px; }
+    .market-kpi .market-kpi__meaning { margin-top:4px; color:var(--brand); font-size:9.5px; font-weight:650; }
+    .market-property-reading { margin-top:11px; }
+    .market-property-reading strong { display:block; color:var(--ink); font-size:11.5px; }
+    .market-property-reading p { margin:4px 0 0; color:var(--body); font-size:11px; line-height:1.5; }
+    .market-context-more { margin-top:8px; border-top:1px solid #eeedf4; }
+    .market-context-more summary { display:flex; align-items:center; min-height:42px; color:var(--brand); font-size:11px; font-weight:650; cursor:pointer; list-style:none; }
+    .market-context-more summary::-webkit-details-marker { display:none; }
+    .market-context-more summary::after { content:"↓"; margin-left:5px; }
+    .market-context-more[open] summary::after { content:"↑"; }
+    .market-context-more__open { display:none; }
+    .market-context-more[open] .market-context-more__closed { display:none; }
+    .market-context-more[open] .market-context-more__open { display:inline; }
+    .market-context-details { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr)); gap:7px; }
+    .market-context-detail { min-width:0; padding:8px; border-radius:8px; background:#f8f8fb; }
+    .market-context-detail strong { display:block; color:var(--ink); font-size:10.5px; line-height:1.3; }
+    .market-context-detail p { margin:3px 0 0; color:var(--body); font-size:10.5px; line-height:1.4; }
+    .market-context-detail small { display:block; margin-top:4px; color:#7a8398; font-size:9.5px; line-height:1.35; }
     .source-note { margin:6px 0 0; color:#7a8398; font-size:10.5px; }
     .source-date-note { margin:-4px 0 8px 34px; color:#7a8398; font-size:10.5px; }
     .activity-funnel { --funnel-base:#5548b5; position:relative; display:grid; width:min(100%,560px); gap:10px; margin:10px auto 2px; }
@@ -441,7 +457,6 @@
     .position-kpi.below { background:#f3faf5; }
     .market-head,.position-top { flex-wrap:wrap; }
     .market-period { white-space:normal; }
-    .market-summary { margin:8px 0 0; }
     .expandable { color:var(--body); font-size:12px; }
     .expandable summary { cursor:pointer; display:block; list-style:none; }
     .expandable summary::-webkit-details-marker { display:none; }
@@ -703,8 +718,9 @@
   {% if view.market_context %}
   <section class="card" aria-labelledby="market-title">
     <div class="market-head"><h2 class="section-heading" id="market-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Contexto del mercado inmobiliario</h2>{% if view.market_context.reference_month %}<span class="market-period">{{ view.market_context.reference_month }}</span>{% endif %}</div>
-    {% if view.market_context.kpis %}<div class="market-kpis" style="grid-template-columns:repeat({{ view.market_context.kpis|length }},minmax(0,1fr))">{% for item in view.market_context.kpis[:3] %}<div class="market-kpi"><small>{{ item.label or 'Indicador' }}</small><strong>{{ item.value or 'No disponible' }}</strong>{% if item.note %}<small>{{ item.note }}</small>{% endif %}</div>{% endfor %}</div>{% endif %}
-    {% if view.market_context.summary %}{{ expandable(view.market_context.summary, 180, 'market-summary') }}{% endif %}
+    {% if view.market_context.visible_kpis %}<div class="market-kpis" data-kpi-count="{{ view.market_context.visible_kpis[:3]|length }}">{% for item in view.market_context.visible_kpis[:3] %}<div class="market-kpi"><small>{{ item.label }}</small><strong>{{ item.value }}</strong><small>{{ item.note }}</small><small class="market-kpi__meaning">{{ item.meaning }}</small></div>{% endfor %}</div>{% endif %}
+    {% if view.market_context.property_interpretation %}<div class="market-property-reading"><strong>Qué significa para tu propiedad</strong><p>{{ view.market_context.property_interpretation }}</p></div>{% endif %}
+    {% if view.market_context.detail_blocks %}<details class="market-context-more"><summary><span class="market-context-more__closed">Ver más</span><span class="market-context-more__open">Ver menos</span></summary><div class="market-context-details">{% for block in view.market_context.detail_blocks %}<div class="market-context-detail"><strong>{{ block.title }}</strong><p>{{ block.body }}</p>{% if block.context %}<small>{{ block.context }}</small>{% endif %}</div>{% endfor %}</div></details>{% endif %}
     {% if view.market_context.source_date %}<p class="source-note">Corte: {{ view.market_context.source_date }}</p>{% endif %}
     {% if view.market_context.sources %}<p class="source-note">Fuentes: {{ view.market_context.sources }}</p>{% endif %}
   </section>

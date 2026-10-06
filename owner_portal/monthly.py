@@ -2954,18 +2954,6 @@ _MARKET_CONTEXT_LABELS = {
     "REGIONAL_RENTAL_INDICATOR": "Mercado de arriendo",
     "NEW_HOUSING_COMPETITION": "Competencia de vivienda nueva",
 }
-_MARKET_CONTEXT_MEANINGS = {
-    "MORTGAGE_REFERENCE": "Financiamiento comprador",
-    "UNEMPLOYMENT": "Mercado laboral",
-    "TPM": "Condiciones financieras",
-    "REGIONAL_HOME_SALES": "Actividad del mercado",
-    "REAL_WAGES": "Capacidad de pago",
-    "CPI": "Costo de vida",
-    "REGIONAL_RENTAL_INDICATOR": "Mercado de arriendo",
-    "NEW_HOUSING_COMPETITION": "Vivienda nueva",
-}
-
-
 def _market_context_fold(value: Any) -> str:
     text = unicodedata.normalize("NFKD", _text(value).casefold())
     return "".join(char for char in text if not unicodedata.combining(char))
@@ -3035,19 +3023,257 @@ def _market_context_geo(indicator: Mapping[str, Any], *, region: str, commune: s
     return False, "", 0
 
 
-def _market_context_detail(kind: str, operation: str) -> str:
-    details = {
-        "MORTGAGE_REFERENCE": "La tasa de referencia contextualiza las condiciones de financiamiento para la compra.",
-        "UNEMPLOYMENT": "El mercado laboral puede influir en la confianza, la estabilidad de ingresos y la capacidad de pago de los hogares.",
-        "TPM": "La TPM resume la orientación de la política monetaria nacional.",
-        "REGIONAL_HOME_SALES": "Este indicador resume la actividad de ventas en la geografía identificada por la fuente.",
-        "REAL_WAGES": "Las remuneraciones reales muestran la evolución de los ingresos descontando la inflación.",
-        "CPI": "El IPC aporta contexto sobre el costo de vida; no representa la variación de los arriendos.",
-        "REGIONAL_RENTAL_INDICATOR": "Este indicador resume el mercado de arriendo en la geografía identificada por la fuente.",
-    }
-    if kind == "UNEMPLOYMENT" and operation == "VENTA":
-        return "Un mercado laboral más débil puede aumentar la cautela de los hogares al asumir compromisos de largo plazo."
-    return details.get(kind, "")
+def _market_context_numeric_value(item: Mapping[str, Any]) -> float | None:
+    value = item.get("numeric_value", item.get("value"))
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return _number_from_label(value)
+
+
+def _market_context_trend(current: Any, previous: Any) -> str:
+    current_number = _number_from_label(current)
+    previous_number = _number_from_label(previous)
+    if current_number is None or previous_number is None:
+        return "NO_PREVIOUS_DATA"
+    difference = current_number - previous_number
+    if abs(difference) <= 0.05:
+        return "STABLE"
+    return "RISING" if difference > 0 else "FALLING"
+
+
+def _market_context_period_phrase(value: Any) -> str:
+    period = _text(value)
+    quarter = re.search(r"\b([1-4])\s*T\s*(\d{4})\b", period, flags=re.IGNORECASE)
+    if quarter:
+        ordinal = {"1": "primer", "2": "segundo", "3": "tercer", "4": "cuarto"}[quarter.group(1)]
+        return f"el {ordinal} trimestre de {quarter.group(2)}"
+    month_year = re.fullmatch(r"([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{4})(?:\s*·.*)?", period)
+    if month_year:
+        return f"{month_year.group(1).casefold()} de {month_year.group(2)}"
+    return period
+
+
+def _market_context_detail(item: Mapping[str, Any], family: str) -> str:
+    """Narrate observed macro signals conditionally, without defining indicators."""
+    kind = _text(item.get("kind"))
+    current = _text(item.get("value"))
+    previous = _text(item.get("previous_value"))
+    trend = _text(item.get("trend_status")) or "NO_PREVIOUS_DATA"
+    period = _market_context_period_phrase(item.get("period"))
+    region = _text(item.get("geography_label")) or "la región"
+
+    if kind == "MORTGAGE_REFERENCE" and family == "VENTA_RM":
+        start = "La tasa hipotecaria de referencia en la Región Metropolitana"
+        if trend == "FALLING":
+            return f"{start} bajó de {previous} a {current}. La reducción mejora gradualmente las condiciones de financiamiento para compradores que dependen de crédito, aunque el precio de entrada y el dividendo continúan siendo factores relevantes al comparar alternativas."
+        if trend == "RISING":
+            return f"{start} subió de {previous} a {current}. El mayor costo del financiamiento puede aumentar la sensibilidad de los compradores al precio y al dividendo asociado a la propiedad."
+        if trend == "STABLE":
+            return f"{start} se mantiene prácticamente sin cambios en {current}. El costo del financiamiento no muestra una variación relevante respecto del período anterior, por lo que precio y condiciones de compra continúan teniendo un peso importante en la decisión."
+        return f"{start} se ubica en {current}. El financiamiento continúa siendo una variable relevante en la decisión de compra, especialmente para hogares que dependen de crédito. Sin una comparación anterior verificada, no corresponde interpretar esta cifra como una mejora o deterioro de las condiciones de financiamiento."
+
+    if kind == "UNEMPLOYMENT":
+        national = item.get("national_comparison") if isinstance(item.get("national_comparison"), Mapping) else {}
+        national_value = _text(national.get("value"))
+        regional_number = _market_context_numeric_value(item)
+        national_number = _market_context_numeric_value(national)
+        if not national_value or regional_number is None or national_number is None:
+            base = f"La desocupación en {region} alcanza {current}. No hay una comparación nacional verificada para el mismo período, por lo que no corresponde establecer una diferencia territorial."
+        else:
+            difference = regional_number - national_number
+            if difference > 0.1:
+                relative = "levemente por sobre" if difference <= 0.3 else "por sobre"
+                base = f"La desocupación en {region} alcanza {current}, {relative} el {national_value} registrado a nivel nacional. Esto muestra un mercado laboral regional relativamente menos favorable que el promedio del país, un escenario que puede reforzar la cautela de los hogares frente a compromisos financieros relevantes."
+                if trend == "RISING":
+                    base += " Además, la tasa aumentó respecto del período anterior, reforzando esa señal de mayor cautela."
+                elif trend == "FALLING":
+                    base += " Sin embargo, la tasa disminuyó respecto del período anterior, lo que representa una mejora relativa dentro de un nivel que todavía se mantiene por sobre el promedio nacional."
+                elif trend == "STABLE":
+                    base += " La tasa se mantiene prácticamente sin cambios respecto del período anterior."
+            elif difference < -0.1:
+                relative = "levemente por debajo del" if difference >= -0.3 else "por debajo del"
+                base = f"La desocupación en {region} alcanza {current}, {relative} {national_value} nacional. El mercado laboral regional presenta así una condición relativamente más favorable que el promedio del país, lo que entrega un contexto algo más favorable para la capacidad de los hogares de asumir compromisos."
+                if trend == "RISING":
+                    base += " En el período más reciente, la tasa aumentó, moderando esa señal favorable."
+                elif trend == "FALLING":
+                    base += " Además, la tasa disminuyó respecto del período anterior, reforzando la mejora observada."
+                elif trend == "STABLE":
+                    base += " La tasa se mantiene prácticamente sin cambios respecto del período anterior."
+            else:
+                base = f"La desocupación en {region} alcanza {current}, muy próxima al {national_value} nacional. El mercado laboral regional se encuentra en una situación similar a la observada en el conjunto del país, sin una diferencia territorial relevante en este indicador."
+                if trend == "RISING":
+                    base += " En el período más reciente, la tasa aumentó."
+                elif trend == "FALLING":
+                    base += " En el período más reciente, la tasa disminuyó."
+                elif trend == "STABLE":
+                    base += " La tasa también se mantiene prácticamente estable frente al período anterior."
+        return base
+
+    if kind == "REGIONAL_HOME_SALES" and family.startswith("VENTA_"):
+        geography = _text(item.get("geography_label")) or region
+        value = _market_context_numeric_value(item)
+        observation = _market_context_period_phrase(item.get("period")) or "el período informado"
+        if value is None:
+            return ""
+        if value < -0.05:
+            amount = current.lstrip("+-− ")
+            return f"Las ventas de viviendas en {geography} cayeron {amount} interanual durante {observation}. La señal es de menor dinamismo respecto del año anterior, por lo que captar demanda puede exigir un posicionamiento más competitivo frente a las alternativas disponibles."
+        if value > 0.05:
+            return f"Las ventas de viviendas en {geography} aumentaron {current} interanual durante {observation}. La actividad muestra mayor dinamismo que un año atrás, lo que entrega un entorno comercial más activo, aunque la respuesta de cada propiedad continúa dependiendo de su precio, ubicación y características."
+        return f"Las ventas de viviendas en {geography} muestran poca variación respecto del año anterior durante {observation}. La actividad del mercado se mantiene relativamente estable, sin una señal clara de expansión o contracción."
+
+    if kind == "TPM" and family.startswith("VENTA_"):
+        if trend == "FALLING":
+            return f"La TPM bajó de {previous} a {current}. La orientación monetaria se está haciendo menos restrictiva, una evolución que puede favorecer gradualmente las condiciones financieras, aunque su efecto sobre el crédito hipotecario no es inmediato."
+        if trend == "RISING":
+            return f"La TPM subió de {previous} a {current}. La orientación monetaria se vuelve más restrictiva, lo que puede limitar una mejora rápida de las condiciones generales de financiamiento."
+        if trend == "STABLE":
+            return f"La TPM permanece en {current}. No existe un cambio relevante de política monetaria respecto del período anterior, por lo que el escenario financiero general presenta continuidad en esta variable."
+        return f"La TPM se sitúa en {current}" + (f" durante {period}" if period else "") + ". Sin una comparación anterior validada en la serie del portal, debe utilizarse como parte del escenario financiero general y no como una señal aislada de mayor o menor demanda inmobiliaria."
+
+    if kind == "REAL_WAGES" and family.startswith("ARRIENDO_"):
+        value = _market_context_numeric_value(item)
+        observation = period or "el período informado"
+        if value is None:
+            return ""
+        if value > 0.05:
+            return f"Las remuneraciones reales aumentaron {current} interanual en {observation}. Esto indica que, en promedio, los ingresos laborales crecieron por sobre la variación de precios, entregando un contexto relativamente más favorable para la capacidad de pago de los hogares."
+        if value < -0.05:
+            return f"Las remuneraciones reales disminuyeron {current.lstrip('-− ')} interanual en {observation}. La pérdida de poder adquisitivo puede aumentar la sensibilidad de los hogares frente al valor mensual del arriendo y otros gastos asociados a la vivienda."
+        return f"Las remuneraciones reales presentan escasa variación interanual en {observation}. El poder adquisitivo laboral no muestra un avance significativo, por lo que la capacidad de pago de los hogares permanece relativamente estable."
+
+    if kind == "CPI" and family.startswith("ARRIENDO_"):
+        if trend == "RISING":
+            return f"El IPC registra una variación anual de {current}, superior a la observada en el período anterior. El costo general de vida está aumentando a un ritmo mayor, lo que puede ejercer más presión sobre el presupuesto disponible de los hogares para vivienda."
+        if trend == "FALLING":
+            return f"El IPC registra una variación anual de {current}, inferior a la observada en el período anterior. La presión del costo de vida se está moderando, aunque los precios continúan siendo superiores a los de un año atrás."
+        if trend == "STABLE":
+            return f"El IPC registra una variación anual de {current}, sin un cambio relevante respecto del período anterior. El costo de vida continúa siendo un factor a considerar en el presupuesto mensual de los hogares."
+        return f"El IPC registra una variación anual de {current}. Esto indica que el costo general de vida es superior al de un año atrás y aporta contexto sobre la presión que enfrenta el presupuesto de los hogares. No debe interpretarse como una medición directa del precio de los arriendos."
+
+    # A regional rental series needs explicit semantic metadata before its
+    # direction can safely be narrated. Until then, show its verified value only.
+    if kind == "REGIONAL_RENTAL_INDICATOR":
+        return ""
+    return f"Dato observado: {current}." if current else ""
+
+
+_MARKET_CONTEXT_NARRATIVE_FAMILIES = {
+    "VENTA_RM": {
+        "reading": "La lectura reúne señales financieras, laborales y de actividad del mercado de compra.",
+        "implication": "Al revisar una operación de venta, estas referencias pueden acompañar la evaluación del precio y del seguimiento comercial.",
+    },
+    "ARRIENDO_RM": {
+        "reading": "La lectura reúne señales laborales, de ingresos y del entorno de arriendo en la Región Metropolitana.",
+        "implication": "Al revisar una operación de arriendo, estas referencias pueden acompañar la evaluación de las condiciones y del seguimiento comercial.",
+    },
+    "VENTA_REGION": {
+        "reading": "La lectura reúne señales laborales, financieras y de actividad de compra disponibles para {region}.",
+        "implication": "Al revisar una operación de venta, estas referencias pueden acompañar la evaluación del precio y del seguimiento comercial.",
+    },
+    "ARRIENDO_REGION": {
+        "reading": "La lectura reúne señales laborales, de ingresos y del entorno de arriendo disponibles para {region}.",
+        "implication": "Al revisar una operación de arriendo, estas referencias pueden acompañar la evaluación de las condiciones y del seguimiento comercial.",
+    },
+}
+
+
+def _market_context_family(operation: str, region: str) -> str:
+    is_rm = _market_context_region_key(region) == "metropolitana"
+    return f"{operation}_{'RM' if is_rm else 'REGION'}"
+
+
+def _market_context_narrative(context: Mapping[str, Any] | None) -> str:
+    """Build one of four generic, snapshot-driven narratives; never use property data."""
+    if not isinstance(context, Mapping):
+        return ""
+    operation = _market_context_operation(context.get("operation"))
+    if not operation:
+        return ""
+    region = _text(context.get("geography", {}).get("region")) if isinstance(context.get("geography"), Mapping) else _text(context.get("region"))
+    family = _market_context_family(operation, region)
+    template = _MARKET_CONTEXT_NARRATIVE_FAMILIES.get(family)
+    if not template:
+        return ""
+    indicators = context.get("indicators") if isinstance(context.get("indicators"), list) else []
+    primary = context.get("visible_kpis") if isinstance(context.get("visible_kpis"), list) else indicators
+    signals = []
+    for item in primary:
+        if not isinstance(item, Mapping) or not _text(item.get("value")):
+            continue
+        kind = _text(item.get("kind"))
+        value = _text(item.get("value"))
+        previous = _text(item.get("previous_value"))
+        trend = _text(item.get("trend_status")) or "NO_PREVIOUS_DATA"
+        if kind == "MORTGAGE_REFERENCE":
+            signal = {
+                "FALLING": f"la tasa hipotecaria bajó de {previous} a {value}",
+                "RISING": f"la tasa hipotecaria subió de {previous} a {value}",
+                "STABLE": f"la tasa hipotecaria se mantuvo en {value}",
+                "NO_PREVIOUS_DATA": f"la tasa hipotecaria se ubicó en {value}, sin comparación anterior verificada",
+            }[trend]
+        elif kind == "UNEMPLOYMENT":
+            national = item.get("national_comparison") if isinstance(item.get("national_comparison"), Mapping) else {}
+            national_value = _text(national.get("value"))
+            difference = None
+            if national_value:
+                region_number = _market_context_numeric_value(item)
+                national_number = _market_context_numeric_value(national)
+                if region_number is not None and national_number is not None:
+                    difference = region_number - national_number
+            if difference is None:
+                signal = f"la desocupación regional se ubicó en {value}, sin comparación nacional verificada"
+            elif difference > 0.1:
+                signal = f"la desocupación regional fue {value}, {abs(difference):.1f} puntos porcentuales por sobre el {national_value} nacional".replace(".", ",")
+            elif difference < -0.1:
+                signal = f"la desocupación regional fue {value}, {abs(difference):.1f} puntos porcentuales por debajo del {national_value} nacional".replace(".", ",")
+            else:
+                signal = f"la desocupación regional fue {value}, muy próxima al {national_value} nacional"
+            if trend in {"RISING", "FALLING", "STABLE"}:
+                signal += {"RISING": " y aumentó frente al período anterior", "FALLING": " y disminuyó frente al período anterior", "STABLE": " y se mantuvo respecto del período anterior"}[trend]
+        elif kind == "REGIONAL_HOME_SALES":
+            number = _market_context_numeric_value(item)
+            signal = (
+                f"las ventas de viviendas en {_text(item.get('geography_label'))} cayeron {value} interanual"
+                if number is not None and number < -0.05 else
+                f"las ventas de viviendas en {_text(item.get('geography_label'))} aumentaron {value} interanual"
+                if number is not None and number > 0.05 else
+                f"las ventas de viviendas en {_text(item.get('geography_label'))} variaron poco interanualmente"
+            )
+        elif kind == "TPM":
+            signal = {
+                "FALLING": f"la TPM bajó de {previous} a {value}",
+                "RISING": f"la TPM subió de {previous} a {value}",
+                "STABLE": f"la TPM se mantuvo en {value}",
+                "NO_PREVIOUS_DATA": f"la TPM se ubicó en {value}, sin comparación anterior validada",
+            }[trend]
+        elif kind == "REAL_WAGES":
+            number = _market_context_numeric_value(item)
+            signal = (
+                f"las remuneraciones reales aumentaron {value}"
+                if number is not None and number > 0.05 else
+                f"las remuneraciones reales disminuyeron {value.lstrip('-− ')}"
+                if number is not None and number < -0.05 else
+                f"las remuneraciones reales variaron poco ({value})"
+            )
+        elif kind == "CPI":
+            signal = {
+                "RISING": f"la variación anual del IPC se aceleró hasta {value}",
+                "FALLING": f"la variación anual del IPC se moderó a {value}",
+                "STABLE": f"la variación anual del IPC se mantuvo en {value}",
+                "NO_PREVIOUS_DATA": f"la variación anual del IPC se ubicó en {value}, sin comparación anterior verificada",
+            }[trend]
+        else:
+            continue
+        signals.append(signal)
+    if not signals:
+        return ""
+    reference_month = _text(context.get("reference_month"))
+    reading = template["reading"].format(region=region or "la región")
+    period_lead = f"Durante {reference_month}, " if reference_month else "En el período observado, "
+    return f"{period_lead}{'; '.join(signals)}. {reading} {template['implication']}"
 
 
 def _market_indicator_display_value(raw: Mapping[str, Any], kind: str) -> str:
@@ -3076,6 +3302,15 @@ def _market_indicator_display_value(raw: Mapping[str, Any], kind: str) -> str:
     return f"{value_text}{unit}" if unit == "%" else f"{value_text} {unit}"
 
 
+def _market_context_identity(raw: Mapping[str, Any]) -> tuple[str, str, str]:
+    kind = _market_context_kind(raw.get("kind") or raw.get("indicator_kind"))
+    level = re.sub(r"[^A-Z]+", "", _text(raw.get("geography_level")).upper())
+    code = re.sub(r"[^A-Z0-9]+", "_", _text(raw.get("geography_code")).upper()).strip("_")
+    if not code:
+        code = _market_context_fold(raw.get("geography_label") or raw.get("geography_name"))
+    return kind, level, code
+
+
 def _normalize_market_context(
     context: Mapping[str, Any] | None, *, operation: Any = "", region: Any = "", commune: Any = "",
     property_price_uf: Any = None, property_condition: Any = "",
@@ -3098,7 +3333,7 @@ def _normalize_market_context(
         # are hard filters before relevance can affect display order.
         allowed = (
             ("MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES", "TPM")
-            if is_rm else ("UNEMPLOYMENT", "TPM", "REGIONAL_HOME_SALES", "MORTGAGE_REFERENCE")
+            if is_rm else ("UNEMPLOYMENT", "TPM", "REGIONAL_HOME_SALES")
         )
         priority = {kind: score for kind, score in zip(allowed, (100, 95, 90, 70))}
     else:
@@ -3135,6 +3370,16 @@ def _normalize_market_context(
         geo_ok, geo_label, geo_rank = _market_context_geo(raw, region=region_label, commune=commune_label)
         if not geo_ok:
             continue
+        level = re.sub(r"[^A-Z]+", "", _text(raw.get("geography_level")).upper())
+        if kind == "UNEMPLOYMENT" and level not in {"REGION", "REGIONAL", "NATIONAL", "COUNTRY"}:
+            continue
+        if kind == "REGIONAL_HOME_SALES":
+            code = re.sub(r"[^A-Z0-9]+", "_", _text(raw.get("geography_code")).upper()).strip("_")
+            if is_rm:
+                if level != "MARKET" or code != "GRAN_SANTIAGO":
+                    continue
+            elif level not in {"REGION", "REGIONAL"} or geo_rank < 3:
+                continue
         note = " · ".join(part for part in (geo_label, period, _text(raw.get("note"))) if part)
         if kind == "UNEMPLOYMENT" and raw.get("unemployment_yoy_change_pp") is not None:
             change = _market_indicator_display_value({
@@ -3143,11 +3388,13 @@ def _normalize_market_context(
             note = " · ".join(part for part in (note, f"Variación anual {change}") if part)
         item = {
             "kind": kind, "label": _MARKET_CONTEXT_LABELS[kind], "value": value, "note": note,
-            "meaning": _MARKET_CONTEXT_MEANINGS[kind],
             "geography_level": _text(raw.get("geography_level")).upper(), "geography_label": geo_label,
             "period": period, "source": source,
             "source_date": raw.get("source_date") or raw.get("source_published_at") or raw.get("cutoff"),
-            "change": raw.get("change"), "detail": _market_context_detail(kind, operation_key),
+            "change": raw.get("change"),
+            "numeric_value": raw.get("change") if kind in {"REAL_WAGES", "CPI", "REGIONAL_HOME_SALES"} and raw.get("change") is not None else raw.get("value"),
+            "_identity": _market_context_identity(raw),
+            "_observation_period": _text(raw.get("observation_period") or raw.get("period_label") or raw.get("period")),
         }
         candidates.setdefault(kind, []).append((geo_rank, raw, item))
 
@@ -3159,68 +3406,74 @@ def _normalize_market_context(
         if kind == "UNEMPLOYMENT":
             options.sort(key=lambda item: item[0], reverse=True)
             chosen = next((item for item in options if item[0] == 3), None)
-            chosen = chosen or next((item for item in options if item[0] == 2), None)
+            national = next((item for item in options if item[0] == 2), None)
+            if chosen and national:
+                regional_observation = _text(chosen[1].get("observation_period") or chosen[1].get("period_label") or chosen[1].get("period"))
+                national_observation = _text(national[1].get("observation_period") or national[1].get("period_label") or national[1].get("period"))
+                if regional_observation == national_observation:
+                    chosen[2]["national_comparison"] = {
+                        "value": national[2]["value"],
+                        "numeric_value": national[2]["numeric_value"],
+                        "source": national[2]["source"],
+                        "period": national_observation,
+                        "geography_code": _text(national[1].get("geography_code")),
+                    }
+                    regional_number = _market_context_numeric_value(chosen[2])
+                    national_number = _market_context_numeric_value(chosen[2]["national_comparison"])
+                    if regional_number is not None and national_number is not None:
+                        difference = regional_number - national_number
+                        chosen[2]["national_comparison_difference_pp"] = round(difference, 2)
+                        chosen[2]["national_comparison_status"] = (
+                            "ABOVE_NATIONAL" if difference > 0.1 else
+                            "BELOW_NATIONAL" if difference < -0.1 else "NEAR_NATIONAL"
+                        )
         else:
             options.sort(key=lambda item: (item[0], _text(item[1].get("source_date") or item[1].get("cutoff") or item[1].get("period"))), reverse=True)
             chosen = options[0]
         if chosen:
             selected.append(chosen[2])
 
+    if operation_key == "ARRIENDO" and any(item["kind"] == "REGIONAL_RENTAL_INDICATOR" for item in selected):
+        selected = [item for item in selected if item["kind"] != "CPI"]
+
+    previous_indicators = context.get("previous_indicators") if isinstance(context.get("previous_indicators"), list) else []
+    previous_by_identity: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
+    for previous in previous_indicators:
+        if not isinstance(previous, Mapping) or previous.get("verified") is not True or previous.get("active") is not True:
+            continue
+        previous_by_identity.setdefault(_market_context_identity(previous), []).append(previous)
+    previous_period = _text(context.get("previous_period"))
+    for item in selected:
+        identity = item.pop("_identity")
+        current_observation = item.pop("_observation_period")
+        matches = previous_by_identity.get(identity, [])
+        previous = matches[0] if len(matches) == 1 else None
+        if previous and previous_period:
+            expected_previous_period = _text(previous.get("period"))
+            if expected_previous_period != previous_period:
+                previous = None
+        if previous:
+            previous_display = _market_indicator_display_value(previous, item["kind"])
+            previous_numeric = previous.get("change") if item["kind"] in {"REAL_WAGES", "CPI", "REGIONAL_HOME_SALES"} and previous.get("change") is not None else previous.get("value")
+            item.update({
+                "previous_value": previous_display,
+                "previous_period": previous_period,
+                "trend_status": _market_context_trend(item.get("numeric_value"), previous_numeric),
+            })
+        else:
+            item.update({"previous_value": "", "previous_period": None, "trend_status": "NO_PREVIOUS_DATA"})
+        item["observation_period"] = current_observation
+        item["detail"] = _market_context_detail(item, _market_context_family(operation_key, region_label))
+
     selected.sort(key=lambda item: priority.get(item["kind"], 0), reverse=True)
 
-    # Show a new-home program only as market competition when the source proves
-    # a comparable price band; never present it as an owner benefit.
-    condition = _market_context_fold(property_condition)
-    price = _number_from_label(property_price_uf)
-    additional_details: list[dict[str, str]] = []
-    if operation_key == "VENTA":
-        for raw in raw_indicators:
-            if not isinstance(raw, Mapping) or _market_context_kind(raw.get("kind")) != "NEW_HOUSING_COMPETITION":
-                continue
-            low, high = _number_from_label(raw.get("eligible_price_low_uf")), _number_from_label(raw.get("eligible_price_high_uf"))
-            geo_ok, geo_label, _ = _market_context_geo(raw, region=region_label, commune=commune_label)
-            if (raw.get("available") is True and raw.get("verified") is True and raw.get("program_eligible") is True
-                    and raw.get("price_range_comparable") is True
-                    and condition in {"new", "new_build", "new_housing", "obra_nueva", "nueva", "used", "used_home", "usada", "usado"}
-                    and geo_ok and price is not None and low is not None and high is not None and low <= price <= high
-                    and _text(raw.get("source") or raw.get("source_name"))):
-                additional_details.append({
-                    "title": _MARKET_CONTEXT_LABELS["NEW_HOUSING_COMPETITION"],
-                    "body": "El programa puede aumentar la competencia de vivienda nueva en un rango de precio comparable.",
-                    "period": _text(raw.get("period_label") or raw.get("period")),
-                    "source": _text(raw.get("source") or raw.get("source_name")),
-                    "context": " · ".join(part for part in (
-                        geo_label, _text(raw.get("period_label") or raw.get("observation_period") or raw.get("period")),
-                        _text(raw.get("source") or raw.get("source_name")),
-                    ) if part),
-                })
-                break
     selected = selected[:4]
-    visible_kpis = selected[:3]
+    visible_kpis = [
+        item for item in selected
+        if not (operation_key == "VENTA" and is_rm and item["kind"] == "TPM")
+    ][:3]
     if not selected:
         return None
-
-    kinds = {item["kind"] for item in selected}
-    if operation_key == "VENTA":
-        has_mortgage, has_unemployment = "MORTGAGE_REFERENCE" in kinds, "UNEMPLOYMENT" in kinds
-        if has_mortgage and has_unemployment:
-            opening = "El acceso al financiamiento y las condiciones del mercado laboral pueden influir en la cautela de los compradores"
-            summary = f"{opening}. En este escenario, el precio y la respuesta comercial de cada propiedad cobran relevancia."
-        elif has_mortgage:
-            summary = "El acceso al financiamiento puede influir en las decisiones de compra. En este escenario, el precio y la respuesta comercial de cada propiedad cobran relevancia."
-        elif has_unemployment:
-            summary = "Un mercado laboral más débil puede aumentar la cautela de los hogares al asumir compromisos de largo plazo. En este escenario, el precio y la respuesta comercial de cada propiedad cobran relevancia."
-        elif "REGIONAL_HOME_SALES" in kinds:
-            summary = "La actividad de ventas disponible aporta contexto al escenario de compra de esta región. El precio y la respuesta comercial de cada propiedad siguen siendo relevantes."
-        else:
-            summary = ""
-    else:
-        signals = [label for key, label in (("UNEMPLOYMENT", "la estabilidad del empleo"), ("REAL_WAGES", "la evolución de los ingresos reales"), ("CPI", "el costo de vida")) if key in kinds]
-        if signals:
-            joined = ", ".join(signals[:-1]) + (" y " if len(signals) > 1 else "") + signals[-1]
-            summary = f"En arriendo, {joined} pueden influir en la capacidad de pago y en la selectividad de los arrendatarios."
-        else:
-            summary = ""
 
     month = _text(context.get("reference_month") or context.get("reference_period"))
     period = _text(context.get("period"))
@@ -3230,22 +3483,28 @@ def _normalize_market_context(
         index = int(month_number) - 1
         if 0 <= index < 12:
             month = f"{month_names[index]} {year}"
-    sources = list(dict.fromkeys([item["source"] for item in selected if item.get("source")] + [item["source"] for item in additional_details if item.get("source")]))
+    sources = list(dict.fromkeys(
+        source for item in selected
+        for source in (item.get("source"), (item.get("national_comparison") or {}).get("source"))
+        if source
+    ))
     details = ([{
-        "title": item.get("meaning") or item["label"], "body": item["detail"],
+        "title": item["label"], "body": item["detail"],
         "context": " · ".join(part for part in (item.get("geography_label"), item.get("period"), item.get("source")) if part),
         "period": item.get("period"), "source": item["source"],
-    } for item in selected if item.get("detail")] + additional_details)[:5]
+    } for item in selected if item.get("detail")])[:5]
     dates = [_source_date_label(item.get("source_date")) for item in selected if item.get("source_date")]
-    return {
+    result = {
         "operation": operation_key, "reference_month": month,
         "geography": {"country": "Chile", "region": region_label, "commune": commune_label},
         "indicators": selected, "kpis": visible_kpis, "visible_kpis": visible_kpis,
-        "summary": _text(context.get("summary")) if context.get("summary_verified") is True else summary,
+        "narrative_family": _market_context_family(operation_key, region_label),
         "detail_blocks": details,
         "source_date": _text(context.get("source_date") or (dates[0] if dates else "")) or None,
         "sources": " · ".join(sources) if sources else None,
     }
+    result["summary"] = _market_context_narrative(result)
+    return result
 
 
 def _report_market_context_period(monthly: Mapping[str, Any], snapshot: Mapping[str, Any], campaign_view: Mapping[str, Any], row: Mapping[str, Any]) -> str:
@@ -3263,7 +3522,7 @@ def _report_market_context_period(monthly: Mapping[str, Any], snapshot: Mapping[
 
 
 def _load_market_context_snapshot(db: Any, period: str) -> Mapping[str, Any] | None:
-    """Load the exact period or the immediately previous canonical month only."""
+    """Load the selected snapshot plus only its immediately previous month."""
     if not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", str(period or "")):
         return None
 
@@ -3275,10 +3534,7 @@ def _load_market_context_snapshot(db: Any, period: str) -> Mapping[str, Any] | N
             item for item in collection.find({"period": period, "active": True}, {"_id": 0})
             if isinstance(item, Mapping)
         ]
-        if exact:
-            return {"period": period, "indicators": exact}
-
-        eligible = [
+        eligible = exact or [
             item for item in collection.find({"period": {"$lte": period}, "active": True}, {"_id": 0})
             if isinstance(item, Mapping)
             and re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", str(item.get("period") or ""))
@@ -3297,127 +3553,25 @@ def _load_market_context_snapshot(db: Any, period: str) -> Mapping[str, Any] | N
     if age_months < 0 or age_months > 1:
         return None
     selected = [item for item in eligible if str(item["period"]) == selected_period]
-    return {"period": selected_period, "indicators": selected}
-
-
-def _market_context_property_interpretation(
-    *, context: Mapping[str, Any] | None, funnel: Mapping[str, Any],
-    publication_presence: Mapping[str, Any], market_position: Mapping[str, Any],
-) -> str:
-    """Describe verified property signals alongside context without claiming causality."""
-    if not isinstance(context, Mapping):
-        return ""
-    operation = _market_context_operation(context.get("operation"))
-    if not operation:
-        return ""
-    kinds = {str(item.get("kind") or "") for item in context.get("visible_kpis", []) if isinstance(item, Mapping)}
-    if operation == "VENTA":
-        if "MORTGAGE_REFERENCE" in kinds and "UNEMPLOYMENT" in kinds:
-            opening = "En Venta, el financiamiento y el mercado laboral forman parte del entorno de decisión de los compradores."
-        elif "REGIONAL_HOME_SALES" in kinds:
-            opening = "En Venta, la actividad inmobiliaria observada aporta contexto para evaluar el mercado del segmento."
-        elif "UNEMPLOYMENT" in kinds:
-            opening = "En Venta, el mercado laboral aporta contexto sobre el entorno de los compradores."
-        else:
-            opening = "En Venta, las condiciones financieras aportan contexto para evaluar el mercado."
-    else:
-        signals = []
-        if "UNEMPLOYMENT" in kinds:
-            signals.append("el empleo")
-        if "REAL_WAGES" in kinds:
-            signals.append("la evolución de los ingresos reales")
-        if "CPI" in kinds:
-            signals.append("el costo de vida")
-        if "REGIONAL_RENTAL_INDICATOR" in kinds:
-            signals.append("el mercado local de arriendo")
-        joined = ", ".join(signals[:-1]) + (" y " if len(signals) > 1 else "") + (signals[-1] if signals else "")
-        verb = "ayudan" if len(signals) > 1 else "ayuda"
-        opening = f"En arriendo, {joined or 'el contexto económico disponible'} {verb} a contextualizar la capacidad de pago y la selectividad de los hogares."
-
-    stages = funnel.get("stages") if isinstance(funnel.get("stages"), list) else []
-    verified_counts = {
-        _text(stage.get("key")).upper(): _activity_count(stage.get("count"))
-        for stage in stages if isinstance(stage, Mapping) and _text(stage.get("status")).upper() == "VERIFIED"
+    selected_year, selected_month = (int(part) for part in selected_period.split("-"))
+    previous_ordinal = selected_year * 12 + selected_month - 2
+    previous_year, previous_month0 = divmod(previous_ordinal, 12)
+    previous_period = f"{previous_year:04d}-{previous_month0 + 1:02d}"
+    try:
+        previous = [
+            item for item in db[MARKET_CONTEXT_SNAPSHOT_COLLECTION].find(
+                {"period": previous_period, "active": True}, {"_id": 0},
+            ) if isinstance(item, Mapping)
+        ]
+    except Exception:
+        logging.getLogger(__name__).exception("Unable to read previous owner market context snapshot")
+        previous = []
+    return {
+        "period": selected_period,
+        "indicators": selected,
+        "previous_period": previous_period if previous else None,
+        "previous_indicators": previous,
     }
-    activity_parts: list[str] = []
-    leads, visits = verified_counts.get("LEADS"), verified_counts.get("VISITS")
-    if leads is not None:
-        activity_parts.append(f"{leads} consulta" + ("s" if leads != 1 else ""))
-    if visits is not None:
-        activity_parts.append("ninguna visita coordinada" if visits == 0 else f"{visits} visita" + ("s" if visits != 1 else "") + " coordinada" + ("s" if visits != 1 else ""))
-    activity_sentence = f"En los últimos 90 días registró {' y '.join(activity_parts)}." if activity_parts else ""
-
-    exposure_count = None
-    if publication_presence.get("source_status") == "VERIFIED":
-        exposure_count = _activity_count(publication_presence.get("publication_channel_count"))
-    if exposure_count is not None and exposure_count > 0:
-        if (activity_sentence and exposure_count >= 4 and leads is not None and leads <= 3
-                and (visits is None or visits <= 1)):
-            activity_sentence = f"Mantiene exposición en {exposure_count} portales; en los últimos 90 días registró una respuesta comercial acotada ({' y '.join(activity_parts)})."
-        elif not activity_sentence:
-            activity_sentence = f"La ficha registra presencia en {exposure_count} portales."
-
-    gaps = market_position.get("property_current_gaps") if isinstance(market_position.get("property_current_gaps"), list) else []
-    comparable_gap = next((
-        item for item in gaps if isinstance(item, Mapping) and item.get("kind") == "COMPARABLE" and _text(item.get("text"))
-    ), None)
-    gap_text = _text(comparable_gap.get("text")) if isinstance(comparable_gap, Mapping) else ""
-    gap_match = re.search(r"([+-]?\s*\d+(?:[.,]\d+)?)\s*%\s*vs\s*similares", gap_text, flags=re.IGNORECASE)
-    position_sentence = ""
-    if gap_match:
-        signed_gap = gap_match.group(1).replace(" ", "")
-        magnitude = signed_gap.lstrip("+-")
-        signed_number = float(signed_gap.replace(",", "."))
-        direction = "por sobre" if signed_number > 0 else "por debajo de" if signed_number < 0 else "en línea con"
-        count = _activity_count(market_position.get("count"))
-        reference = (
-            f"la referencia de {count} propiedades similares" if count and count > 1
-            else "la referencia de 1 propiedad similar" if count == 1
-            else "la referencia de propiedades similares"
-        )
-        has_area_unit = "m²" in _text(market_position.get("unit")) or "m2" in _text(market_position.get("unit")).casefold()
-        price_subject = (
-            "Su valor de arriendo por m²" if operation == "ARRIENDO" and has_area_unit
-            else "Su valor de arriendo" if operation == "ARRIENDO"
-            else "Su precio por m²" if has_area_unit
-            else "Su precio"
-        )
-        position_sentence = (
-            f"{price_subject} se encuentra {magnitude}% {direction} {reference}."
-            if signed_number else f"{price_subject} está en línea con {reference}."
-        )
-
-    proposed_gaps = market_position.get("property_recommended_gaps") if isinstance(market_position.get("property_recommended_gaps"), list) else []
-    proposed_gap = next((
-        item for item in proposed_gaps if isinstance(item, Mapping) and item.get("kind") == "COMPARABLE" and _text(item.get("text"))
-    ), None)
-    recommendation_sentence = ""
-    if gap_match and isinstance(proposed_gap, Mapping):
-        proposed_match = re.search(r"([+-]?\s*\d+(?:[.,]\d+)?)\s*%\s*vs\s*similares", _text(proposed_gap.get("text")), flags=re.IGNORECASE)
-        if proposed_match:
-            current_num = float(signed_gap.replace(",", "."))
-            proposed_text = proposed_match.group(1).replace(" ", "")
-            proposed_num = float(proposed_text.replace(",", "."))
-            effect = "reduciría" if abs(proposed_num) < abs(current_num) else "cambiaría"
-            recommendation_sentence = f"El precio recomendado {effect} la diferencia frente a similares de {signed_gap}% a {proposed_text}%."
-
-    fact_parts = [part.rstrip(".") for part in (activity_sentence, position_sentence) if part]
-    if len(fact_parts) > 1:
-        fact_parts[1] = fact_parts[1][:1].lower() + fact_parts[1][1:]
-    evidence_sentence = "; ".join(fact_parts) + "." if fact_parts else (
-        "No hay suficientes señales verificadas de actividad, exposición o posición para relacionar este contexto con la propiedad."
-    )
-    closing = ""
-    if gap_match and leads is not None and leads <= 3 and (visits is None or visits <= 1):
-        closing = "Al observar conjuntamente estas señales, cobra importancia revisar su posicionamiento, sin atribuir la respuesta a un factor único."
-    elif leads is not None and (leads >= 10 or (visits is not None and visits >= 3)):
-        closing = "La respuesta comercial observada debe seguir evaluándose junto con su posición frente a las alternativas del mercado."
-    if recommendation_sentence and closing:
-        closing = recommendation_sentence.rstrip(".") + "; " + closing[:1].lower() + closing[1:]
-    elif recommendation_sentence:
-        closing = recommendation_sentence
-    pieces = [opening, evidence_sentence, closing]
-    return " ".join(part for part in pieces if part)
 
 
 def _previous_snapshot_changes(snapshots: Any, current: Mapping[str, Any]) -> list[dict[str, str]]:
@@ -4108,13 +4262,7 @@ def build_monthly_portal_view(
     }
     publication_presence = resolve_property_publication_presence(db, property_code)
     if isinstance(context, Mapping):
-        context = {
-            **context,
-            "property_interpretation": _market_context_property_interpretation(
-                context=context, funnel=commercial_funnel,
-                publication_presence=publication_presence, market_position=market_position,
-            ),
-        }
+        context = {**context, "narrative": context.get("summary", "")}
 
     return {
         "logo_url": campaign_view.get("logo_url"),

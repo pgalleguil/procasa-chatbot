@@ -11,7 +11,7 @@ from owner_portal.monthly import (
     _normalize_market_context,
     _market_context_region_key,
     _market_context_geo,
-    _market_context_property_interpretation,
+    _market_context_narrative,
     _static_position_data,
     _position_simulation_data,
     _recommendation_narrative,
@@ -64,6 +64,62 @@ def _verified_market_indicator(kind, value, geography_level, geography_label, so
     }
 
 
+def _resolve_market_pair(kind, previous_value, current_value, *, operation, region, geography_level,
+                         geography_label, geography_code, source, national_values=None):
+    def doc(value, snapshot_period, observation_period):
+        if kind in {"MORTGAGE_REFERENCE", "TPM", "UNEMPLOYMENT"}:
+            shown = f"{value:.2f}%" if kind in {"MORTGAGE_REFERENCE", "TPM"} else f"{value:.1f}%"
+        else:
+            shown = f"{value:+.1f}%"
+        shown = shown.replace(".", ",")
+        item = _verified_market_indicator(
+            kind, value, geography_level, geography_label, source,
+            period=observation_period, display_value=shown,
+            geography_code=geography_code,
+        )
+        item["period"] = snapshot_period
+        item["active"] = True
+        if kind in {"REAL_WAGES", "CPI", "REGIONAL_HOME_SALES"}:
+            item["change"] = value
+        return item
+
+    current = doc(current_value, "2026-10", "2T 2026 · variación interanual" if kind == "REGIONAL_HOME_SALES" else "septiembre 2026")
+    previous = doc(previous_value, "2026-09", "2T 2025 · variación interanual" if kind == "REGIONAL_HOME_SALES" else "agosto 2026")
+    current_items, previous_items = [current], [previous]
+    if kind == "UNEMPLOYMENT" and national_values:
+        current_national, previous_national = national_values
+        current_items.append(doc_for_unemployment_country(current_national, "2026-10", "2026-09"))
+        previous_items.append(doc_for_unemployment_country(previous_national, "2026-09", "2026-08"))
+        current_items[1]["period_label"] = current["period_label"]
+        previous_items[1]["period_label"] = current["period_label"]
+    result = _normalize_market_context({
+        "period": "2026-10", "previous_period": "2026-09",
+        "indicators": current_items, "previous_indicators": previous_items,
+    }, operation=operation, region=region)
+    return result
+
+
+def doc_for_unemployment_country(value, snapshot_period, _previous_period):
+    item = _verified_market_indicator(
+        "UNEMPLOYMENT", value, "COUNTRY", "Chile", "INE",
+        period="jun-ago 2026", display_value=f"{value:.1f}%".replace(".", ","), geography_code="CL",
+    )
+    item["period"] = snapshot_period
+    item["active"] = True
+    return item
+
+
+def _market_detail(result, kind):
+    return next(item["body"] for item in result["detail_blocks"] if item["title"] == {
+        "MORTGAGE_REFERENCE": "Tasa hipotecaria de referencia",
+        "UNEMPLOYMENT": "Desempleo",
+        "REGIONAL_HOME_SALES": "Ventas inmobiliarias",
+        "TPM": "TPM",
+        "REAL_WAGES": "Remuneraciones reales",
+        "CPI": "IPC",
+    }[kind])
+
+
 def test_market_context_sale_rm_ranks_three_primary_kpis_and_moves_tpm_to_detail():
     result = _normalize_market_context({
         "period": "2026-09", "indicators": [
@@ -79,6 +135,8 @@ def test_market_context_sale_rm_ranks_three_primary_kpis_and_moves_tpm_to_detail
     assert [item["kind"] for item in result["indicators"]] == [
         "MORTGAGE_REFERENCE", "UNEMPLOYMENT", "REGIONAL_HOME_SALES", "TPM",
     ]
+    assert all(item["kind"] != "TPM" for item in result["visible_kpis"])
+    assert any(item["title"] == "TPM" and "Sin una comparación anterior validada" in item["body"] for item in result["detail_blocks"])
     assert len(result["visible_kpis"]) == 3
     assert result["visible_kpis"][1]["note"].startswith("Región Metropolitana · jun-ago 2026")
     assert result["reference_month"] == "septiembre 2026"
@@ -100,12 +158,162 @@ def test_sale_valparaiso_never_uses_gran_santiago_and_prefers_its_region_unemplo
     assert all("Gran Santiago" not in item["note"] for item in result["visible_kpis"])
 
 
-def test_national_unemployment_is_labeled_chile_only_when_region_series_is_absent():
+@pytest.mark.parametrize(("operation", "region", "indicators", "family"), [
+    ("VENTA", "Región Metropolitana", [
+        ("MORTGAGE_REFERENCE", "4,08%", "REGION", "Región Metropolitana", "Banco Central", {"region": "RM"}),
+        ("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", {"region": "RM"}),
+        ("REGIONAL_HOME_SALES", "-2,9%", "MARKET", "Gran Santiago", "CChC", {"geography_code": "GRAN_SANTIAGO"}),
+        ("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central", {}),
+    ], "VENTA_RM"),
+    ("ARRIENDO", "Región Metropolitana", [
+        ("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", {"region": "RM"}),
+        ("REAL_WAGES", "+4,1%", "NATIONAL", "Chile", "INE", {}),
+        ("REGIONAL_RENTAL_INDICATOR", "3,2%", "REGION", "Región Metropolitana", "Fuente arriendo", {"region": "RM"}),
+        ("CPI", "+3,4%", "NATIONAL", "Chile", "INE", {}),
+    ], "ARRIENDO_RM"),
+    ("VENTA", "Bío-Bío", [
+        ("UNEMPLOYMENT", "8,1%", "REGION", "Región del Biobío", "INE", {"region": "BI"}),
+        ("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central", {}),
+        ("REGIONAL_HOME_SALES", "+1,2%", "REGION", "Región del Biobío", "CChC", {"region": "BI"}),
+    ], "VENTA_REGION"),
+    ("ARRIENDO", "Valparaíso", [
+        ("UNEMPLOYMENT", "10,2%", "REGION", "Región de Valparaíso", "INE", {"region": "VS"}),
+        ("REAL_WAGES", "+4,1%", "NATIONAL", "Chile", "INE", {}),
+        ("CPI", "+3,4%", "NATIONAL", "Chile", "INE", {}),
+    ], "ARRIENDO_REGION"),
+])
+def test_context_narrative_has_four_generic_dynamic_families(operation, region, indicators, family):
+    result = _normalize_market_context({
+        "period": "2026-10",
+        "indicators": [
+            _verified_market_indicator(kind, value, level, label, source, period="septiembre 2026", **extra)
+            for kind, value, level, label, source, extra in indicators
+        ],
+    }, operation=operation, region=region)
+    assert result is not None
+    assert result["narrative_family"] == family
+    assert "tasa hipotecaria" in result["summary"] or "desocupación regional" in result["summary"]
+    assert "octubre 2026" in result["summary"]
+    assert result["sources"] and all(item["source"] in result["sources"] for item in result["indicators"])
+    assert not any(term in result["summary"].casefold() for term in (
+        "este indicador mide", "la tpm resume", "la tasa contextualiza", "este indicador representa", "tu propiedad",
+    ))
+    assert all(block["body"] for block in result["detail_blocks"])
+    assert all("este indicador mide" not in block["body"].casefold() for block in result["detail_blocks"])
+
+
+def test_context_narrative_values_period_and_sources_follow_selected_monthly_snapshot():
+    def resolve(period, value, source):
+        return _normalize_market_context({"period": period, "indicators": [
+            _verified_market_indicator("UNEMPLOYMENT", value, "REGION", "Región del Biobío", source,
+                                       region="BI", period=f"observación {period}"),
+        ]}, operation="ARRIENDO", region="Biobío")
+
+    september = resolve("2026-09", "8,1%", "Fuente septiembre")
+    october = resolve("2026-10", "7,9%", "Fuente octubre")
+    assert "8,1%" in september["summary"] and "septiembre 2026" in september["summary"]
+    assert september["sources"] == "Fuente septiembre"
+    assert "7,9%" in october["summary"] and "octubre 2026" in october["summary"]
+    assert october["sources"] == "Fuente octubre"
+
+
+def test_mortgage_rising_and_falling_change_the_conditional_copy():
+    falling = _resolve_market_pair(
+        "MORTGAGE_REFERENCE", 4.30, 4.08, operation="VENTA", region="Región Metropolitana",
+        geography_level="REGION", geography_label="Región Metropolitana", geography_code="METROPOLITANA",
+        source="Banco Central",
+    )
+    rising = _resolve_market_pair(
+        "MORTGAGE_REFERENCE", 4.08, 4.30, operation="VENTA", region="Región Metropolitana",
+        geography_level="REGION", geography_label="Región Metropolitana", geography_code="METROPOLITANA",
+        source="Banco Central",
+    )
+    assert falling["indicators"][0]["trend_status"] == "FALLING"
+    assert rising["indicators"][0]["trend_status"] == "RISING"
+    assert "bajó de 4,30% a 4,08%" in _market_detail(falling, "MORTGAGE_REFERENCE")
+    assert "subió de 4,08% a 4,30%" in _market_detail(rising, "MORTGAGE_REFERENCE")
+    assert _market_detail(falling, "MORTGAGE_REFERENCE") != _market_detail(rising, "MORTGAGE_REFERENCE")
+
+
+def test_unemployment_national_comparison_changes_copy_for_above_and_below():
+    above = _resolve_market_pair(
+        "UNEMPLOYMENT", 9.7, 9.8, operation="VENTA", region="Región Metropolitana",
+        geography_level="REGION", geography_label="Región Metropolitana", geography_code="RM",
+        source="INE", national_values=(9.6, 9.6),
+    )
+    below = _resolve_market_pair(
+        "UNEMPLOYMENT", 9.5, 9.4, operation="VENTA", region="Región Metropolitana",
+        geography_level="REGION", geography_label="Región Metropolitana", geography_code="RM",
+        source="INE", national_values=(9.6, 9.6),
+    )
+    assert above["indicators"][0]["national_comparison_status"] == "ABOVE_NATIONAL"
+    assert below["indicators"][0]["national_comparison_status"] == "BELOW_NATIONAL"
+    assert "levemente por sobre el 9,6%" in _market_detail(above, "UNEMPLOYMENT")
+    assert "por debajo del 9,6%" in _market_detail(below, "UNEMPLOYMENT")
+    assert _market_detail(above, "UNEMPLOYMENT") != _market_detail(below, "UNEMPLOYMENT")
+
+
+def test_home_sales_positive_and_negative_values_change_copy_without_santiago_leakage():
+    falling = _resolve_market_pair(
+        "REGIONAL_HOME_SALES", 1.0, -2.9, operation="VENTA", region="Biobío",
+        geography_level="REGION", geography_label="Región del Biobío", geography_code="BI", source="CChC",
+    )
+    rising = _resolve_market_pair(
+        "REGIONAL_HOME_SALES", -2.9, 1.2, operation="VENTA", region="Biobío",
+        geography_level="REGION", geography_label="Región del Biobío", geography_code="BI", source="CChC",
+    )
+    assert "cayeron 2,9% interanual" in _market_detail(falling, "REGIONAL_HOME_SALES")
+    assert "aumentaron +1,2% interanual" in _market_detail(rising, "REGIONAL_HOME_SALES")
+    assert "Gran Santiago" not in _market_detail(falling, "REGIONAL_HOME_SALES")
+
+
+def test_tpm_rising_and_falling_change_complementary_copy():
+    falling = _resolve_market_pair(
+        "TPM", 5.0, 4.5, operation="VENTA", region="Valparaíso",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="Banco Central",
+    )
+    rising = _resolve_market_pair(
+        "TPM", 4.5, 5.0, operation="VENTA", region="Valparaíso",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="Banco Central",
+    )
+    assert "bajó de 5,00% a 4,50%" in _market_detail(falling, "TPM")
+    assert "subió de 4,50% a 5,00%" in _market_detail(rising, "TPM")
+    assert _market_detail(falling, "TPM") != _market_detail(rising, "TPM")
+
+
+def test_real_wage_positive_and_negative_values_change_rental_copy():
+    rising = _resolve_market_pair(
+        "REAL_WAGES", 3.0, 4.1, operation="ARRIENDO", region="Valparaíso",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="INE",
+    )
+    falling = _resolve_market_pair(
+        "REAL_WAGES", -0.3, -1.2, operation="ARRIENDO", region="Valparaíso",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="INE",
+    )
+    assert "aumentaron +4,1% interanual" in _market_detail(rising, "REAL_WAGES")
+    assert "disminuyeron 1,2% interanual" in _market_detail(falling, "REAL_WAGES")
+    assert _market_detail(rising, "REAL_WAGES") != _market_detail(falling, "REAL_WAGES")
+
+
+def test_cpi_accelerating_and_decelerating_change_fallback_copy():
+    accelerating = _resolve_market_pair(
+        "CPI", 3.5, 4.1, operation="ARRIENDO", region="Región Metropolitana",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="INE",
+    )
+    decelerating = _resolve_market_pair(
+        "CPI", 4.1, 3.2, operation="ARRIENDO", region="Región Metropolitana",
+        geography_level="COUNTRY", geography_label="Chile", geography_code="CL", source="INE",
+    )
+    assert "superior a la observada en el período anterior" in _market_detail(accelerating, "CPI")
+    assert "inferior a la observada en el período anterior" in _market_detail(decelerating, "CPI")
+    assert _market_detail(accelerating, "CPI") != _market_detail(decelerating, "CPI")
+
+
+def test_national_unemployment_is_not_substituted_for_required_regional_series():
     result = _normalize_market_context({"indicators": [
         _verified_market_indicator("UNEMPLOYMENT", "9,6%", "NATIONAL", "Chile", "INE", period="jun-ago 2026"),
     ]}, operation="VENTA", region="Biobío")
-    assert result["visible_kpis"][0]["value"] == "9,6%"
-    assert result["visible_kpis"][0]["note"] == "Chile · jun-ago 2026"
+    assert result is None
 
 
 def test_rm_only_mortgage_series_is_not_used_for_valparaiso():
@@ -129,14 +337,15 @@ def test_rent_context_uses_unemployment_real_wages_and_cpi_without_sale_metrics(
     }, operation="ARRIENDO", region=region, commune="Santiago")
     assert [item["kind"] for item in result["visible_kpis"]] == ["UNEMPLOYMENT", "REAL_WAGES", "CPI"]
     assert result["visible_kpis"][0]["value"] == ("9,8%" if "Metropolitana" in region else "10,2%")
-    assert "capacidad de pago" in result["summary"]
+    assert result["narrative_family"] == ("ARRIENDO_RM" if "Metropolitana" in region else "ARRIENDO_REGION")
+    assert "desocupación regional" in result["summary"]
     assert "MORTGAGE_REFERENCE" not in [item["kind"] for item in result["indicators"]]
     assert "NEW_HOUSING_COMPETITION" not in [item["kind"] for item in result["indicators"]]
 
 
 def test_market_context_formats_numeric_changes_and_unemployment_yoy_points():
     result = _normalize_market_context({"indicators": [
-        _verified_market_indicator("UNEMPLOYMENT", 9.6, "NATIONAL", "Chile", "INE", period="jun-ago 2026", unemployment_yoy_change_pp=0.4),
+        _verified_market_indicator("UNEMPLOYMENT", 9.6, "REGION", "Región del Biobío", "INE", region="BI", period="jun-ago 2026", unemployment_yoy_change_pp=0.4),
         _verified_market_indicator("REAL_WAGES", 104.1, "NATIONAL", "Chile", "INE", period="julio 2026", change=4.1),
         _verified_market_indicator("CPI", 100, "NATIONAL", "Chile", "INE", period="agosto 2026", change=4.1),
     ]}, operation="ARRIENDO", region="Biobío")
@@ -343,7 +552,7 @@ def test_market_context_disclosure_label_tracks_open_state():
     disclosure = soup.select_one("details.market-context-more")
     assert disclosure is not None
     assert len(soup.select(".market-kpi")) <= 3
-    assert soup.select_one(".market-property-reading strong").get_text(strip=True) == "Qué significa para tu propiedad"
+    assert soup.select_one(".market-property-reading strong").get_text(strip=True) == "Lectura del escenario"
     assert disclosure.select_one("summary .market-context-more__closed").get_text(strip=True) == "Ver más"
     assert disclosure.select_one("summary .market-context-more__open").get_text(strip=True) == "Ver menos"
     css = template.render(view=view)
@@ -352,57 +561,37 @@ def test_market_context_disclosure_label_tracks_open_state():
     assert '.market-context-more[open] summary::after { content:"↑";' in css
 
 
-def test_sale_property_interpretation_uses_verified_signals_and_current_recommended_gaps():
-    copy = _market_context_property_interpretation(
-        context={"operation": "VENTA", "visible_kpis": [
-            {"kind": "MORTGAGE_REFERENCE"}, {"kind": "UNEMPLOYMENT"},
-        ]},
-        funnel={"stages": [
-            {"key": "LEADS", "count": 1, "status": "VERIFIED"},
-            {"key": "VISITS", "count": 0, "status": "VERIFIED"},
-            {"key": "OFFERS", "count": None, "status": "NOT_INSTRUMENTED"},
-            {"key": "CLOSINGS", "count": None, "status": "NOT_INSTRUMENTED"},
-        ]},
-        publication_presence={"source_status": "VERIFIED", "publication_channel_count": 7},
-        market_position={
-            "count": 13, "unit": "UF/m² útil",
-            "property_current_gaps": [{"kind": "COMPARABLE", "text": "+45,1% vs similares"}],
-            "property_recommended_gaps": [{"kind": "COMPARABLE", "text": "+30,6% vs similares"}],
-        },
-    )
-    assert "1 consulta" in copy and "ninguna visita coordinada" in copy
-    assert "7 portales" in copy
-    assert "su precio por m² se encuentra 45,1% por sobre la referencia de 13 propiedades similares" in copy
-    assert "reduciría la diferencia frente a similares de +45,1% a +30,6%" in copy
-    assert "ofertas" not in copy and "cierres" not in copy
-    assert not any(term in copy.casefold() for term in ("causó", "debido al desempleo", "por culpa de"))
+def test_market_narrative_uses_only_snapshot_facts_and_never_property_specific_data():
+    result = _normalize_market_context({"period": "2026-09", "indicators": [
+        _verified_market_indicator("MORTGAGE_REFERENCE", "4,08%", "REGION", "Región Metropolitana", "Banco Central", region="RM"),
+        _verified_market_indicator("UNEMPLOYMENT", "9,8%", "REGION", "Región Metropolitana", "INE", region="RM"),
+        _verified_market_indicator("UNEMPLOYMENT", "9,6%", "COUNTRY", "Chile", "INE"),
+    ]}, operation="VENTA", region="Región Metropolitana")
+    copy = result["summary"]
+    assert "4,08%" in copy and "9,8%" in copy
+    assert "9,6%" in copy and "septiembre 2026" in copy
+    assert "consulta" not in copy and "portal" not in copy and "45,1%" not in copy and "propiedad" not in copy.casefold()
+    assert not any(term in copy.casefold() for term in ("este indicador mide", "la tpm resume", "la tasa contextualiza", "por culpa de"))
 
 
-def test_rent_property_interpretation_uses_rent_signals_without_sale_or_mortgage_claims():
-    copy = _market_context_property_interpretation(
-        context={"operation": "ARRIENDO", "visible_kpis": [
-            {"kind": "UNEMPLOYMENT"}, {"kind": "REAL_WAGES"}, {"kind": "CPI"},
-        ]},
-        funnel={"stages": [
-            {"key": "LEADS", "count": 2, "status": "VERIFIED"},
-            {"key": "VISITS", "count": None, "status": "NOT_INSTRUMENTED"},
-        ]},
-        publication_presence={"source_status": "VERIFIED", "publication_channel_count": 5},
-        market_position={
-            "count": 8, "unit": "UF/m²/mes",
-            "property_current_gaps": [{"kind": "COMPARABLE", "text": "+12,4% vs similares"}],
-            "property_recommended_gaps": [{"kind": "COMPARABLE", "text": "+4,2% vs similares"}],
-        },
-    )
-    assert copy.startswith("En arriendo, el empleo, la evolución de los ingresos reales y el costo de vida")
-    assert "2 consultas" in copy and "5 portales" in copy
-    assert "su valor de arriendo por m²" in copy
-    assert "financiamiento hipotecario" not in copy.casefold()
-    assert "ventas de viviendas" not in copy.casefold()
-    assert "0 visitas" not in copy
+def test_rent_narrative_is_generic_and_uses_dynamic_period_values():
+    result = _normalize_market_context({"period": "2026-10", "indicators": [
+        _verified_market_indicator("UNEMPLOYMENT", "10,2%", "REGION", "Región de Valparaíso", "INE", region="VS"),
+        _verified_market_indicator("UNEMPLOYMENT", "9,6%", "COUNTRY", "Chile", "INE"),
+        _verified_market_indicator("REAL_WAGES", "+4,1%", "COUNTRY", "Chile", "INE", period="julio 2026 · variación interanual", change=4.1),
+        _verified_market_indicator("CPI", "+3,4%", "COUNTRY", "Chile", "INE", period="septiembre 2026 · variación anual", change=3.4),
+    ]}, operation="ARRIENDO", region="Valparaíso")
+    copy = result["summary"]
+    details = " ".join(item["body"] for item in result["detail_blocks"])
+    assert "10,2%" in copy and "+4,1%" in copy and "+3,4%" in copy
+    assert "octubre 2026" in copy
+    assert "por sobre el 9,6%" in details and "aumentaron +4,1%" in details
+    assert "IPC registra una variación anual de +3,4%" in details
+    assert "Valparaíso" in details and "propiedad" not in copy.casefold()
+    assert "financiamiento hipotecario" not in details.casefold() and "ventas de viviendas" not in details.casefold()
 
 
-def test_rent_regional_indicator_is_primary_and_cpi_moves_to_details():
+def test_rent_regional_indicator_replaces_cpi_when_verified_for_region():
     result = _normalize_market_context({"indicators": [
         _verified_market_indicator("UNEMPLOYMENT", 9.8, "REGION", "Región Metropolitana", "INE", region="RM"),
         _verified_market_indicator("REAL_WAGES", 4.1, "NATIONAL", "Chile", "INE", change=4.1),
@@ -413,10 +602,11 @@ def test_rent_regional_indicator_is_primary_and_cpi_moves_to_details():
         "UNEMPLOYMENT", "REAL_WAGES", "REGIONAL_RENTAL_INDICATOR",
     ]
     assert len(result["visible_kpis"]) == 3
-    assert any("Costo de vida" == block["title"] for block in result["detail_blocks"])
+    assert "CPI" not in [item["kind"] for item in result["indicators"]]
+    assert all("Costo de vida" != block["title"] for block in result["detail_blocks"])
 
 
-def test_fogaes_is_only_competition_context_for_verified_comparable_price_band():
+def test_fogaes_is_not_added_to_the_four_context_narrative_families():
     context = {"indicators": [
         _verified_market_indicator("TPM", "4,5%", "NATIONAL", "Chile", "Banco Central"),
         _verified_market_indicator(
@@ -425,13 +615,10 @@ def test_fogaes_is_only_competition_context_for_verified_comparable_price_band()
             eligible_price_low_uf=1000, eligible_price_high_uf=4000,
         ),
     ]}
-    used = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500, property_condition="USED")
-    new = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500, property_condition="NEW")
-    assert any(item["title"] == "Competencia de vivienda nueva" for item in used["detail_blocks"])
-    assert any(item["title"] == "Competencia de vivienda nueva" for item in new["detail_blocks"])
-    assert all("beneficio" not in item["body"].casefold() for item in used["detail_blocks"])
-    unknown = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500)
-    assert all(item["title"] != "Competencia de vivienda nueva" for item in unknown["detail_blocks"])
+    result = _normalize_market_context(context, operation="VENTA", region="Valparaíso", property_price_uf=2500, property_condition="USED")
+    assert result is not None
+    assert result["narrative_family"] == "VENTA_REGION"
+    assert all(item["title"] != "Competencia de vivienda nueva" for item in result["detail_blocks"])
 
 
 def test_gap_explanation_only_appears_for_material_verified_gap():

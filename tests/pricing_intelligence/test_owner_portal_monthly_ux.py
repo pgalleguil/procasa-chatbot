@@ -9,6 +9,8 @@ from owner_portal.monthly import (
     _activity_funnel,
     _gap_explanation,
     _normalize_market_context,
+    _market_context_region_key,
+    _market_context_geo,
     _market_context_property_interpretation,
     _static_position_data,
     _position_simulation_data,
@@ -155,6 +157,33 @@ def test_market_context_rejects_unverified_legacy_and_unmatched_region():
         ],
     }, operation="VENTA", region="Valparaíso")
     assert result is None
+
+
+@pytest.mark.parametrize("region", ["Bío-Bío", "Bio-Bio", "Biobío", "Biobio", "BI"])
+def test_biobio_region_aliases_resolve_to_seed_geography_code(region):
+    seed = next(item for item in SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT if item["geography_code"] == "BI")
+    assert _market_context_region_key(region) == "biobio"
+    assert _market_context_region_key(region) == _market_context_region_key(seed["geography_code"])
+    matches, _, _ = _market_context_geo(seed, region=region, commune="")
+    assert matches is True
+
+
+@pytest.mark.parametrize(("region", "geography_code"), [
+    ("Araucanía", "AR"),
+    ("Maule", "ML"),
+    ("Metropolitana", "RM"),
+    ("Valparaiso", "VS"),
+    ("Bernardo OHiggins", "LI"),
+    ("Bío-Bío", "BI"),
+    ("Coquimbo", "CO"),
+    ("Los Lagos", "LL"),
+    ("Los Ríos", "LR"),
+])
+def test_all_owner_portal_regions_match_their_seed_geography_code(region, geography_code):
+    seed = next(item for item in SEPTEMBER_2026_REGIONAL_UNEMPLOYMENT if item["geography_code"] == geography_code)
+    assert _market_context_region_key(region) == _market_context_region_key(geography_code)
+    matches, _, _ = _market_context_geo(seed, region=region, commune="")
+    assert matches is True
 
 
 def test_market_context_canonical_store_uses_exact_or_previous_month_and_is_operation_aware():

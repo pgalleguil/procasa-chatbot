@@ -2983,6 +2983,8 @@ def _market_context_region_key(value: Any) -> str:
     }
     if folded in region_codes:
         return region_codes[folded]
+    if folded in {"bio-bio", "bio bio", "biobio"}:
+        return "biobio"
     if folded in {"metropolitana de santiago", "metropolitana"}:
         return "metropolitana"
     if folded in {"bernardo ohiggins", "libertador bernardo ohiggins", "libertador general bernardo ohiggins", "o higgins", "ohiggins"}:

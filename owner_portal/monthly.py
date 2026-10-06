@@ -1304,9 +1304,9 @@ _PUBLICATION_CHANNELS: tuple[tuple[str, str], ...] = (
     ("portal_inmobiliario", "Portal Inmobiliario"),
     ("toctoc", "TocToc"),
     ("yapo", "Yapo"),
-    ("proppit", "Proppit"),
     ("chilepropiedades", "ChilePropiedades"),
     ("enlace_inmobiliario", "Enlace Inmobiliario"),
+    ("proppit", "Proppit"),
 )
 _PROPPIT_NETWORK_PORTALS: tuple[str, ...] = ("icasas", "Mitula", "Nestoria", "Nuroa", "Trovit")
 _PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
@@ -1539,6 +1539,9 @@ def _publication_presence_model(property_doc: Mapping[str, Any], *, now: datetim
         if item:
             item["kind"] = key.upper()
             items.append(item)
+    # Keep the distribution-network row last, after standalone and future
+    # canonical channels.
+    items.sort(key=lambda item: item.get("kind") == "PROPPIT")
     distinct_urls = {link["url"] for item in items if item.get("published") for link in item["links"]}
     published_items = [item for item in items if item.get("published")]
     group_ids = {item["group_id"] for item in published_items}

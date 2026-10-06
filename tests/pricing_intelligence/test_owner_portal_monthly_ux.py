@@ -2529,7 +2529,7 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
     assert result["total_published_channels"] == 12
     assert result["channels_with_url"] == 6
     assert [item["kind"] for item in result["items"]] == [
-        "PROCASA", "PORTAL_INMOBILIARIO", "MERCADO_LIBRE", "TOCTOC", "YAPO", "PROPPIT", "CHILEPROPIEDADES", "ENLACE_INMOBILIARIO",
+        "PROCASA", "PORTAL_INMOBILIARIO", "MERCADO_LIBRE", "TOCTOC", "YAPO", "CHILEPROPIEDADES", "ENLACE_INMOBILIARIO", "PROPPIT",
     ]
     pi_item, ml_item = result["items"][1:3]
     assert pi_item["owner_label"] == "Portal Inmobiliario"
@@ -2551,7 +2551,7 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
     assert chile["url"] == "" and chile["links"] == []
     proppit = next(item for item in result["items"] if item["kind"] == "PROPPIT")
     assert proppit["network_portals"] == ["icasas", "Mitula", "Nestoria", "Nuroa", "Trovit"]
-    enlace = result["items"][-1]
+    enlace = next(item for item in result["items"] if item["kind"] == "ENLACE_INMOBILIARIO")
     assert enlace["owner_label"] == "Enlace Inmobiliario"
     assert enlace["published"] is False
     assert enlace["links"] == []

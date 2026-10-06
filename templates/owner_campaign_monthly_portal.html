@@ -163,16 +163,18 @@
     .publication-item__link { display:inline-flex; min-height:20px; align-items:center; color:var(--brand); font-size:9px; line-height:1.2; font-weight:650; text-decoration:none; }
     .publication-item__link:hover { text-decoration:underline; }
     .market-evidence-summary { margin-top:3px; color:#747d93; font-size:10.5px; line-height:1.3; }
-    .market-position-evidence { display:grid; gap:5px; margin:8px 0 0; color:#747d93; font-size:10px; line-height:1.35; }
+    .market-position-evidence { display:grid; gap:5px; margin:10px 0 0; padding:9px 11px; border:1px solid #efedf6; border-radius:9px; background:#fbfaff; color:#626d85; font-size:14px; line-height:1.4; }
     .market-position-evidence p { margin:0; }
-    .market-position-extra-refs { display:grid; gap:3px; }
-    .market-position-extra-refs > strong { color:#626d85; font-size:9.5px; font-weight:700; }
-    .market-position-extra-ref { display:flex; min-width:0; align-items:center; gap:6px; color:#626d85; }
+    .market-position-evidence__group { display:grid; gap:3px; }
+    .market-position-evidence__label { color:#626d85; font-size:13px; line-height:1.3; font-weight:650; }
+    .market-position-extra-refs { display:grid; gap:4px; }
+    .market-position-extra-ref { display:flex; min-width:0; align-items:flex-start; gap:6px; color:#626d85; }
     .market-position-extra-ref i { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:#8b85c8; }
     .market-position-extra-ref[data-kind="APPRAISAL"] i { background:#5145b5; }
     .market-position-extra-ref[data-kind="COMMUNAL"] i { background:#91a0b7; }
-    .market-position-extra-ref span { min-width:0; overflow-wrap:anywhere; }
+    .market-position-extra-ref span { min-width:0; overflow-wrap:anywhere; font-size:14px; font-weight:600; }
     .market-position-extra-ref b { color:var(--ink); font-weight:650; }
+    .market-position-extra-ref small { display:block; margin-top:2px; color:#737d92; font-size:13px; line-height:1.4; font-weight:400; }
     .position-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
     .badge { flex:0 0 auto; padding:4px 8px; border-radius:999px; background:#eeedff; color:var(--brand); font-size:10.5px; font-weight:700; }
     .position-figure { position:relative; height:126px; margin:9px 7px 11px; }
@@ -195,7 +197,7 @@
     .position-static__gap { margin:9px 0 0; color:var(--brand); font-size:11px; line-height:1.35; font-weight:650; }
     .position-static__note { margin:5px 0 0; color:#737d92; font-size:10px; line-height:1.35; }
     .position-simulation__selector { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; padding:4px; border:1px solid #e9e7f4; border-radius:11px; background:#f6f5fb; }
-    .position-simulation__option { min-width:0; min-height:44px; padding:7px 9px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--body); font-family:inherit; font-size:11.5px; line-height:1.2; font-weight:600; cursor:pointer; }
+    .position-simulation__option { min-width:0; min-height:44px; padding:7px 9px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--body); font-family:inherit; font-size:16px; line-height:1.25; font-weight:550; cursor:pointer; }
     .position-simulation__option[aria-pressed="true"] { border-color:#dedbf2; background:#fff; color:var(--ink); box-shadow:0 1px 4px #19165f0d; }
     .position-simulation__option:focus-visible { outline:3px solid #4433d5; outline-offset:2px; }
     .position-simulation__plot { position:relative; height:58px; margin:5px 2px 7px; }
@@ -213,7 +215,7 @@
     .position-simulation__legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
     .position-simulation__legend[data-marker-count="1"] { grid-template-columns:minmax(0,1fr); }
     .position-simulation__legend-item { min-width:0; padding:7px 6px; border:1px solid #eeedf4; border-radius:9px; background:#fcfcfe; }
-    .position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:10px; line-height:1.2; }
+    .position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:14px; line-height:1.3; font-weight:550; }
     .position-simulation__legend-marker { --marker-color:#6958cc; flex:0 0 10px; width:10px; height:10px; box-sizing:border-box; border:0; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); }
     .position-simulation__legend-marker--appraisal { --marker-color:#c86c24; }
     .position-simulation__legend-marker--communal { --marker-color:#68758c; }
@@ -222,14 +224,15 @@
     .position-simulation__legend-item.is-selected { border-color:#d9d5f0; background:#f9f8ff; }
     .position-simulation__legend-item--property-current.is-selected { box-shadow:0 0 0 1px #211c6922; }
     .position-simulation__legend-item--property-recommended.is-selected { border-color:#b9d9c7; background:#f6fbf8; box-shadow:0 0 0 1px #21834d22; }
-    .position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:12px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
-    .position-simulation__property-gaps { display:flex; flex-wrap:wrap; gap:3px 8px; margin-top:4px; }
-    .position-simulation__property-gap { color:#505b73; font-size:9.5px; line-height:1.25; font-weight:600; overflow-wrap:anywhere; }
-    .position-simulation__classification { margin:12px 0 3px; color:var(--ink); font-size:13px; line-height:1.35; font-weight:700; }
+    .position-simulation__legend-value { display:block; margin-top:4px; color:var(--ink); font-size:23px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
+    .position-simulation__property-gaps { display:flex; flex-wrap:wrap; gap:4px 8px; margin-top:5px; }
+    .position-simulation__property-gap { color:#505b73; font-size:14px; line-height:1.35; font-weight:500; overflow-wrap:anywhere; }
+    .position-simulation__analysis-title { margin:15px 0 4px; color:var(--ink); font-size:17px; line-height:1.35; font-weight:700; }
     .position-simulation__legend-item--communal { background:#f8f8fb; }
-    .position-simulation__summary { min-height:2.8em; margin:9px 0 0; color:var(--body); font-size:11.5px; line-height:1.4; }
-    .position-simulation__note { margin:6px 0 0; color:#737d92; font-size:10px; line-height:1.35; }
-    .position-simulation__sources { margin-top:8px; padding-top:7px; border-top:1px solid #f0eff5; color:#737d92; font-size:10px; line-height:1.4; }
+    .position-simulation__summary { margin:0; color:var(--body); font-size:15.5px; line-height:1.5; font-weight:400; }
+    .position-simulation__note { margin:8px 0 0; color:#737d92; font-size:12.5px; line-height:1.4; font-weight:400; }
+    .position-simulation__sources { margin-top:10px; padding-top:8px; border-top:1px solid #f0eff5; color:#737d92; font-size:12.5px; line-height:1.45; font-weight:400; }
+    .position-top .section-heading { font-size:23px; line-height:1.3; font-weight:700; }
     .position-neutral { margin:0; padding:12px; border:1px dashed #dcdbe7; border-radius:10px; background:#fafafd; color:var(--body); font-size:11.5px; line-height:1.4; }
     .interpretation { margin:0; color:var(--body); text-align:center; font-size:10px; }
     .gap-explanation { margin:8px 0 0; padding:9px 11px; border-left:3px solid #8172df; border-radius:0 9px 9px 0; background:#f6f5ff; color:var(--body); font-size:11px; line-height:1.4; }
@@ -516,12 +519,20 @@
       .position-callout.subject { top:47px; }
       .position-callout strong { font-size:11px; }
       .position-simulation { padding:10px; }
-      .position-simulation__option { padding:7px 5px; font-size:10.5px; }
+      .position-top .section-heading { font-size:19px; }
+      .position-simulation__option { padding:7px 5px; font-size:14px; }
       .position-simulation__legend { gap:5px; }
-      .position-simulation__legend-item { padding:6px 5px; }
-      .position-simulation__legend-label { font-size:10px; }
-      .position-simulation__legend-value { font-size:11.5px; }
-      .position-simulation__summary { font-size:11.5px; }
+      .position-simulation__legend-item { padding:8px 7px; }
+      .position-simulation__legend-label { font-size:13px; }
+      .position-simulation__legend-value { font-size:19px; }
+      .position-simulation__property-gap { font-size:12.5px; }
+      .position-simulation__analysis-title { margin-top:13px; font-size:16px; }
+      .position-simulation__summary { font-size:14.5px; }
+      .market-position-evidence { padding:8px 9px; font-size:13px; }
+      .market-position-evidence__label { font-size:12.5px; }
+      .market-position-extra-ref span { font-size:13px; }
+      .market-position-extra-ref small { font-size:12px; }
+      .position-simulation__note,.position-simulation__sources { font-size:12px; }
       .sticky .button { font-size:11px; }
     }
     @media (prefers-reduced-motion:reduce) {
@@ -660,7 +671,7 @@
     <div class="position-simulation" data-position-simulation data-state="current" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
       {% if market_position.simulation_available %}<div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
         <button class="position-simulation__option" type="button" data-position-state="current" aria-pressed="true">Precio actual</button>
-        <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Con ajuste ({{ market_position.adjustment_label }})</button>
+        <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Precio recomendado ({{ market_position.adjustment_label }})</button>
       </div>{% endif %}
       <div class="position-simulation__plot" aria-label="Escala de posición frente a referencias disponibles">
         <div class="position-simulation__track" aria-hidden="true">
@@ -670,10 +681,18 @@
       <div class="position-simulation__legend" data-marker-count="{{ market_position.bar_markers|length }}" aria-label="Referencias y posición de la propiedad">
         {% for marker in market_position.bar_markers %}<div class="position-simulation__legend-item position-simulation__legend-item--{{ marker.kind|lower|replace('_','-') }}{% if marker.kind == 'PROPERTY_CURRENT' %} is-selected{% endif %}" data-legend-kind="{{ marker.kind|lower }}"><span class="position-simulation__legend-label"><span class="position-simulation__legend-marker position-simulation__legend-marker--{{ marker.kind|lower|replace('_','-') }}" aria-hidden="true"></span>{{ marker.label }}</span><strong class="position-simulation__legend-value">{{ marker.value_label }} {{ marker.unit }}</strong>{% if marker.gaps %}<span class="position-simulation__property-gaps">{% for gap in marker.gaps %}<span class="position-simulation__property-gap"{% if gap.is_primary %} data-position-gap{% endif %}>{{ gap.text }}</span>{% endfor %}</span>{% endif %}</div>{% endfor %}
       </div>
-      {% if market_position.market_evidence and market_position.market_evidence.available %}{% set additional_sources = market_position.market_evidence.sources|rejectattr('kind', 'in', market_position.market_evidence.scale_compatible_sources|map(attribute='kind')|list)|list %}{% if additional_sources %}<div class="market-position-evidence"><strong>Referencias de mercado</strong>{% if market_position.market_evidence.scale_compatible_sources %}<p><strong>Comparadas en esta escala:</strong> {{ market_position.market_evidence.scale_compatible_sources|map(attribute='owner_label')|join(' · ') }}</p>{% endif %}<div class="market-position-extra-refs"><strong>Referencias adicionales:</strong>{% for source in additional_sources %}<div class="market-position-extra-ref" data-kind="{{ source.kind }}"><i aria-hidden="true"></i><span>{{ source.owner_label }}{% if source.value_label %} · <b>{{ source.value_label }}</b>{% elif source.kind == 'APPRAISAL' %} · documento disponible{% endif %}{% if source.kind == 'COMMUNAL' and not source.area_basis %} · base de superficie pendiente de validar{% endif %}</span></div>{% endfor %}</div></div>{% endif %}{% endif %}
-      <p class="position-simulation__classification" data-position-classification aria-live="polite">{{ market_position.current_classification.label }}</p><p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
-      {% if market_position.simulation_available %}<p class="position-simulation__note">Simulación visual. No modifica el precio de publicación.</p>{% else %}<p class="position-simulation__note">UF/m² permite comparar valores usando una misma unidad de superficie.</p>{% endif %}
-      {% if market_position.count %}<p class="position-simulation__note">Referencia basada en {{ market_position.count }} propiedades similares seleccionadas.</p>{% endif %}
+      {% if market_position.market_evidence and market_position.market_evidence.available %}
+        {% set additional_sources = market_position.market_evidence.sources|rejectattr('kind', 'in', market_position.market_evidence.scale_compatible_sources|map(attribute='kind')|list)|list %}
+        {% if additional_sources %}<div class="market-position-evidence">
+          <div class="market-position-evidence__group"><span class="market-position-evidence__label">Referencia complementaria</span>
+            <div class="market-position-extra-refs">{% for source in additional_sources %}
+              <div class="market-position-extra-ref" data-kind="{{ source.kind }}"><i aria-hidden="true"></i><span>{{ source.owner_label }}{% if source.value_label %} · <b>{{ source.value_label }}</b>{% elif source.kind == 'APPRAISAL' %} · documento disponible{% endif %}{% if source.kind == 'COMMUNAL' and not source.area_basis %}<small>No se incorpora a la comparación directa porque aún no se ha validado que utilice la misma base de superficie.</small>{% elif source.kind == 'COMMUNAL' %}<small>No se incorpora a la comparación directa porque utiliza una base de superficie distinta.</small>{% endif %}</span></div>
+            {% endfor %}</div>
+          </div>
+        </div>{% endif %}
+      {% endif %}
+      <h3 class="position-simulation__analysis-title">Lectura comercial</h3><p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
+      {% if market_position.simulation_available %}<p class="position-simulation__note">Esta simulación es informativa y no modifica el precio publicado.</p>{% endif %}
       {% if market_position.sources_label %}<p class="position-simulation__sources">{{ market_position.sources_label }}</p>{% endif %}
     </div>
   </section>

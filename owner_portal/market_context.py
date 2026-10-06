@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
+import re
 from typing import Any, Iterable, Mapping
 
 MARKET_CONTEXT_SNAPSHOT_COLLECTION = "market_context_snapshots"
+MARKET_CONTEXT_NATURAL_KEY = (
+    "period", "indicator_kind", "geography_level", "geography_code",
+)
+MARKET_CONTEXT_UNIQUE_INDEX_NAME = "uq_market_context_period_kind_geo"
 SEPTEMBER_2026_PERIOD = "2026-09"
 
 
@@ -114,9 +120,125 @@ SEPTEMBER_2026_SEED: tuple[dict[str, Any], ...] = (
 
 def seed_identity(document: Mapping[str, Any]) -> tuple[str, str, str, str]:
     """Natural id: period + indicator kind + geography level + geography code."""
-    return tuple(str(document.get(key) or "").strip() for key in (
-        "period", "indicator_kind", "geography_level", "geography_code",
-    ))  # type: ignore[return-value]
+    return tuple(str(document.get(key) or "").strip() for key in MARKET_CONTEXT_NATURAL_KEY)  # type: ignore[return-value]
+
+
+def validate_market_context_documents(
+    documents: Iterable[Mapping[str, Any]], *, period: str,
+) -> list[str]:
+    """Validate a complete verified monthly manifest before planning any writes."""
+    items = list(documents)
+    errors: list[str] = []
+    if not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", str(period or "")):
+        return ["INVALID_PERIOD"]
+    required = (
+        "period", "indicator_kind", "value", "display_value", "unit",
+        "observation_period", "geography_level", "geography_code",
+        "geography_label", "source_name", "source_reference",
+        "source_published_at", "verified_at", "relevant_operations",
+        "methodology_notes", "verified", "active",
+    )
+    identities: list[tuple[str, str, str, str]] = []
+    forbidden_kinds = {"REGIONAL_RENTAL_INDICATOR", "STABLE_VACANCY", "FOGAES_CONTEXT"}
+    forbidden_key_tokens = ("fixture", "qa_only", "mock", "test_value", "temporary", "debug", "sample")
+    for index, document in enumerate(items):
+        if not isinstance(document, Mapping):
+            errors.append(f"DOC_{index}_NOT_MAPPING")
+            continue
+        for key in required:
+            if key not in document or (key != "source_published_at" and document.get(key) in (None, "", [])):
+                errors.append(f"DOC_{index}_MISSING_{key.upper()}")
+        if document.get("period") != period:
+            errors.append(f"DOC_{index}_PERIOD_MISMATCH")
+        if document.get("verified") is not True:
+            errors.append(f"DOC_{index}_NOT_VERIFIED")
+        if document.get("active") is not True:
+            errors.append(f"DOC_{index}_NOT_ACTIVE")
+        if document.get("source_reference") in (None, "") or document.get("source_name") in (None, ""):
+            errors.append(f"DOC_{index}_SOURCE_MISSING")
+        value = document.get("value")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            errors.append(f"DOC_{index}_INVALID_VALUE")
+        if document.get("indicator_kind") in forbidden_kinds:
+            errors.append(f"DOC_{index}_FORBIDDEN_INDICATOR_KIND")
+        if any(any(token in str(key).casefold() for token in forbidden_key_tokens) for key in document):
+            errors.append(f"DOC_{index}_QA_FIELD_PRESENT")
+        operations = document.get("relevant_operations")
+        if not isinstance(operations, (list, tuple)) or not operations or any(
+            str(operation).upper() not in {"VENTA", "ARRIENDO"} for operation in operations
+        ):
+            errors.append(f"DOC_{index}_INVALID_RELEVANT_OPERATIONS")
+        identity = seed_identity(document)
+        identities.append(identity)
+        if any(not part for part in identity):
+            errors.append(f"DOC_{index}_INCOMPLETE_NATURAL_KEY")
+    if len(set(identities)) != len(identities):
+        errors.append("DUPLICATE_NATURAL_IDENTITIES")
+    return errors
+
+
+def plan_period_update(
+    *, period: str,
+    incoming_documents: Iterable[Mapping[str, Any]],
+    existing_period_documents: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Plan idempotent writes for one period, never mutating other periods."""
+    incoming = [deepcopy(dict(item)) for item in incoming_documents if isinstance(item, Mapping)]
+    existing = [dict(item) for item in existing_period_documents if isinstance(item, Mapping)]
+    by_id: dict[tuple[str, str, str, str], list[Mapping[str, Any]]] = {}
+    conflicts: list[dict[str, Any]] = []
+    for document in existing:
+        identity = seed_identity(document)
+        if document.get("period") != period:
+            continue
+        if any(not part for part in identity):
+            conflicts.append({"identity": identity, "reason": "incomplete natural key"})
+        by_id.setdefault(identity, []).append(document)
+    for identity, matches in by_id.items():
+        if len(matches) > 1:
+            conflicts.append({"identity": identity, "reason": "duplicate natural key"})
+
+    incoming_by_id = {seed_identity(document): document for document in incoming}
+    for identity in set(by_id) - set(incoming_by_id):
+        conflicts.append({"identity": identity, "reason": "existing period identity absent from manifest"})
+
+    plan: dict[str, Any] = {"inserts": [], "updates": [], "unchanged": [], "conflicts": conflicts}
+    for document in incoming:
+        identity = seed_identity(document)
+        matches = by_id.get(identity, [])
+        if not matches:
+            plan["inserts"].append(document)
+            continue
+        if len(matches) > 1:
+            continue
+        current = matches[0]
+        if current.get("verified") is not True or current.get("active") is not True:
+            plan["conflicts"].append({"identity": identity, "reason": "existing record is not verified and active"})
+            continue
+        if all(current.get(key) == value for key, value in document.items()):
+            plan["unchanged"].append(identity)
+        else:
+            plan["updates"].append({"identity": identity, "document": document})
+    return plan
+
+
+def inspect_unique_key_integrity(existing_documents: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Find malformed or duplicate identities that would prevent a unique index."""
+    groups: dict[tuple[str, str, str, str], int] = {}
+    issues: list[dict[str, Any]] = []
+    for document in existing_documents:
+        if not isinstance(document, Mapping):
+            issues.append({"reason": "record is not a mapping"})
+            continue
+        identity = seed_identity(document)
+        if any(not part for part in identity):
+            issues.append({"identity": identity, "reason": "incomplete natural key"})
+        groups[identity] = groups.get(identity, 0) + 1
+    issues.extend(
+        {"identity": identity, "reason": "duplicate natural key"}
+        for identity, count in groups.items() if count > 1
+    )
+    return issues
 
 
 def plan_seed(existing_documents: Iterable[Mapping[str, Any]]) -> dict[str, Any]:

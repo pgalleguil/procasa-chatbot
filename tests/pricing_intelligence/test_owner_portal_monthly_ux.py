@@ -2349,7 +2349,7 @@ def test_missing_verified_update_date_is_omitted_instead_of_fabricated():
     assert "Fecha no disponible" not in html
 
 
-def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
+def test_summary_has_three_cards_and_reuses_canonical_activity_and_position():
     from bs4 import BeautifulSoup
     db = mongomock.MongoClient().test
     current = {
@@ -2432,21 +2432,36 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     soup = BeautifulSoup(template.render(view=view), "html.parser")
     summary = soup.select_one("#summary-title").find_parent("section")
     cards = summary.select(":scope > .kpis > .kpi")
-    assert len(cards) == 4
+    assert len(cards) == 3
     assert [card.select_one(".kpi-label").get_text(" ", strip=True) for card in cards] == [
-        "Precio actual", "Precio sugerido", "Consultas recibidas", "Posición de mercado",
+        "Precio actual", "Precio sugerido", "Consultas recibidas",
     ]
     activity_section = soup.select_one("#activity-title").find_parent("section")
     summary_leads = cards[2].select_one(".kpi-value").get_text(strip=True)
     activity_leads = activity_section.select_one(".owner-funnel-stage-label strong").get_text(strip=True)
     assert summary_leads == activity_leads == str(view["activity_90d"]["leads"])
     assert cards[1].select_one(".kpi-note").get_text(" ", strip=True) == "-10% recomendado"
-    assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición de mercado"
-    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "2 fuentes disponibles"
-    assert cards[3].select_one(".market-evidence-summary").get_text(" ", strip=True) == (
-        "2 referencias con valor · 1 referencia directamente en la misma escala · Similares · Oferta comunal"
-    )
+    assert not summary.select_one(".position-kpi")
+    assert [card.select_one(".kpi-value").get_text(strip=True) for card in cards] == [
+        "18.507 UF", "≈ 16.650 UF", "1",
+    ]
+    assert [card.select_one(".kpi-value")["data-count-value"] for card in cards] == [
+        "18507", "16650", "1",
+    ]
+    assert cards[0].select_one(".kpi-value")["data-count-final"] == "18.507 UF"
+    assert cards[1].select_one(".kpi-value")["data-count-prefix"] == "≈ "
+    assert cards[1].select_one(".kpi-value")["data-count-suffix"] == " UF"
+    assert cards[2].select_one(".kpi-value")["data-count-delay"] == "140"
     assert view["market_reference_card"]["source_label"].startswith("Informe comunal · Santiago · Departamento")
+
+    template_source = open("templates/owner_campaign_monthly_portal.html", encoding="utf-8").read()
+    assert ".kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:1fr;" in template_source
+    assert ".kpis { grid-template-columns:minmax(0,1fr);" in template_source
+    assert "requestAnimationFrame(frame)" in template_source
+    assert "duration=800" in template_source
+    assert "target.dataset.countupStarted==='true'" in template_source
+    assert "prefers-reduced-motion: reduce" in template_source
+    assert "new IntersectionObserver(function(entries)" in template_source
 
     missing_db = mongomock.MongoClient().test
     missing_current = {**current, "property": {**current["property"], "commune": "Talca"}}
@@ -2471,7 +2486,7 @@ def test_summary_keeps_unknown_leads_unavailable_instead_of_zero():
     ).render(view=view), "html.parser")
     summary = soup.select_one("#summary-title").find_parent("section")
     cards = summary.select(":scope > .kpis > .kpi")
-    assert len(cards) == 4
+    assert len(cards) == 3
     leads = next(card for card in cards if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas")
     assert leads.select_one(".kpi-value").get_text(strip=True) == "—"
     assert leads.select_one(".kpi-note").get_text(strip=True) == "Sin dato consolidado"
@@ -2874,8 +2889,8 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
         if case == "missing_macro": assert len(soup.select(".market-kpi")) == 1
         if case == "no_gap":
-            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "1 fuente disponible"
-            assert not soup.select_one(".position-kpi.above, .position-kpi.below")
+            assert not soup.select_one(".position-kpi")
+            assert view["market_evidence"]["summary_position_label"] == "1 fuente disponible"
             assert not view["gap_explanation"]
         if case in {"stale", "no_gap"}:
             assert view["position_simulation"]["available"] is False

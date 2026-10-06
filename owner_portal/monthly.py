@@ -3651,16 +3651,16 @@ def _recommendation_period_label(value: Any) -> str:
     return f"{months[month - 1].capitalize()} {year}" if 1 <= month <= 12 else ""
 
 
-def _price_presentation(value: Any, exact_label: Any, operation: str, current_value: Any) -> tuple[str, str]:
+def _price_presentation(value: Any, exact_label: Any, operation: str, current_value: Any) -> tuple[str, str, Any]:
     """Create presentation-only rounded UF labels; leave stored/exact prices untouched."""
     from .campaign import _format_client_price
 
     exact = _text(exact_label)
     if not exact.casefold().endswith("uf"):
-        return exact, ""
+        return exact, "", value
     amount = _number_from_label(value)
     if amount is None or amount <= 0:
-        return exact, ""
+        return exact, "", value
     increment = Decimal("50") if amount >= 1000 else Decimal("10")
     rounded = (Decimal(str(amount)) / increment).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * increment
     proposed_label = "≈ " + _format_client_price(float(rounded), operation)
@@ -3670,7 +3670,7 @@ def _price_presentation(value: Any, exact_label: Any, operation: str, current_va
     if current_label.casefold().endswith("uf") and current_amount is not None and current_amount > float(rounded):
         difference = current_amount - float(rounded)
         difference_label = "≈ " + _format_client_price(difference, operation)
-    return proposed_label, difference_label
+    return proposed_label, difference_label, int(rounded)
 
 
 def _activity_count_signals(activity: Mapping[str, Any]) -> list[tuple[str, str]]:
@@ -4097,7 +4097,7 @@ def build_monthly_portal_view(
                 adjustment_headline_label = f"{headline_adjustment:g}%"
         except (TypeError, ValueError):
             pass
-    recommended_price_display_label, recommendation_difference_label = _price_presentation(
+    recommended_price_display_label, recommendation_difference_label, recommended_price_display_value = _price_presentation(
         recommended_price, recommended_price_label, operation, current_price,
     )
     recommendation_summary, recommendation_details = _recommendation_narrative(position, activity, adjustment_value)
@@ -4275,8 +4275,10 @@ def build_monthly_portal_view(
         "commune": commune_label,
         "operation": operation,
         "current_price_label": current_price_label if not stale else "",
+        "current_price_count_value": current_price if not stale else None,
         "recommended_price_label": recommended_price_label if not stale else "",
         "recommended_price_display_label": recommended_price_display_label if not stale else "",
+        "recommended_price_count_value": recommended_price_display_value if not stale else None,
         "recommendation_difference_label": recommendation_difference_label if not stale else "",
         "adjustment_pct": adjustment_value,
         "adjustment_label": adjustment_label,

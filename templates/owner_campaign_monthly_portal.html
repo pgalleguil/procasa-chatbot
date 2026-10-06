@@ -69,8 +69,8 @@
     .section-heading { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:14px; line-height:1.25; font-weight:700; }
     .section-icon { width:26px; height:26px; flex:0 0 26px; display:grid; place-items:center; border-radius:9px; background:var(--wash); color:var(--brand); font-size:14px; }
     .section-icon svg { width:16px; height:16px; }
-    .kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
-    .kpi { min-width:0; padding:10px 9px; border:1px solid #eaebf3; border-radius:11px; background:#fbfbfe; }
+    .kpis { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:1fr; align-items:stretch; gap:7px; }
+    .kpi { min-width:0; height:100%; box-sizing:border-box; padding:10px 9px; border:1px solid #eaebf3; border-radius:11px; background:#fbfbfe; }
     .kpi.recommended { border-color:#e9e1d3; background:var(--warm); }
     .kpi.adjustment { border-color:#dcecdf; background:#f3faf5; }
     .kpi-label { color:var(--body); font-size:10.5px; line-height:1.25; font-weight:700; }
@@ -393,7 +393,7 @@
       .card { margin-top:8px; padding:12px; border-radius:13px; }
       .section-heading { gap:7px; margin-bottom:8px; font-size:12px; }
       .section-icon { width:23px; height:23px; flex-basis:23px; }
-      .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+      .kpis { grid-template-columns:minmax(0,1fr); gap:6px; }
       .kpi { padding:8px; }
       .kpi-label { font-size:10.5px; }
       .kpi-value { font-size:16px; }
@@ -588,10 +588,13 @@
   <section class="card" aria-labelledby="summary-title">
     <h2 class="section-heading" id="summary-title"><span class="section-icon">{{ ui_icon('bolt') }}</span>Resumen en 30 segundos</h2>
     <div class="kpis">
-      <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value">{{ view.current_price_label or '—' }}</div></div>
-      <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value">{{ view.recommended_price_display_label or view.recommended_price_label or '—' }}</div>{% if view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
-      <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value">{{ view.activity_90d.leads if view.activity_90d.leads is not none else '—' }}</div><div class="kpi-note">{{ 'últimos 90 días' if view.activity_90d.leads is not none else 'Sin dato consolidado' }}</div></div>
-      <div class="kpi position-kpi"><div class="kpi-label">Posición de mercado</div>{% if view.market_evidence and view.market_evidence.available %}<div class="kpi-value">{{ view.market_evidence.summary_position_label }}</div><div class="market-evidence-summary">{{ view.market_evidence.summary_position_note }}</div>{% else %}<div class="kpi-value">—</div><div class="kpi-note">Sin referencias verificadas</div>{% endif %}</div>
+      {% set current_price_label = view.current_price_label|default('') %}
+      {% set current_price_count = view.current_price_count_value|default(none) %}
+      {% set recommended_display = view.recommended_price_display_label or view.recommended_price_label or '' %}
+      {% set recommended_price_count = view.recommended_price_count_value|default(none) %}
+      <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value"{% if current_price_count is not none and current_price_label.endswith(' UF') %} data-count-value="{{ current_price_count }}" data-count-prefix="" data-count-suffix=" UF" data-count-final="{{ current_price_label }}" data-count-delay="0"{% endif %}>{{ current_price_label or '—' }}</div></div>
+      <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value"{% if recommended_price_count is not none and recommended_display.endswith(' UF') %} data-count-value="{{ recommended_price_count }}" data-count-prefix="{{ '≈ ' if recommended_display.startswith('≈ ') else '' }}" data-count-suffix=" UF" data-count-final="{{ recommended_display }}" data-count-delay="70"{% endif %}>{{ recommended_display or '—' }}</div>{% if view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
+      <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value"{% if view.activity_90d.leads is not none %} data-count-value="{{ view.activity_90d.leads }}" data-count-prefix="" data-count-suffix="" data-count-final="{{ view.activity_90d.leads }}" data-count-delay="140"{% endif %}>{{ view.activity_90d.leads if view.activity_90d.leads is not none else '—' }}</div><div class="kpi-note">{{ 'últimos 90 días' if view.activity_90d.leads is not none else 'Sin dato consolidado' }}</div></div>
     </div>
   </section>
 
@@ -839,9 +842,34 @@
   var cards=Array.from(document.querySelectorAll('.card'));
   try {
     var reveal=new IntersectionObserver(function(entries){
-      entries.forEach(function(entry){if(entry.isIntersecting){entry.target.classList.remove('reveal-pending');entry.target.classList.add('revealed');reveal.unobserve(entry.target);}});
+      entries.forEach(function(entry){
+        if(!entry.isIntersecting) return;
+        var target=entry.target;
+        if(target.hasAttribute('data-count-value')){
+          if(target.dataset.countupStarted==='true') return;
+          target.dataset.countupStarted='true';
+          var endValue=Number(target.dataset.countValue),delay=Number(target.dataset.countDelay)||0;
+          if(!Number.isFinite(endValue)){reveal.unobserve(target);return;}
+          window.setTimeout(function(){
+            var startTime=null,duration=800,prefix=target.dataset.countPrefix||'',suffix=target.dataset.countSuffix||'';
+            var fractional=Math.abs(endValue-Math.round(endValue))>0.000001;
+            var numberFormat=new Intl.NumberFormat('es-CL',{minimumFractionDigits:0,maximumFractionDigits:fractional?1:0});
+            function frame(now){
+              if(startTime===null) startTime=now;
+              var progress=Math.min((now-startTime)/duration,1),eased=1-Math.pow(1-progress,3);
+              target.textContent=progress===1?(target.dataset.countFinal||''):(prefix+numberFormat.format(endValue*eased)+suffix);
+              if(progress<1) window.requestAnimationFrame(frame);
+            }
+            window.requestAnimationFrame(frame);
+          },delay);
+          reveal.unobserve(target);
+          return;
+        }
+        target.classList.remove('reveal-pending');target.classList.add('revealed');reveal.unobserve(target);
+      });
     },{threshold:0.06});
     cards.forEach(function(card){if(card.getBoundingClientRect().top>window.innerHeight){card.classList.add('reveal-pending');reveal.observe(card);}});
+    document.querySelectorAll('#summary-title ~ .kpis .kpi-value[data-count-value]').forEach(function(value){reveal.observe(value);});
   }catch(error){cards.forEach(function(card){card.classList.remove('reveal-pending');});}
 })();
 </script>

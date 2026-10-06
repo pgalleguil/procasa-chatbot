@@ -12,7 +12,7 @@ The portal template references only `/static/...` assets at runtime.
 | Yapo | `yapo.svg` (embedded local copy, icon view) | `https://getonbrd-prod.s3.amazonaws.com/uploads/users/logo/253/logo_yapo_2022.png` |
 | Proppit | `proppit.png` | `https://www.proppit.com/proppit-favicons/mstile-150x150.png` |
 | ChilePropiedades | `chilepropiedades.svg` | `https://chilepropiedades.cl/assets/images/favicon.svg` |
-| Enlace Inmobiliario | `enlace-inmobiliario.png` | Local crop of the complete Enlace hand-and-house icon from the official Enlace BCI page asset: `https://www.enlaceinmobiliarios.cl/bci/bancarios/img/logos_portales/banco_87_color.png` |
+| Enlace Inmobiliario | `enlace-inmobiliario.png` | Local copy of the hand-and-house icon image provided by the user; displayed with `object-fit: contain` and no external runtime request. |
 
 Names and marks remain the property of their respective owners. Yapo's 200×200
 transparent company mark is embedded in the local `yapo.svg`, which shows only

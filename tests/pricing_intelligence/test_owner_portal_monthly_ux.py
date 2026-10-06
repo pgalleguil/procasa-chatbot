@@ -6,14 +6,18 @@ import mongomock
 import pytest
 
 from owner_portal.monthly import (
+    _activity_funnel,
     _gap_explanation,
     _normalize_market_context,
     _static_position_data,
     _position_simulation_data,
     _recommendation_narrative,
     _recommendation_period_label,
+    _market_evidence_model,
     build_monthly_portal_view,
     owner_property_portal_id,
+    resolve_owner_activity_90d,
+    resolve_owner_commercial_funnel_90d,
 )
 
 
@@ -95,24 +99,26 @@ def test_recommendation_period_uses_current_snapshot_period():
     assert _recommendation_period_label("not-a-period") == ""
 
 
-def test_zero_activity_is_preserved_and_unverified_whatsapp_is_hidden():
+def test_unanchored_activity_is_unavailable_and_unverified_whatsapp_is_hidden():
     db = mongomock.MongoClient().test
     current = {
         "period": "2026-10",
         "activity_90d": {"leads": 0, "conversations": 0, "visits": 0},
     }
     view = _view(db, monthly=current, history=[current], snapshot={"executive_phone": "not-a-phone"})
-    assert view["activity_90d"] == {
-        "leads": 0, "conversations": 0, "visits": 0, "summary": "", "source_date": "", "source_label": "",
+    assert {key: view["activity_90d"][key] for key in ("leads", "conversations", "visits", "summary", "source_date", "source_label")} == {
+        "leads": None, "conversations": None, "visits": None, "summary": "", "source_date": "", "source_label": "",
     }
+    assert view["activity_90d"]["funnel"]["available"] is True
     assert view["top_whatsapp_url"] == view["sticky_whatsapp_url"] == ""
     html = Environment(loader=FileSystemLoader("templates")).get_template(
         "owner_campaign_monthly_portal.html"
     ).render(view=view)
-    assert "Leads registrados" in html
-    assert "Conversaciones" in html
-    assert "Visitas coordinadas" in html
-    assert html.count('class="activity-value">0</div>') == 3
+    assert "Consultas recibidas" in html
+    assert "Conversaciones" not in html
+    assert "Visitas" in html and "Ofertas" in html and "Cierre" in html
+    assert html.count('class="owner-funnel-stage-row"') == 4
+    assert html.count('class="owner-funnel-stage-row"') == 4
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
     summary = soup.select_one("#summary-title").find_parent("section")
@@ -120,8 +126,66 @@ def test_zero_activity_is_preserved_and_unverified_whatsapp_is_hidden():
         card for card in summary.select(":scope > .kpis > .kpi")
         if card.select_one(".kpi-label").get_text(strip=True) == "Consultas recibidas"
     )
-    assert leads_card.select_one(".kpi-value").get_text(strip=True) == "0"
-    assert leads_card.select_one(".kpi-note").get_text(strip=True) == "últimos 90 días"
+    assert leads_card.select_one(".kpi-value").get_text(strip=True) == "—"
+    assert leads_card.select_one(".kpi-note").get_text(strip=True) == "Sin dato consolidado"
+
+
+def test_activity_reconstruction_uses_frozen_cutoff_and_deduplicates_conversation_messages():
+    db = mongomock.MongoClient().test
+    cutoff = datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
+    db["leads"].insert_one({
+        "_id": "lead-1", "prospecto": {"codigo": "5695", "operacion": "VENTA"},
+        "created_at": cutoff - timedelta(days=20), "phone": "+56911112222", "source": "portal",
+    })
+    db["conversation_events"].insert_many([
+        {"property_code": "5695", "lead_id": "lead-1", "conversation_id": "conversation-1",
+         "event_type": "customer_message_received", "timestamp": cutoff - timedelta(days=2)},
+        {"property_code": "5695", "lead_id": "lead-1", "conversation_id": "conversation-1",
+         "event_type": "human_message_sent", "timestamp": cutoff - timedelta(days=2)},
+    ])
+    result = resolve_owner_activity_90d(
+        db, "5695", candidates=({},), window_end_candidates=(cutoff,), operation="VENTA",
+    )
+    assert result["source"] == "CANONICAL_READ_ONLY_RECONSTRUCTION"
+    assert result["window_end"] == cutoff
+    assert (result["leads"], result["conversations"], result["visits"]) == (1, 1, 0)
+
+
+def test_activity_successful_empty_query_is_zero_but_unknown_source_is_not_zero():
+    db = mongomock.MongoClient().test
+    cutoff = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    empty = resolve_owner_activity_90d(
+        db, "5695", candidates=({},), window_end_candidates=(cutoff,), operation="VENTA",
+    )
+    assert (empty["leads"], empty["conversations"], empty["visits"]) == (0, 0, 0)
+    unknown = resolve_owner_activity_90d(
+        db, "5695", candidates=({},), window_end_candidates=(), operation="VENTA",
+    )
+    assert unknown["state"] == "INTEGRITY_FAILURE"
+    assert unknown["leads"] is None
+
+
+def test_activity_does_not_turn_an_undated_exact_property_lead_into_zero():
+    db = mongomock.MongoClient().test
+    cutoff = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    db["leads"].insert_one({"_id": "lead-undated", "prospecto": {"codigo": "5806", "operacion": "VENTA"}})
+    result = resolve_owner_activity_90d(
+        db, "5806", candidates=({},), window_end_candidates=(cutoff,), operation="VENTA",
+    )
+    assert result["state"] == "INTEGRITY_FAILURE"
+    assert result["integrity"] == "UNVERIFIED_LEAD_TIMESTAMP"
+    assert result["undated_lead_candidates"] == 1
+    assert result["leads"] is None
+
+
+def test_activity_funnel_ratios_never_divide_by_zero():
+    zero = _activity_funnel({"leads": 0, "conversations": 0, "visits": 0})
+    assert zero["available"] is True
+    assert [stage["value"] for stage in zero["stages"]] == [0, 0, 0]
+    assert all("Sin base" in stage["ratio"] or "Sin consultas" in stage["ratio"] for stage in zero["stages"])
+    one = _activity_funnel({"leads": 1, "conversations": 0, "visits": 0})
+    assert one["stages"][1]["ratio"] == "0,0% de los leads"
+    assert one["stages"][2]["ratio"] == "0,0% de los leads"
 
 
 def test_verified_snapshot_phone_is_rendered_without_unsigned_whatsapp_link():
@@ -182,6 +246,34 @@ def test_market_position_uses_all_compatible_references_and_classifies_both_stat
     assert result["current_classification"]["label"] == "Sobre 3 de 3 referencias"
     assert result["proposed_classification"]["code"] == "WITHIN_REFERENCE_RANGE"
     assert result["proposed_classification"]["label"] == "Dentro del rango"
+    assert result["appraisal_available"] is True and result["appraisal_on_scale"] is True
+    assert result["appraisal_exclusion_reason"] == ""
+    assert result["communal_available"] is True and result["communal_on_scale"] is True
+    assert result["communal_exclusion_reason"] == ""
+
+
+def test_market_position_reports_available_references_excluded_from_scale():
+    from owner_portal.monthly import _market_position_data
+
+    result = _market_position_data(
+        position_simulation={"available": False},
+        position_static={"available": True, "unit": "UF/m² útil", "count": 7,
+                         "reference_value": 35.0, "property_value": 39.9},
+        comparables={"surface_ref_m2": 100},
+        communal={"offer_uf_m2": 102.76, "reference_unit": "UF/m²"},
+        appraisal_card={"mode": "DOCUMENT_ONLY", "document_url": "/private-report"},
+        property_state={"surface_ref_m2": 100, "surface_ref_unit": "UF/m² útil", "surface_ref_basis": "USEFUL"},
+        property_code="5695", current_price=3990, recommended_price=None,
+        recommendation_is_monthly=False, stale=False,
+    )
+    assert result["available"] is True
+    assert [reference["kind"] for reference in result["references"]] == ["COMPARABLE"]
+    assert result["appraisal_available"] is True
+    assert result["appraisal_on_scale"] is False
+    assert result["appraisal_exclusion_reason"] == "NO_VERIFIED_STRUCTURED_REFERENCE"
+    assert result["communal_available"] is True
+    assert result["communal_on_scale"] is False
+    assert result["communal_exclusion_reason"] == "AREA_BASIS_UNKNOWN"
 
 
 def test_comparable_surface_ref_preserves_historical_pair_and_requires_explicit_equivalence_for_other_sources():
@@ -1360,7 +1452,10 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     assert position["surface_ref_m2"] == 140
     assert abs(position["current_m2"] - 18_507 / 140) < 0.02
     assert abs(position["proposed_m2"] - 16_656 / 140) < 0.02
-    assert position["median"] == 91.1 and position["communal_value"] == 55.2
+    assert position["median"] == 91.1 and position["communal_value"] == 55.23
+    assert view["market_position"]["communal_available"] is True
+    assert view["market_position"]["communal_on_scale"] is False
+    assert view["market_position"]["communal_exclusion_reason"] == "AREA_BASIS_UNKNOWN"
     assert market["metrics"][0]["value"] == "55,2 UF/m²"
     assert market["metrics"][1]["value"] == "-10,0%"
     assert market["metrics"][2]["value"] == "9.215"
@@ -1378,12 +1473,14 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     ]
     activity_section = soup.select_one("#activity-title").find_parent("section")
     summary_leads = cards[2].select_one(".kpi-value").get_text(strip=True)
-    activity_leads = activity_section.select_one(".activity-value").get_text(strip=True)
+    activity_leads = activity_section.select_one(".owner-funnel-stage-label strong").get_text(strip=True)
     assert summary_leads == activity_leads == str(view["activity_90d"]["leads"])
     assert cards[1].select_one(".kpi-note").get_text(" ", strip=True) == "-10% recomendado"
     assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición de mercado"
-    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "+45,1% vs similares"
-    assert cards[3].select_one(".kpi-note").get_text(strip=True) == "similares"
+    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "2 referencias analizadas"
+    assert cards[3].select_one(".market-evidence-summary").get_text(" ", strip=True) == (
+        "1 referencia directamente en la misma escala · Propiedades similares · Informe comunal"
+    )
     assert view["market_reference_card"]["source_label"].startswith("Informe comunal · Santiago · Departamento")
 
     missing_db = mongomock.MongoClient().test
@@ -1782,7 +1879,7 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
         if case == "missing_macro": assert len(soup.select(".market-kpi")) == 2
         if case == "no_gap":
-            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "—"
+            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "1 referencias analizadas"
             assert not soup.select_one(".position-kpi.above, .position-kpi.below")
             assert not view["gap_explanation"]
         if case in {"stale", "no_gap"}:
@@ -1905,3 +2002,111 @@ def test_executive_signature_uses_requested_role_and_omits_removed_pitch():
         assert soup.select_one(".executive-role").get_text(" ", strip=True) == expected
         assert not soup.select_one(".executive-description")
         assert "Te explico cómo llegamos a este precio" not in soup.get_text(" ", strip=True)
+
+
+def test_owner_commercial_funnel_uses_dashboard_stages_and_deduplicates_visit_orders():
+    db = mongomock.MongoClient().test
+    cutoff = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    created = cutoff - timedelta(days=20)
+    for index in range(10):
+        stage_history = [{"to": "NEW", "timestamp": created}]
+        if index in {0, 1}:
+            stage_history.extend([
+                {"to": "OFFER", "timestamp": created + timedelta(days=3)},
+            ])
+        if index == 0:
+            stage_history.append({"to": "CLOSED_WON", "timestamp": created + timedelta(days=8)})
+        db["leads"].insert_one({
+            "prospecto": {"codigo": "5695", "operacion": "Venta"},
+            "created_at": created + timedelta(minutes=index),
+            "phone": f"569123456{index:02d}", "stage_history": stage_history,
+        })
+    accepted = cutoff - timedelta(days=5)
+    for index in range(4):
+        db["visitas"].insert_one({
+            "property_code": "5695", "status": "signed", "visita_code": f"V-{index}",
+            "timeline": [{"action": "accepted", "server_timestamp": accepted}],
+        })
+    db["ordenes_visitas"].insert_one({
+        "property_code": "5695", "status": "signed", "visita_code": "V-0",
+        "timeline": [{"action": "accepted", "server_timestamp": accepted}],
+    })
+    funnel = resolve_owner_commercial_funnel_90d(
+        db, "5695", candidates=(), window_end_candidates=(cutoff,), operation="VENTA",
+    )
+    stages = funnel["stages"]
+    assert [stage["key"] for stage in stages] == ["LEADS", "VISITS", "OFFERS", "CLOSINGS"]
+    assert [stage["count"] for stage in stages] == [10, 4, 2, 1]
+    assert [stage["width"] for stage in stages] == sorted([stage["width"] for stage in stages], reverse=True)
+    assert len({item for item in db["visitas"].distinct("visita_code")}) == 4
+    assert stages[1]["source"] == "visitas.status+timeline.accepted"
+    assert stages[2]["source"] == "leads.stage_history:OFFER|NEGOTIATION|CLOSED_WON"
+    assert stages[3]["source"] == "leads.stage_history:CLOSED_WON"
+    assert funnel["cutoff"] == cutoff
+
+
+def test_property_5695_owner_funnel_keeps_verified_lead_and_zero_visits():
+    db = mongomock.MongoClient().test
+    cutoff = datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc)
+    db["leads"].insert_one({
+        "_id": "5695-lead-1", "prospecto": {"codigo": "5695", "operacion": "VENTA"},
+        "created_at": datetime(2026, 8, 7, 12, tzinfo=timezone.utc),
+        "phone": "+56912345678", "stage_history": [{"to": "NEW", "timestamp": datetime(2026, 8, 7, 12, tzinfo=timezone.utc)}],
+    })
+    funnel = resolve_owner_commercial_funnel_90d(
+        db, "5695", candidates=(), window_end_candidates=(cutoff,), operation="VENTA",
+    )
+    assert [stage["count"] for stage in funnel["stages"]] == [1, 0, 0, 0]
+    assert funnel["stages"][0]["source"] == "leads.created_at"
+    assert funnel["stages"][1]["source"] == "visitas.status+timeline.accepted"
+    assert funnel["stages"][2]["status"] == funnel["stages"][3]["status"] == "VERIFIED"
+    assert funnel["cutoff"] == cutoff
+
+
+def test_market_evidence_summary_keeps_unscaled_sources_visible():
+    result = _market_evidence_model(
+        market_position={
+            "available": True,
+            "current_value": 132.2,
+            "references": [{"kind": "COMPARABLE", "value": 91.1, "unit": "UF/m² útil", "area_basis": "USEFUL"}],
+        },
+        position_static={"available": True, "reference_value": 91.1, "unit": "UF/m² útil", "count": 13, "source": "PRIMARY"},
+        appraisal_card={"mode": "DOCUMENT_ONLY"},
+        communal={"offer_uf_m2": 102.76, "reference_unit": "UF/m² de oferta", "currency_basis": "UF", "source_date": "28/04/2026"},
+        stale=False,
+    )
+    assert [source["kind"] for source in result["sources"]] == ["APPRAISAL", "COMPARABLE", "COMMUNAL"]
+    assert [source["kind"] for source in result["scale_compatible_sources"]] == ["COMPARABLE"]
+    assert result["summary_position_label"] == "3 referencias analizadas"
+    assert "1 referencia directamente en la misma escala" in result["summary_position_note"]
+    assert "Informe comunal" in result["summary_position_note"]
+
+
+def test_owner_funnel_reuses_portals_and_costs_bar_silhouette_visual_language():
+    from bs4 import BeautifulSoup
+
+    view = premium_fixture("full")
+    view["activity_90d"]["funnel"]["stages"] = [
+        {"key": "LEADS", "label": "Leads", "count": 10, "value": "10", "ratio": "100%", "width": 100},
+        {"key": "VISITS", "label": "Visitas", "count": 4, "value": "4", "ratio": "40,0% de leads", "width": 40},
+        {"key": "OFFERS", "label": "Ofertas", "count": 2, "value": "2", "ratio": "50,0% de visitas", "width": 20},
+        {"key": "CLOSINGS", "label": "Cierre", "count": 1, "value": "1", "ratio": "50,0% de ofertas", "width": 10},
+    ]
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    funnel = soup.select_one(".activity-funnel")
+    stages = funnel.select(".owner-funnel-stage-row")
+    assert [stage.select_one(".owner-funnel-stage-label span").get_text(strip=True) for stage in stages] == ["Leads", "Visitas", "Ofertas", "Cierre"]
+    widths = [float(stage.select_one(".owner-funnel-stage-bar")["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for stage in stages]
+    assert all(left > right for left, right in zip(widths, widths[1:]))
+    assert all(stage.select_one(".owner-funnel-stage-label strong") for stage in stages)
+    assert all(stage.select_one(".owner-funnel-stage-label small") for stage in stages)
+    assert "owner-funnel-silhouette" in html and "renderFunnelSilhouette" in html
+    assert "ownerFunnelBarGrow .72s cubic-bezier(.16,1,.3,1) .52s" in html
+    assert "ownerFunnelLineDraw .72s cubic-bezier(.16,1,.3,1) .46s" in html
+    assert "animateFunnelCounts" not in html and "toLocaleString('es-CL')" not in html
+    assert "clip-path:polygon" not in html
+    assert "prefers-reduced-motion:reduce" in html
+    assert not any("Conversaciones" in stage.get_text() for stage in stages)

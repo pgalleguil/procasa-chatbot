@@ -12,7 +12,7 @@ import html
 import re
 import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -492,6 +492,391 @@ def extract_verified_email_evidence(email_html: str | None) -> dict[str, Any]:
     return result
 
 
+def _activity_datetime(value: Any) -> datetime | None:
+    """Parse a source timestamp without substituting the current time."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+    elif isinstance(value, str) and value.strip():
+        raw = value.strip()
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _activity_count(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    number = _number_from_label(value)
+    if number is None or number < 0 or not float(number).is_integer():
+        return None
+    return int(number)
+
+
+def _complete_activity_candidate(value: Any, *, source: str, cutoff: Any = None) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    state = _text(value.get("state")).upper()
+    if state in {"UNKNOWN", "SOURCE_ERROR", "INTEGRITY_FAILURE", "UNRESOLVED"}:
+        return None
+    leads = _activity_count(value.get("leads", value.get("total_leads", value.get("lead_total"))))
+    conversations = _activity_count(value.get("conversations", value.get("conversation_count")))
+    visits = _activity_count(value.get("visits", value.get("visit_count")))
+    if leads is None or conversations is None or visits is None:
+        return None
+    window_end = _activity_datetime(
+        value.get("window_end") or value.get("cutoff_at") or value.get("as_of")
+        or value.get("source_date") or cutoff
+    )
+    return {
+        "state": "VERIFIED", "leads": leads, "conversations": conversations,
+        "visits": visits, "source": source, "window_end": window_end,
+        "summary": _text(value.get("summary")),
+    }
+
+
+def _reconstruct_owner_activity_90d(
+    db: Any, property_code: str, *, window_end: datetime, operation: str,
+) -> dict[str, Any]:
+    """Rebuild historical activity using the campaign's established semantics.
+
+    Leads are unique by normalized phone (or lead id when no phone exists),
+    conversations by conversation_id rather than message count, and visits
+    only by a signed visit with a verifiable accepted timestamp.
+    """
+    cutoff = window_end.astimezone(timezone.utc)
+    window_start = cutoff - timedelta(days=90)
+    code_values: list[Any] = [property_code]
+    try:
+        if property_code.isdigit():
+            code_values.append(int(property_code))
+    except Exception:
+        pass
+    try:
+        raw_leads = list(db["leads"].find(
+            {"prospecto.codigo": {"$in": code_values}},
+            {"_id": 1, "prospecto.codigo": 1, "prospecto.operacion": 1,
+             "created_at": 1, "conversation_id": 1, "source": 1, "origen": 1,
+             "portal": 1, "test_mode": 1, "is_duplicate": 1, "duplicate": 1,
+             "duplicate_of": 1, "phone": 1, "stage_history": 1},
+        ))
+        eligible_leads: dict[str, Mapping[str, Any]] = {}
+        lead_identity: set[str] = set()
+        offer_leads: set[str] = set()
+        closing_leads: set[str] = set()
+        undated_lead_candidates = 0
+        for lead in raw_leads:
+            prospect = lead.get("prospecto") if isinstance(lead.get("prospecto"), Mapping) else {}
+            if str(prospect.get("codigo") or "").strip() != property_code:
+                continue
+            source_text = " ".join(str(lead.get(key) or "") for key in ("source", "origen", "portal")).casefold()
+            if lead.get("test_mode") is True or any(flag in source_text for flag in ("test", "qa", "internal")):
+                continue
+            if lead.get("is_duplicate") is True or lead.get("duplicate") is True or lead.get("duplicate_of") not in (None, "", False):
+                continue
+            lead_operation = _text(prospect.get("operacion")).casefold()
+            if operation == "VENTA" and any(word in lead_operation for word in ("arriendo", "arriend", "rent")):
+                continue
+            if operation == "ARRIENDO" and any(word in lead_operation for word in ("venta", "sell")):
+                continue
+            created = _activity_datetime(lead.get("created_at"))
+            if created is None:
+                undated_lead_candidates += 1
+                continue
+            if not (window_start <= created <= cutoff):
+                continue
+            phone = "".join(char for char in str(lead.get("phone") or "") if char.isdigit())
+            if phone.startswith("56") and len(phone) == 11:
+                phone = phone[2:]
+            identity = f"phone:{phone}" if phone else f"lead:{lead.get('_id')}"
+            if identity in lead_identity:
+                continue
+            lead_identity.add(identity)
+            lead_id = str(lead.get("_id"))
+            eligible_leads[lead_id] = lead
+            for stage_event in lead.get("stage_history") or []:
+                if not isinstance(stage_event, Mapping):
+                    continue
+                reached = str(stage_event.get("to") or "").strip().upper()
+                event_at = _activity_datetime(stage_event.get("timestamp"))
+                if event_at is None or not (created <= event_at <= cutoff):
+                    continue
+                if reached in {"OFFER", "NEGOTIATION", "CLOSED_WON"}:
+                    offer_leads.add(lead_id)
+                if reached == "CLOSED_WON":
+                    closing_leads.add(lead_id)
+
+        native_ids = list(eligible_leads.keys())
+        event_or: list[dict[str, Any]] = [{"property_code": {"$in": code_values}}]
+        if native_ids:
+            event_or.append({"lead_id": {"$in": native_ids}})
+        raw_events = list(db["conversation_events"].find(
+            {"$or": event_or},
+            {"property_code": 1, "lead_id": 1, "conversation_id": 1,
+             "timestamp": 1, "created_at": 1, "event_type": 1,
+             "actor_type": 1, "test_mode": 1, "source": 1},
+        ))
+        conversations: set[str] = set()
+        for event in raw_events:
+            if event.get("test_mode") is True or str(event.get("source") or "").casefold() in {"owner_campaign_test", "qa", "internal"}:
+                continue
+            linked = str(event.get("property_code") or "").strip()
+            if not linked and event.get("lead_id") is not None:
+                linked_lead = eligible_leads.get(str(event.get("lead_id")))
+                if linked_lead:
+                    prospect = linked_lead.get("prospecto") if isinstance(linked_lead.get("prospecto"), Mapping) else {}
+                    linked = str(prospect.get("codigo") or "").strip()
+            if linked != property_code:
+                continue
+            event_type = str(event.get("event_type") or "").casefold()
+            actor = str(event.get("actor_type") or "").casefold()
+            if event_type not in {"customer_message_received", "human_message_sent"} and actor not in {"customer", "owner"}:
+                continue
+            occurred = _activity_datetime(event.get("timestamp") or event.get("created_at"))
+            if occurred is None or not (window_start <= occurred <= cutoff):
+                continue
+            conversation_id = str(event.get("conversation_id") or "").strip()
+            if conversation_id:
+                conversations.add(conversation_id)
+
+        raw_visits: list[Mapping[str, Any]] = []
+        for collection_name in ("visitas", "ordenes_visitas"):
+            try:
+                raw_visits.extend(list(db[collection_name].find(
+                    {"property_code": {"$in": code_values}},
+                    {"property_code": 1, "status": 1, "timeline": 1,
+                     "visita_code": 1, "order_id": 1, "_id": 1},
+                )))
+            except Exception:
+                raise
+        visits: set[str] = set()
+        for visit in raw_visits:
+            if str(visit.get("property_code") or "").strip() != property_code or str(visit.get("status") or "").casefold() != "signed":
+                continue
+            for event in visit.get("timeline") or []:
+                if not isinstance(event, Mapping) or str(event.get("action") or "").casefold() != "accepted":
+                    continue
+                accepted_at = _activity_datetime(event.get("server_timestamp"))
+                if accepted_at is not None and window_start <= accepted_at <= cutoff:
+                    visits.add(str(visit.get("visita_code") or visit.get("order_id") or visit.get("_id") or ""))
+                break
+        leads_value = len(lead_identity)
+        # An exact-property lead without a timestamp cannot be assigned to or
+        # excluded from this historical window. Do not turn that uncertainty
+        # into a verified zero when there are no dated leads to count.
+        unresolved_leads = undated_lead_candidates > 0 and leads_value == 0
+        return {
+            "state": "INTEGRITY_FAILURE" if unresolved_leads else "VERIFIED",
+            "leads": None if unresolved_leads else leads_value,
+            "conversations": len(conversations), "visits": len(visits),
+            "offers": len(offer_leads), "closings": len(closing_leads),
+            "offers_source": "leads.stage_history:OFFER|NEGOTIATION|CLOSED_WON",
+            "closings_source": "leads.stage_history:CLOSED_WON",
+            "source": "CANONICAL_READ_ONLY_RECONSTRUCTION",
+            "window_start": window_start, "window_end": cutoff,
+            "summary": "",
+            "integrity": "UNVERIFIED_LEAD_TIMESTAMP" if unresolved_leads else (
+                "PARTIAL_UNDATED_LEAD_CANDIDATES" if undated_lead_candidates else "OK"
+            ),
+            "undated_lead_candidates": undated_lead_candidates,
+        }
+    except Exception:
+        return {
+            "state": "SOURCE_ERROR", "leads": None, "conversations": None,
+            "visits": None, "offers": None, "closings": None,
+            "offers_source": "NOT_INSTRUMENTED", "closings_source": "NOT_INSTRUMENTED",
+            "source": "CANONICAL_READ_ONLY_RECONSTRUCTION",
+            "window_start": window_start, "window_end": cutoff,
+            "summary": "", "integrity": "SOURCE_ERROR",
+        }
+
+
+def resolve_owner_activity_90d(
+    db: Any, property_code: str, *, candidates: tuple[Any, ...],
+    window_end_candidates: tuple[Any, ...], operation: str,
+) -> dict[str, Any]:
+    """Resolve one canonical activity result for both KPI and funnel."""
+    for index, candidate in enumerate(candidates):
+        source = "MONTHLY_SNAPSHOT" if index == 0 else "FROZEN_SENT_RENDER_MODEL"
+        resolved = _complete_activity_candidate(candidate, source=source)
+        if resolved is not None:
+            end = resolved.get("window_end")
+            resolved["window_start"] = end - timedelta(days=90) if end else None
+            resolved["integrity"] = "OK"
+            return resolved
+    cutoff = next((_activity_datetime(value) for value in window_end_candidates if _activity_datetime(value)), None)
+    if cutoff is None:
+        return {
+            "state": "INTEGRITY_FAILURE", "leads": None, "conversations": None,
+            "visits": None, "source": "UNRESOLVED_CUTOFF", "window_start": None,
+            "window_end": None, "summary": "", "integrity": "UNRESOLVED_CUTOFF",
+        }
+    return _reconstruct_owner_activity_90d(db, property_code, window_end=cutoff, operation=operation)
+
+
+def resolve_owner_commercial_funnel_90d(
+    db: Any, property_code: str, *, candidates: tuple[Any, ...],
+    window_end_candidates: tuple[Any, ...], operation: str,
+) -> dict[str, Any]:
+    """Resolve the four owner-facing commercial stages against the report cutoff.
+
+    Complete, frozen four-stage evidence wins. Legacy three-stage activity data
+    is intentionally not promoted into a complete funnel; it falls back to
+    exact-property canonical lead/visit records and timestamped stage history.
+    """
+    normalized_stages = ("LEADS", "VISITS", "OFFERS", "CLOSINGS")
+    legacy_activity: dict[str, Any] | None = None
+    for index, candidate in enumerate(candidates):
+        if not isinstance(candidate, Mapping):
+            continue
+        legacy = _complete_activity_candidate(
+            candidate,
+            source="MONTHLY_SNAPSHOT" if index == 0 else "FROZEN_CAMPAIGN_EVIDENCE",
+        )
+        if legacy is not None and legacy_activity is None:
+            legacy_activity = legacy
+        funnel = candidate.get("commercial_funnel_90d") or candidate.get("funnel")
+        if not isinstance(funnel, Mapping):
+            continue
+        values = funnel.get("stages") if isinstance(funnel.get("stages"), Mapping) else funnel
+        resolved: dict[str, Any] = {}
+        complete = True
+        for stage in normalized_stages:
+            item = values.get(stage.lower()) or values.get(stage) if isinstance(values, Mapping) else None
+            item = item if isinstance(item, Mapping) else {"count": item}
+            count = _activity_count(item.get("count", item.get("value")))
+            status = _text(item.get("status") or funnel.get("status")).upper()
+            if count is None or status in {"SOURCE_ERROR", "INTEGRITY_ERROR", "IDENTITY_UNRESOLVED", "UNKNOWN"}:
+                complete = False
+                break
+            resolved[stage] = {"count": count, "status": "VERIFIED", "source": _text(item.get("source") or funnel.get("source"))}
+        if complete:
+            cutoff = next((_activity_datetime(value) for value in (
+                funnel.get("cutoff"), funnel.get("window_end"), candidate.get("cutoff_at"),
+                candidate.get("window_end"),
+            ) if _activity_datetime(value)), None)
+            if cutoff:
+                start = cutoff - timedelta(days=90)
+                return _build_owner_funnel(resolved, source="MONTHLY_SNAPSHOT" if index == 0 else "FROZEN_CAMPAIGN_EVIDENCE", cutoff=cutoff, start=start)
+
+    cutoff = next((_activity_datetime(value) for value in window_end_candidates if _activity_datetime(value)), None)
+    if cutoff is None and legacy_activity is not None:
+        cutoff = legacy_activity.get("window_end")
+    if cutoff is None:
+        return _unavailable_owner_funnel("UNRESOLVED_CUTOFF", "IDENTITY_UNRESOLVED")
+    reconstructed = _reconstruct_owner_activity_90d(
+        db, property_code, window_end=cutoff, operation=operation,
+    )
+    if reconstructed.get("state") == "SOURCE_ERROR" and legacy_activity is None:
+        return _unavailable_owner_funnel(reconstructed.get("integrity") or "SOURCE_ERROR", "SOURCE_ERROR", cutoff=cutoff)
+    rows = {
+        "LEADS": {"count": reconstructed.get("leads"), "status": "VERIFIED" if reconstructed.get("leads") is not None else "INTEGRITY_ERROR", "source": "leads.created_at"},
+        "VISITS": {"count": reconstructed.get("visits"), "status": "VERIFIED" if reconstructed.get("visits") is not None else "INTEGRITY_ERROR", "source": "visitas.status+timeline.accepted"},
+        "OFFERS": {"count": reconstructed.get("offers"), "status": "VERIFIED" if reconstructed.get("offers") is not None else "NOT_INSTRUMENTED", "source": reconstructed.get("offers_source") or "NOT_INSTRUMENTED"},
+        "CLOSINGS": {"count": reconstructed.get("closings"), "status": "VERIFIED" if reconstructed.get("closings") is not None else "NOT_INSTRUMENTED", "source": reconstructed.get("closings_source") or "NOT_INSTRUMENTED"},
+    }
+    if legacy_activity is not None:
+        # Preserve frozen leads/visits as higher-priority stage evidence. The
+        # old conversations field remains activity metadata, never a funnel stage.
+        for key, legacy_key in (("LEADS", "leads"), ("VISITS", "visits")):
+            value = _activity_count(legacy_activity.get(legacy_key))
+            if value is not None:
+                rows[key] = {"count": value, "status": "VERIFIED", "source": legacy_activity.get("source")}
+    result = _build_owner_funnel(rows, source=reconstructed.get("source") or "CANONICAL_READ_ONLY_RECONSTRUCTION", cutoff=cutoff, start=cutoff - timedelta(days=90))
+    result.update({
+        "conversations": legacy_activity.get("conversations") if legacy_activity else reconstructed.get("conversations"),
+        "summary": legacy_activity.get("summary", "") if legacy_activity else reconstructed.get("summary", ""),
+        "integrity": reconstructed.get("integrity", "OK"),
+    })
+    return result
+
+
+def _unavailable_owner_funnel(reason: str, status: str, *, cutoff: datetime | None = None) -> dict[str, Any]:
+    rows = {stage: {"count": None, "status": status, "source": "UNAVAILABLE"} for stage in ("LEADS", "VISITS", "OFFERS", "CLOSINGS")}
+    return _build_owner_funnel(rows, source=reason, cutoff=cutoff, start=cutoff - timedelta(days=90) if cutoff else None)
+
+
+def _build_owner_funnel(rows: Mapping[str, Mapping[str, Any]], *, source: str, cutoff: datetime | None, start: datetime | None) -> dict[str, Any]:
+    ordered = ("LEADS", "VISITS", "OFFERS", "CLOSINGS")
+    labels = {"LEADS": "Leads", "VISITS": "Visitas", "OFFERS": "Ofertas", "CLOSINGS": "Cierre"}
+    previous_count: int | None = None
+    stages: list[dict[str, Any]] = []
+    base_count = _activity_count((rows.get("LEADS") or {}).get("count"))
+    previous_width = 100.0
+    for index, key in enumerate(ordered):
+        item = rows.get(key) or {}
+        count = _activity_count(item.get("count"))
+        stage_status = _text(item.get("status") or ("VERIFIED" if count is not None else "SOURCE_ERROR")).upper()
+        if count is None:
+            ratio = "Sin registro estructurado" if stage_status == "NOT_INSTRUMENTED" else "Dato no consolidado"
+            width = (100.0, 76.0, 54.0, 34.0)[index]
+        elif index == 0:
+            ratio = "100%" if count > 0 else "Sin consultas registradas"
+            width = 100.0
+        else:
+            pct = (count / previous_count * 100) if previous_count is not None and previous_count > 0 else None
+            ratio = f"{pct:.1f}% de {labels[ordered[index - 1]].lower()}".replace(".", ",") if pct is not None else "Sin base de comparación"
+            relative = (count / base_count * 100) if base_count and count is not None else None
+            proposed = max(13.0, min(100.0, relative if relative is not None else (100.0, 76.0, 54.0, 34.0)[index]))
+            width = min(proposed, previous_width - 2.0)
+        width = max(10.0, min(width, previous_width))
+        stages.append({"key": key, "label": labels[key], "count": count,
+                       "value": str(count) if count is not None else "—", "ratio": ratio,
+                       "width": round(width, 1), "status": stage_status,
+                       "confidence": "VERIFIED" if count is not None else "UNAVAILABLE",
+                       "source": _text(item.get("source") or source)})
+        previous_width = width
+        previous_count = count
+    return {
+        "available": True, "stages": stages, "source": source,
+        "cutoff": cutoff, "start_date": start,
+        "source_status": "VERIFIED" if all(item["status"] == "VERIFIED" for item in stages) else "PARTIAL",
+    }
+
+
+def _activity_funnel(activity: Mapping[str, Any]) -> dict[str, Any]:
+    """Prepare client-readable funnel stages without division by zero."""
+    leads, conversations, visits = (
+        _activity_count(activity.get(key)) for key in ("leads", "conversations", "visits")
+    )
+    valid = all(value is not None for value in (leads, conversations, visits))
+    if not valid:
+        return {"available": False, "stages": []}
+
+    def pct(numerator: int, denominator: int) -> str | None:
+        if denominator <= 0:
+            return None
+        return f"{numerator / denominator * 100:.1f}".replace(".", ",") + "%"
+
+    def width(value: int) -> float:
+        if leads <= 0:
+            return 0.0
+        return max(0.0, min(100.0, value / leads * 100))
+
+    lead_note = "100%" if leads > 0 else "Sin consultas registradas"
+    conversation_pct = pct(conversations, leads)
+    conversation_note = f"{conversation_pct} de los leads" if conversation_pct is not None else "Sin base de comparación"
+    visit_denominator = conversations if conversations > 0 else leads
+    visit_pct = pct(visits, visit_denominator)
+    visit_basis = "de las conversaciones" if conversations > 0 else "de los leads"
+    visit_note = f"{visit_pct} {visit_basis}" if visit_pct is not None else "Sin base de comparación"
+    return {
+        "available": True,
+        "stages": [
+            {"label": "Consultas recibidas", "value": leads, "ratio": lead_note, "width": width(leads)},
+            {"label": "Conversaciones", "value": conversations, "ratio": conversation_note, "width": width(conversations)},
+            {"label": "Visitas coordinadas", "value": visits, "ratio": visit_note, "width": width(visits)},
+        ],
+    }
+
+
 def _as_period(value: Any) -> str:
     if isinstance(value, datetime):
         return value.strftime("%Y-%m")
@@ -679,6 +1064,8 @@ def _communal_market_card(
         "_id": 0, "match_key": 1, "comuna": 1, "tipo_propiedad": 1, market_field: 1,
         "mercado_arriendo": 1, "indicadores_mercado": 1,
         "rangos_precio_venta": 1, "rangos_precio_arriendo": 1, "source": 1,
+        "currency_basis": 1, "reference_unit": 1, "area_basis": 1,
+        "reference_area_basis": 1, "surface_basis": 1,
     }
     try:
         # Match the dataset's normalized key exactly. Limiting to two makes
@@ -802,6 +1189,12 @@ def _communal_market_card(
     return {
         "kind": "COMMUNAL_MARKET_REPORT", "title": _communal_market_title(property_type, commune),
         "metrics": metrics, "interpretation": interpretation, "details": details,
+        "commune": commune, "property_type": property_type,
+        "operation": operation_key,
+        "reference_value_uf_m2": operation_data.get("uf_m2_publicacion_actual") if operation_key == "VENTA" else None,
+        "currency_basis": _position_currency_basis(record.get("currency_basis") or record.get("reference_unit") or "UF"),
+        "reference_unit": record.get("reference_unit") or "UF/m²",
+        "area_basis": record.get("area_basis") or record.get("reference_area_basis") or record.get("surface_basis") or "",
         "source_label": f"Informe comunal · {commune} · {property_type}" + (f" · Corte {report_date}" if report_date else ""),
         "source_date": report_date, "document_url": document_url,
         "document_title": "Informe de mercado comunal",
@@ -1177,8 +1570,47 @@ def _market_position_data(
 ) -> dict[str, Any]:
     """Combine only property-scoped references that share a verified UF/m² scale."""
     unavailable = {"available": False, "simulation_available": False, "references": []}
+
+    appraisal_source = appraisal_card.get("market_position_reference") if isinstance(appraisal_card, Mapping) else None
+    appraisal_available = bool(appraisal_card)
+    appraisal_on_scale = False
+    appraisal_exclusion_reason = "NO_VERIFIED_STRUCTURED_REFERENCE" if appraisal_available else "APPRAISAL_NOT_AVAILABLE"
+    communal_source_value = None
+    communal_source_unit = None
+    communal_source_basis = None
+    if isinstance(communal, Mapping):
+        source_metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+        for source_key in ("offer_uf_m2", "uf_m2_offer", "value_uf_m2", "reference_value_uf_m2", "reference_value", "value", "uf_m2_publicacion_actual"):
+            raw = communal.get(source_key, source_metrics.get(source_key))
+            number = _number_from_label(raw)
+            if number is not None and number > 0:
+                communal_source_value = number
+                communal_source_unit = communal.get("reference_unit") or communal.get("unit")
+                communal_source_basis = communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis")
+                break
+    communal_available = communal_source_value is not None
+    communal_on_scale = False
+    communal_exclusion_reason = "COMMUNAL_REFERENCE_NOT_AVAILABLE" if not communal_available else "AREA_BASIS_UNKNOWN"
+
+    def diagnostics() -> dict[str, Any]:
+        return {
+            "appraisal_available": appraisal_available,
+            "appraisal_on_scale": appraisal_on_scale,
+            "appraisal_exclusion_reason": appraisal_exclusion_reason,
+            "communal_available": communal_available,
+            "communal_on_scale": communal_on_scale,
+            "communal_exclusion_reason": communal_exclusion_reason,
+        }
+
+    def unavailable_result(reason: str) -> dict[str, Any]:
+        return {**unavailable, "reason": reason, **diagnostics()}
+
     if stale:
-        return {**unavailable, "reason": "STALE_PORTAL"}
+        if appraisal_available:
+            appraisal_exclusion_reason = "STALE_PORTAL"
+        if communal_available:
+            communal_exclusion_reason = "STALE_PORTAL"
+        return unavailable_result("STALE_PORTAL")
 
     comparable_ok = bool(position_static.get("available"))
     scale_unit = _position_unit_label(position_static.get("unit")) if comparable_ok else ""
@@ -1205,7 +1637,6 @@ def _market_position_data(
                 "unit": scale_unit, "area_basis": scale_area_basis, "count": position_static.get("count"),
             })
 
-    appraisal_source = appraisal_card.get("market_position_reference") if isinstance(appraisal_card, Mapping) else None
     if (
         isinstance(appraisal_source, Mapping)
         and appraisal_source.get("verified") is True
@@ -1220,6 +1651,14 @@ def _market_position_data(
         appraisal_area_basis = _position_area_basis(
             explicit_raw_unit, appraisal_source.get("area_basis")
         )
+        if explicit_m2 is None:
+            appraisal_exclusion_reason = "EXPLICIT_UF_M2_NOT_AVAILABLE"
+        elif appraisal_currency != "UF":
+            appraisal_exclusion_reason = "CURRENCY_BASIS_UNKNOWN_OR_UNSUPPORTED"
+        elif not appraisal_area_basis:
+            appraisal_exclusion_reason = "AREA_BASIS_UNKNOWN"
+        elif scale_area_basis and appraisal_area_basis != scale_area_basis:
+            appraisal_exclusion_reason = "INCOMPATIBLE_AREA_BASIS"
         explicit_unit = _position_basis_unit(appraisal_currency, appraisal_area_basis)
         appraisal_value_m2 = None
         appraisal_unit = ""
@@ -1272,6 +1711,19 @@ def _market_position_data(
                 "value": appraisal_value_m2, "value_label": _format_position_value(appraisal_value_m2),
                 "unit": appraisal_unit, "area_basis": appraisal_area_basis,
             })
+            appraisal_on_scale = True
+            appraisal_exclusion_reason = ""
+        elif explicit_m2 is None and appraisal_mid and appraisal_mid > 0 and appraisal_area_basis:
+            appraisal_exclusion_reason = "NO_VERIFIED_AREA_DENOMINATOR"
+        elif appraisal_value_m2 is not None and target_unit and appraisal_unit != target_unit:
+            appraisal_exclusion_reason = "INCOMPATIBLE_AREA_BASIS"
+    elif appraisal_available:
+        if isinstance(appraisal_source, Mapping) and appraisal_source.get("verified") is not True:
+            appraisal_exclusion_reason = "APPRAISAL_REFERENCE_NOT_VERIFIED"
+        elif isinstance(appraisal_source, Mapping) and str(appraisal_source.get("property_code") or "") != str(property_code):
+            appraisal_exclusion_reason = "APPRAISAL_PROPERTY_CODE_MISMATCH"
+        else:
+            appraisal_exclusion_reason = "NO_VERIFIED_STRUCTURED_REFERENCE"
 
     # Read only numeric, explicitly typed communal UF/m² fields. A prose summary
     # is never parsed into a marker.
@@ -1283,13 +1735,14 @@ def _market_position_data(
             (communal.get(key), communal.get("reference_unit") or communal.get("unit"), communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
             for key in ("offer_uf_m2", "uf_m2_offer", "value_uf_m2", "reference_value_uf_m2", "reference_value", "value")
         ]
+        candidates.append((communal.get("reference_value_uf_m2"), communal.get("reference_unit") or communal.get("unit"), communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis")))
         candidates.extend(
             (communal_metrics.get(key), communal.get("reference_unit") or communal.get("unit"), communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
             for key in ("uf_m2_publicacion_actual", "uf_m2_arriendo_actual")
         )
         for raw_value, raw_unit, raw_basis in candidates:
             number = _number_from_label(raw_value)
-            currency_basis = _position_currency_basis(raw_unit)
+            currency_basis = _position_currency_basis(raw_unit, communal.get("currency_basis"))
             area_basis = _position_area_basis(raw_unit, raw_basis)
             normalized_unit = _position_basis_unit(currency_basis, area_basis)
             if number and number > 0 and currency_basis == "UF" and area_basis and normalized_unit:
@@ -1297,6 +1750,15 @@ def _market_position_data(
                 scale_currency = scale_currency or currency_basis
                 scale_area_basis = scale_area_basis or area_basis
                 break
+    if communal_available:
+        if not communal_source_unit or _position_currency_basis(communal_source_unit, communal.get("currency_basis")) != "UF":
+            communal_exclusion_reason = "CURRENCY_BASIS_UNKNOWN_OR_UNSUPPORTED"
+        elif not communal_source_basis and not _position_area_basis(communal_source_unit):
+            communal_exclusion_reason = "AREA_BASIS_UNKNOWN"
+        elif communal_unit and scale_area_basis and _position_area_basis(communal_unit) != scale_area_basis:
+            communal_exclusion_reason = "INCOMPATIBLE_AREA_BASIS"
+        elif position_simulation.get("communal_on_same_scale") is False:
+            communal_exclusion_reason = "SOURCE_COMPATIBILITY_FAILED"
     if not scale_unit and communal_unit and scale_currency == "UF" and scale_area_basis:
         scale_unit = communal_unit
     if communal_value is not None and communal_unit and scale_unit:
@@ -1315,6 +1777,8 @@ def _market_position_data(
                 "value": communal_value, "value_label": _format_position_value(communal_value),
                 "unit": communal_unit, "area_basis": scale_area_basis,
             })
+            communal_on_scale = True
+            communal_exclusion_reason = ""
 
     # If no comparable source defines the scale, a verified explicit unit can
     # still support an appraisal/communal-only synthesis with a same-basis
@@ -1324,14 +1788,14 @@ def _market_position_data(
         scale_currency = _position_currency_basis(scale_unit)
         scale_area_basis = _position_area_basis(scale_unit)
     if not scale_unit or scale_currency != "UF" or not scale_area_basis or not references:
-        return {**unavailable, "reason": "NO_VERIFIED_MARKET_REFERENCE_ON_SCALE"}
+        return unavailable_result("NO_VERIFIED_MARKET_REFERENCE_ON_SCALE")
     compatible_refs = [
         ref for ref in references
         if _position_currency_basis(ref.get("unit")) == scale_currency
         and _position_area_basis(ref.get("unit"), ref.get("area_basis")) == scale_area_basis
     ]
     if not compatible_refs:
-        return {**unavailable, "reason": "NO_VERIFIED_MARKET_REFERENCE_ON_SCALE"}
+        return unavailable_result("NO_VERIFIED_MARKET_REFERENCE_ON_SCALE")
 
     current_value = None
     if comparable_ok:
@@ -1356,7 +1820,7 @@ def _market_position_data(
         ):
             current_value = current_price_number / property_surface
     if current_value is None or current_value <= 0:
-        return {**unavailable, "reason": "PROPERTY_VALUE_NOT_VERIFIABLE_ON_SCALE"}
+        return unavailable_result("PROPERTY_VALUE_NOT_VERIFIABLE_ON_SCALE")
 
     comparable_value = next((ref["value"] for ref in compatible_refs if ref["kind"] == "COMPARABLE"), None)
     appraisal_value = next((ref["value"] for ref in compatible_refs if ref["kind"] == "APPRAISAL"), None)
@@ -1419,7 +1883,7 @@ def _market_position_data(
         domain_values.append(proposed_value)
     domain = _position_scale(domain_values)
     if domain is None:
-        return {**unavailable, "reason": "POSITIONING_SCALE_UNAVAILABLE"}
+        return unavailable_result("POSITIONING_SCALE_UNAVAILABLE")
     property_x = _position_scale_pct(current_value, domain)
     primary_x = _position_scale_pct(primary_reference["value"], domain)
     for ref in compatible_refs:
@@ -1481,10 +1945,23 @@ def _market_position_data(
 
     current_classification = classify(current_value)
     proposed_classification = classify(proposed_value) if simulation_available and proposed_value is not None else None
+    summary_label = current_classification["label"]
+    if len(compatible_refs) == 1 and compatible_refs[0]["kind"] == "COMPARABLE":
+        only_gap = round(gap_for(current_value, compatible_refs[0]["value"]), 1)
+        sign = "+" if only_gap > 0 else "" if only_gap == 0 else "-"
+        summary_label = f"{sign}{_format_position_value(abs(only_gap))}% vs propiedades similares"
     summary_source_names = {
         "APPRAISAL": "Tasación", "COMPARABLE": "similares", "COMMUNAL": "comunal",
     }
     summary_sources = " · ".join(summary_source_names[ref["kind"]] for ref in compatible_refs)
+    extra_reference_count = int(appraisal_available and not appraisal_on_scale) + int(communal_available and not communal_on_scale)
+    if len(compatible_refs) == 1 and compatible_refs[0]["kind"] == "COMPARABLE":
+        summary_note = "1 referencia disponible"
+        if extra_reference_count:
+            noun = "referencia adicional" if extra_reference_count == 1 else "referencias adicionales"
+            summary_note += f" · {extra_reference_count} {noun} disponible" + ("s" if extra_reference_count != 1 else "")
+    else:
+        summary_note = f"{len(compatible_refs)} referencias: {summary_sources}"
     return {
         "available": True, "simulation_available": simulation_available,
         "count": position_static.get("count") if comparable_ok else None,
@@ -1502,11 +1979,90 @@ def _market_position_data(
         "proposed_gap_label": adjusted_gap_label,
         "current_classification": current_classification,
         "proposed_classification": proposed_classification,
-        "summary_position_label": current_classification["label"],
-        "summary_position_note": summary_sources or "Sin referencias comparables",
+        "summary_position_label": summary_label,
+        "summary_position_note": summary_note or "Sin referencias comparables",
+        **diagnostics(),
         "current_copy": copy_for(current_value, "Actualmente"),
         "adjusted_copy": copy_for(proposed_value, "Con el ajuste recomendado") if simulation_available and proposed_value is not None else "",
         "adjustment_label": position_simulation.get("adjustment_label") or "",
+    }
+
+
+def _market_evidence_model(
+    *, market_position: Mapping[str, Any], position_static: Mapping[str, Any],
+    appraisal_card: Mapping[str, Any] | None, communal: Mapping[str, Any],
+    stale: bool,
+) -> dict[str, Any]:
+    """Keep all verified market sources distinct from the geometric scale subset."""
+    sources: list[dict[str, Any]] = []
+    if not stale and isinstance(appraisal_card, Mapping):
+        app_ref = appraisal_card.get("market_position_reference")
+        app_ref = app_ref if isinstance(app_ref, Mapping) else {}
+        sources.append({
+            "kind": "APPRAISAL", "label": "Tasación individual",
+            "available": True, "structured": appraisal_card.get("mode") == "STRUCTURED",
+            "value": _number_from_label(app_ref.get("appraisal_uf_m2")),
+            "unit": _text(app_ref.get("appraisal_uf_m2_unit")),
+            "area_basis": _text(app_ref.get("area_basis")),
+            "source": "INDIVIDUAL_APPRAISAL",
+        })
+    if not stale and isinstance(position_static, Mapping) and position_static.get("available"):
+        sources.append({
+            "kind": "COMPARABLE", "label": "Propiedades similares",
+            "available": True, "structured": True,
+            "value": _number_from_label(position_static.get("reference_value")),
+            "unit": _position_unit_label(position_static.get("unit")),
+            "area_basis": _position_area_basis(position_static.get("unit")),
+            "count": position_static.get("count"),
+            "source": _text(position_static.get("source") or "VERIFIED_COMPARABLES"),
+        })
+    communal_metrics = communal.get("relevant_metrics") if isinstance(communal.get("relevant_metrics"), Mapping) else {}
+    communal_value = None
+    for communal_key in ("reference_value_uf_m2", "offer_uf_m2", "uf_m2_offer", "uf_m2_publicacion_actual"):
+        communal_value = _number_from_label(communal.get(communal_key))
+        if communal_value is not None:
+            break
+    if communal_value is None:
+        communal_value = _number_from_label(communal_metrics.get("uf_m2_publicacion_actual"))
+    if not stale and communal_value is not None and communal_value > 0:
+        unit = _text(communal.get("reference_unit") or communal.get("unit"))
+        basis = _text(communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
+        sources.append({
+            "kind": "COMMUNAL", "label": "Informe comunal",
+            "available": True, "structured": True,
+            "value": communal_value, "unit": unit, "area_basis": basis,
+            "source": "mercado_comunal", "source_date": communal.get("source_date"),
+        })
+    compatible_by_kind = {
+        str(ref.get("kind")): dict(ref)
+        for ref in (market_position.get("references") or [])
+        if isinstance(ref, Mapping)
+    }
+    compatible = [
+        {**source, "scale_reference": compatible_by_kind[source["kind"]]}
+        for source in sources if source["kind"] in compatible_by_kind
+    ]
+    labels = [source["label"] for source in sources]
+    compatible_count = len(compatible)
+    summary_label = f"{len(sources)} referencias analizadas" if sources else "—"
+    current_value = _number_from_label(market_position.get("current_value"))
+    if sources and compatible_count == len(sources) and current_value is not None:
+        comparable_values = [
+            _number_from_label(item["scale_reference"].get("value"))
+            for item in compatible
+        ]
+        if comparable_values and all(value is not None and current_value > value for value in comparable_values):
+            summary_label = f"Sobre {compatible_count} de {compatible_count} referencias"
+    if compatible_count:
+        compat_note = f"{compatible_count} referencia" + ("s" if compatible_count != 1 else "") + " directamente en la misma escala"
+    else:
+        compat_note = "Sin referencias con unidad y superficie verificadas en una misma escala"
+    summary_note = " · ".join([compat_note, " · ".join(labels)] if labels else [compat_note])
+    return {
+        "available": bool(sources), "sources": sources,
+        "scale_compatible_sources": compatible,
+        "summary_position_label": summary_label,
+        "summary_position_note": summary_note,
     }
 
 
@@ -1892,10 +2448,8 @@ def build_monthly_portal_view(
     property_state = monthly.get("property") if isinstance(monthly.get("property"), Mapping) else monthly
     raw_context = monthly.get("market_context") if isinstance(monthly.get("market_context"), Mapping) else evidence.get("market_context")
     context = _normalize_market_context(raw_context)
-    # Activity is frozen with the sent campaign render model for older portals,
-    # while newer monthly snapshots store it at the top level. Prefer the
-    # monthly record, then the exact campaign/email evidence; do not turn
-    # absent fields into zero.
+    # Resolve activity once. The same object feeds both the summary KPI and
+    # funnel, with a deterministic report cutoff for reconstruction.
     campaign_snapshot = campaign_view.get("snapshot") if isinstance(campaign_view.get("snapshot"), Mapping) else snapshot
     saved_email_model = next((
         source.get(key) for source in (snapshot, campaign_snapshot, row)
@@ -1906,27 +2460,42 @@ def build_monthly_portal_view(
     if not isinstance(campaign_activity, Mapping):
         campaign_activity = campaign_snapshot.get("activity_90d") if isinstance(campaign_snapshot.get("activity_90d"), Mapping) else {}
     saved_activity = saved_email_model.get("activity_90d") if isinstance(saved_email_model, Mapping) else {}
-    activity_candidates = (
-        monthly.get("activity_90d"), evidence.get("activity_90d"),
-        campaign_activity, saved_activity, snapshot.get("activity_90d"),
+    frozen_activities = (
+        campaign_activity, saved_activity, campaign_snapshot.get("activity_90d"),
+        snapshot.get("activity_90d"), evidence.get("activity_90d"),
     )
-    activity = next((
-        candidate for candidate in activity_candidates
-        if isinstance(candidate, Mapping) and any(
-            candidate.get(key) is not None
-            for key in ("leads", "total_leads", "lead_total", "conversations", "visits")
-        )
-    ), {})
-    activity = dict(activity) if isinstance(activity, Mapping) else {}
-    if activity.get("leads") is None:
-        leads = campaign_view.get("leads_90d")
-        if leads is None:
-            leads = snapshot.get("leads_90d")
-        if leads is not None:
-            activity = {**activity, "leads": leads}
-    for activity_key in ("conversations", "visits", "summary"):
-        if activity.get(activity_key) is None and snapshot.get(activity_key) is not None:
-            activity = {**activity, activity_key: snapshot.get(activity_key)}
+    report_cutoffs = (
+        (monthly.get("activity_90d") or {}).get("window_end") if isinstance(monthly.get("activity_90d"), Mapping) else None,
+        (monthly.get("activity_90d") or {}).get("cutoff_at") if isinstance(monthly.get("activity_90d"), Mapping) else None,
+        snapshot.get("prepared_at"), campaign_snapshot.get("prepared_at"),
+        campaign_view.get("sent_at"), row.get("sent_at"),
+    )
+    operation_for_activity = _text(
+        _value(property_state, snapshot, "operation") or snapshot.get("operation_resolved")
+        or row.get("operation") or campaign_view.get("operation")
+    ).upper()
+    commercial_funnel = resolve_owner_commercial_funnel_90d(
+        db, property_code,
+        candidates=(monthly.get("activity_90d"), *frozen_activities),
+        window_end_candidates=report_cutoffs,
+        operation=operation_for_activity,
+    )
+    funnel_counts = {
+        item.get("key"): item.get("count")
+        for item in commercial_funnel.get("stages", [])
+        if isinstance(item, Mapping)
+    }
+    activity = {
+        "leads": funnel_counts.get("LEADS"),
+        "visits": funnel_counts.get("VISITS"),
+        "conversations": commercial_funnel.get("conversations"),
+        "source": commercial_funnel.get("source"),
+        "summary": commercial_funnel.get("summary", ""),
+        "state": commercial_funnel.get("source_status"),
+        "window_start": commercial_funnel.get("start_date"),
+        "window_end": commercial_funnel.get("cutoff"),
+        "integrity": commercial_funnel.get("source_status"),
+    }
     communal = monthly.get("communal_reference") if isinstance(monthly.get("communal_reference"), Mapping) else {}
     if not communal:
         compact = (evidence.get("market-reference-compact-single") or [None])[0]
@@ -2108,6 +2677,18 @@ def build_monthly_portal_view(
             db, commune=commune_label, property_type=property_type_label,
             operation=operation, document_url=str(communal_document.get("url") or ""),
         )
+    communal_position_reference = dict(communal)
+    if isinstance(market_reference_card, Mapping) and market_reference_card.get("kind") == "COMMUNAL_MARKET_REPORT":
+        canonical_communal_value = _number_from_label(market_reference_card.get("reference_value_uf_m2"))
+        if canonical_communal_value is not None and canonical_communal_value > 0:
+            communal_position_reference.update({
+                "offer_uf_m2": canonical_communal_value,
+                "reference_unit": market_reference_card.get("reference_unit") or "UF/m²",
+                "currency_basis": market_reference_card.get("currency_basis") or "UF",
+                "source_date": market_reference_card.get("source_date") or communal_position_reference.get("source_date"),
+            })
+            if market_reference_card.get("area_basis"):
+                communal_position_reference["area_basis"] = market_reference_card["area_basis"]
     current_price = _value(property_state, snapshot, "current_price")
     recommended_price = recommendation.get("recommended_price")
     if recommended_price is None:
@@ -2236,7 +2817,7 @@ def build_monthly_portal_view(
     position_simulation = _position_simulation_data(
         position=position,
         comparables=simulation_comparables,
-        communal=communal,
+        communal=communal_position_reference,
         property_state=simulation_property_state,
         current_price=simulation_current_price,
         recommended_price=simulation_recommended_price,
@@ -2265,7 +2846,7 @@ def build_monthly_portal_view(
         position_simulation=position_simulation,
         position_static=position_static,
         comparables=simulation_comparables,
-        communal=communal,
+        communal=communal_position_reference,
         appraisal_card=appraisal_card,
         property_state=simulation_property_state,
         property_code=property_code,
@@ -2274,6 +2855,19 @@ def build_monthly_portal_view(
         recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
         stale=stale,
     )
+    market_evidence = _market_evidence_model(
+        market_position=market_position,
+        position_static=position_static,
+        appraisal_card=appraisal_card,
+        communal=communal_position_reference,
+        stale=stale,
+    )
+    market_position = {
+        **market_position,
+        "market_evidence": market_evidence,
+        "summary_position_label": market_evidence["summary_position_label"],
+        "summary_position_note": market_evidence["summary_position_note"],
+    }
     # Keep the existing simulation contract while exposing the independently
     # validated markers from the unified scale. The visual remains read-only.
     market_reference_x = {
@@ -2316,18 +2910,25 @@ def build_monthly_portal_view(
         "position_simulation": position_simulation,
         "position_static": position_static,
         "market_position": market_position,
+        "market_evidence": market_evidence,
         "appraisal_card": appraisal_card,
         "gap_explanation": gap_explanation,
         "communal_reference": communal,
         "market_reference_card": market_reference_card,
         "market_context": context if isinstance(context, Mapping) else None,
         "activity_90d": {
-            "leads": activity.get("leads", activity.get("total_leads")),
+            "leads": activity.get("leads"),
             "conversations": activity.get("conversations"),
             "visits": activity.get("visits"),
             "summary": _text(activity.get("summary")),
-            "source_date": _source_date_label(activity.get("source_date") or activity.get("period")),
-            "source_label": "Actualizado al" if activity.get("source_date") else ("Período" if activity.get("period") else ""),
+            "state": activity.get("state"),
+            "source": activity.get("source"),
+            "integrity": activity.get("integrity"),
+            "window_start": activity.get("window_start"),
+            "window_end": activity.get("window_end"),
+            "source_date": _source_date_label(activity.get("window_end") or activity.get("source_date")),
+            "source_label": "Período al" if activity.get("window_end") else ("Actualizado al" if activity.get("source_date") else ""),
+            "funnel": commercial_funnel,
         },
         "comparables_source_date": _source_date_label(comparable_state.get("source_date") or comparable_state.get("cutoff_date")),
         "diagnosis": diagnosis,

@@ -108,7 +108,10 @@ def test_monthly_snapshot_drives_dashboard_without_recalculating_price():
     assert view["comparable_count"] == 17
     assert view["position"]["reference_value"] == "56,1 UF/m² útil"
     assert view["position"]["property_value"] == "57,0 UF/m² útil"
-    assert view["activity_90d"] == {"leads": 0, "conversations": 0, "visits": 0, "summary": "", "source_date": "", "source_label": ""}
+    assert view["activity_90d"]["leads"] == 0
+    assert view["activity_90d"]["conversations"] == 0
+    assert view["activity_90d"]["visits"] == 0
+    assert view["activity_90d"]["funnel"]["available"] is True
     assert view["market_context"]["kpis"][0]["value"] == "4,1%"
     assert view["market_context"]["kpis"][1]["value"] == "4,5%"
     assert view["market_context"]["kpis"][2]["value"] == "Selectiva"
@@ -127,7 +130,11 @@ def test_no_monthly_or_verified_history_does_not_invent_secondary_data():
     assert view["current_price_label"] == "2.852 UF"
     assert view["recommended_price_label"] == "2.595 UF"
     assert view["activity_90d"]["leads"] == 0
-    assert view["activity_90d"]["conversations"] is None
+    # A successful exact-property query with a verified campaign cutoff proves
+    # zero activity. Missing data remains distinct and is tested separately.
+    assert view["activity_90d"]["conversations"] == 0
+    assert view["activity_90d"]["visits"] == 0
+    assert view["activity_90d"]["state"] == "VERIFIED"
     assert view["position"]["reference_value"] is None
     assert view["market_context"] is None
     assert view["communal_reference"] == {}
@@ -154,7 +161,13 @@ def test_verified_email_evidence_fills_only_secondary_historical_blocks():
     """
     view = build_monthly_portal_view(db, _row(), _campaign_view(), email_html=email_html)
 
-    assert view["activity_90d"] == {"leads": 0, "conversations": None, "visits": None, "summary": "La propiedad no registró interacciones.", "source_date": "", "source_label": ""}
+    # The frozen email supplies only a partial count. The canonical resolver
+    # reconstructs the complete window and must not retain stale prose that
+    # may contradict newly verified conversations or visits.
+    assert view["activity_90d"]["leads"] == 0
+    assert view["activity_90d"]["conversations"] == 0
+    assert view["activity_90d"]["visits"] == 0
+    assert view["activity_90d"]["summary"] == ""
     assert view["property_type"] == "Casa"
     assert view["commune"] == "Talca"
     assert view["market_context"]["sources"] == "Banco Central y MINVU · septiembre 2026"

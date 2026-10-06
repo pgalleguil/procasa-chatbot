@@ -87,11 +87,39 @@
     .market-summary { margin:8px 0 0; color:var(--body); font-size:11px; }
     .source-note { margin:6px 0 0; color:#7a8398; font-size:10.5px; }
     .source-date-note { margin:-4px 0 8px 34px; color:#7a8398; font-size:10.5px; }
-    .activity-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr)); gap:7px; }
-    .activity-item { padding:9px; border:1px solid #e9eaf3; border-radius:10px; background:#fcfcfe; }
-    .activity-label { color:var(--body); font-size:10.5px; line-height:1.2; font-weight:700; }
-    .activity-value { margin-top:4px; font-size:21px; line-height:1; font-weight:700; }
+    .activity-funnel { --funnel-base:#5548b5; position:relative; display:grid; width:min(100%,560px); gap:10px; margin:10px auto 2px; }
+    .owner-funnel-stage-row { position:relative; z-index:1; display:grid; justify-items:center; gap:6px; min-width:0; }
+    .owner-funnel-stage-label { display:flex; min-width:0; align-items:baseline; justify-content:center; gap:7px; line-height:1.15; white-space:nowrap; }
+    .owner-funnel-stage-label span { overflow:hidden; color:var(--body); font-size:10px; font-weight:750; letter-spacing:.06em; text-overflow:ellipsis; text-transform:uppercase; }
+    .owner-funnel-stage-label strong { color:var(--ink); font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; }
+    .owner-funnel-stage-label small { color:#707a90; font-size:10px; font-variant-numeric:tabular-nums; }
+    .owner-funnel-stage-label small::before { content:'·'; display:inline-block; margin-right:6px; color:#a5aabd; }
+    .owner-funnel-stage-rail { display:flex; width:100%; min-width:0; justify-content:center; }
+    .owner-funnel-stage-bar { display:flex; width:var(--stage-width); max-width:100%; min-width:0; height:18px; overflow:hidden; border-radius:999px; background:#e9e8f1; transform:scaleX(.02); transform-origin:center; transition:transform .3s cubic-bezier(.16,1,.3,1),filter .16s ease; }
+    .activity-funnel.owner-funnel-reveal .owner-funnel-stage-bar { transform:scaleX(1); }
+    .owner-funnel-stage-fill { display:block; width:100%; height:100%; border-radius:999px; background:var(--stage-color,#6258bd); opacity:.88; }
+    .owner-funnel-stage-row:nth-of-type(1) { --stage-color:#5145b5; }
+    .owner-funnel-stage-row:nth-of-type(2) { --stage-color:#655bbd; }
+    .owner-funnel-stage-row:nth-of-type(3) { --stage-color:#786fc4; }
+    .owner-funnel-stage-row:nth-of-type(4) { --stage-color:#8c84cd; }
+    .owner-funnel-stage-row:hover .owner-funnel-stage-bar { filter:brightness(1.06); }
+    .owner-funnel-zero-marker { width:6px; height:6px; align-self:center; border-radius:50%; background:#7b8295; opacity:.85; }
+    .owner-funnel-silhouette { position:absolute; z-index:0; inset:0; width:100%; height:100%; color:#9290ae; pointer-events:none; opacity:.4; }
+    .owner-funnel-silhouette line { stroke:currentColor; stroke-width:1; vector-effect:non-scaling-stroke; }
+    @keyframes ownerFunnelBarGrow { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+    @keyframes ownerFunnelLineDraw { from { stroke-dasharray:1; stroke-dashoffset:1; opacity:0; } to { stroke-dasharray:1; stroke-dashoffset:0; opacity:1; } }
+    .activity-funnel.owner-funnel-reveal .owner-funnel-stage-bar { animation:ownerFunnelBarGrow .72s cubic-bezier(.16,1,.3,1) .52s both; }
+    .activity-funnel.owner-funnel-reveal .owner-funnel-silhouette line { animation:ownerFunnelLineDraw .72s cubic-bezier(.16,1,.3,1) .46s both; }
+    @media (prefers-reduced-motion:reduce) {
+      .activity-funnel.owner-funnel-reveal .owner-funnel-stage-bar,
+      .activity-funnel.owner-funnel-reveal .owner-funnel-silhouette line { animation:none; transition:none; }
+      .owner-funnel-stage-bar { transform:scaleX(1); }
+    }
+    .activity-empty { margin:0; padding:12px; border:1px dashed #d9d8e7; border-radius:11px; color:var(--body); font-size:11px; }
     .activity-summary { margin:8px 0 0; color:var(--body); font-size:10px; }
+    .market-evidence-summary { margin-top:3px; color:#747d93; font-size:10.5px; line-height:1.3; }
+    .market-position-evidence { display:grid; gap:3px; margin:8px 0 0; color:#747d93; font-size:10px; line-height:1.35; }
+    .market-position-evidence p { margin:0; }
     .position-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
     .badge { flex:0 0 auto; padding:4px 8px; border-radius:999px; background:#eeedff; color:var(--brand); font-size:10.5px; font-weight:700; }
     .position-figure { position:relative; height:126px; margin:9px 7px 11px; }
@@ -267,6 +295,11 @@
       .hero-copy { font-size:11px; line-height:1.32; }
       .property-line { margin-top:4px; font-size:10.5px; line-height:1.25; }
       .updated { margin-top:2px; font-size:10.5px; line-height:1.25; }
+      .activity-funnel { width:100%; max-width:430px; gap:8px; margin-top:7px; }
+      .owner-funnel-stage-bar { height:17px; }
+      .owner-funnel-stage-label { gap:5px; }
+      .owner-funnel-stage-label strong { font-size:15px; }
+      .owner-funnel-stage-label span,.owner-funnel-stage-label small { font-size:9px; }
       .actions-top { gap:6px; margin-top:8px; }
       .button { min-height:47px; padding:9px 7px; border-radius:10px; font-size:10px; }
       .action-note { font-size:10.5px; }
@@ -446,22 +479,23 @@
       <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value">{{ view.current_price_label or '—' }}</div></div>
       <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value">{{ view.recommended_price_display_label or view.recommended_price_label or '—' }}</div>{% if view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
       <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value">{{ view.activity_90d.leads if view.activity_90d.leads is not none else '—' }}</div><div class="kpi-note">{{ 'últimos 90 días' if view.activity_90d.leads is not none else 'Sin dato consolidado' }}</div></div>
-      <div class="kpi position-kpi"><div class="kpi-label">Posición de mercado</div>{% if view.market_position and view.market_position.available %}<div class="kpi-value">{{ view.market_position.summary_position_label }}</div><div class="kpi-note">{{ view.market_position.summary_position_note }}</div>{% else %}<div class="kpi-value">—</div><div class="kpi-note">Sin referencias comparables</div>{% endif %}</div>
+      <div class="kpi position-kpi"><div class="kpi-label">Posición de mercado</div>{% if view.market_evidence and view.market_evidence.available %}<div class="kpi-value">{{ view.market_evidence.summary_position_label }}</div><div class="market-evidence-summary">{{ view.market_evidence.summary_position_note }}</div>{% else %}<div class="kpi-value">—</div><div class="kpi-note">Sin referencias verificadas</div>{% endif %}</div>
     </div>
   </section>
 
-  {% if view.activity_90d.leads is not none or view.activity_90d.conversations is not none or view.activity_90d.visits is not none %}
   <section class="card" aria-labelledby="activity-title">
-    <h2 class="section-heading" id="activity-title"><span class="section-icon">{{ ui_icon('activity') }}</span>Actividad comercial · últimos 90 días</h2>
+    <h2 class="section-heading" id="activity-title"><span class="section-icon">{{ ui_icon('activity') }}</span>Embudo comercial · últimos 90 días</h2>
     {% if view.activity_90d.source_date %}<p class="source-date-note">{{ view.activity_90d.source_label }}: {{ view.activity_90d.source_date }}</p>{% endif %}
-    <div class="activity-grid">
-      {% if view.activity_90d.leads is not none %}<div class="activity-item"><div class="activity-label">Leads registrados</div><div class="activity-value">{{ view.activity_90d.leads }}</div></div>{% endif %}
-      {% if view.activity_90d.conversations is not none %}<div class="activity-item"><div class="activity-label">Conversaciones</div><div class="activity-value">{{ view.activity_90d.conversations }}</div></div>{% endif %}
-      {% if view.activity_90d.visits is not none %}<div class="activity-item"><div class="activity-label">Visitas coordinadas</div><div class="activity-value">{{ view.activity_90d.visits }}</div></div>{% endif %}
+    {% set default_funnel = {'stages': [{'label':'Leads','value':'—','ratio':'Dato no consolidado','width':100}, {'label':'Visitas','value':'—','ratio':'Dato no consolidado','width':76}, {'label':'Ofertas','value':'—','ratio':'Sin registro estructurado','width':54}, {'label':'Cierre','value':'—','ratio':'Sin registro estructurado','width':34}]} %}
+    {% set commercial_funnel = view.activity_90d.funnel|default(default_funnel, true) %}<div class="activity-funnel" role="group" aria-label="Embudo comercial de leads, visitas, ofertas y cierres en los últimos 90 días">
+      {% for stage in commercial_funnel.stages %}{% set stage_count = stage.count|default(none) %}<div class="owner-funnel-stage-row" data-funnel-stage="{{ stage.key|default(loop.index) }}" aria-label="{{ stage.label }}: {{ stage.value }}. {{ stage.ratio }}">
+        <div class="owner-funnel-stage-label"><span>{{ stage.label }}</span><strong>{{ stage.value }}</strong><small>{{ stage.ratio }}</small></div>
+        <div class="owner-funnel-stage-rail">{% if stage_count is not none and stage_count > 0 %}<div class="owner-funnel-stage-bar" style="--stage-width:{{ stage.width }}%"><i class="owner-funnel-stage-fill" aria-hidden="true"></i></div>{% else %}<span class="owner-funnel-zero-marker" aria-hidden="true" title="{{ stage.ratio }}"></span>{% endif %}</div>
+      </div>{% endfor %}
     </div>
+    {% if commercial_funnel.cutoff %}<p class="activity-summary">Período: {{ commercial_funnel.start_date.strftime('%d/%m/%Y') }}–{{ commercial_funnel.cutoff.strftime('%d/%m/%Y') }} · Fuente: {{ commercial_funnel.source }}</p>{% endif %}
     {% if view.activity_90d.summary %}<p class="activity-summary">{{ view.activity_90d.summary }}</p>{% endif %}
   </section>
-  {% endif %}
 
 
 
@@ -524,6 +558,7 @@
         {% for reference in market_position.references %}<div class="position-simulation__legend-item position-simulation__legend-item--{{ reference.kind|lower }}"><span class="position-simulation__legend-label"><span class="position-simulation__legend-marker position-simulation__legend-marker--{{ reference.kind|lower }}" aria-hidden="true"></span>{{ reference.label }}</span><strong class="position-simulation__legend-value">{{ reference.value_label }} {{ reference.unit }}</strong></div>{% endfor %}
         <div class="position-simulation__legend-item position-simulation__legend-item--property"><span class="position-simulation__legend-label" data-property-label><span class="position-simulation__legend-marker position-simulation__legend-marker--property" aria-hidden="true"></span><span data-property-state-label>Tu propiedad</span></span><strong class="position-simulation__legend-value"><span data-property-value>{{ market_position.current_value_label }}</span> {{ market_position.unit }}</strong><span class="position-simulation__property-gaps" aria-live="polite">{% for reference in market_position.references %}<span class="position-simulation__property-gap" data-property-gap{% if reference.kind == market_position.primary_kind %} data-position-gap{% endif %} data-current-gap="{{ reference.current_gap_label|e }}" data-adjusted-gap="{{ reference.proposed_gap_label|e }}">{{ reference.current_gap_label }}</span>{% endfor %}</span></div>
       </div>
+      {% if market_position.market_evidence and market_position.market_evidence.available %}<div class="market-position-evidence"><p><strong>Referencias consideradas:</strong> {{ market_position.market_evidence.sources|map(attribute='label')|join(' · ') }}</p>{% if market_position.market_evidence.scale_compatible_sources %}<p><strong>En esta escala:</strong> {{ market_position.market_evidence.scale_compatible_sources|map(attribute='label')|join(' · ') }}</p>{% endif %}{% set additional_sources = market_position.market_evidence.sources|rejectattr('kind', 'in', market_position.market_evidence.scale_compatible_sources|map(attribute='kind')|list)|list %}{% if additional_sources %}<p><strong>Referencia adicional:</strong> {{ additional_sources|map(attribute='label')|join(' · ') }}</p>{% endif %}</div>{% endif %}
       <p class="position-simulation__classification" data-position-classification aria-live="polite">{{ market_position.current_classification.label }}</p><p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
       {% if market_position.simulation_available %}<p class="position-simulation__note">Simulación visual. No modifica el precio de publicación.</p>{% else %}<p class="position-simulation__note">UF/m² permite comparar valores usando una misma unidad de superficie.</p>{% endif %}
       {% if market_position.count %}<p class="position-simulation__note">Referencia basada en {{ market_position.count }} propiedades similares seleccionadas.</p>{% endif %}
@@ -584,6 +619,46 @@
 <script>
 (function(){
   document.querySelectorAll('.executive-avatar img').forEach(function(img){img.addEventListener('error',function(){img.remove();});});
+  var funnel=document.querySelector('.activity-funnel');
+  if(funnel){
+    var rows=Array.from(funnel.querySelectorAll('.owner-funnel-stage-row'));
+    function renderFunnelSilhouette(){
+      funnel.querySelector('.owner-funnel-silhouette')?.remove();
+      var box=funnel.getBoundingClientRect();
+      if(!box.width||!box.height)return;
+      var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.classList.add('owner-funnel-silhouette');
+      svg.setAttribute('viewBox','0 0 '+box.width+' '+box.height);
+      var bounds=rows.map(function(row){
+        var bar=row.querySelector('.owner-funnel-stage-bar');
+        var marker=row.querySelector('.owner-funnel-zero-marker');
+        var rail=row.querySelector('.owner-funnel-stage-rail');
+        if(!rail)return null;
+        var railRect=rail.getBoundingClientRect();
+        var center=railRect.left-box.left+railRect.width/2;
+        var barWidth=bar?railRect.width*(parseFloat(bar.style.getPropertyValue('--stage-width'))||0)/100:(marker?marker.getBoundingClientRect().width:0);
+        var rowRect=row.getBoundingClientRect();
+        return {left:center-barWidth/2,right:center+barWidth/2,y:rowRect.bottom-box.top-9};
+      });
+      for(var i=0;i<bounds.length-1;i++){
+        var current=bounds[i],next=bounds[i+1];if(!current||!next)continue;
+        [['left','left'],['right','right']].forEach(function(pair){
+          var line=document.createElementNS('http://www.w3.org/2000/svg','line');
+          line.setAttribute('x1',current[pair[0]]);line.setAttribute('y1',current.y);
+          line.setAttribute('x2',next[pair[1]]);line.setAttribute('y2',next.y);line.setAttribute('pathLength','1');svg.appendChild(line);
+        });
+      }
+      funnel.insertBefore(svg,funnel.firstChild);
+    }
+    renderFunnelSilhouette();
+    window.addEventListener('resize',renderFunnelSilhouette,{passive:true});
+    function revealOwnerFunnel(){funnel.classList.add('owner-funnel-reveal');renderFunnelSilhouette();}
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches)revealOwnerFunnel();
+    else if('IntersectionObserver' in window){
+      var funnelObserver=new IntersectionObserver(function(entries){if(entries.some(function(entry){return entry.isIntersecting;})){revealOwnerFunnel();funnelObserver.disconnect();}},{threshold:.15});
+      funnelObserver.observe(funnel);
+    }else revealOwnerFunnel();
+  }
   document.querySelectorAll('[data-position-simulation]').forEach(function(simulation){
     var buttons=Array.from(simulation.querySelectorAll('[data-position-state]'));
     var marker=simulation.querySelector('[data-point="property"]');

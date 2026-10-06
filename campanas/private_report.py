@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
+import json
 import logging
 import os
 import re
 import threading
 import time
 import unicodedata
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Mapping
 from urllib.parse import quote
@@ -770,7 +773,7 @@ def _fallback_response(identity: Mapping[str, str] | None, property_code: str) -
     )
 
 
-def _serve_campaign_report(token: str) -> Response:
+def _serve_campaign_report(token: str, owner_portal_context_token: str = "", owner_portal_session_id: str = "", owner_portal_client_event_id: str = "") -> Response:
     request_started = time.perf_counter()
     timings: dict[str, float] = {}
 
@@ -808,6 +811,21 @@ def _serve_campaign_report(token: str) -> Response:
     timings["token_validation_ms"] = (time.perf_counter() - token_started) * 1000
     if claims is None:
         return finish(_response(404, "Documento no disponible."))
+    if owner_portal_session_id and not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_portal_session_id):
+        return finish(_response(404, "Documento no disponible."))
+    if owner_portal_client_event_id and not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_portal_client_event_id):
+        return finish(_response(404, "Documento no disponible."))
+    portal_context = None
+    if owner_portal_context_token:
+        from .owner_campaign_live_events import decode_live_token
+        portal_context = decode_live_token(owner_portal_context_token)
+        if (
+            not is_live or not portal_context
+            or portal_context.get("action") != "owner_portal_interaction"
+            or portal_context.get("interaction_surface") != "OWNER_PORTAL"
+            or any(portal_context.get(key) != claims.get(key) for key in ("campaign_id", "property_code", "recipient", "source"))
+        ):
+            return finish(_response(404, "Documento no disponible."))
 
     property_code = claims["property_code"]
     try:
@@ -836,9 +854,38 @@ def _serve_campaign_report(token: str) -> Response:
                 ):
                     return finish(_response(404, "Documento no disponible."))
                 from .owner_campaign_live_events import persist_live_event
-
-                persist_live_event(db, claims, event="cta_clicked", action="ver_informe")
-                persist_live_event(db, claims, event="report_opened", action="ver_informe")
+                from owner_portal.monthly import (
+                    OWNER_PROPERTY_PORTAL_COLLECTION, _as_period, _select_monthly_snapshot,
+                    owner_property_portal_id,
+                )
+                from uuid import uuid4
+                portal_key = owner_property_portal_id(property_code, claims["recipient"])
+                portal_record = db[OWNER_PROPERTY_PORTAL_COLLECTION].find_one({
+                    "_id": portal_key, "owner_key": portal_key, "property_code": property_code,
+                })
+                report_snapshot = _select_monthly_snapshot(portal_record, property_code) or {}
+                report_period = _as_period(report_snapshot.get("period") or report_snapshot.get("generated_at")) or datetime.now(timezone.utc).strftime("%Y-%m")
+                snapshot_hash = str(report_snapshot.get("snapshot_hash") or report_snapshot.get("content_sha256") or "")
+                if not snapshot_hash:
+                    snapshot_hash = hashlib.sha256(json.dumps(dict(report_snapshot), sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+                event_claims = {
+                    **claims, "report_period": report_period,
+                    "snapshot_hash": snapshot_hash, "session_id": str(uuid4()),
+                    "section_id": "communal_market_report" if claims["document_type"] == "COMMUNAL_MARKET_REPORT" else "appraisal_report",
+                    "control_id": "communal_market_report" if claims["document_type"] == "COMMUNAL_MARKET_REPORT" else "individual_appraisal_report",
+                }
+                if portal_context:
+                    event_claims.update({
+                        "report_period": portal_context.get("report_period"),
+                        "snapshot_hash": portal_context.get("snapshot_hash"),
+                        "session_id": portal_context.get("session_id"),
+                    })
+                if owner_portal_session_id:
+                    event_claims["session_id"] = owner_portal_session_id
+                if owner_portal_client_event_id:
+                    event_claims["event_id"] = owner_portal_client_event_id
+                    event_claims["client_event_id"] = owner_portal_client_event_id
+                persist_live_event(db, event_claims, event="report_opened", action="ver_informe")
             finally:
                 client.close()
         mongo_started = time.perf_counter()
@@ -897,5 +944,5 @@ def _serve_campaign_report(token: str) -> Response:
         return finish(_response(502, "Documento no disponible."))
 
 
-async def handle_campaign_report(token: str) -> Response:
-    return await asyncio.to_thread(_serve_campaign_report, token)
+async def handle_campaign_report(token: str, *, owner_portal_context_token: str = "", owner_portal_session_id: str = "", owner_portal_client_event_id: str = "") -> Response:
+    return await asyncio.to_thread(_serve_campaign_report, token, owner_portal_context_token, owner_portal_session_id, owner_portal_client_event_id)

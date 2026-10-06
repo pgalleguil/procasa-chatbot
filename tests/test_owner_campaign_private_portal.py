@@ -155,8 +155,10 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     client = client_for(monkeypatch, db)
 
     response = client.get(f"/ajuste/{CODE}?token={token}")
+    second_visit = client.get(f"/ajuste/{CODE}?token={token}")
 
     assert response.status_code == 200
+    assert second_visit.status_code == 200
     assert "3.428 UF" in response.text
     assert "3.119 UF" in response.text
     assert "Resumen congelado de la campaña." not in response.text
@@ -175,6 +177,9 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     assert response.headers["referrer-policy"] == "no-referrer"
     stored = db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
     event = next(item for item in stored["events"] if item["event"] == "portal_opened")
+    assert len([item for item in stored["events"] if item["event"] == "portal_opened"]) == 1
+    assert not any(item["event"] == "portal_visit" for item in stored["events"])
+    assert "owner_portal_visit_count" not in stored
     assert event["source"] == "EMAIL"
     assert event["interaction_surface"] == "OWNER_PORTAL"
     assert event["interaction_channel"] == "EMAIL"
@@ -765,10 +770,15 @@ def test_executive_whatsapp_is_signed_click_only_and_preserves_attribution(monke
         assert "Hablar con ejecutivo" not in soup.get_text()
 
         clicks = [
-            (top, "TOP"), (top, "TOP"), (sticky, "STICKY"),
+            (top, "TOP", "00000000-0000-4000-8000-000000000001"),
+            (top, "TOP", "00000000-0000-4000-8000-000000000001"),
+            (top, "TOP", "00000000-0000-4000-8000-000000000002"),
+            (sticky, "STICKY", "00000000-0000-4000-8000-000000000003"),
         ]
-        for link, placement in clicks:
-            click = client.get(link["href"].replace("https://www.procasa.cl", ""), follow_redirects=False)
+        for link, placement, client_event_id in clicks:
+            url = link["href"].replace("https://www.procasa.cl", "")
+            url += f"&owner_portal_client_event_id={client_event_id}&owner_portal_session_id=00000000-0000-4000-8000-000000000099"
+            click = client.get(url, follow_redirects=False)
             assert click.status_code == 302
             assert click.headers["location"].startswith("https://wa.me/56912345678?")
             message = parse_qs(urlsplit(click.headers["location"]).query)["text"][0]
@@ -786,6 +796,9 @@ def test_executive_whatsapp_is_signed_click_only_and_preserves_attribution(monke
         assert all(event["source"] == source for event in events)
         assert all(event["interaction_surface"] == "OWNER_PORTAL" for event in events)
         assert all(event["interaction_channel"] == source and event["channel"] == source for event in events)
+        assert all(event["report_period"] and event["snapshot_hash"] for event in events)
+        assert all(event["session_id"] for event in events)
+        assert [event["control_id"] for event in events] == ["whatsapp_top", "whatsapp_top", "whatsapp_sticky"]
         assert all(event["event_type"] == "OWNER_WHATSAPP_CLICK" for event in events)
         assert all(event["cta_type"] == "WHATSAPP" and event["intent"] == "INTENT_TO_CONTACT" for event in events)
         assert all(event["property_code"] == CODE and event["campaign_id"] == CAMPAIGN for event in events)

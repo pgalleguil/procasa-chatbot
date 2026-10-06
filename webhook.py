@@ -4282,18 +4282,30 @@ async def campana_respuesta(
     token: str = Query(""),
     mode: str = Query("live"),
     selected_adjustment_type: str = Query(""),
+    owner_portal_context_token: str = Query(""),
+    owner_portal_session_id: str = Query(""),
+    owner_portal_client_event_id: str = Query(""),
 ):
     return await handle_campana_respuesta(
         request, email, accion, codigos, campana, mode, token,
-        selected_adjustment_type,
+        selected_adjustment_type, owner_portal_context_token, owner_portal_session_id,
+        owner_portal_client_event_id,
     )
 
 
 @app.get("/campana/informe", include_in_schema=False)
 async def campana_informe(request: Request, token: str = Query(...)):
-    if set(request.query_params.keys()) != {"token"} or len(request.query_params.getlist("token")) != 1:
+    allowed_query = {"token", "owner_portal_context_token", "owner_portal_session_id", "owner_portal_client_event_id"}
+    if (not set(request.query_params.keys()).issubset(allowed_query)
+            or len(request.query_params.getlist("token")) != 1
+            or any(len(request.query_params.getlist(key)) > 1 for key in allowed_query - {"token"})):
         raise HTTPException(status_code=400, detail="Parámetros de informe inválidos")
-    return await handle_campana_informe(token=token)
+    owner_portal_context_token = request.query_params.get("owner_portal_context_token", "")
+    owner_portal_session_id = request.query_params.get("owner_portal_session_id", "")
+    owner_portal_client_event_id = request.query_params.get("owner_portal_client_event_id", "")
+    return await handle_campana_informe(token=token, owner_portal_context_token=owner_portal_context_token,
+                                        owner_portal_session_id=owner_portal_session_id,
+                                        owner_portal_client_event_id=owner_portal_client_event_id)
 
 
 @app.api_route("/campana/test-accion", methods=["GET", "POST"], include_in_schema=False)

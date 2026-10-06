@@ -248,7 +248,8 @@ def _sync_process_campana_response(
 
 def _process_owner_campaign_action(
     *, email: str, accion: str, codigo: str, campana: str, token: str,
-    method: str, selected_adjustment_type: str = "",
+    method: str, selected_adjustment_type: str = "", owner_portal_context_token: str = "",
+    owner_portal_session_id: str = "", owner_portal_client_event_id: str = "",
 ):
     """Handle a signed single-property production campaign action."""
     from html import escape
@@ -270,6 +271,14 @@ def _process_owner_campaign_action(
     )
     if claims is None:
         return HTMLResponse("Enlace de campaña inválido o vencido.", status_code=404)
+    from .owner_campaign_live_events import decode_live_token
+    context_claims = decode_live_token(owner_portal_context_token) if owner_portal_context_token else None
+    if owner_portal_context_token and (
+        not context_claims or context_claims.get("action") != "owner_portal_interaction"
+        or context_claims.get("interaction_surface") != "OWNER_PORTAL"
+        or any(context_claims.get(key) != claims.get(key) for key in ("campaign_id", "property_code", "recipient", "source"))
+    ):
+        return HTMLResponse("Enlace de campaña inválido o vencido.", status_code=404)
     client = MongoClient(Config.MONGO_URI)
     try:
         db = client[Config.DB_NAME]
@@ -277,6 +286,35 @@ def _process_owner_campaign_action(
         row = ledger.find_one({"_id": f"{campana}:{codigo}", "campaign_id": campana, "property_code": codigo})
         if not row or str(row.get("owner_email") or "").casefold() != email_lower:
             return HTMLResponse("Esta acción no está disponible para la propiedad indicada.", status_code=404)
+        from owner_portal.monthly import (
+            OWNER_PROPERTY_PORTAL_COLLECTION, _as_period, _select_monthly_snapshot,
+            owner_property_portal_id,
+        )
+        from uuid import uuid4
+        portal_key = owner_property_portal_id(codigo, email_lower)
+        portal_record = db[OWNER_PROPERTY_PORTAL_COLLECTION].find_one({
+            "_id": portal_key, "owner_key": portal_key, "property_code": codigo,
+        })
+        report_snapshot = _select_monthly_snapshot(portal_record, codigo) or {}
+        report_period = _as_period(report_snapshot.get("period") or report_snapshot.get("generated_at")) or datetime.now(timezone.utc).strftime("%Y-%m")
+        snapshot_hash = str(report_snapshot.get("snapshot_hash") or report_snapshot.get("content_sha256") or "")
+        if not snapshot_hash:
+            import hashlib, json
+            snapshot_hash = hashlib.sha256(json.dumps(dict(report_snapshot or row.get("campaign_snapshot") or {}), sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        claims = {
+            **claims, "report_period": report_period, "snapshot_hash": snapshot_hash,
+            "session_id": str(uuid4()),
+        }
+        if context_claims:
+            claims.update({
+                "report_period": context_claims.get("report_period"),
+                "snapshot_hash": context_claims.get("snapshot_hash"),
+                "session_id": context_claims.get("session_id"),
+            })
+        if owner_portal_session_id:
+            if not re.fullmatch(r"[0-9a-fA-F-]{36}", owner_portal_session_id):
+                return HTMLResponse("Enlace de campaña inválido o vencido.", status_code=404)
+            claims["session_id"] = owner_portal_session_id
         if accion == "aceptar_rebaja" and owner_campaign_authorization_is_stale(row):
             return HTMLResponse(
                 "La recomendación está en revisión. Solicita contacto con tu ejecutivo antes de autorizar un precio.",
@@ -318,6 +356,10 @@ def _process_owner_campaign_action(
             gradual_clp = round(float(current_clp) * (100 - int(gradual_pct)) / 100)
 
         base = {"email": email_lower, "campana": campana, "codigos": codigo, "mode": "owner_campaign", "token": token}
+        if owner_portal_context_token:
+            base["owner_portal_context_token"] = owner_portal_context_token
+        if owner_portal_session_id:
+            base["owner_portal_session_id"] = owner_portal_session_id
         def action_url(action: str, action_token: str, *, selected_type: str = "") -> str:
             query_args = {**base, "accion": action, "token": action_token}
             if selected_type:
@@ -454,6 +496,9 @@ async def handle_campana_respuesta(
     mode: str = "live",
     token: str = "",
     selected_adjustment_type: str = "",
+    owner_portal_context_token: str = "",
+    owner_portal_session_id: str = "",
+    owner_portal_client_event_id: str = "",
 ):
     accion = normalize_accion(accion)
     valid = {"aceptar_rebaja", "contactar_ejecutivo", "mantener_precio", "no_disponible", "unsubscribe"}
@@ -489,6 +534,9 @@ async def handle_campana_respuesta(
             token=token,
             method=request.method.upper(),
             selected_adjustment_type=selected_adjustment_type,
+            owner_portal_context_token=owner_portal_context_token,
+            owner_portal_session_id=owner_portal_session_id,
+            owner_portal_client_event_id=owner_portal_client_event_id,
         )
 
     try:
@@ -658,9 +706,15 @@ def _resolve_test_report_response(*, token: str):
         return private_report._response(503, "No pudimos consultar el informe en este momento.")
 
 
-async def handle_campana_informe(*, token: str):
+async def handle_campana_informe(*, token: str, owner_portal_context_token: str = "", owner_portal_session_id: str = "", owner_portal_client_event_id: str = ""):
     # Production links use their own signed-token decoder, live campaign ledger,
     # and document resolver. Keep the historical QA path isolated to test tokens.
     if str(token or "").startswith("p1."):
-        return await private_report.handle_campaign_report(token)
+        if not (owner_portal_context_token or owner_portal_session_id or owner_portal_client_event_id):
+            return await private_report.handle_campaign_report(token)
+        return await private_report.handle_campaign_report(
+            token, owner_portal_context_token=owner_portal_context_token,
+            owner_portal_session_id=owner_portal_session_id,
+            owner_portal_client_event_id=owner_portal_client_event_id,
+        )
     return await asyncio.to_thread(_resolve_test_report_response, token=token)

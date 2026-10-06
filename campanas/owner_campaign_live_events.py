@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 from uuid import uuid4
@@ -26,6 +27,28 @@ LIVE_ACTIONS = {
 INTERACTION_SURFACES = frozenset({"EMAIL_TEMPLATE", "OWNER_PORTAL"})
 INTERACTION_CHANNELS = frozenset({"EMAIL", "WHATSAPP"})
 CTA_PLACEMENTS = frozenset({"TOP", "STICKY", "ORIGINAL", "EXECUTIVE"})
+OWNER_PORTAL_INTERACTION_ACTION = "owner_portal_interaction"
+OWNER_PORTAL_EVENTS = frozenset({
+    "section_expanded", "section_collapsed", "price_simulation_changed",
+    "publication_link_clicked",
+})
+OWNER_PORTAL_SECTIONS = frozenset({
+    "owner_portal", "commercial_activity_publications", "publication_details",
+    "appraisal_details", "communal_market_details", "market_context_details",
+    "recommendation_details", "price_simulation", "price_recommendation",
+    "appraisal_report", "communal_market_report", "executive_contact",
+})
+OWNER_PORTAL_CONTROLS = frozenset({
+    "portal_load", "publication_disclosure", "appraisal_details_toggle",
+    "communal_market_details_toggle", "market_context_toggle",
+    "recommendation_details_toggle", "price_simulation_current",
+    "price_simulation_adjusted", "publication_link", "review_adjust_top",
+    "review_adjust_sticky", "whatsapp_top", "whatsapp_sticky",
+    "individual_appraisal_report", "communal_market_report",
+})
+OWNER_PUBLICATION_PORTALS = frozenset({
+    "PortalInmobiliario", "TOCTOC", "Yapo", "ChilePropiedades", "Other",
+})
 HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS = frozenset({
     "owner_price_sucre_wave1_20260928",
     "owner_price_sucre_wave2_20260930",
@@ -80,9 +103,9 @@ def _secret() -> str:
     return os.getenv("OWNER_CAMPAIGN_PRODUCTION_TOKEN_SECRET", "")
 
 
-def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, cta_placement: str | None = None, event_id: str | None = None) -> str:
+def issue_live_token(*, campaign_id: str, property_code: str, action: str, recipient: str, document_type: str | None = None, expires_at: int, source: str | None = None, interaction_surface: str | None = None, cta_placement: str | None = None, event_id: str | None = None, report_period: str | None = None, snapshot_hash: str | None = None, session_id: str | None = None) -> str:
     secret = _secret()
-    if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened", "executive_whatsapp_clicked"}:
+    if not secret or not campaign_id or "test" in campaign_id.casefold() or action not in {*LIVE_ACTIONS, "cta_clicked", "price_confirm_page_opened", "executive_whatsapp_clicked", OWNER_PORTAL_INTERACTION_ACTION}:
         raise ValueError("production_action_token_not_configured")
     if source is not None and source not in {"EMAIL", "WHATSAPP"}:
         raise ValueError("invalid_campaign_token_source")
@@ -105,6 +128,18 @@ def issue_live_token(*, campaign_id: str, property_code: str, action: str, recip
         payload["interaction_surface"] = interaction_surface
     if cta_placement is not None:
         payload["cta_placement"] = cta_placement
+    if report_period is not None:
+        if not re.fullmatch(r"\d{4}-\d{2}", str(report_period)):
+            raise ValueError("invalid_report_period")
+        payload["report_period"] = str(report_period)
+    if snapshot_hash is not None:
+        if len(str(snapshot_hash)) > 128:
+            raise ValueError("invalid_snapshot_hash")
+        payload["snapshot_hash"] = str(snapshot_hash)
+    if session_id is not None:
+        if not re.fullmatch(r"[0-9a-fA-F-]{36}", str(session_id)):
+            raise ValueError("invalid_session_id")
+        payload["session_id"] = str(session_id)
     if action == "ver_informe":
         if document_type not in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
             raise ValueError("invalid_live_document_type")
@@ -179,6 +214,18 @@ def persist_live_event(
         "property_code": code,
         "campaign_id": campaign_id,
     }
+    attribution = derive_interaction_attribution(claims)
+    payload.update({
+        "interaction_surface": attribution["interaction_surface"],
+        "interaction_channel": attribution["interaction_channel"],
+        "source": claims.get("source") or "UNKNOWN",
+        "report_period": claims.get("report_period"),
+        "snapshot_hash": claims.get("snapshot_hash"),
+        "session_id": claims.get("session_id") or str(uuid4()),
+        "client_event_id": claims.get("client_event_id") or str(claims.get("event_id") or event_id),
+        "section_id": claims.get("section_id") or _event_section(event, claims, details),
+        "control_id": claims.get("control_id") or _event_control(event, claims, details),
+    })
     if details:
         payload.update(dict(details))
     source = claims.get("source")
@@ -188,6 +235,8 @@ def persist_live_event(
     if cta_placement in CTA_PLACEMENTS:
         payload["cta_placement"] = cta_placement
     payload.update(derive_interaction_attribution(claims))
+    if event == "report_opened" and claims.get("document_type") in {"INDIVIDUAL_APPRAISAL", "COMMUNAL_MARKET_REPORT"}:
+        payload["document_type"] = claims["document_type"]
     ledger = db[Config.COLLECTION_CAMPANAS_LOG]
     key = f"{campaign_id}:{code}"
     # An authorization is monotonic. The atomic update is scoped to one
@@ -244,6 +293,63 @@ def persist_live_event(
     return existing, False
 
 
+def _event_section(event: str, claims: Mapping[str, Any], details: Mapping[str, Any] | None) -> str:
+    if details and details.get("section_id") in OWNER_PORTAL_SECTIONS:
+        return str(details["section_id"])
+    if event == "report_opened":
+        return "communal_market_report" if (claims.get("document_type") == "COMMUNAL_MARKET_REPORT") else "appraisal_report"
+    if event in {"cta_clicked", "price_confirm_page_opened", "confirmation_page_opened", "price_authorized", "recommended_selected", "gradual_selected"}:
+        return "price_recommendation"
+    if event in {"executive_whatsapp_clicked", "advisor_review_requested"}:
+        return "executive_contact"
+    return "owner_portal"
+
+
+def _event_control(event: str, claims: Mapping[str, Any], details: Mapping[str, Any] | None) -> str:
+    if details and details.get("control_id") in OWNER_PORTAL_CONTROLS:
+        return str(details["control_id"])
+    placement = str(claims.get("cta_placement") or "").upper()
+    if event in {"cta_clicked", "price_confirm_page_opened", "confirmation_page_opened", "price_authorized", "recommended_selected", "gradual_selected"}:
+        return "review_adjust_sticky" if placement == "STICKY" else "review_adjust_top"
+    if event == "executive_whatsapp_clicked":
+        return "whatsapp_sticky" if placement == "STICKY" else "whatsapp_top"
+    if event == "report_opened":
+        return "communal_market_report" if claims.get("document_type") == "COMMUNAL_MARKET_REPORT" else "individual_appraisal_report"
+    return "portal_load"
+
+
+def persist_owner_portal_interaction(db: Any, claims: Mapping[str, Any], payload: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Persist only a validated in-page event, idempotent by client event ID."""
+    event = str(payload["event"])
+    client_event_id = str(payload["client_event_id"])
+    event_id = hashlib.sha256(f"{claims['campaign_id']}|{claims['property_code']}|{event}|{client_event_id}".encode()).hexdigest()
+    event_at = datetime.now(timezone.utc)
+    attribution = derive_interaction_attribution(claims)
+    stored = {
+        "event_id": event_id, "event_at": event_at, "event": event, "action": event,
+        "campaign_id": str(claims["campaign_id"]), "property_code": str(claims["property_code"]),
+        "interaction_surface": "OWNER_PORTAL", "interaction_channel": attribution["interaction_channel"],
+        "source": claims.get("source") or "UNKNOWN", "report_period": claims.get("report_period"),
+        "snapshot_hash": claims.get("snapshot_hash"), "section_id": payload["section_id"],
+        "control_id": payload["control_id"], "session_id": payload["session_id"],
+        "client_event_id": client_event_id,
+    }
+    for field in ("previous_state", "target_state", "selected_adjustment_pct", "external_portal", "expanded"):
+        if field in payload:
+            stored[field] = payload[field]
+    key = f"{stored['campaign_id']}:{stored['property_code']}"
+    result = db[Config.COLLECTION_CAMPANAS_LOG].update_one(
+        {"_id": key, "campaign_id": stored["campaign_id"], "property_code": stored["property_code"], "events.event_id": {"$ne": event_id}},
+        {"$push": {"events": stored}},
+    )
+    if result.modified_count == 1:
+        return db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": key}) or {}, True
+    existing = db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": key})
+    if not existing:
+        raise LookupError("prepared_campaign_row_missing")
+    return existing, False
+
+
 def persist_owner_whatsapp_click(
     db: Any,
     claims: Mapping[str, Any],
@@ -289,6 +395,14 @@ def persist_owner_whatsapp_click(
 
     ledger = db[Config.COLLECTION_CAMPANAS_LOG]
     key = f"{campaign_id}:{code}"
+    client_event_id = str(details.get("client_event_id") or "").strip()
+    if client_event_id:
+        already_persisted = ledger.find_one({
+            "_id": key, "campaign_id": campaign_id, "property_code": code,
+            "events.client_event_id": client_event_id,
+        })
+        if already_persisted:
+            return already_persisted
     current = ledger.find_one({"_id": key, "campaign_id": campaign_id, "property_code": code},
         {"owner_whatsapp_click_count": 1, "events": 1})
     if not current:

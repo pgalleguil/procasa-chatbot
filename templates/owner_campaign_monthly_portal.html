@@ -15,8 +15,8 @@
   {% endif %}
 </svg>
 {%- endmacro %}
-{% macro expandable(text, limit=230, class_name='compact-copy') -%}
-{% if text|length > limit %}<details class="expandable"><summary><span class="text-preview">{{ text[:limit].rsplit(' ', 1)[0] }}…</span><span class="expand-open">Ver más</span><span class="expand-close">Ver menos</span></summary><p class="{{ class_name }}">{{ text }}</p></details>{% else %}<p class="{{ class_name }}">{{ text }}</p>{% endif %}
+{% macro expandable(text, limit=230, class_name='compact-copy', section_id='') -%}
+{% if text|length > limit %}<details class="expandable"{% if section_id %} data-telemetry-section="{{ section_id|e }}" data-telemetry-control="recommendation_details_toggle"{% endif %}><summary><span class="text-preview">{{ text[:limit].rsplit(' ', 1)[0] }}…</span><span class="expand-open">Ver más</span><span class="expand-close">Ver menos</span></summary><p class="{{ class_name }}">{{ text }}</p></details>{% else %}<p class="{{ class_name }}">{{ text }}</p>{% endif %}
 {%- endmacro %}
 <!doctype html>
 <html lang="es">
@@ -554,7 +554,7 @@
   </style>
 </head>
 <body>
-<main class="page">
+<main class="page" data-owner-portal-telemetry-token="{{ view.interaction_token|default('')|e }}" data-portal-session-bootstrap="{{ view.portal_session_id|default('')|e }}" data-report-period="{{ view.report_period|default('')|e }}" data-snapshot-hash="{{ view.snapshot_hash|default('')|e }}">
   <header class="masthead">
     <img class="logo" src="{{ view.logo_url }}" alt="PROCASA">
     <div class="masthead-label"><strong>Informe comercial · Propietarios</strong>Actualizado mensualmente</div>
@@ -577,10 +577,10 @@
   {% endif %}
 
   <nav class="actions-top{% if not view.top_whatsapp_url %} actions-top-single{% endif %}" id="owner-portal-top-actions" aria-label="Acciones principales">
-    {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url }}">Revisar ajuste</a>
+    {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="TOP" href="{{ view.top_primary_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}">Revisar ajuste</a>
     {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
     {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
-    {% if view.top_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="TOP" data-cta-type="WHATSAPP" href="{{ view.top_whatsapp_url|e }}" aria-label="Escribir por WhatsApp a {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>Escribir por WhatsApp</span></a>{% endif %}
+    {% if view.top_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="TOP" data-cta-type="WHATSAPP" href="{{ view.top_whatsapp_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}" aria-label="Escribir por WhatsApp a {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>Escribir por WhatsApp</span></a>{% endif %}
   </nav>
   <p class="action-note">Revisar no modifica tu precio. Podrás confirmar después.</p>
 
@@ -604,7 +604,7 @@
     {% if publication_presence.source_status == 'VERIFIED' %}
       {% set channel_count = publication_presence.publication_channel_count|default(publication_presence.total_published_channels|default(0)) %}
       {% set linked_count = publication_presence.available_link_count|default(publication_presence.channels_with_url|default(0)) %}
-      {% if publication_presence['items'] %}<details class="publication-disclosure" id="publication-disclosure">
+      {% if publication_presence['items'] %}<details class="publication-disclosure" id="publication-disclosure" data-telemetry-section="publication_details" data-telemetry-control="publication_disclosure">
         <summary aria-expanded="false" aria-controls="publication-detail-list">
           <h3 class="publication-disclosure__heading">Exposición de tu propiedad</h3>
           <span class="publication-summary">Presencia en {{ channel_count }} {% if channel_count == 1 %}portal{% else %}portales{% endif %} · {{ linked_count }} {% if linked_count == 1 %}enlace disponible{% else %}enlaces disponibles{% endif %}</span>
@@ -615,7 +615,7 @@
             <div class="publication-item__logos" aria-hidden="true">{% if item.logo_urls %}<img class="publication-item__logo{% if 'toctoc' in item.logo_urls[0] %} publication-item__logo--toctoc{% elif 'yapo' in item.logo_urls[0] %} publication-item__logo--yapo{% elif 'chilepropiedades' in item.logo_urls[0] %} publication-item__logo--chilepropiedades{% endif %}" src="{{ item.logo_urls[0]|e }}" alt="" loading="lazy" decoding="async">{% else %}<svg class="publication-item__fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}</div>
             <div class="publication-item__content"><strong class="publication-item__title">{{ item.owner_label }}</strong>
               {% if item.network_portals %}<div class="publication-item__network"><span>También publica en estos 5 portales asociados:</span><ul class="publication-item__network-list">{% for portal_name in item.network_portals %}<li>{{ portal_name|e }}</li>{% endfor %}</ul><span>Los enlaces directos por portal estarán disponibles más adelante.</span></div>{% endif %}
-              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">{{ item.detail_label|default('Sin enlace disponible')|e }}</span>{% endif %}
+              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" data-publication-link data-control-id="publication_link" data-external-portal="{% if item.kind == 'PORTAL_INMOBILIARIO' %}PortalInmobiliario{% elif item.kind == 'TOCTOC' %}TOCTOC{% elif item.kind == 'YAPO' %}Yapo{% elif item.kind == 'CHILEPROPIEDADES' %}ChilePropiedades{% else %}Other{% endif %}" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">{{ item.detail_label|default('Sin enlace disponible')|e }}</span>{% endif %}
             </div>
           </article>{% endfor %}
         </div></div></div>
@@ -640,9 +640,9 @@
     {% if view.appraisal_card.mode == 'STRUCTURED' %}
       {% if view.appraisal_card.metrics %}<div class="appraisal-card__metrics">{% for metric in view.appraisal_card.metrics %}<div class="appraisal-card__metric"><span class="appraisal-card__metric-label">{{ metric.label }}</span><strong class="appraisal-card__metric-value">{{ metric.value }}</strong>{% if metric.note %}<span class="appraisal-card__metric-note">{{ metric.note }}</span>{% endif %}</div>{% endfor %}</div>{% endif %}
       {% if view.appraisal_card.interpretation %}<p class="appraisal-card__interpretation">{{ view.appraisal_card.interpretation }}</p>{% endif %}
-      <details class="appraisal-card__details"><summary>Ver más</summary>{% if view.appraisal_card.details %}<dl class="appraisal-card__details-list">{% for item in view.appraisal_card.details %}<div class="appraisal-card__detail"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>{% endfor %}</dl>{% endif %}{% if view.appraisal_card.method_copy %}<p class="appraisal-card__copy">{{ view.appraisal_card.method_copy }}</p>{% endif %}</details>
+      <details class="appraisal-card__details" data-telemetry-section="appraisal_details" data-telemetry-control="appraisal_details_toggle"><summary>Ver más</summary>{% if view.appraisal_card.details %}<dl class="appraisal-card__details-list">{% for item in view.appraisal_card.details %}<div class="appraisal-card__detail"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>{% endfor %}</dl>{% endif %}{% if view.appraisal_card.method_copy %}<p class="appraisal-card__copy">{{ view.appraisal_card.method_copy }}</p>{% endif %}</details>
     {% else %}<p class="appraisal-card__copy">{{ view.appraisal_card.body_copy }}</p>{% endif %}
-    {% if view.appraisal_card.document_url %}<a class="appraisal-card__document" data-document-type="INDIVIDUAL_APPRAISAL" href="{{ view.appraisal_card.document_url|e }}" rel="noreferrer" aria-label="Abrir {{ view.appraisal_card.document_title|e }}. {{ view.appraisal_card.document_metadata|e }}"><span class="appraisal-card__document-icon">{{ ui_icon('document') }}</span><span class="appraisal-card__document-copy"><span class="appraisal-card__document-title">{{ view.appraisal_card.document_title }}</span><span class="appraisal-card__document-meta">{{ view.appraisal_card.document_metadata }}</span></span>{{ ui_icon('chevron', 'appraisal-card__document-chevron') }}</a>{% endif %}
+    {% if view.appraisal_card.document_url %}<a class="appraisal-card__document" data-document-type="INDIVIDUAL_APPRAISAL" href="{{ view.appraisal_card.document_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}" rel="noreferrer" aria-label="Abrir {{ view.appraisal_card.document_title|e }}. {{ view.appraisal_card.document_metadata|e }}"><span class="appraisal-card__document-icon">{{ ui_icon('document') }}</span><span class="appraisal-card__document-copy"><span class="appraisal-card__document-title">{{ view.appraisal_card.document_title }}</span><span class="appraisal-card__document-meta">{{ view.appraisal_card.document_metadata }}</span></span>{{ ui_icon('chevron', 'appraisal-card__document-chevron') }}</a>{% endif %}
   </section>
   {% endif %}
 
@@ -658,14 +658,14 @@
     {% endif %}
     {% if view.market_reference_card.interpretation %}<p class="complementary-market__interpretation">{{ view.market_reference_card.interpretation }}</p>{% endif %}
     {% if view.market_reference_card.details %}
-    <details class="complementary-market__details"><summary>Ver más</summary><dl class="complementary-market__details-list">
+    <details class="complementary-market__details" data-telemetry-section="communal_market_details" data-telemetry-control="communal_market_details_toggle"><summary>Ver más</summary><dl class="complementary-market__details-list">
       {% for item in view.market_reference_card.details %}
       <div class="complementary-market__detail"><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
       {% endfor %}
     </dl></details>
     {% endif %}
     {% if view.market_reference_card.source_label %}<p class="complementary-market__source">{{ view.market_reference_card.source_label }}</p>{% endif %}
-    {% if view.market_reference_card.document_url %}<a class="complementary-market__document" data-cta-placement="ORIGINAL" data-document-type="{{ view.market_reference_card.kind|e }}" href="{{ view.market_reference_card.document_url|e }}" rel="noreferrer" aria-label="Abrir {{ view.market_reference_card.document_title|e }}. {{ view.market_reference_card.document_metadata|e }}">
+    {% if view.market_reference_card.document_url %}<a class="complementary-market__document" data-cta-placement="ORIGINAL" data-document-type="{{ view.market_reference_card.kind|e }}" href="{{ view.market_reference_card.document_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}" rel="noreferrer" aria-label="Abrir {{ view.market_reference_card.document_title|e }}. {{ view.market_reference_card.document_metadata|e }}">
       <span class="complementary-market__document-icon">{{ ui_icon('document') }}</span>
       <span class="complementary-market__document-copy"><span class="complementary-market__document-title">{{ view.market_reference_card.document_title }}</span><span class="complementary-market__document-meta">{{ view.market_reference_card.document_metadata }}</span></span>
       {{ ui_icon('chevron', 'complementary-market__document-chevron') }}
@@ -677,7 +677,7 @@
   {% set market_position = view.market_position %}
   <section class="card" aria-labelledby="position-title">
     <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a las referencias de mercado</h2>{% if market_position.count %}<span class="badge">{{ market_position.count }} propiedades similares</span>{% endif %}</div>
-    <div class="position-simulation" data-position-simulation data-state="current" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
+    <div class="position-simulation" data-position-simulation data-state="current" data-adjustment-pct="{{ view.telemetry_adjustment_pct|default('')|e }}" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
       {% if market_position.simulation_available %}<div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
         <button class="position-simulation__option" type="button" data-position-state="current" aria-pressed="true">Precio actual</button>
         <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Precio recomendado ({{ market_position.adjustment_label }})</button>
@@ -714,7 +714,7 @@
     <div class="market-head"><h2 class="section-heading" id="market-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Contexto del mercado inmobiliario</h2>{% if view.market_context.reference_month %}<span class="market-period">{{ view.market_context.reference_month }}</span>{% endif %}</div>
     {% if view.market_context.visible_kpis %}<div class="market-kpis" data-kpi-count="{{ view.market_context.visible_kpis[:3]|length }}">{% for item in view.market_context.visible_kpis[:3] %}<div class="market-kpi"><small>{{ item.label }}</small><strong>{{ item.value }}</strong><small>{{ item.note }}</small></div>{% endfor %}</div>{% endif %}
     {% if view.market_context.narrative %}<div class="market-property-reading"><strong>Lectura del escenario</strong><p>{{ view.market_context.narrative }}</p></div>{% endif %}
-    {% if view.market_context.detail_blocks %}<details class="market-context-more"><summary><span class="market-context-more__closed">Ver más</span><span class="market-context-more__open">Ver menos</span></summary><div class="market-context-details">{% for block in view.market_context.detail_blocks %}<div class="market-context-detail"><strong>{{ block.title }}</strong><p>{{ block.body }}</p>{% if block.context %}<small>{{ block.context }}</small>{% endif %}</div>{% endfor %}</div></details>{% endif %}
+    {% if view.market_context.detail_blocks %}<details class="market-context-more" data-telemetry-section="market_context_details" data-telemetry-control="market_context_toggle"><summary><span class="market-context-more__closed">Ver más</span><span class="market-context-more__open">Ver menos</span></summary><div class="market-context-details">{% for block in view.market_context.detail_blocks %}<div class="market-context-detail"><strong>{{ block.title }}</strong><p>{{ block.body }}</p>{% if block.context %}<small>{{ block.context }}</small>{% endif %}</div>{% endfor %}</div></details>{% endif %}
     {% if view.market_context.source_date %}<p class="source-note">Corte: {{ view.market_context.source_date }}</p>{% endif %}
     {% if view.market_context.sources %}<p class="source-note">Fuentes: {{ view.market_context.sources }}</p>{% endif %}
   </section>
@@ -730,7 +730,7 @@
       <div class="recommendation-flow"><div class="recommendation-step"><span>Precio actual</span><strong>{{ view.current_price_label or 'No disponible' }}</strong></div>{{ ui_icon('arrow', 'recommendation-arrow') }}<div class="recommendation-step"><span>Precio propuesto</span><strong>{{ view.recommended_price_display_label or view.recommended_price_label or 'No disponible' }}</strong></div></div>
       <div class="recommendation-meta"><span class="adjustment-chip">Ajuste: {{ view.adjustment_label or 'No disponible' }}</span>{% if view.recommendation_difference_label %}<span class="recommendation-difference">Diferencia aprox.: {{ view.recommendation_difference_label }}</span>{% endif %}</div>
       <p class="recommendation-summary">{{ view.recommendation_summary or 'El ajuste propuesto es una alternativa de posicionamiento para revisar antes de decidir.' }}</p>
-      <details class="recommendation-details"><summary><span class="view-more">Ver más ↓</span><span class="view-less">Ver menos ↑</span></summary><ul>{% for detail in view.recommendation_details %}<li>{{ detail }}</li>{% endfor %}</ul></details>
+      <details class="recommendation-details" data-telemetry-section="recommendation_details" data-telemetry-control="recommendation_details_toggle"><summary><span class="view-more">Ver más ↓</span><span class="view-less">Ver menos ↑</span></summary><ul>{% for detail in view.recommendation_details %}<li>{{ detail }}</li>{% endfor %}</ul></details>
     </section>
     {% endif %}
   </div>
@@ -752,13 +752,62 @@
 </main>
 
 <nav class="sticky{% if not view.sticky_whatsapp_url %} sticky-single{% endif %}" id="owner-portal-sticky-actions" aria-label="Acciones rápidas">
-  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url }}">Revisar ajuste</a>
+  {% if view.can_authorize and not view.already_authorized %}<a class="button button-primary" data-cta-placement="STICKY" href="{{ view.sticky_primary_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}">Revisar ajuste</a>
   {% elif view.already_authorized %}<span class="button button-primary" aria-disabled="true">Ajuste autorizado</span>
   {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
-  {% if view.sticky_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="STICKY" data-cta-type="WHATSAPP" href="{{ view.sticky_whatsapp_url|e }}" aria-label="WhatsApp de {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>WhatsApp</span></a>{% endif %}
+  {% if view.sticky_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="STICKY" data-cta-type="WHATSAPP" href="{{ view.sticky_whatsapp_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}" aria-label="WhatsApp de {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>WhatsApp</span></a>{% endif %}
 </nav>
 <script>
 (function(){
+  var telemetryRoot=document.querySelector('[data-owner-portal-telemetry-token]');
+  var telemetryToken=telemetryRoot&&telemetryRoot.getAttribute('data-owner-portal-telemetry-token');
+  function telemetryUuid(){if(window.crypto&&typeof window.crypto.randomUUID==='function')return window.crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});}
+  var telemetrySession='';
+  try{telemetrySession=sessionStorage.getItem('ownerPortalSessionId')||'';if(!/^[0-9a-f-]{36}$/i.test(telemetrySession)){var bootstrap=telemetryRoot&&telemetryRoot.getAttribute('data-portal-session-bootstrap');telemetrySession=/^[0-9a-f-]{36}$/i.test(bootstrap||'')?bootstrap:telemetryUuid();sessionStorage.setItem('ownerPortalSessionId',telemetrySession);}}catch(error){telemetrySession=telemetryUuid();}
+  function sendOwnerInteraction(eventName,extra){
+    if(!telemetryToken)return;
+    var payload=Object.assign({token:telemetryToken,event:eventName,client_event_id:telemetryUuid(),session_id:telemetrySession},extra||{});
+    var body=new Blob([JSON.stringify(payload)],{type:'application/json'});
+    if(navigator.sendBeacon){navigator.sendBeacon('/owner-portal/interaction',body);}
+    else fetch('/owner-portal/interaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true,credentials:'omit'}).catch(function(){});
+  }
+  document.querySelectorAll('a[href*="owner_portal_context_token="]').forEach(function(link){
+    link.addEventListener('click',function(event){
+      if(!event.isTrusted)return;
+      try{var target=new URL(link.href,window.location.href);target.searchParams.set('owner_portal_session_id',telemetrySession);link.href=target.toString();}catch(error){}
+    },{capture:true});
+  });
+  document.querySelectorAll('a[data-cta-type="WHATSAPP"][href*="owner_portal_context_token="]').forEach(function(link){
+    link.addEventListener('click',function(event){
+      if(!event.isTrusted)return;
+      try{var target=new URL(link.href,window.location.href);target.searchParams.set('owner_portal_client_event_id',telemetryUuid());link.href=target.toString();}catch(error){}
+    },{capture:true});
+  });
+  document.querySelectorAll('a[data-document-type][href*="owner_portal_context_token="]').forEach(function(link){
+    link.addEventListener('click',function(event){
+      if(!event.isTrusted)return;
+      try{var target=new URL(link.href,window.location.href);target.searchParams.set('owner_portal_client_event_id',telemetryUuid());link.href=target.toString();}catch(error){}
+    },{capture:true});
+  });
+  document.querySelectorAll('details[data-telemetry-section][data-telemetry-control]').forEach(function(details){
+    details.addEventListener('toggle',function(event){
+      if(!event.isTrusted)return;
+      var expanded=details.open;
+      sendOwnerInteraction(expanded?'section_expanded':'section_collapsed',{
+        section_id:details.getAttribute('data-telemetry-section'),
+        control_id:details.getAttribute('data-telemetry-control'),expanded:expanded
+      });
+    });
+  });
+  document.querySelectorAll('[data-publication-link][data-external-portal]').forEach(function(link){
+    link.addEventListener('click',function(event){
+      if(!event.isTrusted)return;
+      sendOwnerInteraction('publication_link_clicked',{
+        section_id:'commercial_activity_publications',control_id:'publication_link',
+        external_portal:link.getAttribute('data-external-portal')
+      });
+    });
+  });
   document.querySelectorAll('.executive-avatar img').forEach(function(img){img.addEventListener('error',function(){img.remove();});});
   var publicationDisclosure=document.getElementById('publication-disclosure');
   if(publicationDisclosure){
@@ -826,7 +875,19 @@
       });
       buttons.forEach(function(item){item.setAttribute('aria-pressed',item.getAttribute('data-position-state')===state?'true':'false');});
     }
-    buttons.forEach(function(button){button.addEventListener('click',function(){setPosition(button.getAttribute('data-position-state'));});});
+    buttons.forEach(function(button){button.addEventListener('click',function(event){
+      var previous=simulation.getAttribute('data-state')||'current';
+      var target=button.getAttribute('data-position-state');
+      if(event.isTrusted&&target!==previous){
+        var adjustment=Number(simulation.getAttribute('data-adjustment-pct'));
+        sendOwnerInteraction('price_simulation_changed',{
+          section_id:'price_simulation',
+          control_id:target==='adjusted'?'price_simulation_adjusted':'price_simulation_current',
+          previous_state:previous,target_state:target,selected_adjustment_pct:adjustment
+        });
+      }
+      setPosition(target);
+    });});
   });
   var top=document.getElementById('owner-portal-top-actions'),sticky=document.getElementById('owner-portal-sticky-actions');
   if(!('IntersectionObserver' in window)) return;

@@ -606,7 +606,9 @@ def _patch_live_report_runtime(monkeypatch, service, *, document_type="COMMUNAL_
     monkeypatch.setattr(
         owner_campaign_live_events,
         "persist_live_event",
-        lambda _db, claims, *, event, action: event_calls.append((claims["property_code"], event, action)),
+        lambda _db, claims, *, event, action: event_calls.append((
+            claims["property_code"], event, action, claims.get("document_type"),
+        )),
     )
     return event_calls
 
@@ -718,8 +720,7 @@ async def test_valid_live_report_token_serves_private_drive_pdf_and_tracks_open(
     assert response.headers["x-campaign-report-resolution"] == "drive"
     assert service._files.media_calls == [{"fileId": "live-private-pdf", "supportsAllDrives": True}]
     assert events == [
-        (LIVE_CODE, "cta_clicked", "ver_informe"),
-        (LIVE_CODE, "report_opened", "ver_informe"),
+        (LIVE_CODE, "report_opened", "ver_informe", document_type),
     ]
 
 
@@ -742,8 +743,7 @@ async def test_valid_live_report_without_drive_file_returns_fallback_and_tracks_
     assert response.headers["x-campaign-report-resolution"] == "procasa_fallback"
     assert response.body.startswith(b"%PDF-")
     assert events == [
-        (LIVE_CODE, "cta_clicked", "ver_informe"),
-        (LIVE_CODE, "report_opened", "ver_informe"),
+        (LIVE_CODE, "report_opened", "ver_informe", "COMMUNAL_MARKET_REPORT"),
     ]
 
 

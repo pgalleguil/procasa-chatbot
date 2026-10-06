@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import logging
 import re
 import unicodedata
@@ -4025,12 +4026,19 @@ def build_monthly_portal_view(
     if adjustment_value is None:
         adjustment_value = campaign_view.get("recommended_adjustment_pct")
     adjustment_label = ""
+    telemetry_adjustment_pct = None
     if not stale and adjustment_value is not None:
         try:
             adjustment_number = float(str(adjustment_value).replace(",", "."))
+            telemetry_adjustment_pct = adjustment_number
             adjustment_label = f"-{abs(adjustment_number):g}%"
         except (TypeError, ValueError):
-            adjustment_label = _text(adjustment_value)
+            raw_adjustment = str(adjustment_value).replace("%", "").replace(",", ".").strip()
+            try:
+                telemetry_adjustment_pct = float(raw_adjustment)
+                adjustment_label = _text(adjustment_value)
+            except (TypeError, ValueError):
+                adjustment_label = _text(adjustment_value)
 
     operation = _text(_value(property_state, snapshot, "operation") or snapshot.get("operation_resolved") or row.get("operation") or campaign_view.get("operation"))
     market_reference_card = None
@@ -4087,6 +4095,15 @@ def build_monthly_portal_view(
                 )
                 whatsapp_urls[placement] = f"{base}/owner-portal/executive-whatsapp?{urlencode({'token': token})}"
     current_period = _as_period(monthly.get("period") or monthly.get("generated_at"))
+    report_period = current_period or _as_period(snapshot.get("prepared_at")) or _as_period(campaign_snapshot.get("prepared_at")) or datetime.now(timezone.utc).strftime("%Y-%m")
+    snapshot_hash = str(monthly.get("snapshot_hash") or monthly.get("content_sha256") or "").strip()
+    if not snapshot_hash:
+        try:
+            snapshot_hash = hashlib.sha256(json.dumps(
+                dict(monthly or snapshot), sort_keys=True, separators=(",", ":"), default=str,
+            ).encode("utf-8")).hexdigest()
+        except (TypeError, ValueError):
+            snapshot_hash = hashlib.sha256(f"{property_code}|{report_period}".encode("utf-8")).hexdigest()
     monthly_changes = _previous_snapshot_changes(monthly_snapshots, monthly) if current_period else []
     recommendation_period_label = _recommendation_period_label(monthly.get("period") or monthly.get("generated_at"))
     adjustment_headline_label = ""
@@ -4281,6 +4298,7 @@ def build_monthly_portal_view(
         "recommended_price_count_value": recommended_price_display_value if not stale else None,
         "recommendation_difference_label": recommendation_difference_label if not stale else "",
         "adjustment_pct": adjustment_value,
+        "telemetry_adjustment_pct": telemetry_adjustment_pct,
         "adjustment_label": adjustment_label,
         "adjustment_headline_label": adjustment_headline_label,
         "recommendation_period_label": recommendation_period_label,
@@ -4332,6 +4350,8 @@ def build_monthly_portal_view(
         "sticky_whatsapp_url": whatsapp_urls["STICKY"],
         "updated_label": updated_label,
         "data_period": _as_period(monthly.get("period") or monthly.get("generated_at")) or _as_period(snapshot.get("prepared_at")),
+        "report_period": report_period,
+        "snapshot_hash": snapshot_hash,
         "source": campaign_view.get("source"),
         "safe_mode": stale,
         "already_authorized": already_authorized,

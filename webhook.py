@@ -965,6 +965,38 @@ async def lifespan(app: FastAPI):
     finally:
         db_connect_ms = (time.perf_counter() - db_started) * 1000
 
+    # Initialize the centrally stored September 2026 market-context baseline
+    # after the normal Mongo connection is available. The bootstrap is
+    # collection-scoped, idempotent, and never updates divergent records.
+    def _startup_market_context_bootstrap():
+        from chatbot.storage import get_db
+        from owner_portal.market_context import ensure_market_context_snapshots_initialized
+
+        return ensure_market_context_snapshots_initialized(get_db())
+
+    market_context_started = time.perf_counter()
+    try:
+        market_context_result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            _startup_market_context_bootstrap,
+        )
+        logger.info(
+            "[MARKET_CONTEXT_BOOTSTRAP] status=%s inserts=%s updates=%s unchanged=%s conflicts=%s unique_index_ready=%s collection_documents=%s",
+            market_context_result.get("status"),
+            market_context_result.get("inserts", 0),
+            market_context_result.get("updates", 0),
+            market_context_result.get("unchanged", 0),
+            market_context_result.get("conflicts", 0),
+            market_context_result.get("unique_index_ready"),
+            market_context_result.get("collection_documents"),
+        )
+    except Exception:
+        # The portal remains available if Mongo is unavailable or the stored
+        # baseline conflicts; the explicit exception is retained in logs.
+        logger.exception("[MARKET_CONTEXT_BOOTSTRAP] status=error; no unsafe writes attempted")
+    finally:
+        mandatory_init_ms += (time.perf_counter() - market_context_started) * 1000
+
     # Controlled one-shot recovery for authenticated historical delivery
     # evidence.  It runs after Mongo preconnect and before any background
     # consumer/reconciler task is scheduled.  The runner is fail-closed and

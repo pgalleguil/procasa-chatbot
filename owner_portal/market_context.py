@@ -262,6 +262,125 @@ def plan_seed(existing_documents: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     return plan
 
 
+class MarketContextBootstrapConflict(RuntimeError):
+    """Raised when the stored September baseline is not safe to initialize."""
+
+
+def ensure_market_context_snapshots_initialized(db: Any) -> dict[str, Any]:
+    """Ensure the approved September baseline exists in its canonical collection.
+
+    This startup bootstrap is intentionally limited to one collection and one
+    period. It inserts missing baseline identities, never updates existing
+    documents, and fails closed on malformed, duplicate, extra, or divergent
+    records.
+    """
+    documents = [deepcopy(item) for item in SEPTEMBER_2026_SEED]
+    validation_errors = validate_market_context_documents(
+        documents, period=SEPTEMBER_2026_PERIOD,
+    )
+    if len(documents) != 22 or validation_errors:
+        raise MarketContextBootstrapConflict(
+            "invalid canonical September 2026 manifest: "
+            + ",".join(validation_errors or [f"expected 22 documents, got {len(documents)}"])
+        )
+
+    collection = db[MARKET_CONTEXT_SNAPSHOT_COLLECTION]
+    key_projection = {key: 1 for key in MARKET_CONTEXT_NATURAL_KEY}
+    key_issues = inspect_unique_key_integrity(collection.find({}, key_projection))
+    if key_issues:
+        raise MarketContextBootstrapConflict(
+            f"market_context_snapshots has invalid or duplicate natural keys: {key_issues!r}"
+        )
+
+    existing = list(collection.find({"period": SEPTEMBER_2026_PERIOD}))
+    plan = plan_seed(existing)
+    seed_identities = {seed_identity(item) for item in documents}
+    existing_identities = {seed_identity(item) for item in existing}
+    unexpected = sorted(existing_identities - seed_identities)
+    if unexpected:
+        plan["conflicts"].extend(
+            {"identity": identity, "reason": "unexpected September identity"}
+            for identity in unexpected
+        )
+    if plan["updates"]:
+        plan["conflicts"].extend(
+            {"identity": item["identity"], "reason": "stored document differs from approved baseline"}
+            for item in plan["updates"]
+        )
+    if plan["conflicts"]:
+        raise MarketContextBootstrapConflict(
+            f"market_context_snapshots bootstrap stopped without document writes: {plan['conflicts']!r}"
+        )
+
+    indexes = collection.index_information()
+    expected_index = [(key, 1) for key in MARKET_CONTEXT_NATURAL_KEY]
+    named_index = indexes.get(MARKET_CONTEXT_UNIQUE_INDEX_NAME)
+    if named_index and (
+        named_index.get("unique") is not True
+        or list(named_index.get("key", [])) != expected_index
+    ):
+        raise MarketContextBootstrapConflict(
+            f"index {MARKET_CONTEXT_UNIQUE_INDEX_NAME} exists with incompatible definition"
+        )
+    unique_index_ready = bool(named_index and named_index.get("unique") is True)
+    if not unique_index_ready:
+        unique_index_ready = any(
+            spec.get("unique") is True and list(spec.get("key", [])) == expected_index
+            for spec in indexes.values()
+        )
+    if not unique_index_ready:
+        collection.create_index(
+            expected_index,
+            unique=True,
+            name=MARKET_CONTEXT_UNIQUE_INDEX_NAME,
+        )
+        unique_index_ready = True
+
+    inserted_count = 0
+    if plan["inserts"]:
+        try:
+            result = collection.insert_many(plan["inserts"], ordered=True)
+            inserted_count = len(result.inserted_ids)
+        except Exception as exc:
+            # Concurrent application starts may race after the unique index is
+            # created. Accept only if the other starter completed the exact
+            # approved baseline; otherwise preserve the explicit failure.
+            post_race = list(collection.find({"period": SEPTEMBER_2026_PERIOD}))
+            race_plan = plan_seed(post_race)
+            if (
+                len(post_race) != 22
+                or race_plan["inserts"]
+                or race_plan["updates"]
+                or race_plan["conflicts"]
+            ):
+                raise MarketContextBootstrapConflict(
+                    f"baseline insertion failed and post-race verification failed: {exc}"
+                ) from exc
+
+    final_documents = list(collection.find({"period": SEPTEMBER_2026_PERIOD}))
+    final_plan = plan_seed(final_documents)
+    if (
+        len(final_documents) != 22
+        or final_plan["inserts"]
+        or final_plan["updates"]
+        or final_plan["conflicts"]
+        or len(final_plan["unchanged"]) != 22
+    ):
+        raise MarketContextBootstrapConflict(
+            "post-write baseline verification failed; expected exactly 22 canonical September documents"
+        )
+
+    return {
+        "status": "initialized" if inserted_count else "unchanged",
+        "inserts": inserted_count,
+        "updates": 0,
+        "unchanged": len(final_plan["unchanged"]),
+        "conflicts": 0,
+        "unique_index_ready": unique_index_ready,
+        "collection_documents": collection.count_documents({}),
+    }
+
+
 def canonical_documents_to_context(period: str, documents: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     """Adapt canonical collection documents to the owner portal resolver contract."""
     indicators = []

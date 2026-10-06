@@ -9,6 +9,8 @@ from owner_portal.market_context import (
     MARKET_CONTEXT_UNIQUE_INDEX_NAME,
     SEPTEMBER_2026_PERIOD,
     SEPTEMBER_2026_SEED,
+    MarketContextBootstrapConflict,
+    ensure_market_context_snapshots_initialized,
     inspect_unique_key_integrity,
     plan_period_update,
     validate_market_context_documents,
@@ -148,3 +150,98 @@ def test_execute_requires_mongo_uri_and_fails_before_any_database_action(monkeyp
     monkeypatch.setattr(updater, "_mongo_config", lambda: (None, "URLS"))
     assert updater.run_update(period=SEPTEMBER_2026_PERIOD, execute=True) == 2
     assert "MONGO_URI_NOT_CONFIGURED" in capsys.readouterr().out
+
+
+class _CollectionScopedDatabase:
+    """Fail tests if startup bootstrap reaches any collection but its target."""
+
+    def __init__(self, database):
+        self.database = database
+        self.accessed = []
+
+    def __getitem__(self, name):
+        self.accessed.append(name)
+        if name != "market_context_snapshots":
+            raise AssertionError(f"bootstrap accessed unauthorized collection: {name}")
+        return self.database[name]
+
+
+def test_startup_bootstrap_creates_exactly_22_in_target_collection_only():
+    database = mongomock.MongoClient().URLS
+    database.other_collection.insert_one({"_id": "sentinel", "value": "unchanged"})
+    scoped = _CollectionScopedDatabase(database)
+
+    result = ensure_market_context_snapshots_initialized(scoped)
+
+    assert result == {
+        "status": "initialized",
+        "inserts": 22,
+        "updates": 0,
+        "unchanged": 22,
+        "conflicts": 0,
+        "unique_index_ready": True,
+        "collection_documents": 22,
+    }
+    assert scoped.accessed == ["market_context_snapshots"]
+    assert database.market_context_snapshots.count_documents({}) == 22
+    assert database.other_collection.find_one({"_id": "sentinel"})["value"] == "unchanged"
+    assert set(database.list_collection_names()) == {"market_context_snapshots", "other_collection"}
+
+
+def test_startup_bootstrap_with_complete_equal_seed_is_noop():
+    collection = mongomock.MongoClient().URLS.market_context_snapshots
+    collection.insert_many([deepcopy(item) for item in SEPTEMBER_2026_SEED])
+    database = _CollectionScopedDatabase(collection.database)
+
+    first = ensure_market_context_snapshots_initialized(database)
+    second = ensure_market_context_snapshots_initialized(database)
+
+    assert first["inserts"] == second["inserts"] == 0
+    assert first["updates"] == second["updates"] == 0
+    assert first["unchanged"] == second["unchanged"] == 22
+    assert collection.count_documents({}) == 22
+    assert database.accessed == ["market_context_snapshots", "market_context_snapshots"]
+
+
+def test_startup_bootstrap_completes_only_missing_seed_document():
+    collection = mongomock.MongoClient().URLS.market_context_snapshots
+    existing = [deepcopy(item) for item in SEPTEMBER_2026_SEED if item != SEPTEMBER_2026_SEED[7]]
+    collection.insert_many(existing)
+
+    result = ensure_market_context_snapshots_initialized(_CollectionScopedDatabase(collection.database))
+
+    assert result["inserts"] == 1
+    assert result["updates"] == 0
+    assert result["unchanged"] == 22
+    assert result["conflicts"] == 0
+    assert collection.count_documents({}) == 22
+    assert collection.find_one({"period": SEPTEMBER_2026_PERIOD, "indicator_kind": SEPTEMBER_2026_SEED[7]["indicator_kind"], "geography_code": SEPTEMBER_2026_SEED[7]["geography_code"]})
+
+
+def test_startup_bootstrap_conflict_stops_before_index_or_document_write():
+    collection = mongomock.MongoClient().URLS.market_context_snapshots
+    changed = deepcopy(SEPTEMBER_2026_SEED[0])
+    changed["value"] = float(changed["value"]) + 1
+    collection.insert_one(changed)
+    before = list(collection.find({}))
+
+    try:
+        ensure_market_context_snapshots_initialized(_CollectionScopedDatabase(collection.database))
+    except MarketContextBootstrapConflict as exc:
+        assert "stored document differs" in str(exc)
+    else:
+        raise AssertionError("a divergent baseline document must stop the bootstrap")
+
+    assert collection.count_documents({}) == 1
+    assert list(collection.find({})) == before
+    assert set(collection.index_information()) == {"_id_"}
+
+
+def test_startup_bootstrap_unique_index_has_exact_natural_key():
+    database = mongomock.MongoClient().URLS
+    result = ensure_market_context_snapshots_initialized(_CollectionScopedDatabase(database))
+    spec = database.market_context_snapshots.index_information()[MARKET_CONTEXT_UNIQUE_INDEX_NAME]
+
+    assert result["unique_index_ready"] is True
+    assert spec["unique"] is True
+    assert list(spec["key"]) == [(field, 1) for field in MARKET_CONTEXT_NATURAL_KEY]

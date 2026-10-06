@@ -9,9 +9,11 @@ The portal template references only `/static/...` assets at runtime.
 | Portal Inmobiliario | `portalinmobiliario.svg` | `https://http2.mlstatic.com/frontend-assets/pi-web-navigation/ui-navigation/6.9.2/portalinmobiliario/favicon.svg` |
 | Mercado Libre | `mercado-libre.svg` | `https://http2.mlstatic.com/frontend-assets/ml-web-navigation/ui-navigation/5.21.22/mercadolibre/favicon.svg` |
 | TocToc | `toctoc.svg` | `https://d2jd36q67phkec.cloudfront.net/toctoc/img/logos/brand/logo-tt-h.svg` |
-| Yapo | `yapo.ico` | `https://www.yapo.cl/favicon.ico` |
+| Yapo | `yapo.svg` (embedded local copy, icon view) | `https://getonbrd-prod.s3.amazonaws.com/uploads/users/logo/253/logo_yapo_2022.png` |
 | Proppit | `proppit.png` | `https://www.proppit.com/proppit-favicons/mstile-150x150.png` |
 | ChilePropiedades | `chilepropiedades.svg` | `https://chilepropiedades.cl/assets/images/favicon.svg` |
 
-Names and marks remain the property of their respective owners. Image elements
-use `object-fit: contain` so the source aspect ratios are preserved.
+Names and marks remain the property of their respective owners. Yapo's 200×200
+transparent company mark is embedded in the local `yapo.svg`, which shows only
+its high-resolution cube to match the existing icon-only row. Image elements use
+`object-fit: contain` so the source aspect ratios are preserved.

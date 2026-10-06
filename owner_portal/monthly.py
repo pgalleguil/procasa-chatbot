@@ -1312,7 +1312,7 @@ _PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
     "PORTAL_INMOBILIARIO": ("/static/portal-logos/portalinmobiliario.svg",),
     "MERCADO_LIBRE": ("/static/portal-logos/mercado-libre.svg",),
     "TOCTOC": ("/static/portal-logos/toctoc.svg",),
-    "YAPO": ("/static/portal-logos/yapo.ico",),
+    "YAPO": ("/static/portal-logos/yapo.svg",),
     "PROPPIT": ("/static/portal-logos/proppit.png",),
     "CHILEPROPIEDADES": ("/static/portal-logos/chilepropiedades.svg",),
 }

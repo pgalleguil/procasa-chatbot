@@ -2539,6 +2539,8 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
     assert [link["label"] for link in ml_item["links"]] == ["Ver Mercado Libre"]
     assert pi_item["logo_urls"] == ("/static/portal-logos/portalinmobiliario.svg",)
     assert ml_item["logo_urls"] == ("/static/portal-logos/mercado-libre.svg",)
+    assert result["items"][3]["logo_urls"] == ("/static/portal-logos/toctoc.svg",)
+    assert result["items"][4]["logo_urls"] == ("/static/portal-logos/yapo.svg",)
     assert all(
         logo.startswith("/static/") and not logo.startswith(("http://", "https://"))
         for item in result["items"] for logo in item["logo_urls"]
@@ -2640,6 +2642,7 @@ def test_publication_portals_render_safe_links_without_analytics_or_empty_href()
     assert "@media (prefers-reduced-motion:reduce)" in template_source
     assert "publicationDisclosure.addEventListener('toggle',syncPublicationExpanded)" in template_source
     assert ".publication-item__logo--toctoc { width:56px" in template_source
+    assert ".publication-item--toctoc { grid-template-columns:58px minmax(0,1fr); }" in template_source
     assert ".publication-item__logo--yapo,.publication-item__logo--chilepropiedades" in template_source
     assert ".publication-item { grid-template-columns:38px minmax(0,1fr); gap:8px; padding:7px 2px; }" in template_source
     assert '.owner-funnel-stage-bar[data-zero="true"] .owner-funnel-stage-fill { display:none; }' in template_source

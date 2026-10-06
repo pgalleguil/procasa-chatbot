@@ -2080,6 +2080,37 @@ def test_market_evidence_summary_keeps_unscaled_sources_visible():
     assert result["summary_position_label"] == "3 referencias analizadas"
     assert "1 referencia directamente en la misma escala" in result["summary_position_note"]
     assert "Informe comunal" in result["summary_position_note"]
+    assert result["sources"][0]["value_label"] == ""
+    assert result["sources"][2]["value_label"] == "102,8 UF/m² de oferta · superficie no informada"
+
+
+def test_market_position_displays_available_non_scale_values_with_source_labels():
+    from bs4 import BeautifulSoup
+
+    view = premium_fixture("full")
+    evidence = _market_evidence_model(
+        market_position={
+            "available": True, "current_value": 39.9,
+            "references": [{"kind": "COMPARABLE", "value": 35.0, "unit": "UF/m² útil", "area_basis": "USEFUL"}],
+        },
+        position_static={"available": True, "reference_value": 35.0, "unit": "UF/m² útil", "count": 7, "source": "PRIMARY"},
+        appraisal_card={"mode": "STRUCTURED", "market_position_reference": {
+            "appraisal_uf_m2": 37.5, "appraisal_uf_m2_unit": "UF/m² útil", "area_basis": "USEFUL",
+        }},
+        communal={"offer_uf_m2": 37.0, "reference_unit": "UF/m²", "currency_basis": "UF"},
+        stale=False,
+    )
+    view["market_position"]["market_evidence"] = evidence
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    extra_refs = soup.select(".market-position-extra-ref")
+    assert [item.get("data-kind") for item in extra_refs] == ["APPRAISAL", "COMMUNAL"]
+    extra_text = " ".join(item.get_text(" ", strip=True) for item in extra_refs)
+    assert "Tasación individual: 37,5 UF/m² útil" in extra_text
+    assert "Informe comunal: 37,0 UF/m² · superficie no informada" in extra_text
+    assert [item["kind"] for item in evidence["scale_compatible_sources"]] == ["COMPARABLE"]
 
 
 def test_owner_funnel_reuses_portals_and_costs_bar_silhouette_visual_language():

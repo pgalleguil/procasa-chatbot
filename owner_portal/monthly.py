@@ -1998,12 +1998,20 @@ def _market_evidence_model(
     if not stale and isinstance(appraisal_card, Mapping):
         app_ref = appraisal_card.get("market_position_reference")
         app_ref = app_ref if isinstance(app_ref, Mapping) else {}
+        appraisal_value = _number_from_label(app_ref.get("appraisal_uf_m2"))
+        appraisal_basis = _text(app_ref.get("area_basis"))
+        appraisal_unit = _text(app_ref.get("appraisal_uf_m2_unit"))
+        if appraisal_value is not None and not appraisal_unit:
+            appraisal_unit = _position_basis_unit("UF", appraisal_basis) if appraisal_basis else "UF/m² · superficie no informada"
+        elif appraisal_value is not None and not appraisal_basis and not re.search(r"útil|util|built|construid|terreno|land", appraisal_unit, re.I):
+            appraisal_unit = f"{appraisal_unit or 'UF/m²'} · superficie no informada"
         sources.append({
             "kind": "APPRAISAL", "label": "Tasación individual",
             "available": True, "structured": appraisal_card.get("mode") == "STRUCTURED",
-            "value": _number_from_label(app_ref.get("appraisal_uf_m2")),
-            "unit": _text(app_ref.get("appraisal_uf_m2_unit")),
-            "area_basis": _text(app_ref.get("area_basis")),
+            "value": appraisal_value,
+            "value_label": f"{_format_position_value(appraisal_value)} {appraisal_unit}" if appraisal_value is not None else "",
+            "unit": appraisal_unit,
+            "area_basis": appraisal_basis,
             "source": "INDIVIDUAL_APPRAISAL",
         })
     if not stale and isinstance(position_static, Mapping) and position_static.get("available"):
@@ -2027,10 +2035,16 @@ def _market_evidence_model(
     if not stale and communal_value is not None and communal_value > 0:
         unit = _text(communal.get("reference_unit") or communal.get("unit"))
         basis = _text(communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
+        communal_basis = _text(communal.get("area_basis") or communal.get("reference_area_basis") or communal.get("surface_basis"))
+        communal_unit = _text(communal.get("reference_unit") or communal.get("unit"))
+        if communal_value is not None and not communal_basis and not re.search(r"útil|util|built|construid|terreno|land", communal_unit, re.I):
+            communal_unit = f"{communal_unit or 'UF/m²'} · superficie no informada"
         sources.append({
             "kind": "COMMUNAL", "label": "Informe comunal",
             "available": True, "structured": True,
-            "value": communal_value, "unit": unit, "area_basis": basis,
+            "value": communal_value,
+            "value_label": f"{_format_position_value(communal_value)} {communal_unit}" if communal_value is not None else "",
+            "unit": communal_unit or unit, "area_basis": basis,
             "source": "mercado_comunal", "source_date": communal.get("source_date"),
         })
     compatible_by_kind = {

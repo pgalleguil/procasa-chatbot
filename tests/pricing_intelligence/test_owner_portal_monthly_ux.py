@@ -1678,15 +1678,44 @@ def test_market_position_final_copy_and_full_scale_evidence_are_not_repeated():
     assert not section.select_one(".market-position-evidence")
     assert section.select_one(".position-simulation__analysis-title").get_text(strip=True) == "Lectura comercial"
     assert not section.select_one("[data-position-classification]")
-    assert ".position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:14px;" in html
-    assert ".position-simulation__legend-value { display:block; margin-top:4px; color:var(--ink); font-size:23px;" in html
-    assert ".position-simulation__property-gap { color:#505b73; font-size:14px;" in html
-    assert "font-size:19px" in html and "font-size:12.5px" in html
+    assert ".position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:10.5px;" in html
+    assert ".position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:15px; line-height:1.2;" in html
+    assert ".position-simulation__property-gap { color:#505b73; font-size:10.5px;" in html
     assert [item.get("data-legend-kind") for item in section.select(".position-simulation__legend-item")] == [
         "appraisal", "comparable", "communal", "property_recommended", "property_current",
     ]
     assert "repeat(5,minmax(0,1fr))" in html
     assert "grid-column:2 / span 2" in html and "grid-column:4 / span 2" in html
+
+
+def test_market_position_typography_and_subcards_match_global_portal_scale():
+    from bs4 import BeautifulSoup
+
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=_full_data_appraisal_view())
+    css = BeautifulSoup(html, "html.parser").style.get_text()
+
+    assert ".section-heading { display:flex; align-items:center; gap:8px; margin:0 0 10px; font-size:14px; line-height:1.25; font-weight:700; }" in css
+    assert ".section-heading { gap:7px; margin-bottom:8px; font-size:12px; }" in css
+    assert ".position-top .section-heading" not in css
+    assert ".position-simulation__option { min-width:0; min-height:40px; padding:6px 8px;" in css
+    assert "font-size:12px; line-height:1.25; font-weight:600;" in css
+    assert ".position-simulation__option { min-height:40px; padding:6px; font-size:11px; }" in css
+    assert ".position-simulation__legend-item { display:flex; min-width:0; flex-direction:column; justify-content:flex-start; padding:7px 8px;" in css
+    assert ".position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:10.5px; line-height:1.3; font-weight:650; }" in css
+    assert ".position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:15px; line-height:1.2;" in css
+    assert "@media (max-width:480px)" in css
+    assert ".position-simulation__legend-value { font-size:14px; }" in css
+    assert ".position-simulation__property-gap { font-size:10px; }" in css
+    assert ".position-simulation__analysis-title { font-size:11.5px; }" in css
+    assert ".position-simulation__summary { font-size:11px; }" in css
+    assert ".position-simulation__note,.position-simulation__sources { font-size:12px; }" not in css
+    assert ".market-position-evidence { display:grid; gap:5px; margin:10px 0 0; padding:8px 9px;" in css
+    assert "font-size:10.5px; line-height:1.4; }" in css
+    assert ".market-position-evidence__label { color:#626d85; font-size:10.5px;" in css
+    assert ".market-position-extra-ref span { min-width:0; overflow-wrap:anywhere; font-size:10.5px;" in css
+    assert ".market-position-extra-ref small { display:block; margin-top:2px; color:#737d92; font-size:9.5px;" in css
 
 
 def test_market_position_adjusted_copy_uses_owner_friendly_communal_label():

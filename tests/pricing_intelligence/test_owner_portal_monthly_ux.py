@@ -157,7 +157,7 @@ def test_market_context_rejects_unverified_legacy_and_unmatched_region():
     assert result is None
 
 
-def test_market_context_canonical_store_is_exact_period_and_operation_aware():
+def test_market_context_canonical_store_uses_exact_or_previous_month_and_is_operation_aware():
     db = mongomock.MongoClient().test
     sale_context = [item.copy() for item in SEPTEMBER_2026_SEED]
     db.market_context_snapshots.insert_many(sale_context)
@@ -174,7 +174,28 @@ def test_market_context_canonical_store_is_exact_period_and_operation_aware():
     october = _view(db, monthly={
         "period": "2026-10", "operation": "VENTA", "region": "Región Metropolitana", "commune": "Vitacura",
     }, campaign_view={"operation": "Venta"}, code="5439")
-    assert october["market_context"] is None
+    assert october["market_context"]["reference_month"] == "septiembre 2026"
+    unemployment = next(item for item in october["market_context"]["indicators"] if item["kind"] == "UNEMPLOYMENT")
+    assert unemployment["period"] == "jun-ago 2026"
+
+
+@pytest.mark.parametrize(("report_period", "available_periods", "expected_period"), [
+    ("2026-10", ["2026-09"], "2026-09"),
+    ("2026-09", ["2026-09"], "2026-09"),
+    ("2026-09", ["2026-10"], None),
+    ("2026-11", ["2026-09"], None),
+])
+def test_market_context_temporal_resolution_is_bounded_and_never_uses_future(
+    report_period, available_periods, expected_period,
+):
+    from owner_portal.monthly import _load_market_context_snapshot
+
+    db = mongomock.MongoClient().test
+    template = dict(SEPTEMBER_2026_SEED[0])
+    documents = [dict(template, period=period) for period in available_periods]
+    db.market_context_snapshots.insert_many(documents)
+    result = _load_market_context_snapshot(db, report_period)
+    assert (result.get("period") if result else None) == expected_period
 
 
 def test_market_context_canonical_rental_excludes_sale_only_series_and_qa_rental_data():
@@ -1488,7 +1509,13 @@ def test_owner_appraisal_analysis_log_is_compact_and_contains_no_document_or_own
 
     caplog.clear()
     _log_owner_appraisal_analysis("5806", "FOUND", {})
-    assert not caplog.records
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 1
+    assert messages[0].startswith("[OWNER_APPRAISAL_ANALYSIS] property_code=5806 ")
+    assert "appraisal_resolver_status=FOUND" in messages[0]
+    assert all(secret not in messages[0] for secret in (
+        "private@example.com", "secret-token", "private PDF contents", "drive-file-id",
+    ))
 
 
 def test_market_position_compatibility_requires_currency_area_and_measurement_match():

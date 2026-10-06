@@ -228,9 +228,10 @@ def _log_owner_appraisal_analysis(
     property_code: str, resolver_status: Any, analysis: Mapping[str, Any] | None = None,
     *, error_type: str = "",
 ) -> None:
-    """Emit a compact, non-PII diagnostic for the real 5695 appraisal lookup."""
-    if str(property_code or "").strip() != "5695":
-        return
+    """Emit a compact, non-PII appraisal diagnostic for any property code."""
+    safe_property_code = str(property_code or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", safe_property_code):
+        safe_property_code = "UNKNOWN"
     analysis = analysis if isinstance(analysis, Mapping) else {}
     area_basis = _text(analysis.get("area_basis")).upper()
     if area_basis not in {"USEFUL", "BUILT", "LAND"}:
@@ -241,10 +242,11 @@ def _log_owner_appraisal_analysis(
     error_type = error_type or _text(analysis.get("extraction_error"))
     safe_error_type = error_type if re.fullmatch(r"[A-Za-z0-9_]{1,64}", error_type or "") else ""
     logger.info(
-        "[OWNER_APPRAISAL_ANALYSIS] property_code=5695 appraisal_resolver_status=%s "
+        "[OWNER_APPRAISAL_ANALYSIS] property_code=%s appraisal_resolver_status=%s "
         "appraisal_extraction_status=%s text_extracted=%s page_count=%s "
         "has_appraisal_value=%s has_surface_m2=%s area_basis=%s "
         "has_explicit_uf_m2=%s has_derived_uf_m2=%s uf_m2_source=%s error_type=%s",
+        safe_property_code,
         _text(resolver_status).upper() or "UNKNOWN",
         _text(analysis.get("extraction_status")).upper() or "NOT_RUN",
         bool(analysis.get("text_extracted")),
@@ -3259,18 +3261,41 @@ def _report_market_context_period(monthly: Mapping[str, Any], snapshot: Mapping[
 
 
 def _load_market_context_snapshot(db: Any, period: str) -> Mapping[str, Any] | None:
-    """Read one exact-period canonical snapshot from URLS.market_context_snapshots."""
-    if not period:
+    """Load the exact period or the immediately previous canonical month only."""
+    if not re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", str(period or "")):
         return None
+
+    target_year, target_month = (int(part) for part in period.split("-"))
+    target_ordinal = target_year * 12 + target_month - 1
     try:
-        cursor = db[MARKET_CONTEXT_SNAPSHOT_COLLECTION].find({"period": period, "active": True}, {"_id": 0})
-        indicators = [item for item in cursor if isinstance(item, Mapping)]
+        collection = db[MARKET_CONTEXT_SNAPSHOT_COLLECTION]
+        exact = [
+            item for item in collection.find({"period": period, "active": True}, {"_id": 0})
+            if isinstance(item, Mapping)
+        ]
+        if exact:
+            return {"period": period, "indicators": exact}
+
+        eligible = [
+            item for item in collection.find({"period": {"$lte": period}, "active": True}, {"_id": 0})
+            if isinstance(item, Mapping)
+            and re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", str(item.get("period") or ""))
+            and str(item.get("period")) <= period
+        ]
     except Exception:
         logging.getLogger(__name__).exception("Unable to read owner market context snapshot")
         return None
-    if not indicators:
+
+    if not eligible:
         return None
-    return {"period": period, "indicators": indicators}
+    selected_period = max(str(item["period"]) for item in eligible)
+    selected_year, selected_month = (int(part) for part in selected_period.split("-"))
+    selected_ordinal = selected_year * 12 + selected_month - 1
+    age_months = target_ordinal - selected_ordinal
+    if age_months < 0 or age_months > 1:
+        return None
+    selected = [item for item in eligible if str(item["period"]) == selected_period]
+    return {"period": selected_period, "indicators": selected}
 
 
 def _market_context_property_interpretation(

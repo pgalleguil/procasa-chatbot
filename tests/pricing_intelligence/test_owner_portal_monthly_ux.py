@@ -858,6 +858,7 @@ def _full_data_appraisal_view(*, comparable=True, appraisal=True, communal=True)
             "verified": True, "property_code": code,
             "estimated_low_uf": 3600, "estimated_mid_uf": 3750,
             "estimated_high_uf": 3900, "source_date": "2026-09-15", "area_basis": "USEFUL",
+            "appraisal_uf_m2": 37.5, "appraisal_uf_m2_unit": "UF/m² útil",
         }
         current["documents"].append({
             "document_type": "INDIVIDUAL_APPRAISAL", "verified": True,
@@ -895,6 +896,7 @@ def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_
 
     assert view["position_simulation"]["available"] is True
     assert view["appraisal_card"]["mode"] == "STRUCTURED"
+    assert view["market_position"]["market_evidence"] is view["market_evidence"]
     assert view["market_reference_card"]["title"] == "Mercado de departamentos en Talca"
     assert soup.select_one("#position-title")
     assert soup.select_one("#appraisal-title")
@@ -922,26 +924,25 @@ def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_
     assert len(soup.select('[data-document-type="INDIVIDUAL_APPRAISAL"]')) == 1
     assert len(soup.select('[data-document-type="COMMUNAL_MARKET_REPORT"]')) == 1
     position = soup.select_one("[data-position-simulation]")
-    assert position.select_one('[data-point="appraisal"]')
-    assert position.select_one('[data-point="comparable"]')
-    assert position.select_one('[data-point="communal"]')
-    assert not position.select_one(".position-simulation__legend-item--appraisal [data-property-gap]")
-    assert not position.select_one(".position-simulation__legend-item--comparable [data-property-gap]")
-    assert not position.select_one(".position-simulation__legend-item--communal [data-property-gap]")
-    property_gaps = position.select(".position-simulation__legend-item--property [data-property-gap]")
-    assert [gap.get_text(strip=True) for gap in property_gaps] == [
+    assert [marker.get("data-point") for marker in position.select(".position-simulation__track [data-point]")] == [
+        "appraisal", "comparable", "communal", "property_recommended", "property_current",
+    ]
+    assert position.select_one('[data-legend-kind="property_recommended"]')
+    assert position.select_one('[data-legend-kind="property_current"]')
+    assert [gap.get_text(strip=True) for gap in position.select('[data-legend-kind="property_current"] .position-simulation__property-gap')] == [
         "+6,4% vs tasación", "+14,0% vs similares", "+7,8% vs oferta comunal",
     ]
-    assert [gap.get("data-adjusted-gap") for gap in property_gaps] == [
+    assert [gap.get_text(strip=True) for gap in position.select('[data-legend-kind="property_recommended"] .position-simulation__property-gap')] == [
         "-4,2% vs tasación", "+2,6% vs similares", "-2,9% vs oferta comunal",
     ]
     assert position.select_one(".position-simulation__legend-marker--appraisal")
     assert position.select_one(".position-simulation__legend-marker--comparable")
     assert position.select_one(".position-simulation__legend-marker--communal")
-    assert position.select_one(".position-simulation__legend-marker--property")
-    assert position.select_one('[data-property-state-label]').get_text(strip=True) == "Tu propiedad"
+    assert position.select_one(".position-simulation__legend-marker--property-current")
+    assert position.select_one(".position-simulation__legend-marker--property-recommended")
     assert all(point.name == "span" for point in position.select(".position-simulation__point"))
-    assert position.select_one('[data-point="ghost"]')
+    assert position.select_one('[data-point="property_current"]')
+    assert position.select_one('[data-point="property_recommended"]')
     style = soup.find("style").get_text()
     assert ".position-simulation__point {" in style and "width:10px; height:10px" in style
     assert "border-radius:50%" in style
@@ -949,13 +950,10 @@ def test_full_data_fixture_renders_comparables_appraisal_communal_and_following_
     assert ".position-simulation__point--appraisal { --marker-color:#c86c24; }" in style
     assert ".position-simulation__point--comparable { --marker-color:#6958cc; }" in style
     assert ".position-simulation__point--communal { --marker-color:#68758c; }" in style
-    assert '.position-simulation[data-state="adjusted"] .position-simulation__point--property { --marker-color:#21834d; }' in style
-    assert "animation:position-marker-arrival 1.8s cubic-bezier(.22,.68,.2,1) 1 both" in style
-    assert ".position-simulation__point--property::before" in style and "inset:-3px" in style
+    assert ".position-simulation__point--property-recommended { --marker-color:#21834d; z-index:2; }" in style
+    assert ".position-simulation__point--property-current::before" in style and "inset:-3px" in style
     assert "border:2px solid #fff" not in style
-    assert ".position-simulation__point--property { --marker-color:#211c69; z-index:2; transition:left 620ms cubic-bezier(.22,.68,.2,1),background-color 260ms ease; }" in style
     assert "@media (prefers-reduced-motion:reduce)" in style
-    assert ".position-simulation__point--property::after { animation:none!important; opacity:0!important; }" in style
     assert "7 propiedades similares" in soup.get_text(" ", strip=True)
     assert soup.select_one(".actions-top .button-primary").get_text(" ", strip=True) == "Revisar ajuste"
     assert soup.select_one(".sticky .button-primary").get_text(" ", strip=True) == "Revisar ajuste"
@@ -1016,14 +1014,14 @@ def test_market_position_omits_appraisal_with_explicit_incompatible_area_basis()
     assert result["available"] is True
     assert [reference["kind"] for reference in result["references"]] == ["COMPARABLE", "COMMUNAL"]
 
-    # Without a conflicting explicit value, derive only from the exact
-    # canonical comparable denominator (100 m²) and keep the same unit.
+    # A value without its own verified appraisal surface is not derived from
+    # the property's/comparable group's denominator.
     appraisal["market_position_reference"]["appraisal_uf_m2"] = None
     appraisal["market_position_reference"]["appraisal_uf_m2_unit"] = "UF/m²"
     appraisal["market_position_reference"]["area_basis"] = "USEFUL"
     derived = _market_position_data(**common, appraisal_card=appraisal)
-    assert [reference["kind"] for reference in derived["references"]] == ["APPRAISAL", "COMPARABLE", "COMMUNAL"]
-    assert derived["references"][0]["value"] == 37.5
+    assert [reference["kind"] for reference in derived["references"]] == ["COMPARABLE", "COMMUNAL"]
+    assert derived["appraisal_exclusion_reason"] == "NO_STRUCTURED_VALUE"
 
     # A same-currency communal marker with unknown area basis is not plotted.
     unknown_area = {**common, "communal": {
@@ -1043,6 +1041,177 @@ def test_market_position_omits_appraisal_with_explicit_incompatible_area_basis()
     explicit_reject = {**common, "position_simulation": {"available": False, "communal_on_same_scale": False}}
     rejected = _market_position_data(**explicit_reject, appraisal_card={})
     assert all(reference["kind"] != "COMMUNAL" for reference in rejected["references"])
+
+
+def test_market_position_bar_always_keeps_current_and_recommended_markers():
+    from owner_portal.monthly import _market_position_data
+
+    result = _market_position_data(
+        position_simulation={"available": False},
+        position_static={
+            "available": True, "unit": "UF/m² útil", "count": 13,
+            "reference_value": 91.1, "property_value": 132.2,
+        },
+        comparables={"surface_ref_m2": 140}, communal={}, appraisal_card=None,
+        property_state={"operation": "VENTA", "surface_ref_m2": 140, "surface_ref_basis": "USEFUL"},
+        property_code="5695", current_price=18507, recommended_price=16656.3,
+        recommendation_is_monthly=True, stale=False,
+    )
+
+    assert [marker["kind"] for marker in result["bar_markers"]] == [
+        "COMPARABLE", "PROPERTY_RECOMMENDED", "PROPERTY_CURRENT",
+    ]
+    assert result["property"]["current_uf_m2"] == 18507 / 140
+    assert result["property"]["recommended_uf_m2"] == 16656.3 / 140
+    assert result["bar_markers"][1]["value_label"] == "119,0"
+    assert result["bar_markers"][2]["value_label"] == "132,2"
+
+
+def test_market_position_full_data_has_exact_five_markers_in_fixed_order():
+    from owner_portal.monthly import _market_position_data
+
+    result = _market_position_data(
+        position_simulation={"available": False},
+        position_static={
+            "available": True, "unit": "UF/m² útil", "count": 13,
+            "reference_value": 91.1, "property_value": 132.2,
+        },
+        comparables={"surface_ref_m2": 140},
+        communal={
+            "offer_uf_m2": 102.8, "reference_unit": "UF/m² útil",
+            "area_basis": "USEFUL", "measurement_definition": "UF_PER_M2",
+        },
+        appraisal_card={"mode": "STRUCTURED", "market_position_reference": {
+            "verified": True, "property_code": "5695", "appraisal_value_uf": 13300,
+            "appraisal_uf_m2": 95.0, "appraisal_uf_m2_unit": "UF/m² útil",
+            "area_basis": "USEFUL", "measurement_definition": "UF_PER_M2",
+        }},
+        property_state={"operation": "VENTA", "surface_ref_m2": 140, "surface_ref_basis": "USEFUL"},
+        property_code="5695", current_price=18507, recommended_price=16656.3,
+        recommendation_is_monthly=True, stale=False,
+    )
+
+    assert [marker["kind"] for marker in result["bar_markers"]] == [
+        "APPRAISAL", "COMPARABLE", "COMMUNAL", "PROPERTY_RECOMMENDED", "PROPERTY_CURRENT",
+    ]
+    assert [marker["value_label"] for marker in result["bar_markers"]] == [
+        "95,0", "91,1", "102,8", "119,0", "132,2",
+    ]
+    assert result["appraisal_on_scale"] is True
+    assert result["communal_on_scale"] is True
+
+
+def test_market_position_final_copy_and_full_scale_evidence_are_not_repeated():
+    from bs4 import BeautifulSoup
+
+    view = _full_data_appraisal_view()
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one(".position-simulation")
+
+    assert section.select_one("[data-position-summary]").get_text(" ", strip=True) == (
+        "Actualmente, tu propiedad se publica en 39,9 UF/m² útil: 6,4% sobre la tasación, "
+        "14,0% sobre propiedades similares y 7,8% sobre la oferta comunal."
+    )
+    assert "Referencias de mercado" not in section.get_text(" ", strip=True)
+    assert [item.get("data-legend-kind") for item in section.select(".position-simulation__legend-item")] == [
+        "appraisal", "comparable", "communal", "property_recommended", "property_current",
+    ]
+    assert "repeat(5,minmax(0,1fr))" in html
+    assert "grid-column:2 / span 2" in html and "grid-column:4 / span 2" in html
+
+
+def test_market_position_adjusted_copy_uses_owner_friendly_communal_label():
+    view = _full_data_appraisal_view()
+    assert view["market_position"]["adjusted_copy"] == (
+        "Con el precio recomendado de 35,9 UF/m² útil, la propiedad quedaría "
+        "4,2% bajo la tasación, 2,6% sobre propiedades similares y 2,9% bajo la oferta comunal."
+    )
+
+
+def test_owner_appraisal_analysis_log_is_compact_and_contains_no_document_or_owner_data(caplog):
+    import logging
+    from owner_portal.monthly import _log_owner_appraisal_analysis
+
+    caplog.set_level(logging.INFO, logger="owner_portal.monthly")
+    _log_owner_appraisal_analysis("5695", "FOUND", {
+        "extraction_status": "STRUCTURED", "text_extracted": True, "page_count": 4,
+        "appraisal_value": 3750, "surface_m2": 100, "area_basis": "USEFUL",
+        "appraisal_uf_m2_source": "DERIVED_FROM_VERIFIED_VALUE_AND_SURFACE",
+        "owner_email": "private@example.com", "token": "secret-token",
+        "pdf_text": "private PDF contents", "source_file_id": "drive-file-id",
+    })
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 1
+    assert messages[0].startswith("[OWNER_APPRAISAL_ANALYSIS] property_code=5695 ")
+    assert "appraisal_resolver_status=FOUND" in messages[0]
+    assert "appraisal_extraction_status=STRUCTURED" in messages[0]
+    assert "page_count=4" in messages[0]
+    assert "has_appraisal_value=True" in messages[0]
+    assert "area_basis=USEFUL" in messages[0]
+    assert "has_derived_uf_m2=True" in messages[0]
+    assert all(secret not in messages[0] for secret in (
+        "private@example.com", "secret-token", "private PDF contents", "drive-file-id",
+    ))
+
+    caplog.clear()
+    _log_owner_appraisal_analysis("5806", "FOUND", {})
+    assert not caplog.records
+
+
+def test_market_position_compatibility_requires_currency_area_and_measurement_match():
+    from owner_portal.monthly import are_market_position_scales_compatible
+
+    comparable = {
+        "unit": "UF/m² útil", "currency_basis": "UF", "area_basis": "USEFUL",
+        "measurement_definition": "UF_PER_M2",
+    }
+    assert are_market_position_scales_compatible(comparable, dict(comparable)) is True
+    assert are_market_position_scales_compatible(comparable, {**comparable, "area_basis": "BUILT"}) is False
+    assert are_market_position_scales_compatible(comparable, {**comparable, "currency_basis": "CLP"}) is False
+    assert are_market_position_scales_compatible(comparable, {**comparable, "measurement_definition": "UF_PER_M2_SALE_EFFECTIVE"}) is False
+    assert are_market_position_scales_compatible(
+        comparable, {**comparable, "unit": "UF/m²", "area_basis": ""}
+    ) is False
+
+
+def test_market_evidence_summary_counts_document_only_without_treating_it_as_quantitative():
+    from owner_portal.monthly import _market_evidence_model, _market_position_data
+
+    position = _market_position_data(
+        position_simulation={"available": False},
+        position_static={
+            "available": True, "unit": "UF/m² útil", "count": 13,
+            "reference_value": 91.1, "property_value": 132.2,
+        },
+        comparables={"surface_ref_m2": 140},
+        communal={"offer_uf_m2": 102.76, "reference_unit": "UF/m²"},
+        appraisal_card={"mode": "DOCUMENT_ONLY", "market_position_reference": {}},
+        property_state={"surface_ref_m2": 140, "operation": "VENTA"},
+        property_code="5695", current_price=18507, recommended_price=16656.3,
+        recommendation_is_monthly=True, stale=False,
+    )
+    evidence = _market_evidence_model(
+        market_position=position,
+        position_static={"available": True, "unit": "UF/m² útil", "count": 13, "reference_value": 91.1},
+        appraisal_card={"mode": "DOCUMENT_ONLY", "market_position_reference": {}},
+        communal={"offer_uf_m2": 102.76, "reference_unit": "UF/m²"}, stale=False,
+    )
+
+    assert evidence["evidence_source_count"] == 3
+    assert evidence["quantitative_reference_count"] == 2
+    assert evidence["scale_compatible_count"] == 1
+    assert evidence["summary_position_label"] == "3 fuentes disponibles"
+    appraisal_source = next(item for item in evidence["sources"] if item["kind"] == "APPRAISAL")
+    communal_source = next(item for item in evidence["sources"] if item["kind"] == "COMMUNAL")
+    assert appraisal_source["quantitative_value"] is None
+    assert communal_source["value"] == 102.76
+    assert communal_source["scale_compatible"] is False
+    assert [item["kind"] for item in position["bar_markers"]] == [
+        "COMPARABLE", "PROPERTY_RECOMMENDED", "PROPERTY_CURRENT",
+    ]
 
 
 def test_appraisal_only_scale_requires_exact_typed_property_surface():
@@ -1251,6 +1420,48 @@ def test_pdf_appraisal_parser_does_not_invent_midpoint_or_range():
     assert "estimated_low_uf" not in parsed
     assert "estimated_high_uf" not in parsed
     assert parsed["extraction_status"] == "DOCUMENT_ONLY"
+
+
+@pytest.mark.parametrize(
+    ("pdf_text", "basis", "surface", "explicit_m2"),
+    [
+        ("Valor de tasación: 3.900 UF\nSuperficie útil: 78 m²", "USEFUL", 78.0, None),
+        ("Valor comercial 4.000 UF\n80 m² construidos", "BUILT", 80.0, None),
+        ("Valor comercial 8.000 UF\nTerreno: 200 m2", "LAND", 200.0, None),
+        ("UF/m²: 75,4", None, None, 75.4),
+        ("UF/m2 75.4", None, None, 75.4),
+        ("Valor por m²: 75,4 UF", None, None, 75.4),
+        ("75.4 UF/m2", None, None, 75.4),
+    ],
+)
+def test_pdf_appraisal_parser_extracts_explicit_surface_basis_and_uf_m2(pdf_text, basis, surface, explicit_m2):
+    from campanas.private_report import _extract_appraisal_fields
+    parsed = _extract_appraisal_fields(pdf_text, property_code="5695", file_record={"id": "verified-pdf"})
+    assert parsed.get("area_basis") == basis
+    assert parsed.get("surface_m2") == surface
+    expected_value = explicit_m2
+    if expected_value is None and basis:
+        expected_value = parsed["estimated_mid_uf"] / surface
+    assert parsed.get("appraisal_uf_m2") == expected_value
+    if explicit_m2 is not None:
+        assert parsed["appraisal_uf_m2_source"] == "EXPLICIT"
+    elif basis:
+        assert parsed["appraisal_uf_m2_source"] == "DERIVED_FROM_VERIFIED_VALUE_AND_SURFACE"
+
+
+def test_pdf_appraisal_parser_derives_uf_m2_only_from_same_document_value_and_typed_surface():
+    from campanas.private_report import _extract_appraisal_fields
+    parsed = _extract_appraisal_fields(
+        "Valor de tasación: 3.900 UF\nSuperficie útil: 78 m²",
+        property_code="5695", file_record={"id": "verified-pdf"},
+    )
+    assert parsed["appraisal_uf_m2"] == 50
+    assert parsed["appraisal_uf_m2_source"] == "DERIVED_FROM_VERIFIED_VALUE_AND_SURFACE"
+    no_basis = _extract_appraisal_fields(
+        "Valor de tasación: 3.900 UF\nSuperficie total: 78 m²",
+        property_code="5695", file_record={"id": "verified-pdf"},
+    )
+    assert "appraisal_uf_m2" not in no_basis
 
 
 @pytest.mark.parametrize("status", ["NOT_FOUND", "AMBIGUOUS", "ERROR"])
@@ -1477,9 +1688,9 @@ def test_summary_has_four_cards_and_reuses_canonical_activity_and_position():
     assert summary_leads == activity_leads == str(view["activity_90d"]["leads"])
     assert cards[1].select_one(".kpi-note").get_text(" ", strip=True) == "-10% recomendado"
     assert cards[3].select_one(".kpi-label").get_text(strip=True) == "Posición de mercado"
-    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "2 referencias analizadas"
+    assert cards[3].select_one(".kpi-value").get_text(strip=True) == "2 fuentes disponibles"
     assert cards[3].select_one(".market-evidence-summary").get_text(" ", strip=True) == (
-        "1 referencia directamente en la misma escala · Propiedades similares · Informe comunal"
+        "2 referencias con valor · 1 referencia directamente en la misma escala · Similares · Oferta comunal"
     )
     assert view["market_reference_card"]["source_label"].startswith("Informe comunal · Santiago · Departamento")
 
@@ -1728,8 +1939,9 @@ def test_sent_email_comparable_fallback_restores_position_bar_without_monthly_co
     section = BeautifulSoup(html, "html.parser").select_one("[data-position-simulation]")
     assert section is not None
     assert section.select_one('[data-position-state="adjusted"]') is not None
-    assert section.select_one('[data-position-gap]').get_text(strip=True) == "+45,1% vs similares"
-    assert section.select_one('[data-point="property"]') is not None
+    assert section.select_one('[data-legend-kind="property_current"] [data-position-gap]').get_text(strip=True) == "+45,1% vs similares"
+    assert section.select_one('[data-point="property_current"]') is not None
+    assert section.select_one('[data-point="property_recommended"]') is not None
 
     # A current comparison remains useful without the surface needed for the
     # adjusted-price simulation.
@@ -1879,7 +2091,7 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert soup.select_one(".executive-avatar img") and soup.select_one(".executive-phone")
         if case == "missing_macro": assert len(soup.select(".market-kpi")) == 2
         if case == "no_gap":
-            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "1 referencias analizadas"
+            assert soup.select_one(".position-kpi .kpi-value").get_text(strip=True) == "1 fuente disponible"
             assert not soup.select_one(".position-kpi.above, .position-kpi.below")
             assert not view["gap_explanation"]
         if case in {"stale", "no_gap"}:
@@ -1908,13 +2120,13 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             position_section = soup.select_one(".position-simulation")
             assert position_section.select_one('[data-position-state="current"][aria-pressed="true"]')
             assert position_section.select_one('[data-position-state="adjusted"][disabled]')
-            assert position_section.select_one('[data-position-gap]').get_text(strip=True) == "+45,1% vs similares"
-            assert [item.get("data-point") for item in position_section.select(".position-simulation__track [data-point]:not([hidden])")] == ["comparable", "property"]
+            assert position_section.select_one('[data-legend-kind="property_current"] [data-position-gap]').get_text(strip=True) == "+45,1% vs similares"
+            assert [item.get("data-point") for item in position_section.select(".position-simulation__track [data-point]:not([hidden])")] == ["comparable", "property_recommended", "property_current"]
             assert not position_section.select_one('[data-reference-gap][data-adjusted-gap]')
-            assert len(position_section.select("[data-property-gap][data-adjusted-gap]")) == 1
+            assert len(position_section.select('[data-legend-kind="property_recommended"] .position-simulation__property-gap')) >= 1
             assert 'data-position-gap' in html and 'data-primary-x=' not in html
             assert "corte 30-09-2026" in position_section.get_text(" ", strip=True)
-            assert "corte 28-04-2026" not in position_section.get_text(" ", strip=True)  # Communal area basis is unknown.
+            assert "Oferta comunal · corte 28-04-2026" in position_section.get_text(" ", strip=True)  # Provenance stays visible; unknown area basis stays off-scale.
             assert "Propiedades similares" in position_section.get_text(" ", strip=True)
             assert "Referencia basada en 13 propiedades similares seleccionadas." in position_section.get_text(" ", strip=True)
             assert "mediana comparable" not in position_section.get_text(" ", strip=True).lower()
@@ -2077,11 +2289,15 @@ def test_market_evidence_summary_keeps_unscaled_sources_visible():
     )
     assert [source["kind"] for source in result["sources"]] == ["APPRAISAL", "COMPARABLE", "COMMUNAL"]
     assert [source["kind"] for source in result["scale_compatible_sources"]] == ["COMPARABLE"]
-    assert result["summary_position_label"] == "3 referencias analizadas"
+    assert result["summary_position_label"] == "3 fuentes disponibles"
+    assert result["evidence_source_count"] == 3
+    assert result["quantitative_reference_count"] == 2
+    assert result["scale_compatible_count"] == 1
     assert "1 referencia directamente en la misma escala" in result["summary_position_note"]
-    assert "Informe comunal" in result["summary_position_note"]
+    assert "2 referencias con valor" in result["summary_position_note"]
+    assert "Oferta comunal" in result["summary_position_note"]
     assert result["sources"][0]["value_label"] == ""
-    assert result["sources"][2]["value_label"] == "102,8 UF/m² de oferta · superficie no informada"
+    assert result["sources"][2]["value_label"] == "102,8 UF/m²"
 
 
 def test_market_position_displays_available_non_scale_values_with_source_labels():
@@ -2108,8 +2324,13 @@ def test_market_position_displays_available_non_scale_values_with_source_labels(
     extra_refs = soup.select(".market-position-extra-ref")
     assert [item.get("data-kind") for item in extra_refs] == ["APPRAISAL", "COMMUNAL"]
     extra_text = " ".join(item.get_text(" ", strip=True) for item in extra_refs)
-    assert "Tasación individual: 37,5 UF/m² útil" in extra_text
-    assert "Informe comunal: 37,0 UF/m² · superficie no informada" in extra_text
+    assert "Tasación · 37,5 UF/m² útil" in extra_text
+    assert "Oferta comunal · 37,0 UF/m² · base de superficie pendiente de validar" in extra_text
+    assert soup.select_one(".market-position-evidence").get_text(" ", strip=True).startswith("Referencias de mercado")
+    evidence_text = soup.select_one(".market-position-evidence").get_text(" ", strip=True)
+    assert "Comparadas en esta escala: Similares" in evidence_text
+    assert "35,0 UF/m² útil" not in evidence_text
+    assert "37,5 UF/m² útil" in evidence_text
     assert [item["kind"] for item in evidence["scale_compatible_sources"]] == ["COMPARABLE"]
 
 
@@ -2118,10 +2339,10 @@ def test_owner_funnel_reuses_portals_and_costs_bar_silhouette_visual_language():
 
     view = premium_fixture("full")
     view["activity_90d"]["funnel"]["stages"] = [
-        {"key": "LEADS", "label": "Leads", "count": 10, "value": "10", "ratio": "100%", "width": 100},
-        {"key": "VISITS", "label": "Visitas", "count": 4, "value": "4", "ratio": "40,0% de leads", "width": 40},
-        {"key": "OFFERS", "label": "Ofertas", "count": 2, "value": "2", "ratio": "50,0% de visitas", "width": 20},
-        {"key": "CLOSINGS", "label": "Cierre", "count": 1, "value": "1", "ratio": "50,0% de ofertas", "width": 10},
+        {"key": "LEADS", "label": "Leads", "count": 10, "value": "10", "ratio": "100%", "width": 100, "shape_width": 100, "fill_width": 100, "status": "VERIFIED"},
+        {"key": "VISITS", "label": "Visitas", "count": 4, "value": "4", "ratio": "40,0% de leads", "width": 76, "shape_width": 76, "fill_width": 40, "status": "VERIFIED"},
+        {"key": "OFFERS", "label": "Ofertas", "count": 2, "value": "2", "ratio": "50,0% de visitas", "width": 54, "shape_width": 54, "fill_width": 20, "status": "VERIFIED"},
+        {"key": "CLOSINGS", "label": "Cierre", "count": 1, "value": "1", "ratio": "50,0% de ofertas", "width": 34, "shape_width": 34, "fill_width": 10, "status": "VERIFIED"},
     ]
     html = Environment(loader=FileSystemLoader("templates")).get_template(
         "owner_campaign_monthly_portal.html"
@@ -2141,3 +2362,31 @@ def test_owner_funnel_reuses_portals_and_costs_bar_silhouette_visual_language():
     assert "clip-path:polygon" not in html
     assert "prefers-reduced-motion:reduce" in html
     assert not any("Conversaciones" in stage.get_text() for stage in stages)
+
+
+def test_owner_funnel_keeps_shape_when_zero_or_not_instrumented():
+    from bs4 import BeautifulSoup
+    view = premium_fixture("full")
+    rows = [
+        ("LEADS", "Leads", 1, "1", "VERIFIED", 100),
+        ("VISITS", "Visitas", 0, "0", "VERIFIED", 76),
+        ("OFFERS", "Ofertas", None, "—", "NOT_INSTRUMENTED", 54),
+        ("CLOSINGS", "Cierre", None, "—", "NOT_INSTRUMENTED", 34),
+    ]
+    view["activity_90d"]["funnel"]["stages"] = [
+        {"key": key, "label": label, "count": count, "value": value, "ratio": "QA", "shape_width": width,
+         "fill_width": 100 if count == 1 else 0, "status": status}
+        for key, label, count, value, status, width in rows
+    ]
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    bars = soup.select(".activity-funnel .owner-funnel-stage-bar")
+    assert len(bars) == 4
+    widths = [float(bar["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for bar in bars]
+    fills = [float(bar["style"].split("--fill-width:", 1)[1].split("%", 1)[0]) for bar in bars]
+    assert widths == [100, 76, 54, 34]
+    assert fills == [100, 0, 0, 0]
+    assert bars[2]["data-status"] == bars[3]["data-status"] == "NOT_INSTRUMENTED"
+    assert "owner-funnel-zero-marker" not in html

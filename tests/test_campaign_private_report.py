@@ -215,8 +215,12 @@ def test_appraisal_resolver_caches_ambiguous_and_drive_errors_fail_closed(monkey
     failing = _Service({})
     failing._files.list = lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("drive unavailable"))
     monkeypatch.setattr(private_report, "GDriveSync", lambda: SimpleNamespace(service=failing))
-    assert private_report.resolve_appraisal_document_cached(CODE) == {"status": "ERROR", "document": None}
-    assert private_report.resolve_appraisal_document_cached(CODE) == {"status": "ERROR", "document": None}
+    assert private_report.resolve_appraisal_document_cached(CODE) == {
+        "status": "ERROR", "document": None, "error_type": "RuntimeError",
+    }
+    assert private_report.resolve_appraisal_document_cached(CODE) == {
+        "status": "ERROR", "document": None, "error_type": "RuntimeError",
+    }
 
 
 @pytest.mark.asyncio

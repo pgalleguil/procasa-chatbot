@@ -256,7 +256,7 @@ def _resolve_appraisal(service: Any, property_code: str) -> dict[str, Any] | Non
 
 
 _APPRAISAL_CACHE_TTL_SECONDS = 60 * 60
-_APPRAISAL_CACHE: dict[str, tuple[float, str, dict[str, Any] | None]] = {}
+_APPRAISAL_CACHE: dict[str, tuple[float, str, dict[str, Any] | None, str]] = {}
 _APPRAISAL_CACHE_LOCK = threading.Lock()
 _APPRAISAL_PARSE_CACHE: dict[tuple[str, str, str], tuple[float, dict[str, Any]]] = {}
 _APPRAISAL_PARSE_CACHE_LOCK = threading.Lock()
@@ -278,12 +278,16 @@ def resolve_appraisal_document_cached(property_code: str) -> dict[str, Any]:
     with _APPRAISAL_CACHE_LOCK:
         cached = _APPRAISAL_CACHE.get(code)
         if cached and cached[0] > now:
-            return {"status": cached[1], "document": dict(cached[2]) if cached[2] else None}
+            return {
+                "status": cached[1], "document": dict(cached[2]) if cached[2] else None,
+                "error_type": cached[3],
+            }
         if cached:
             _APPRAISAL_CACHE.pop(code, None)
 
     status = "ERROR"
     document = None
+    error_type = ""
     try:
         drive = GDriveSync()
         service = drive.service
@@ -296,16 +300,19 @@ def resolve_appraisal_document_cached(property_code: str) -> dict[str, Any]:
         status = "FOUND" if document else "NOT_FOUND"
     except CampaignReportError as exc:
         status = "AMBIGUOUS" if exc.reason == "appraisal_ambiguous" else "ERROR"
-    except Exception:
+        error_type = type(exc).__name__
+    except Exception as exc:
         status = "ERROR"
+        error_type = type(exc).__name__
     with _APPRAISAL_CACHE_LOCK:
         _APPRAISAL_CACHE[code] = (
             time.monotonic() + _APPRAISAL_CACHE_TTL_SECONDS,
             status,
             dict(document) if document else None,
+            error_type,
         )
     logger.info("[CAMPAIGN_REPORT_APPRAISAL_RESOLVE] status=%s", status.casefold())
-    return {"status": status, "document": dict(document) if document else None}
+    return {"status": status, "document": dict(document) if document else None, "error_type": error_type}
 
 
 def _parse_uf_amount(raw: str) -> float | None:
@@ -383,15 +390,59 @@ def _extract_appraisal_fields(text: str, *, property_code: str, file_record: Map
             })
             break
 
-    per_m2 = re.search(
-        r"(?i)(?:UF\s*/\s*m(?:2|²)|(?:UF|valor)\s+por\s+m(?:2|²))\s*[:=]?\s*"
-        r"(\d+(?:\.\d{3})*(?:,\d+)?)\s*UF?\b", normalized,
+    # Area basis is accepted only when the document explicitly names it.
+    surface_patterns = (
+        ("USEFUL", r"(?:superficie|sup\.?)\s*(?:útil(?:es)?|util(?:es)?)", r"m(?:²|2)\s*(?:útil(?:es)?|util(?:es)?)"),
+        ("BUILT", r"(?:superficie|sup\.?)\s*(?:construid[oa]s?|edificad[oa]s?)", r"m(?:²|2)\s*(?:construid[oa]s?|edificad[oa]s?)"),
+        ("LAND", r"(?:superficie\s+de\s+)?terreno", r"m(?:²|2)\s+(?:de\s+)?terreno"),
     )
+    for basis, before_number, after_number in surface_patterns:
+        surface_number = r"(\d+(?:[.,]\d+)?)"
+        surface_match = re.search(
+            rf"(?i)(?:\b{before_number}\b[^\d\n]{{0,24}}{surface_number}\s*(?:m²|m2|metros?\s+cuadrados?)\b"
+            rf"|\b{surface_number}\s*{after_number}\b)",
+            normalized,
+        )
+        if surface_match:
+            raw_surface = next((part for part in surface_match.groups() if part and re.fullmatch(r"\d+(?:[.,]\d+)?", part)), "")
+            try:
+                surface_value = float(raw_surface.replace(",", "."))
+            except ValueError:
+                surface_value = 0
+            if 0 < surface_value < 1_000_000:
+                result["surface_m2"] = surface_value
+                result["area_basis"] = basis
+                result["field_sources"].update({
+                    "surface_m2": surface_match.group(0).strip(),
+                    "area_basis": surface_match.group(0).strip(),
+                })
+                break
+
+    number = r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
+    per_m2_patterns = (
+        re.compile(rf"(?i)\b(?:UF\s*/\s*m(?:2|²)|valor\s+por\s+m(?:2|²))\s*[:=]?\s*{number}\s*(?:UF)?\b"),
+        re.compile(rf"(?i)\b{number}\s*UF\s*/\s*m(?:2|²)\b"),
+    )
+    per_m2 = next((pattern.search(normalized) for pattern in per_m2_patterns if pattern.search(normalized)), None)
     if per_m2:
-        value = _parse_uf_amount(per_m2.group(1))
+        raw_value = per_m2.group(1)
+        value = _parse_uf_amount(raw_value)
         if value is not None:
             result["appraisal_uf_m2"] = value
+            result["appraisal_uf_m2_source"] = "EXPLICIT"
             result["field_sources"]["appraisal_uf_m2"] = per_m2.group(0)
+
+    verified_value = result.get("appraisal_value") or result.get("estimated_mid_uf")
+    if (
+        result.get("appraisal_uf_m2") is None
+        and isinstance(verified_value, (int, float))
+        and isinstance(result.get("surface_m2"), (int, float))
+        and result.get("area_basis") in {"USEFUL", "BUILT", "LAND"}
+        and result["surface_m2"] > 0
+    ):
+        result["appraisal_uf_m2"] = verified_value / result["surface_m2"]
+        result["appraisal_uf_m2_source"] = "DERIVED_FROM_VERIFIED_VALUE_AND_SURFACE"
+        result["field_sources"]["appraisal_uf_m2"] = "appraisal_value / surface_m2 from same PDF"
 
     date_match = re.search(
         r"(?im)\b(?:fecha\s+de\s+tasaci[oó]n|fecha\s+del\s+informe|emitida\s+el)\b"

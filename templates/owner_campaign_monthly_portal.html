@@ -97,13 +97,17 @@
     .owner-funnel-stage-rail { display:flex; width:100%; min-width:0; justify-content:center; }
     .owner-funnel-stage-bar { display:flex; width:var(--stage-width); max-width:100%; min-width:0; height:18px; overflow:hidden; border-radius:999px; background:#e9e8f1; transform:scaleX(.02); transform-origin:center; transition:transform .3s cubic-bezier(.16,1,.3,1),filter .16s ease; }
     .activity-funnel.owner-funnel-reveal .owner-funnel-stage-bar { transform:scaleX(1); }
-    .owner-funnel-stage-fill { display:block; width:100%; height:100%; border-radius:999px; background:var(--stage-color,#6258bd); opacity:.88; }
+    .owner-funnel-stage-fill { display:block; width:var(--fill-width,0%); height:100%; border-radius:999px; background:var(--stage-color,#6258bd); opacity:.88; transition:width .35s ease; }
+    .owner-funnel-stage-bar[data-status="NOT_INSTRUMENTED"] { border:1px dashed #a9a8bb; background:#f8f8fb; }
+    .owner-funnel-stage-bar[data-status="SOURCE_ERROR"], .owner-funnel-stage-bar[data-status="ERROR"] { border:1px dashed #c4c2cf; background:#f5f4f8; }
+    .owner-funnel-stage-bar[data-status="NOT_INSTRUMENTED"] .owner-funnel-stage-fill,
+    .owner-funnel-stage-bar[data-status="SOURCE_ERROR"] .owner-funnel-stage-fill,
+    .owner-funnel-stage-bar[data-status="ERROR"] .owner-funnel-stage-fill { opacity:0; }
     .owner-funnel-stage-row:nth-of-type(1) { --stage-color:#5145b5; }
     .owner-funnel-stage-row:nth-of-type(2) { --stage-color:#655bbd; }
     .owner-funnel-stage-row:nth-of-type(3) { --stage-color:#786fc4; }
     .owner-funnel-stage-row:nth-of-type(4) { --stage-color:#8c84cd; }
     .owner-funnel-stage-row:hover .owner-funnel-stage-bar { filter:brightness(1.06); }
-    .owner-funnel-zero-marker { width:6px; height:6px; align-self:center; border-radius:50%; background:#7b8295; opacity:.85; }
     .owner-funnel-silhouette { position:absolute; z-index:0; inset:0; width:100%; height:100%; color:#9290ae; pointer-events:none; opacity:.4; }
     .owner-funnel-silhouette line { stroke:currentColor; stroke-width:1; vector-effect:non-scaling-stroke; }
     @keyframes ownerFunnelBarGrow { from { transform:scaleX(0); } to { transform:scaleX(1); } }
@@ -118,10 +122,10 @@
     .activity-empty { margin:0; padding:12px; border:1px dashed #d9d8e7; border-radius:11px; color:var(--body); font-size:11px; }
     .activity-summary { margin:8px 0 0; color:var(--body); font-size:10px; }
     .market-evidence-summary { margin-top:3px; color:#747d93; font-size:10.5px; line-height:1.3; }
-    .market-position-evidence { display:grid; gap:3px; margin:8px 0 0; color:#747d93; font-size:10px; line-height:1.35; }
+    .market-position-evidence { display:grid; gap:5px; margin:8px 0 0; color:#747d93; font-size:10px; line-height:1.35; }
     .market-position-evidence p { margin:0; }
-    .market-position-extra-refs { display:grid; gap:4px; margin-top:4px; }
-    .market-position-extra-refs > strong { color:#747d93; font-size:9.5px; font-weight:650; }
+    .market-position-extra-refs { display:grid; gap:3px; }
+    .market-position-extra-refs > strong { color:#626d85; font-size:9.5px; font-weight:700; }
     .market-position-extra-ref { display:flex; min-width:0; align-items:center; gap:6px; color:#626d85; }
     .market-position-extra-ref i { width:7px; height:7px; flex:0 0 7px; border-radius:50%; background:#8b85c8; }
     .market-position-extra-ref[data-kind="APPRAISAL"] i { background:#5145b5; }
@@ -159,22 +163,24 @@
     .position-simulation__point--appraisal { --marker-color:#c86c24; }
     .position-simulation__point--comparable { --marker-color:#6958cc; }
     .position-simulation__point--communal { --marker-color:#68758c; }
-    .position-simulation__point--property { --marker-color:#211c69; z-index:2; transition:left 620ms cubic-bezier(.22,.68,.2,1),background-color 260ms ease; }
-    .position-simulation__point--property::before { content:""; position:absolute; inset:-3px; border:1px solid var(--marker-color); border-radius:50%; opacity:.18; pointer-events:none; }
-    .position-simulation__point--property::after { content:""; position:absolute; inset:0; box-sizing:border-box; border:1px solid var(--marker-color); border-radius:50%; opacity:0; transform:scale(1); pointer-events:none; }
-    .position-simulation__point--property.is-arriving::after { animation:position-marker-arrival 1.8s cubic-bezier(.22,.68,.2,1) 1 both; }
-    .position-simulation[data-state="adjusted"] .position-simulation__point--property { --marker-color:#21834d; }
-    @keyframes position-marker-arrival { 0% { opacity:.52; transform:scale(1); } 100% { opacity:0; transform:scale(1.8); } }
-    .position-simulation__point--ghost { --marker-color:#211c69; z-index:1; opacity:.3; box-shadow:0 0 0 1px var(--marker-color); }
+    .position-simulation__point--property-current { --marker-color:#211c69; z-index:2; }
+    .position-simulation__point--property-recommended { --marker-color:#21834d; z-index:2; }
+    .position-simulation__point--property-current::before,.position-simulation__point--property-recommended::before { content:""; position:absolute; inset:-3px; border:1px solid var(--marker-color); border-radius:50%; opacity:0; pointer-events:none; transition:opacity 180ms ease; }
+    .position-simulation[data-state="current"] .position-simulation__point--property-current.is-selected::before,.position-simulation[data-state="adjusted"] .position-simulation__point--property-recommended.is-selected::before { opacity:.28; }
+    .position-simulation[data-state="current"] .position-simulation__point--property-recommended,.position-simulation[data-state="adjusted"] .position-simulation__point--property-current { opacity:.78; }
     .position-simulation__point[hidden] { display:none; }
-    .position-simulation__legend { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+    .position-simulation__legend { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+    .position-simulation__legend[data-marker-count="1"] { grid-template-columns:minmax(0,1fr); }
     .position-simulation__legend-item { min-width:0; padding:7px 6px; border:1px solid #eeedf4; border-radius:9px; background:#fcfcfe; }
     .position-simulation__legend-label { display:flex; align-items:center; gap:6px; color:var(--body); font-size:10px; line-height:1.2; }
     .position-simulation__legend-marker { --marker-color:#6958cc; flex:0 0 10px; width:10px; height:10px; box-sizing:border-box; border:0; border-radius:50%; background:var(--marker-color); box-shadow:0 0 0 1px var(--marker-color); }
     .position-simulation__legend-marker--appraisal { --marker-color:#c86c24; }
     .position-simulation__legend-marker--communal { --marker-color:#68758c; }
-    .position-simulation__legend-marker--property { --marker-color:#211c69; }
-    .position-simulation[data-state="adjusted"] .position-simulation__legend-marker--property { --marker-color:#21834d; }
+    .position-simulation__legend-marker--property-current { --marker-color:#211c69; }
+    .position-simulation__legend-marker--property-recommended { --marker-color:#21834d; }
+    .position-simulation__legend-item.is-selected { border-color:#d9d5f0; background:#f9f8ff; }
+    .position-simulation__legend-item--property-current.is-selected { box-shadow:0 0 0 1px #211c6922; }
+    .position-simulation__legend-item--property-recommended.is-selected { border-color:#b9d9c7; background:#f6fbf8; box-shadow:0 0 0 1px #21834d22; }
     .position-simulation__legend-value { display:block; margin-top:3px; color:var(--ink); font-size:12px; line-height:1.25; font-weight:700; overflow-wrap:anywhere; }
     .position-simulation__property-gaps { display:flex; flex-wrap:wrap; gap:3px 8px; margin-top:4px; }
     .position-simulation__property-gap { color:#505b73; font-size:9.5px; line-height:1.25; font-weight:600; overflow-wrap:anywhere; }
@@ -414,6 +420,30 @@
       .card { margin-top:12px; }
       .sticky { left:50%; transform:translate(-50%,12px) scale(.985); }
       .sticky.visible { transform:translate(-50%,0) scale(1); }
+      .position-simulation__legend { grid-template-columns:repeat(6,minmax(0,1fr)); }
+      .position-simulation__legend-item { grid-column:span 2; }
+      .position-simulation__legend[data-marker-count="5"] .position-simulation__legend-item:nth-child(4) { grid-column:2 / span 2; }
+      .position-simulation__legend[data-marker-count="5"] .position-simulation__legend-item:nth-child(5) { grid-column:4 / span 2; }
+      .position-simulation__legend[data-marker-count="4"] { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="4"] .position-simulation__legend-item { grid-column:span 2; }
+      .position-simulation__legend[data-marker-count="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="3"] .position-simulation__legend-item { grid-column:auto; }
+      .position-simulation__legend[data-marker-count="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="2"] .position-simulation__legend-item { grid-column:auto; }
+      .position-simulation__legend[data-marker-count="1"] { grid-template-columns:minmax(0,1fr); }
+      .position-simulation__legend[data-marker-count="1"] .position-simulation__legend-item { grid-column:auto; }
+    }
+    @media (min-width:1100px) {
+      .position-simulation__legend { grid-template-columns:repeat(5,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="4"] { grid-template-columns:repeat(4,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="3"] { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="2"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .position-simulation__legend[data-marker-count="1"] { grid-template-columns:minmax(0,1fr); }
+      .position-simulation__legend-item,.position-simulation__legend-item:nth-child(4),.position-simulation__legend-item:nth-child(5) { grid-column:auto; }
+      .position-simulation__legend[data-marker-count="5"] .position-simulation__legend-item:nth-child(4),.position-simulation__legend[data-marker-count="5"] .position-simulation__legend-item:nth-child(5) { grid-column:auto; }
+    }
+    @media (max-width:359px) {
+      .position-simulation__legend { grid-template-columns:minmax(0,1fr); }
     }
     @media (max-width:480px) {
       .button { font-size:11px; gap:4px; padding:9px 6px; }
@@ -429,7 +459,7 @@
       .position-callout strong { font-size:11px; }
       .position-simulation { padding:10px; }
       .position-simulation__option { padding:7px 5px; font-size:10.5px; }
-      .position-simulation__legend { grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+      .position-simulation__legend { gap:5px; }
       .position-simulation__legend-item { padding:6px 5px; }
       .position-simulation__legend-label { font-size:10px; }
       .position-simulation__legend-value { font-size:11.5px; }
@@ -437,8 +467,7 @@
       .sticky .button { font-size:11px; }
     }
     @media (prefers-reduced-motion:reduce) {
-      .position-simulation__point--property { transition:none; }
-      .position-simulation__point--property::after { animation:none!important; opacity:0!important; }
+      .position-simulation__point--property-current::before,.position-simulation__point--property-recommended::before { transition:none; }
     }
     @media (prefers-reduced-motion:reduce) {
       *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
@@ -498,7 +527,7 @@
     {% set commercial_funnel = view.activity_90d.funnel|default(default_funnel, true) %}<div class="activity-funnel" role="group" aria-label="Embudo comercial de leads, visitas, ofertas y cierres en los últimos 90 días">
       {% for stage in commercial_funnel.stages %}{% set stage_count = stage.count|default(none) %}<div class="owner-funnel-stage-row" data-funnel-stage="{{ stage.key|default(loop.index) }}" aria-label="{{ stage.label }}: {{ stage.value }}. {{ stage.ratio }}">
         <div class="owner-funnel-stage-label"><span>{{ stage.label }}</span><strong>{{ stage.value }}</strong><small>{{ stage.ratio }}</small></div>
-        <div class="owner-funnel-stage-rail">{% if stage_count is not none and stage_count > 0 %}<div class="owner-funnel-stage-bar" style="--stage-width:{{ stage.width }}%"><i class="owner-funnel-stage-fill" aria-hidden="true"></i></div>{% else %}<span class="owner-funnel-zero-marker" aria-hidden="true" title="{{ stage.ratio }}"></span>{% endif %}</div>
+        <div class="owner-funnel-stage-rail"><div class="owner-funnel-stage-bar" data-status="{{ stage.status|default('SOURCE_ERROR') }}" style="--stage-width:{{ stage.shape_width|default(stage.width|default(34)) }}%;--fill-width:{{ stage.fill_width|default(100 if stage_count is not none and stage_count > 0 else 0) }}%" title="{{ stage.ratio }}"><i class="owner-funnel-stage-fill" aria-hidden="true"></i></div></div>
       </div>{% endfor %}
     </div>
     {% if commercial_funnel.cutoff %}<p class="activity-summary">Período: {{ commercial_funnel.start_date.strftime('%d/%m/%Y') }}–{{ commercial_funnel.cutoff.strftime('%d/%m/%Y') }} · Fuente: {{ commercial_funnel.source }}</p>{% endif %}
@@ -550,23 +579,20 @@
   {% set market_position = view.market_position %}
   <section class="card" aria-labelledby="position-title">
     <div class="position-top"><h2 class="section-heading" id="position-title"><span class="section-icon">{{ ui_icon('home') }}</span>Tu posición frente a las referencias de mercado</h2>{% if market_position.count %}<span class="badge">{{ market_position.count }} propiedades similares</span>{% endif %}</div>
-    <div class="position-simulation" data-position-simulation data-state="current" data-current-x="{{ market_position.current_x }}" data-adjusted-x="{{ market_position.proposed_x if market_position.simulation_available else '' }}" data-current-value="{{ market_position.current_value_label }}" data-adjusted-value="{{ market_position.proposed_value_label }}" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
+    <div class="position-simulation" data-position-simulation data-state="current" data-current-copy="{{ market_position.current_copy|e }}" data-adjusted-copy="{{ market_position.adjusted_copy|e }}" data-current-classification="{{ market_position.current_classification.label|e }}" data-adjusted-classification="{{ (market_position.proposed_classification.label if market_position.proposed_classification else '')|e }}" data-unit="{{ market_position.unit|e }}">
       {% if market_position.simulation_available %}<div class="position-simulation__selector" role="group" aria-label="Simular posición con el ajuste recomendado">
         <button class="position-simulation__option" type="button" data-position-state="current" aria-pressed="true">Precio actual</button>
         <button class="position-simulation__option" type="button" data-position-state="adjusted" aria-pressed="false" disabled>Con ajuste ({{ market_position.adjustment_label }})</button>
       </div>{% endif %}
       <div class="position-simulation__plot" aria-label="Escala de posición frente a referencias disponibles">
         <div class="position-simulation__track" aria-hidden="true">
-          {% for reference in market_position.references %}<span class="position-simulation__point position-simulation__point--{{ reference.kind|lower }}" data-point="{{ reference.kind|lower }}" style="left:{{ reference.x }}%"></span>{% endfor %}
-          {% if market_position.simulation_available %}<span class="position-simulation__point position-simulation__point--ghost" data-point="ghost" style="left:{{ market_position.current_x }}%" hidden></span>{% endif %}
-          <span class="position-simulation__point position-simulation__point--property" data-point="property" style="left:{{ market_position.current_x }}%"></span>
+          {% for marker in market_position.bar_markers %}<span class="position-simulation__point position-simulation__point--{{ marker.kind|lower|replace('_','-') }}{% if marker.kind == 'PROPERTY_CURRENT' %} is-selected{% endif %}" data-point="{{ marker.kind|lower }}" style="left:{{ marker.x }}%"></span>{% endfor %}
         </div>
       </div>
-      <div class="position-simulation__legend" aria-label="Referencias y posición de la propiedad">
-        {% for reference in market_position.references %}<div class="position-simulation__legend-item position-simulation__legend-item--{{ reference.kind|lower }}"><span class="position-simulation__legend-label"><span class="position-simulation__legend-marker position-simulation__legend-marker--{{ reference.kind|lower }}" aria-hidden="true"></span>{{ reference.label }}</span><strong class="position-simulation__legend-value">{{ reference.value_label }} {{ reference.unit }}</strong></div>{% endfor %}
-        <div class="position-simulation__legend-item position-simulation__legend-item--property"><span class="position-simulation__legend-label" data-property-label><span class="position-simulation__legend-marker position-simulation__legend-marker--property" aria-hidden="true"></span><span data-property-state-label>Tu propiedad</span></span><strong class="position-simulation__legend-value"><span data-property-value>{{ market_position.current_value_label }}</span> {{ market_position.unit }}</strong><span class="position-simulation__property-gaps" aria-live="polite">{% for reference in market_position.references %}<span class="position-simulation__property-gap" data-property-gap{% if reference.kind == market_position.primary_kind %} data-position-gap{% endif %} data-current-gap="{{ reference.current_gap_label|e }}" data-adjusted-gap="{{ reference.proposed_gap_label|e }}">{{ reference.current_gap_label }}</span>{% endfor %}</span></div>
+      <div class="position-simulation__legend" data-marker-count="{{ market_position.bar_markers|length }}" aria-label="Referencias y posición de la propiedad">
+        {% for marker in market_position.bar_markers %}<div class="position-simulation__legend-item position-simulation__legend-item--{{ marker.kind|lower|replace('_','-') }}{% if marker.kind == 'PROPERTY_CURRENT' %} is-selected{% endif %}" data-legend-kind="{{ marker.kind|lower }}"><span class="position-simulation__legend-label"><span class="position-simulation__legend-marker position-simulation__legend-marker--{{ marker.kind|lower|replace('_','-') }}" aria-hidden="true"></span>{{ marker.label }}</span><strong class="position-simulation__legend-value">{{ marker.value_label }} {{ marker.unit }}</strong>{% if marker.gaps %}<span class="position-simulation__property-gaps">{% for gap in marker.gaps %}<span class="position-simulation__property-gap"{% if gap.is_primary %} data-position-gap{% endif %}>{{ gap.text }}</span>{% endfor %}</span>{% endif %}</div>{% endfor %}
       </div>
-      {% if market_position.market_evidence and market_position.market_evidence.available %}<div class="market-position-evidence"><p><strong>Referencias consideradas:</strong> {{ market_position.market_evidence.sources|map(attribute='label')|join(' · ') }}</p>{% if market_position.market_evidence.scale_compatible_sources %}<p><strong>En esta escala:</strong> {{ market_position.market_evidence.scale_compatible_sources|map(attribute='label')|join(' · ') }}</p>{% endif %}{% set additional_sources = market_position.market_evidence.sources|rejectattr('kind', 'in', market_position.market_evidence.scale_compatible_sources|map(attribute='kind')|list)|list %}{% if additional_sources %}<div class="market-position-extra-refs"><strong>Otras referencias disponibles</strong>{% for source in additional_sources %}<div class="market-position-extra-ref" data-kind="{{ source.kind }}"><i aria-hidden="true"></i><span>{{ source.label }}{% if source.value_label %}: <b>{{ source.value_label }}</b>{% elif source.kind == 'APPRAISAL' %}: documento disponible{% endif %}</span></div>{% endfor %}</div>{% endif %}</div>{% endif %}
+      {% if market_position.market_evidence and market_position.market_evidence.available %}{% set additional_sources = market_position.market_evidence.sources|rejectattr('kind', 'in', market_position.market_evidence.scale_compatible_sources|map(attribute='kind')|list)|list %}{% if additional_sources %}<div class="market-position-evidence"><strong>Referencias de mercado</strong>{% if market_position.market_evidence.scale_compatible_sources %}<p><strong>Comparadas en esta escala:</strong> {{ market_position.market_evidence.scale_compatible_sources|map(attribute='owner_label')|join(' · ') }}</p>{% endif %}<div class="market-position-extra-refs"><strong>Referencias adicionales:</strong>{% for source in additional_sources %}<div class="market-position-extra-ref" data-kind="{{ source.kind }}"><i aria-hidden="true"></i><span>{{ source.owner_label }}{% if source.value_label %} · <b>{{ source.value_label }}</b>{% elif source.kind == 'APPRAISAL' %} · documento disponible{% endif %}{% if source.kind == 'COMMUNAL' and not source.area_basis %} · base de superficie pendiente de validar{% endif %}</span></div>{% endfor %}</div></div>{% endif %}{% endif %}
       <p class="position-simulation__classification" data-position-classification aria-live="polite">{{ market_position.current_classification.label }}</p><p class="position-simulation__summary" data-position-summary aria-live="polite">{{ market_position.current_copy }}</p>
       {% if market_position.simulation_available %}<p class="position-simulation__note">Simulación visual. No modifica el precio de publicación.</p>{% else %}<p class="position-simulation__note">UF/m² permite comparar valores usando una misma unidad de superficie.</p>{% endif %}
       {% if market_position.count %}<p class="position-simulation__note">Referencia basada en {{ market_position.count }} propiedades similares seleccionadas.</p>{% endif %}
@@ -639,12 +665,11 @@
       svg.setAttribute('viewBox','0 0 '+box.width+' '+box.height);
       var bounds=rows.map(function(row){
         var bar=row.querySelector('.owner-funnel-stage-bar');
-        var marker=row.querySelector('.owner-funnel-zero-marker');
         var rail=row.querySelector('.owner-funnel-stage-rail');
         if(!rail)return null;
         var railRect=rail.getBoundingClientRect();
         var center=railRect.left-box.left+railRect.width/2;
-        var barWidth=bar?railRect.width*(parseFloat(bar.style.getPropertyValue('--stage-width'))||0)/100:(marker?marker.getBoundingClientRect().width:0);
+        var barWidth=bar?railRect.width*(parseFloat(bar.style.getPropertyValue('--stage-width'))||0)/100:0;
         var rowRect=row.getBoundingClientRect();
         return {left:center-barWidth/2,right:center+barWidth/2,y:rowRect.bottom-box.top-9};
       });
@@ -669,35 +694,21 @@
   }
   document.querySelectorAll('[data-position-simulation]').forEach(function(simulation){
     var buttons=Array.from(simulation.querySelectorAll('[data-position-state]'));
-    var marker=simulation.querySelector('[data-point="property"]');
-    var ghost=simulation.querySelector('[data-point="ghost"]');
     var summary=simulation.querySelector('[data-position-summary]');
     var classification=simulation.querySelector('[data-position-classification]');
-    var propertyValue=simulation.querySelector('[data-property-value]');
-    var propertyLabel=simulation.querySelector('[data-property-state-label]');
-    if(!marker||!summary||!propertyValue||!propertyLabel) return;
-      var currentX=Number(simulation.getAttribute('data-current-x'));
-      var adjustedX=Number(simulation.getAttribute('data-adjusted-x'));
-      simulation.setAttribute('data-enhanced','true');
+    if(!summary) return;
+    simulation.setAttribute('data-enhanced','true');
     buttons.forEach(function(button){button.removeAttribute('disabled');});
     function setPosition(state){
       var adjusted=state==='adjusted';
-      var propertyX=adjusted?adjustedX:currentX;
-      var changedState=simulation.getAttribute('data-state')!==(adjusted?'adjusted':'current');
-      marker.style.left=propertyX+'%';
-      marker.classList.remove('is-arriving');
-      if(changedState&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
-        void marker.offsetWidth;
-        marker.classList.add('is-arriving');
-      }
-      if(ghost){ghost.style.left=currentX+'%';ghost.hidden=!adjusted;}
       simulation.setAttribute('data-state',adjusted?'adjusted':'current');
       summary.textContent=simulation.getAttribute(adjusted?'data-adjusted-copy':'data-current-copy')||'';
       if(classification) classification.textContent=simulation.getAttribute(adjusted?'data-adjusted-classification':'data-current-classification')||'';
-      propertyValue.textContent=simulation.getAttribute(adjusted?'data-adjusted-value':'data-current-value')||'';
-      propertyLabel.textContent=adjusted?'Tu propiedad · con ajuste':'Tu propiedad';
-      simulation.querySelectorAll('[data-property-gap]').forEach(function(item){
-        item.textContent=item.getAttribute(adjusted?'data-adjusted-gap':'data-current-gap')||'';
+      simulation.querySelectorAll('[data-point^="property_"]').forEach(function(marker){
+        marker.classList.toggle('is-selected',marker.getAttribute('data-point')===(adjusted?'property_recommended':'property_current'));
+      });
+      simulation.querySelectorAll('[data-legend-kind^="property_"]').forEach(function(item){
+        item.classList.toggle('is-selected',item.getAttribute('data-legend-kind')===(adjusted?'property_recommended':'property_current'));
       });
       buttons.forEach(function(item){item.setAttribute('aria-pressed',item.getAttribute('data-position-state')===state?'true':'false');});
     }

@@ -561,6 +561,18 @@ def _activity_count(value: Any) -> int | None:
     return int(number)
 
 
+def _owner_activity_summary(value: Any) -> str:
+    summary = _text(value)
+    forbidden = (
+        "CANONICAL_READ_ONLY_RECONSTRUCTION", "MONTHLY_SNAPSHOT",
+        "FROZEN_CAMPAIGN_EVIDENCE", "FROZEN_SENT_RENDER_MODEL",
+        "SOURCE_ERROR", "INTEGRITY_FAILURE",
+    )
+    if any(term.casefold() in summary.casefold() for term in forbidden):
+        return ""
+    return summary
+
+
 def _complete_activity_candidate(value: Any, *, source: str, cutoff: Any = None) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         return None
@@ -855,13 +867,20 @@ def _build_owner_funnel(rows: Mapping[str, Mapping[str, Any]], *, source: str, c
         item = rows.get(key) or {}
         count = _activity_count(item.get("count"))
         stage_status = _text(item.get("status") or ("VERIFIED" if count is not None else "SOURCE_ERROR")).upper()
+        if stage_status == "NOT_INSTRUMENTED":
+            count = None
         if count is None:
-            ratio = "Sin registro estructurado" if stage_status == "NOT_INSTRUMENTED" else "Dato no consolidado"
+            ratio = "Sin información registrada" if stage_status == "NOT_INSTRUMENTED" else "Dato no disponible"
         elif index == 0:
-            ratio = "100%" if count > 0 else "Sin consultas registradas"
+            ratio = "100%" if count > 0 else "Sin base de comparación"
         else:
             pct = (count / previous_count * 100) if previous_count is not None and previous_count > 0 else None
-            ratio = f"{pct:.1f}% de {labels[ordered[index - 1]].lower()}".replace(".", ",") if pct is not None else "Sin base de comparación"
+            if pct is None:
+                ratio = "Sin base de comparación"
+            elif key == "VISITS" and count == 0 and previous_count > 0:
+                ratio = "0% de leads"
+            else:
+                ratio = f"{pct:.1f}% de {labels[ordered[index - 1]].lower()}".replace(".", ",")
         fill_width = (count / base_count * 100) if count is not None and base_count and base_count > 0 else 0.0
         stages.append({"key": key, "label": labels[key], "count": count,
                        "value": str(count) if count is not None else "—", "ratio": ratio,
@@ -896,7 +915,7 @@ def _activity_funnel(activity: Mapping[str, Any]) -> dict[str, Any]:
             return 0.0
         return max(0.0, min(100.0, value / leads * 100))
 
-    lead_note = "100%" if leads > 0 else "Sin consultas registradas"
+    lead_note = "100%" if leads > 0 else "Sin base de comparación"
     conversation_pct = pct(conversations, leads)
     conversation_note = f"{conversation_pct} de los leads" if conversation_pct is not None else "Sin base de comparación"
     visit_denominator = conversations if conversations > 0 else leads
@@ -1278,6 +1297,272 @@ def _verified_master_identity(db: Any, property_code: str) -> dict[str, str]:
         "commune": _text(location.get("comuna")),
         "property_type": _text(metadata.get("tipo_propiedad")),
     }
+
+
+_PUBLICATION_CHANNELS: tuple[tuple[str, str], ...] = (
+    ("procasa", "PROCASA"),
+    ("portal_inmobiliario", "Portal Inmobiliario"),
+    ("toctoc", "TocToc"),
+    ("yapo", "Yapo"),
+    ("proppit", "Proppit"),
+    ("chilepropiedades", "ChilePropiedades"),
+)
+_PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
+    "PROCASA": ("/static/favicon_procasa_mark.png",),
+    "PORTAL_INMOBILIARIO": ("/static/portal-logos/portalinmobiliario.svg",),
+    "MERCADO_LIBRE": ("/static/portal-logos/mercado-libre.svg",),
+    "TOCTOC": ("/static/portal-logos/toctoc.svg",),
+    "YAPO": ("/static/portal-logos/yapo.ico",),
+    "PROPPIT": ("/static/portal-logos/proppit.png",),
+    "CHILEPROPIEDADES": ("/static/portal-logos/chilepropiedades.svg",),
+}
+_PUBLICATION_VERIFICATION_TTL = timedelta(days=30)
+
+
+def _safe_publication_url(value: Any) -> str:
+    raw = _text(value)
+    if not raw:
+        return ""
+    parsed = urlsplit(raw)
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return raw
+
+
+def _publication_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _publication_records(portal: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    records = portal.get("publicaciones")
+    values: list[Mapping[str, Any]] = []
+    if isinstance(records, Mapping):
+        values.extend(item for item in records.values() if isinstance(item, Mapping))
+    if not values and isinstance(portal.get("publicada"), bool):
+        values.append(portal)
+    return values
+
+
+def _publication_links(portal_key: str, portal: Mapping[str, Any], records: list[Mapping[str, Any]]) -> list[dict[str, str]]:
+    links: list[dict[str, str]] = []
+
+    def add(label: str, value: Any) -> None:
+        url = _safe_publication_url(value)
+        if url and all(item["url"] != url for item in links):
+            links.append({"label": label, "url": url})
+
+    # Prop360 stores Portal Inmobiliario and Mercado Libre as one publication
+    # source. Keep them one channel while preserving each explicit public URL.
+    if portal_key == "portal_inmobiliario":
+        pi_values = portal.get("urls_pi")
+        ml_values = portal.get("urls_mercado_libre")
+        if isinstance(pi_values, (list, tuple)):
+            for value in pi_values:
+                add("Ver en Portal Inmobiliario", value)
+        add("Ver en Portal Inmobiliario", portal.get("url_pi"))
+        if isinstance(ml_values, (list, tuple)):
+            for value in ml_values:
+                add("Ver en Mercado Libre", value)
+        add("Ver en Mercado Libre", portal.get("url_mercado_libre"))
+
+    for record in records:
+        raw_url = record.get("url") or record.get("url_publicacion")
+        label = "Ver publicación"
+        host = (urlsplit(_safe_publication_url(raw_url)).hostname or "").casefold()
+        if portal_key == "portal_inmobiliario":
+            label = "Ver Mercado Libre" if "mercadolibre" in host else "Ver Portal Inmobiliario" if "portalinmobiliario" in host else label
+        add(label, raw_url)
+    return links
+
+
+def _publication_item(
+    portal_key: str, portal: Mapping[str, Any], owner_label: str,
+    records: list[Mapping[str, Any]], *, now: datetime, kind: str | None = None,
+    links: list[dict[str, str]] | None = None,
+    group_id: str | None = None,
+) -> dict[str, Any] | None:
+    published_records = [record for record in records if record.get("publicada") is True]
+    if not published_records:
+        return None
+    item_links = links if links is not None else _publication_links(portal_key, portal, published_records)
+    checked_at = max(
+        (stamp for record in published_records for key in ("verified_at", "last_verified_at", "fecha_verificacion")
+         if (stamp := _publication_datetime(record.get(key))) is not None),
+        default=None,
+    )
+    verification_marked = any(
+        _text(record.get("verification_status")).casefold() in {"verified", "verificado", "active_verified"}
+        for record in published_records
+    )
+    recently_verified = bool(
+        verification_marked and checked_at is not None
+        and timedelta(0) <= now - checked_at <= _PUBLICATION_VERIFICATION_TTL
+    )
+    status = "Publicado"
+    return {
+        "kind": kind or portal_key.upper(),
+        "group_id": group_id or portal_key,
+        "owner_label": owner_label,
+        "published": True,
+        "status": status,
+        "link_status": "" if item_links else "Enlace no disponible",
+        "url": item_links[0]["url"] if item_links else "",
+        "links": item_links,
+        "verified_at": checked_at if recently_verified else None,
+        "verification_status": "VERIFIED" if recently_verified else "PUBLISHED",
+        "logo_urls": _PUBLICATION_LOGO_ASSETS.get(kind or portal_key.upper(), ()),
+    }
+
+
+def _portal_inmobiliario_items(
+    portal: Mapping[str, Any], records: list[Mapping[str, Any]], *, now: datetime,
+) -> list[dict[str, Any]]:
+    """Expose the shared PI/ML source as two independently identified channels."""
+    active_records = [record for record in records if record.get("publicada") is True]
+    if not active_records:
+        return []
+    channel_links: dict[str, list[dict[str, str]]] = {
+        "PORTAL_INMOBILIARIO": [], "MERCADO_LIBRE": [],
+    }
+
+    def add(kind: str, label: str, raw_url: Any) -> None:
+        url = _safe_publication_url(raw_url)
+        if url and all(item["url"] != url for item in channel_links[kind]):
+            channel_links[kind].append({"label": label, "url": url})
+
+    pi_values = portal.get("urls_pi")
+    if isinstance(pi_values, (list, tuple)):
+        for value in pi_values:
+            add("PORTAL_INMOBILIARIO", "Ver Portal Inmobiliario", value)
+    add("PORTAL_INMOBILIARIO", "Ver Portal Inmobiliario", portal.get("url_pi"))
+    ml_values = portal.get("urls_mercado_libre")
+    if isinstance(ml_values, (list, tuple)):
+        for value in ml_values:
+            add("MERCADO_LIBRE", "Ver Mercado Libre", value)
+    add("MERCADO_LIBRE", "Ver Mercado Libre", portal.get("url_mercado_libre"))
+    for record in active_records:
+        raw_url = record.get("url") or record.get("url_publicacion")
+        host = (urlsplit(_safe_publication_url(raw_url)).hostname or "").casefold()
+        if "mercadolibre" in host:
+            add("MERCADO_LIBRE", "Ver Mercado Libre", raw_url)
+        elif "portalinmobiliario" in host:
+            add("PORTAL_INMOBILIARIO", "Ver Portal Inmobiliario", raw_url)
+
+    pi_item = _publication_item(
+        "portal_inmobiliario", portal, "Portal Inmobiliario", active_records,
+        now=now, kind="PORTAL_INMOBILIARIO", links=channel_links["PORTAL_INMOBILIARIO"],
+        group_id="portal_inmobiliario",
+    )
+    ml_item = _publication_item(
+        "mercado_libre", portal, "Mercado Libre", active_records,
+        now=now, kind="MERCADO_LIBRE", links=channel_links["MERCADO_LIBRE"],
+        group_id="portal_inmobiliario",
+    )
+    return [item for item in (pi_item, ml_item) if item]
+
+
+def _publication_presence_model(property_doc: Mapping[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+    """Normalize only active publication evidence from one exact Prop360 record."""
+    publications = property_doc.get("publicaciones")
+    if not isinstance(publications, Mapping):
+        publications = {}
+    now_utc = _publication_datetime(now or datetime.now(timezone.utc)) or datetime.now(timezone.utc)
+    items: list[dict[str, Any]] = []
+    known_keys = {key for key, _ in _PUBLICATION_CHANNELS} | {"mercadolibre", "mercado_libre"}
+    for portal_key, label in _PUBLICATION_CHANNELS:
+        portal = publications.get(portal_key)
+        if not isinstance(portal, Mapping):
+            portal = {}
+        portal = dict(portal)
+        records = _publication_records(portal)
+        if portal_key == "portal_inmobiliario":
+            for alias_key in ("mercadolibre", "mercado_libre"):
+                alias = publications.get(alias_key)
+                if not isinstance(alias, Mapping):
+                    continue
+                for field in ("url_pi", "urls_pi", "url_mercado_libre", "urls_mercado_libre"):
+                    if field in alias and field not in portal:
+                        portal[field] = alias[field]
+                records.extend(_publication_records(alias))
+            items.extend(_portal_inmobiliario_items(portal, records, now=now_utc))
+            continue
+        item = _publication_item(portal_key, portal, label, records, now=now_utc)
+        if item:
+            items.append(item)
+
+    # Preserve future canonical channels without leaking their raw Mongo shape.
+    for portal_key, portal in publications.items():
+        key = _text(portal_key).casefold()
+        if key in known_keys or not isinstance(portal, Mapping):
+            continue
+        records = _publication_records(portal)
+        if not records:
+            continue
+        label = re.sub(r"[_-]+", " ", _text(portal_key)).strip().title()
+        item = _publication_item(key, portal, label, records, now=now_utc)
+        if item:
+            item["kind"] = key.upper()
+            items.append(item)
+    distinct_urls = {link["url"] for item in items for link in item["links"]}
+    group_ids = {item["group_id"] for item in items}
+    base_publication_count = len(group_ids)
+    publication_channel_count = len(items)
+    available_link_count = len(distinct_urls)
+    return {
+        "source": "universo_cartera_prop360.publicaciones",
+        "source_status": "VERIFIED",
+        "publication_group_count": base_publication_count,
+        "base_publication_count": base_publication_count,
+        "publication_channel_count": publication_channel_count,
+        "portal_channel_count": publication_channel_count,
+        "available_link_count": available_link_count,
+        "owner_facing_row_count": publication_channel_count,
+        "total_published_channels": publication_channel_count,
+        "channels_with_url": available_link_count,
+        "items": items,
+    }
+
+
+def resolve_property_publication_presence(db: Any, property_code: Any) -> dict[str, Any]:
+    """Read current channel presence from the exact canonical master property."""
+    code = _text(property_code)
+    empty = {
+        "source": "universo_cartera_prop360.publicaciones",
+        "source_status": "IDENTITY_UNRESOLVED",
+        "publication_group_count": 0,
+        "base_publication_count": 0,
+        "publication_channel_count": 0,
+        "portal_channel_count": 0,
+        "available_link_count": 0,
+        "owner_facing_row_count": 0,
+        "total_published_channels": 0,
+        "channels_with_url": 0,
+        "items": [],
+    }
+    if not code:
+        return empty
+    try:
+        matches = list(db["universo_cartera_prop360"].find(
+            {"codigo": code}, {"_id": 0, "codigo": 1, "publicaciones": 1},
+        ).limit(2))
+    except Exception:
+        return {**empty, "source_status": "SOURCE_ERROR"}
+    if len(matches) != 1 or _text(matches[0].get("codigo")) != code:
+        return empty
+    return _publication_presence_model(matches[0])
 
 
 def _number_from_label(value: Any) -> float | None:
@@ -3093,6 +3378,7 @@ def build_monthly_portal_view(
         "current_x": market_position.get("current_x") if market_position.get("available") else None,
         "proposed_x": market_position.get("proposed_x") if market_position.get("available") else None,
     }
+    publication_presence = resolve_property_publication_presence(db, property_code)
 
     return {
         "logo_url": campaign_view.get("logo_url"),
@@ -3129,7 +3415,7 @@ def build_monthly_portal_view(
             "leads": activity.get("leads"),
             "conversations": activity.get("conversations"),
             "visits": activity.get("visits"),
-            "summary": _text(activity.get("summary")),
+            "summary": _owner_activity_summary(activity.get("summary")),
             "state": activity.get("state"),
             "source": activity.get("source"),
             "integrity": activity.get("integrity"),
@@ -3139,6 +3425,7 @@ def build_monthly_portal_view(
             "source_label": "Período al" if activity.get("window_end") else ("Actualizado al" if activity.get("source_date") else ""),
             "funnel": commercial_funnel,
         },
+        "property_publication_presence": publication_presence,
         "comparables_source_date": _source_date_label(comparable_state.get("source_date") or comparable_state.get("cutoff_date")),
         "diagnosis": diagnosis,
         "recommendation_text": recommendation_text,

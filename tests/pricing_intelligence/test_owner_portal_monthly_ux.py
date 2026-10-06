@@ -16,6 +16,9 @@ from owner_portal.monthly import (
     _market_evidence_model,
     build_monthly_portal_view,
     owner_property_portal_id,
+    _build_owner_funnel,
+    _publication_presence_model,
+    resolve_property_publication_presence,
     resolve_owner_activity_90d,
     resolve_owner_commercial_funnel_90d,
 )
@@ -2351,7 +2354,7 @@ def test_owner_funnel_reuses_portals_and_costs_bar_silhouette_visual_language():
     funnel = soup.select_one(".activity-funnel")
     stages = funnel.select(".owner-funnel-stage-row")
     assert [stage.select_one(".owner-funnel-stage-label span").get_text(strip=True) for stage in stages] == ["Leads", "Visitas", "Ofertas", "Cierre"]
-    widths = [float(stage.select_one(".owner-funnel-stage-bar")["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for stage in stages]
+    widths = [float(stage["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for stage in stages]
     assert all(left > right for left, right in zip(widths, widths[1:]))
     assert all(stage.select_one(".owner-funnel-stage-label strong") for stage in stages)
     assert all(stage.select_one(".owner-funnel-stage-label small") for stage in stages)
@@ -2384,9 +2387,259 @@ def test_owner_funnel_keeps_shape_when_zero_or_not_instrumented():
     soup = BeautifulSoup(html, "html.parser")
     bars = soup.select(".activity-funnel .owner-funnel-stage-bar")
     assert len(bars) == 4
-    widths = [float(bar["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for bar in bars]
+    widths = [float(row["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for row in soup.select(".activity-funnel .owner-funnel-stage-row")]
     fills = [float(bar["style"].split("--fill-width:", 1)[1].split("%", 1)[0]) for bar in bars]
     assert widths == [100, 76, 54, 34]
     assert fills == [100, 0, 0, 0]
     assert bars[2]["data-status"] == bars[3]["data-status"] == "NOT_INSTRUMENTED"
     assert "owner-funnel-zero-marker" not in html
+
+
+def test_unknown_leads_keeps_structural_funnel_and_does_not_invent_conversion():
+    from bs4 import BeautifulSoup
+
+    cutoff = datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc)
+    funnel = _build_owner_funnel({
+        "LEADS": {"count": None, "status": "SOURCE_ERROR", "source": "CANONICAL_READ_ONLY_RECONSTRUCTION"},
+        "VISITS": {"count": 0, "status": "VERIFIED", "source": "visitas"},
+        "OFFERS": {"count": None, "status": "NOT_INSTRUMENTED", "source": "NOT_INSTRUMENTED"},
+        "CLOSINGS": {"count": None, "status": "NOT_INSTRUMENTED", "source": "NOT_INSTRUMENTED"},
+    }, source="CANONICAL_READ_ONLY_RECONSTRUCTION", cutoff=cutoff, start=cutoff - timedelta(days=90))
+    view = premium_fixture("full")
+    view["activity_90d"]["funnel"] = funnel
+    view["activity_90d"]["summary"] = ""
+    view["property_publication_presence"] = {"source_status": "VERIFIED", "total_published_channels": 0, "channels_with_url": 0, "items": []}
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one("#activity-title").find_parent("section")
+    rows = section.select(".owner-funnel-stage-row")
+    assert len(rows) == 4
+    bars = section.select(".owner-funnel-stage-bar")
+    widths = [float(row["style"].split("--stage-width:", 1)[1].split("%", 1)[0]) for row in rows]
+    assert widths == [100, 76, 54, 34]
+    assert [row.select_one("strong").get_text(strip=True) for row in rows] == ["—", "0", "—", "—"]
+    visits_bar = rows[1].select_one(".owner-funnel-stage-bar")
+    assert visits_bar["data-zero"] == "true"
+    assert float(visits_bar["style"].split("--fill-width:", 1)[1].split("%", 1)[0]) == 0
+    assert rows[2].select_one(".owner-funnel-stage-bar")["data-status"] == "NOT_INSTRUMENTED"
+    assert "0% de leads" not in section.get_text(" ", strip=True)
+    assert rows[0].select_one("small").get_text(strip=True) == "Dato no disponible"
+    assert all("Sin información registrada" in row.get_text(" ", strip=True) for row in rows[2:])
+    assert "Sin consultas registradas" not in section.get_text(" ", strip=True)
+    assert "CANONICAL_READ_ONLY_RECONSTRUCTION" not in section.get_text(" ", strip=True)
+    assert "Fuente:" not in section.get_text(" ", strip=True)
+    assert "Actividad registrada entre 02/07/2026 y 30/09/2026." in section.get_text(" ", strip=True)
+    assert "Sin registro estructurado" not in section.get_text(" ", strip=True)
+    assert "Sin información registrada" in section.get_text(" ", strip=True)
+    assert 'data-zero="true"' in section.decode()
+    assert not section.select(".activity-funnel details, .activity-funnel summary")
+
+
+def test_funnel_missing_data_copy_is_consistent_by_status():
+    cutoff = datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc)
+    funnel = _build_owner_funnel({
+        "LEADS": {"count": None, "status": "IDENTITY_UNRESOLVED"},
+        "VISITS": {"count": None, "status": "NOT_INSTRUMENTED"},
+        "OFFERS": {"count": 1, "status": "VERIFIED"},
+        "CLOSINGS": {"count": None, "status": "INTEGRITY_ERROR"},
+    }, source="CANONICAL_READ_ONLY_RECONSTRUCTION", cutoff=cutoff, start=cutoff - timedelta(days=90))
+    assert [stage["ratio"] for stage in funnel["stages"]] == [
+        "Dato no disponible", "Sin información registrada", "Sin base de comparación", "Dato no disponible",
+    ]
+
+
+def test_funnel_zero_visits_and_uninstrumented_stages_use_owner_friendly_copy():
+    cutoff = datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc)
+    funnel = _build_owner_funnel({
+        "LEADS": {"count": 1, "status": "VERIFIED"},
+        "VISITS": {"count": 0, "status": "VERIFIED"},
+        "OFFERS": {"count": None, "status": "NOT_INSTRUMENTED"},
+        "CLOSINGS": {"count": None, "status": "NOT_INSTRUMENTED"},
+    }, source="CANONICAL_READ_ONLY_RECONSTRUCTION", cutoff=cutoff,
+       start=cutoff - timedelta(days=90))
+    assert [(stage["value"], stage["ratio"]) for stage in funnel["stages"]] == [
+        ("1", "100%"), ("0", "0% de leads"), ("—", "Sin información registrada"), ("—", "Sin información registrada"),
+    ]
+    assert all("NOT_INSTRUMENTED" not in stage["ratio"] for stage in funnel["stages"])
+
+
+def test_not_instrumented_stage_with_zero_payload_stays_unknown_not_zero():
+    cutoff = datetime(2026, 9, 30, 23, 59, tzinfo=timezone.utc)
+    funnel = _build_owner_funnel({
+        "LEADS": {"count": 1, "status": "VERIFIED"},
+        "VISITS": {"count": 0, "status": "VERIFIED"},
+        "OFFERS": {"count": 0, "status": "NOT_INSTRUMENTED"},
+        "CLOSINGS": {"count": None, "status": "NOT_INSTRUMENTED"},
+    }, source="test", cutoff=cutoff, start=cutoff - timedelta(days=90))
+    assert funnel["stages"][2]["value"] == "—"
+    assert funnel["stages"][2]["ratio"] == "Sin información registrada"
+
+
+def test_funnel_headers_are_centered_on_their_own_bar_and_context_cannot_shift_value():
+    from bs4 import BeautifulSoup
+
+    view = premium_fixture("full")
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select(".owner-funnel-stage-row")
+    assert len(rows) == 4
+    for row in rows:
+        head = row.select_one(".owner-funnel-stage-label")
+        bar = row.select_one(".owner-funnel-stage-bar")
+        assert "--stage-width:" in row["style"]
+        assert head.select_one(".owner-funnel-stage-name")
+        assert head.select_one("strong")
+        assert head.select_one(".owner-funnel-stage-separator")
+        assert head.select_one("small")
+        assert "width:max(220px,var(--stage-width))" in html
+        assert "grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)" in html
+        assert "align-items:baseline" in html
+        assert "justify-self:center" in html
+        assert "--stage-width:" not in bar.get("style", "")
+
+
+def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inactive_links():
+    now = datetime(2026, 10, 6, tzinfo=timezone.utc)
+    master = {"codigo": "5695", "publicaciones": {
+        "procasa": {"publicaciones": {"V": {"publicada": True, "url": "https://www.procasa.cl/5695"}}},
+        "portal_inmobiliario": {
+            "url_pi": "https://www.portalinmobiliario.cl/listing/5695",
+            "url_mercado_libre": "https://www.mercadolibre.cl/listing/5695",
+            "publicaciones": {"V": {"publicada": True, "url": "https://www.mercadolibre.cl/listing/5695"}},
+        },
+        "toctoc": {"publicaciones": {"V": {"publicada": True, "url": "https://www.toctoc.com/5695"}}},
+        "yapo": {"publicaciones": {"V": {"publicada": True, "url": "https://www.yapo.cl/5695"}}},
+        "proppit": {"publicaciones": {"V": {"publicada": True, "url": "https://www.proppit.com/5695"}}},
+        "chilepropiedades": {"codigo_venta": "CP-5695", "publicaciones": {"V": {"publicada": True, "url": ""}}},
+        "legacy": {"publicaciones": {"V": {"publicada": False, "url": "https://legacy.example/5695"}}},
+    }}
+    result = _publication_presence_model(master, now=now)
+    assert result["source"] == "universo_cartera_prop360.publicaciones"
+    assert result["source_status"] == "VERIFIED"
+    assert result["publication_group_count"] == 6
+    assert result["base_publication_count"] == 6
+    assert result["publication_channel_count"] == 7
+    assert result["portal_channel_count"] == 7
+    assert result["available_link_count"] == 6
+    assert result["owner_facing_row_count"] == 7
+    assert result["total_published_channels"] == 7
+    assert result["channels_with_url"] == 6
+    assert [item["kind"] for item in result["items"]] == [
+        "PROCASA", "PORTAL_INMOBILIARIO", "MERCADO_LIBRE", "TOCTOC", "YAPO", "PROPPIT", "CHILEPROPIEDADES",
+    ]
+    pi_item, ml_item = result["items"][1:3]
+    assert pi_item["owner_label"] == "Portal Inmobiliario"
+    assert ml_item["owner_label"] == "Mercado Libre"
+    assert pi_item["group_id"] == ml_item["group_id"] == "portal_inmobiliario"
+    assert [link["label"] for link in pi_item["links"]] == ["Ver Portal Inmobiliario"]
+    assert [link["label"] for link in ml_item["links"]] == ["Ver Mercado Libre"]
+    assert pi_item["logo_urls"] == ("/static/portal-logos/portalinmobiliario.svg",)
+    assert ml_item["logo_urls"] == ("/static/portal-logos/mercado-libre.svg",)
+    assert all(
+        logo.startswith("/static/") and not logo.startswith(("http://", "https://"))
+        for item in result["items"] for logo in item["logo_urls"]
+    )
+    chile = result["items"][-1]
+    assert chile["status"] == "Publicado"
+    assert chile["link_status"] == "Enlace no disponible"
+    assert chile["url"] == "" and chile["links"] == []
+    assert all(item["status"] == "Publicado" for item in result["items"])
+
+
+def test_publication_presence_resolves_exact_unique_master_only_and_fails_closed():
+    db = mongomock.MongoClient().test
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": "5695", "publicaciones": {"procasa": {"publicaciones": {"V": {
+            "publicada": True, "url": "javascript:alert(1)",
+        }}}},
+    })
+    resolved = resolve_property_publication_presence(db, "5695")
+    assert resolved["source_status"] == "VERIFIED"
+    assert resolved["publication_channel_count"] == 1
+    assert resolved["available_link_count"] == 0
+    assert resolved["items"][0]["link_status"] == "Enlace no disponible"
+    assert resolved["items"][0]["links"] == []
+
+    db["universo_cartera_prop360"].insert_one({"codigo": "5695", "publicaciones": {}})
+    ambiguous = resolve_property_publication_presence(db, "5695")
+    assert ambiguous["source_status"] == "IDENTITY_UNRESOLVED"
+    assert ambiguous["items"] == []
+
+
+def test_publication_portals_render_safe_links_without_analytics_or_empty_href():
+    from bs4 import BeautifulSoup
+
+    view = premium_fixture("full")
+    view["property_publication_presence"] = _publication_presence_model({"publicaciones": {
+        "portal_inmobiliario": {
+            "url_pi": "https://www.portalinmobiliario.cl/listing/5695",
+            "publicaciones": {"V": {"publicada": True, "url": "https://www.mercadolibre.cl/listing/5695"}},
+        },
+        "chilepropiedades": {"publicaciones": {"V": {"publicada": True, "url": ""}}},
+        "proppit": {"publicaciones": {"V": {"publicada": True, "url": ""}}},
+    }}, now=datetime(2026, 10, 6, tzinfo=timezone.utc))
+    html = Environment(loader=FileSystemLoader("templates")).get_template(
+        "owner_campaign_monthly_portal.html"
+    ).render(view=view)
+    soup = BeautifulSoup(html, "html.parser")
+    section = soup.select_one("#activity-title").find_parent("section")
+    disclosure = section.select_one("details.publication-disclosure")
+    assert disclosure and not disclosure.has_attr("open")
+    assert disclosure.select_one("summary[aria-controls='publication-detail-list'][aria-expanded='false']")
+    summary_children = disclosure.select_one("summary").find_all(recursive=False)
+    assert [child.get("class", [""])[0] for child in summary_children] == [
+        "publication-disclosure__heading", "publication-summary", "publication-control",
+    ]
+    assert "Presencia en 4 portales · 2 enlaces disponibles" in disclosure.get_text(" ", strip=True)
+    assert not disclosure.select(".publication-logo-strip")
+    pi = disclosure.select_one(".publication-item[data-publication-kind='PORTAL_INMOBILIARIO']")
+    ml = disclosure.select_one(".publication-item[data-publication-kind='MERCADO_LIBRE']")
+    assert pi and ml
+    assert len(pi.select(".publication-item__logo")) == len(ml.select(".publication-item__logo")) == 1
+    assert [link.get_text(" ", strip=True) for link in pi.select(".publication-item__link")] == ["Ver Portal Inmobiliario →"]
+    assert [link.get_text(" ", strip=True) for link in ml.select(".publication-item__link")] == ["Ver Mercado Libre →"]
+    assert section.select_one(".publication-item[data-publication-kind='PROPPIT']")
+    assert section.select_one(".publication-item[data-publication-kind='CHILEPROPIEDADES']")
+    assert "Portal Inmobiliario" in section.get_text(" ", strip=True)
+    assert "Mercado Libre" in section.get_text(" ", strip=True)
+    assert "ChilePropiedades" in section.get_text(" ", strip=True)
+    assert "Sin enlace disponible" in section.get_text(" ", strip=True)
+    assert len(section.select(".publication-item__detail")) == 2
+    assert "Enlace disponible" not in " ".join(item.get_text(" ", strip=True) for item in section.select(".publication-item"))
+    assert not section.select(".publication-item__badge")
+    assert all(
+        image.get("src", "").startswith("/static/")
+        for image in section.select(".publication-item__logo")
+    )
+    assert not any(label in section.get_text(" ", strip=True) for label in ("PR", "PI", "ML", "TT", "YA", "PP", "CP"))
+    links = section.select(".publication-item__link")
+    assert len(links) == 2
+    assert [link.get_text(" ", strip=True) for link in links] == ["Ver Portal Inmobiliario →", "Ver Mercado Libre →"]
+    assert all(link.get("target") == "_blank" for link in links)
+    assert all(link.get("rel") == ["noopener", "noreferrer"] for link in links)
+    assert all(link.get("href") for link in links)
+    assert not section.select("[data-cta-placement], [data-cta-type]")
+    assert "Ver detalle de publicaciones ↓" in disclosure.get_text(" ", strip=True)
+    assert "Ocultar detalle ↑" in disclosure.get_text(" ", strip=True)
+    assert "Sin registro estructurado" not in section.get_text(" ", strip=True)
+    assert disclosure.select_one(".publication-disclosure__heading").get_text(strip=True) == "Exposición de tu propiedad"
+    assert disclosure.find_next("h3", class_="activity-subsection-heading").get_text(strip=True) == "Embudo comercial · últimos 90 días"
+    assert disclosure.parent is section
+    assert disclosure.select_one(".publication-item__status") is None
+    assert disclosure.get_text(" ", strip=True).count("Publicado") == 0
+
+    with open("templates/owner_campaign_monthly_portal.html", encoding="utf-8") as template_file:
+        template_source = template_file.read()
+    assert "object-fit:contain" in template_source
+    assert "grid-template-columns:minmax(0,1fr)" in template_source
+    assert ".publication-disclosure__panel { display:grid; grid-template-rows:0fr" in template_source
+    assert "@media (prefers-reduced-motion:reduce)" in template_source
+    assert "publicationDisclosure.addEventListener('toggle',syncPublicationExpanded)" in template_source
+    assert ".publication-item__logo--toctoc { width:56px" in template_source
+    assert ".publication-item__logo--yapo,.publication-item__logo--chilepropiedades" in template_source
+    assert ".publication-item { grid-template-columns:38px minmax(0,1fr); gap:8px; padding:7px 2px; }" in template_source
+    assert '.owner-funnel-stage-bar[data-zero="true"] .owner-funnel-stage-fill { display:none; }' in template_source

@@ -89,15 +89,18 @@
     .source-date-note { margin:-4px 0 8px 34px; color:#7a8398; font-size:10.5px; }
     .activity-funnel { --funnel-base:#5548b5; position:relative; display:grid; width:min(100%,560px); gap:10px; margin:10px auto 2px; }
     .owner-funnel-stage-row { position:relative; z-index:1; display:grid; justify-items:center; gap:6px; min-width:0; }
-    .owner-funnel-stage-label { display:flex; min-width:0; align-items:baseline; justify-content:center; gap:7px; line-height:1.15; white-space:nowrap; }
-    .owner-funnel-stage-label span { overflow:hidden; color:var(--body); font-size:10px; font-weight:750; letter-spacing:.06em; text-overflow:ellipsis; text-transform:uppercase; }
-    .owner-funnel-stage-label strong { color:var(--ink); font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; }
-    .owner-funnel-stage-label small { color:#707a90; font-size:10px; font-variant-numeric:tabular-nums; }
-    .owner-funnel-stage-label small::before { content:'·'; display:inline-block; margin-right:6px; color:#a5aabd; }
+    .owner-funnel-stage-label { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:baseline; width:max(220px,var(--stage-width)); max-width:100%; min-width:0; line-height:1.15; }
+    .owner-funnel-stage-label .owner-funnel-stage-name { justify-self:end; min-width:0; margin-right:7px; overflow:hidden; color:var(--body); font-size:10px; font-weight:750; letter-spacing:.06em; text-align:right; text-overflow:ellipsis; text-transform:uppercase; white-space:nowrap; }
+    .owner-funnel-stage-label strong { grid-column:2; justify-self:center; min-width:2.5ch; color:var(--ink); font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; text-align:center; }
+    .owner-funnel-stage-context { display:flex; grid-column:3; align-items:baseline; gap:7px; min-width:0; margin-left:7px; justify-self:start; }
+    .owner-funnel-stage-separator { flex:0 0 auto; color:#a5aabd; font-size:10px; }
+    .owner-funnel-stage-label small { display:block; min-width:0; max-width:100%; color:#707a90; font-size:10px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
     .owner-funnel-stage-rail { display:flex; width:100%; min-width:0; justify-content:center; }
     .owner-funnel-stage-bar { display:flex; width:var(--stage-width); max-width:100%; min-width:0; height:18px; overflow:hidden; border-radius:999px; background:#e9e8f1; transform:scaleX(.02); transform-origin:center; transition:transform .3s cubic-bezier(.16,1,.3,1),filter .16s ease; }
     .activity-funnel.owner-funnel-reveal .owner-funnel-stage-bar { transform:scaleX(1); }
     .owner-funnel-stage-fill { display:block; width:var(--fill-width,0%); height:100%; border-radius:999px; background:var(--stage-color,#6258bd); opacity:.88; transition:width .35s ease; }
+    .owner-funnel-stage-bar[data-zero="true"] { border:1px solid #dfddea; background:#faf9fd; }
+    .owner-funnel-stage-bar[data-zero="true"] .owner-funnel-stage-fill { display:none; }
     .owner-funnel-stage-bar[data-status="NOT_INSTRUMENTED"] { border:1px dashed #a9a8bb; background:#f8f8fb; }
     .owner-funnel-stage-bar[data-status="SOURCE_ERROR"], .owner-funnel-stage-bar[data-status="ERROR"] { border:1px dashed #c4c2cf; background:#f5f4f8; }
     .owner-funnel-stage-bar[data-status="NOT_INSTRUMENTED"] .owner-funnel-stage-fill,
@@ -121,6 +124,41 @@
     }
     .activity-empty { margin:0; padding:12px; border:1px dashed #d9d8e7; border-radius:11px; color:var(--body); font-size:11px; }
     .activity-summary { margin:8px 0 0; color:var(--body); font-size:10px; }
+    .activity-subsection-heading { margin:13px 0 0; color:var(--ink); font-size:12px; line-height:1.3; font-weight:750; }
+    .activity-divider { height:1px; margin:15px 0 12px; border:0; background:var(--line); }
+    .publication-disclosure { margin:0 0 12px; }
+    .publication-disclosure > summary { display:grid; gap:5px; padding:11px 0 9px; list-style:none; cursor:pointer; }
+    .publication-disclosure > summary::-webkit-details-marker { display:none; }
+    .publication-disclosure__heading { display:block; min-width:0; margin:0; color:var(--ink); font-size:12px; line-height:1.3; font-weight:750; }
+    .publication-control { display:inline-flex; flex:0 0 auto; align-items:center; gap:4px; margin-top:1px; color:var(--brand); font-size:9.5px; line-height:1.25; font-weight:700; }
+    .publication-control svg { width:12px; height:12px; transition:transform .24s ease; }
+    .publication-control__close { display:none; }
+    .publication-disclosure[open] .publication-control__open { display:none; }
+    .publication-disclosure[open] .publication-control__close { display:inline; }
+    .publication-disclosure[open] .publication-control svg { transform:rotate(180deg); }
+    .publication-summary { margin:0; color:var(--body); font-size:10.5px; line-height:1.35; }
+    .publication-logo-strip { display:flex; flex-wrap:wrap; align-items:center; gap:5px; min-width:0; }
+    .publication-logo-chip { display:grid; width:28px; height:28px; flex:0 0 28px; place-items:center; }
+    .publication-logo-chip img { display:block; max-width:26px; max-height:26px; object-fit:contain; }
+    .publication-logo-chip img.publication-logo--toctoc { width:46px; max-width:none; max-height:15px; }
+    .publication-disclosure__panel { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .24s ease,opacity .2s ease; }
+    .publication-disclosure[open] .publication-disclosure__panel { grid-template-rows:1fr; opacity:1; }
+    .publication-disclosure__clip { min-height:0; overflow:hidden; }
+    .publication-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:24px; margin-top:2px; border-top:1px solid #ececf3; }
+    .publication-item { display:grid; grid-template-columns:38px minmax(0,1fr); align-items:center; gap:9px; min-width:0; padding:8px 3px; border-bottom:1px solid #f0eff5; background:transparent; transition:background-color .15s ease; }
+    .publication-item:hover { background:#fafaff; }
+    .publication-item__logos { display:grid; width:36px; height:36px; place-items:center; }
+    .publication-item__logo { display:block; width:34px; height:34px; max-width:34px; max-height:34px; object-fit:contain; }
+    .publication-item__logo--toctoc { width:56px; max-width:none; height:auto; max-height:23px; }
+    .publication-item__logo--yapo,.publication-item__logo--chilepropiedades { width:30px; height:30px; max-width:30px; max-height:30px; }
+    .publication-item__fallback { display:grid; width:30px; height:30px; place-items:center; color:#7d8294; }
+    .publication-item__content { display:grid; min-width:0; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:2px 8px; }
+    .publication-item__title { display:block; color:var(--ink); font-size:10.5px; line-height:1.3; font-weight:750; overflow-wrap:anywhere; }
+    .publication-item__status { color:#68728a; font-size:9px; line-height:1.2; white-space:nowrap; }
+    .publication-item__detail { grid-column:1/-1; color:#7a8296; font-size:9px; line-height:1.25; }
+    .publication-item__links { display:flex; grid-column:1 / -1; flex-wrap:wrap; gap:4px 13px; margin-top:2px; }
+    .publication-item__link { display:inline-flex; min-height:20px; align-items:center; color:var(--brand); font-size:9px; line-height:1.2; font-weight:650; text-decoration:none; }
+    .publication-item__link:hover { text-decoration:underline; }
     .market-evidence-summary { margin-top:3px; color:#747d93; font-size:10.5px; line-height:1.3; }
     .market-position-evidence { display:grid; gap:5px; margin:8px 0 0; color:#747d93; font-size:10px; line-height:1.35; }
     .market-position-evidence p { margin:0; }
@@ -311,9 +349,23 @@
       .updated { margin-top:2px; font-size:10.5px; line-height:1.25; }
       .activity-funnel { width:100%; max-width:430px; gap:8px; margin-top:7px; }
       .owner-funnel-stage-bar { height:17px; }
-      .owner-funnel-stage-label { gap:5px; }
-      .owner-funnel-stage-label strong { font-size:15px; }
-      .owner-funnel-stage-label span,.owner-funnel-stage-label small { font-size:9px; }
+      .owner-funnel-stage-label .owner-funnel-stage-name { min-width:0; margin-right:5px; font-size:9px; }
+      .owner-funnel-stage-context { gap:4px; margin-left:5px; }
+      .owner-funnel-stage-label strong { min-width:2.5ch; font-size:15px; }
+      .owner-funnel-stage-label small,.owner-funnel-stage-separator { font-size:9px; }
+      .publication-disclosure > summary { gap:6px; padding:9px 0 8px; }
+      .publication-logo-strip { gap:4px 6px; }
+      .publication-logo-chip { width:27px; height:27px; flex-basis:27px; }
+      .publication-logo-chip img { max-width:25px; max-height:25px; }
+      .publication-logo-chip img.publication-logo--toctoc { width:44px; max-height:15px; }
+      .publication-grid { grid-template-columns:minmax(0,1fr); column-gap:0; margin-top:2px; }
+      .publication-item { grid-template-columns:38px minmax(0,1fr); gap:8px; padding:7px 2px; }
+      .publication-item__logo { width:32px; height:32px; max-width:32px; max-height:32px; }
+      .publication-item__logo--toctoc { width:54px; max-width:none; max-height:22px; }
+      .publication-item__title { font-size:10.5px; }
+      .publication-item__links { gap:3px 13px; }
+      .activity-subsection-heading { margin-top:11px; font-size:11px; }
+      .activity-divider { margin:12px 0 10px; }
       .actions-top { gap:6px; margin-top:8px; }
       .button { min-height:47px; padding:9px 7px; border-radius:10px; font-size:10px; }
       .action-note { font-size:10.5px; }
@@ -358,6 +410,9 @@
       .sticky { right:8px; left:8px; bottom:calc(6px + env(safe-area-inset-bottom)); width:calc(100% - 16px); gap:5px; padding:6px; }
       .sticky .button { min-height:42px; font-size:10.5px; }
       body { padding-bottom:calc(78px + env(safe-area-inset-bottom)); }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .publication-control svg,.publication-disclosure__panel { transition:none !important; }
     }
     @media (max-width:375px) { .complementary-market__grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } .sticky,.button { transition:none; } }
@@ -521,17 +576,36 @@
   </section>
 
   <section class="card" aria-labelledby="activity-title">
-    <h2 class="section-heading" id="activity-title"><span class="section-icon">{{ ui_icon('activity') }}</span>Embudo comercial · últimos 90 días</h2>
-    {% if view.activity_90d.source_date %}<p class="source-date-note">{{ view.activity_90d.source_label }}: {{ view.activity_90d.source_date }}</p>{% endif %}
-    {% set default_funnel = {'stages': [{'label':'Leads','value':'—','ratio':'Dato no consolidado','width':100}, {'label':'Visitas','value':'—','ratio':'Dato no consolidado','width':76}, {'label':'Ofertas','value':'—','ratio':'Sin registro estructurado','width':54}, {'label':'Cierre','value':'—','ratio':'Sin registro estructurado','width':34}]} %}
+    <h2 class="section-heading" id="activity-title"><span class="section-icon">{{ ui_icon('activity') }}</span>Actividad comercial</h2>
+    {% set publication_presence = view.property_publication_presence|default({}) %}
+    {% if publication_presence.source_status == 'VERIFIED' %}
+      {% set channel_count = publication_presence.publication_channel_count|default(publication_presence.total_published_channels|default(0)) %}
+      {% set linked_count = publication_presence.available_link_count|default(publication_presence.channels_with_url|default(0)) %}
+      {% if publication_presence['items'] %}<details class="publication-disclosure" id="publication-disclosure">
+        <summary aria-expanded="false" aria-controls="publication-detail-list">
+          <h3 class="publication-disclosure__heading">Exposición de tu propiedad</h3>
+          <span class="publication-summary">Presencia en {{ channel_count }} {% if channel_count == 1 %}portal{% else %}portales{% endif %} · {{ linked_count }} {% if linked_count == 1 %}enlace disponible{% else %}enlaces disponibles{% endif %}</span>
+          <span class="publication-control"><span class="publication-control__open">Ver detalle de publicaciones ↓</span><span class="publication-control__close">Ocultar detalle ↑</span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3 6 5 5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </summary>
+        <div class="publication-disclosure__panel"><div class="publication-disclosure__clip"><div class="publication-grid" id="publication-detail-list" aria-label="Portales donde está publicada la propiedad">
+          {% for item in publication_presence['items'] %}<article class="publication-item" data-publication-kind="{{ item.kind|e }}">
+            <div class="publication-item__logos" aria-hidden="true">{% if item.logo_urls %}<img class="publication-item__logo{% if 'toctoc' in item.logo_urls[0] %} publication-item__logo--toctoc{% elif 'yapo' in item.logo_urls[0] %} publication-item__logo--yapo{% elif 'chilepropiedades' in item.logo_urls[0] %} publication-item__logo--chilepropiedades{% endif %}" src="{{ item.logo_urls[0]|e }}" alt="" loading="lazy" decoding="async">{% else %}<svg class="publication-item__fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}</div>
+            <div class="publication-item__content"><strong class="publication-item__title">{{ item.owner_label }}</strong>
+              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">Sin enlace disponible</span>{% endif %}
+            </div>
+          </article>{% endfor %}
+        </div></div></div>
+      </details>{% else %}<div class="publication-empty"><h3 class="publication-disclosure__heading">Exposición de tu propiedad</h3><p class="publication-summary">No se encontraron portales de publicación activos para esta propiedad.</p></div>{% endif %}
+    {% else %}<div class="publication-empty"><h3 class="publication-disclosure__heading">Exposición de tu propiedad</h3><p class="publication-summary">No fue posible consultar los portales de publicación de esta propiedad.</p></div>{% endif %}
+    <h3 class="activity-subsection-heading">Embudo comercial · últimos 90 días</h3>
+    {% set default_funnel = {'stages': [{'label':'Leads','value':'—','ratio':'Dato no disponible','width':100}, {'label':'Visitas','value':'—','ratio':'Dato no disponible','width':76}, {'label':'Ofertas','value':'—','ratio':'Dato no disponible','width':54}, {'label':'Cierre','value':'—','ratio':'Dato no disponible','width':34}]} %}
     {% set commercial_funnel = view.activity_90d.funnel|default(default_funnel, true) %}<div class="activity-funnel" role="group" aria-label="Embudo comercial de leads, visitas, ofertas y cierres en los últimos 90 días">
-      {% for stage in commercial_funnel.stages %}{% set stage_count = stage.count|default(none) %}<div class="owner-funnel-stage-row" data-funnel-stage="{{ stage.key|default(loop.index) }}" aria-label="{{ stage.label }}: {{ stage.value }}. {{ stage.ratio }}">
-        <div class="owner-funnel-stage-label"><span>{{ stage.label }}</span><strong>{{ stage.value }}</strong><small>{{ stage.ratio }}</small></div>
-        <div class="owner-funnel-stage-rail"><div class="owner-funnel-stage-bar" data-status="{{ stage.status|default('SOURCE_ERROR') }}" style="--stage-width:{{ stage.shape_width|default(stage.width|default(34)) }}%;--fill-width:{{ stage.fill_width|default(100 if stage_count is not none and stage_count > 0 else 0) }}%" title="{{ stage.ratio }}"><i class="owner-funnel-stage-fill" aria-hidden="true"></i></div></div>
+      {% for stage in commercial_funnel.stages %}{% set stage_count = stage.count|default(none) %}{% set stage_width = stage.shape_width|default(stage.width|default(34)) %}<div class="owner-funnel-stage-row" data-funnel-stage="{{ stage.key|default(loop.index) }}" style="--stage-width:{{ stage_width }}%" aria-label="{{ stage.label }}: {{ stage.value }}. {{ stage.ratio }}">
+        <div class="owner-funnel-stage-label"><span class="owner-funnel-stage-name">{{ stage.label }}</span><strong>{{ stage.value }}</strong><span class="owner-funnel-stage-context"><i class="owner-funnel-stage-separator" aria-hidden="true">·</i><small>{{ stage.ratio }}</small></span></div>
+        <div class="owner-funnel-stage-rail"><div class="owner-funnel-stage-bar" data-status="{{ stage.status|default('SOURCE_ERROR') }}" data-zero="{{ 'true' if stage_count == 0 else 'false' }}" style="--fill-width:{{ stage.fill_width|default(100 if stage_count is not none and stage_count > 0 else 0) }}%" title="{{ stage.ratio }}"><i class="owner-funnel-stage-fill" aria-hidden="true"></i></div></div>
       </div>{% endfor %}
     </div>
-    {% if commercial_funnel.cutoff %}<p class="activity-summary">Período: {{ commercial_funnel.start_date.strftime('%d/%m/%Y') }}–{{ commercial_funnel.cutoff.strftime('%d/%m/%Y') }} · Fuente: {{ commercial_funnel.source }}</p>{% endif %}
-    {% if view.activity_90d.summary %}<p class="activity-summary">{{ view.activity_90d.summary }}</p>{% endif %}
+    {% if commercial_funnel.cutoff and commercial_funnel.start_date %}<p class="activity-summary">Actividad registrada entre {{ commercial_funnel.start_date.strftime('%d/%m/%Y') }} y {{ commercial_funnel.cutoff.strftime('%d/%m/%Y') }}.</p>{% endif %}
   </section>
 
 
@@ -653,6 +727,13 @@
 <script>
 (function(){
   document.querySelectorAll('.executive-avatar img').forEach(function(img){img.addEventListener('error',function(){img.remove();});});
+  var publicationDisclosure=document.getElementById('publication-disclosure');
+  if(publicationDisclosure){
+    var publicationSummary=publicationDisclosure.querySelector('summary');
+    var syncPublicationExpanded=function(){publicationSummary.setAttribute('aria-expanded',publicationDisclosure.open?'true':'false');};
+    syncPublicationExpanded();
+    publicationDisclosure.addEventListener('toggle',syncPublicationExpanded);
+  }
   var funnel=document.querySelector('.activity-funnel');
   if(funnel){
     var rows=Array.from(funnel.querySelectorAll('.owner-funnel-stage-row'));

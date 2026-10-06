@@ -145,19 +145,20 @@
     .publication-disclosure[open] .publication-disclosure__panel { grid-template-rows:1fr; opacity:1; }
     .publication-disclosure__clip { min-height:0; overflow:hidden; }
     .publication-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:24px; margin-top:2px; border-top:1px solid #ececf3; }
-    .publication-item { display:grid; grid-template-columns:38px minmax(0,1fr); align-items:center; gap:9px; min-width:0; padding:8px 3px; border-bottom:1px solid #f0eff5; background:transparent; transition:background-color .15s ease; }
-    .publication-item--toctoc { grid-template-columns:58px minmax(0,1fr); }
+    .publication-item { display:grid; grid-template-columns:42px minmax(0,1fr); align-items:center; gap:9px; min-width:0; padding:8px 3px; border-bottom:1px solid #f0eff5; background:transparent; transition:background-color .15s ease; }
     .publication-item:hover { background:#fafaff; }
     .publication-item__logos { display:grid; width:36px; height:36px; place-items:center; }
-    .publication-item--toctoc .publication-item__logos { width:56px; }
     .publication-item__logo { display:block; width:34px; height:34px; max-width:34px; max-height:34px; object-fit:contain; }
-    .publication-item__logo--toctoc { width:56px; max-width:none; height:auto; max-height:23px; }
+    .publication-item__logo--toctoc { width:42px; max-width:42px; height:auto; max-height:12px; }
     .publication-item__logo--yapo,.publication-item__logo--chilepropiedades { width:30px; height:30px; max-width:30px; max-height:30px; }
     .publication-item__fallback { display:grid; width:30px; height:30px; place-items:center; color:#7d8294; }
     .publication-item__content { display:grid; min-width:0; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:2px 8px; }
     .publication-item__title { display:block; color:var(--ink); font-size:10.5px; line-height:1.3; font-weight:750; overflow-wrap:anywhere; }
     .publication-item__status { color:#68728a; font-size:9px; line-height:1.2; white-space:nowrap; }
     .publication-item__detail { grid-column:1/-1; color:#7a8296; font-size:9px; line-height:1.25; }
+    .publication-item__network { display:grid; grid-column:1/-1; gap:4px; margin-top:2px; color:#69738b; font-size:9px; line-height:1.3; }
+    .publication-item__network-list { display:flex; flex-wrap:wrap; gap:4px; margin:0; padding:0; list-style:none; }
+    .publication-item__network-list li { padding:2px 6px; border:1px solid #eceaf4; border-radius:999px; background:#fafaff; color:#4c5369; font-size:8.5px; line-height:1.2; }
     .publication-item__links { display:flex; grid-column:1 / -1; flex-wrap:wrap; gap:4px 13px; margin-top:2px; }
     .publication-item__link { display:inline-flex; min-height:20px; align-items:center; color:var(--brand); font-size:9px; line-height:1.2; font-weight:650; text-decoration:none; }
     .publication-item__link:hover { text-decoration:underline; }
@@ -361,10 +362,9 @@
       .publication-logo-chip img { max-width:25px; max-height:25px; }
       .publication-logo-chip img.publication-logo--toctoc { width:44px; max-height:15px; }
       .publication-grid { grid-template-columns:minmax(0,1fr); column-gap:0; margin-top:2px; }
-      .publication-item { grid-template-columns:38px minmax(0,1fr); gap:8px; padding:7px 2px; }
-      .publication-item--toctoc { grid-template-columns:58px minmax(0,1fr); }
+      .publication-item { grid-template-columns:42px minmax(0,1fr); gap:10px; padding:7px 2px; }
       .publication-item__logo { width:32px; height:32px; max-width:32px; max-height:32px; }
-      .publication-item__logo--toctoc { width:54px; max-width:none; max-height:22px; }
+      .publication-item__logo--toctoc { width:42px; max-width:42px; max-height:12px; }
       .publication-item__title { font-size:10.5px; }
       .publication-item__links { gap:3px 13px; }
       .activity-subsection-heading { margin-top:11px; font-size:11px; }
@@ -591,10 +591,11 @@
           <span class="publication-control"><span class="publication-control__open">Ver detalle de publicaciones ↓</span><span class="publication-control__close">Ocultar detalle ↑</span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m3 6 5 5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </summary>
         <div class="publication-disclosure__panel"><div class="publication-disclosure__clip"><div class="publication-grid" id="publication-detail-list" aria-label="Portales donde está publicada la propiedad">
-          {% for item in publication_presence['items'] %}<article class="publication-item{% if item.logo_urls and 'toctoc' in item.logo_urls[0] %} publication-item--toctoc{% endif %}" data-publication-kind="{{ item.kind|e }}">
+          {% for item in publication_presence['items'] %}<article class="publication-item" data-publication-kind="{{ item.kind|e }}">
             <div class="publication-item__logos" aria-hidden="true">{% if item.logo_urls %}<img class="publication-item__logo{% if 'toctoc' in item.logo_urls[0] %} publication-item__logo--toctoc{% elif 'yapo' in item.logo_urls[0] %} publication-item__logo--yapo{% elif 'chilepropiedades' in item.logo_urls[0] %} publication-item__logo--chilepropiedades{% endif %}" src="{{ item.logo_urls[0]|e }}" alt="" loading="lazy" decoding="async">{% else %}<svg class="publication-item__fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}</div>
             <div class="publication-item__content"><strong class="publication-item__title">{{ item.owner_label }}</strong>
-              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">Sin enlace disponible</span>{% endif %}
+              {% if item.network_portals %}<div class="publication-item__network"><span>También publica en estos 5 portales asociados:</span><ul class="publication-item__network-list">{% for portal_name in item.network_portals %}<li>{{ portal_name|e }}</li>{% endfor %}</ul><span>Los enlaces directos por portal estarán disponibles más adelante.</span></div>{% endif %}
+              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">{{ item.detail_label|default('Sin enlace disponible')|e }}</span>{% endif %}
             </div>
           </article>{% endfor %}
         </div></div></div>

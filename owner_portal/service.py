@@ -78,6 +78,7 @@ MASTER_PUBLICATION_PROJECTION = {
     "publicaciones.chilepropiedades.codigo_venta": 1,
     "publicaciones.chilepropiedades.codigo_arriendo": 1,
     "publicaciones.proppit.publicaciones": 1,
+    "publicaciones.enlace_inmobiliario.publicaciones": 1,
     "publicaciones.procasa.publicaciones": 1,
 }
 
@@ -92,6 +93,7 @@ IDENTITY_PROJECTION = {
     "publicaciones.chilepropiedades.codigo_venta": 1,
     "publicaciones.chilepropiedades.codigo_arriendo": 1,
     "publicaciones.proppit.publicaciones": 1,
+    "publicaciones.enlace_inmobiliario.publicaciones": 1,
     "publicaciones.procasa.publicaciones": 1,
 }
 

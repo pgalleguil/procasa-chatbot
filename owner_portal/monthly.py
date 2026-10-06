@@ -1306,7 +1306,9 @@ _PUBLICATION_CHANNELS: tuple[tuple[str, str], ...] = (
     ("yapo", "Yapo"),
     ("proppit", "Proppit"),
     ("chilepropiedades", "ChilePropiedades"),
+    ("enlace_inmobiliario", "Enlace Inmobiliario"),
 )
+_PROPPIT_NETWORK_PORTALS: tuple[str, ...] = ("icasas", "Mitula", "Nestoria", "Nuroa", "Trovit")
 _PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
     "PROCASA": ("/static/favicon_procasa_mark.png",),
     "PORTAL_INMOBILIARIO": ("/static/portal-logos/portalinmobiliario.svg",),
@@ -1315,6 +1317,7 @@ _PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
     "YAPO": ("/static/portal-logos/yapo.svg",),
     "PROPPIT": ("/static/portal-logos/proppit.png",),
     "CHILEPROPIEDADES": ("/static/portal-logos/chilepropiedades.svg",),
+    "ENLACE_INMOBILIARIO": ("/static/portal-logos/enlace-inmobiliario.png",),
 }
 _PUBLICATION_VERIFICATION_TTL = timedelta(days=30)
 
@@ -1424,6 +1427,7 @@ def _publication_item(
         "verified_at": checked_at if recently_verified else None,
         "verification_status": "VERIFIED" if recently_verified else "PUBLISHED",
         "logo_urls": _PUBLICATION_LOGO_ASSETS.get(kind or portal_key.upper(), ()),
+        "network_portals": list(_PROPPIT_NETWORK_PORTALS) if portal_key == "proppit" else [],
     }
 
 
@@ -1503,6 +1507,25 @@ def _publication_presence_model(property_doc: Mapping[str, Any], *, now: datetim
         if item:
             items.append(item)
 
+    # Keep Enlace Inmobiliario visible as a separate future channel until its
+    # publication status and URL are supplied by the canonical property record.
+    if not any(item["kind"] == "ENLACE_INMOBILIARIO" for item in items):
+        items.append({
+            "kind": "ENLACE_INMOBILIARIO",
+            "group_id": "enlace_inmobiliario",
+            "owner_label": "Enlace Inmobiliario",
+            "published": False,
+            "status": "Sin publicación registrada",
+            "link_status": "Enlace aún no disponible",
+            "detail_label": "Enlace aún no disponible",
+            "url": "",
+            "links": [],
+            "verified_at": None,
+            "verification_status": "NOT_RECORDED",
+            "logo_urls": _PUBLICATION_LOGO_ASSETS["ENLACE_INMOBILIARIO"],
+            "network_portals": [],
+        })
+
     # Preserve future canonical channels without leaking their raw Mongo shape.
     for portal_key, portal in publications.items():
         key = _text(portal_key).casefold()
@@ -1516,10 +1539,14 @@ def _publication_presence_model(property_doc: Mapping[str, Any], *, now: datetim
         if item:
             item["kind"] = key.upper()
             items.append(item)
-    distinct_urls = {link["url"] for item in items for link in item["links"]}
-    group_ids = {item["group_id"] for item in items}
+    distinct_urls = {link["url"] for item in items if item.get("published") for link in item["links"]}
+    published_items = [item for item in items if item.get("published")]
+    group_ids = {item["group_id"] for item in published_items}
     base_publication_count = len(group_ids)
-    publication_channel_count = len(items)
+    proppit_extra_channels = len(_PROPPIT_NETWORK_PORTALS) if any(
+        item["kind"] == "PROPPIT" and item.get("published") for item in published_items
+    ) else 0
+    publication_channel_count = len(published_items) + proppit_extra_channels
     available_link_count = len(distinct_urls)
     return {
         "source": "universo_cartera_prop360.publicaciones",
@@ -1529,7 +1556,7 @@ def _publication_presence_model(property_doc: Mapping[str, Any], *, now: datetim
         "publication_channel_count": publication_channel_count,
         "portal_channel_count": publication_channel_count,
         "available_link_count": available_link_count,
-        "owner_facing_row_count": publication_channel_count,
+        "owner_facing_row_count": len(items),
         "total_published_channels": publication_channel_count,
         "channels_with_url": available_link_count,
         "items": items,

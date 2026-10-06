@@ -2522,14 +2522,14 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
     assert result["source_status"] == "VERIFIED"
     assert result["publication_group_count"] == 6
     assert result["base_publication_count"] == 6
-    assert result["publication_channel_count"] == 7
-    assert result["portal_channel_count"] == 7
+    assert result["publication_channel_count"] == 12
+    assert result["portal_channel_count"] == 12
     assert result["available_link_count"] == 6
-    assert result["owner_facing_row_count"] == 7
-    assert result["total_published_channels"] == 7
+    assert result["owner_facing_row_count"] == 8
+    assert result["total_published_channels"] == 12
     assert result["channels_with_url"] == 6
     assert [item["kind"] for item in result["items"]] == [
-        "PROCASA", "PORTAL_INMOBILIARIO", "MERCADO_LIBRE", "TOCTOC", "YAPO", "PROPPIT", "CHILEPROPIEDADES",
+        "PROCASA", "PORTAL_INMOBILIARIO", "MERCADO_LIBRE", "TOCTOC", "YAPO", "PROPPIT", "CHILEPROPIEDADES", "ENLACE_INMOBILIARIO",
     ]
     pi_item, ml_item = result["items"][1:3]
     assert pi_item["owner_label"] == "Portal Inmobiliario"
@@ -2545,11 +2545,18 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
         logo.startswith("/static/") and not logo.startswith(("http://", "https://"))
         for item in result["items"] for logo in item["logo_urls"]
     )
-    chile = result["items"][-1]
+    chile = next(item for item in result["items"] if item["kind"] == "CHILEPROPIEDADES")
     assert chile["status"] == "Publicado"
     assert chile["link_status"] == "Enlace no disponible"
     assert chile["url"] == "" and chile["links"] == []
-    assert all(item["status"] == "Publicado" for item in result["items"])
+    proppit = next(item for item in result["items"] if item["kind"] == "PROPPIT")
+    assert proppit["network_portals"] == ["icasas", "Mitula", "Nestoria", "Nuroa", "Trovit"]
+    enlace = result["items"][-1]
+    assert enlace["owner_label"] == "Enlace Inmobiliario"
+    assert enlace["published"] is False
+    assert enlace["links"] == []
+    assert enlace["logo_urls"] == ("/static/portal-logos/enlace-inmobiliario.png",)
+    assert sum(bool(item["published"]) for item in result["items"]) == 7
 
 
 def test_publication_presence_resolves_exact_unique_master_only_and_fails_closed():
@@ -2596,7 +2603,7 @@ def test_publication_portals_render_safe_links_without_analytics_or_empty_href()
     assert [child.get("class", [""])[0] for child in summary_children] == [
         "publication-disclosure__heading", "publication-summary", "publication-control",
     ]
-    assert "Presencia en 4 portales · 2 enlaces disponibles" in disclosure.get_text(" ", strip=True)
+    assert "Presencia en 9 portales · 2 enlaces disponibles" in disclosure.get_text(" ", strip=True)
     assert not disclosure.select(".publication-logo-strip")
     pi = disclosure.select_one(".publication-item[data-publication-kind='PORTAL_INMOBILIARIO']")
     ml = disclosure.select_one(".publication-item[data-publication-kind='MERCADO_LIBRE']")
@@ -2605,12 +2612,20 @@ def test_publication_portals_render_safe_links_without_analytics_or_empty_href()
     assert [link.get_text(" ", strip=True) for link in pi.select(".publication-item__link")] == ["Ver Portal Inmobiliario →"]
     assert [link.get_text(" ", strip=True) for link in ml.select(".publication-item__link")] == ["Ver Mercado Libre →"]
     assert section.select_one(".publication-item[data-publication-kind='PROPPIT']")
+    proppit_row = section.select_one(".publication-item[data-publication-kind='PROPPIT']")
+    assert [item.get_text(" ", strip=True) for item in proppit_row.select(".publication-item__network-list li")] == [
+        "icasas", "Mitula", "Nestoria", "Nuroa", "Trovit",
+    ]
+    assert "enlaces directos por portal estarán disponibles más adelante" in proppit_row.get_text(" ", strip=True)
     assert section.select_one(".publication-item[data-publication-kind='CHILEPROPIEDADES']")
+    enlace_row = section.select_one(".publication-item[data-publication-kind='ENLACE_INMOBILIARIO']")
+    assert enlace_row and "Enlace aún no disponible" in enlace_row.get_text(" ", strip=True)
+    assert enlace_row.select_one("img.publication-item__logo[src='/static/portal-logos/enlace-inmobiliario.png']")
     assert "Portal Inmobiliario" in section.get_text(" ", strip=True)
     assert "Mercado Libre" in section.get_text(" ", strip=True)
     assert "ChilePropiedades" in section.get_text(" ", strip=True)
     assert "Sin enlace disponible" in section.get_text(" ", strip=True)
-    assert len(section.select(".publication-item__detail")) == 2
+    assert len(section.select(".publication-item__detail")) == 3
     assert "Enlace disponible" not in " ".join(item.get_text(" ", strip=True) for item in section.select(".publication-item"))
     assert not section.select(".publication-item__badge")
     assert all(
@@ -2641,8 +2656,9 @@ def test_publication_portals_render_safe_links_without_analytics_or_empty_href()
     assert ".publication-disclosure__panel { display:grid; grid-template-rows:0fr" in template_source
     assert "@media (prefers-reduced-motion:reduce)" in template_source
     assert "publicationDisclosure.addEventListener('toggle',syncPublicationExpanded)" in template_source
-    assert ".publication-item__logo--toctoc { width:56px" in template_source
-    assert ".publication-item--toctoc { grid-template-columns:58px minmax(0,1fr); }" in template_source
+    assert ".publication-item__logo--toctoc { width:42px" in template_source
+    assert ".publication-item { display:grid; grid-template-columns:42px minmax(0,1fr);" in template_source
+    assert ".publication-item--toctoc { grid-template-columns:58px minmax(0,1fr); }" not in template_source
     assert ".publication-item__logo--yapo,.publication-item__logo--chilepropiedades" in template_source
-    assert ".publication-item { grid-template-columns:38px minmax(0,1fr); gap:8px; padding:7px 2px; }" in template_source
+    assert ".publication-item { grid-template-columns:42px minmax(0,1fr); gap:10px; padding:7px 2px; }" in template_source
     assert '.owner-funnel-stage-bar[data-zero="true"] .owner-funnel-stage-fill { display:none; }' in template_source

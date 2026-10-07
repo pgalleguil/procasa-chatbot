@@ -257,7 +257,7 @@ def _process_owner_campaign_action(
     from pymongo import MongoClient
     from config import Config
     from .owner_campaign_live_events import (
-        LIVE_ACTIONS, persist_live_event, verify_live_token,
+        LIVE_ACTIONS, persist_live_event, persist_noncritical_live_event, verify_live_token,
         notify_campaign_channels_after_persist,
     )
     from .owner_campaign_confirmation_page import gradual_option_enabled
@@ -399,9 +399,9 @@ def _process_owner_campaign_action(
                 ), headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
             )
         if accion == "aceptar_rebaja" and method == "GET":
-            persist_live_event(db, claims, event="cta_clicked", action=accion)
-            persist_live_event(db, claims, event="price_confirm_page_opened", action=accion)
-            persist_live_event(db, claims, event="confirmation_page_opened", action=accion)
+            persist_noncritical_live_event(db, claims, event="cta_clicked", action=accion)
+            persist_noncritical_live_event(db, claims, event="price_confirm_page_opened", action=accion)
+            persist_noncritical_live_event(db, claims, event="confirmation_page_opened", action=accion)
             recommended_form = action_url("aceptar_rebaja", token, selected_type="RECOMMENDED")
             from .owner_campaign_confirmation_page import render_decision_page
             page = render_decision_page(
@@ -423,7 +423,7 @@ def _process_owner_campaign_action(
         selected_type = str(selected_adjustment_type or "").upper()
         if event == "price_authorized" and selected_type == "GRADUAL" and not gradual_option_enabled(campana):
             return HTMLResponse("La opción gradual no está habilitada para esta campaña.", status_code=409)
-        persist_live_event(db, claims, event="cta_clicked", action=accion)
+        persist_noncritical_live_event(db, claims, event="cta_clicked", action=accion)
         details = {}
         if event == "price_authorized":
             if selected_type not in {"RECOMMENDED", "GRADUAL"}:

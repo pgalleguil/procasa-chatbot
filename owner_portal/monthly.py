@@ -1381,6 +1381,17 @@ _PUBLICATION_CHANNELS: tuple[tuple[str, str], ...] = (
     ("proppit", "Proppit"),
 )
 _PROPPIT_NETWORK_PORTALS: tuple[str, ...] = ("icasas", "Mitula", "Nestoria", "Nuroa", "Trovit")
+_PUBLICATION_TELEMETRY_PORTALS = {
+    "procasa": "PROCASA",
+    "portal_inmobiliario": "PortalInmobiliario",
+    "mercado_libre": "MercadoLibre",
+    "mercadolibre": "MercadoLibre",
+    "toctoc": "TOCTOC",
+    "yapo": "Yapo",
+    "chilepropiedades": "ChilePropiedades",
+    "proppit": "Proppit",
+    "enlace_inmobiliario": "EnlaceInmobiliario",
+}
 _PUBLICATION_LOGO_ASSETS: dict[str, tuple[str, ...]] = {
     "PROCASA": ("/static/favicon_procasa_mark.png",),
     "PORTAL_INMOBILIARIO": ("/static/portal-logos/portalinmobiliario.svg",),
@@ -1433,11 +1444,12 @@ def _publication_records(portal: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 def _publication_links(portal_key: str, portal: Mapping[str, Any], records: list[Mapping[str, Any]]) -> list[dict[str, str]]:
     links: list[dict[str, str]] = []
+    telemetry_portal = _PUBLICATION_TELEMETRY_PORTALS.get(portal_key, "Other")
 
     def add(label: str, value: Any) -> None:
         url = _safe_publication_url(value)
         if url and all(item["url"] != url for item in links):
-            links.append({"label": label, "url": url})
+            links.append({"label": label, "url": url, "external_portal": telemetry_portal})
 
     # Prop360 stores Portal Inmobiliario and Mercado Libre as one publication
     # source. Keep them one channel while preserving each explicit public URL.
@@ -1517,7 +1529,8 @@ def _portal_inmobiliario_items(
     def add(kind: str, label: str, raw_url: Any) -> None:
         url = _safe_publication_url(raw_url)
         if url and all(item["url"] != url for item in channel_links[kind]):
-            channel_links[kind].append({"label": label, "url": url})
+            portal = "MercadoLibre" if kind == "MERCADO_LIBRE" else "PortalInmobiliario"
+            channel_links[kind].append({"label": label, "url": url, "external_portal": portal})
 
     pi_values = portal.get("urls_pi")
     if isinstance(pi_values, (list, tuple)):

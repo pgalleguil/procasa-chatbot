@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
 import mongomock
@@ -110,6 +111,86 @@ def test_interaction_idempotency_retries_once_but_distinct_clicks_both_persist(m
     assert len({item["event_id"] for item in events}) == 2
 
 
+@pytest.mark.parametrize("portal", [
+    "PROCASA", "PortalInmobiliario", "MercadoLibre", "TOCTOC", "Yapo",
+    "Proppit", "ChilePropiedades", "EnlaceInmobiliario", "Other",
+])
+def test_publication_endpoint_accepts_only_canonical_portal_values(monkeypatch, portal):
+    db = make_db()
+    client = make_client(monkeypatch, db)
+    token = interaction_token(monkeypatch)
+    payload = event_payload(token, "publication_link_clicked",
+                            section="commercial_activity_publications",
+                            control="publication_link", external_portal=portal)
+    assert client.post("/owner-portal/interaction", json=payload).status_code == 200
+    event = db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"][0]
+    assert event["external_portal"] == portal
+
+
+def test_interaction_mongo_failure_can_retry_same_client_event_id_once(monkeypatch, caplog):
+    import campanas.owner_campaign_live_events as live_events
+
+    caplog.set_level("INFO", logger="campanas.owner_campaign_live_events")
+    db = make_db()
+    client = make_client(monkeypatch, db)
+    token = interaction_token(monkeypatch)
+    payload = event_payload(token, "section_expanded", section="appraisal_details",
+                            control="appraisal_details_toggle", expanded=True)
+    persist = live_events.persist_owner_portal_interaction
+    attempts = {"count": 0}
+
+    def fail_once(*args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("temporary mongo outage")
+        return persist(*args, **kwargs)
+
+    monkeypatch.setattr(live_events, "persist_owner_portal_interaction", fail_once)
+    assert client.post("/owner-portal/interaction", json=payload).status_code == 503
+    assert client.post("/owner-portal/interaction", json={**payload, "client_attempt": 2}).json()["status"] == "accepted"
+    assert client.post("/owner-portal/interaction", json=payload).json()["status"] == "duplicate"
+    events = db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"]
+    assert len(events) == 1
+    assert events[0]["client_event_id"] == payload["client_event_id"]
+    assert "status=mongo_error" in caplog.text
+    assert "status=accepted" in caplog.text
+    assert "status=duplicate" in caplog.text
+    assert "status=retry_success" in caplog.text
+    assert EMAIL not in caplog.text
+
+
+def test_interaction_endpoint_rejects_oversized_payload(monkeypatch):
+    db = make_db()
+    client = make_client(monkeypatch, db)
+    response = client.post("/owner-portal/interaction", content=b" " * (16 * 1024 + 1))
+    assert response.status_code == 413
+    assert db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"] == []
+
+
+def test_interaction_endpoint_rejects_invalid_signed_token(monkeypatch):
+    db = make_db()
+    client = make_client(monkeypatch, db)
+    payload = event_payload("p1.invalid", "section_expanded", section="appraisal_details",
+                            control="appraisal_details_toggle", expanded=True)
+    assert client.post("/owner-portal/interaction", json=payload).status_code == 404
+    assert db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"] == []
+
+
+def test_client_telemetry_outbox_is_bounded_retryable_and_nonblocking():
+    source = Path("templates/owner_campaign_monthly_portal.html").read_text(encoding="utf-8")
+    assert "ownerPortalTelemetryOutbox" in source
+    assert "var telemetryOutboxLimit=25" in source
+    assert "var telemetryAttemptsLimit=3" in source
+    assert "fetch('/owner-portal/interaction'" in source and "keepalive:true" in source
+    assert "navigator.sendBeacon('/owner-portal/interaction'" in source
+    assert "window.addEventListener('online',flushOwnerTelemetry)" in source
+    assert "visibilitychange" in source and "pagehide" in source
+    assert "telemetryRequestPayload(stored)" in source and "response.ok" in source
+    assert "dropTelemetryEvent(id)" in source
+    assert "event.preventDefault" not in source
+    assert source.count("sendOwnerInteraction('publication_link_clicked'") == 1
+
+
 @pytest.mark.parametrize("payload_change", [
     {"event": "arbitrary_event"},
     {"extra": "unexpected"},
@@ -204,3 +285,16 @@ def test_review_and_authorization_events_preserve_placement_and_selection(monkey
     assert auth["selected_adjustment_pct"] == details["selected_adjustment_pct"]
     assert auth["selected_price"] == details["selected_price"]
     assert auth["report_period"] == "2026-10" and auth["snapshot_hash"] == "snapshot-hash-10"
+
+
+def test_noncritical_event_helper_refuses_price_authorization(monkeypatch):
+    from campanas.owner_campaign_live_events import persist_noncritical_live_event
+
+    db = make_db()
+    claims = {"campaign_id": CAMPAIGN, "property_code": CODE, "recipient": EMAIL}
+    assert not persist_noncritical_live_event(
+        db, claims, event="price_authorized", action="aceptar_rebaja",
+    )
+    row = db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": f"{CAMPAIGN}:{CODE}"})
+    assert row["authorization_status"] == "PENDING"
+    assert row["events"] == []

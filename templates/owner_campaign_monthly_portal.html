@@ -615,7 +615,7 @@
             <div class="publication-item__logos" aria-hidden="true">{% if item.logo_urls %}<img class="publication-item__logo{% if 'toctoc' in item.logo_urls[0] %} publication-item__logo--toctoc{% elif 'yapo' in item.logo_urls[0] %} publication-item__logo--yapo{% elif 'chilepropiedades' in item.logo_urls[0] %} publication-item__logo--chilepropiedades{% endif %}" src="{{ item.logo_urls[0]|e }}" alt="" loading="lazy" decoding="async">{% else %}<svg class="publication-item__fallback" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}</div>
             <div class="publication-item__content"><strong class="publication-item__title">{{ item.owner_label }}</strong>
               {% if item.network_portals %}<div class="publication-item__network"><span>También publica en estos 5 portales asociados:</span><ul class="publication-item__network-list">{% for portal_name in item.network_portals %}<li>{{ portal_name|e }}</li>{% endfor %}</ul><span>Los enlaces directos por portal estarán disponibles más adelante.</span></div>{% endif %}
-              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" data-publication-link data-control-id="publication_link" data-external-portal="{% if item.kind == 'PORTAL_INMOBILIARIO' %}PortalInmobiliario{% elif item.kind == 'TOCTOC' %}TOCTOC{% elif item.kind == 'YAPO' %}Yapo{% elif item.kind == 'CHILEPROPIEDADES' %}ChilePropiedades{% else %}Other{% endif %}" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">{{ item.detail_label|default('Sin enlace disponible')|e }}</span>{% endif %}
+              {% if item.links %}<div class="publication-item__links">{% for link in item.links %}<a class="publication-item__link" data-publication-link data-control-id="publication_link" data-external-portal="{{ link.external_portal|default(item.telemetry_portal|default('Other'))|e }}" href="{{ link.url|e }}" target="_blank" rel="noopener noreferrer">{{ link.label }} →</a>{% endfor %}</div>{% else %}<span class="publication-item__detail">{{ item.detail_label|default('Sin enlace disponible')|e }}</span>{% endif %}
             </div>
           </article>{% endfor %}
         </div></div></div>
@@ -764,13 +764,55 @@
   function telemetryUuid(){if(window.crypto&&typeof window.crypto.randomUUID==='function')return window.crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){var r=Math.random()*16|0;return (c==='x'?r:(r&3|8)).toString(16);});}
   var telemetrySession='';
   try{telemetrySession=sessionStorage.getItem('ownerPortalSessionId')||'';if(!/^[0-9a-f-]{36}$/i.test(telemetrySession)){var bootstrap=telemetryRoot&&telemetryRoot.getAttribute('data-portal-session-bootstrap');telemetrySession=/^[0-9a-f-]{36}$/i.test(bootstrap||'')?bootstrap:telemetryUuid();sessionStorage.setItem('ownerPortalSessionId',telemetrySession);}}catch(error){telemetrySession=telemetryUuid();}
+  var telemetryOutboxKey='ownerPortalTelemetryOutbox';
+  var telemetryOutboxLimit=25;
+  var telemetryAttemptsLimit=3;
+  var telemetryFlushing=false;
+  function readTelemetryOutbox(){
+    try{var value=JSON.parse(sessionStorage.getItem(telemetryOutboxKey)||'[]');return Array.isArray(value)?value.filter(function(item){return item&&item.payload&&typeof item.payload.client_event_id==='string';}).slice(-telemetryOutboxLimit):[];}catch(error){return [];}
+  }
+  function writeTelemetryOutbox(items){try{sessionStorage.setItem(telemetryOutboxKey,JSON.stringify(items.slice(-telemetryOutboxLimit)));return true;}catch(error){return false;}}
+  function dropTelemetryEvent(clientEventId){writeTelemetryOutbox(readTelemetryOutbox().filter(function(item){return item.payload.client_event_id!==clientEventId;}));}
+  function telemetryRequestPayload(entry){return Object.assign({},entry.payload,{client_attempt:entry.attempts||1});}
+  function flushOwnerTelemetry(){
+    if(!telemetryToken||telemetryFlushing||navigator.onLine===false)return;
+    var pending=readTelemetryOutbox();if(!pending.length)return;telemetryFlushing=true;
+    function sendNext(index){
+      if(index>=pending.length){
+        telemetryFlushing=false;
+        var pendingIds=pending.map(function(item){return item.payload.client_event_id;});
+        if(readTelemetryOutbox().some(function(item){return pendingIds.indexOf(item.payload.client_event_id)<0;}))Promise.resolve().then(flushOwnerTelemetry);
+        return;
+      }
+      var entry=pending[index];var id=entry.payload.client_event_id;
+      var current=readTelemetryOutbox();var stored=current.find(function(item){return item.payload.client_event_id===id;});
+      if(!stored){sendNext(index+1);return;}
+      if((stored.attempts||0)>=telemetryAttemptsLimit){dropTelemetryEvent(id);sendNext(index+1);return;}
+      stored.attempts=(stored.attempts||0)+1;writeTelemetryOutbox(current);
+      fetch('/owner-portal/interaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(telemetryRequestPayload(stored)),keepalive:true,credentials:'omit'})
+        .then(function(response){if(response.ok){dropTelemetryEvent(id);}else if(stored.attempts>=telemetryAttemptsLimit){dropTelemetryEvent(id);}sendNext(index+1);})
+        .catch(function(){if(stored.attempts>=telemetryAttemptsLimit)dropTelemetryEvent(id);sendNext(index+1);});
+    }
+    sendNext(0);
+  }
   function sendOwnerInteraction(eventName,extra){
     if(!telemetryToken)return;
-    var payload=Object.assign({token:telemetryToken,event:eventName,client_event_id:telemetryUuid(),session_id:telemetrySession},extra||{});
-    var body=new Blob([JSON.stringify(payload)],{type:'application/json'});
-    if(navigator.sendBeacon){navigator.sendBeacon('/owner-portal/interaction',body);}
-    else fetch('/owner-portal/interaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true,credentials:'omit'}).catch(function(){});
+    try{
+      var payload=Object.assign({token:telemetryToken,event:eventName,client_event_id:telemetryUuid(),session_id:telemetrySession},extra||{});
+      var outbox=readTelemetryOutbox();outbox.push({payload:payload,attempts:0});
+      if(!writeTelemetryOutbox(outbox)){fetch('/owner-portal/interaction',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({},payload,{client_attempt:1})),keepalive:true,credentials:'omit'}).catch(function(){});return;}
+      flushOwnerTelemetry();
+    }catch(error){}
   }
+  window.addEventListener('online',flushOwnerTelemetry);
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')flushOwnerTelemetry();});
+  window.addEventListener('pagehide',function(){
+    if(!navigator.sendBeacon)return;
+    var pending=readTelemetryOutbox();if(!pending.length)return;
+    var item=pending[0];if((item.attempts||0)>=telemetryAttemptsLimit){dropTelemetryEvent(item.payload.client_event_id);return;}
+    item.attempts=(item.attempts||0)+1;writeTelemetryOutbox(pending);
+    try{navigator.sendBeacon('/owner-portal/interaction',new Blob([JSON.stringify(telemetryRequestPayload(item))],{type:'application/json'}));}catch(error){}
+  });
   document.querySelectorAll('a[href*="owner_portal_context_token="]').forEach(function(link){
     link.addEventListener('click',function(event){
       if(!event.isTrusted)return;

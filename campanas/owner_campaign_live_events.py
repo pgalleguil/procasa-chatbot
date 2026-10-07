@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,9 @@ from uuid import uuid4
 from pymongo import MongoClient, ReturnDocument
 
 from config import Config
+
+
+logger = logging.getLogger(__name__)
 
 
 LIVE_ACTIONS = {
@@ -47,7 +51,12 @@ OWNER_PORTAL_CONTROLS = frozenset({
     "individual_appraisal_report", "communal_market_report",
 })
 OWNER_PUBLICATION_PORTALS = frozenset({
-    "PortalInmobiliario", "TOCTOC", "Yapo", "ChilePropiedades", "Other",
+    "PROCASA", "PortalInmobiliario", "MercadoLibre", "TOCTOC", "Yapo",
+    "Proppit", "ChilePropiedades", "EnlaceInmobiliario", "Other",
+})
+OWNER_NONCRITICAL_EVENTS = frozenset({
+    "portal_opened", "report_opened", "cta_clicked",
+    "price_confirm_page_opened", "confirmation_page_opened",
 })
 HISTORICAL_EMAIL_TEMPLATE_CAMPAIGNS = frozenset({
     "owner_price_sucre_wave1_20260928",
@@ -293,6 +302,49 @@ def persist_live_event(
     return existing, False
 
 
+def log_owner_portal_telemetry(
+    status: str, *, claims: Mapping[str, Any] | None = None, event: str = "",
+    client_event_id: str = "", portal: str = "", error: Exception | None = None,
+) -> None:
+    """Emit structured, PII-free telemetry diagnostics for owner portal paths."""
+    safe_claims = claims if isinstance(claims, Mapping) else {}
+    logger.info(
+        "[OWNER_PORTAL_TELEMETRY] status=%s campaign_id=%s property_code=%s event=%s "
+        "client_event_id=%s portal=%s error_type=%s",
+        status,
+        str(safe_claims.get("campaign_id") or "")[:96],
+        str(safe_claims.get("property_code") or "")[:32],
+        str(event or "")[:48], str(client_event_id or "")[:64],
+        str(portal or "")[:48], type(error).__name__ if error else "",
+    )
+
+
+def persist_noncritical_live_event(
+    db: Any, claims: Mapping[str, Any], *, event: str, action: str,
+    details: Mapping[str, Any] | None = None,
+) -> bool:
+    """Persist navigation/open events best-effort; commercial writes stay strict."""
+    if event not in OWNER_NONCRITICAL_EVENTS:
+        log_owner_portal_telemetry(
+            "rejected", claims=claims, event=event,
+            client_event_id=str(claims.get("client_event_id") or ""),
+        )
+        return False
+    try:
+        _stored, inserted = persist_live_event(db, claims, event=event, action=action, details=details)
+        log_owner_portal_telemetry(
+            "accepted" if inserted else "duplicate", claims=claims, event=event,
+            client_event_id=str(claims.get("client_event_id") or ""),
+        )
+        return True
+    except Exception as exc:
+        log_owner_portal_telemetry(
+            "mongo_error", claims=claims, event=event,
+            client_event_id=str(claims.get("client_event_id") or ""), error=exc,
+        )
+        return False
+
+
 def _event_section(event: str, claims: Mapping[str, Any], details: Mapping[str, Any] | None) -> str:
     if details and details.get("section_id") in OWNER_PORTAL_SECTIONS:
         return str(details["section_id"])
@@ -339,14 +391,27 @@ def persist_owner_portal_interaction(db: Any, claims: Mapping[str, Any], payload
             stored[field] = payload[field]
     key = f"{stored['campaign_id']}:{stored['property_code']}"
     result = db[Config.COLLECTION_CAMPANAS_LOG].update_one(
-        {"_id": key, "campaign_id": stored["campaign_id"], "property_code": stored["property_code"], "events.event_id": {"$ne": event_id}},
+        {
+            "_id": key, "campaign_id": stored["campaign_id"],
+            "property_code": stored["property_code"],
+            "owner_email": claims["recipient"],
+            "events.event_id": {"$ne": event_id},
+        },
         {"$push": {"events": stored}},
     )
     if result.modified_count == 1:
-        return db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": key}) or {}, True
-    existing = db[Config.COLLECTION_CAMPANAS_LOG].find_one({"_id": key})
+        return {}, True
+    existing = db[Config.COLLECTION_CAMPANAS_LOG].find_one({
+        "_id": key, "campaign_id": stored["campaign_id"],
+        "property_code": stored["property_code"], "owner_email": claims["recipient"],
+    })
     if not existing:
         raise LookupError("prepared_campaign_row_missing")
+    if not any(
+        isinstance(item, Mapping) and item.get("event_id") == event_id
+        for item in existing.get("events", [])
+    ):
+        raise LookupError("owner_portal_interaction_not_persisted")
     return existing, False
 
 
@@ -355,7 +420,7 @@ def persist_owner_whatsapp_click(
     claims: Mapping[str, Any],
     *,
     details: Mapping[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     """Atomically append every owner WhatsApp intent with a per-property sequence."""
     campaign_id = str(claims["campaign_id"])
     code = str(claims["property_code"])
@@ -402,7 +467,7 @@ def persist_owner_whatsapp_click(
             "events.client_event_id": client_event_id,
         })
         if already_persisted:
-            return already_persisted
+            return already_persisted, False
     current = ledger.find_one({"_id": key, "campaign_id": campaign_id, "property_code": code},
         {"owner_whatsapp_click_count": 1, "events": 1})
     if not current:
@@ -432,16 +497,26 @@ def persist_owner_whatsapp_click(
     sequence = int(sequenced_row.get("owner_whatsapp_click_count") or 0)
     payload["click_sequence_number"] = sequence
     payload["is_first_whatsapp_click"] = sequence == 1
+    append_query = {
+        "_id": key, "campaign_id": campaign_id, "property_code": code,
+        "events.event_id": {"$ne": event_id},
+    }
+    if client_event_id:
+        append_query["events.client_event_id"] = {"$ne": client_event_id}
     result = ledger.update_one(
-        {"_id": key, "campaign_id": campaign_id, "property_code": code, "events.event_id": {"$ne": event_id}},
+        append_query,
         {"$push": {"events": payload}},
     )
     if result.modified_count != 1:
+        if client_event_id:
+            duplicate = ledger.find_one({"_id": key, "events.client_event_id": client_event_id})
+            if duplicate:
+                return duplicate
         raise LookupError("owner_whatsapp_click_event_not_persisted")
     stored = ledger.find_one({"_id": key, "campaign_id": campaign_id, "property_code": code})
     if not stored:
         raise LookupError("prepared_campaign_row_missing")
-    return stored
+    return stored, True
 
 
 def notify_internal_after_persist(stored: Mapping[str, Any], *, event: str) -> bool:

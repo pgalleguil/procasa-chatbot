@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
+import json
 import logging
 import re
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -35,12 +36,16 @@ from .monthly import build_monthly_portal_view
 router = APIRouter(tags=["owner-portal-preview"])
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 logger = logging.getLogger(__name__)
+OWNER_PORTAL_REQUEST_PATH_LIGHTWEIGHT = "YES"
+OWNER_PORTAL_TELEMETRY_EXTERNAL_IO = "NO"
 
 
 @router.get("/owner-portal/executive-whatsapp", include_in_schema=False)
 async def executive_whatsapp_click(request: Request, token: str = Query(default="")):
     """A signed click intent only; never an advisor request or authorization."""
-    from campanas.owner_campaign_live_events import decode_live_token, persist_owner_whatsapp_click
+    from campanas.owner_campaign_live_events import (
+        decode_live_token, log_owner_portal_telemetry, persist_owner_whatsapp_click,
+    )
     from .campaign import LEDGER_COLLECTION, short_key_for_token_hash
     from .executive import resolve_executive_contact, whatsapp_destination
     from .monthly import OWNER_PROPERTY_PORTAL_COLLECTION, owner_property_portal_id, _select_monthly_snapshot, _as_period
@@ -116,9 +121,25 @@ async def executive_whatsapp_click(request: Request, token: str = Query(default=
     }
     event_details["snapshot_hash"] = (context_claims or {}).get("snapshot_hash") or snapshot_hash
     try:
-        await run_in_threadpool(persist_owner_whatsapp_click, db, claims, details=event_details)
-    except LookupError as exc:
-        raise HTTPException(404, "Página no disponible") from exc
+        _stored, inserted = await run_in_threadpool(
+            persist_owner_whatsapp_click, db, claims, details=event_details,
+        )
+        log_owner_portal_telemetry(
+            "accepted" if inserted else "duplicate", claims=claims, event="executive_whatsapp_clicked",
+            client_event_id=event_details["client_event_id"],
+        )
+        if not inserted:
+            log_owner_portal_telemetry(
+                "retry_success", claims=claims, event="executive_whatsapp_clicked",
+                client_event_id=event_details["client_event_id"],
+            )
+    except Exception as exc:
+        # Once the signed identity and safe destination are verified, analytics
+        # failure must not prevent the requested navigation to the executive.
+        log_owner_portal_telemetry(
+            "mongo_error", claims=claims, event="executive_whatsapp_clicked",
+            client_event_id=event_details["client_event_id"], error=exc,
+        )
     return RedirectResponse(url, status_code=302, headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
 
 
@@ -157,8 +178,27 @@ def _verified_sent_email_html(db, row: dict, status: str) -> str | None:
     return verify_original_email_artifact(artifact)
 
 
-def _monthly_response(request: Request, db, row: dict, view: dict, *, email_html: str | None = None) -> HTMLResponse:
+def _monthly_response(
+    request: Request, db, row: dict, view: dict, *, email_html: str | None = None,
+    portal_claims: dict | None = None,
+) -> HTMLResponse:
     report_view = build_monthly_portal_view(db, row, view, email_html=email_html)
+    # Owner request paths must stay lightweight: portal telemetry is one
+    # best-effort Mongo write and must never block the report response.
+    if portal_claims:
+        from campanas.owner_campaign_live_events import persist_noncritical_live_event
+
+        persist_noncritical_live_event(
+            db,
+            {
+                **portal_claims,
+                "source": view.get("source") if view.get("source") in ACCESS_SOURCES else portal_claims.get("source"),
+                "interaction_surface": "OWNER_PORTAL",
+                "report_period": str(report_view.get("report_period") or "") or None,
+                "snapshot_hash": str(report_view.get("snapshot_hash") or "") or None,
+            },
+            event="portal_opened", action="portal_opened",
+        )
     from campanas.owner_campaign_live_events import (
         issue_live_token,
     )
@@ -195,45 +235,76 @@ def _monthly_response(request: Request, db, row: dict, view: dict, *, email_html
 
 @router.post("/owner-portal/interaction", include_in_schema=False)
 async def owner_portal_interaction(request: Request):
-    """Accept a narrow set of signed, in-page owner portal interactions."""
+    """Validate and atomically append one signed event; no external service calls."""
     from campanas.owner_campaign_live_events import (
         OWNER_PORTAL_CONTROLS, OWNER_PORTAL_EVENTS, OWNER_PORTAL_SECTIONS,
-        OWNER_PUBLICATION_PORTALS, decode_live_token, persist_owner_portal_interaction,
+        OWNER_PUBLICATION_PORTALS, decode_live_token, log_owner_portal_telemetry,
+        persist_owner_portal_interaction,
     )
-    from .campaign import LEDGER_COLLECTION
-
+    max_payload_bytes = 16 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_payload_bytes:
+                raise HTTPException(status_code=413, detail="Interacción demasiado grande")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Longitud inválida") from exc
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > max_payload_bytes:
+            raise HTTPException(status_code=413, detail="Interacción demasiado grande")
     try:
-        data = await request.json()
-    except Exception as exc:
+        data = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+        log_owner_portal_telemetry("rejected", error=exc)
         raise HTTPException(status_code=400, detail="Interacción inválida") from exc
     allowed = {
         "token", "event", "client_event_id", "session_id", "section_id", "control_id",
         "previous_state", "target_state", "selected_adjustment_pct", "external_portal", "expanded",
+        "client_attempt",
     }
     if not isinstance(data, dict) or set(data) - allowed:
+        log_owner_portal_telemetry("rejected")
         raise HTTPException(status_code=400, detail="Interacción inválida")
     required = {"token", "event", "client_event_id", "session_id", "section_id", "control_id"}
     if not required.issubset(data):
+        log_owner_portal_telemetry("rejected")
         raise HTTPException(status_code=400, detail="Interacción incompleta")
+    client_attempt = data.get("client_attempt", 1)
+    if isinstance(client_attempt, bool) or not isinstance(client_attempt, int) or not 1 <= client_attempt <= 3:
+        log_owner_portal_telemetry("rejected")
+        raise HTTPException(status_code=400, detail="Intento inválido")
+    payload_keys = set(data) - {"client_attempt"}
     if not isinstance(data["token"], str) or len(data["token"]) > 8192:
+        log_owner_portal_telemetry("rejected")
         raise HTTPException(status_code=400, detail="Token inválido")
     claims = decode_live_token(str(data["token"]))
     if (not claims or claims.get("action") != "owner_portal_interaction"
             or claims.get("interaction_surface") != "OWNER_PORTAL"
-            or claims.get("source") not in ACCESS_SOURCES):
+            or claims.get("source") not in ACCESS_SOURCES
+            or not all(claims.get(key) for key in ("campaign_id", "property_code", "recipient"))):
+        log_owner_portal_telemetry("rejected")
         raise HTTPException(status_code=404, detail="Interacción no disponible")
     if any(not isinstance(data.get(key), str) or len(data[key]) > 80 for key in ("event", "section_id", "control_id")):
+        log_owner_portal_telemetry("rejected", claims=claims)
         raise HTTPException(status_code=400, detail="Interacción inválida")
     if data["event"] not in OWNER_PORTAL_EVENTS:
+        log_owner_portal_telemetry("rejected", claims=claims)
         raise HTTPException(status_code=400, detail="Evento no permitido")
     event = data["event"]
     section, control = data["section_id"], data["control_id"]
     if section not in OWNER_PORTAL_SECTIONS or control not in OWNER_PORTAL_CONTROLS:
+        log_owner_portal_telemetry("rejected", claims=claims, event=event)
         raise HTTPException(status_code=400, detail="Control no permitido")
-    if not isinstance(data["client_event_id"], str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", data["client_event_id"]):
-        raise HTTPException(status_code=400, detail="Identificador inválido")
-    if not isinstance(data["session_id"], str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", data["session_id"]):
-        raise HTTPException(status_code=400, detail="Sesión inválida")
+    for key, label in (("client_event_id", "Identificador"), ("session_id", "Sesión")):
+        value = data[key]
+        try:
+            if not isinstance(value, str) or str(UUID(value)) != value.lower():
+                raise ValueError("invalid_uuid")
+        except (ValueError, AttributeError) as exc:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event, client_event_id=data.get("client_event_id", ""))
+            raise HTTPException(status_code=400, detail=f"{label} inválida") from exc
     normalized = {
         "event": event, "client_event_id": data["client_event_id"],
         "session_id": data["session_id"], "section_id": section, "control_id": control,
@@ -246,44 +317,68 @@ async def owner_portal_interaction(request: Request):
             "market_context_details": "market_context_toggle",
             "recommendation_details": "recommendation_details_toggle",
         }
-        if valid.get(section) != control or set(data) != required | {"expanded"}:
+        if valid.get(section) != control or payload_keys != required | {"expanded"}:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Expansión no permitida")
         if not isinstance(data["expanded"], bool) or data["expanded"] != (event == "section_expanded"):
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Estado de expansión inválido")
         normalized["expanded"] = data["expanded"]
     elif event == "price_simulation_changed":
         if section != "price_simulation" or control not in {"price_simulation_current", "price_simulation_adjusted"}:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Simulación no permitida")
-        if set(data) != required | {"previous_state", "target_state", "selected_adjustment_pct"}:
+        if payload_keys != required | {"previous_state", "target_state", "selected_adjustment_pct"}:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Simulación incompleta")
         if (not isinstance(data["previous_state"], str) or not isinstance(data["target_state"], str)
                 or len(data["previous_state"]) > 16 or len(data["target_state"]) > 16
                 or (data["previous_state"], data["target_state"]) not in {("current", "adjusted"), ("adjusted", "current")}):
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Transición no permitida")
         try:
+            if isinstance(data["selected_adjustment_pct"], bool):
+                raise ValueError("bool_not_adjustment")
             pct = float(data["selected_adjustment_pct"])
         except (TypeError, ValueError):
+            log_owner_portal_telemetry("rejected", claims=claims, event=event, client_event_id=data["client_event_id"])
             raise HTTPException(status_code=400, detail="Ajuste inválido")
         if not -100 <= pct <= 100:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event, client_event_id=data["client_event_id"])
             raise HTTPException(status_code=400, detail="Ajuste inválido")
         normalized.update(previous_state=data["previous_state"], target_state=data["target_state"], selected_adjustment_pct=pct)
     else:
-        if section != "commercial_activity_publications" or control != "publication_link" or set(data) != required | {"external_portal"}:
+        if section != "commercial_activity_publications" or control != "publication_link" or payload_keys != required | {"external_portal"}:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event,
+                                       client_event_id=data.get("client_event_id", ""))
             raise HTTPException(status_code=400, detail="Publicación no permitida")
         portal = data["external_portal"]
         if not isinstance(portal, str) or len(portal) > 48 or portal not in OWNER_PUBLICATION_PORTALS:
+            log_owner_portal_telemetry("rejected", claims=claims, event=event, client_event_id=data["client_event_id"])
             raise HTTPException(status_code=400, detail="Portal no permitido")
         normalized["external_portal"] = portal
-    db = get_db()
-    row = await run_in_threadpool(db[LEDGER_COLLECTION].find_one, {
-        "_id": f"{claims['campaign_id']}:{claims['property_code']}",
-        "campaign_id": claims["campaign_id"], "property_code": claims["property_code"],
-        "owner_email": claims["recipient"],
-    })
-    if not row:
-        raise HTTPException(status_code=404, detail="Interacción no disponible")
-    await run_in_threadpool(persist_owner_portal_interaction, db, claims, normalized)
-    return {"status": "ok"}
+    try:
+        db = get_db()
+        _stored, inserted = await run_in_threadpool(persist_owner_portal_interaction, db, claims, normalized)
+    except Exception as exc:
+        log_owner_portal_telemetry("mongo_error", claims=claims, event=event,
+                                   client_event_id=data["client_event_id"],
+                                   portal=normalized.get("external_portal", ""), error=exc)
+        raise HTTPException(status_code=503, detail="Telemetría temporalmente no disponible") from exc
+    status = "accepted" if inserted else "duplicate"
+    log_owner_portal_telemetry(status, claims=claims, event=event,
+                               client_event_id=data["client_event_id"],
+                               portal=normalized.get("external_portal", ""))
+    if not inserted or client_attempt > 1:
+        log_owner_portal_telemetry("retry_success", claims=claims, event=event,
+                                   client_event_id=data["client_event_id"],
+                                   portal=normalized.get("external_portal", ""))
+    return {"status": "accepted" if inserted else "duplicate"}
 
 
 @router.get("/owner-portal-preview", response_class=HTMLResponse, include_in_schema=False)
@@ -336,15 +431,6 @@ async def owner_campaign_private_property(
     if verified is None:
         raise HTTPException(status_code=404, detail="Página no disponible")
     row, claims = verified
-    from campanas.owner_campaign_live_events import persist_live_event
-
-    try:
-        persist_live_event(
-            db, {**claims, "source": source},
-            event="portal_opened", action="portal_opened",
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
     view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
     status = str(row.get("send_status") or "").strip().upper()
@@ -357,7 +443,7 @@ async def owner_campaign_private_property(
             email_html = None
     elif status != "SKIPPED_STALE_OR_MISMATCH":
         raise HTTPException(status_code=404, detail="Página no disponible")
-    return _monthly_response(request, db, row, view, email_html=email_html)
+    return _monthly_response(request, db, row, view, email_html=email_html, portal_claims={**claims, "source": source})
 
 
 @router.get("/p/{access_key}", response_class=HTMLResponse, include_in_schema=False)
@@ -380,15 +466,6 @@ async def owner_campaign_short_landing(
     if verified is None:
         raise HTTPException(status_code=404, detail="Página no disponible")
     row, claims = verified
-    from campanas.owner_campaign_live_events import persist_live_event
-
-    try:
-        persist_live_event(
-            db, {**claims, "source": source},
-            event="portal_opened", action="portal_opened",
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail="Página no disponible") from exc
     base_url = (Config.CRM_BASE_URL or "https://www.procasa.cl").rstrip("/")
     view = build_private_page_view(db, row, claims, base_url=base_url, source=source)
     # Sent rows retain immutable original HTML as evidence; the owner portal
@@ -407,4 +484,4 @@ async def owner_campaign_short_landing(
     if status not in {"SKIPPED_STALE_OR_MISMATCH"}:
         if status not in {"SENT", "DELIVERY_UNKNOWN"}:
             raise HTTPException(status_code=404, detail="Página no disponible")
-    return _monthly_response(request, db, row, view, email_html=email_html)
+    return _monthly_response(request, db, row, view, email_html=email_html, portal_claims={**claims, "source": source})

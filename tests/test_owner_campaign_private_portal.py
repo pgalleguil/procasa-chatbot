@@ -183,8 +183,26 @@ def test_private_portal_requires_registered_signed_token_and_logs_source(monkeyp
     assert event["source"] == "EMAIL"
     assert event["interaction_surface"] == "OWNER_PORTAL"
     assert event["interaction_channel"] == "EMAIL"
+    assert event["report_period"]
+    assert event["snapshot_hash"]
     assert "token_hash" in stored["portal_access"]
     assert token not in str(stored["portal_access"])
+
+
+def test_private_portal_load_survives_portal_open_telemetry_failure(monkeypatch):
+    import campanas.owner_campaign_live_events as live_events
+
+    db = make_test_db()
+    url = registered_link(monkeypatch, db)
+    client = client_for(monkeypatch, db)
+
+    def fail_telemetry(*_args, **_kwargs):
+        raise RuntimeError("temporary mongo outage")
+
+    monkeypatch.setattr(live_events, "persist_live_event", fail_telemetry)
+    response = client.get(urlsplit(url).path + "?" + urlsplit(url).query)
+    assert response.status_code == 200
+    assert "Revisión comercial de tu propiedad" in response.text
 
 
 def test_portal_actions_use_campaign_p1_tokens_for_same_property(monkeypatch):
@@ -817,6 +835,26 @@ def test_executive_whatsapp_rejects_tampered_token(monkeypatch):
     client = client_for(monkeypatch, db)
     assert client.get("/owner-portal/executive-whatsapp?token=invalid").status_code == 404
     assert db[campaign.LEDGER_COLLECTION].find_one({"_id": f"{CAMPAIGN}:{CODE}"})["events"] == []
+
+
+def test_executive_whatsapp_redirect_survives_telemetry_failure(monkeypatch):
+    from bs4 import BeautifulSoup
+
+    db = make_test_db(ledger_row(executive_phone="+56 9 1234 5678"))
+    url = registered_short_link(monkeypatch, db)
+    client = client_for(monkeypatch, db)
+    landing = client.get(url.replace("https://www.procasa.cl", ""))
+    soup = BeautifulSoup(landing.text, "html.parser")
+    link = soup.select_one('a[data-cta-placement="TOP"][data-cta-type="WHATSAPP"]')
+    assert link
+
+    def fail_telemetry(*_args, **_kwargs):
+        raise RuntimeError("temporary mongo outage")
+
+    monkeypatch.setattr("campanas.owner_campaign_live_events.persist_owner_whatsapp_click", fail_telemetry)
+    response = client.get(link["href"].replace("https://www.procasa.cl", ""), follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"].startswith("https://wa.me/56912345678?")
 
 
 def test_executive_whatsapp_rejects_client_supplied_placement(monkeypatch):

@@ -3337,6 +3337,11 @@ def test_publication_presence_groups_pi_and_mercadolibre_and_omits_empty_or_inac
     assert pi_item["group_id"] == ml_item["group_id"] == "portal_inmobiliario"
     assert [link["label"] for link in pi_item["links"]] == ["Ver Portal Inmobiliario"]
     assert [link["label"] for link in ml_item["links"]] == ["Ver Mercado Libre"]
+    assert {link["external_portal"] for link in pi_item["links"]} == {"PortalInmobiliario"}
+    assert {link["external_portal"] for link in ml_item["links"]} == {"MercadoLibre"}
+    assert {link["external_portal"] for link in result["items"][0]["links"]} == {"PROCASA"}
+    assert {link["external_portal"] for link in result["items"][3]["links"]} == {"TOCTOC"}
+    assert {link["external_portal"] for link in result["items"][4]["links"]} == {"Yapo"}
     assert pi_item["logo_urls"] == ("/static/portal-logos/portalinmobiliario.svg",)
     assert ml_item["logo_urls"] == ("/static/portal-logos/mercado-libre.svg",)
     assert result["items"][3]["logo_urls"] == ("/static/portal-logos/toctoc.svg",)
@@ -3377,6 +3382,24 @@ def test_publication_presence_resolves_exact_unique_master_only_and_fails_closed
     ambiguous = resolve_property_publication_presence(db, "5695")
     assert ambiguous["source_status"] == "IDENTITY_UNRESOLVED"
     assert ambiguous["items"] == []
+
+
+def test_publication_telemetry_classifies_chilepropiedades_proppit_and_unknown_links():
+    result = _publication_presence_model({"publicaciones": {
+        "chilepropiedades": {"publicaciones": {"V": {
+            "publicada": True, "url": "https://www.chilepropiedades.cl/5695",
+        }}},
+        "proppit": {"publicaciones": {"V": {
+            "publicada": True, "url": "https://www.proppit.com/5695",
+        }}},
+        "portal_nuevo": {"publicaciones": {"V": {
+            "publicada": True, "url": "https://unknown.example/5695",
+        }}},
+    }}, now=datetime(2026, 10, 6, tzinfo=timezone.utc))
+    by_kind = {item["kind"]: item for item in result["items"]}
+    assert by_kind["CHILEPROPIEDADES"]["links"][0]["external_portal"] == "ChilePropiedades"
+    assert by_kind["PROPPIT"]["links"][0]["external_portal"] == "Proppit"
+    assert by_kind["PORTAL_NUEVO"]["links"][0]["external_portal"] == "Other"
 
 
 def test_publication_portals_render_safe_links_without_analytics_or_empty_href():
@@ -3439,6 +3462,7 @@ def test_publication_portals_render_safe_links_without_analytics_or_empty_href()
     assert all(link.get("target") == "_blank" for link in links)
     assert all(link.get("rel") == ["noopener", "noreferrer"] for link in links)
     assert all(link.get("href") for link in links)
+    assert [link.get("data-external-portal") for link in links] == ["PortalInmobiliario", "MercadoLibre"]
     assert not section.select("[data-cta-placement], [data-cta-type]")
     assert "Ver detalle de publicaciones ↓" in disclosure.get_text(" ", strip=True)
     assert "Ocultar detalle ↑" in disclosure.get_text(" ", strip=True)

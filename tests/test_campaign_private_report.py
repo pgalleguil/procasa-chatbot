@@ -605,8 +605,8 @@ def _patch_live_report_runtime(monkeypatch, service, *, document_type="COMMUNAL_
     monkeypatch.setattr(private_report, "MediaIoBaseDownload", _Downloader)
     monkeypatch.setattr(
         owner_campaign_live_events,
-        "persist_live_event",
-        lambda _db, claims, *, event, action: event_calls.append((
+        "persist_noncritical_live_event",
+        lambda _db, claims, *, event, action, details=None: event_calls.append((
             claims["property_code"], event, action, claims.get("document_type"),
         )),
     )
@@ -745,6 +745,31 @@ async def test_valid_live_report_without_drive_file_returns_fallback_and_tracks_
     assert events == [
         (LIVE_CODE, "report_opened", "ver_informe", "COMMUNAL_MARKET_REPORT"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_document_serving_continues_when_report_open_telemetry_fails(monkeypatch):
+    service = _Service({private_report.COMMUNAL_FOLDER_ID: [_pdf("live-private-pdf", "Talca - Casa.pdf")]})
+    persist_noncritical = owner_campaign_live_events.persist_noncritical_live_event
+    events = _patch_live_report_runtime(monkeypatch, service)
+    monkeypatch.setattr(owner_campaign_live_events, "persist_noncritical_live_event", persist_noncritical)
+    monkeypatch.setattr(
+        owner_campaign_live_events, "persist_live_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("temporary mongo outage")),
+    )
+    monkeypatch.setattr(
+        private_report, "_load_property_identity",
+        lambda _code: {**PROPERTY_IDENTITY, "property_code": LIVE_CODE},
+    )
+
+    response = await campaign_handler.handle_campana_informe(
+        token=_live_report_token("COMMUNAL_MARKET_REPORT"),
+    )
+
+    assert response.status_code == 200
+    assert response.media_type == "application/pdf"
+    assert response.body.startswith(b"%PDF-")
+    assert events == []
 
 
 @pytest.mark.asyncio

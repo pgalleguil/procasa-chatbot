@@ -853,7 +853,7 @@ def _serve_campaign_report(token: str, owner_portal_context_token: str = "", own
                     )
                 ):
                     return finish(_response(404, "Documento no disponible."))
-                from .owner_campaign_live_events import persist_live_event
+                from .owner_campaign_live_events import persist_noncritical_live_event
                 from owner_portal.monthly import (
                     OWNER_PROPERTY_PORTAL_COLLECTION, _as_period, _select_monthly_snapshot,
                     owner_property_portal_id,
@@ -885,7 +885,9 @@ def _serve_campaign_report(token: str, owner_portal_context_token: str = "", own
                 if owner_portal_client_event_id:
                     event_claims["event_id"] = owner_portal_client_event_id
                     event_claims["client_event_id"] = owner_portal_client_event_id
-                persist_live_event(db, event_claims, event="report_opened", action="ver_informe")
+                persist_noncritical_live_event(
+                    db, event_claims, event="report_opened", action="ver_informe",
+                )
             finally:
                 client.close()
         mongo_started = time.perf_counter()

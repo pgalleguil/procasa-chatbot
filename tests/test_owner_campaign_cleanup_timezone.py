@@ -11,6 +11,9 @@ from campanas.owner_campaign_live_events import (
 from campanas.timezone_utils import DISPLAY_TIMEZONE, STORAGE_TIMEZONE, format_event_at_for_display
 from scripts.cleanup_owner_portal_test_interactions import (
     AUTHORIZATION_FIELDS,
+    BOOTSTRAP_LOCK_COLLECTION,
+    BOOTSTRAP_LOCK_ID,
+    BOOTSTRAP_NONCE,
     CleanupPreflightError,
     apply_preflight,
     _document_update,
@@ -18,6 +21,7 @@ from scripts.cleanup_owner_portal_test_interactions import (
     build_preflight,
     email_integrity_snapshot,
     is_owner_portal_link_event,
+    run_one_shot_cleanup,
 )
 
 
@@ -215,3 +219,24 @@ def test_mocked_cleanup_preserves_email_data_and_only_removes_linked_admin_notif
     assert residual["authorization_status"] == "PENDING"
     assert "selected_price" not in residual
     assert email_integrity_snapshot(after) == email_signature_before
+
+
+def test_cleanup_bootstrap_rejects_any_nonce_other_than_the_approved_one() -> None:
+    assert run_one_shot_cleanup(mongo_uri="unused", nonce="unexpected", commit_sha="test") == {
+        "status": "IGNORED_INVALID_NONCE"
+    }
+
+
+def test_cleanup_bootstrap_skips_when_atomic_marker_is_already_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = mongomock.MongoClient()
+    client.URLS[BOOTSTRAP_LOCK_COLLECTION].insert_one({
+        "_id": BOOTSTRAP_LOCK_ID,
+        "status": "COMPLETED",
+    })
+    monkeypatch.setattr("scripts.cleanup_owner_portal_test_interactions.MongoClient", lambda *args, **kwargs: client)
+
+    assert run_one_shot_cleanup(
+        mongo_uri="mongodb://fake",
+        nonce=BOOTSTRAP_NONCE,
+        commit_sha="test-sha",
+    ) == {"status": "ALREADY_COMPLETED"}

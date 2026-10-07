@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 
 from config import Config
 
@@ -59,6 +60,9 @@ EXPECTED_PRECHECK = {
     "email_template_events_before": 42,
     "historical_email_events_before": 18,
 }
+BOOTSTRAP_NONCE = "cleanup_20261006_final"
+BOOTSTRAP_LOCK_ID = "cleanup_20261006_final"
+BOOTSTRAP_LOCK_COLLECTION = "owner_portal_maintenance_locks"
 
 
 class CleanupPreflightError(RuntimeError):
@@ -409,6 +413,114 @@ def _print_summary(report: Mapping[str, Any], *, stage: str) -> None:
     visible = {key: value for key, value in report.items() if key != "plans"}
     print(stage)
     print(json.dumps(visible, ensure_ascii=False, sort_keys=True, default=str, indent=2))
+
+
+def run_one_shot_cleanup(*, mongo_uri: str, nonce: str, commit_sha: str) -> dict[str, Any]:
+    """Run the approved cleanup once from application startup, fail-closed.
+
+    A unique Mongo marker arbitrates across Render instances. Full property
+    identifiers and event payloads are deliberately omitted from logs/marker.
+    """
+    if nonce != BOOTSTRAP_NONCE:
+        return {"status": "IGNORED_INVALID_NONCE"}
+    if not mongo_uri:
+        raise CleanupPreflightError("MONGO_URI is not configured")
+
+    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
+    lock = None
+    acquired = False
+    try:
+        client.admin.command("ping")
+        db = client[DATABASE_NAME]
+        lock = db[BOOTSTRAP_LOCK_COLLECTION]
+        started_at = datetime.now(timezone.utc)
+        try:
+            lock.insert_one({
+                "_id": BOOTSTRAP_LOCK_ID,
+                "status": "RUNNING",
+                "started_at": started_at,
+                "commit_sha": str(commit_sha or "unknown")[:80],
+            })
+            acquired = True
+        except DuplicateKeyError:
+            existing = lock.find_one({"_id": BOOTSTRAP_LOCK_ID}, {"status": 1}) or {}
+            status_value = str(existing.get("status") or "UNKNOWN")
+            if status_value == "COMPLETED":
+                return {"status": "ALREADY_COMPLETED"}
+            if status_value == "RUNNING":
+                return {"status": "ALREADY_RUNNING"}
+            return {"status": "ALREADY_" + status_value}
+
+        collection = db[COLLECTION_NAME]
+        documents = _campaign_documents(collection)
+        protected_email_before = email_integrity_snapshot(documents)
+        report = build_preflight(documents)
+        validate_preflight(report)
+        logger_summary = {
+            key: report[key]
+            for key in (
+                "documents_affected", "documents_modified", "events_to_remove",
+                "email_template_events_before", "historical_email_events_before",
+                "notifications_to_remove", "owner_whatsapp_test_events",
+            )
+        }
+        with client.start_session() as session:
+            with session.start_transaction():
+                current_documents = _campaign_documents(collection, session=session)
+                current_report = build_preflight(current_documents)
+                validate_preflight(current_report)
+                if any(
+                    current_report[field] != report[field]
+                    for field in ("events_to_remove", "documents_affected", "documents_modified")
+                ):
+                    raise CleanupPreflightError("campaign data changed since startup preflight")
+                apply_preflight(collection, current_report, session=session)
+                post_documents = _campaign_documents(collection, session=session)
+                if email_integrity_snapshot(post_documents) != protected_email_before:
+                    raise CleanupPreflightError("protected email data changed during cleanup")
+                post_report = verify_post_cleanup(post_documents)
+
+        final_documents = _campaign_documents(collection)
+        if email_integrity_snapshot(final_documents) != protected_email_before:
+            raise CleanupPreflightError("post-commit email data integrity verification failed")
+        verify_post_cleanup(final_documents)
+        summary = {
+            "documents_modified": logger_summary["documents_modified"],
+            "events_removed": logger_summary["events_to_remove"],
+            "email_template_events_preserved": post_report["EMAIL_TEMPLATE_EVENTS"],
+            "historical_sourceless_events_preserved": (
+                post_report["HISTORICAL_SOURCELESS_CTA_CLICKED"]
+                + post_report["HISTORICAL_SOURCELESS_REPORT_OPENED"]
+            ),
+            "owner_portal_events_remaining": post_report["OWNER_PORTAL_EVENTS"],
+            "owner_whatsapp_events_remaining": post_report["OWNER_WHATSAPP_TEST_EVENTS"],
+        }
+        lock.update_one(
+            {"_id": BOOTSTRAP_LOCK_ID, "status": "RUNNING"},
+            {"$set": {
+                "status": "COMPLETED",
+                "completed_at": datetime.now(timezone.utc),
+                "commit_sha": str(commit_sha or "unknown")[:80],
+                "summary": summary,
+            }},
+        )
+        return {"status": "COMPLETED", "preflight": logger_summary, "summary": summary}
+    except Exception as exc:
+        if acquired and lock is not None:
+            try:
+                lock.update_one(
+                    {"_id": BOOTSTRAP_LOCK_ID, "status": "RUNNING"},
+                    {"$set": {
+                        "status": "FAILED",
+                        "completed_at": datetime.now(timezone.utc),
+                        "error_type": type(exc).__name__,
+                    }},
+                )
+            except Exception:
+                pass
+        raise
+    finally:
+        client.close()
 
 
 def _run(*, execute: bool) -> int:

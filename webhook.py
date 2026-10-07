@@ -965,6 +965,40 @@ async def lifespan(app: FastAPI):
     finally:
         db_connect_ms = (time.perf_counter() - db_started) * 1000
 
+    # A narrowly scoped, nonce-gated one-shot cleanup for the approved owner
+    # portal test campaigns. It runs off the event loop and never gates app
+    # readiness; Mongo's unique marker arbitrates across concurrent instances.
+    def _startup_owner_portal_cleanup():
+        nonce = str(os.getenv("OWNER_PORTAL_CLEANUP_ONCE", "")).strip()
+        if nonce.lower() in {"", "0", "false", "no", "off"}:
+            return {"status": "DISABLED"}
+        from scripts.cleanup_owner_portal_test_interactions import run_one_shot_cleanup
+
+        return run_one_shot_cleanup(
+            mongo_uri=Config.MONGO_URI,
+            nonce=nonce,
+            commit_sha=os.getenv("RENDER_GIT_COMMIT", "unknown"),
+        )
+
+    async def _run_startup_owner_portal_cleanup():
+        try:
+            result = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                _startup_owner_portal_cleanup,
+            )
+            logger.info(
+                "[OWNER_PORTAL_CLEANUP_ONCE] status=%s preflight=%s summary=%s",
+                result.get("status"),
+                result.get("preflight", {}),
+                result.get("summary", {}),
+            )
+        except Exception:
+            # Cleanup is fail-closed and must never prevent the web service
+            # from starting; its structured failure remains visible in logs.
+            logger.exception("[OWNER_PORTAL_CLEANUP_ONCE] status=FAILED")
+
+    owner_portal_cleanup_task = asyncio.create_task(_run_startup_owner_portal_cleanup())
+
     # Initialize the centrally stored September 2026 market-context baseline
     # after the normal Mongo connection is available. The bootstrap is
     # collection-scoped, idempotent, and never updates divergent records.

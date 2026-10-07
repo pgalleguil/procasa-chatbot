@@ -125,16 +125,45 @@ def test_portal_auth_reset_refuses_to_override_any_surviving_auth_event() -> Non
         build_document_plan(document)
 
 
-def test_email_notification_linked_to_removed_event_aborts_without_mutation() -> None:
+def test_notification_linked_to_owner_event_is_removed_but_legitimate_email_is_preserved() -> None:
     document = {
         "_id": "campaign:9999",
         "campaign_id": "owner_price_sucre_wave1_20260928",
         "property_code": "9999",
-        "events": [_event("cta_clicked", interaction_surface="OWNER_PORTAL", event_id="portal_event")],
-        "notifications": {"email": {"cta_clicked": {"event_id": "portal_event", "status": "sent"}}},
+        "events": [
+            _event("cta_clicked", interaction_surface="OWNER_PORTAL", event_id="portal_event"),
+            _event("report_opened", interaction_surface="EMAIL_TEMPLATE", event_id="email_event"),
+        ],
+        "notifications": {"email": {
+            "cta_clicked": {"event_id": "portal_event", "status": "sent"},
+            "report_opened": {"event_id": "email_event", "status": "sent"},
+        }},
     }
 
-    with pytest.raises(CleanupPreflightError, match="email notification"):
+    plan = build_document_plan(document)
+    assert plan is not None
+    assert plan["notification_paths_to_remove"] == ["notifications.email.cta_clicked"]
+    _query, update = _document_update(plan)
+    assert update["$unset"]["notifications.email.cta_clicked"] == ""
+    assert email_integrity_snapshot([document]) == email_integrity_snapshot([{
+        **document,
+        "events": [document["events"][1]],
+        "notifications": {"email": {"report_opened": document["notifications"]["email"]["report_opened"]}},
+    }])
+
+
+def test_notification_with_event_id_shared_by_removed_and_email_event_aborts() -> None:
+    document = {
+        "_id": "campaign:9998",
+        "campaign_id": "owner_price_sucre_wave1_20260928",
+        "property_code": "9998",
+        "events": [
+            _event("cta_clicked", interaction_surface="OWNER_PORTAL", event_id="duplicate"),
+            _event("report_opened", interaction_surface="EMAIL_TEMPLATE", event_id="duplicate"),
+        ],
+        "notifications": {"email": {"report_opened": {"event_id": "duplicate"}}},
+    }
+    with pytest.raises(CleanupPreflightError, match="shared by owner and preserved events"):
         build_document_plan(document)
 
 
@@ -240,3 +269,30 @@ def test_cleanup_bootstrap_skips_when_atomic_marker_is_already_completed(monkeyp
         nonce=BOOTSTRAP_NONCE,
         commit_sha="test-sha",
     ) == {"status": "ALREADY_COMPLETED"}
+
+
+def test_cleanup_bootstrap_retries_a_failed_preflight_only_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = mongomock.MongoClient()
+    locks = client.URLS[BOOTSTRAP_LOCK_COLLECTION]
+    locks.insert_one({
+        "_id": BOOTSTRAP_LOCK_ID,
+        "status": "FAILED",
+        "error_type": "CleanupPreflightError",
+    })
+    monkeypatch.setattr("scripts.cleanup_owner_portal_test_interactions.MongoClient", lambda *args, **kwargs: client)
+
+    with pytest.raises(CleanupPreflightError, match="invariant mismatch"):
+        run_one_shot_cleanup(
+            mongo_uri="mongodb://fake",
+            nonce=BOOTSTRAP_NONCE,
+            commit_sha="test-sha",
+        )
+    marker = locks.find_one({"_id": BOOTSTRAP_LOCK_ID})
+    assert marker["status"] == "FAILED"
+    assert marker["retry_count"] == 1
+
+    assert run_one_shot_cleanup(
+        mongo_uri="mongodb://fake",
+        nonce=BOOTSTRAP_NONCE,
+        commit_sha="test-sha",
+    ) == {"status": "ALREADY_FAILED"}

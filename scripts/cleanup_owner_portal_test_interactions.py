@@ -118,7 +118,7 @@ def _latest_event_value(events: list[Mapping[str, Any]], event_name: str) -> Any
 
 
 def _notification_paths_to_remove(
-    notifications: Any, removed_event_ids: set[str]
+    notifications: Any, removed_event_ids: set[str], preserved_event_ids: set[str]
 ) -> tuple[list[str], int]:
     paths: list[str] = []
     preserved = 0
@@ -134,6 +134,10 @@ def _notification_paths_to_remove(
                 continue
             event_id = notification.get("event_id")
             if event_id and str(event_id) in removed_event_ids:
+                if str(event_id) in preserved_event_ids:
+                    raise CleanupPreflightError(
+                        "notification event_id is shared by owner and preserved events"
+                    )
                 paths.append(f"notifications.{channel}.{event_name}")
             else:
                 preserved += 1
@@ -165,14 +169,12 @@ def build_document_plan(document: Mapping[str, Any]) -> dict[str, Any] | None:
     removed_event_ids = {
         str(event.get("event_id")) for event in events_remove if event.get("event_id")
     }
+    preserved_event_ids = {
+        str(event.get("event_id")) for event in events_keep if event.get("event_id")
+    }
     notification_paths, notifications_preserved = _notification_paths_to_remove(
-        document.get("notifications"), removed_event_ids,
+        document.get("notifications"), removed_event_ids, preserved_event_ids,
     )
-    email_notification_paths = [path for path in notification_paths if path.startswith("notifications.email.")]
-    if email_notification_paths:
-        raise CleanupPreflightError(
-            "email notification points to an event proposed for removal; refusing to modify email data"
-        )
 
     if not events_remove and not reset_authorization and not notification_paths:
         return None
@@ -393,6 +395,31 @@ def email_integrity_snapshot(documents: list[Mapping[str, Any]]) -> str:
         preserved_events = [event for event in events if not (isinstance(event, Mapping) and is_owner_portal_link_event(event))]
         notifications = document.get("notifications")
         email_notifications = notifications.get("email") if isinstance(notifications, Mapping) else None
+        if isinstance(email_notifications, Mapping):
+            removed_ids = {
+                str(event.get("event_id"))
+                for event in events
+                if isinstance(event, Mapping)
+                and is_owner_portal_link_event(event)
+                and event.get("event_id")
+            }
+            kept_ids = {
+                str(event.get("event_id"))
+                for event in events
+                if isinstance(event, Mapping)
+                and not is_owner_portal_link_event(event)
+                and event.get("event_id")
+            }
+            email_notifications = {
+                name: notification
+                for name, notification in email_notifications.items()
+                if not (
+                    isinstance(notification, Mapping)
+                    and notification.get("event_id")
+                    and str(notification.get("event_id")) in removed_ids
+                    and str(notification.get("event_id")) not in kept_ids
+                )
+            }
         auth_state = None
         if str(document.get("property_code") or "") in EMAIL_AUTHORIZATION_CODES:
             auth_state = {
@@ -429,6 +456,7 @@ def run_one_shot_cleanup(*, mongo_uri: str, nonce: str, commit_sha: str) -> dict
     client = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
     lock = None
     acquired = False
+    transaction_started = False
     try:
         client.admin.command("ping")
         db = client[DATABASE_NAME]
@@ -443,13 +471,38 @@ def run_one_shot_cleanup(*, mongo_uri: str, nonce: str, commit_sha: str) -> dict
             })
             acquired = True
         except DuplicateKeyError:
-            existing = lock.find_one({"_id": BOOTSTRAP_LOCK_ID}, {"status": 1}) or {}
+            existing = lock.find_one(
+                {"_id": BOOTSTRAP_LOCK_ID}, {"status": 1, "error_type": 1}
+            ) or {}
             status_value = str(existing.get("status") or "UNKNOWN")
             if status_value == "COMPLETED":
                 return {"status": "ALREADY_COMPLETED"}
             if status_value == "RUNNING":
                 return {"status": "ALREADY_RUNNING"}
-            return {"status": "ALREADY_" + status_value}
+            if status_value == "FAILED" and existing.get("error_type") == "CleanupPreflightError":
+                retry = lock.update_one(
+                    {
+                        "_id": BOOTSTRAP_LOCK_ID,
+                        "status": "FAILED",
+                        "error_type": "CleanupPreflightError",
+                        "retry_count": {"$exists": False},
+                    },
+                    {
+                        "$set": {
+                            "status": "RUNNING",
+                            "started_at": started_at,
+                            "commit_sha": str(commit_sha or "unknown")[:80],
+                        },
+                        "$inc": {"retry_count": 1},
+                        "$unset": {"completed_at": "", "error_type": ""},
+                    },
+                )
+                if retry.modified_count == 1:
+                    acquired = True
+                else:
+                    return {"status": "ALREADY_FAILED"}
+            else:
+                return {"status": "ALREADY_" + status_value}
 
         collection = db[COLLECTION_NAME]
         documents = _campaign_documents(collection)
@@ -466,6 +519,7 @@ def run_one_shot_cleanup(*, mongo_uri: str, nonce: str, commit_sha: str) -> dict
         }
         with client.start_session() as session:
             with session.start_transaction():
+                transaction_started = True
                 current_documents = _campaign_documents(collection, session=session)
                 current_report = build_preflight(current_documents)
                 validate_preflight(current_report)
@@ -514,6 +568,7 @@ def run_one_shot_cleanup(*, mongo_uri: str, nonce: str, commit_sha: str) -> dict
                         "status": "FAILED",
                         "completed_at": datetime.now(timezone.utc),
                         "error_type": type(exc).__name__,
+                        "retryable": not transaction_started,
                     }},
                 )
             except Exception:

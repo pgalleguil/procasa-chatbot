@@ -159,6 +159,8 @@ def run_prop360_poll_cycle(db=None) -> dict:
         "skipped_no_contact": 0,
         "skipped_property_inactive": 0,
         "skipped_stale_id": 0,
+        "inactive_property_events_processed": 0,
+        "unprocessed_events": 0,
     }
 
     try:
@@ -184,29 +186,42 @@ def run_prop360_poll_cycle(db=None) -> dict:
     cartera = _active_cartera_codes()
     last_id = _last_contacto_id(db)
     max_confirmed_id = last_id or 0
-
+    normalized_events = []
+    normalization_failed = False
     for raw in leads:
         try:
             norm = extractor.normalize_lead(raw)
         except Exception:
             metrics["errors"] += 1
+            normalization_failed = True
             continue
+        normalized_events.append((_norm_id(norm), raw, norm))
 
-        cid = _norm_id(norm)
+    # idContacto is a monotonic checkpoint. Process in ascending order so a
+    # failed event blocks the cursor before any newer event can pass it.
+    normalized_events.sort(key=lambda item: (item[0] is None, item[0] or 0))
+    checkpoint_blocked = normalization_failed
+
+    for cid, raw, norm in normalized_events:
+
+        if cid is None:
+            metrics["errors"] += 1
+            metrics["unprocessed_events"] += 1
+            checkpoint_blocked = True
+            continue
 
         # Monotonic idContacto watermark: leads already seen before are skipped
         # without any DB lookup. Falls back to the identity dedup below when the
         # checkpoint is missing or the id is unknown.
-        if cid is not None and last_id is not None and cid <= last_id:
-            # A previously checkpointed event can still have unfinished
-            # commercial effects after an interrupted run. Let the ledger
-            # resume those stages; completed events remain stale-id skips.
-            ledger = db["lead_ingest_events"].find_one({
-                "source_system": "prop360", "source_event_id": str(cid),
-            })
-            resumable = bool(ledger and ledger.get("status") in {
-                "processing", "lead_persisted", "commercial_cycle_created", "notification_enqueued",
-            })
+        # The ingest ledger allows incomplete work to resume even if the ID is
+        # already below the saved watermark.
+        ledger = db["lead_ingest_events"].find_one({
+            "source_system": "prop360", "source_event_id": str(cid),
+        }, {"status": 1}) or {}
+        resumable = ledger.get("status") in {
+            "processing", "lead_persisted", "commercial_cycle_created", "notification_enqueued",
+        }
+        if last_id is not None and cid <= last_id:
             if not resumable:
                 metrics["skipped_stale_id"] += 1
                 if cid > max_confirmed_id:
@@ -215,42 +230,49 @@ def run_prop360_poll_cycle(db=None) -> dict:
 
         if _is_internal(norm):
             metrics["skipped_internal"] += 1
+            if not checkpoint_blocked and cid > max_confirmed_id:
+                max_confirmed_id = cid
             continue
 
         if not _norm_has_contact(norm):
             metrics["skipped_no_contact"] += 1
+            if not checkpoint_blocked and cid > max_confirmed_id:
+                max_confirmed_id = cid
             continue
 
         prop = str(norm.get("codigo") or "").strip()
         if prop and prop not in cartera:
-            metrics["skipped_property_inactive"] += 1
-            continue
-
-        # _is_duplicate re-checks identity on the leads collection before ingest
-        if extractor._is_duplicate(norm):
-            metrics["duplicates_skipped"] += 1
-            if cid and cid > max_confirmed_id:
-                max_confirmed_id = cid
-            continue
+            # A stale availability flag must not discard a legitimate lead.
+            # Keep the property status as CRM context and ingest the event.
+            metrics["inactive_property_events_processed"] += 1
 
         try:
-            extractor.process_lead(raw)
+            outcome = extractor.process_lead(raw, resume_incomplete_event=resumable)
         except Exception:
             logger.error(
                 "[PROP360_POLL] process_lead failed idContacto=%s:\n%s",
                 norm.get("idContacto"), traceback.format_exc(),
             )
             metrics["errors"] += 1
-            # Do not advance the monotonic idContacto watermark past a failed
-            # commercial event. The next hourly poll must retry it.
-            break
+            metrics["unprocessed_events"] += 1
+            checkpoint_blocked = True
+            continue
+
+        if outcome not in {"created", "updated", "resumed", "duplicate", "duplicate_event", "conflict", "dry_run"}:
+            metrics["errors"] += 1
+            metrics["unprocessed_events"] += 1
+            checkpoint_blocked = True
+            logger.error("[PROP360_POLL] Evento sin confirmar idContacto=%s outcome=%s; checkpoint protegido",
+                         cid, outcome)
+            continue
 
         m = extractor.metrics
         metrics["leads_created"] = m["leads_created"]
         metrics["leads_updated"] = m["leads_updated"]
         metrics["events_duplicate"] = m["events_duplicate"]
         metrics["notifications_enqueued"] = m["notifications_enqueued"]
-        if cid and cid > max_confirmed_id:
+        metrics["duplicates_skipped"] = m["duplicates_skipped"]
+        if not checkpoint_blocked and cid > max_confirmed_id:
             max_confirmed_id = cid
 
     metrics["finished_at"] = datetime.now().isoformat()

@@ -221,6 +221,126 @@ def test_poll_loop_runs_on_consecutive_hourly_slots(monkeypatch):
     assert runs == [9, 10, 11, 12]
 
 
+def _prepare_poll_cycle(monkeypatch, leads, active_codes, outcomes, last_id=9):
+    db = mongomock.MongoClient().incident
+    processed = []
+    checkpoints = []
+
+    class FakeExtractor:
+        def __init__(self, **_kwargs):
+            self.metrics = {
+                "leads_created": 0, "leads_updated": 0, "events_duplicate": 0,
+                "notifications_enqueued": 0, "duplicates_skipped": 0,
+            }
+
+        def login(self):
+            return True
+
+        def fetch_leads(self, **_kwargs):
+            return leads
+
+        def normalize_lead(self, raw):
+            return raw
+
+        def process_lead(self, raw, *, resume_incomplete_event=False):
+            processed.append((raw["idContacto"], raw["codigo"], resume_incomplete_event))
+            return outcomes[raw["idContacto"]]
+
+    monkeypatch.setattr(extractor_prop360, "Prop360Extractor", FakeExtractor)
+    monkeypatch.setattr(prop360_poll_loop, "_feature_enabled", lambda: True)
+    monkeypatch.setattr(prop360_poll_loop, "_credentials", lambda: ("email", "password"))
+    monkeypatch.setattr(prop360_poll_loop, "_window_hours", lambda: 48)
+    monkeypatch.setattr(prop360_poll_loop, "_from_date_iso", lambda _hours: "2026-10-01")
+    monkeypatch.setattr(prop360_poll_loop, "_active_cartera_codes", lambda: active_codes)
+    monkeypatch.setattr(prop360_poll_loop, "_last_contacto_id", lambda _db: last_id)
+    monkeypatch.setattr(prop360_poll_loop, "_save_checkpoint", lambda _e, _m, _db, **kw: checkpoints.append(kw))
+    monkeypatch.setattr(prop360_poll_loop, "_persist_cycle_status", lambda *_a, **_kw: None)
+    return db, processed, checkpoints
+
+
+def test_poll_ingests_event_when_property_availability_flag_is_stale(monkeypatch):
+    leads = [
+        {"idContacto": 11, "codigo": "100", "contFono": "+56911111111"},
+        {"idContacto": 10, "codigo": "16704", "contFono": "+56922222222"},
+    ]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"100"}, {10: "created", 11: "created"},
+    )
+
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+
+    assert [item[0] for item in processed] == [10, 11]
+    assert result["skipped_property_inactive"] == 0
+    assert result["inactive_property_events_processed"] == 1
+    assert result["unprocessed_events"] == 0
+    assert checkpoints[-1]["max_confirmed_id"] == 11
+
+
+def test_poll_checkpoint_does_not_pass_an_unprocessed_event(monkeypatch):
+    leads = [
+        {"idContacto": 11, "codigo": "100", "contFono": "+56911111111"},
+        {"idContacto": 10, "codigo": "100", "contFono": "+56922222222"},
+    ]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"100"}, {10: "error", 11: "created"},
+    )
+
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+
+    assert [item[0] for item in processed] == [10, 11]
+    assert result["unprocessed_events"] == 1
+    assert checkpoints[-1]["max_confirmed_id"] == 9
+
+
+def test_extractor_resumes_incomplete_event_before_identity_dedup(monkeypatch):
+    db = mongomock.MongoClient().incident
+    event_id = "11555"
+    lead_id = ObjectId()
+    db["lead_ingest_events"].insert_one({
+        "source_system": "prop360", "source_event_id": event_id,
+        "status": "lead_persisted", "lead_id": lead_id,
+    })
+    monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
+    monkeypatch.setattr(extractor_prop360, "ingest_lead_event", lambda _event: IngestResult(
+        status="resume", lead_id=str(lead_id), executive="Mariela Arriagada", property_found=True,
+    ))
+
+    extractor = extractor_prop360.Prop360Extractor("", "", dry_run=False)
+    extractor.normalize_lead = lambda raw: raw
+    extractor._is_duplicate = lambda _raw: pytest.fail("resume must bypass identity dedup")
+    enqueued = []
+    extractor._enqueue_notification = lambda *args: enqueued.append(args)
+
+    result = extractor.process_lead({
+        "idContacto": event_id, "codigo": "16704", "contFono": "+56922222222",
+        "contNombre": "Cliente", "contMsg": "Consulta",
+    }, resume_incomplete_event=True)
+
+    assert result == "resumed"
+    assert len(enqueued) == 1
+
+
+def test_prop360_poll_remains_idle_outside_business_hours(monkeypatch):
+    class StopLoop(BaseException):
+        pass
+
+    monkeypatch.setattr(prop360_poll_loop, "_feature_enabled", lambda: True)
+    monkeypatch.setattr(prop360_poll_loop, "_in_business_hours", lambda: False)
+    monkeypatch.setattr(prop360_poll_loop, "_update_health_heartbeat", lambda **_kwargs: None)
+    async def persist_off_loop(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(prop360_poll_loop, "_persist_cycle_status_off_loop", persist_off_loop)
+    monkeypatch.setattr(prop360_poll_loop, "run_prop360_poll_cycle", lambda: pytest.fail("poll must remain idle"))
+
+    async def stop_at_next_slot(_interval):
+        raise StopLoop()
+
+    monkeypatch.setattr(prop360_poll_loop, "_sleep_until_next_slot", stop_at_next_slot)
+    with pytest.raises(StopLoop):
+        asyncio.run(prop360_poll_loop.prop360_poll_loop(3600))
+
+
 def test_updated_ingest_result_enqueues_without_nonexistent_action(monkeypatch):
     extractor = extractor_prop360.Prop360Extractor("", "", dry_run=False)
     enqueued = []

@@ -446,7 +446,9 @@ class Prop360Extractor:
             {"$set": {"status": "completed"}},
         )
 
-    def process_lead(self, prop360_lead: Dict[str, Any]) -> None:
+    def process_lead(
+        self, prop360_lead: Dict[str, Any], *, resume_incomplete_event: bool = False
+    ) -> str:
         prop360_lead = self.normalize_lead(prop360_lead)
         self.metrics["total_received"] += 1
         id_contacto = prop360_lead.get("idContacto")
@@ -486,14 +488,14 @@ class Prop360Extractor:
             },
         )
 
-        if self._is_duplicate(prop360_lead):
+        if not resume_incomplete_event and self._is_duplicate(prop360_lead):
             self.metrics["duplicates_skipped"] += 1
             logger.info(
                 f"[DUP] Lead omitido (mismo cliente + misma propiedad): idContacto={id_contacto} "
                 f"phone={'[REDACTED]' if event.phone else 'N/A'} "
                 f"property_code={event.property_code}"
             )
-            return
+            return "duplicate"
 
         if self.dry_run:
             logger.info(
@@ -504,7 +506,7 @@ class Prop360Extractor:
                 f"portal={event.portal_source} "
                 f"action={'crear' if '<existe?>' else 'actualizar'}"
             )
-            return
+            return "dry_run"
 
         result = ingest_lead_event(event)
 
@@ -514,6 +516,7 @@ class Prop360Extractor:
             self.metrics["properties_not_found"] += 0 if result.property_found else 1
             self._enqueue_notification(result.lead_id, result.executive, event, prop360_lead)
             logger.info(f"[OK] Lead creado: idContacto={id_contacto} lead_id={result.lead_id} exec={result.executive}")
+            return "created"
 
         elif result.status in {"updated", "resume"}:
             self.metrics["leads_updated"] += 1
@@ -521,10 +524,14 @@ class Prop360Extractor:
             self.metrics["properties_not_found"] += 0 if result.property_found else 1
             self._enqueue_notification(result.lead_id, result.executive, event, prop360_lead)
             logger.info(f"[OK] Lead actualizado: idContacto={id_contacto} lead_id={result.lead_id} action={result.status}")
+            if result.status == "resume":
+                return "resumed"
+            return "updated"
 
         elif result.status in {"duplicate", "duplicate_event"}:
             self.metrics["events_duplicate"] += 1
             logger.info(f"[DUP] Evento duplicado: idContacto={id_contacto} lead_id={result.lead_id}")
+            return "duplicate_event"
 
         elif result.status == "rejected":
             raise RuntimeError(result.error or f"Prop360 event {id_contacto} is still being processed")
@@ -532,10 +539,14 @@ class Prop360Extractor:
         elif result.status == "conflict":
             self.metrics["identity_conflicts"] += 1
             logger.warning(f"[CONFLICT] Conflicto identidad: idContacto={id_contacto} details={result.conflict_details}")
+            return "conflict"
 
         elif result.status == "error":
             self.metrics["errors"] += 1
             logger.error(f"[ERROR] idContacto={id_contacto}: {result.error}")
+            return "error"
+
+        return "error"
 
     def run(
         self,

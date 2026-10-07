@@ -16,6 +16,7 @@ from uuid import uuid4
 from pymongo import MongoClient, ReturnDocument
 
 from config import Config
+from campanas.timezone_utils import format_event_at_for_display
 
 
 logger = logging.getLogger(__name__)
@@ -587,7 +588,7 @@ def _campaign_whatsapp_text(row: Mapping[str, Any], event: str, event_at: dateti
     commune = str(row.get("commune") or "Comuna no disponible")
     owner = str(row.get("owner_name") or "Sin nombre")
     executive = str(row.get("executive_name") or "Sin ejecutivo")
-    event_text = event_at.astimezone(timezone.utc).strftime("%d-%m-%Y %H:%M UTC")
+    event_text = format_event_at_for_display(event_at)
     if event == "price_authorized":
         selected_type = str(row.get("selected_adjustment_type") or "RECOMMENDED").upper()
         gradual = selected_type == "GRADUAL"

@@ -4,13 +4,15 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import Config
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+from campanas.timezone_utils import format_event_at_for_display
 
 logger = logging.getLogger(__name__)
 
 def enviar_alerta_equipo(nombre: str, telefono: str, email: str, codigos: list, accion_texto: str, campana: str):
     try:
         codigo_principal = codigos[0] if codigos else "S/C"
+        hora_chile = format_event_at_for_display(datetime.now(timezone.utc))
         cuerpo = f"""
 ¡NUEVA RESPUESTA EN VIVO - {campana.upper()}!
 
@@ -19,7 +21,7 @@ Código(s)    : {", ".join(codigos) if codigos else codigo_principal}
 Teléfono     : {telefono}
 Email        : {email}
 Respuesta    : {accion_texto}
-Hora         : {datetime.utcnow().strftime('%d/%m/%Y %H:%M')}  # ← ahora datetime está definido
+Hora         : {hora_chile}
 
 ENLACE DIRECTO:
 https://www.procasa.cl/{codigo_principal}

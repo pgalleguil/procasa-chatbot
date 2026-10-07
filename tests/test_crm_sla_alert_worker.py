@@ -217,6 +217,56 @@ class TestSendDisabled:
 
 class TestWorker:
     @pytest.mark.asyncio
+    async def test_management_after_first_check_is_caught_before_provider_call(self, db):
+        alert = _alert_doc({"state": ST_PROCESSING, "lease_owner": "w1"})
+        db[COLLECTION]._docs.append(alert)
+        db["leads"]._docs.append(make_lead())
+        db["crm_assignment_cycles"]._docs.append(make_cycle())
+        db["crm_management_results"]._docs = []
+        db["crm_events"]._docs = []
+        sender = FakeSender()
+
+        async def management_wins_after_initial_revalidation(db, *, alert_id, worker_id):
+            cycle = db["crm_assignment_cycles"]._docs[0]
+            cycle["first_valid_management_at"] = chile_dt(9, 30)
+            cycle["sla_first_management_status"] = "completed"
+            return {**alert, "state": ST_PROCESSING,
+                    "delivery_started_at": chile_dt(9, 31),
+                    "delivery_attempt_id": "attempt-1"}
+
+        with patch("chatbot.crm_sla_alert_worker.mark_delivery_started",
+                   side_effect=management_wins_after_initial_revalidation):
+            result = await process_one_alert(
+                db=db, worker_id="w1", sender=sender,
+                pre_claimed={**alert, "assignment_cycle_id": "cycle-1"},
+            )
+
+        assert result == {"status": "cancelled", "reason": "management_completed"}
+        assert sender._calls == []
+
+    @pytest.mark.asyncio
+    async def test_management_marker_added_after_claim_cancels_before_provider_send(self, db):
+        alert = _alert_doc({"state": ST_PROCESSING, "lease_owner": "w1"})
+        db[COLLECTION]._docs.append(alert)
+        db["leads"]._docs.append(make_lead())
+        cycle = make_cycle()
+        cycle["first_valid_management_at"] = chile_dt(8, 30)  # legacy time before assigned_at
+        cycle["sla_first_management_status"] = "completed"
+        db["crm_assignment_cycles"]._docs.append(cycle)
+        db["crm_management_results"]._docs = []
+        db["crm_events"]._docs = []
+        sender = FakeSender()
+
+        result = await process_one_alert(
+            db=db, worker_id="w1", sender=sender,
+            pre_claimed={**alert, "assignment_cycle_id": "cycle-1"},
+        )
+
+        assert result == {"status": "cancelled", "reason": "management_completed"}
+        assert sender._calls == []
+        assert db[COLLECTION]._docs[0]["state"] == "cancelled"
+
+    @pytest.mark.asyncio
     async def test_revalidation_cancels_no_respondio_before_send(self, db):
         db[COLLECTION]._docs.append(_alert_doc())
         db["leads"]._docs.append(make_lead())

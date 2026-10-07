@@ -6,9 +6,13 @@ from pymongo.errors import DuplicateKeyError
 
 from chatbot.crm_management import (
     claim_sla_alert_if_still_eligible, eligible_for_first_sla_reassignment,
-    follow_up_shadow_status, record_management_result,
+    follow_up_shadow_status, record_management_result, RESULT_RULES,
 )
-from chatbot.crm_metrics import calculate_sla, event_evidence, registered_outreach_evidence
+from chatbot.crm_metrics import (
+    VALID_MANAGEMENT_RESULTS, calculate_sla, event_evidence,
+    is_first_sla_management_completed,
+    registered_outreach_evidence,
+)
 from chatbot.crm_sla_shadow import evaluate_sla_shadow
 from tests.test_crm_notification_containment import local
 
@@ -169,6 +173,81 @@ def test_message_sent_suppresses_pending_yellow_and_red_notifications():
     ])
     record(db, "MESSAGE_SENT_WAITING_RESPONSE")
     assert [row["state"] for row in db["crm_notifications_v1"].docs] == ["suppressed", "suppressed"]
+
+
+def test_message_sent_cancels_unstarted_pending_and_claimed_sla_alerts():
+    db, _, _ = fixture()
+    db["crm_sla_alerts_v1"] = Collection([
+        {"assignment_cycle_id": "cycle-1", "state": state, "delivery_started_at": None}
+        for state in ("pending", "processing", "failed_retryable")
+    ] + [{"assignment_cycle_id": "cycle-1", "state": "processing",
+          "delivery_started_at": local(20, 9) + timedelta(minutes=59)}])
+    record(db, "MESSAGE_SENT_WAITING_RESPONSE")
+    assert [row["state"] for row in db["crm_sla_alerts_v1"].docs] == [
+        "cancelled", "cancelled", "cancelled", "processing",
+    ]
+
+
+def test_canonical_management_marker_is_authoritative_even_if_legacy_timestamp_predates_assignment():
+    cycle = {"assignment_cycle_id": "new", "assigned_at": local(20, 9),
+             "first_valid_management_at": local(20, 8) + timedelta(minutes=30),
+             "sla_first_management_status": "completed"}
+    assert is_first_sla_management_completed(cycle)
+
+
+def test_old_or_other_cycle_management_does_not_protect_active_cycle():
+    cycle = {"assignment_cycle_id": "new", "assigned_at": local(20, 9)}
+    old_cycle_result = {"assignment_cycle_id": "old", "result_type": "EFFECTIVE_CONTACT",
+                        "status": "completed", "occurred_at": local(20, 9) + timedelta(minutes=30)}
+    assert not is_first_sla_management_completed(cycle, [old_cycle_result])
+    other_cycle_event = {"assignment_cycle_id": "old", "lead_id": "lead-1",
+                         "type": "HUMAN_NOTE", "actor": "human-1", "actor_type": "human",
+                         "result": "EFFECTIVE_CONTACT", "confirmed": True,
+                         "timestamp": local(20, 9) + timedelta(minutes=30)}
+    assert not is_first_sla_management_completed(cycle, events=[other_cycle_event])
+
+
+def test_open_and_click_events_do_not_complete_initial_sla():
+    cycle = {"assignment_cycle_id": "cycle-1", "assigned_at": local(20, 9)}
+    for event_type in ("CLICK_WHATSAPP_LEAD", "CLICK_EMAIL_LEAD", "CLICK_PHONE_LEAD", "OPEN_DETAIL"):
+        event = {"assignment_cycle_id": "cycle-1", "lead_id": "lead-1",
+                 "type": event_type, "actor": "user-1", "actor_type": "human",
+                 "confirmed": True, "timestamp": local(20, 9) + timedelta(minutes=5)}
+        assert event_evidence(event)["management"] is False
+        assert not is_first_sla_management_completed(cycle, events=[event])
+
+
+def test_registered_mwr_and_email_results_complete_initial_sla():
+    cycle = {"assignment_cycle_id": "cycle-1", "assigned_at": local(20, 9)}
+    for result_type in ("MESSAGE_SENT_WAITING_RESPONSE", "EMAIL_SENT", "CALL_NO_ANSWER",
+                        "EFFECTIVE_CONTACT"):
+        result = {"assignment_cycle_id": "cycle-1", "result_type": result_type,
+                  "status": "completed", "occurred_at": local(20, 9) + timedelta(minutes=15)}
+        assert is_first_sla_management_completed(cycle, [result])
+
+
+def test_management_taxonomy_is_covered_by_shared_sla_management_contract():
+    assert set(RESULT_RULES).issubset(VALID_MANAGEMENT_RESULTS)
+
+
+def test_completed_cycle_management_blocks_first_sla_reassignment():
+    cycle = {"assignment_cycle_id": "cycle-1", "assigned_at": local(20, 9),
+             "schema_version": "crm_assignment_cycle_v1", "cycle_status": "active",
+             "first_valid_management_at": local(20, 8) + timedelta(minutes=30)}
+    assert eligible_for_first_sla_reassignment(
+        cycle=cycle, lead={}, delivery_valid=True, red_overdue=True,
+        executive_active=True,
+    ) is False
+
+
+def test_management_recording_does_not_change_mariela_after_hours_preference():
+    db, _, _ = fixture()
+    preference = {"_id": "mariela", "notification_preferences": {
+        "assignment_immediate_outside_business_hours": True,
+    }}
+    db["usuarios"] = Collection([preference])
+    record(db, "EMAIL_SENT")
+    assert db["usuarios"].find_one({"_id": "mariela"}) == preference
 
 
 def test_registered_whatsapp_row_cannot_remain_expired_or_unattended():

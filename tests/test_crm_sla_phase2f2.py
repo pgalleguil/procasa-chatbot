@@ -92,22 +92,29 @@ def test_a1_and_a2_capacity_semantics_match_for_open_unmanaged_expired_and_press
             assert 3 * values["expired"] + 2 * values["unmanaged"] + values["open"] == 6
 
 
-def test_management_result_and_human_event_flags_are_not_mixed():
+def test_registered_outreach_management_stops_sla_but_automatic_event_does_not():
     rows = [_cycle()]
-    rows[0]["management_results"] = [{"result_type": "MESSAGE_SENT_WAITING_RESPONSE"}]
+    rows[0]["management_results"] = [{
+        "assignment_cycle_id": "cycle-1",
+        "result_type": "MESSAGE_SENT_WAITING_RESPONSE",
+        "occurred_at": NOW - timedelta(hours=3),
+    }]
     automatic_event = [{
         "lead_id": "lead-1", "type": "GESTION_LOG", "actor_human": False,
         "confirmed_effective": True, "result_effective": "CONTACTADO",
     }]
     capacity, audit = _capacity_from_rows(rows, automatic_event, as_of=NOW, policy_since=NOW - timedelta(days=1))
-    assert capacity["owner-a"] == {"open": 1, "unmanaged": 1, "expired": 1}
-    assert audit["management_stop_cycles"] == 0
+    assert capacity["owner-a"] == {"open": 1, "unmanaged": 0, "expired": 0}
+    assert audit["management_stop_cycles"] == 1
     assert audit["human_event_stop_cycles"] == 0
 
 
 def test_valid_management_result_stops_unmanaged_but_does_not_change_open():
     rows = [_cycle()]
-    rows[0]["management_results"] = [{"result_type": "EFFECTIVE_CONTACT"}]
+    rows[0]["management_results"] = [{
+        "assignment_cycle_id": "cycle-1", "result_type": "EFFECTIVE_CONTACT",
+        "occurred_at": NOW - timedelta(hours=3),
+    }]
     capacity, audit = _capacity_from_rows(rows, [], as_of=NOW, policy_since=NOW - timedelta(days=1))
     assert capacity["owner-a"] == {"open": 1, "unmanaged": 0, "expired": 0}
     assert audit["management_stop_cycles"] == 1

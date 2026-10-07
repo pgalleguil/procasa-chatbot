@@ -508,7 +508,8 @@ class TestManagementPolicy:
         assert len(report["alerts"]) == 0
 
     @pytest.mark.asyncio
-    async def test_mwr_does_not_stop_sla(self, fake_db):
+    @pytest.mark.parametrize("result_type", ["MESSAGE_SENT_WAITING_RESPONSE", "EMAIL_SENT"])
+    async def test_registered_outreach_management_stops_initial_sla(self, fake_db, result_type):
         assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "COLD")])
         fake_db["crm_assignment_cycles"] = FakeCollection([
@@ -518,7 +519,7 @@ class TestManagementPolicy:
         fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
         fake_db["crm_management_results"] = FakeCollection([{
             "assignment_cycle_id": "cycle-1",
-            "result_type": "MESSAGE_SENT_WAITING_RESPONSE",
+            "result_type": result_type,
             "actor_user_id": "6989c6309dd2ba54e478196d",
             "occurred_at": chile_dt(9, 15, 3), "source": "crm_send_action",
         }])
@@ -528,11 +529,10 @@ class TestManagementPolicy:
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
                        lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
-        assert len(report["alerts"]) == 1
-        assert report["alerts"][0]["outreach_state"] == "whatsapp_sent"
+        assert len(report["alerts"]) == 0
 
     @pytest.mark.asyncio
-    async def test_first_valid_management_at_alone_not_enough(self, fake_db):
+    async def test_first_valid_management_marker_alone_stops_sla(self, fake_db):
         assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         cycle = make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
         cycle["first_valid_management_at"] = chile_dt(9, 15, 3)
@@ -552,7 +552,7 @@ class TestManagementPolicy:
             mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now",
                        lambda: chile_dt(13, 0, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
-        assert len(report["alerts"]) == 1
+        assert len(report["alerts"]) == 0
 
     @pytest.mark.asyncio
     async def test_valid_result_after_mwr_stops_sla(self, fake_db):
@@ -636,6 +636,7 @@ class TestManagementPolicy:
         fake_db["crm_events"] = FakeCollection([{
             "lead_id": "lead-1", "type": "GESTION_LOG", "actor": "user-1",
             "actor_type": "human", "result": "EFFECTIVE_CONTACT",
+            "assignment_cycle_id": "cycle-1",
             "timestamp": chile_dt(9, 15, 3).astimezone(timezone.utc), "confirmed": True,
         }])
         fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
@@ -857,8 +858,9 @@ def test_alert_constants():
     assert MESSAGE_DOMAIN == "crm_sla_alert"
 
 
-def test_sla_stop_results_excludes_mwr():
-    assert "MESSAGE_SENT_WAITING_RESPONSE" not in SLA_STOP_RESULTS
+def test_sla_stop_results_includes_registered_outreach_management():
+    assert "MESSAGE_SENT_WAITING_RESPONSE" in SLA_STOP_RESULTS
+    assert "EMAIL_SENT" in SLA_STOP_RESULTS
 
 
 def test_outreach_results_includes_mwr():
@@ -868,6 +870,7 @@ def test_outreach_results_includes_mwr():
 def test_sla_stop_results_has_valid_types():
     for r in ("NO_RESPONDIO", "EFFECTIVE_CONTACT", "CALL_NO_ANSWER", "INVALID_NUMBER",
               "FOLLOW_UP_REQUESTED", "SCHEDULE_FOLLOW_UP",
-              "NOT_INTERESTED", "DISCARDED_VALID_REASON"):
+              "NOT_INTERESTED", "DISCARDED_VALID_REASON", "MESSAGE_SENT_WAITING_RESPONSE",
+              "EMAIL_SENT"):
         assert r in SLA_STOP_RESULTS
 

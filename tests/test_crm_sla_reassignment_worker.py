@@ -293,6 +293,35 @@ def test_worker_and_executor_share_canonical_protection_for_same_crm_event(
     assert (executor is not None) is (canonical is not None)
 
 
+def test_canonical_cycle_management_marker_blocks_reassignment_even_if_preassignment_timestamp():
+    row = cycle(1)
+    row["first_valid_management_at"] = row["assigned_at"] - timedelta(minutes=20)
+    row["sla_first_management_status"] = "completed"
+    protection = _management_protection(row, lead(1), [], [], breach_at=NOW)
+    assert protection.protected is True
+    assert "canonical:first_sla_management_completed" in protection.evidence_types
+
+
+def test_management_evidence_from_another_assignment_cycle_does_not_protect_current():
+    row = cycle(1)
+    deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+    old_cycle_event = {
+        "lead_id": "lead-1", "assignment_cycle_id": "old-cycle",
+        "type": "HUMAN_NOTE", "actor": "owner", "actor_type": "human",
+        "confirmed": True, "result": "EFFECTIVE_CONTACT",
+        "timestamp": deadline - timedelta(minutes=1),
+    }
+    old_cycle_result = {
+        "lead_id": "lead-1", "assignment_cycle_id": "old-cycle",
+        "result_type": "EFFECTIVE_CONTACT", "status": "completed",
+        "occurred_at": deadline - timedelta(minutes=1),
+    }
+    protection = _management_protection(
+        row, lead(1), [old_cycle_event], [old_cycle_result], breach_at=deadline,
+    )
+    assert protection.protected is False
+
+
 def test_post_breach_human_management_remains_executor_race_protection_only():
     row = cycle(1)
     deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)

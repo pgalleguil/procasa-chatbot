@@ -149,6 +149,15 @@ def test_source_filter_allows_active_destination_with_prior_decision_id():
     assert "reassignment_decision_id" not in source_filter
 
 
+def test_source_filter_requires_first_management_not_completed():
+    decision, source_cycle, _lead, _target = snapshots()
+    source_cycle["sla_first_management_status"] = "completed"
+    source_filter = transaction.build_source_cycle_filter(
+        decision, source_cycle, expected_sla_policy_version="sla_visual_v1_20260723"
+    )
+    assert {"sla_first_management_status": {"$ne": "completed"}} in source_filter["$and"]
+
+
 def test_new_cycle_preserves_existing_routing_contract_and_marks_reassignment():
     new_cycle = make_plan().operations[1].document
     assert new_cycle["cycle_status"] == "active"

@@ -12,11 +12,10 @@ Guarantees:
 - Fully async MongoDB via Motor (no PyMongo sync calls on event loop).
 
 Policy:
-- MESSAGE_SENT_WAITING_RESPONSE does NOT stop the SLA (it's an outreach,
-  not a valid management result).
-- Valid results that DO stop the SLA: EFFECTIVE_CONTACT, CALL_NO_ANSWER,
-  INVALID_NUMBER, FOLLOW_UP_REQUESTED, SCHEDULE_FOLLOW_UP, NOT_INTERESTED,
-  DISCARDED_VALID_REASON.
+- The assignment cycle's canonical first_valid_management_at marker or
+  completed first-management status stops first-contact SLA.
+- Otherwise, valid registered results/events tied to this exact cycle stop it.
+- Opening an app or clicking an outreach action never counts as management.
 """
 from __future__ import annotations
 
@@ -28,8 +27,9 @@ from bson import ObjectId
 
 from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
 from .crm_metrics import (
-    INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
-    event_evidence, normalize_result, utc_now,
+    INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS, calculate_sla,
+    coerce_utc_datetime, event_evidence, is_first_sla_management_completed,
+    normalize_result, utc_now,
 )
 from .crm_sla_alert_templates import (
     MESSAGE_DOMAIN, build_sla_message, build_deadline_display,
@@ -60,19 +60,10 @@ SLA_PROFILE_HOT = "hot"
 # Management results that DO stop the SLA
 # ---------------------------------------------------------------------------
 
-SLA_STOP_RESULTS = frozenset({
-    "NO_RESPONDIO",
-    "EFFECTIVE_CONTACT",
-    "CALL_NO_ANSWER",
-    "INVALID_NUMBER",
-    "FOLLOW_UP_REQUESTED",
-    "SCHEDULE_FOLLOW_UP",
-    "NOT_INTERESTED",
-    "NO_INTERESADO",
-    "DISCARDED_VALID_REASON",
-})
+SLA_STOP_RESULTS = VALID_MANAGEMENT_RESULTS
 
-# Management results that represent outreach (WhatsApp sent) but do NOT stop SLA
+# Management results that also describe the outreach channel. The canonical
+# management result still stops the initial SLA.
 OUTREACH_RESULTS = frozenset({
     "MESSAGE_SENT_WAITING_RESPONSE",
     "EMAIL_SENT",
@@ -418,22 +409,17 @@ async def evaluate_sla_alerts(
         # ---- Query crm_management_results for this cycle ----
         cycle_mgmts = mgmt_by_cycle.get(cycle_id, [])
 
-        # Check for valid SLA-stop results
-        has_valid_result = any(
-            normalize_result(m.get("result_type")) in SLA_STOP_RESULTS
-            and coerce_utc_datetime(m.get("occurred_at"))
-            and coerce_utc_datetime(m.get("occurred_at")) >= assigned_at
-            for m in cycle_mgmts
-        )
-        if has_valid_result:
-            excluded["has_valid_management"] += 1; continue
-
         # ---- Event evidence (GESTION_LOG / HUMAN_NOTE / MANUAL_ENTRY) ----
         events_cursor = db["crm_events"].find({
             "lead_id": lid, "timestamp": {"$gte": assigned_at},
+            "$or": [
+                {"assignment_cycle_id": cycle_id},
+                {"assignment_cycle_id": {"$exists": False}},
+                {"assignment_cycle_id": None},
+            ],
         })
         events = await events_cursor.to_list(length=limit_events)
-        if any(event_evidence(e)["management"] for e in events):
+        if is_first_sla_management_completed(cycle, cycle_mgmts, events):
             excluded["has_valid_management"] += 1; continue
 
         # ---- Temperature and hot_since ----

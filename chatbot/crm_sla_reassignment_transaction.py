@@ -175,6 +175,7 @@ def build_source_cycle_filter(
         "reassignment_state": {"$in": [None, "eligible", "active"]},
         "$and": [
             _management_absent_filter("first_valid_management_at"),
+            {"sla_first_management_status": {"$ne": "completed"}},
             _management_absent_filter("first_contact_attempt_at"),
             _management_absent_filter("reassignment_protection_at"),
         ],

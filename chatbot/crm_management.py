@@ -5,7 +5,10 @@ from datetime import timedelta
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from .crm_metrics import coerce_utc_datetime, utc_now
+from .crm_metrics import (
+    VALID_MANAGEMENT_RESULTS, coerce_utc_datetime,
+    is_first_sla_management_completed, utc_now,
+)
 from .mongo_identity import mongo_id_variants
 
 RESULT_RULES = {
@@ -114,7 +117,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     if result_type == "EFFECTIVE_CONTACT" and next_follow_up_at:
         result_type = "FOLLOW_UP_REQUESTED"
     rule = RESULT_RULES.get(result_type)
-    if not rule:
+    if not rule or result_type not in VALID_MANAGEMENT_RESULTS:
         raise ValueError("unsupported CRM management result")
     details = details_json if isinstance(details_json, dict) else {}
     # Keep the operational note compact in the list and enforce the same
@@ -346,6 +349,20 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
          "state": {"$in": ["pending", "failed_retryable"]}},
         {"$set": {"state": "suppressed", "suppressed_reason": "management_completed", "updated_at": occurred}},
     )
+    # Cancel unstarted alerts in the new SLA alert queue. Once delivery starts,
+    # the provider may already have been called, so preserve that state.
+    try:
+        db["crm_sla_alerts_v1"].update_many(
+            {"assignment_cycle_id": assignment_cycle_id,
+             "state": {"$in": ["pending", "processing", "failed_retryable"]},
+             "delivery_started_at": None},
+            {"$set": {"state": "cancelled", "cancelled_at": occurred,
+                       "cancellation_reason": "management_completed",
+                       "lease_owner": None, "lease_expires_at": None,
+                       "updated_at": occurred}},
+        )
+    except KeyError:  # lightweight legacy test adapters may omit this collection
+        pass
     event_type = {"MESSAGE_SENT_WAITING_RESPONSE": "SEND_WA_LEAD", "EMAIL_SENT": "SEND_EMAIL_LEAD",
                   "CALL_NO_ANSWER": "CALL_COMPLETED_LEAD"}.get(result_type, "CONTACT_RESULT")
     lead_for_event = db["leads"].find_one({"_id": lead_id}) or {}
@@ -505,10 +522,12 @@ def confirm_sla_alert_claim(db, *, assignment_cycle_id, level, recipient_user_id
 
 
 def eligible_for_first_sla_reassignment(*, cycle, lead, delivery_valid, red_overdue,
-                                        executive_active, suppressed=False, quarantined=False) -> bool:
+                                        executive_active, suppressed=False, quarantined=False,
+                                        management_results=(), events=()) -> bool:
     return bool(
         cycle and cycle.get("schema_version") == "crm_assignment_cycle_v1"
-        and cycle.get("cycle_status") == "active" and not cycle.get("first_valid_management_at")
+        and cycle.get("cycle_status") == "active"
+        and not is_first_sla_management_completed(cycle, management_results, events)
         and not lead.get("follow_up_required") and lead.get("management_status") != "managed_waiting_response"
         and delivery_valid and red_overdue and executive_active and not suppressed and not quarantined
     )

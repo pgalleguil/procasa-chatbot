@@ -20,10 +20,10 @@ from collections import Counter
 from bson import ObjectId
 
 from .crm_metrics import (
-    calculate_sla, coerce_utc_datetime, event_evidence, normalize_result, utc_now,
+    calculate_sla, coerce_utc_datetime, is_first_sla_management_completed, utc_now,
 )
 from .crm_sla_alert_evaluator import (
-    SLA_STOP_RESULTS, _is_test_lead, CLOSED_STAGES, EXCLUDED_ORIGINS,
+    _is_test_lead, CLOSED_STAGES, EXCLUDED_ORIGINS,
 )
 from .crm_sla_alert_repository import (
     COLLECTION, ST_PENDING, ST_PROCESSING, ST_SENT, ST_FAILED_RETRYABLE,
@@ -95,15 +95,15 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "reassigned"
 
     mgmt = await db["crm_management_results"].find({"assignment_cycle_id": cycle_id}).to_list(length=50)
-    if any(normalize_result(m.get("result_type")) in SLA_STOP_RESULTS
-           and coerce_utc_datetime(m.get("occurred_at"))
-           and coerce_utc_datetime(m.get("occurred_at")) >= assigned_at for m in mgmt):
-        return "management_completed"
-
-    events = await db["crm_events"].find({"lead_id": lead_id, "timestamp": {"$gte": assigned_at}}).to_list(length=100)
-    if len(lead_query_ids) > 1:
-        events += await db["crm_events"].find({"lead_id": lead_query_ids[1], "timestamp": {"$gte": assigned_at}}).to_list(length=100)
-    if any(event_evidence(e)["management"] for e in events):
+    events = await db["crm_events"].find({
+        "lead_id": {"$in": lead_query_ids}, "timestamp": {"$gte": assigned_at},
+        "$or": [
+            {"assignment_cycle_id": cycle_id},
+            {"assignment_cycle_id": {"$exists": False}},
+            {"assignment_cycle_id": None},
+        ],
+    }).to_list(length=100)
+    if is_first_sla_management_completed(cycle, mgmt, events):
         return "management_completed"
 
     reason = str(cycle.get("reason") or "").lower()
@@ -160,6 +160,19 @@ async def process_one_alert(
         if not started:
             return {"status": "lost_lease", "reason": "delivery_start_not_acquired"}
         attempt_id = started.get("delivery_attempt_id")
+
+        # Re-read the canonical cycle after acquiring the delivery lease. A
+        # management result can land after the first check but before this
+        # point; if so, cancel before calling the provider.
+        post_start_reason = await _revalidate(db, {**alert, **started})
+        if post_start_reason:
+            if post_start_reason == "superseded_by_breached":
+                await cancel_alerts_for_cycle(
+                    db, assignment_cycle_id=alert["assignment_cycle_id"],
+                    reason=post_start_reason, except_level=alert.get("alert_level"),
+                )
+            await cancel_alert(db, alert_id=alert_id, reason=post_start_reason)
+            return {"status": "cancelled", "reason": post_start_reason}
 
         # 4. Call sender
         transport = get_sender(sender)

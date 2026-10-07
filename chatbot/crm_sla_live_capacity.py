@@ -12,14 +12,12 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from .crm_metrics import (
-    event_evidence,
-    normalize_result,
+    is_first_sla_management_completed,
     calculate_sla,
 )
 from .crm_sla_alert_evaluator import (
     CLOSED_STAGES,
     EXCLUDED_ORIGINS,
-    SLA_STOP_RESULTS,
     SYNTHETIC_PHONES,
 )
 from .crm_sla_performance_snapshot import _utc
@@ -91,7 +89,10 @@ def _management_lookup() -> dict[str, Any]:
             "let": {"cycle_key": "$assignment_cycle_id"},
             "pipeline": [
                 {"$match": {"$expr": {"$eq": ["$assignment_cycle_id", "$$cycle_key"]}}},
-                {"$project": {"_id": 0, "result_type": 1, "occurred_at": 1}},
+                {"$project": {
+                    "_id": 0, "assignment_cycle_id": 1,
+                    "result_type": 1, "occurred_at": 1,
+                }},
             ],
             "as": "management_results",
         }
@@ -106,6 +107,8 @@ def _cycle_projection() -> dict[str, Any]:
         "assigned_to_user_id": 1,
         "assigned_at": 1,
         "sla_started_at": 1,
+        "first_valid_management_at": 1,
+        "sla_first_management_status": 1,
         "hot_started_at": 1,
         "temperature_at_assignment": 1,
         "schema_version": 1,
@@ -137,6 +140,8 @@ def _base_pipeline(policy_since: datetime, *, grouped: bool) -> list[dict[str, A
                     "assigned_to_user_id": "$assigned_to_user_id",
                     "assigned_at": "$assigned_at",
                     "sla_started_at": "$sla_started_at",
+                    "first_valid_management_at": "$first_valid_management_at",
+                    "sla_first_management_status": "$sla_first_management_status",
                     "hot_started_at": "$hot_started_at",
                     "temperature_at_assignment": "$temperature_at_assignment",
                     "schema_version": "$schema_version",
@@ -192,6 +197,7 @@ def _event_compact_projection() -> dict[str, Any]:
     return {
         "_id": 0,
         "lead_id": 1,
+        "assignment_cycle_id": 1,
         "type": 1,
         "timestamp": 1,
         "occurred_at": 1,
@@ -244,6 +250,7 @@ def _compact_event(row: Mapping[str, Any]) -> dict[str, Any]:
     human = bool(row.get("actor_human"))
     return {
         "lead_id": row.get("lead_id"),
+        "assignment_cycle_id": row.get("assignment_cycle_id"),
         "type": row.get("type"),
         "actor": "human" if human else None,
         "actor_type": "human" if human else "system",
@@ -306,16 +313,18 @@ def _capacity_from_rows(
         row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0})
         row["open"] += 1
 
-        mgmt_stop = any(
-            normalize_result(item.get("result_type")) in SLA_STOP_RESULTS
-            for item in (cycle.get("management_results") or [])
+        cycle_events = events_by_lead.get(str(cycle.get("lead_id") or ""), [])
+        mgmt_stop = is_first_sla_management_completed(
+            cycle, cycle.get("management_results") or (), (),
         )
-        factual_assigned_at = _utc(cycle.get("assigned_at")) or _utc(cycle.get("sla_started_at")) or policy_since
+        event_cycle = {
+            **cycle,
+            "first_valid_management_at": None,
+            "sla_first_management_status": None,
+        }
         event_stop = any(
-            event_evidence(item).get("management")
-            and _utc(item.get("timestamp") or item.get("occurred_at"))
-            and _utc(item.get("timestamp") or item.get("occurred_at")) >= factual_assigned_at
-            for item in events_by_lead.get(str(cycle.get("lead_id") or ""), [])
+            is_first_sla_management_completed(event_cycle, (), (item,))
+            for item in cycle_events
         )
         if mgmt_stop:
             audit["management_stop_cycles"] += 1

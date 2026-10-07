@@ -57,8 +57,59 @@ VALID_MANAGEMENT_RESULTS = frozenset({
     "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
     "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
     "DISCARDED_VALID_REASON", "SCHEDULE_FOLLOW_UP", "OTHER_EXPLICIT",
+    "VISIT_SCHEDULED", "PROPERTY_UNAVAILABLE", "CLOSED_WON", "CLOSED_LOST",
+    "NOT_INTERESTED",
 })
 HUMAN_ACTOR_TYPES = frozenset({"human", "agent", "administrator", "supervisor"})
+
+
+def is_first_sla_management_completed(
+    cycle: Mapping[str, Any] | None,
+    management_results: Iterable[Mapping[str, Any]] = (),
+    events: Iterable[Mapping[str, Any]] = (),
+) -> bool:
+    """Return whether this exact assignment cycle has completed first management.
+
+    The cycle's persisted first-management marker is authoritative, including
+    legacy records whose timestamp was stored before ``assigned_at``. Otherwise
+    only completed canonical results tied to this cycle, or registered human
+    management events tied to it (or untagged legacy events) after assignment,
+    count.
+    Navigation, app opens, and outreach clicks never count.
+    """
+    if not isinstance(cycle, Mapping):
+        return False
+    marker = cycle.get("first_valid_management_at")
+    if marker not in (None, "") or str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+        return True
+
+    cycle_id = str(cycle.get("assignment_cycle_id") or "")
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    if not cycle_id or not assigned_at:
+        return False
+
+    for result in management_results or ():
+        if str(result.get("assignment_cycle_id") or "") != cycle_id:
+            continue
+        if str(result.get("status") or "completed").lower() != "completed":
+            continue
+        if normalize_result(result.get("result_type") or result.get("result")) not in VALID_MANAGEMENT_RESULTS:
+            continue
+        occurred = coerce_utc_datetime(result.get("occurred_at"))
+        if occurred and occurred >= assigned_at:
+            return True
+
+    for event in events or ():
+        event_cycle_id = str(event.get("assignment_cycle_id") or "")
+        # Legacy events without cycle identity can be attributed by their
+        # timestamp only when they occur after this cycle's assignment. An
+        # explicit different cycle is never accepted.
+        if event_cycle_id and event_cycle_id != cycle_id:
+            continue
+        occurred = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+        if occurred and occurred >= assigned_at and event_evidence(event).get("management"):
+            return True
+    return False
 
 
 def utc_now() -> datetime:

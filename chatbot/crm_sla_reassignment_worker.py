@@ -28,7 +28,10 @@ from typing import Any, Iterable, Mapping
 from bson import ObjectId
 
 from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
-from .crm_metrics import INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime, event_evidence, normalize_result, utc_now
+from .crm_metrics import (
+    INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
+    event_evidence, is_first_sla_management_completed, normalize_result, utc_now,
+)
 from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, add_business_minutes
 from .crm_sla_global_rescue import RescueParameters
 from .crm_sla_hybrid_rescue import (
@@ -722,10 +725,23 @@ def _human_actor(value: Any, actor_type: Any = None) -> bool:
 
 def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | None, events: Iterable[Mapping[str, Any]], results: Iterable[Mapping[str, Any]], *, breach_at: datetime | None) -> ManagementProtection:
     assigned_at = _utc(cycle.get("assigned_at"))
+    events = list(events or ())
+    results = list(results or ())
     human_times: list[datetime] = []
     stop_times: list[datetime] = []
     evidence_types: list[str] = []
+    if is_first_sla_management_completed(cycle, results, events):
+        marker_at = _utc(cycle.get("first_valid_management_at"))
+        if marker_at is None:
+            marker_at = assigned_at
+        if marker_at is not None:
+            human_times.append(marker_at)
+            stop_times.append(marker_at)
+        evidence_types.append("canonical:first_sla_management_completed")
     for event in events:
+        event_cycle_id = str(event.get("assignment_cycle_id") or "")
+        if event_cycle_id and event_cycle_id != str(cycle.get("assignment_cycle_id") or ""):
+            continue
         occurred = _utc(event.get("timestamp") or event.get("occurred_at"))
         if not occurred or (assigned_at and occurred < assigned_at):
             continue
@@ -743,6 +759,8 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
             human_times.append(occurred)
             evidence_types.append(f"human:{raw_type or protection_type.lower()}")
     for result in results:
+        if str(result.get("assignment_cycle_id") or "") != str(cycle.get("assignment_cycle_id") or ""):
+            continue
         occurred = _utc(result.get("occurred_at"))
         if not occurred or (assigned_at and occurred < assigned_at):
             continue
@@ -771,10 +789,11 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
     current_stop = min(stop_times) if stop_times else None
     human_before = bool(breach_at and any(value <= breach_at for value in human_times))
     human_after = bool(breach_at and any(value > breach_at for value in human_times))
+    completed_marker = is_first_sla_management_completed(cycle, results, events)
     return ManagementProtection(
         # A late human action remains audit evidence, but cannot retroactively
         # protect a deadline that the worker was already entitled to enforce.
-        protected=human_before if breach_at else bool(human_times),
+        protected=(completed_marker or human_before) if breach_at else bool(human_times),
         human_evidence_count=len(human_times),
         current_stop_at=current_stop,
         first_human_at=first_human,

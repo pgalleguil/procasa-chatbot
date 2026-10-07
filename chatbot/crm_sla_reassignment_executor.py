@@ -406,6 +406,10 @@ def _predeadline_evidence(value: Any, *, breach_at: datetime | None) -> bool:
 def _cycle_field_protection(
     cycle: Mapping[str, Any], lead: Mapping[str, Any], *, breach_at: datetime | None
 ) -> tuple[str, Any] | None:
+    if str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+        marker = cycle.get("first_valid_management_at") or cycle.get("assigned_at")
+        if _predeadline_evidence(marker, breach_at=breach_at):
+            return "sla_first_management_status", marker
     for field in PROTECTED_CYCLE_FIELDS:
         value = cycle.get(field)
         if _predeadline_evidence(value, breach_at=breach_at):
@@ -451,7 +455,11 @@ def _human_evidence_in_collections(
             db["crm_events"],
             {
                 "lead_id": lead_key,
-                "assignment_cycle_id": cycle_id,
+                "$or": [
+                    {"assignment_cycle_id": cycle_id},
+                    {"assignment_cycle_id": {"$exists": False}},
+                    {"assignment_cycle_id": None},
+                ],
             },
             session=session,
         )
@@ -502,6 +510,11 @@ def _postdeadline_cycle_protection(
     """Return cycle/lifecycle human evidence that appeared after breach."""
     if breach_at is None:
         return None
+    if str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+        marker = cycle.get("first_valid_management_at") or cycle.get("assigned_at")
+        parsed = coerce_utc_datetime(marker)
+        if marker not in (None, "") and (parsed is None or parsed > breach_at):
+            return "sla_first_management_status", marker
     for field in PROTECTED_CYCLE_FIELDS:
         value = cycle.get(field)
         parsed = coerce_utc_datetime(value)

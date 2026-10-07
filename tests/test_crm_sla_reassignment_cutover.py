@@ -95,6 +95,7 @@ def test_automatic_post_cutover_cycle_can_be_eligible():
         "assigned_at": datetime(2026, 9, 15, 13, 0, tzinfo=timezone.utc),
         "sla_started_at": datetime(2026, 9, 15, 13, 0, tzinfo=timezone.utc),
         "temperature_at_assignment": "HOT",
+        "temperature_on_assignment": "HOT",
         "reassignment_source_cycle_id": "previous-cycle",
         "reassignment_decision_id": "decision",
     }

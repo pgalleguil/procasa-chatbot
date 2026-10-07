@@ -3,7 +3,9 @@ from datetime import datetime
 from config import Config
 from .constants import CHILE_TZ, PipelineStage
 from .utils import calculate_business_minutes
-from .crm_metrics import calculate_sla, resolve_canonical_lead
+from .crm_metrics import (
+    calculate_sla, resolve_canonical_lead, sync_active_cycle_temperature,
+)
 import logging
 from .lead_temperature import (
     HOT,
@@ -164,8 +166,13 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None)
         }
         
         became_hot = new_temp == HOT and old_temp != HOT
+        hot_transition_at = None
         if became_hot:
-            update_data["lifecycle.hot_since"] = datetime.now(CHILE_TZ).isoformat()
+            # Mongo BSON dates are millisecond precise; normalize once so the
+            # lead lifecycle and cycle document persist the identical instant.
+            now = datetime.now(CHILE_TZ)
+            hot_transition_at = now.replace(microsecond=(now.microsecond // 1000) * 1000)
+            update_data["lifecycle.hot_since"] = hot_transition_at.isoformat()
         
         if event_at: update_data["last_event_at"] = event_at
         if event_type: update_data["last_event_type"] = event_type
@@ -193,6 +200,20 @@ def update_lead_metrics(db, phone, event_at=None, event_type=None, lead_id=None)
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": update_data})
 
         if became_hot:
+            # Persist the active-cycle HOT segment independently of whether
+            # the separate HOT notification path is enabled or deduplicated.
+            # The cycle update writes both timestamps and its SLA segment in
+            # one atomic, idempotent update.
+            try:
+                sync_active_cycle_temperature(
+                    db, lead["_id"], temperature="HOT",
+                    transition_at=hot_transition_at,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist HOT transition on active assignment cycle lead_id=%s",
+                    lead.get("_id"),
+                )
             _enqueue_hot_lead_notification(lead)
         
     except Exception as e:

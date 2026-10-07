@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .crm_metrics import INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime
+from .crm_metrics import (
+    INSTRUMENTATION_CUTOVER,
+    calculate_cycle_sla,
+    coerce_utc_datetime,
+    is_first_sla_management_completed,
+    resolve_cycle_sla_temperature,
+)
 
 
 def evaluate_sla_shadow(*, leads, cycles, users, deliveries, as_of) -> dict:
@@ -37,16 +43,20 @@ def evaluate_sla_shadow(*, leads, cycles, users, deliveries, as_of) -> dict:
             counters["inactive_executive_exclusions"] += 1; continue
         if cycle_id not in delivered_cycles:
             counters["delivery_failed_exclusions"] += 1; continue
-        temperature = str(lead.get("lead_temperature_effective") or "").upper()
-        sla = calculate_sla(
-            assigned_at=assigned, first_valid_management_at=cycle.get("first_valid_management_at"), now=now,
-        )
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        sla = calculate_cycle_sla(cycle=cycle, lead=lead, now=now)
+        if is_first_sla_management_completed(cycle):
+            continue
         if temperature != "HOT":
             if temperature == "COLD" and not sla["fulfilled"]:
                 cold_backlog[recipient] += 1
             continue
         counters["eligible_sla_cycles"] += 1
-        level = "red" if sla["status"] == "critical" else "yellow" if sla["status"] == "near_critical" else None
+        level = {
+            "critical": "red",
+            "near_critical": "yellow",
+            "warning": "yellow",
+        }.get(sla["status"])
         if not level:
             continue
         key = f"{lead_id}|{cycle_id}|{level}|{recipient}"

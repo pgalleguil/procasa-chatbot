@@ -30,7 +30,10 @@ from pymongo.write_concern import WriteConcern
 from config import Config
 
 from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
-from .crm_metrics import calculate_sla, coerce_utc_datetime, utc_now
+from .crm_metrics import (
+    calculate_cycle_sla, coerce_utc_datetime,
+    is_first_sla_management_completed, utc_now,
+)
 from .crm_sla_hybrid_stabilization import generate_decision_id
 from .crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
@@ -406,7 +409,7 @@ def _predeadline_evidence(value: Any, *, breach_at: datetime | None) -> bool:
 def _cycle_field_protection(
     cycle: Mapping[str, Any], lead: Mapping[str, Any], *, breach_at: datetime | None
 ) -> tuple[str, Any] | None:
-    if str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+    if is_first_sla_management_completed(cycle):
         marker = cycle.get("first_valid_management_at") or cycle.get("assigned_at")
         if _predeadline_evidence(marker, breach_at=breach_at):
             return "sla_first_management_status", marker
@@ -510,7 +513,7 @@ def _postdeadline_cycle_protection(
     """Return cycle/lifecycle human evidence that appeared after breach."""
     if breach_at is None:
         return None
-    if str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+    if is_first_sla_management_completed(cycle):
         marker = cycle.get("first_valid_management_at") or cycle.get("assigned_at")
         parsed = coerce_utc_datetime(marker)
         if marker not in (None, "") and (parsed is None or parsed > breach_at):
@@ -698,21 +701,15 @@ def _revalidate(
             f"human_protection:{collection_protection[0]}",
         )
 
-    temperature = str(
-        lead.get("lead_temperature_effective")
-        or source.get("temperature_at_assignment")
-        or "COLD"
-    ).upper()
     first_valid_management_at = source.get("first_valid_management_at")
     parsed_first_management = coerce_utc_datetime(first_valid_management_at)
     if canonical_breach and parsed_first_management and parsed_first_management > canonical_breach:
         first_valid_management_at = None
-    sla = calculate_sla(
-        assigned_at=source.get("assigned_at"),
+    sla = calculate_cycle_sla(
+        cycle=source,
+        lead=lead,
         first_valid_management_at=first_valid_management_at,
         now=evaluated_at,
-        temperature=temperature,
-        hot_started_at=source.get("hot_started_at"),
     )
     if sla.get("status") != "critical":
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED, "sla_not_expired")

@@ -8,12 +8,16 @@ from __future__ import annotations
 from collections import Counter
 from typing import Iterable, Mapping
 
-from .crm_metrics import calculate_sla, coerce_utc_datetime
+from .crm_metrics import (
+    calculate_cycle_sla, coerce_utc_datetime,
+    is_first_sla_management_completed, resolve_cycle_sla_temperature,
+)
+from .crm_sla_alert_evaluator import alert_level_for_sla_status
 
 MESSAGE_DOMAIN = "crm_sla_alert"
 RECIPIENT_ROLE = "executive"
 ALERTS = {
-    "HOT": ((45, "warning"), (60, "breached")),
+    "HOT": ((30, "warning"), (45, "near_critical"), (60, "breached")),
     "NORMAL": ((150, "warning"), (180, "breached")),
 }
 BLOCKED_STAGES = {"CLOSED", "CLOSED_WON", "CLOSED_LOST", "ARCHIVED"}
@@ -56,7 +60,7 @@ def evaluate_sla_alert_dry_run(*, leads: Iterable[Mapping], cycles: Iterable[Map
             excluded["pre_activation"] += 1; continue
         if cycle.get("cycle_status") not in (None, "active") or cycle.get("unassigned_at"):
             excluded["inactive_cycle"] += 1; continue
-        if lead.get("first_valid_management_at") or cycle.get("first_valid_management_at"):
+        if is_first_sla_management_completed(cycle):
             excluded["human_management"] += 1; continue
         stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").upper()
         if stage in BLOCKED_STAGES:
@@ -66,15 +70,16 @@ def evaluate_sla_alert_dry_run(*, leads: Iterable[Mapping], cycles: Iterable[Map
             excluded["waiting_assignment"] += 1; continue
         if not user or not _active(user) or not _phone(user):
             excluded["invalid_recipient"] += 1; continue
-        temperature = "HOT" if str(lead.get("lead_temperature_effective") or "").upper() == "HOT" else "NORMAL"
-        sla = calculate_sla(assigned_at=assigned_at, first_valid_management_at=None, now=now)
-        minutes = sla.get("minutes")
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        sla = calculate_cycle_sla(cycle=cycle, lead=lead, now=now)
+        alert_level = alert_level_for_sla_status(sla.get("status"), temperature=temperature)
+        minutes = sla.get("hot_minutes") if temperature == "HOT" else sla.get("minutes")
         if minutes is None:
             excluded["invalid_sla"] += 1; continue
-        threshold, level = next(((m, l) for m, l in reversed(ALERTS[temperature]) if minutes >= m), (None, None))
-        if threshold is None:
+        if alert_level is None:
             excluded["below_threshold"] += 1; continue
-        alert_type = f"{temperature.lower()}_{level}"
+        threshold = dict((level, value) for value, level in ALERTS[temperature])[alert_level]
+        alert_type = f"{temperature.lower()}_{alert_level}"
         key = f"{cycle_id}|{alert_type}|{threshold}|{recipient}"
         if key in seen:
             excluded["duplicate_candidate"] += 1; continue

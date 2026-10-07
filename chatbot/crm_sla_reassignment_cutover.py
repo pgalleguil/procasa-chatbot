@@ -14,8 +14,9 @@ from typing import Any, Mapping
 
 import pytz
 
-from .crm_metrics import commercial_sla_start_at, coerce_utc_datetime
-from .crm_sla_alert_evaluator import add_business_minutes
+from .crm_metrics import (
+    calculate_cycle_sla, coerce_utc_datetime, resolve_cycle_sla_start,
+)
 
 
 SANTIAGO_TZ = pytz.timezone("America/Santiago")
@@ -103,41 +104,25 @@ def canonical_sla_breached_at(
 ) -> datetime | None:
     """Resolve the reproducible breach instant for one cycle.
 
-    Persisted breach/deadline fields are preferred when valid.  Otherwise the
-    exact production deadline arithmetic is used from the cycle's effective
-    SLA start and current temperature.  No alternate SLA formula is created.
+    Persisted breach/deadline hints are deliberately ignored here because they
+    may reflect a stale Hot start. The exact production deadline arithmetic
+    uses the shared cycle Hot-start resolver and current policy.
     """
 
-    for field in ("sla_breached_at", "sla_expired_at", "deadline_at", "sla_deadline_at"):
-        parsed = _aware_breach(cycle.get(field))
-        if parsed:
-            return parsed
-
     assigned_at = cycle.get("assigned_at")
-    effective_start = _aware_breach(cycle.get("sla_started_at"))
-    if effective_start is None:
-        effective_start = commercial_sla_start_at(assigned_at)
+    effective_start = resolve_cycle_sla_start(cycle=cycle)
     if effective_start is None:
         return None
 
-    lead = lead or {}
-    temperature = str(
-        cycle.get("temperature_at_assignment")
-        or lead.get("lead_temperature_effective")
-        or "NORMAL"
-    ).upper()
-    if temperature == "HOT":
-        hot_start = _aware_breach(cycle.get("hot_started_at"))
-        lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
-        hot_start = hot_start or _aware_breach(lifecycle.get("hot_since"))
-        if hot_start and hot_start < effective_start:
-            hot_start = effective_start
-        deadline_start = hot_start or effective_start
-        threshold = 60
-    else:
-        deadline_start = effective_start
-        threshold = 180
-    return add_business_minutes(deadline_start, threshold)
+    # Keep the historical commercial-start fallback above, but route both
+    # policy selection and deadline calculation through the same cycle helper
+    # used by CRM, alerts and the active reassignment worker.
+    canonical_cycle = dict(cycle)
+    canonical_cycle["sla_started_at"] = effective_start
+    result = calculate_cycle_sla(
+        cycle=canonical_cycle, lead=lead or {}, now=effective_start,
+    )
+    return result.get("deadline_at")
 
 
 def evaluate_cutover(

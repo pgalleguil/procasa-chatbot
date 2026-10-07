@@ -19,7 +19,7 @@ from chatbot.crm_sla_alert_evaluator import (
     evaluate_sla_alerts, _get_executive_phone_async,
     SLA_STOP_RESULTS, OUTREACH_RESULTS,
     THRESHOLD_WARNING_NORMAL, THRESHOLD_BREACHED_NORMAL,
-    THRESHOLD_WARNING_HOT, THRESHOLD_BREACHED_HOT,
+    THRESHOLD_WARNING_HOT, THRESHOLD_NEAR_CRITICAL_HOT, THRESHOLD_BREACHED_HOT,
     ALERT_LEVEL_WARNING, ALERT_LEVEL_BREACHED,
     SLA_PROFILE_STANDARD, SLA_PROFILE_HOT,
 )
@@ -771,8 +771,14 @@ class TestEvaluatorE2E:
     async def test_hot_warning_triggered(self, fake_db):
         assigned = chile_dt(9, 0, 3).astimezone(timezone.utc)
         fake_db["leads"] = FakeCollection([make_lead("lead-1", "HOT")])
+        hot_cycle = make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
+        hot_cycle.update({
+            "sla_started_at": assigned, "temperature_at_assignment": "HOT",
+            "temperature_on_assignment": "HOT", "hot_started_at": assigned,
+            "temperature_transitioned_at": assigned,
+        })
         fake_db["crm_assignment_cycles"] = FakeCollection([
-            make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
+            hot_cycle
         ])
         fake_db["crm_events"] = FakeCollection([])
         fake_db["usuarios"] = FakeCollection([{"_id": "user-1", "nombre": "Ejecutiva", "is_active": True, "rol": "agente", "telefono": "+56911111111"}])
@@ -784,6 +790,48 @@ class TestEvaluatorE2E:
                        lambda: chile_dt(9, 46, 3).astimezone(timezone.utc))
             report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
         assert len(report["alerts"]) == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "hour,minute,expected_level",
+        [(12, 20, None), (12, 46, "near_critical"), (13, 1, "breached")],
+    )
+    async def test_hot_transition_alerts_use_cycle_hot_start_not_original_assignment(
+        self, fake_db, hour, minute, expected_level,
+    ):
+        assigned = CHILE_TZ.localize(datetime(2026, 10, 7, 10, 0)).astimezone(timezone.utc)
+        hot_start = CHILE_TZ.localize(datetime(2026, 10, 7, 12, 0)).astimezone(timezone.utc)
+        cycle = make_cycle("lead-1", "cycle-1", "user-1", assigned_at=assigned)
+        cycle.update({
+            "sla_started_at": assigned,
+            "temperature_at_assignment": "HOT",
+            "temperature_on_assignment": "NORMAL",
+            "hot_started_at": hot_start,
+            "temperature_transitioned_at": hot_start,
+        })
+        fake_db["leads"] = FakeCollection([make_lead("lead-1", "HOT")])
+        fake_db["crm_assignment_cycles"] = FakeCollection([cycle])
+        fake_db["crm_events"] = FakeCollection([])
+        fake_db["usuarios"] = FakeCollection([{
+            "_id": "user-1", "nombre": "Ejecutiva", "is_active": True,
+            "rol": "agente", "telefono": "+56911111111",
+        }])
+        fake_db["crm_management_results"] = FakeCollection([])
+        now = CHILE_TZ.localize(datetime(2026, 10, 7, hour, minute)).astimezone(timezone.utc)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("chatbot.crm_sla_alert_settings.CUTOVER_AT", assigned)
+            mp.setattr("chatbot.crm_sla_alert_evaluator.utc_now", lambda: now)
+            report = await evaluate_sla_alerts(db=fake_db, limit_cycles=100)
+        levels = [alert["alert_level"] for alert in report["alerts"]]
+        assert levels == ([expected_level] if expected_level else [])
+        if expected_level:
+            alert = report["alerts"][0]
+            assert alert["hot_started_at"] == hot_start
+            assert alert["elapsed_hot_minutes"] == (hour - 12) * 60 + minute
+            assert alert["sla_status"] == ("near_critical" if minute == 46 else "critical")
+            assert alert["deadline_at"] == add_business_minutes(hot_start, 60).isoformat()
+        if expected_level == "breached":
+            assert "13:00" in report["alerts"][0]["deadline_display"]
 
     @pytest.mark.asyncio
     async def test_closed_lead_excluded(self, fake_db):
@@ -853,7 +901,8 @@ class TestEvaluatorE2E:
 def test_alert_constants():
     assert THRESHOLD_WARNING_NORMAL == 150
     assert THRESHOLD_BREACHED_NORMAL == 180
-    assert THRESHOLD_WARNING_HOT == 45
+    assert THRESHOLD_WARNING_HOT == 30
+    assert THRESHOLD_NEAR_CRITICAL_HOT == 45
     assert THRESHOLD_BREACHED_HOT == 60
     assert MESSAGE_DOMAIN == "crm_sla_alert"
 

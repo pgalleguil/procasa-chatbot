@@ -29,10 +29,12 @@ from bson import ObjectId
 
 from .crm_assignment_cycle_gate import classify_human_protection, protection_type_for_management_result
 from .crm_metrics import (
-    INSTRUMENTATION_CUTOVER, calculate_sla, coerce_utc_datetime,
-    event_evidence, is_first_sla_management_completed, normalize_result, utc_now,
+    INSTRUMENTATION_CUTOVER, calculate_cycle_sla, coerce_utc_datetime,
+    event_evidence, is_first_sla_management_completed, normalize_result,
+    resolve_cycle_hot_start_details, resolve_cycle_sla_start,
+    resolve_cycle_sla_temperature, utc_now,
 )
-from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS, add_business_minutes
+from .crm_sla_alert_evaluator import CLOSED_STAGES, SLA_STOP_RESULTS
 from .crm_sla_global_rescue import RescueParameters
 from .crm_sla_hybrid_rescue import (
     REGION_JPC_MARIA_HERNAN,
@@ -247,10 +249,17 @@ class CanonicalExpiration:
     start_source: str
     persisted_deadline_at: datetime | None = None
     persisted_deadline_mismatch: bool = False
+    hot_started_at: datetime | None = None
+    elapsed_hot_minutes: float | None = None
+    sla_status: str | None = None
+    canonical_state: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         output = asdict(self)
-        for key in ("started_at", "deadline_at", "breach_at", "persisted_deadline_at"):
+        for key in (
+            "started_at", "deadline_at", "breach_at", "persisted_deadline_at",
+            "hot_started_at",
+        ):
             if output[key]:
                 output[key] = output[key].isoformat()
         return output
@@ -426,6 +435,7 @@ def _cycle_projection() -> dict[str, int]:
         "_id": 1, "lead_id": 1, "assignment_cycle_id": 1,
         "assigned_to_user_id": 1, "assigned_to_display_name": 1,
         "assigned_at": 1, "sla_started_at": 1, "hot_started_at": 1,
+        "temperature_transitioned_at": 1, "temperature_on_assignment": 1,
         "sla_breached_at": 1, "sla_expired_at": 1, "deadline_at": 1,
         "sla_deadline_at": 1, "temperature_at_assignment": 1,
         "cycle_status": 1, "unassigned_at": 1,
@@ -670,16 +680,12 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
             temperature, "awaiting_owner_notification", persisted_deadline, False,
         )
     persisted_start = _utc(cycle.get("sla_started_at"))
-    started_at = persisted_start or assigned_at
-    start_source = "persisted" if persisted_start else "fallback_assigned_at" if assigned_at else "missing"
-    temperature = _text(cycle.get("temperature_at_assignment") or (lead or {}).get("lead_temperature_effective") or "NORMAL").upper()
-    if temperature not in {"HOT", "NORMAL"}:
-        temperature = "NORMAL"
+    started_at = resolve_cycle_sla_start(cycle=cycle)
+    start_source = "persisted" if persisted_start else "fallback_commercial_start" if started_at else "missing"
+    temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
     threshold = 60 if temperature == "HOT" else 180
-    lifecycle = (lead or {}).get("lifecycle") or {}
-    hot_start = _utc(cycle.get("hot_started_at")) or _utc(lifecycle.get("hot_since"))
-    if hot_start and started_at and hot_start < started_at:
-        hot_start = started_at
+    hot_resolution = resolve_cycle_hot_start_details(cycle=cycle, lead=lead)
+    hot_start = hot_resolution.get("hot_start") if temperature == "HOT" else None
     persisted_deadline = None
     for key in ("sla_breached_at", "sla_expired_at", "deadline_at", "sla_deadline_at"):
         persisted_deadline = _utc(cycle.get(key))
@@ -687,16 +693,22 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
             break
     if not started_at:
         return CanonicalExpiration(None, None, None, threshold, None, 0.0, False, temperature, start_source, persisted_deadline, False)
-    result = calculate_sla(
-        assigned_at=started_at,
-        first_valid_management_at=None,
-        now=_utc(now) or utc_now(),
-        temperature=temperature,
-        hot_started_at=hot_start,
-    )
+    if temperature == "HOT" and hot_start is None:
+        return CanonicalExpiration(
+            started_at, None, None, threshold, None, 0.0, False,
+            temperature, "insufficient_hot_start", persisted_deadline, False,
+            None, None, "unknown", "INSUFFICIENT_DATA",
+        )
+    result = calculate_cycle_sla(cycle=cycle, lead=lead, now=_utc(now) or utc_now())
     measured = result.get("hot_minutes") if temperature == "HOT" else result.get("minutes")
-    deadline_start = hot_start if temperature == "HOT" and hot_start else started_at
-    deadline = add_business_minutes(deadline_start, threshold)
+    deadline = result.get("deadline_at")
+    if deadline is None:
+        return CanonicalExpiration(
+            started_at, None, None, threshold, None, 0.0, False,
+            temperature, "insufficient_deadline_data", persisted_deadline, False,
+            hot_start, result.get("elapsed_hot_minutes"), result.get("status"),
+            result.get("canonical_state"),
+        )
     expired = result.get("status") == "critical"
     mismatch = bool(persisted_deadline and abs((persisted_deadline - deadline).total_seconds()) > 1)
     elapsed = _number(measured) if measured is not None else None
@@ -712,6 +724,10 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
         start_source=start_source,
         persisted_deadline_at=persisted_deadline,
         persisted_deadline_mismatch=mismatch,
+        hot_started_at=hot_start,
+        elapsed_hot_minutes=result.get("elapsed_hot_minutes"),
+        sla_status=result.get("status"),
+        canonical_state=result.get("canonical_state"),
     )
 
 
@@ -888,7 +904,8 @@ async def _batch_context(
     leads = await _find_many(
         db["leads"], {"_id": {"$in": lead_values}},
         {"_id": 1, "pipeline_stage": 1, "stage": 1, "crm_estado": 1, "lead_temperature_effective": 1,
-         "ejecutivo_asignado": 1, "lifecycle": 1, "prospecto.codigo": 1, "prospecto.codigo_propiedad": 1,
+         "ejecutivo_asignado": 1, "lifecycle": 1, "temperature_history": 1,
+         "prospecto.codigo": 1, "prospecto.codigo_propiedad": 1,
          "prospecto.codigo_referencia": 1, "prospecto.origen": 1, "prospecto.operacion": 1,
          "prospecto.comuna": 1, "prospecto.region": 1, "comuna": 1, "region": 1,
          "property_code": 1, "origin": 1, "lead_origin": 1, "operacion": 1},

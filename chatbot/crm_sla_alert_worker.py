@@ -20,10 +20,12 @@ from collections import Counter
 from bson import ObjectId
 
 from .crm_metrics import (
-    calculate_sla, coerce_utc_datetime, is_first_sla_management_completed, utc_now,
+    calculate_cycle_sla, coerce_utc_datetime,
+    is_first_sla_management_completed, resolve_cycle_sla_temperature, utc_now,
 )
 from .crm_sla_alert_evaluator import (
     _is_test_lead, CLOSED_STAGES, EXCLUDED_ORIGINS,
+    alert_level_for_sla_status,
 )
 from .crm_sla_alert_repository import (
     COLLECTION, ST_PENDING, ST_PROCESSING, ST_SENT, ST_FAILED_RETRYABLE,
@@ -63,6 +65,7 @@ async def _revalidate(db, alert: dict) -> str | None:
         "pipeline_stage": 1, "stage": 1, "lead_temperature_effective": 1,
         "ejecutivo_asignado": 1, "phone": 1, "lead_origin": 1, "origin": 1,
         "prospecto.origen": 1, "lifecycle.hot_since": 1,
+        "temperature_history": 1,
     })
     try:
         lead_query_ids.append(ObjectId(lead_id))
@@ -73,6 +76,7 @@ async def _revalidate(db, alert: dict) -> str | None:
             "pipeline_stage": 1, "stage": 1, "lead_temperature_effective": 1,
             "ejecutivo_asignado": 1, "phone": 1, "lead_origin": 1, "origin": 1,
             "prospecto.origen": 1, "lifecycle.hot_since": 1,
+            "temperature_history": 1,
         })
     if not lead:
         return "lead_not_found"
@@ -112,15 +116,18 @@ async def _revalidate(db, alert: dict) -> str | None:
     if str(cycle.get("cycle_origin") or "").lower() in EXCLUDED_ORIGINS:
         return f"excluded_cycle_origin:{cycle.get('cycle_origin')}"
 
-    if alert_level == "warning" and not alert.get("delivery_started_at"):
-        temp = str(lead.get("lead_temperature_effective") or "").upper()
-        hot_start = None
-        if temp == "HOT":
-            hs = (lead.get("lifecycle") or {}).get("hot_since")
-            hot_start = coerce_utc_datetime(hs) if hs else None
-        sla = calculate_sla(assigned_at=assigned_at, now=utc_now(), temperature=temp, hot_started_at=hot_start)
-        if sla.get("status") == "critical":
-            return "superseded_by_breached"
+    temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+    sla = calculate_cycle_sla(
+        cycle=cycle, lead=lead, now=utc_now(),
+        management_results=mgmt, events=events,
+    )
+    current_level = alert_level_for_sla_status(sla.get("status"), temperature=temp)
+    if current_level == "breached" and alert_level != "breached":
+        return "superseded_by_breached"
+    if current_level is None:
+        return "sla_not_due_or_insufficient_data"
+    if current_level != alert_level:
+        return "sla_level_changed"
     return None
 
 
@@ -150,9 +157,8 @@ async def process_one_alert(
         if reason:
             if reason == "superseded_by_breached":
                 await cancel_alerts_for_cycle(db, assignment_cycle_id=alert["assignment_cycle_id"],
-                                              reason=reason, except_level=alert.get("alert_level"))
-            else:
-                await cancel_alert(db, alert_id=alert_id, reason=reason)
+                                              reason=reason, except_level="breached")
+            await cancel_alert(db, alert_id=alert_id, reason=reason)
             return {"status": "cancelled", "reason": reason}
 
         # 3. Mark delivery started (lease-gated: same _id, processing, same lease_owner, lease not expired)
@@ -169,7 +175,7 @@ async def process_one_alert(
             if post_start_reason == "superseded_by_breached":
                 await cancel_alerts_for_cycle(
                     db, assignment_cycle_id=alert["assignment_cycle_id"],
-                    reason=post_start_reason, except_level=alert.get("alert_level"),
+                    reason=post_start_reason, except_level="breached",
                 )
             await cancel_alert(db, alert_id=alert_id, reason=post_start_reason)
             return {"status": "cancelled", "reason": post_start_reason}

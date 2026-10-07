@@ -378,7 +378,8 @@ async def build_historical_performance_snapshot(
     cycle_projection = {
         "lead_id": 1, "assignment_cycle_id": 1, "assigned_to_user_id": 1,
         "assigned_to_display_name": 1, "assigned_at": 1, "sla_started_at": 1,
-        "temperature_at_assignment": 1, "hot_started_at": 1, "cycle_status": 1,
+        "temperature_at_assignment": 1, "temperature_on_assignment": 1,
+        "hot_started_at": 1, "temperature_transitioned_at": 1, "cycle_status": 1,
         "unassigned_at": 1, "schema_version": 1, "reason": 1, "cycle_origin": 1,
         "reassignment_state": 1,
         "first_valid_management_at": 1, "updated_at": 1,
@@ -398,6 +399,7 @@ async def build_historical_performance_snapshot(
         "pipeline_stage": 1, "stage": 1, "crm_estado": 1, "ejecutivo_asignado": 1,
         "lead_temperature_effective": 1, "origen": 1, "lead_origin": 1, "origin": 1,
         "source_type": 1, "lifecycle": 1, "prospecto.codigo": 1,
+        "temperature_history": 1,
         "prospecto.codigo_propiedad": 1, "prospecto.codigo_referencia": 1,
         "prospecto.origen": 1, "prospecto.operacion": 1, "prospecto.tipo_operacion": 1,
         "prospecto.comuna": 1, "prospecto.region": 1, "comuna": 1, "region": 1,
@@ -500,13 +502,15 @@ async def build_live_capacity_snapshot(
 ) -> dict[str, Any]:
     """Refresh current capacity without re-reading historical performance."""
     started = time.perf_counter()
-    from .crm_metrics import calculate_sla, event_evidence, normalize_result
-    from .crm_sla_alert_evaluator import CLOSED_STAGES, EXCLUDED_ORIGINS, SLA_STOP_RESULTS, SYNTHETIC_PHONES
+    from .crm_metrics import calculate_cycle_sla, is_first_sla_management_completed
+    from .crm_sla_alert_evaluator import CLOSED_STAGES, EXCLUDED_ORIGINS, SYNTHETIC_PHONES
     from .crm_sla_alert_settings import CUTOVER_AT
 
     cycle_projection = {
         "lead_id": 1, "assignment_cycle_id": 1, "assigned_to_user_id": 1,
         "assigned_at": 1, "sla_started_at": 1, "hot_started_at": 1,
+        "temperature_transitioned_at": 1, "temperature_on_assignment": 1,
+        "first_valid_management_at": 1, "sla_first_management_status": 1,
         "temperature_at_assignment": 1, "cycle_status": 1, "unassigned_at": 1,
         "schema_version": 1, "reason": 1, "cycle_origin": 1,
         "reassignment_state": 1,
@@ -558,7 +562,8 @@ async def build_live_capacity_snapshot(
                 "origin": {"$nin": list(EXCLUDED_ORIGINS)},
                 "prospecto.origen": {"$nin": list(EXCLUDED_ORIGINS)},
             },
-            {"_id": 1, "pipeline_stage": 1, "stage": 1, "crm_estado": 1, "lead_temperature_effective": 1, "lifecycle": 1},
+            {"_id": 1, "pipeline_stage": 1, "stage": 1, "crm_estado": 1,
+             "lead_temperature_effective": 1, "lifecycle": 1, "temperature_history": 1},
             instrumentation=instrumentation, query_name="live.leads",
         ) if lead_ids else asyncio.sleep(0, result=[]),
         _find_many(db["crm_management_results"], {"assignment_cycle_id": {"$in": cycle_ids}}, {"assignment_cycle_id": 1, "result_type": 1, "occurred_at": 1}, instrumentation=instrumentation, query_name="live.management_results") if cycle_ids else asyncio.sleep(0, result=[]),
@@ -605,13 +610,17 @@ async def build_live_capacity_snapshot(
         row["open"] += 1
         assigned_at = cycle.get("sla_started_at") or cycle.get("assigned_at")
         factual_assigned_at = _utc(cycle.get("assigned_at")) or _utc(assigned_at) or policy_since
-        stop = any(normalize_result(item.get("result_type")) in SLA_STOP_RESULTS for item in results_by_cycle.get(str(cycle.get("assignment_cycle_id") or ""), []))
-        management_stop = stop
+        cycle_results = results_by_cycle.get(str(cycle.get("assignment_cycle_id") or ""), [])
+        cycle_events = events_by_lead.get(str(cycle.get("lead_id") or ""), [])
+        management_stop = is_first_sla_management_completed(cycle, cycle_results, ())
+        event_cycle = {
+            **cycle,
+            "first_valid_management_at": None,
+            "sla_first_management_status": None,
+        }
         event_stop = any(
-            event_evidence(item).get("management")
-            and _utc(item.get("timestamp") or item.get("occurred_at"))
-            and _utc(item.get("timestamp") or item.get("occurred_at")) >= factual_assigned_at
-            for item in events_by_lead.get(str(cycle.get("lead_id") or ""), [])
+            is_first_sla_management_completed(event_cycle, (), (item,))
+            for item in cycle_events
         )
         stop = management_stop or event_stop
         if management_stop:
@@ -623,9 +632,10 @@ async def build_live_capacity_snapshot(
         row["unmanaged"] += 1
         if not assigned_at:
             continue
-        temperature = str(cycle.get("temperature_at_assignment") or lead.get("lead_temperature_effective") or "NORMAL").upper()
-        hot_start = cycle.get("hot_started_at") or (lead.get("lifecycle") or {}).get("hot_since")
-        sla = calculate_sla(assigned_at=assigned_at, now=as_of, temperature=temperature, hot_started_at=hot_start)
+        sla = calculate_cycle_sla(
+            cycle=cycle, lead=lead, now=as_of,
+            management_results=cycle_results, events=cycle_events,
+        )
         if sla.get("status") == "critical":
             row["expired"] += 1
     sla_ms = (time.perf_counter() - sla_started) * 1000.0

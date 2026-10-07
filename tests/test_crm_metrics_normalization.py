@@ -4,7 +4,8 @@ from pathlib import Path
 from chatbot.crm_metrics import (
     build_snapshot_document, calculate_sla, coerce_utc_datetime,
     commercial_sla_start_at, create_assignment_cycle, event_evidence, normalize_result, pipeline_activity_in_period,
-    resolve_canonical_lead, sync_active_cycle_temperature, unique_managed_lead_ids, validate_list_parity,
+    resolve_canonical_lead, resolve_cycle_hot_start, resolve_cycle_hot_start_details,
+    calculate_cycle_sla, sync_active_cycle_temperature, unique_managed_lead_ids, validate_list_parity,
 )
 
 
@@ -151,6 +152,12 @@ def test_historical_lead_new_inbound_cycle_has_its_own_assignment_and_sla_timest
     assert cycle["cycle_started_at"] == cycle["assigned_at"]
     assert cycle["sla_started_at"] == cycle["assigned_at"]
     assert cycle["temperature_at_assignment"] == "HOT"
+    assert cycle["temperature_on_assignment"] == "HOT"
+    assert cycle["hot_started_at"] == cycle["sla_started_at"]
+    assert cycle["sla_segments"] == [{
+        "policy": "HOT", "segment_start": cycle["sla_started_at"],
+        "segment_end": None, "end_reason": None,
+    }]
 
 
 def test_new_cycle_does_not_inherit_pre_activation_policy():
@@ -216,7 +223,8 @@ def test_crm_list_uses_one_canonical_cycle_source_for_row_fields():
     assert '"schema_version": "crm_assignment_cycle_v1"' in source
     assert 'current_cycle = cycle_by_lead_id' in source
     assert '"assignment_cycle_id": current_cycle_id' in source
-    assert 'current_cycle or {}).get("temperature_at_assignment")' in source
+    assert "calculate_cycle_sla(" in source
+    assert "resolve_cycle_hot_start_details(cycle=current_cycle" in source
 
 
 def test_sla_before_opening_starts_at_same_day_opening():
@@ -231,12 +239,14 @@ def test_crm_projection_treats_naive_bson_datetime_as_utc():
     assert "parsed = CHILE_TZ.localize(parsed)" not in source
 
 
-def test_hot_cycle_without_transition_uses_hot_60_minute_threshold():
+def test_hot_cycle_without_transition_evidence_is_insufficient_not_retroactive():
     result = calculate_sla(
         assigned_at=datetime(2026, 7, 27, 13, tzinfo=timezone.utc),
         temperature="HOT", now=datetime(2026, 7, 27, 14, 1, tzinfo=timezone.utc),
     )
-    assert result["status"] == "critical" and result["hot_minutes"] >= 60
+    assert result["status"] == "unknown"
+    assert result["canonical_state"] == "INSUFFICIENT_DATA"
+    assert result["hot_minutes"] is None
 
 def test_normal_cycle_uses_180_minute_threshold():
     result = calculate_sla(
@@ -249,3 +259,56 @@ def test_naive_bson_datetime_is_utc_not_chile_local_time():
     assert coerce_utc_datetime(datetime(2026, 7, 27, 14, 43, 32)) == datetime(
         2026, 7, 27, 14, 43, 32, tzinfo=timezone.utc
     )
+
+
+def test_hot_start_prefers_cycle_timestamp_over_disagreeing_lifecycle():
+    cycle = {
+        "assigned_at": datetime(2026, 10, 7, 13, 57, 57, tzinfo=timezone.utc),
+        "sla_started_at": datetime(2026, 10, 7, 13, 57, 57, tzinfo=timezone.utc),
+        "temperature_at_assignment": "HOT",
+        "hot_started_at": datetime(2026, 10, 7, 15, 15, 1, tzinfo=timezone.utc),
+    }
+    lead = {"lead_temperature_effective": "HOT", "lifecycle": {
+        "hot_since": datetime(2026, 10, 7, 14, 57, 57, tzinfo=timezone.utc),
+    }}
+    details = resolve_cycle_hot_start_details(cycle=cycle, lead=lead)
+    assert details["hot_start"] == cycle["hot_started_at"]
+    assert details["source"] == "cycle.hot_started_at"
+    assert details["discrepancy"] is True
+    assert "lead.lifecycle.hot_since" in details["conflicting_sources"]
+
+
+def test_hot_assignment_uses_commercial_sla_start_without_transition_timestamp():
+    start = datetime(2026, 10, 7, 13, 0, tzinfo=timezone.utc)
+    cycle = {
+        "assigned_at": start, "sla_started_at": start,
+        "temperature_at_assignment": "HOT", "temperature_on_assignment": "HOT",
+    }
+    assert resolve_cycle_hot_start(cycle=cycle, lead={"lead_temperature_effective": "HOT"}) == start
+
+
+def test_cycle_hot_after_normal_assignment_calculates_only_hot_segment_elapsed():
+    assigned = datetime(2026, 7, 27, 14, 0, tzinfo=timezone.utc)  # 10:00 Chile
+    hot_start = datetime(2026, 7, 27, 16, 0, tzinfo=timezone.utc)  # 12:00 Chile
+    cycle = {
+        "assignment_cycle_id": "cycle-hot-transition", "assigned_at": assigned,
+        "sla_started_at": assigned, "temperature_at_assignment": "HOT",
+        "temperature_on_assignment": "NORMAL", "hot_started_at": hot_start,
+        "temperature_transitioned_at": hot_start,
+    }
+    lead = {"lead_temperature_effective": "HOT"}
+    result = calculate_cycle_sla(
+        cycle=cycle, lead=lead, now=datetime(2026, 7, 27, 16, 20, tzinfo=timezone.utc),
+    )
+    assert result["hot_minutes"] == 20
+    assert result["status"] == "good"
+
+
+def test_cycle_currently_hot_without_demonstrable_start_stays_unknown():
+    assigned = datetime(2026, 10, 7, 13, 0, tzinfo=timezone.utc)
+    cycle = {"assigned_at": assigned, "sla_started_at": assigned, "temperature_at_assignment": "HOT"}
+    lead = {"lead_temperature_effective": "HOT"}
+    result = calculate_cycle_sla(cycle=cycle, lead=lead, now=datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc))
+    assert resolve_cycle_hot_start(cycle=cycle, lead=lead) is None
+    assert result["status"] == "unknown"
+    assert result["canonical_state"] == "INSUFFICIENT_DATA"

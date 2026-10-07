@@ -165,6 +165,15 @@ def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
             return opening.astimezone(timezone.utc)
 
 
+def resolve_cycle_sla_start(*, cycle: Mapping[str, Any] | None) -> Optional[datetime]:
+    """Resolve persisted cycle SLA start or the established commercial fallback."""
+    cycle = cycle if isinstance(cycle, Mapping) else {}
+    persisted = coerce_utc_datetime(cycle.get("sla_started_at"))
+    if persisted:
+        return persisted
+    return commercial_sla_start_at(cycle.get("assigned_at"))
+
+
 @dataclass(frozen=True)
 class LeadResolution:
     lead: Optional[Mapping[str, Any]]
@@ -386,12 +395,19 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         cycle_origin = "inbound_message"
     else:
         cycle_origin = reason
+    sla_started_at = commercial_sla_start_at(assigned_at)
+    temperature_on_assignment = str(
+        lead.get("lead_temperature_effective") or lead.get("lead_temperature") or "COLD"
+    ).upper()
     cycle = {
         "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead_id,
         "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
         "cycle_started_at": assigned_at,
-        "sla_started_at": commercial_sla_start_at(assigned_at),
-        "temperature_at_assignment": str(lead.get("lead_temperature_effective") or "COLD").upper(),
+        "sla_started_at": sla_started_at,
+        "temperature_at_assignment": temperature_on_assignment,
+        # Keep an immutable assignment-time fact. The legacy field above is
+        # also used as the cycle's live temperature by existing consumers.
+        "temperature_on_assignment": temperature_on_assignment,
         "assigned_to_display_name": assigned_to_display_name or str(assigned_to_user_id),
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
@@ -401,7 +417,18 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "notification_eligible": notification_eligible,
         "cycle_origin": cycle_origin,
         "property_code": str(property_code).strip() if property_code else None,
+        "sla_segments": [{
+            "policy": "HOT" if temperature_on_assignment == "HOT" else "NON_HOT",
+            "segment_start": sla_started_at,
+            "segment_end": None,
+            "end_reason": None,
+        }],
     }
+    if temperature_on_assignment == "HOT":
+        # A lead already Hot when assigned starts the Hot segment with its
+        # commercial SLA, never with a potentially stale lead-level hot_since.
+        cycle["hot_started_at"] = sla_started_at
+        cycle["temperature_transitioned_at"] = sla_started_at
     if source_system and source_event_id:
         cycle.update({"source_system": source_system, "source_event_id": str(source_event_id)})
     try:
@@ -428,11 +455,12 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
 def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=None):
     """Propagate the lead's current temperature to its active assignment cycle.
 
-    Keeps ``temperature_at_assignment`` on the active cycle in sync with the
+    Keeps the active cycle's effective temperature in sync with the
     live lead temperature (e.g. COLD -> HOT escalation mid-conversation) so the
     CRM badge and SLA policy follow the current temperature WITHOUT creating a
-    new assignment cycle or re-assigning the executive.  Idempotent: no-op when
-    the cycle already carries the given temperature.
+    new assignment cycle or re-assigning the executive. Idempotent: preserves
+    the first valid transition. A missing transition timestamp is never
+    replaced with the current clock.
     """
     temp = str(temperature or "").strip().upper()
     if not temp:
@@ -446,19 +474,62 @@ def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=Non
             break
     if not cycle:
         return None
-    if str(cycle.get("temperature_at_assignment") or "").upper() == temp:
+    previous_temperature = str(cycle.get("temperature_at_assignment") or "").upper()
+    if previous_temperature == temp and temp != "HOT":
         return cycle
-    transition = coerce_utc_datetime(transition_at) or utc_now()
+    transition = coerce_utc_datetime(transition_at)
     cycle_update = {"temperature_at_assignment": temp}
     if temp == "HOT":
-        cycle_update.update({
-            "temperature_transitioned_at": transition,
-            "hot_started_at": transition,
-        })
-    db["crm_assignment_cycles"].update_one(
-        {"_id": cycle["_id"]},
+        # Preserve any already-valid canonical start. This whole-document
+        # update is a single Mongo atomic write so the Hot timestamps and
+        # existing SLA segment transition cannot be observed half-applied.
+        existing_hot = coerce_utc_datetime(cycle.get("hot_started_at"))
+        existing_transition = coerce_utc_datetime(cycle.get("temperature_transitioned_at"))
+        transition = existing_hot or existing_transition or transition
+        # A HOT state without a persisted transition instant is insufficient
+        # evidence. Never manufacture one from the current clock.
+        if transition is not None:
+            cycle_update.update({
+                "temperature_transitioned_at": existing_transition or transition,
+                "hot_started_at": existing_hot or transition,
+            })
+            segments = cycle.get("sla_segments")
+            if isinstance(segments, list):
+                has_active_hot = any(
+                    isinstance(segment, Mapping)
+                    and str(segment.get("policy") or "").upper() == "HOT"
+                    and segment.get("segment_end") is None
+                    for segment in segments
+                )
+                if not has_active_hot:
+                    transitioned_segments = []
+                    for segment in segments:
+                        if (isinstance(segment, Mapping)
+                                and str(segment.get("policy") or "").upper() == "NON_HOT"
+                                and segment.get("segment_end") is None):
+                            transitioned_segments.append({
+                                **segment,
+                                "segment_end": transition,
+                                "end_reason": "superseded_by_hot",
+                            })
+                        else:
+                            transitioned_segments.append(segment)
+                    transitioned_segments.append({
+                        "policy": "HOT", "segment_start": transition,
+                        "segment_end": None, "end_reason": None,
+                    })
+                    cycle_update["sla_segments"] = transitioned_segments
+    result = db["crm_assignment_cycles"].update_one(
+        {
+            "_id": cycle["_id"],
+            # Compare-and-set prevents two concurrent transitions from
+            # appending duplicate Hot segments or overwriting the first time.
+            "temperature_at_assignment": cycle.get("temperature_at_assignment"),
+        },
         {"$set": cycle_update},
     )
+    if getattr(result, "matched_count", 1) == 0:
+        return db["crm_assignment_cycles"].find_one({"_id": cycle["_id"]})
     return db["crm_assignment_cycles"].find_one({"_id": cycle["_id"]})
 
 
@@ -503,7 +574,8 @@ def active_assignment_cycle(db, lead_id):
 
 def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
                   temperature=None, hot_started_at=None,
-                  require_hot_start=False) -> dict[str, Any]:
+                  require_hot_start=True,
+                  first_management_completed=False) -> dict[str, Any]:
     """Calculate SLA with differentiated thresholds for Lead vs Lead Hot.
 
     Lead thresholds:   0-119 good, 120-149 warning, 150-179 near_critical, 180+ critical
@@ -520,6 +592,15 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
             "status": "unknown", "canonical_state": "SLA_NOT_STARTED",
             "minutes": None, "hot_minutes": None, "fulfilled": False,
             "coverage": "insufficient_data",
+        }
+    if first_management_completed and not end:
+        # The canonical completion marker stops the first SLA even when a
+        # legacy cycle has no auditable timestamp to calculate elapsed time.
+        return {
+            "status": "fulfilled", "canonical_state": "MANAGED_TIME_UNKNOWN",
+            "minutes": None, "hot_minutes": None, "fulfilled": True,
+            "threshold_minutes": 60 if str(temperature or "").upper() == "HOT" else 180,
+            "coverage": "management_completed_time_unknown",
         }
     boundary = end or current
     total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
@@ -540,7 +621,14 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
                 "coverage": "insufficient_data",
             }
         else:
-            hot_minutes = total_minutes
+            # A current HOT badge alone is not evidence that the lead was HOT
+            # when assigned. Fail closed until a transition/assignment start
+            # can be proven.
+            return {
+                "status": "unknown", "canonical_state": "INSUFFICIENT_DATA",
+                "minutes": total_minutes, "hot_minutes": None, "fulfilled": False,
+                "coverage": "insufficient_data",
+            }
     use_hot_thresholds = is_hot
 
     if end:
@@ -583,6 +671,37 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
     }
 
 
+def add_business_minutes(start_dt: datetime, minutes_to_add: float) -> datetime:
+    """Add business minutes using the existing Chile weekday business calendar."""
+    if start_dt.tzinfo is None:
+        start_dt = CHILE_TZ.localize(start_dt)
+    current = start_dt.astimezone(CHILE_TZ)
+    remaining = float(minutes_to_add)
+
+    day_start = current.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
+    day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
+    if current < day_start:
+        current = day_start
+    elif current >= day_end:
+        current = day_start + timedelta(days=1)
+        while current.weekday() not in BUSINESS_DAYS:
+            current += timedelta(days=1)
+
+    while remaining > 0:
+        if current.weekday() in BUSINESS_DAYS:
+            day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
+            available = (day_end - current).total_seconds() / 60.0
+            if available >= remaining:
+                return (current + timedelta(minutes=remaining)).astimezone(timezone.utc)
+            remaining -= available
+        current = current.replace(
+            hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0,
+        ) + timedelta(days=1)
+        while current.weekday() not in BUSINESS_DAYS:
+            current += timedelta(days=1)
+    return current.astimezone(timezone.utc)
+
+
 def resolve_hot_start_at(*, assigned_at, temperature_history=None,
                          effective_temperature=None) -> Optional[datetime]:
     """Resolve a demonstrable Hot start without inferring it from current state."""
@@ -607,6 +726,133 @@ def resolve_hot_start_at(*, assigned_at, temperature_history=None,
             return timestamp
     # Current HOT without a historical timestamp is intentionally insufficient.
     return None
+
+
+def resolve_cycle_hot_start_details(*, cycle: Mapping[str, Any] | None,
+                                    lead: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve the one defensible HOT start for an assignment cycle.
+
+    Precedence is cycle.hot_started_at, cycle.temperature_transitioned_at,
+    immutable assignment-time HOT evidence, lead.lifecycle.hot_since for
+    compatibility, then timestamped temperature_history. Values earlier than
+    the commercial SLA start are clamped to that start (already HOT at
+    assignment). Current HOT state without such evidence stays unresolved.
+    """
+    cycle = cycle if isinstance(cycle, Mapping) else {}
+    lead = lead if isinstance(lead, Mapping) else {}
+    sla_start = resolve_cycle_sla_start(cycle=cycle)
+    if not sla_start:
+        return {"hot_start": None, "source": "missing_sla_start", "discrepancy": False,
+                "conflicting_sources": []}
+
+    lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
+    raw_sources = [
+        ("cycle.hot_started_at", coerce_utc_datetime(cycle.get("hot_started_at"))),
+        ("cycle.temperature_transitioned_at", coerce_utc_datetime(cycle.get("temperature_transitioned_at"))),
+    ]
+    selected_source, selected = next(((name, value) for name, value in raw_sources if value), (None, None))
+
+    if selected is None and str(cycle.get("temperature_on_assignment") or "").upper() == "HOT":
+        selected_source, selected = "cycle.temperature_on_assignment", sla_start
+    if selected is None:
+        lifecycle_hot = coerce_utc_datetime(lifecycle.get("hot_since"))
+        if lifecycle_hot:
+            selected_source, selected = "lead.lifecycle.hot_since", lifecycle_hot
+    if selected is None:
+        history_hot = resolve_hot_start_at(
+            assigned_at=sla_start,
+            temperature_history=lead.get("temperature_history") or (),
+            effective_temperature=lead.get("lead_temperature_effective"),
+        )
+        if history_hot:
+            selected_source, selected = "lead.temperature_history", history_hot
+
+    if selected is None:
+        return {"hot_start": None, "source": "insufficient_evidence", "discrepancy": False,
+                "conflicting_sources": []}
+
+    resolved = max(selected, sla_start)
+    compared = []
+    for name, value in [
+        *raw_sources,
+        ("lead.lifecycle.hot_since", coerce_utc_datetime(lifecycle.get("hot_since"))),
+    ]:
+        if value:
+            compared.append((name, max(value, sla_start)))
+    distinct = {value for _, value in compared}
+    conflicts = [name for name, value in compared if value != resolved]
+    return {
+        "hot_start": resolved,
+        "source": selected_source,
+        "discrepancy": len(distinct) > 1,
+        "conflicting_sources": conflicts,
+    }
+
+
+def resolve_cycle_hot_start(*, cycle: Mapping[str, Any] | None,
+                            lead: Mapping[str, Any] | None = None) -> Optional[datetime]:
+    """Return the timestamp selected by ``resolve_cycle_hot_start_details``."""
+    return resolve_cycle_hot_start_details(cycle=cycle, lead=lead).get("hot_start")
+
+
+def resolve_cycle_sla_temperature(*, cycle: Mapping[str, Any] | None,
+                                  lead: Mapping[str, Any] | None = None) -> str:
+    """Use the active cycle's persisted live temperature, with lead fallback."""
+    cycle = cycle if isinstance(cycle, Mapping) else {}
+    lead = lead if isinstance(lead, Mapping) else {}
+    value = str(
+        cycle.get("temperature_at_assignment")
+        or lead.get("lead_temperature_effective")
+        or cycle.get("temperature_on_assignment")
+        or "NORMAL"
+    ).strip().upper()
+    return "HOT" if value == "HOT" else "NORMAL"
+
+
+def calculate_cycle_sla(*, cycle: Mapping[str, Any], lead: Mapping[str, Any] | None = None,
+                        now=None, management_results=(), events=(),
+                        first_valid_management_at=None) -> dict[str, Any]:
+    """Calculate SLA using the canonical cycle start, Hot start and management rule."""
+    lead = lead if isinstance(lead, Mapping) else {}
+    effective_start = resolve_cycle_sla_start(cycle=cycle)
+    temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+    hot_resolution = (
+        resolve_cycle_hot_start_details(cycle=cycle, lead=lead)
+        if temperature == "HOT" else
+        {"hot_start": None, "source": "not_hot", "discrepancy": False,
+         "conflicting_sources": []}
+    )
+    hot_start = hot_resolution.get("hot_start")
+    completed = is_first_sla_management_completed(cycle, management_results, events)
+    management_at = (
+        coerce_utc_datetime(first_valid_management_at)
+        or coerce_utc_datetime(cycle.get("first_valid_management_at"))
+    )
+    result = calculate_sla(
+        assigned_at=effective_start,
+        first_valid_management_at=management_at,
+        first_management_completed=completed,
+        now=now,
+        temperature=temperature,
+        hot_started_at=hot_start,
+        require_hot_start=True,
+    )
+    result.update({
+        "temperature": temperature,
+        "hot_start": hot_start,
+        "hot_start_source": hot_resolution.get("source"),
+        "hot_start_discrepancy": hot_resolution.get("discrepancy", False),
+        "hot_start_conflicting_sources": hot_resolution.get("conflicting_sources", []),
+        "elapsed_hot_minutes": result.get("hot_minutes"),
+    })
+    deadline_start = hot_start if temperature == "HOT" else effective_start
+    threshold = result.get("threshold_minutes")
+    result["deadline_at"] = (
+        add_business_minutes(deadline_start, threshold)
+        if deadline_start is not None and threshold is not None
+        else None
+    )
+    return result
 
 
 def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:
@@ -656,11 +902,18 @@ def atomic_transition_to_hot(db, *, cycle_id, notification_id, timestamp):
     or the preconditions were not met.
     """
     transition_id = f"{cycle_id}|{notification_id}|NON_HOT_to_HOT"
-    now = coerce_utc_datetime(timestamp) or utc_now()
+    now = coerce_utc_datetime(timestamp)
+    if now is None:
+        return None
     notification_id_str = str(notification_id)
 
     pipeline = [
         {"$set": {
+            "temperature_at_assignment": "HOT",
+            "temperature_transitioned_at": {
+                "$ifNull": ["$temperature_transitioned_at", now],
+            },
+            "hot_started_at": {"$ifNull": ["$hot_started_at", now]},
             "sla_segments": {
                 "$concatArrays": [
                     {

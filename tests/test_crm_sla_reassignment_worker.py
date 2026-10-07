@@ -199,7 +199,11 @@ def test_pre_cutover_is_skipped_even_when_currently_expired():
 
 
 def test_hot_breach_one_minute_after_cutover_is_future_eligible():
-    row = cycle(1, assigned_at=datetime(2026, 9, 10, 14, 0, tzinfo=UTC), temperature="HOT")
+    assigned = datetime(2026, 9, 10, 14, 0, tzinfo=UTC)
+    row = cycle(1, assigned_at=assigned, temperature="HOT")
+    row["temperature_on_assignment"] = "HOT"
+    row["hot_started_at"] = assigned
+    row["temperature_transitioned_at"] = assigned
     expiry = canonical_expiration_recheck(row, lead(1), now=NOW)
     assert expiry.breach_at is not None
     result = run(**base_kwargs([row], [lead(1)], cutover_at=expiry.breach_at - timedelta(minutes=1)))
@@ -352,6 +356,9 @@ def test_elvin_hot_unconfirmed_send_does_not_block_worker_reassignment():
     assigned = datetime(2026, 10, 5, 12, 14, tzinfo=UTC)  # 09:14 Chile
     now = datetime(2026, 10, 5, 13, 15, tzinfo=UTC)  # 10:15 Chile
     row = cycle(1, assigned_at=assigned, temperature="HOT")
+    row["temperature_on_assignment"] = "HOT"
+    row["hot_started_at"] = assigned
+    row["temperature_transitioned_at"] = assigned
     fixture_lead = lead(1)
     fixture_lead["lead_temperature_effective"] = "HOT"
     event = {

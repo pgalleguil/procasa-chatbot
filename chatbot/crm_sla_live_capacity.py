@@ -13,7 +13,7 @@ from typing import Any, Mapping
 
 from .crm_metrics import (
     is_first_sla_management_completed,
-    calculate_sla,
+    calculate_cycle_sla, resolve_cycle_sla_temperature,
 )
 from .crm_sla_alert_evaluator import (
     CLOSED_STAGES,
@@ -75,6 +75,7 @@ def _lead_lookup() -> dict[str, Any]:
                     "crm_estado": 1,
                     "lead_temperature_effective": 1,
                     "lifecycle.hot_since": 1,
+                    "temperature_history": 1,
                 }},
             ],
             "as": "lead_doc",
@@ -110,6 +111,8 @@ def _cycle_projection() -> dict[str, Any]:
         "first_valid_management_at": 1,
         "sla_first_management_status": 1,
         "hot_started_at": 1,
+        "temperature_transitioned_at": 1,
+        "temperature_on_assignment": 1,
         "temperature_at_assignment": 1,
         "schema_version": 1,
         "reassignment_state": 1,
@@ -143,6 +146,8 @@ def _base_pipeline(policy_since: datetime, *, grouped: bool) -> list[dict[str, A
                     "first_valid_management_at": "$first_valid_management_at",
                     "sla_first_management_status": "$sla_first_management_status",
                     "hot_started_at": "$hot_started_at",
+                    "temperature_transitioned_at": "$temperature_transitioned_at",
+                    "temperature_on_assignment": "$temperature_on_assignment",
                     "temperature_at_assignment": "$temperature_at_assignment",
                     "schema_version": "$schema_version",
                     "reassignment_state": "$reassignment_state",
@@ -337,14 +342,11 @@ def _capacity_from_rows(
         assigned_at = cycle.get("sla_started_at") or cycle.get("assigned_at")
         if not assigned_at:
             continue
-        temperature = str(cycle.get("temperature_at_assignment") or lead.get("lead_temperature_effective") or "NORMAL").upper()
-        lifecycle = lead.get("lifecycle") or {}
-        hot_start = cycle.get("hot_started_at") or lifecycle.get("hot_since")
-        sla = calculate_sla(
-            assigned_at=assigned_at,
-            now=as_of,
-            temperature=temperature,
-            hot_started_at=hot_start,
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        sla = calculate_cycle_sla(
+            cycle=cycle, lead=lead, now=as_of,
+            management_results=cycle.get("management_results") or (),
+            events=cycle_events,
         )
         if sla.get("status") == "critical":
             row["expired"] += 1

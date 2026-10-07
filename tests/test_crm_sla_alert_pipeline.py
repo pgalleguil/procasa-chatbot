@@ -90,9 +90,15 @@ def lead(lid, name="Cliente", prop="P001", temp="HOT", executive="Erika Garrido"
 
 
 def cycle(lid, cid, uid="u-erika", assigned=None):
+    assigned_at = assigned or cl(9)
+    # These pipeline cases model leads that were HOT when assigned. Record
+    # that evidence explicitly; current HOT temperature alone must not infer
+    # an historical HOT start.
     return {"lead_id": lid, "assignment_cycle_id": cid, "assigned_to_user_id": uid,
-            "assigned_at": assigned or cl(9), "unassigned_at": None,
-            "cycle_status": "active", "reason": "lead_created"}
+            "assigned_at": assigned_at, "sla_started_at": assigned_at,
+            "temperature_at_assignment": "HOT", "temperature_on_assignment": "HOT",
+            "hot_started_at": assigned_at, "temperature_transitioned_at": assigned_at,
+            "unassigned_at": None, "cycle_status": "active", "reason": "lead_created"}
 
 
 def user(uid, name, role="agente", active=True, phone="+56911111111"):

@@ -21,15 +21,16 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 
-from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+from .constants import CHILE_TZ
 from .crm_metrics import (
-    INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS, calculate_sla,
+    INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS, add_business_minutes,
+    calculate_cycle_sla,
     coerce_utc_datetime, event_evidence, is_first_sla_management_completed,
-    normalize_result, utc_now,
+    normalize_result, resolve_cycle_sla_temperature,
+    utc_now,
 )
 from .crm_sla_alert_templates import (
     MESSAGE_DOMAIN, build_sla_message, build_deadline_display,
@@ -47,14 +48,30 @@ logger = logging.getLogger(__name__)
 
 THRESHOLD_WARNING_NORMAL = 150
 THRESHOLD_BREACHED_NORMAL = 180
-THRESHOLD_WARNING_HOT = 45
+THRESHOLD_WARNING_HOT = 30
+THRESHOLD_NEAR_CRITICAL_HOT = 45
 THRESHOLD_BREACHED_HOT = 60
 
 ALERT_LEVEL_WARNING = "warning"
+ALERT_LEVEL_NEAR_CRITICAL = "near_critical"
 ALERT_LEVEL_BREACHED = "breached"
 
 SLA_PROFILE_STANDARD = "standard"
 SLA_PROFILE_HOT = "hot"
+
+
+def alert_level_for_sla_status(status: str, *, temperature: str) -> str | None:
+    """Map canonical SLA state to delivery level without recalculating time."""
+    if temperature == "HOT":
+        return {
+            "warning": ALERT_LEVEL_WARNING,
+            "near_critical": ALERT_LEVEL_NEAR_CRITICAL,
+            "critical": ALERT_LEVEL_BREACHED,
+        }.get(status)
+    return {
+        "near_critical": ALERT_LEVEL_WARNING,
+        "critical": ALERT_LEVEL_BREACHED,
+    }.get(status)
 
 # ---------------------------------------------------------------------------
 # Management results that DO stop the SLA
@@ -158,40 +175,6 @@ def classify_outreach_state(events, *, assigned_at=None, mgmt_results=None,
         best, best_rank = "whatsapp_sent", _OUTREACH_PRIORITY["whatsapp_sent"]
 
     return best
-
-
-# ---------------------------------------------------------------------------
-# Business minutes arithmetic
-# ---------------------------------------------------------------------------
-
-def add_business_minutes(start_dt: datetime, minutes_to_add: float) -> datetime:
-    if start_dt.tzinfo is None:
-        start_dt = CHILE_TZ.localize(start_dt)
-    start_local = start_dt.astimezone(CHILE_TZ)
-    remaining = float(minutes_to_add)
-    current = start_local
-
-    day_start = current.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
-    day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
-    if current < day_start:
-        current = day_start
-    elif current >= day_end:
-        current = day_start + timedelta(days=1)
-        while current.weekday() not in BUSINESS_DAYS:
-            current += timedelta(days=1)
-
-    while remaining > 0:
-        if current.weekday() in BUSINESS_DAYS:
-            day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
-            available = (day_end - current).total_seconds() / 60.0
-            if available >= remaining:
-                result = current + timedelta(minutes=remaining)
-                return result.astimezone(timezone.utc)
-            remaining -= available
-        current = current.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        while current.weekday() not in BUSINESS_DAYS:
-            current += timedelta(days=1)
-    return current.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -423,15 +406,8 @@ async def evaluate_sla_alerts(
             excluded["has_valid_management"] += 1; continue
 
         # ---- Temperature and hot_since ----
-        temp = str(lead.get("lead_temperature_effective") or "").upper()
+        temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
         is_hot = temp == "HOT"
-        hot_start = None
-        if is_hot:
-            lifecycle = lead.get("lifecycle") or {}
-            hs = lifecycle.get("hot_since")
-            hot_start = coerce_utc_datetime(hs) if hs else None
-            if hot_start and hot_start < sla_started_at:
-                hot_start = sla_started_at
 
         # ---- Classify outreach (uses events + management_results) ----
         outreach_state = classify_outreach_state(
@@ -440,25 +416,27 @@ async def evaluate_sla_alerts(
         )
 
         # ---- Calculate SLA ----
-        sla = calculate_sla(
-            assigned_at=sla_started_at, now=now_utc,
-            temperature=temp, hot_started_at=hot_start,
+        sla = calculate_cycle_sla(
+            cycle=cycle, lead=lead, now=now_utc,
+            management_results=cycle_mgmts, events=events,
         )
+        hot_start = sla.get("hot_start") if is_hot else None
         sla_status = sla.get("status", "good")
-        if sla_status not in {"near_critical", "critical"}:
+        alert_level = alert_level_for_sla_status(sla_status, temperature=temp)
+        if not alert_level:
             excluded["below_threshold"] += 1; continue
 
         # ---- Alert level and profile ----
-        alert_level = ALERT_LEVEL_BREACHED if sla_status == "critical" else ALERT_LEVEL_WARNING
         sla_profile = SLA_PROFILE_HOT if is_hot else SLA_PROFILE_STANDARD
 
         # ---- Elapsed ----
-        effective_start = hot_start if (is_hot and hot_start) else sla_started_at
         elapsed = int(max(0, sla.get("hot_minutes" if is_hot else "minutes", 0) or 0))
 
         # ---- Deadline ----
-        deadline_threshold = THRESHOLD_BREACHED_HOT if is_hot else THRESHOLD_BREACHED_NORMAL
-        deadline_dt = add_business_minutes(effective_start, deadline_threshold)
+        deadline_threshold = sla.get("threshold_minutes")
+        deadline_dt = sla.get("deadline_at")
+        if deadline_threshold is None or deadline_dt is None:
+            excluded["insufficient_deadline_data"] += 1; continue
         deadline_display = build_deadline_display(deadline_dt, CHILE_TZ)
         remaining_minutes = max(0, deadline_threshold - elapsed)
 
@@ -510,6 +488,11 @@ async def evaluate_sla_alerts(
             "assignment_cycle_id": cycle_id,
             "lead_id": str(lid),
             "sla_started_at": sla_started_at,
+            "sla_status": sla.get("status"),
+            "canonical_state": sla.get("canonical_state"),
+            "hot_started_at": hot_start,
+            "elapsed_hot_minutes": sla.get("elapsed_hot_minutes"),
+            "threshold_minutes": deadline_threshold,
             "recipient_user_id": recipient_user_id,
             "alert_level": alert_level,
             "sla_profile": sla_profile,

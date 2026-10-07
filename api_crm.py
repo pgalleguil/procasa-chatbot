@@ -1,6 +1,6 @@
 # from pymongo import MongoClient (Replaced by singleton)
 from config import Config
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import pytz
 import re
@@ -715,6 +715,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "fecha_asignacion": 1,
         "datos_propiedad.codigo": 1,
         "lead_temperature_effective": 1,
+        "temperature_history": 1,
         "_has_assigned": 1,
         "_cycle_assigned_at": 1,
         "_legacy_assigned_at": 1,
@@ -777,7 +778,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_has_management": {"$cond": [
                 "$_has_cycle",
                 {"$cond": [
-                    {"$ne": [{"$ifNull": ["$_active_cycle.first_valid_management_at", None]}, None]},
+                    {"$or": [
+                        {"$ne": [{"$ifNull": ["$_active_cycle.first_valid_management_at", None]}, None]},
+                        {"$eq": ["$_active_cycle.sla_first_management_status", "completed"]},
+                    ]},
                     0, 1,
                 ]},
                 # Fallback: use lead-level lifecycle evidence for legacy docs
@@ -878,22 +882,27 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # the full-universe sort.
     if _use_python_sla_sort:
         sla_all = await db["leads"].aggregate(sla_full_pipeline).to_list(length=None)
-        from chatbot.utils import calculate_business_minutes
-        from chatbot.crm_metrics import coerce_utc_datetime
-        now_chile = datetime.now(CHILE_TZ)
+        from chatbot.crm_metrics import (
+            calculate_cycle_sla, coerce_utc_datetime,
+            is_first_sla_management_completed, resolve_cycle_sla_start,
+            resolve_cycle_sla_temperature,
+        )
+        now_utc = datetime.now(timezone.utc)
         for lead in sla_all:
-            at_raw = lead.get("_cycle_assigned_at")
-            at_dt = coerce_utc_datetime(at_raw)
-            if at_dt:
-                at_chile = at_dt.astimezone(CHILE_TZ)
-            else:
-                at_chile = None
-            temp = lead.get("_temperature") or lead.get("lead_temperature_effective") or "COLD"
-            threshold = 60 if str(temp).upper() == "HOT" else 180
-            if at_chile:
-                elapsed = calculate_business_minutes(at_chile, now_chile)
-                lead["_business_minutes"] = elapsed
-                lead["_overdue_minutes"] = elapsed - threshold
+            cycle = lead.get("_active_cycle")
+            if isinstance(cycle, dict):
+                sla = calculate_cycle_sla(cycle=cycle, lead=lead, now=now_utc)
+                temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+                measured = sla.get("hot_minutes") if temp == "HOT" else sla.get("minutes")
+                threshold = sla.get("threshold_minutes")
+                lead["_business_minutes"] = measured
+                lead["_overdue_minutes"] = (
+                    measured - threshold
+                    if measured is not None and threshold is not None and sla.get("coverage") == "determined"
+                    else None
+                )
+                if is_first_sla_management_completed(cycle):
+                    lead["_has_management"] = 0
             else:
                 lead["_business_minutes"] = None
                 lead["_overdue_minutes"] = None
@@ -1165,9 +1174,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # managed; SEND_WA/CLICK events are outreach telemetry only.
         cycle_management_at = (current_cycle or {}).get("first_valid_management_at")
         legacy_management_at = (lead.get("lifecycle") or {}).get("first_valid_management_at")
+        from chatbot.crm_metrics import is_first_sla_management_completed
+        canonical_cycle_managed = bool(current_cycle and is_first_sla_management_completed(
+            current_cycle,
+            events=[recognized_management_ev] if recognized_management_ev else (),
+        ))
         has_real_management = bool(
             recognized_management_ev is not None
             or cycle_management_at
+            or canonical_cycle_managed
             or (not current_cycle and legacy_management_at)
         )
         if recognized_management_ev:
@@ -1266,46 +1281,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
 
         # 1. TEMPERATURA Y PRIORIDAD: única fuente persistida, sin reinterpretar
         # alerts_sent ni otras señales durante la consulta/render.
-        temp = str((current_cycle or {}).get("temperature_at_assignment")
-                   or lead.get("lead_temperature_effective") or "COLD").upper()
+        from chatbot.crm_metrics import resolve_cycle_sla_temperature
+        temp = resolve_cycle_sla_temperature(cycle=current_cycle, lead=lead) if current_cycle else str(
+            lead.get("lead_temperature_effective") or "COLD"
+        ).upper()
 
-        # 5. SLA / TIEMPO DE RESPUESTA
-        sla_status = lead.get("sla_status", "good")
-        
-        # Omitir cálculo de SLA crítico para leads informativos/fríos
-        if temp != "HOT":
-            sla_status = "informativo"
-        elif estado_final == PipelineStage.NEW:
-            start_time = lead.get("lifecycle", {}).get("hot_since") or lead.get("lifecycle", {}).get("assigned_at") or lead.get("created_at")
-            if start_time:
-                try:
-                    if isinstance(start_time, str):
-                        dt_start = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                    else:
-                        dt_start = start_time
-                    if dt_start.tzinfo is None:
-                        dt_start = CHILE_TZ.localize(dt_start)
-                    else:
-                        dt_start = dt_start.astimezone(CHILE_TZ)
-
-                    mins = calculate_business_minutes(dt_start, datetime.now(CHILE_TZ))
-                    sla_hours = mins / 60.0
-
-                    if sla_hours <= 1.5:
-                        sla_status = "good"
-                    elif sla_hours < 3.0:
-                        sla_status = "near_critical"
-                    else:
-                        sla_status = "critical"
-                except Exception:
-                    sla_status = lead.get("sla_status", "good")
-            else:
-                sla_status = "good"
-        else:
-            sla_status = "fulfilled"
+        # SLA status is calculated once below from the canonical cycle helper.
+        sla_status = "unknown"
             
         # One SLA definition for cards, list, detail and monitor.
-        from chatbot.crm_metrics import calculate_sla, is_pre_visual_cutover
+        from chatbot.crm_metrics import (
+            calculate_cycle_sla, calculate_sla, is_pre_visual_cutover,
+            resolve_cycle_hot_start_details, resolve_cycle_sla_start,
+        )
         assigned_at_raw = ((current_cycle or {}).get("sla_started_at")
                            or (current_cycle or {}).get("assigned_at")
                            or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
@@ -1326,21 +1314,35 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             sla_status = "historical" if visual_pre else "unknown"
             sla_label = "Histórico" if visual_pre else "SLA S/I"
         else:
-            # The current canonical cycle was resolved in the batch query.
-            if current_cycle is not None and isinstance(current_cycle, dict):
-                hot_started_at = current_cycle.get("hot_started_at") or current_cycle.get("temperature_transitioned_at")
-            
             # SLA completion is scoped to the active assignment cycle. Never
             # reuse a lead-level historical timestamp after reassignment; an
             # outreach event is telemetry and does not stop the SLA clock.
             cycle_management_at = ((current_cycle or {}).get("first_valid_management_at")
                                    if current_cycle else lifecycle.get("first_valid_management_at"))
-            canonical_sla = calculate_sla(
-                assigned_at=assigned_at,
-                first_valid_management_at=cycle_management_at,
-                temperature=temp,
-                hot_started_at=hot_started_at,
-            )
+            hot_resolution = {"hot_start": None, "source": "not_hot", "discrepancy": False,
+                              "conflicting_sources": []}
+            if current_cycle is not None and isinstance(current_cycle, dict):
+                canonical_assigned_at = resolve_cycle_sla_start(cycle=current_cycle)
+                if canonical_assigned_at:
+                    assigned_at = canonical_assigned_at
+                hot_resolution = resolve_cycle_hot_start_details(cycle=current_cycle, lead=lead)
+                hot_started_at = hot_resolution.get("hot_start")
+                cycle_sla_events = [recognized_management_ev] if recognized_management_ev else ()
+                canonical_sla = calculate_cycle_sla(
+                    cycle=current_cycle,
+                    lead=lead,
+                    events=cycle_sla_events,
+                    first_valid_management_at=cycle_management_at,
+                    now=datetime.now(timezone.utc),
+                )
+            else:
+                canonical_sla = calculate_sla(
+                    assigned_at=assigned_at,
+                    first_valid_management_at=cycle_management_at,
+                    temperature=temp,
+                    hot_started_at=None,
+                    require_hot_start=True,
+                )
             sla_managed_outside = (
                 canonical_sla.get("canonical_state") == "MANAGED_OUTSIDE_SLA"
             )
@@ -1380,12 +1382,28 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             # Build SLA info for row tooltip
             if not visual_pre:
                 sla_info = {
+                    "status": canonical_sla.get("status"),
+                    "canonical_state": canonical_sla.get("canonical_state"),
                     "total_minutes": canonical_sla.get("minutes", 0),
                     "hot_minutes": canonical_sla.get("hot_minutes"),
+                    "elapsed_hot_minutes": canonical_sla.get("elapsed_hot_minutes"),
+                    "hot_start": (
+                        str(canonical_sla["hot_start"])
+                        if canonical_sla.get("hot_start") else None
+                    ),
+                    "threshold_minutes": canonical_sla.get("threshold_minutes"),
                     "assigned_at": str(assigned_at),
+                    "deadline_at": (
+                        canonical_sla["deadline_at"].isoformat()
+                        if canonical_sla.get("deadline_at") else None
+                    ),
                 }
                 if hot_started_at:
+                    sla_info["hot_start"] = str(hot_started_at)
                     sla_info["hot_started"] = str(hot_started_at)
+                    sla_info["hot_start_source"] = hot_resolution.get("source")
+                    sla_info["hot_start_discrepancy"] = hot_resolution.get("discrepancy", False)
+                    sla_info["hot_start_conflicting_sources"] = hot_resolution.get("conflicting_sources", [])
         
         sla_labels_map = {
             "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Atención",

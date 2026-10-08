@@ -126,6 +126,34 @@ def is_synthetic_phone(phone: Optional[str]) -> bool:
     return phone.startswith(SYNTHETIC_PHONE_PREFIX) or phone == "+56900000000"
 
 
+def has_real_phone(phone: Optional[str]) -> bool:
+    """Return whether a value is a valid, non-synthetic contact phone.
+
+    This validates format and known placeholders only. Actual reachability can
+    only be confirmed by the channel provider; this helper performs no contact.
+    """
+    raw = str(phone or "").strip()
+    # Phone input may contain conventional formatting, but alphabetic text or
+    # other content must not become a contact number merely by stripping it.
+    if not re.fullmatch(r"\+?\d[\d\s().-]*", raw):
+        return False
+    if raw.count("(") != raw.count(")") or raw.count("(") > 1:
+        return False
+    if re.search(r"[-.]{2,}", raw) or raw.rstrip().endswith(("-", ".", "(")):
+        return False
+    digits = extract_digits(raw)
+    if digits in {"56900000000", "0000000000"}:
+        return False
+    if len(digits) >= MIN_VALID_PHONE_DIGITS and len(set(digits)) == 1:
+        return False
+    normalized = normalize_phone_strict(raw)
+    return bool(
+        normalized
+        and not is_synthetic_phone(raw)
+        and not is_synthetic_phone(normalized)
+    )
+
+
 def build_synthetic_phone_key(source_system: str, source_event_id: str) -> str:
     """Genera una clave técnica determinística para contactos sin teléfono.
     Formato: no-phone-<source_system>-<source_event_id>

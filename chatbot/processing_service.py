@@ -413,6 +413,21 @@ class LeadProcessingService:
                 }
             return {} # Ya tiene asignado y sigue activo
 
+        from .phone_utils import has_real_phone
+        contact_candidates = (
+            lead_doc.get("phone"),
+            lead_doc.get("contact_phone_normalized"),
+            lead_doc.get("contact_phone"),
+            prospecto.get("phone"),
+        )
+        if not any(has_real_phone(value) for value in contact_candidates):
+            logger.info(
+                "[PROCESS_SERVICE] Lead %s sin teléfono de contacto válido. "
+                "Se omite asignación automática.",
+                lead_doc.get("_id") or lead_doc.get("phone"),
+            )
+            return {}
+
         property_code = prospecto.get("codigo") or lead_doc.get("codigo")
         comuna = prospecto.get("comuna") or lead_doc.get("comuna")
         zone = lead_doc.get("zone", "unknown")

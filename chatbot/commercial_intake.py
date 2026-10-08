@@ -159,12 +159,45 @@ def _state(db, event_id, state, reason, now):
 
 def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, is_test=False):
     """Persist one commercial event; property-less inbound never gets assigned."""
-    from .phone_utils import normalize_phone_strict
-    phone = normalize_phone_strict(phone) or phone
+    from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
+    source_id = str(inbound_provider_id)
+    raw_phone = str(phone or "").strip()
+    normalized_phone = normalize_phone_strict(raw_phone)
+    phone_is_real = has_real_phone(raw_phone)
+    existing_event = db[COLLECTION].find_one({"source_inbound_provider_id": source_id})
+    if existing_event and existing_event.get("commercial_processing_state") == COMPLETED:
+        return existing_event
+
+    lead = None
+    if existing_event and existing_event.get("lead_id") is not None:
+        linked_id = existing_event.get("lead_id")
+        lead = db["leads"].find_one({"_id": linked_id})
+        if not lead and isinstance(linked_id, str):
+            try:
+                from bson import ObjectId
+                lead = db["leads"].find_one({"_id": ObjectId(linked_id)})
+            except Exception:
+                lead = None
+        if lead and not phone_is_real:
+            stored_phones = (
+                lead.get("contact_phone_normalized"),
+                lead.get("contact_phone"),
+                lead.get("phone"),
+                (lead.get("prospecto") or {}).get("phone"),
+            )
+            stored_phone = next((value for value in stored_phones if has_real_phone(value)), None)
+            if stored_phone:
+                normalized_phone = normalize_phone_strict(stored_phone)
+                phone_is_real = True
+
+    if not lead and phone_is_real:
+        lead = db["leads"].find_one({
+            "phone": {"$in": phone_identity_variants(raw_phone)},
+        })
+    phone = normalized_phone if phone_is_real else raw_phone
     now = _now()
-    lead = db["leads"].find_one({"phone": phone})
     event = db[COLLECTION].find_one_and_update(
-        {"source_inbound_provider_id": str(inbound_provider_id)},
+        {"source_inbound_provider_id": source_id},
         {"$setOnInsert": {
             "source_inbound_provider_id": str(inbound_provider_id),
             "lead_id": lead.get("_id") if lead else None, "phone": phone,
@@ -180,7 +213,18 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         "updated_at": now,
     }})
     if not lead:
-        _state(db, event["_id"], WAITING_PROPERTY, "lead_not_available", now)
+        reason = "lead_not_available" if phone_is_real else "invalid_contact_phone"
+        if not phone_is_real:
+            db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+                "notification_eligible": False,
+            }})
+        _state(db, event["_id"], WAITING_PROPERTY, reason, now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
+    if not phone_is_real:
+        db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+            "lead_id": lead["_id"], "notification_eligible": False,
+        }})
+        _state(db, event["_id"], WAITING_PROPERTY, "invalid_contact_phone", now)
         return db[COLLECTION].find_one({"_id": event["_id"]})
     stored_reference = event.get("source_property_code")
     if stored_reference and event.get("commercial_processing_state") in {WAITING_INVENTORY, RECONCILING}:

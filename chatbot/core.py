@@ -703,7 +703,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}){1,3}", candidate):
                 updates_datos["nombre"] = candidate
         elif requested_field == "rut" and not prospecto_actual.get("rut") and "rut" not in updates_datos:
-            captured_rut = extraer_rut(original_message)
+            captured_rut = extraer_rut(original_message, allow_unlabelled=True)
             if captured_rut:
                 updates_datos["rut"] = captured_rut
         elif requested_field == "email" and not prospecto_actual.get("email") and "email" not in updates_datos:

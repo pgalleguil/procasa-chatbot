@@ -110,36 +110,56 @@ def validar_rut(rut_sin_formato: str) -> bool:
     multiplo = 2
     for digito in reversed(cuerpo):
         suma += int(digito) * multiplo
-        multiplo = 7 if multiplo == 8 else multiplo + 1  # serie: 2,3,4,5,6,7,2,3...
+        multiplo = 2 if multiplo == 7 else multiplo + 1  # serie correcta: 2,3,4,5,6,7,2,3...
     
     resto = suma % 11
     dv_calculado = "0" if resto == 0 else "K" if resto == 1 else str(11 - resto)
     
     return dv_calculado == dv_provisto
 
-def extraer_rut(texto: str) -> Optional[str]:
+def extraer_rut(texto: str, *, allow_unlabelled: bool = False) -> Optional[str]:
+    """Extract a valid personal RUT only when the message supplies context.
+
+    URLs and property references are excluded. A RUT label is required except
+    in the accepted optional visit-data slot, where a formatted RUT is enough.
     """
-    Versión mejorada: extrae solo si pasa validación de DV.
-    """
-    # Busca formatos comunes (con o sin puntos/guion)
-    match = re.search(r'\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b', texto, re.IGNORECASE)
-    if not match:
-        return None
-    
-    rut_raw = match.group(1).replace(".", "").replace("-", "").upper()
-    
-    # Normaliza longitud (algunos escriben con 0 iniciales, pero no afecta)
-    if len(rut_raw) < 2:
-        return None
-    
-    cuerpo = rut_raw[:-1]
-    dv = rut_raw[-1]
-    
-    # Validación estricta
-    if not validar_rut(cuerpo + dv):
-        return None  # ← Aquí se rechazan los códigos de propiedades falsos
-    
-    return f"{cuerpo}-{dv}"
+    texto = str(texto or "")
+    texto_sin_urls = re.sub(
+        r"\b(?:https?://|www\.)[^\s<>]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>]*)?",
+        " ", texto, flags=re.IGNORECASE,
+    )
+    rut_pattern = re.compile(
+        r"\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b", re.IGNORECASE
+    )
+    rut_label = re.compile(
+        r"\b(?:mi|su|el)?\s*rut\b"
+        r"(?:\s+(?:es|ser[ií]a|n(?:ro|[úu]mero)))?\s*[:#]?\s*$",
+        re.IGNORECASE,
+    )
+    property_reference = re.compile(
+        r"\b(?:propiedad|inmueble|publicaci[oó]n|aviso|ficha|c[oó]digo|"
+        r"identificador|enlace)\b", re.IGNORECASE,
+    )
+
+    for match in rut_pattern.finditer(texto_sin_urls):
+        prefix = texto_sin_urls[max(0, match.start() - 64):match.start()]
+        personal_context = bool(rut_label.search(prefix))
+        if not personal_context and not allow_unlabelled:
+            continue
+        if not personal_context:
+            # In the optional visit slot, punctuation distinguishes a RUT from
+            # a bare publication/property identifier.
+            if not re.search(r"[.-]", match.group(1)):
+                continue
+            if property_reference.search(prefix):
+                continue
+
+        rut_raw = match.group(1).replace(".", "").replace("-", "").upper()
+        cuerpo, dv = rut_raw[:-1], rut_raw[-1]
+        if validar_rut(cuerpo + dv):
+            return f"{cuerpo}-{dv}"
+
+    return None
 
 def extraer_email(texto: str) -> Optional[str]:
     match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', texto)

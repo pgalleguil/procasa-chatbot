@@ -9,10 +9,17 @@ from .property_lookup import (
     extract_property_external_id,
     find_property_by_any_identifier,
     get_prop_location,
+    get_prop_operation,
     lookup_property_link,
     normalize_property_url,
 )
 from .lead_router import find_responsible_executive
+from api_captacion import (
+    _normalize_operacion,
+    _normalize_tipo,
+    get_zone_for_comuna,
+    normalize_commune_v2,
+)
 
 COLLECTION = "commercial_processing_events"
 WAITING_PROPERTY = "waiting_property"
@@ -73,6 +80,46 @@ def _property_is_active(prop):
     if status:
         return status not in {"baja", "pasiva", "no disponible", "inactiva", "inactive"}
     return True
+
+
+_PORTALS_WITH_OPERATION_PATHS = {
+    "enlaceinmobiliario", "mercadolibre", "portal_inmobiliario",
+    "procasa", "toctoc", "yapo",
+}
+
+
+def _commercial_property_context(prop, prop_meta=None):
+    """Build lead classification fields from a resolved Prop360 document.
+
+    A URL path can select Venta/Arriendo only when it belongs to a supported
+    portal and Prop360 says that operation is available. This keeps legitimate
+    dual-operation portal links while preventing an unrelated URL slug from
+    overriding the resolved property's canonical operation.
+    """
+    prop_meta = prop_meta or {}
+    location = get_prop_location(prop)
+    property_operation = get_prop_operation(prop)
+    operation_flags = prop.get("tipo_operacion", {}) or {}
+    requested = str(prop_meta.get("operation") or "").strip().lower()
+    portal = str(prop_meta.get("portal") or "").strip().lower()
+    requested_flag = {"venta": "venta", "arriendo": "arriendo"}.get(requested)
+    operation_override = None
+    if requested_flag and portal in _PORTALS_WITH_OPERATION_PATHS:
+        if "venta" in operation_flags or "arriendo" in operation_flags:
+            supports_requested = operation_flags.get(requested_flag) is True
+        else:
+            canonical = str(property_operation.get("operacion") or "").strip().lower()
+            supports_requested = not canonical or requested in canonical
+        if supports_requested:
+            operation_override = requested
+
+    operation_data = get_prop_operation(prop, operation_override=operation_override)
+    return {
+        "comuna": location.get("comuna") or "",
+        "tipo": operation_data.get("tipo") or "",
+        "operacion": operation_data.get("operacion") or "",
+        "operacion_fuente": operation_override,
+    }
 
 
 def _pending_other_count(db, lead_id, event_id):
@@ -184,8 +231,31 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         return db[COLLECTION].find_one({"_id": event["_id"]})
     code = str(prop.get("codigo") or raw)
     identity = property_reference_identity(raw)
-    operation = prop_meta.get("operation")
-    location = get_prop_location(prop)
+    property_context = _commercial_property_context(prop, prop_meta)
+    previous_prospect = lead.get("prospecto") or {}
+    comuna = property_context["comuna"] or previous_prospect.get("comuna") or lead.get("comuna") or ""
+    tipo = property_context["tipo"] or previous_prospect.get("tipo") or lead.get("tipo") or ""
+    property_operation = (
+        property_context["operacion"]
+        or previous_prospect.get("operacion")
+        or lead.get("operacion")
+        or ""
+    )
+    operation = property_context["operacion_fuente"]
+    # Reuse the pure normalization helpers used by classification. Deliberately
+    # do not call classify(), which can inspect message history and resolve refs.
+    from .processing_service import LeadProcessingService
+    tipo_code = _normalize_tipo(tipo)
+    operation_code = _normalize_operacion(property_operation)
+    commune_ui = LeadProcessingService._normalize_commune_ui(comuna)
+    classification = {
+        "comuna": comuna,
+        "comuna_norm": normalize_commune_v2(comuna),
+        "tipo": tipo_code,
+        "operacion": operation_code,
+        "cluster_id": f"{commune_ui}-{tipo_code}-{operation_code}",
+        "zone": get_zone_for_comuna(comuna) if comuna else "unknown",
+    }
 
     # A lead is assigned to a property only ONCE.  process_inbound runs once per
     # inbound message, so follow-up messages about the same property must reuse
@@ -229,7 +299,7 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             reuse = False
     if not reuse:
         executive, _unused, assignment_type = find_responsible_executive(
-            property_code=code, comuna=location.get("comuna"), lead_phone=phone)
+            property_code=code, comuna=comuna, lead_phone=phone)
         recipient = db["usuarios"].find_one({"nombre": executive, "is_active": {"$ne": False}})
         recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
     if not recipient or not recipient_phone:
@@ -250,13 +320,15 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
         "prospecto.codigo": code,
         "prospecto.codigo_propiedad": code,
-        "prospecto.operacion": operation or (lead.get("prospecto") or {}).get("operacion"),
+        "prospecto.comuna": comuna or previous_prospect.get("comuna"),
+        "prospecto.tipo": tipo or previous_prospect.get("tipo"),
+        "prospecto.operacion": property_operation or previous_prospect.get("operacion"),
         "prospecto.operacion_fuente": operation,
         "prospecto.portal_origen": prop_meta.get("portal"),
         "prospecto.external_id_origen": prop_meta.get("external_id"),
         "codigo": code,
         "codigo_propiedad": code,
-        "operacion": operation or lead.get("operacion"),
+        **classification,
         "operacion_fuente": operation,
         "portal_origen": prop_meta.get("portal"),
         "external_id_origen": prop_meta.get("external_id"),
@@ -268,25 +340,33 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         "lifecycle.assigned_to_user_id": cycle.get("assigned_to_user_id"),
         "lifecycle.assigned_to_display_name": cycle.get("assigned_to_display_name"),
         "commercial_processing_state": COMPLETED,
+        "assignment_type": assignment_type,
         "commercial_notification_eligible": True,
         "prospecto.link_pendiente": bool(pending_other),
     }})
     fresh = db["leads"].find_one({"_id": lead["_id"]}) or lead
-    if str(fresh.get("lead_temperature_effective") or "").upper() == "HOT":
-        from .crm_hot_delivery import assign_and_enqueue_hot
-        notification = assign_and_enqueue_hot(db, lead=fresh, recipient_user_id=str(recipient["_id"]),
-            recipient_name=recipient["nombre"], recipient_phone=str(recipient_phone),
-            payload={"phone": phone, "property_code": code, "nombre": (fresh.get("prospecto") or {}).get("nombre"),
-                     "last_message": text}, assigned_by="commercial_intake", reason="inbound_message",
-            assigned_at=now, source_event_id=str(inbound_provider_id))["notification"]
-    else:
-        from .crm_non_hot_digest import accumulate_non_hot_lead
-        notification = accumulate_non_hot_lead(db, lead=fresh, cycle=cycle)
+    # A reused assignment already owns its notification lifecycle. Resolving
+    # or retrying property context must not enqueue a second notification.
+    notification = event.get("notification_id") if reuse else None
+    if not reuse:
+        if str(fresh.get("lead_temperature_effective") or "").upper() == "HOT":
+            from .crm_hot_delivery import assign_and_enqueue_hot
+            notification = assign_and_enqueue_hot(db, lead=fresh, recipient_user_id=str(recipient["_id"]),
+                recipient_name=recipient["nombre"], recipient_phone=str(recipient_phone),
+                payload={"phone": phone, "property_code": code, "nombre": (fresh.get("prospecto") or {}).get("nombre"),
+                         "last_message": text}, assigned_by="commercial_intake", reason="inbound_message",
+                assigned_at=now, source_event_id=str(inbound_provider_id))["notification"]
+        else:
+            from .crm_non_hot_digest import accumulate_non_hot_lead
+            notification = accumulate_non_hot_lead(db, lead=fresh, cycle=cycle)
+    notification_id = (
+        notification.get("_id") if isinstance(notification, dict) else notification
+    )
     db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
         **identity,
         "lead_id": fresh["_id"], "resolved_property_code": code,
         "assignment_cycle_id": cycle["assignment_cycle_id"], "assignment_type": assignment_type,
-        "notification_id": (notification or {}).get("_id"), "notification_eligible": True,
+        "notification_id": notification_id, "notification_eligible": True,
         "property_resolved_at": now, "source_message": str(text or "")}})
     _state(db, event["_id"], COMPLETED, "property_resolved_and_routed", now)
     return db[COLLECTION].find_one({"_id": event["_id"]})

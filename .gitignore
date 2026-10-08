@@ -102,3 +102,4 @@ backfill*.py
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+!tests/test_commercial_intake_property_context.py

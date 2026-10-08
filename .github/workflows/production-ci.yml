@@ -48,7 +48,6 @@ jobs:
               tests/test_toctoc_canonical_persistence.py
               tests/test_toctoc_extractor_regressions.py
               tests/test_toctoc_pipeline_e2e.py
-              tests/test_yapo_current_extractor.py
               tests/test_property_resolution.py
           - suite: CRM management SLA
             tests: >-

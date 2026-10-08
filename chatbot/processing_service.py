@@ -238,7 +238,9 @@ class LeadProcessingService:
             content = str(message.get("content") or "")
             if not content:
                 continue
-            reference = resolver_referencia_propiedad(content, lead_doc.get("phone"), trace_id)
+            reference = resolver_referencia_propiedad(
+                content, lead_doc.get("phone"), trace_id, use_legacy_lookup=False,
+            )
             if reference.get("status") != "no_reference":
                 latest_reference = reference
                 break

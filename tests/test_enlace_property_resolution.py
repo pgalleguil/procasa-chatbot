@@ -51,6 +51,15 @@ ENLACE_URL = "https://bancoestado.enlaceinmobiliario.cl/usados/el-bosque/casa/10
 
 def _resolve(monkeypatch, db, message):
     monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        link_extractor, "analizar_mensaje_para_link",
+        lambda text, _phone=None, _trace_id=None: (
+            False, None,
+            link_extractor.detectar_plataforma(link_extractor.URL_RE.findall(text)[0])
+            if link_extractor.URL_RE.findall(text) else "",
+            None,
+        ),
+    )
     return link_extractor.resolver_referencia_propiedad(message)
 
 
@@ -81,6 +90,34 @@ def test_unknown_portal_with_explicit_id_resolves_without_claiming_its_identity(
     assert result["property"]["_link_match"]["portal"] == ""
     assert result["property"]["_link_match"]["identity_source"] == "message_text"
     assert result["url"].startswith("https://sitio-de-ejemplo.cl/")
+    assert result["property"]["_link_match"]["operation"] is None
+
+
+def test_unknown_url_operation_cannot_override_exact_text_property_operation(monkeypatch):
+    db = _database(_property("6508", "101006508"))
+    message = "Me interesa la propiedad 101006508 https://sitio-nuevo.example/arriendo/aviso/42"
+
+    result = _resolve(monkeypatch, db, message)
+
+    assert result["status"] == "resolved"
+    assert result["property"]["codigo"] == "6508"
+    assert result["property"]["_link_match"]["operation"] is None
+    assert get_prop_operation(
+        result["property"], result["property"]["_link_match"]["operation"],
+    )["operacion"] == "Venta"
+
+
+def test_supported_portal_operation_inference_remains_available(monkeypatch):
+    db = _database(_property("6508", "101006508"))
+    message = "Me interesa la propiedad 101006508 https://www.toctoc.com/arriendo/aviso/42"
+
+    result = _resolve(monkeypatch, db, message)
+
+    assert result["status"] == "resolved"
+    assert result["property"]["_link_match"]["operation"] == "arriendo"
+    assert get_prop_operation(
+        result["property"], result["property"]["_link_match"]["operation"],
+    )["operacion"] == "arriendo"
 
 
 def test_explicit_id_without_url_uses_shared_exact_resolver(monkeypatch):
@@ -91,6 +128,28 @@ def test_explicit_id_without_url_uses_shared_exact_resolver(monkeypatch):
     assert result["has_url"] is False
     assert result["property"]["codigo"] == "6508"
     assert find_property_by_any_identifier(db, "101006508")["codigo"] == "6508"
+
+
+def test_code_only_message_is_exact_unique_and_excludes_phone_or_rut_numbers(monkeypatch):
+    db = _database(_property("6508", "101006508"))
+
+    result = _resolve(monkeypatch, db, " 101006508 \n")
+
+    assert link_extractor.extraer_codigo_internacional("101006508") == "101006508"
+    assert result["status"] == "resolved"
+    assert result["property"]["codigo"] == "6508"
+    assert link_extractor.extraer_codigos_internacionales("912345678") == []
+    assert link_extractor.extraer_codigos_internacionales("123456785") == []
+    assert link_extractor.extraer_codigos_internacionales("Hola 101006508 gracias") == []
+
+
+def test_code_only_message_still_refuses_duplicate_exact_matches(monkeypatch):
+    db = _database(_property("6508", "101006508"), _property("6766", "101006508"))
+
+    result = _resolve(monkeypatch, db, "101006508")
+
+    assert result["status"] == "ambiguous"
+    assert result["error_code"] == "AMBIGUOUS_PROPERTY_REFERENCE"
 
 
 @pytest.mark.parametrize(
@@ -233,6 +292,10 @@ def test_processing_service_uses_newest_reference_and_refreshes_old_context(monk
     new_property = _property("6508", "101006508", commune="El Bosque", property_type="Casa")
     db = _database(old_property, new_property)
     monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        link_extractor, "analizar_mensaje_para_link",
+        lambda *_args, **_kwargs: (False, None, "Otro Portal", None),
+    )
     monkeypatch.setattr(LeadProcessingService, "_db", staticmethod(lambda: db))
     lead = {
         "prospecto": {
@@ -264,14 +327,74 @@ def test_processing_service_uses_newest_reference_and_refreshes_old_context(monk
     assert LeadProcessingService.classify(lead) == {}
 
 
+def test_classifier_preserves_operation_from_verified_supported_portal_url(monkeypatch):
+    url = "https://www.toctoc.com/arriendo/aviso/42"
+    prop = _property("6508", "101006508")
+    prop["publicaciones"]["toctoc"] = {"url_toctoc": url}
+    db = _database(prop)
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        link_extractor, "analizar_mensaje_para_link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("classifier must use the direct lookup path")
+        ),
+    )
+
+    context = LeadProcessingService.classify({
+        "messages": [{"role": "user", "content": url}],
+    })
+
+    assert context["operacion"] == "A"
+    assert context["cluster_id"] == "EL BOSQUE-CASA-A"
+
+
+def test_classifier_uses_read_only_single_url_lookup(monkeypatch):
+    from chatbot import storage
+
+    db = _database()
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    lookups = []
+    analyzer_calls = []
+    writes = []
+    lookup = link_extractor.lookup_property_link
+
+    def counted_lookup(*args, **kwargs):
+        lookups.append(args[1])
+        return lookup(*args, **kwargs)
+
+    def forbidden_analyzer(*_args, **_kwargs):
+        analyzer_calls.append(True)
+        raise AssertionError("classifier must not enter the legacy diagnostic path")
+
+    monkeypatch.setattr(link_extractor, "lookup_property_link", counted_lookup)
+    monkeypatch.setattr(link_extractor, "analizar_mensaje_para_link", forbidden_analyzer)
+    monkeypatch.setattr(storage, "actualizar_prospecto", lambda *args, **kwargs: writes.append(args))
+
+    result = LeadProcessingService.classify({
+        "phone": "56911112222",
+        "messages": [{"role": "user", "content": "https://www.yapo.cl/bienes-raices/32979177"}],
+    })
+
+    assert result == {}
+    assert len(lookups) == 1
+    assert analyzer_calls == []
+    assert writes == []
+
+
 def test_core_processes_unknown_portal_code_through_canonical_property_flow(monkeypatch):
+    from bson import ObjectId
     from config import Config
+    from threading import Event
 
     monkeypatch.setattr(Config, "DEEPSEEK_API_KEY", "test-key")
     from chatbot import core, storage
 
     db = _database(_property("6508", "101006508"))
     monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        link_extractor, "analizar_mensaje_para_link",
+        lambda *_args, **_kwargs: (False, None, "Otro Portal", None),
+    )
     phone = "56911112222"
     message = "Me interesa la propiedad 101006508. https://sitio-nuevo.example/aviso/42"
     prospect = {
@@ -280,15 +403,34 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
         "tipo": "Departamento",
         "operacion": "Venta",
     }
-    lead = {"phone": phone, "prospecto": prospect}
+    lead_id = ObjectId()
+    lead = {
+        "_id": lead_id,
+        "phone": phone,
+        "prospecto": prospect,
+        "processing_required": True,
+        "processing_event_id": "inbound-test-event",
+        "processing_reason": "inbound_message",
+        "processing_state": "received",
+    }
     updates = []
     saved_messages = []
     viewed_properties = []
+    commercial_calls = []
+    notification_calls = []
+    assignment_calls = []
+    process_claimed_called = Event()
+    processing_queries = []
 
     class _LeadCollection:
         @staticmethod
         def find_one(_query):
             return lead
+
+        @staticmethod
+        def find_one_and_update(query, _pipeline, **_kwargs):
+            processing_queries.append(query)
+            return dict(lead) if query.get("_id") == lead_id else None
 
     class _CoreDB:
         def __getitem__(self, name):
@@ -299,7 +441,21 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
         prospect.update(fields)
 
     async def no_live_alert(**_kwargs):
+        notification_calls.append(_kwargs)
         return {"status": "enqueued"}
+
+    def process_commercial_lead(claimed_lead):
+        claimed_prospect = dict(claimed_lead.get("prospecto") or {})
+        commercial_calls.append((
+            claimed_lead.get("_id"), claimed_prospect.get("codigo"),
+            claimed_prospect.get("codigo_propiedad"),
+        ))
+        process_claimed_called.set()
+        return True
+
+    def observe_assignment(*args, **kwargs):
+        assignment_calls.append((args, kwargs))
+        return {}
 
     monkeypatch.setattr(core, "get_db", lambda: _CoreDB())
     monkeypatch.setattr(core, "guardar_mensaje", lambda *args, **_kwargs: saved_messages.append(args))
@@ -319,6 +475,9 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     monkeypatch.setattr(core, "formatear_ficha_tecnica", lambda *_args, **_kwargs: "Ficha 6508")
     monkeypatch.setattr(core, "build_specific_property_response", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(core, "send_alert_once", no_live_alert)
+    monkeypatch.setattr(LeadProcessingService, "_db", staticmethod(lambda: _CoreDB()))
+    monkeypatch.setattr(LeadProcessingService, "process_claimed", staticmethod(process_commercial_lead))
+    monkeypatch.setattr(LeadProcessingService, "reassign_if_needed", staticmethod(observe_assignment))
     monkeypatch.setattr(
         core, "generar_respuesta_estructurada",
         lambda *_args, **_kwargs: {
@@ -334,6 +493,7 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     monkeypatch.setattr(storage, "log_event", lambda *_args, **_kwargs: None)
 
     response = asyncio.run(core.process_user_message(phone, message))
+    assert process_claimed_called.wait(2)
 
     assert "6508" in response
     assert prospect["codigo"] == "6508"
@@ -346,6 +506,11 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     assert viewed_properties == ["6508"]
     assert saved_messages[0][1:3] == ("user", message)
     assert sum(1 for item in updates if item.get("codigo") == "6508") == 1
+    assert len(processing_queries) == 1
+    assert processing_queries[0]["_id"] == lead_id
+    assert commercial_calls == [(lead_id, "6508", "6508")]
+    assert assignment_calls == []
+    assert notification_calls == []
 
     message = "Quiero información sobre la propiedad 109999999."
     unresolved_response = asyncio.run(core.process_user_message(phone, message))

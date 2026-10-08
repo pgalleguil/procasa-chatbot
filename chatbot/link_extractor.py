@@ -114,11 +114,38 @@ def extraer_codigos_internacionales(mensaje: str) -> list[str]:
     found = []
     for pattern in _INTERNATIONAL_CODE_PATTERNS:
         found.extend(match.group(1) for match in pattern.finditer(text))
+    if not found:
+        # Preserve the historical code-only WhatsApp message, but do not treat
+        # arbitrary numbers embedded in prose, URLs, phone numbers, or RUTs as IDs.
+        bare_value = text.strip()
+        if re.fullmatch(r"\d{9,10}", bare_value) and not _is_phone_or_rut_number(bare_value):
+            found.append(bare_value)
     return list(dict.fromkeys(found))
 
 
+def _is_phone_or_rut_number(value: str) -> bool:
+    """Reject code-only values that have the shape of common Chilean numbers."""
+    if len(value) == 9 and value.startswith("9"):
+        return True
+    if len(value) == 10 and value.startswith("56"):
+        return True
+    if len(value) != 9:
+        return False
+
+    # A nine-digit Chilean RUT is an eight-digit body plus a check digit.
+    body, supplied_dv = value[:-1], value[-1]
+    total = 0
+    factor = 2
+    for digit in reversed(body):
+        total += int(digit) * factor
+        factor = 2 if factor == 7 else factor + 1
+    remainder = total % 11
+    expected_dv = "0" if remainder == 0 else "K" if remainder == 1 else str(11 - remainder)
+    return supplied_dv == expected_dv
+
+
 def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
-    """Return a single explicitly labeled international property ID."""
+    """Return one explicitly labeled ID or one exact code-only message."""
     codes = extraer_codigos_internacionales(mensaje)
     if len(codes) == 1:
         codigo = codes[0]
@@ -461,7 +488,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
 
 
 def resolver_referencia_propiedad(
-    mensaje: str, phone=None, trace_id: str = None,
+    mensaje: str, phone=None, trace_id: str = None, *, use_legacy_lookup: bool = True,
 ) -> dict:
     """Resolve one current property reference without guessing its source portal."""
     urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(str(mensaje or ""))]
@@ -486,17 +513,20 @@ def resolver_referencia_propiedad(
     url_ambiguity = None
     for url in urls:
         external_id = extract_property_external_id(url)
-        if not external_id:
+        if not external_id and use_legacy_lookup:
             continue
-        url_ids.append(external_id)
+        if external_id:
+            url_ids.append(external_id)
         url_prop, url_meta = lookup_property_link(db, url, PROPERTY_COLLECTION_NAME)
         if url_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
             url_ambiguity = url_meta
         if url_prop:
-            url_properties[str(url_prop.get("codigo") or url_prop.get("codigo_prop360") or "")] = url_prop
+            matched_prop = dict(url_prop)
+            matched_prop["_link_match"] = url_meta
+            url_properties[str(url_prop.get("codigo") or url_prop.get("codigo_prop360") or "")] = matched_prop
 
     legacy_external_id = None
-    if urls:
+    if urls and use_legacy_lookup:
         # Retain the existing matching paths for all currently supported portals.
         _legacy_found, legacy_prop, legacy_platform, legacy_external_id = (
             analizar_mensaje_para_link(mensaje, phone, trace_id)
@@ -558,7 +588,12 @@ def resolver_referencia_propiedad(
             meta.update({
                 "portal": canonical_portal(urls[0]) or "",
                 "external_id": legacy_external_id or external_id,
-                "operation": operation_from_property_url(urls[0]),
+                # Keep existing portal URL operation inference. An unknown URL
+                # is only provenance here and must not override a text-code match.
+                "operation": (
+                    operation_from_property_url(urls[0])
+                    if url_prop or canonical_portal(urls[0]) else None
+                ),
                 "url_normalized": normalize_property_url(urls[0]),
                 "match_method": meta.get("match_method") or "exact_international_code",
                 "identity_source": "message_text" if not url_prop else "url_and_message",

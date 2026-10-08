@@ -68,6 +68,8 @@ tests/
 !tests/
 tests/*
 !tests/test_document_message_guard.py
+!tests/test_phone_assignment_guards.py
+!tests/test_rut_phone_validation.py
 !tests/test_chatbot_durable_queue.py
 !tests/test_chatbot_phase1.py
 !tests/test_crm_sla_alert_evaluator.py

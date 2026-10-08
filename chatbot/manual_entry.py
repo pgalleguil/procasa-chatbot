@@ -5,10 +5,10 @@ from typing import Dict, Any, Tuple, Optional
 import re
 from bson.objectid import ObjectId
 from .storage import get_db, log_event
-from .constants import CHILE_TZ, PipelineStage, InteractionType
+from .constants import CHILE_TZ, PipelineStage, InteractionType, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
 from .processing_service import LeadProcessingService
-from .phone_utils import normalize_phone_strict
+from .phone_utils import has_real_phone, normalize_phone_strict
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     build_property_lookup_queries,
@@ -172,7 +172,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     """
     db = get_db()
     raw_phone = str(data.get("phone", "") or "").strip()
-    phone = normalize_phone_strict(raw_phone)
+    phone_is_real = has_real_phone(raw_phone)
+    phone = normalize_phone_strict(raw_phone) if phone_is_real else None
 
     property_code = str(data.get("property_code", "")).strip()
     name = data.get("nombre", "").strip()
@@ -213,11 +214,14 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         return {"status": "error", "message": f"Este contacto ya existe para esta propiedad y está asignado a {executive}"}
 
     # 3. Asignar ejecutivo
-    exec_name, exec_phone, assignment_type = find_responsible_executive(
-        property_code=property_code,
-        lead_phone=phone,
-        lead_name=name
-    )
+    if phone_is_real:
+        exec_name, exec_phone, assignment_type = find_responsible_executive(
+            property_code=property_code,
+            lead_phone=phone,
+            lead_name=name
+        )
+    else:
+        exec_name, exec_phone, assignment_type = UNASSIGNED_LABEL, None, "MISSING_PHONE"
     
     # 3. Prepare Lead Document
     now = datetime.now(CHILE_TZ)
@@ -240,7 +244,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         })
 
     from .lead_router import get_next_business_slot
-    assigned_at = get_next_business_slot(now)
+    assigned_at = get_next_business_slot(now) if phone_is_real else None
 
     lead_doc = {
         "phone": final_phone, 
@@ -252,6 +256,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         "canal_envio": "Lead Manual",
         "lead_temperature": lead_temperature,
         "lead_temperature_effective": lead_temperature,
+        "assignment_type": assignment_type,
         "stage": PipelineStage.NEW,
         "pipeline_stage": PipelineStage.NEW,
         "ejecutivo_asignado": exec_name,
@@ -263,10 +268,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "ejecutivo": exec_name,
             "canal_origen": origen
         },
-        "lifecycle": {
-            "created_at": now.isoformat(),
-            "assigned_at": assigned_at.isoformat()
-        },
+        "lifecycle": {"created_at": now.isoformat()},
         "messages": messages,
         "stage_history": [
             {
@@ -278,6 +280,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             }
         ]
     }
+    if assigned_at:
+        lead_doc["lifecycle"]["assigned_at"] = assigned_at.isoformat()
 
     # 4. Chequear si el lead ya existe (cualquier propiedad)
     existing_query = []
@@ -288,6 +292,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     if existing_query:
         existing_lead = db["leads"].find_one({"$or": existing_query})
 
+    cycle = None
     try:
         if existing_lead:
             lead_id = str(existing_lead["_id"])
@@ -323,14 +328,13 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             
             # Lógica de ejecutivo: Priorizamos SIEMPRE mantener al ejecutivo que ya lo está atendiendo.
             current_exec = existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")
-            from .constants import UNASSIGNED_LABEL
             if current_exec and current_exec not in [UNASSIGNED_LABEL, "No asignado"]:
                 # Respetamos que ya tiene un ejecutivo (ej: Raquel) aunque la propiedad sea de otro (ej: Erika)
                 exec_name = current_exec
                 from .lead_router import get_executive_phone
                 exec_phone = get_executive_phone(exec_name)
                 logger.info(f"[MANUAL] Lead existente. Manteniendo ejecutivo actual: {exec_name}")
-            else:
+            elif phone_is_real:
                 # Si no tiene ejecutivo o está desasignado, le damos el de la propiedad
                 update_payload["$set"]["ejecutivo_asignado"] = exec_name
                 update_payload["$set"]["prospecto.ejecutivo"] = exec_name
@@ -340,51 +344,52 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
             lead_id = str(existing_lead["_id"])
             # Create assignment cycle for the new property interest
-            from .crm_metrics import create_assignment_cycle
-            exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
-            assigned_to = str(exec_user["_id"]) if exec_user else exec_name
-            fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
-            if fresh_lead:
-                cycle = create_assignment_cycle(
-                    db, lead=fresh_lead, assigned_to_user_id=assigned_to,
-                    assigned_by="supervisor", reason="manual_lead_created",
-                    assigned_at=assigned_at, assigned_to_display_name=exec_name,
-                )
+            if phone_is_real:
+                from .crm_metrics import create_assignment_cycle
+                exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
+                assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+                fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
+                if fresh_lead:
+                    cycle = create_assignment_cycle(
+                        db, lead=fresh_lead, assigned_to_user_id=assigned_to,
+                        assigned_by="supervisor", reason="manual_lead_created",
+                        assigned_at=assigned_at, assigned_to_display_name=exec_name,
+                    )
             
         else:
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
             # Create assignment cycle immediately with explicit commercial reason
-            from .crm_metrics import create_assignment_cycle
-            exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
-            assigned_to = str(exec_user["_id"]) if exec_user else exec_name
-            cycle = create_assignment_cycle(
-                db, lead=lead_doc, assigned_to_user_id=assigned_to,
-                assigned_by="supervisor", reason="manual_lead_created",
-                assigned_at=assigned_at, assigned_to_display_name=exec_name,
-            )
+            if phone_is_real:
+                from .crm_metrics import create_assignment_cycle
+                exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
+                assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+                cycle = create_assignment_cycle(
+                    db, lead=lead_doc, assigned_to_user_id=assigned_to,
+                    assigned_by="supervisor", reason="manual_lead_created",
+                    assigned_at=assigned_at, assigned_to_display_name=exec_name,
+                )
             
         # Canonical manual source plus immediate non-HOT digest accumulation.
-        # A missing/synthetic client phone is irrelevant: delivery targets the
-        # active executive resolved from usuarios via the assignment cycle.
         cycle_id = (cycle or {}).get("assignment_cycle_id")
-        if not cycle_id:
+        if phone_is_real and not cycle_id:
             logger.error(
                 "[MANUAL_CREATE] cycle_creation_failed lead_id=%s assigned_to=%s property_code=%s",
                 lead_id, exec_name, property_code,
             )
             raise RuntimeError("manual lead cycle was not created")
-        source_event_id = f"manual_lead:{lead_id}:{cycle_id}"
-        db["crm_assignment_cycles"].update_one(
-            {"assignment_cycle_id": cycle_id},
-            {"$set": {"source_event_id": source_event_id,
-                      "source_event_verified": True,
-                      "source_event_type": "MANUAL_LEAD_CREATED"}},
-        )
-        fresh_lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
+        source_event_id = f"manual_lead:{lead_id}:{cycle_id}" if cycle_id else None
         notification = None
-        if fresh_lead and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT":
+        if cycle_id:
+            db["crm_assignment_cycles"].update_one(
+                {"assignment_cycle_id": cycle_id},
+                {"$set": {"source_event_id": source_event_id,
+                          "source_event_verified": True,
+                          "source_event_type": "MANUAL_LEAD_CREATED"}},
+            )
+        fresh_lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
+        if cycle_id and fresh_lead and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT":
             from .crm_non_hot_digest import accumulate_non_hot_lead
             notification = accumulate_non_hot_lead(db, lead=fresh_lead, cycle=cycle)
             if notification:
@@ -409,8 +414,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             "origen": origen
         })
 
-        # 6. Notification policy: manual leads enter as Lead normal (never HOT).
-        # Assignment is immediate. Digest remains in shadow — no WASender call.
+        # 6. Manual leads are only routed when a contact phone is valid.
         logger.info(
             "[MANUAL_CREATE] lead_created phone=%s property_code=%s assigned_to=%s source=%s",
             final_phone,

@@ -3942,7 +3942,13 @@ async def api_crm_send_recommendation(request: Request):
 
 
 def _normalize_webhook_phone(value):
-    digits = "".join(filter(str.isdigit, str(value or "")))
+    from chatbot.phone_utils import has_real_phone
+    raw = str(value or "").strip()
+    if "@s.whatsapp.net" in raw:
+        raw = raw.split("@", 1)[0]
+    if not has_real_phone(raw):
+        return None
+    digits = "".join(filter(str.isdigit, raw))
     if not digits:
         return None
     if digits.startswith("56") and len(digits) >= 11:
@@ -4149,6 +4155,12 @@ async def webhook(
 
     # Normalización para Chile (Casos comunes de entrada: 912345678, 56912345678, +56912345678)
     phone = _normalize_webhook_phone(phone)
+    from chatbot.phone_utils import has_real_phone, normalize_phone_strict
+    normalized_contact_phone = normalize_phone_strict(phone)
+    if not has_real_phone(phone) or not normalized_contact_phone:
+        logger.warning("[WHATSAPP] inbound rejected: invalid or synthetic contact phone")
+        return JSONResponse({"status": "invalid phone"}, status_code=200)
+    phone = normalized_contact_phone
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:

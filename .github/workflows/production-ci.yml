@@ -37,6 +37,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: RUT and phone assignment guards
+            tests: >-
+              tests/test_rut_phone_validation.py
+              tests/test_phone_assignment_guards.py
+          - suite: Property portal resolution regressions
+            tests: >-
+              tests/test_commercial_intake_property_context.py
+              tests/test_enlace_property_resolution.py
+              tests/test_toctoc_canonical_persistence.py
+              tests/test_toctoc_extractor_regressions.py
+              tests/test_toctoc_pipeline_e2e.py
+              tests/test_property_resolution.py
           - suite: CRM management SLA
             tests: >-
               tests/test_crm_management_sla.py

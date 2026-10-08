@@ -174,6 +174,10 @@ def _send_alert_once_sync(
              is_new_assignment = False
              logger.info(f"[ALERT] Lead ya asignado a {exec_name}. Manteniendo asignación.")
         else:
+             from .phone_utils import has_real_phone
+             if not has_real_phone(phone):
+                 logger.info("[ALERT] Unassigned lead has no valid contact phone; routing skipped.")
+                 return {"status": "failed", "reason": "invalid_contact_phone"}
              logger.info(f"Asignando lead en base a propiedad {lead_data['property_code']}")
              exec_name, exec_phone, assignment_type = find_responsible_executive(
                  property_code=lead_data["property_code"],

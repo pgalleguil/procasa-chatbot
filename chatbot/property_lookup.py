@@ -61,6 +61,9 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
         {"publicaciones.yapo.url_yapo": _regex(value)},
         {"publicaciones.codigo_internacional": value},
         {"publicaciones.codigo_internacional": value_int},
+        {"publicaciones.codigo_internacional_por_operacion.V": value},
+        {"publicaciones.codigo_internacional_por_operacion.A": value},
+        {"publicaciones.codigo_internacional_por_operacion.R": value},
         {"publicaciones.portal_inmobiliario.codigo_pi": value},
         {"publicaciones.portal_inmobiliario.codigo_pi": value_int},
         {"publicaciones.yapo.codigo_yapo": value},
@@ -102,6 +105,10 @@ def build_property_lookup_queries(raw_value: Any) -> list[Dict[str, Any]]:
 
 
 def find_property_by_any_identifier(db, raw_value: Any, collection_name: str = PROPERTY_COLLECTION_NAME):
+    value = _clean_text(raw_value)
+    if re.fullmatch(r"\d{9,10}", value):
+        prop, _meta = find_property_by_international_code(db, value, collection_name)
+        return prop
     if isinstance(raw_value, str) and (
         raw_value.strip().lower().startswith(("http://", "https://"))
         or re.search(r"\bMLC[-_]?\d+\b", raw_value, re.I)
@@ -124,6 +131,18 @@ BACKUP_COLLECTION = "universo_cartera"
 
 def find_property_in_any_collection(db, raw_value: Any) -> dict | None:
     """Busca en universo_cartera primero, luego en universo_cartera_prop360 como fallback."""
+    value = _clean_text(raw_value)
+    if re.fullmatch(r"\d{9,10}", value):
+        prop, meta = find_property_by_international_code(db, value, PROPERTY_COLLECTION_NAME)
+        if prop or meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            return prop
+        if PROPERTY_COLLECTION_NAME != BACKUP_COLLECTION:
+            fallback, fallback_meta = find_property_by_international_code(db, value, BACKUP_COLLECTION)
+            if fallback_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+                return None
+            if fallback:
+                fallback["_lookup_fallback"] = True
+            return fallback
     if isinstance(raw_value, str) and (
         raw_value.strip().lower().startswith(("http://", "https://"))
         or re.search(r"\bMLC[-_]?\d+\b", raw_value, re.I)
@@ -340,17 +359,25 @@ TRACKING_PARAMS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
 
 def canonical_portal(url: str) -> str:
     host = (urlsplit(str(url or "")).hostname or "").lower().removeprefix("www.")
-    if host.endswith("mercadolibre.cl"):
+    if _host_is_or_subdomain(host, "mercadolibre.cl") or re.fullmatch(
+        r"(?:[a-z0-9-]+\.)*mercadolibre\.com(?:\.[a-z]{2})?", host,
+    ):
         return "mercadolibre"
-    if host.endswith("portalinmobiliario.com") or host.endswith("portalinmobiliario.cl"):
+    if _host_is_or_subdomain(host, "portalinmobiliario.com") or _host_is_or_subdomain(host, "portalinmobiliario.cl"):
         return "portal_inmobiliario"
-    if host.endswith("toctoc.com"):
+    if _host_is_or_subdomain(host, "toctoc.com"):
         return "toctoc"
-    if host.endswith("yapo.cl"):
+    if _host_is_or_subdomain(host, "yapo.cl"):
         return "yapo"
-    if host.endswith("procasa.cl"):
+    if _host_is_or_subdomain(host, "procasa.cl"):
         return "procasa"
+    if _host_is_or_subdomain(host, "enlaceinmobiliario.cl"):
+        return "enlaceinmobiliario"
     return ""
+
+
+def _host_is_or_subdomain(host: str, domain: str) -> bool:
+    return host == domain or host.endswith(f".{domain}")
 
 
 def normalize_property_url(url: str) -> str:
@@ -374,6 +401,10 @@ def normalize_property_url(url: str) -> str:
 def extract_property_external_id(url: str, portal: Optional[str] = None) -> Optional[str]:
     value = str(url or "")
     portal = portal or canonical_portal(value)
+    if portal == "enlaceinmobiliario":
+        path = urlsplit(value).path or ""
+        match = re.fullmatch(r"/usados/[^/]+/[^/]+/(\d{9})/\d+/?", path, re.I)
+        return match.group(1) if match else None
     if portal in {"mercadolibre", "portal_inmobiliario"}:
         match = re.search(r"\bMLC[-_]?\d+\b", value, re.I)
         return match.group(0).upper().replace("_", "-") if match else None
@@ -436,6 +467,47 @@ def _property_codes(docs: Iterable[dict]) -> set[str]:
     return {str(doc.get("codigo") or doc.get("codigo_prop360") or doc.get("_id") or "") for doc in docs}
 
 
+INTERNATIONAL_CODE_FIELDS = (
+    "codigo_internacional",
+    "publicaciones.codigo_internacional",
+    "publicaciones.codigo_internacional_por_operacion.V",
+    "publicaciones.codigo_internacional_por_operacion.A",
+    "publicaciones.codigo_internacional_por_operacion.R",
+)
+
+
+def find_property_by_international_code(
+    db, raw_value: Any, collection_name: str = PROPERTY_COLLECTION_NAME,
+) -> tuple[dict | None, dict]:
+    """Resolve a 9–10 digit external property code by exact Prop360 fields only."""
+    value = _clean_text(raw_value)
+    base_meta = {"external_id": value, "match_method": None, "resolvable": False}
+    if not re.fullmatch(r"\d{9,10}", value):
+        return None, {**base_meta, "error_code": "INVALID_INTERNATIONAL_PROPERTY_CODE"}
+
+    docs = _collect_property_matches(
+        db[collection_name], [{field: value} for field in INTERNATIONAL_CODE_FIELDS],
+    )
+    codes = _property_codes(docs)
+    if len(codes) > 1:
+        return None, {
+            **base_meta,
+            "match_method": "AMBIGUOUS_PROPERTY_REFERENCE",
+            "error_code": "AMBIGUOUS_PROPERTY_REFERENCE",
+            "candidate_codes": sorted(codes),
+        }
+    if not docs:
+        return None, {**base_meta, "error_code": "INTERNATIONAL_PROPERTY_CODE_NOT_FOUND"}
+
+    prop = sorted(docs, key=lambda item: str(item.get("_id") or item.get("codigo") or ""))[0]
+    return prop, {
+        **base_meta,
+        "match_method": "exact_international_code",
+        "resolvable": True,
+        "property_code": str(prop.get("codigo") or prop.get("codigo_prop360") or ""),
+    }
+
+
 def operation_from_property_url(url: str) -> Optional[str]:
     text = str(url or "").lower()
     if re.search(r"(?:arriendo|alquiler|rent)", text):
@@ -482,11 +554,24 @@ def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTIO
         historical_url_fields = tuple(f"{base}.{field}" for base in history_bases for field in ("url", "urls"))
     else:
         field_sets = {
-            "yapo": (("publicaciones.yapo.url_yapo", "url_yapo"),
-                     ("publicaciones.yapo.codigo_yapo", "codigo_yapo")),
+            "yapo": (
+                (
+                    "publicaciones.yapo.url_yapo", "url_yapo",
+                    *(f"publicaciones.yapo.publicaciones.{variant}.{field}"
+                      for variant in ("V", "A", "R", "arriendo", "venta")
+                      for field in ("url", "urls", "url_normalized", "urls_normalized")),
+                ),
+                (
+                    "publicaciones.yapo.codigo_yapo", "codigo_yapo",
+                    *(f"publicaciones.yapo.publicaciones.{variant}.{field}"
+                      for variant in ("V", "A", "R", "arriendo", "venta")
+                      for field in ("code", "external_id", "publication_id", "portal_id")),
+                ),
+            ),
             "toctoc": (("publicaciones.toctoc.url_toctoc", "toctoc.enlace"), ()),
             "procasa": (("publicaciones.procasa.url_procasa", "source_url", "metadata.source_url"),
                         ("publicaciones.codigo_internacional", "codigo_internacional")),
+            "enlaceinmobiliario": ((), INTERNATIONAL_CODE_FIELDS),
         }
         legacy_url_fields, legacy_id_fields = field_sets.get(portal, ((), ()))
         current_url_fields, current_id_fields = legacy_url_fields, legacy_id_fields

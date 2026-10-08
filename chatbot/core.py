@@ -28,7 +28,7 @@ from .crm_service import CrmService
 from .constants import PipelineStage, InteractionType, LeadIntent, CHILE_TZ
 
 from .grok_client import generar_respuesta, generar_respuesta_estructurada
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, extraer_codigo_toctoc_compuesto, extraer_contexto_urls, URL_RE
+from .link_extractor import analizar_mensaje_para_link, resolver_referencia_propiedad, extraer_codigo_internacional, extraer_codigo_toctoc_compuesto, extraer_contexto_urls, URL_RE
 from .utils import extraer_rut, extraer_email, safe_int_conversion, extraer_nombre_explicito
 from .utils import parse_bool
 from .alert_service import send_alert_once
@@ -765,8 +765,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     )
     
     # 1. Intentar detectar Link o Código en el mensaje actual
-    es_link, temp_prop, plataforma_origen, codigo_externo_raw = await _run_sync(analizar_mensaje_para_link, original_message, phone, trace_id)
-    hay_url = bool(URL_RE.search(original_message))
+    property_reference = await _run_sync(
+        resolver_referencia_propiedad, original_message, phone, trace_id,
+    )
+    es_link = bool(property_reference.get("has_url"))
+    temp_prop = property_reference.get("property") if es_link else None
+    plataforma_origen = property_reference.get("platform") or ""
+    codigo_externo_raw = property_reference.get("external_id")
+    explicit_international_codes = property_reference.get("explicit_codes") or []
+    hay_url = bool(property_reference.get("has_url"))
     logger.info(
         f"[LINK_FLOW] trace={trace_id} phone={phone} hay_url={hay_url} plataforma={plataforma_origen} "
         f"temp_prop={(temp_prop.get('codigo') if temp_prop else None)} "
@@ -784,27 +791,33 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         db_props = await _run_sync(get_db)
         candidatos_propiedad = []
 
-        # Código ya conocido del prospecto
-        if prospecto_actual.get("codigo"):
-            candidatos_propiedad.append(prospecto_actual.get("codigo"))
+        if explicit_international_codes:
+            # A current, exact code outranks an older property in this lead.
+            # If the evidence is unresolved or conflicting, do not reuse history.
+            if property_reference.get("status") == "resolved":
+                candidatos_propiedad.extend(explicit_international_codes)
+        else:
+            # Código ya conocido del prospecto
+            if prospecto_actual.get("codigo"):
+                candidatos_propiedad.append(prospecto_actual.get("codigo"))
 
-        # Códigos detectados en el mensaje actual o historial reciente
-        for fuente in [original_message, " ".join([m.get("content", "") for m in historial[-8:]])]:
-            if not fuente:
-                continue
-            urls_detectadas = URL_RE.findall(fuente)
-            candidatos_propiedad.extend(urls_detectadas)
+            # Códigos detectados en el mensaje actual o historial reciente
+            for fuente in [original_message, " ".join([m.get("content", "") for m in historial[-8:]])]:
+                if not fuente:
+                    continue
+                urls_detectadas = URL_RE.findall(fuente)
+                candidatos_propiedad.extend(urls_detectadas)
 
-            cod_toctoc = extraer_codigo_toctoc_compuesto(fuente)
-            if cod_toctoc:
-                candidatos_propiedad.append(cod_toctoc)
+                cod_toctoc = extraer_codigo_toctoc_compuesto(fuente)
+                if cod_toctoc:
+                    candidatos_propiedad.append(cod_toctoc)
 
-            cod_int = extraer_codigo_internacional(fuente)
-            if cod_int:
-                candidatos_propiedad.append(cod_int)
+                cod_int = extraer_codigo_internacional(fuente)
+                if cod_int:
+                    candidatos_propiedad.append(cod_int)
 
-            for cod_short in re.findall(r"\b(\d{4,6})\b", fuente):
-                candidatos_propiedad.append(cod_short)
+                for cod_short in re.findall(r"\b(\d{4,6})\b", fuente):
+                    candidatos_propiedad.append(cod_short)
 
         vistos = set()
         for raw_candidate in candidatos_propiedad:
@@ -816,7 +829,17 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if prop_match:
                 propiedad = prop_match
                 codigo_detectado = str(prop_match.get("codigo"))
-                if not nuevo_origen:
+                if candidate in explicit_international_codes:
+                    nuevo_origen = "WhatsApp (Int Code)"
+                    codigo_externo = candidate
+                    await _run_sync(record_observability_event, "PROPERTY_RESOLVED", {
+                        "conversation_id": conversation_id,
+                        "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                        "phone": phone,
+                        "property_id": codigo_detectado,
+                        "source": "INTERNATIONAL_CODE",
+                    })
+                elif not nuevo_origen:
                     nuevo_origen = "WhatsApp"
                 logger.info(
                     f"[PROPERTY_RESOLVE] trace={trace_id} phone={phone} "
@@ -852,7 +875,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         await _run_sync(actualizar_prospecto, phone, {"link_detectado": True}, trace_id)
 
     # 2. Si no viene un enlace y todavía no resolvimos propiedad, intentar detectar CODIGO INTERNACIONAL (9+ dígitos)
-    if not propiedad and not hay_url:
+    if not propiedad and not hay_url and not explicit_international_codes:
         cod_int = extraer_codigo_internacional(original_message)
         if cod_int:
             db_props = await _run_sync(get_db)
@@ -877,7 +900,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 )
 
     # 3. Si no viene un enlace y seguimos sin propiedad, buscar código numérico explícito corto (4-6 dígitos)
-    if not propiedad and not hay_url:
+    if not propiedad and not hay_url and not explicit_international_codes:
         match = re.search(r"\b(\d{4,6})\b", original_message)
         if match:
             cod = match.group(1)
@@ -903,8 +926,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                     f"valor_nuevo={codigo_detectado} comuna={propiedad.get('comuna')} origen=CODIGO_CORTO"
                 )
 
-    # Si hay enlace pero no encontramos propiedad, no heredamos código histórico.
-    if hay_url and not propiedad:
+    # Si la referencia actual no se puede confirmar, no heredamos una propiedad
+    # anterior. Los códigos explícitos ambiguos o inexistentes también quedan
+    # pendientes para revisión, aunque el cliente no haya enviado una URL.
+    if (hay_url or explicit_international_codes) and not propiedad:
         codigo_detectado = None
         await _run_sync(actualizar_prospecto, phone, {
             "origen": plataforma_origen or prospecto_actual.get("origen") or "WhatsApp",
@@ -922,12 +947,19 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             window_minutes=60, lead_type_label="Propiedad No Encontrada",
         )
 
-        respuesta_link_pendiente = (
-            "Gracias por compartir el enlace. En este momento no pude identificar la propiedad en nuestra base de datos, "
-            "pero **ya he notificado internamente a nuestro administrador** para que revise el caso en detalle. "
-            "Apenas actualicemos la información, un ejecutivo se pondrá en contacto contigo. "
-            "Si lo prefieres, también puedes contarme qué tipo de propiedad buscas y te ayudaré con otras opciones."
-        )
+        if hay_url:
+            respuesta_link_pendiente = (
+                "Gracias por compartir el enlace. En este momento no pude identificar la propiedad en nuestra base de datos, "
+                "pero **ya he notificado internamente a nuestro administrador** para que revise el caso en detalle. "
+                "Apenas actualicemos la información, un ejecutivo se pondrá en contacto contigo. "
+                "Si lo prefieres, también puedes contarme qué tipo de propiedad buscas y te ayudaré con otras opciones."
+            )
+        else:
+            respuesta_link_pendiente = (
+                "Gracias por compartir el código de la propiedad. No pude confirmarlo en nuestra base de datos, "
+                "así que **ya notifiqué internamente a nuestro administrador** para que lo revise. "
+                "Mientras tanto, si quieres, cuéntame qué información necesitas."
+            )
         return await _persist_generated_outbound(
             respuesta_link_pendiente,
             {"tipo": "link_no_encontrado", "intencion": "consulta_general", "lead_intent": LeadIntent.ASK_INFO},

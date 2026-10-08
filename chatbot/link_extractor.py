@@ -5,25 +5,30 @@ from typing import Tuple, Optional
 from .storage import get_db
 from .utils import safe_int_conversion
 from config import Config
-from .property_lookup import (PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, lookup_property_link, canonical_portal, normalize_property_url, extract_property_external_id, operation_from_property_url)
+from .property_lookup import (
+    PROPERTY_COLLECTION_NAME,
+    find_property_by_any_identifier,
+    find_property_by_international_code,
+    lookup_property_link,
+    canonical_portal,
+    normalize_property_url,
+    extract_property_external_id,
+    operation_from_property_url,
+)
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
 logger = logging.getLogger(__name__)
 
 
 def detectar_plataforma(url: str) -> str:
-    url_lower = (url or "").lower()
-    if "toctoc.com" in url_lower:
-        return "TocToc"
-    if "yapo.cl" in url_lower:
-        return "Yapo"
-    if "portalinmobiliario.com" in url_lower or "portalinmobiliario.cl" in url_lower:
-        return "PortalInmobiliario"
-    if "mercadolibre." in url_lower:
-        return "MercadoLibre"
-    if "procasa.cl" in url_lower:
-        return "Procasa"
-    return "Otro Portal"
+    return {
+        "toctoc": "TocToc",
+        "yapo": "Yapo",
+        "portal_inmobiliario": "PortalInmobiliario",
+        "mercadolibre": "MercadoLibre",
+        "procasa": "Procasa",
+        "enlaceinmobiliario": "Enlace Inmobiliario",
+    }.get(canonical_portal(url), "Otro Portal")
 
 
 def normalizar_url(url: str) -> str:
@@ -77,11 +82,46 @@ def extraer_codigo_yapo(url: str) -> Optional[str]:
         return codigo
     return None
 
+_INTERNATIONAL_CODE_PATTERNS = (
+    re.compile(
+        r"\bpropiedad\s*(?:n(?:ro|[úu]m(?:ero)?)?\.?\s*)?[:#-]?\s*(\d{9,10})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bc[oó]digo\s+(?:internacional|(?:de\s+)?(?:la\s+)?propiedad|"
+        r"de\s+(?:la\s+)?publicaci[oó]n|de\s+aviso)\s*[:#-]?\s*(\d{9,10})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bidentificador\s+(?:internacional|(?:de\s+)?(?:la\s+)?propiedad)"
+        r"\s*[:#-]?\s*(\d{9,10})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bpublicaci[oó]n\s*(?:n(?:ro|[úu]m(?:ero)?)?\.?\s*)?[:#-]?\s*(\d{9,10})\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def extraer_codigos_internacionales(mensaje: str) -> list[str]:
+    """Extract distinct long property IDs explicitly labeled in message text.
+
+    URLs are excluded so an unknown link's path, phone numbers, RUTs, and prices
+    cannot become property identities just because they contain many digits.
+    """
+    text = URL_RE.sub(" ", str(mensaje or ""))
+    found = []
+    for pattern in _INTERNATIONAL_CODE_PATTERNS:
+        found.extend(match.group(1) for match in pattern.finditer(text))
+    return list(dict.fromkeys(found))
+
+
 def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
-    """Extrae códigos de 9 dígitos (formato internacional)."""
-    match = re.search(r"\b(\d{9,10})\b", mensaje)
-    if match:
-        codigo = match.group(1)
+    """Return a single explicitly labeled international property ID."""
+    codes = extraer_codigos_internacionales(mensaje)
+    if len(codes) == 1:
+        codigo = codes[0]
         print(f"[EXTRACCION] Codigo Internacional detectado -> {codigo}")
         return codigo
     return None
@@ -418,6 +458,144 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
             return True, None, plataforma, codigo_externo
 
     return False, None, "", None
+
+
+def resolver_referencia_propiedad(
+    mensaje: str, phone=None, trace_id: str = None,
+) -> dict:
+    """Resolve one current property reference without guessing its source portal."""
+    urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(str(mensaje or ""))]
+    explicit_codes = extraer_codigos_internacionales(mensaje)
+    platform = detectar_plataforma(urls[0]) if urls else ""
+    result = {
+        "status": "no_reference",
+        "has_url": bool(urls),
+        "property": None,
+        "platform": platform,
+        "external_id": None,
+        "explicit_codes": explicit_codes,
+        "url": urls[0] if urls else "",
+        "error_code": None,
+    }
+    if not urls and not explicit_codes:
+        return result
+
+    db = get_db()
+    url_properties: dict[str, dict] = {}
+    url_ids = []
+    url_ambiguity = None
+    for url in urls:
+        external_id = extract_property_external_id(url)
+        if not external_id:
+            continue
+        url_ids.append(external_id)
+        url_prop, url_meta = lookup_property_link(db, url, PROPERTY_COLLECTION_NAME)
+        if url_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            url_ambiguity = url_meta
+        if url_prop:
+            url_properties[str(url_prop.get("codigo") or url_prop.get("codigo_prop360") or "")] = url_prop
+
+    legacy_external_id = None
+    if urls:
+        # Retain the existing matching paths for all currently supported portals.
+        _legacy_found, legacy_prop, legacy_platform, legacy_external_id = (
+            analizar_mensaje_para_link(mensaje, phone, trace_id)
+        )
+        platform = legacy_platform or platform
+        if legacy_prop:
+            url_properties[str(legacy_prop.get("codigo") or legacy_prop.get("codigo_prop360") or "")] = legacy_prop
+
+    if url_ambiguity:
+        result.update(status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE")
+        result["external_id"] = explicit_codes[0] if len(explicit_codes) == 1 else (url_ids[0] if url_ids else None)
+        return result
+    if len(url_properties) > 1:
+        result.update(status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE", platform=platform)
+        return result
+
+    url_prop = next(iter(url_properties.values()), None)
+    if len(explicit_codes) > 1:
+        result.update(status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE", platform=platform)
+        return result
+
+    if explicit_codes:
+        external_id = explicit_codes[0]
+        code_prop, code_meta = find_property_by_international_code(
+            db, external_id, PROPERTY_COLLECTION_NAME,
+        )
+        if code_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            result.update(
+                status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE",
+                external_id=external_id, platform=platform,
+            )
+            return result
+        if not code_prop:
+            result.update(
+                status="ambiguous" if url_prop else "unresolved",
+                error_code="IDENTIFIER_CONFLICT" if url_prop else code_meta.get("error_code"),
+                external_id=external_id,
+                platform=platform,
+            )
+            return result
+        code_value = str(code_prop.get("codigo") or code_prop.get("codigo_prop360") or "")
+        url_value = str((url_prop or {}).get("codigo") or (url_prop or {}).get("codigo_prop360") or "")
+        if url_prop and url_value != code_value:
+            result.update(
+                status="ambiguous", error_code="IDENTIFIER_CONFLICT",
+                external_id=external_id, platform=platform,
+            )
+            return result
+        if not url_prop and url_ids and any(value != external_id for value in url_ids):
+            result.update(
+                status="ambiguous", error_code="IDENTIFIER_CONFLICT",
+                external_id=external_id, platform=platform,
+            )
+            return result
+
+        prop = url_prop or code_prop
+        if urls:
+            meta = dict(prop.get("_link_match") or {})
+            meta.update({
+                "portal": canonical_portal(urls[0]) or "",
+                "external_id": legacy_external_id or external_id,
+                "operation": operation_from_property_url(urls[0]),
+                "url_normalized": normalize_property_url(urls[0]),
+                "match_method": meta.get("match_method") or "exact_international_code",
+                "identity_source": "message_text" if not url_prop else "url_and_message",
+            })
+            prop = dict(prop)
+            prop["_link_match"] = meta
+        result.update(
+            status="resolved", property=prop, platform=platform,
+            external_id=legacy_external_id or external_id, error_code=None,
+        )
+        return result
+
+    if url_prop:
+        result.update(
+            status="resolved", property=url_prop, platform=platform,
+            external_id=legacy_external_id or extract_property_external_id(urls[0]),
+        )
+        return result
+    if urls:
+        result.update(
+            status="unresolved", platform=platform,
+            external_id=legacy_external_id or (url_ids[0] if url_ids else None),
+            error_code="PROPERTY_NOT_FOUND",
+        )
+        return result
+
+    external_id = explicit_codes[0]
+    code_prop, code_meta = find_property_by_international_code(
+        db, external_id, PROPERTY_COLLECTION_NAME,
+    )
+    if code_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+        result.update(status="ambiguous", external_id=external_id, error_code="AMBIGUOUS_PROPERTY_REFERENCE")
+    elif code_prop:
+        result.update(status="resolved", property=code_prop, external_id=external_id)
+    else:
+        result.update(status="unresolved", external_id=external_id, error_code=code_meta.get("error_code"))
+    return result
 
 
 def extraer_contexto_urls(mensaje: str) -> list[dict]:

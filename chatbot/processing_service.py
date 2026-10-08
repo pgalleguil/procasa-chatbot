@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from .constants import CHILE_TZ, UNASSIGNED_LABEL
 from .lead_router import find_responsible_executive
-from .link_extractor import analizar_mensaje_para_link, extraer_codigo_internacional, URL_RE
+from .link_extractor import resolver_referencia_propiedad
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 from config import Config
 from .storage import get_db, record_observability_event
@@ -228,31 +228,40 @@ class LeadProcessingService:
             f"prospecto.codigo={prospecto.get('codigo')} lead.codigo={lead_doc.get('codigo')}"
         )
         
-        # [AUTOMATION] Si no hay código, intentar extraerlo de los mensajes (historial)
-        if not LeadProcessingService._is_valid_property_code(property_code) and lead_doc.get("messages"):
-            logger.info(f"[PROCESS_SERVICE] Intentando RE-IDENTIFICAR lead {lead_doc.get('phone')} desde historial...")
-            # Unimos los últimos mensajes para buscar links/códigos
-            all_text = " ".join([m.get("content", "") for m in lead_doc.get("messages", [])[-5:]])
-            logger.info(f"[PROCESS_SERVICE] historial_text={all_text}")
-            found_link, prop_match, platform, code_raw = analizar_mensaje_para_link(all_text, lead_doc.get("phone"))
+        # A recent customer reference outranks an older property saved on the lead.
+        # Resolve each message independently so stale codes cannot combine with a
+        # new URL or explicit international ID to create a false match.
+        latest_reference = None
+        for message in reversed((lead_doc.get("messages") or [])[-20:]):
+            if str(message.get("role") or "").strip().lower() not in {"user", "customer", "prospect"}:
+                continue
+            content = str(message.get("content") or "")
+            if not content:
+                continue
+            reference = resolver_referencia_propiedad(content, lead_doc.get("phone"), trace_id)
+            if reference.get("status") != "no_reference":
+                latest_reference = reference
+                break
+
+        if latest_reference:
             logger.info(
-                f"[PROCESS_SERVICE] found_link={found_link} platform={platform} "
-                f"prop_match={(prop_match.get('codigo') if prop_match else None)} code_raw={code_raw}"
+                f"[PROCESS_SERVICE] referencia_reciente status={latest_reference.get('status')} "
+                f"platform={latest_reference.get('platform')} "
+                f"property={(latest_reference.get('property') or {}).get('codigo')}"
             )
-            
-            if found_link and prop_match:
-                property_code = str(prop_match.get("codigo"))
-                logger.info(f"[PROCESS_SERVICE] ¡Match encontrado en historial! Código: {property_code}")
-            elif not URL_RE.search(all_text):
-                # Probar código internacional solo si no hay enlaces en el historial
-                c_int = extraer_codigo_internacional(all_text)
-                if c_int:
-                    db = LeadProcessingService._db()
-                    prop_int = find_property_by_any_identifier(db, c_int, PROPERTY_COLLECTION_NAME)
-                    logger.info(f"[PROCESS_SERVICE] query codigo_internacional={c_int} result={(prop_int.get('codigo') if prop_int else None)}")
-                    if prop_int:
-                        property_code = str(prop_int.get("codigo"))
-                        logger.info(f"[PROCESS_SERVICE] ¡Match por Cód Internacional en historial! Código: {property_code}")
+            prop_match = latest_reference.get("property")
+            if latest_reference.get("status") == "resolved" and prop_match:
+                property_code = str(prop_match.get("codigo") or prop_match.get("codigo_prop360") or "")
+                location = get_prop_location(prop_match)
+                operation_from_source = (prop_match.get("_link_match") or {}).get("operation")
+                operation = get_prop_operation(prop_match, operation_override=operation_from_source)
+                comuna = location.get("comuna") or None
+                tipo = operation.get("tipo") or None
+                operacion = operation.get("operacion") or None
+            else:
+                # An unresolved current reference must not inherit an older property's
+                # code or context during classification.
+                return {}
 
         if not comuna and LeadProcessingService._is_valid_property_code(property_code):
             try:

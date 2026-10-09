@@ -104,7 +104,9 @@ _INTERNATIONAL_CODE_PATTERNS = (
 )
 
 
-def extraer_codigos_internacionales(mensaje: str) -> list[str]:
+def extraer_codigos_internacionales(
+    mensaje: str, *, _verified_bare_codes: Optional[set[str]] = None,
+) -> list[str]:
     """Extract distinct long property IDs explicitly labeled in message text.
 
     URLs are excluded so an unknown link's path, phone numbers, RUTs, and prices
@@ -118,17 +120,21 @@ def extraer_codigos_internacionales(mensaje: str) -> list[str]:
         # Preserve the historical code-only WhatsApp message, but do not treat
         # arbitrary numbers embedded in prose, URLs, phone numbers, or RUTs as IDs.
         bare_value = text.strip()
-        if re.fullmatch(r"\d{9,10}", bare_value) and not _is_phone_or_rut_number(bare_value):
+        if re.fullmatch(r"\d{9,10}", bare_value) and (
+            not _is_phone_or_rut_number(bare_value)
+            or bare_value in (_verified_bare_codes or set())
+        ):
             found.append(bare_value)
     return list(dict.fromkeys(found))
 
 
-def _is_phone_or_rut_number(value: str) -> bool:
-    """Reject code-only values that have the shape of common Chilean numbers."""
+def _is_phone_number(value: str) -> bool:
     if len(value) == 9 and value.startswith("9"):
         return True
-    if len(value) == 10 and value.startswith("56"):
-        return True
+    return len(value) == 10 and value.startswith("56")
+
+
+def _is_valid_rut_number(value: str) -> bool:
     if len(value) != 9:
         return False
 
@@ -142,6 +148,11 @@ def _is_phone_or_rut_number(value: str) -> bool:
     remainder = total % 11
     expected_dv = "0" if remainder == 0 else "K" if remainder == 1 else str(11 - remainder)
     return supplied_dv == expected_dv
+
+
+def _is_phone_or_rut_number(value: str) -> bool:
+    """Reject unverified code-only values that look like phone numbers or RUTs."""
+    return _is_phone_number(value) or _is_valid_rut_number(value)
 
 
 def extraer_codigo_internacional(mensaje: str) -> Optional[str]:
@@ -489,10 +500,30 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
 
 def resolver_referencia_propiedad(
     mensaje: str, phone=None, trace_id: str = None, *, use_legacy_lookup: bool = True,
+    expected_personal_data_field: Optional[str] = None,
 ) -> dict:
     """Resolve one current property reference without guessing its source portal."""
     urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(str(mensaje or ""))]
-    explicit_codes = extraer_codigos_internacionales(mensaje)
+    bare_text = URL_RE.sub(" ", str(mensaje or "")).strip()
+    bare_numeric_code = (
+        bare_text if re.fullmatch(r"\d{9,10}", bare_text) else None
+    )
+    db = None
+    bare_code_prop = None
+    bare_code_meta = {}
+    verified_bare_codes = set()
+    if bare_numeric_code and not urls:
+        # Verify a code-only value before the extractor applies its RUT/phone
+        # shape filter. Only exact, unique Prop360 matches earn that exception.
+        db = get_db()
+        bare_code_prop, bare_code_meta = find_property_by_international_code(
+            db, bare_numeric_code, PROPERTY_COLLECTION_NAME,
+        )
+        if bare_code_prop:
+            verified_bare_codes.add(bare_numeric_code)
+    explicit_codes = extraer_codigos_internacionales(
+        mensaje, _verified_bare_codes=verified_bare_codes,
+    )
     platform = detectar_plataforma(urls[0]) if urls else ""
     result = {
         "status": "no_reference",
@@ -504,10 +535,11 @@ def resolver_referencia_propiedad(
         "url": urls[0] if urls else "",
         "error_code": None,
     }
-    if not urls and not explicit_codes:
+    if not urls and not explicit_codes and not bare_numeric_code:
         return result
 
-    db = get_db()
+    if db is None:
+        db = get_db()
     url_properties: dict[str, dict] = {}
     url_ids = []
     url_ambiguity = None
@@ -548,7 +580,7 @@ def resolver_referencia_propiedad(
         result.update(status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE", platform=platform)
         return result
 
-    if explicit_codes:
+    if explicit_codes and not (bare_numeric_code and not urls):
         external_id = explicit_codes[0]
         code_prop, code_meta = find_property_by_international_code(
             db, external_id, PROPERTY_COLLECTION_NAME,
@@ -603,6 +635,53 @@ def resolver_referencia_propiedad(
         result.update(
             status="resolved", property=prop, platform=platform,
             external_id=legacy_external_id or external_id, error_code=None,
+        )
+        return result
+
+    if bare_numeric_code and not urls:
+        # A bare nine-digit value may be either a valid Chilean RUT or an
+        # international property ID. Check Prop360's exact, unique identifier
+        # index before discarding it by numeric shape. The conversation slot
+        # determines when both meanings remain plausible.
+        code_prop, code_meta = bare_code_prop, bare_code_meta
+        result["external_id"] = bare_numeric_code
+        result["explicit_codes"] = [bare_numeric_code]
+        if code_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            ambiguity = (
+                "NUMERIC_PROPERTY_OR_RUT"
+                if expected_personal_data_field == "rut"
+                else "AMBIGUOUS_PROPERTY_REFERENCE"
+            )
+            result.update(status="ambiguous", error_code=ambiguity)
+            return result
+        if code_prop:
+            if expected_personal_data_field == "rut":
+                result.update(status="ambiguous", error_code="NUMERIC_PROPERTY_OR_RUT")
+                return result
+            if _is_phone_number(bare_numeric_code):
+                result.update(status="ambiguous", error_code="NUMERIC_PROPERTY_OR_PHONE")
+                return result
+
+            prop = dict(code_prop)
+            prop["_link_match"] = {
+                "portal": "",
+                "external_id": bare_numeric_code,
+                "operation": None,
+                "match_method": "exact_international_code",
+                "identity_source": "message_text",
+            }
+            result.update(status="resolved", property=prop, error_code=None)
+            return result
+
+        if _is_phone_or_rut_number(bare_numeric_code):
+            # A phone or RUT-shaped number without a unique Prop360 match is
+            # not sufficient evidence of a property reference.
+            result.update(status="no_reference", external_id=None, explicit_codes=[])
+            return result
+
+        result.update(
+            status="unresolved",
+            error_code=code_meta.get("error_code") or "PROPERTY_NOT_FOUND",
         )
         return result
 

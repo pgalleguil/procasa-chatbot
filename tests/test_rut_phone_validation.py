@@ -49,12 +49,27 @@ def test_all_current_rut_collision_codes_resolve_as_exact_properties(monkeypatch
     ])
     monkeypatch.setattr(link_extractor, "get_db", lambda: db)
 
+    explicit_resolved = 0
+    bare_resolved = 0
     for index, code in enumerate(INTERNATIONAL_RUT_COLLISIONS, start=1):
         result = link_extractor.resolver_referencia_propiedad(
             f"Código internacional {code}", use_legacy_lookup=False,
         )
         assert result["status"] == "resolved", code
+        assert result["explicit_codes"] == [code]
         assert result["property"]["codigo"] == str(index), code
+        explicit_resolved += 1
+
+        bare_result = link_extractor.resolver_referencia_propiedad(
+            code, use_legacy_lookup=False,
+        )
+        assert bare_result["status"] == "resolved", code
+        assert bare_result["explicit_codes"] == [code]
+        assert bare_result["property"]["codigo"] == str(index), code
+        bare_resolved += 1
+
+    assert explicit_resolved == 37
+    assert bare_resolved == 37
 
 
 def test_ambiguous_collision_code_does_not_resolve_to_arbitrary_property(monkeypatch):
@@ -70,3 +85,44 @@ def test_ambiguous_collision_code_does_not_resolve_to_arbitrary_property(monkeyp
     )
     assert result["status"] == "ambiguous"
     assert result["error_code"] == "AMBIGUOUS_PROPERTY_REFERENCE"
+
+
+def test_bare_rut_collision_during_optional_rut_request_requires_clarification(monkeypatch):
+    db = mongomock.MongoClient().URLS
+    db[PROPERTY_COLLECTION_NAME].insert_one({
+        "codigo": "6508", "publicaciones": {"codigo_internacional": "101006506"},
+    })
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+
+    result = link_extractor.resolver_referencia_propiedad(
+        "101006506", use_legacy_lookup=False,
+        expected_personal_data_field="rut",
+    )
+
+    assert result["status"] == "ambiguous"
+    assert result["error_code"] == "NUMERIC_PROPERTY_OR_RUT"
+    assert result["property"] is None
+
+
+def test_bare_phone_or_rut_without_exact_property_is_not_a_property_reference(monkeypatch):
+    db = mongomock.MongoClient().URLS
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+
+    for value in ("912345678", "123456785"):
+        result = link_extractor.resolver_referencia_propiedad(value, use_legacy_lookup=False)
+        assert result["status"] == "no_reference", value
+        assert result["property"] is None
+
+
+def test_bare_phone_matching_a_property_requires_clarification(monkeypatch):
+    db = mongomock.MongoClient().URLS
+    db[PROPERTY_COLLECTION_NAME].insert_one({
+        "codigo": "9001", "publicaciones": {"codigo_internacional": "912345678"},
+    })
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+
+    result = link_extractor.resolver_referencia_propiedad("912345678", use_legacy_lookup=False)
+
+    assert result["status"] == "ambiguous"
+    assert result["error_code"] == "NUMERIC_PROPERTY_OR_PHONE"
+    assert result["property"] is None

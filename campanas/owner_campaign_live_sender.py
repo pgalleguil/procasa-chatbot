@@ -66,9 +66,10 @@ _SMTP_LOGGER = logging.getLogger("owner_campaign.smtp")
 class SenderError(RuntimeError):
     """Safe-to-report sender validation or delivery error."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, details: Mapping[str, Any] | None = None):
         super().__init__(code)
         self.code = code
+        self.details = dict(details or {})
 
 
 def normalize_property_code(value: Any) -> str:
@@ -137,10 +138,17 @@ def _find_wave2_master(db: Any, runtime: Any, property_code: Any) -> dict[str, A
     return dict(master)
 
 
-def _record_wave2_preflight_skip(db: Any, campaign_id: str, property_code: Any, reason: str) -> str:
+def _record_wave2_preflight_skip(
+    db: Any, campaign_id: str, property_code: Any, reason: str,
+    details: Mapping[str, Any] | None = None,
+) -> str:
     """Keep a failed Wave 2 row out of future sends without touching its snapshot."""
     stale = str(reason).startswith("manifest_") or str(reason) == "operation_rebuild_mismatch"
     status = "SKIPPED_STALE_OR_MISMATCH" if stale else "SKIPPED_PREFLIGHT"
+    values = {"send_status": status, "preflight_status": status,
+              "preflight_error_code": str(reason)}
+    if details:
+        values["preflight_diagnostics"] = dict(details)
     db[Config.COLLECTION_CAMPANAS_LOG].update_one(
         {
             "_id": f"{campaign_id}:{property_code}",
@@ -148,8 +156,7 @@ def _record_wave2_preflight_skip(db: Any, campaign_id: str, property_code: Any, 
             "property_code": str(property_code),
             "send_status": "READY",
         },
-        {"$set": {"send_status": status, "preflight_status": status,
-                  "preflight_error_code": str(reason)}},
+        {"$set": values},
     )
     return status
 
@@ -241,7 +248,71 @@ def _read_manifest(path: str | Path) -> tuple[list[dict[str, str]], str, str]:
         raise SenderError("manifest_duplicate_or_invalid_owner")
     if any(str(row.get("send_status") or "").strip().upper() != "READY" for row in rows):
         raise SenderError("manifest_row_not_ready")
+    for row in rows:
+        raw_snapshot = str(row.get("pricing_snapshot") or "").strip()
+        if raw_snapshot:
+            try:
+                pricing_snapshot = json.loads(raw_snapshot)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise SenderError("manifest_pricing_snapshot_invalid") from exc
+            if not isinstance(pricing_snapshot, Mapping):
+                raise SenderError("manifest_pricing_snapshot_invalid")
+            row["pricing_snapshot"] = dict(pricing_snapshot)
+        else:
+            row["pricing_snapshot"] = None
     return rows, campaign_id, batch_id
+
+
+def _rebuild_pricing_snapshot(
+    pricing_snapshot: Mapping[str, Any], manifest_row: Mapping[str, Any], *,
+    live_current_price: Any, campaign_id: str, property_code: str,
+) -> dict[str, Any]:
+    """Validate a campaign's frozen pricing inputs without sampling newer signals."""
+    from analytics.owner_campaign_email_v2 import (
+        OWNER_CAMPAIGN_PRICE_POLICY_VERSION,
+        calculate_commercial_price_recommendation,
+    )
+
+    inputs = pricing_snapshot.get("inputs")
+    if not isinstance(inputs, Mapping):
+        raise SenderError("manifest_pricing_snapshot_invalid")
+    try:
+        rebuilt = calculate_commercial_price_recommendation(**dict(inputs))
+    except (TypeError, ValueError) as exc:
+        raise SenderError("manifest_pricing_snapshot_invalid") from exc
+    diagnostics = {
+        "policy_version": str(pricing_snapshot.get("policy_version") or ""),
+        "manifest_current_price": _number(manifest_row.get("current_price")),
+        "live_current_price": _number(live_current_price),
+        "snapshot_current_price": _number(inputs.get("current_price")),
+        "manifest_recommended_price": _number(manifest_row.get("recommended_price")),
+        "snapshot_recommended_price": _number(pricing_snapshot.get("recommended_price")),
+        "recomputed_recommended_price": _number(rebuilt.get("recommended_price")),
+        "manifest_adjustment_pct": _number(manifest_row.get("recommended_adjustment_pct")),
+        "snapshot_adjustment_pct": _number(pricing_snapshot.get("recommended_adjustment_pct")),
+        "recomputed_adjustment_pct": _number(rebuilt.get("recommended_adjustment_pct")),
+        "pricing_inputs": dict(inputs),
+    }
+    if diagnostics["policy_version"] != OWNER_CAMPAIGN_PRICE_POLICY_VERSION:
+        raise SenderError("manifest_pricing_policy_version_unsupported", details=diagnostics)
+    if (
+        str(pricing_snapshot.get("campaign_id") or "").strip() != campaign_id
+        or normalize_property_code(pricing_snapshot.get("property_code")) != normalize_property_code(property_code)
+    ):
+        raise SenderError("manifest_pricing_snapshot_identity_mismatch", details=diagnostics)
+    if (
+        not _same_number(diagnostics["manifest_current_price"], diagnostics["live_current_price"])
+        or not _same_number(diagnostics["snapshot_current_price"], diagnostics["live_current_price"])
+    ):
+        raise SenderError("manifest_pricing_snapshot_current_price_mismatch", details=diagnostics)
+    if (
+        not _same_number(diagnostics["snapshot_recommended_price"], diagnostics["recomputed_recommended_price"])
+        or not _same_number(diagnostics["manifest_recommended_price"], diagnostics["recomputed_recommended_price"])
+        or not _same_number(diagnostics["snapshot_adjustment_pct"], diagnostics["recomputed_adjustment_pct"], tolerance=0)
+        or not _same_number(diagnostics["manifest_adjustment_pct"], diagnostics["recomputed_adjustment_pct"], tolerance=0)
+    ):
+        raise SenderError("manifest_pricing_snapshot_recommendation_mismatch", details=diagnostics)
+    return diagnostics
 
 
 def _recipient_cc(row: Mapping[str, Any], runtime: Any) -> list[str]:
@@ -383,11 +454,46 @@ def _validate_row(
     if normalize_property_code(manifest_row.get("property_code")) != normalize_property_code(raw_code):
         raise SenderError("manifest_property_mismatch")
     if not _same_number(manifest_row.get("current_price"), row.get("current_price")):
-        raise SenderError("manifest_current_price_stale_or_mismatch")
-    if not _same_number(manifest_row.get("recommended_price"), row.get("recommended_price")):
-        raise SenderError("manifest_recommended_price_stale_or_mismatch")
-    if not _same_number(manifest_row.get("recommended_adjustment_pct"), row.get("recommended_adjustment_pct"), tolerance=0):
-        raise SenderError("manifest_recommendation_stale_or_mismatch")
+        raise SenderError("manifest_current_price_stale_or_mismatch", details={
+            "manifest_current_price": _number(manifest_row.get("current_price")),
+            "recomputed_current_price": _number(row.get("current_price")),
+            "recomputed_at": now.isoformat(),
+        })
+    pricing_snapshot = manifest_row.get("pricing_snapshot")
+    if isinstance(pricing_snapshot, Mapping):
+        pricing_diagnostics = _rebuild_pricing_snapshot(
+            pricing_snapshot, manifest_row, live_current_price=row.get("current_price"),
+            campaign_id=campaign_id, property_code=code,
+        )
+        pricing_diagnostics.update({
+            "live_recomputed_recommended_price": _number(row.get("recommended_price")),
+            "live_recomputed_adjustment_pct": _number(row.get("recommended_adjustment_pct")),
+            "recomputed_at": now.isoformat(),
+        })
+        if not _same_number(manifest_row.get("recommended_price"), row.get("recommended_price")):
+            raise SenderError("manifest_recommended_price_stale_or_mismatch", details=pricing_diagnostics)
+        if not _same_number(manifest_row.get("recommended_adjustment_pct"), row.get("recommended_adjustment_pct"), tolerance=0):
+            raise SenderError("manifest_recommendation_stale_or_mismatch", details=pricing_diagnostics)
+    else:
+        if not _same_number(manifest_row.get("recommended_price"), row.get("recommended_price")):
+            model = row.get("_model") if isinstance(row.get("_model"), Mapping) else {}
+            pricing = model.get("pricing_recommendation") if isinstance(model.get("pricing_recommendation"), Mapping) else {}
+            raise SenderError("manifest_recommended_price_stale_or_mismatch", details={
+                "manifest_recommended_price": _number(manifest_row.get("recommended_price")),
+                "recomputed_recommended_price": _number(row.get("recommended_price")),
+                "manifest_adjustment_pct": _number(manifest_row.get("recommended_adjustment_pct")),
+                "recomputed_adjustment_pct": _number(row.get("recommended_adjustment_pct")),
+                "manifest_current_price": _number(manifest_row.get("current_price")),
+                "recomputed_current_price": _number(row.get("current_price")),
+                "pricing_inputs": dict(pricing.get("inputs")) if isinstance(pricing.get("inputs"), Mapping) else {},
+                "recomputed_at": now.isoformat(),
+            })
+        if not _same_number(manifest_row.get("recommended_adjustment_pct"), row.get("recommended_adjustment_pct"), tolerance=0):
+            raise SenderError("manifest_recommendation_stale_or_mismatch", details={
+                "manifest_adjustment_pct": _number(manifest_row.get("recommended_adjustment_pct")),
+                "recomputed_adjustment_pct": _number(row.get("recommended_adjustment_pct")),
+                "recomputed_at": now.isoformat(),
+            })
     adjustment = _number(row.get("recommended_adjustment_pct"))
     current = _number(row.get("current_price"))
     recommended = _number(row.get("recommended_price"))
@@ -905,7 +1011,10 @@ def run_manifest(
                     or failure_reason == "operation_rebuild_mismatch"
                 )
                 if wave2 and is_stale_mismatch:
-                    failure_status = _record_wave2_preflight_skip(db, campaign_id, code, failure_reason)
+                    failure_status = _record_wave2_preflight_skip(
+                        db, campaign_id, code, failure_reason,
+                        details=getattr(exc, "details", None),
+                    )
                 elif wave2:
                     # Isolate this row for the current run; leave READY intact
                     # unless its frozen snapshot demonstrably changed.
@@ -1055,6 +1164,7 @@ def run_campaign_batch(
                 "recommended_price": record.get("recommended_price", snapshot.get("recommended_price", "")),
                 "document_type": record.get("document_type", snapshot.get("document_type", "")),
                 "send_status": record.get("send_status", ""),
+                "pricing_snapshot": record.get("pricing_snapshot", snapshot.get("pricing_snapshot")),
             })
             if not row["property_code"] or any(row.get(key) in (None, "") for key in REQUIRED_COLUMNS):
                 raise SenderError("campaign_batch_snapshot_incomplete")
@@ -1065,9 +1175,13 @@ def run_campaign_batch(
             raise SenderError("campaign_batch_duplicate_rows")
         with tempfile.NamedTemporaryFile("w", encoding="utf-8-sig", newline="", suffix=".csv", delete=False) as handle:
             temp_path = Path(handle.name)
-            writer = csv.DictWriter(handle, fieldnames=sorted(REQUIRED_COLUMNS))
+            writer = csv.DictWriter(handle, fieldnames=sorted(REQUIRED_COLUMNS | {"pricing_snapshot"}))
             writer.writeheader()
-            writer.writerows(snapshots)
+            writer.writerows({
+                **row,
+                "pricing_snapshot": json.dumps(row["pricing_snapshot"], ensure_ascii=False, sort_keys=True)
+                if isinstance(row.get("pricing_snapshot"), Mapping) else "",
+            } for row in snapshots)
         try:
             return run_manifest(
                 temp_path, mode=mode, confirm_send=confirm_send, db=db,

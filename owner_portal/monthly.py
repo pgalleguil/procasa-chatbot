@@ -3831,6 +3831,42 @@ def build_monthly_portal_view(
         window_end_candidates=report_cutoffs,
         operation=operation_for_activity,
     )
+    # Wave 2 froze this lead total at campaign preparation time, but stored it
+    # at the top level of campaign_snapshot rather than under activity_90d.
+    # For price-review pages, retain that verified historical lead count while
+    # leaving visits/offers/closings to their own verified or unavailable
+    # sources. The snapshot cutoff keeps this count tied to the campaign window.
+    frozen_campaign_leads = _activity_count(campaign_snapshot.get("leads_90d"))
+    frozen_campaign_cutoff = _activity_datetime(campaign_snapshot.get("prepared_at"))
+    campaign_price_review_required = (
+        str(row.get("send_status") or "").upper() == "SKIPPED_STALE_OR_MISMATCH"
+        or bool(campaign_view.get("price_review_required"))
+    )
+    if campaign_price_review_required and frozen_campaign_leads is not None and frozen_campaign_cutoff is not None:
+        funnel_rows = {
+            str(item.get("key")): {
+                "count": item.get("count"),
+                "status": item.get("status"),
+                "source": item.get("source"),
+            }
+            for item in commercial_funnel.get("stages", [])
+            if isinstance(item, Mapping) and item.get("key")
+        }
+        funnel_rows["LEADS"] = {
+            "count": frozen_campaign_leads,
+            "status": "VERIFIED",
+            "source": "campaign_snapshot.leads_90d",
+        }
+        frozen_funnel = _build_owner_funnel(
+            funnel_rows,
+            source="CAMPAIGN_SNAPSHOT_LEADS_WITH_CANONICAL_ACTIVITY",
+            cutoff=frozen_campaign_cutoff,
+            start=frozen_campaign_cutoff - timedelta(days=90),
+        )
+        for key in ("conversations", "summary", "integrity"):
+            if key in commercial_funnel:
+                frozen_funnel[key] = commercial_funnel[key]
+        commercial_funnel = frozen_funnel
     funnel_counts = {
         item.get("key"): item.get("count")
         for item in commercial_funnel.get("stages", [])
@@ -3869,13 +3905,19 @@ def build_monthly_portal_view(
         updated_label = _text(prepared_at)[:10]
 
     status = str(row.get("send_status") or "").upper()
-    stale = bool(campaign_view.get("safe_mode")) or status == "SKIPPED_STALE_OR_MISMATCH"
-    can_authorize = bool(campaign_view.get("top_primary_url")) and not stale
+    stale_status = status == "SKIPPED_STALE_OR_MISMATCH"
+    price_review_required = stale_status or bool(campaign_view.get("price_review_required"))
+    if "report_restricted" in campaign_view:
+        report_restricted = bool(campaign_view.get("report_restricted"))
+    else:
+        report_restricted = bool(campaign_view.get("safe_mode")) and not stale_status
+    stale = price_review_required
+    can_authorize = bool(campaign_view.get("top_primary_url")) and not stale and not report_restricted
     already_authorized = bool(campaign_view.get("already_authorized"))
     docs = monthly.get("documents") if isinstance(monthly.get("documents"), list) else []
     document_type = str(_value(property_state, snapshot, "document_type") or row.get("document_type") or "NONE").upper()
     document_available = bool(campaign_view.get("document_available")) and document_type in {"COMMUNAL_MARKET_REPORT", "INDIVIDUAL_APPRAISAL"}
-    document_url = campaign_view.get("report_url") if document_available and not stale else ""
+    document_url = campaign_view.get("report_url") if document_available else ""
     commune_label = _text(
         property_state.get("commune") or monthly.get("commune")
         or snapshot.get("commune") or row.get("commune")
@@ -4367,6 +4409,8 @@ def build_monthly_portal_view(
         "snapshot_hash": snapshot_hash,
         "source": campaign_view.get("source"),
         "safe_mode": stale,
+        "price_review_required": price_review_required,
+        "report_restricted": report_restricted,
         "already_authorized": already_authorized,
         "can_authorize": can_authorize,
         "top_primary_url": campaign_view.get("top_primary_url") if can_authorize else "",

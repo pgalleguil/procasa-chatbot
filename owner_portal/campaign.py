@@ -420,6 +420,8 @@ def build_private_page_view(
         "sticky_primary_url": sticky_primary_url,
         "sticky_advisor_url": sticky_advisor_url,
         "safe_mode": safe_mode,
+        "price_review_required": stale,
+        "report_restricted": excluded,
         "already_authorized": already_authorized,
         "source": source,
         "document_type": document_type,

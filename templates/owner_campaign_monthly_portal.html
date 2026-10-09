@@ -584,7 +584,7 @@
   </nav>
   <p class="action-note">Revisar no modifica tu precio. Podrás confirmar después.</p>
 
-  {% if not view.safe_mode %}
+  {% if not view.report_restricted %}
   <section class="card" aria-labelledby="summary-title">
     <h2 class="section-heading" id="summary-title"><span class="section-icon">{{ ui_icon('bolt') }}</span>Resumen en 30 segundos</h2>
     <div class="kpis">
@@ -592,8 +592,8 @@
       {% set current_price_count = view.current_price_count_value|default(none) %}
       {% set recommended_display = view.recommended_price_display_label or view.recommended_price_label or '' %}
       {% set recommended_price_count = view.recommended_price_count_value|default(none) %}
-      <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value"{% if current_price_count is not none and current_price_label.endswith(' UF') %} data-count-value="{{ current_price_count }}" data-count-prefix="" data-count-suffix=" UF" data-count-final="{{ current_price_label }}" data-count-delay="0"{% endif %}>{{ current_price_label or '—' }}</div></div>
-      <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value"{% if recommended_price_count is not none and recommended_display.endswith(' UF') %} data-count-value="{{ recommended_price_count }}" data-count-prefix="{{ '≈ ' if recommended_display.startswith('≈ ') else '' }}" data-count-suffix=" UF" data-count-final="{{ recommended_display }}" data-count-delay="70"{% endif %}>{{ recommended_display or '—' }}</div>{% if view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
+      <div class="kpi"><div class="kpi-label">Precio actual</div><div class="kpi-value"{% if not view.price_review_required and current_price_count is not none and current_price_label.endswith(' UF') %} data-count-value="{{ current_price_count }}" data-count-prefix="" data-count-suffix=" UF" data-count-final="{{ current_price_label }}" data-count-delay="0"{% endif %}>{{ 'En validación' if view.price_review_required else (current_price_label or '—') }}</div></div>
+      <div class="kpi recommended"><div class="kpi-label">Precio sugerido</div><div class="kpi-value"{% if not view.price_review_required and recommended_price_count is not none and recommended_display.endswith(' UF') %} data-count-value="{{ recommended_price_count }}" data-count-prefix="{{ '≈ ' if recommended_display.startswith('≈ ') else '' }}" data-count-suffix=" UF" data-count-final="{{ recommended_display }}" data-count-delay="70"{% endif %}>{{ 'Pendiente de validación' if view.price_review_required else (recommended_display or '—') }}</div>{% if not view.price_review_required and view.adjustment_label %}<div class="kpi-note">{{ view.adjustment_label }} recomendado</div>{% endif %}</div>
       <div class="kpi"><div class="kpi-label">Consultas recibidas</div><div class="kpi-value"{% if view.activity_90d.leads is not none %} data-count-value="{{ view.activity_90d.leads }}" data-count-prefix="" data-count-suffix="" data-count-final="{{ view.activity_90d.leads }}" data-count-delay="140"{% endif %}>{{ view.activity_90d.leads if view.activity_90d.leads is not none else '—' }}</div><div class="kpi-note">{{ 'últimos 90 días' if view.activity_90d.leads is not none else 'Sin dato consolidado' }}</div></div>
     </div>
   </section>
@@ -720,7 +720,9 @@
   </section>
   {% endif %}
 
-  {% if view.diagnosis or view.recommendation_text %}
+  {% if view.price_review_required %}
+  <section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><p class="recommendation-summary">La recomendación de precio está en validación. El informe conserva las secciones con datos comprobables e indica por separado cualquier dato que no esté disponible. El ajuste se habilitará cuando termine la revisión.</p></section>
+  {% elif view.diagnosis or view.recommendation_text %}
   <div class="columns">
     {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2><p class="compact-copy diagnosis-copy">{{ view.diagnosis }}</p></section>{% endif %}
     {% if view.recommendation_text or view.adjustment_headline_label or view.recommendation_summary %}

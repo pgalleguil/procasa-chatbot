@@ -104,6 +104,6 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: ${{ runner.os }}-pip-
       - name: Install runtime and test dependencies
-        run: python -m pip install -r requirements.txt pytest pytest-asyncio
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio beautifulsoup4
       - name: Run ${{ matrix.suite }}
         run: python -m pytest -c pytest-procasa.ini ${{ matrix.tests }}

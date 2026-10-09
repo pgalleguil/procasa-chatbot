@@ -9,7 +9,7 @@ from .lead_router import find_responsible_executive
 from .link_extractor import resolver_referencia_propiedad
 from .property_lookup import PROPERTY_COLLECTION_NAME, find_property_by_any_identifier, get_prop_location, get_prop_operation
 from config import Config
-from .storage import get_db, record_observability_event
+from .storage import get_db, get_visit_data_state, record_observability_event
 from api_captacion import (
     get_zone_for_comuna, normalize_commune_v2,
     _normalize_tipo, _normalize_operacion
@@ -232,14 +232,25 @@ class LeadProcessingService:
         # Resolve each message independently so stale codes cannot combine with a
         # new URL or explicit international ID to create a false match.
         latest_reference = None
+        visit_data_state = None
         for message in reversed((lead_doc.get("messages") or [])[-20:]):
             if str(message.get("role") or "").strip().lower() not in {"user", "customer", "prospect"}:
                 continue
             content = str(message.get("content") or "")
             if not content:
                 continue
+            expected_personal_data_field = None
+            if re.fullmatch(r"\d{9,10}", content.strip()) and lead_doc.get("phone"):
+                if visit_data_state is None:
+                    visit_data_state = get_visit_data_state(lead_doc["phone"])
+                if (
+                    visit_data_state.get("status") == "accepted"
+                    and visit_data_state.get("last_requested_field") == "rut"
+                ):
+                    expected_personal_data_field = "rut"
             reference = resolver_referencia_propiedad(
                 content, lead_doc.get("phone"), trace_id, use_legacy_lookup=False,
+                expected_personal_data_field=expected_personal_data_field,
             )
             if reference.get("status") != "no_reference":
                 latest_reference = reference

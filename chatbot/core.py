@@ -696,6 +696,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # When optional visit enrichment is active, the requested field is a
     # conversational slot. A plain answer such as "Juan Pérez" is valid even
     # without an introductory phrase like "me llamo".
+    defer_numeric_rut_answer = False
     if visit_data_state.get("status") == "accepted":
         requested_field = visit_data_state.get("last_requested_field")
         if requested_field == "nombre" and not prospecto_actual.get("nombre") and "nombre" not in updates_datos:
@@ -703,9 +704,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if re.fullmatch(r"[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñÜü'-]{2,}){1,3}", candidate):
                 updates_datos["nombre"] = candidate
         elif requested_field == "rut" and not prospecto_actual.get("rut") and "rut" not in updates_datos:
-            captured_rut = extraer_rut(original_message, allow_unlabelled=True)
-            if captured_rut:
-                updates_datos["rut"] = captured_rut
+            if re.fullmatch(r"\d{9,10}", str(original_message or "").strip()):
+                # Resolve a code/RUT collision against Prop360 before using
+                # this unlabelled numeric answer as the optional RUT field.
+                defer_numeric_rut_answer = True
+            else:
+                captured_rut = extraer_rut(original_message, allow_unlabelled=True)
+                if captured_rut:
+                    updates_datos["rut"] = captured_rut
         elif requested_field == "email" and not prospecto_actual.get("email") and "email" not in updates_datos:
             captured_email = extraer_email(original_message)
             if captured_email:
@@ -767,6 +773,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # 1. Intentar detectar Link o Código en el mensaje actual
     property_reference = await _run_sync(
         resolver_referencia_propiedad, original_message, phone, trace_id,
+        expected_personal_data_field=("rut" if defer_numeric_rut_answer else None),
     )
     es_link = bool(property_reference.get("has_url"))
     temp_prop = property_reference.get("property") if es_link else None
@@ -784,6 +791,38 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         f"es_link={es_link} temp_prop_codigo={(temp_prop.get('codigo') if temp_prop else None)} "
         f"temp_prop_comuna={(temp_prop.get('comuna') if temp_prop else None)}"
     )
+
+    if property_reference.get("error_code") in {
+        "NUMERIC_PROPERTY_OR_RUT", "NUMERIC_PROPERTY_OR_PHONE",
+    }:
+        if property_reference["error_code"] == "NUMERIC_PROPERTY_OR_RUT":
+            clarification = (
+                "Para no confundir los datos, ¿ese número es tu RUT para la preparación opcional "
+                "de la visita o el código internacional de la propiedad?"
+            )
+        else:
+            clarification = (
+                "¿Ese número es el código internacional de la propiedad o un teléfono de contacto? "
+                "Así puedo identificarlo correctamente."
+            )
+        return await _persist_generated_outbound(
+            clarification,
+            {"tipo": "aclaracion_referencia_numerica", "intencion": "consulta_general"},
+            intent="consulta_general",
+        )
+
+    if defer_numeric_rut_answer and not prospecto_actual.get("rut"):
+        captured_rut = extraer_rut(original_message, allow_unlabelled=True)
+        if captured_rut:
+            await _run_sync(actualizar_prospecto, phone, {"rut": captured_rut}, trace_id)
+            prospecto_actual["rut"] = captured_rut
+            await _mark_visit_data_captured(["rut"])
+            await _run_sync(record_observability_event, "DATA_EXTRACTED", {
+                "conversation_id": conversation_id,
+                "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                "phone": phone,
+                "extracted": {"rut": captured_rut},
+            })
 
     # 0. Resolución temprana de propiedad aunque NO haya URL.
     #    Esto usa el código ya guardado en prospecto o lo que exista en el historial.

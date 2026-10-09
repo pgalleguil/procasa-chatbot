@@ -202,10 +202,13 @@ def test_unknown_code_and_unknown_url_are_not_guessed(monkeypatch):
     db = _database(_property("6508", "101006508"))
 
     missing = _resolve(monkeypatch, db, "Quiero la propiedad 109999999.")
+    missing_bare = _resolve(monkeypatch, db, "109999999")
     unknown_url = _resolve(monkeypatch, db, "https://sitio-nuevo.example/publicacion/101006508/1349921")
 
     assert missing["status"] == "unresolved"
     assert missing["property"] is None
+    assert missing_bare["status"] == "unresolved"
+    assert missing_bare["property"] is None
     assert unknown_url["status"] == "unresolved"
     assert unknown_url["property"] is None
     assert unknown_url["external_id"] is None
@@ -381,7 +384,48 @@ def test_classifier_uses_read_only_single_url_lookup(monkeypatch):
     assert writes == []
 
 
-def test_core_processes_unknown_portal_code_through_canonical_property_flow(monkeypatch):
+def test_classifier_does_not_reuse_previous_property_for_pending_rut_collision(monkeypatch):
+    from chatbot import processing_service
+
+    prop = _property("6508", "101006506")
+    db = _database(prop)
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        processing_service, "get_visit_data_state",
+        lambda _phone: {"status": "accepted", "last_requested_field": "rut"},
+    )
+
+    result = LeadProcessingService.classify({
+        "phone": "56911112222",
+        "prospecto": {"codigo": "6766", "comuna": "Colina", "tipo": "Departamento"},
+        "messages": [{"role": "user", "content": "101006506"}],
+    })
+
+    assert result == {}
+
+
+def test_verified_bare_property_with_phone_classifies_without_optional_personal_data(monkeypatch):
+    from chatbot import processing_service
+
+    db = _database(_property("6508", "101006506"))
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    monkeypatch.setattr(
+        processing_service, "get_visit_data_state", lambda _phone: {"status": "not_offered"},
+    )
+
+    result = LeadProcessingService.classify({
+        "phone": "56911112222",
+        "prospecto": {},
+        "messages": [{"role": "user", "content": "101006506"}],
+    })
+
+    assert result["comuna"] == "El Bosque"
+    assert result["tipo"] == "CASA"
+    assert result["operacion"] == "V"
+    assert result["cluster_id"] == "EL BOSQUE-CASA-V"
+
+
+def test_core_processes_bare_collision_code_and_clarifies_rut_context(monkeypatch):
     from bson import ObjectId
     from config import Config
     from threading import Event
@@ -389,14 +433,14 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     monkeypatch.setattr(Config, "DEEPSEEK_API_KEY", "test-key")
     from chatbot import core, storage
 
-    db = _database(_property("6508", "101006508"))
+    db = _database(_property("6508", "101006506"))
     monkeypatch.setattr(link_extractor, "get_db", lambda: db)
     monkeypatch.setattr(
         link_extractor, "analizar_mensaje_para_link",
         lambda *_args, **_kwargs: (False, None, "Otro Portal", None),
     )
     phone = "56911112222"
-    message = "Me interesa la propiedad 101006508. https://sitio-nuevo.example/aviso/42"
+    message = "101006506"
     prospect = {
         "codigo": "6766",
         "comuna": "Colina",
@@ -464,7 +508,8 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     monkeypatch.setattr(core, "obtener_prospecto", lambda _phone: prospect)
     monkeypatch.setattr(core, "actualizar_prospecto", update_prospect)
     monkeypatch.setattr(core, "ensure_conversation_id", lambda _phone: "conversation-test")
-    monkeypatch.setattr(core, "get_visit_data_state", lambda _phone: {"status": "not_offered"})
+    visit_data_state = {"status": "not_offered"}
+    monkeypatch.setattr(core, "get_visit_data_state", lambda _phone: dict(visit_data_state))
     monkeypatch.setattr(core, "record_observability_event", lambda *args, **_kwargs: None)
     monkeypatch.setattr(core, "registrar_propiedades_vistas", lambda _phone, codes: viewed_properties.extend(codes))
     monkeypatch.setattr(core, "obtener_propiedades_vistas", lambda _phone: [])
@@ -501,8 +546,11 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     assert prospect["comuna"] == "El Bosque"
     assert prospect["tipo"] == "Casa"
     assert prospect["operacion"] == "Venta"
-    assert prospect["portal_origen"] == "Otro Portal"
-    assert prospect["external_id_origen"] == "101006508"
+    assert prospect["portal_origen"] == ""
+    assert prospect["external_id_origen"] == "101006506"
+    assert not prospect.get("nombre")
+    assert not prospect.get("rut")
+    assert not prospect.get("email")
     assert viewed_properties == ["6508"]
     assert saved_messages[0][1:3] == ("user", message)
     assert sum(1 for item in updates if item.get("codigo") == "6508") == 1
@@ -512,9 +560,15 @@ def test_core_processes_unknown_portal_code_through_canonical_property_flow(monk
     assert assignment_calls == []
     assert notification_calls == []
 
-    message = "Quiero información sobre la propiedad 109999999."
+    visit_data_state.update({"status": "accepted", "last_requested_field": "rut"})
+    message = "101006506"
     unresolved_response = asyncio.run(core.process_user_message(phone, message))
 
-    assert "No pude confirmarlo" in unresolved_response
-    assert prospect["link_pendiente"] is True
+    assert "RUT" in unresolved_response
+    assert "código internacional" in unresolved_response
+    assert prospect["codigo"] == "6508"
+    assert not prospect.get("rut")
+    assert len(commercial_calls) == 1
+    assert assignment_calls == []
+    assert notification_calls == []
     assert viewed_properties == ["6508"]

@@ -316,14 +316,32 @@ def _process_owner_campaign_action(
                 return HTMLResponse("Enlace de campaña inválido o vencido.", status_code=404)
             claims["session_id"] = owner_portal_session_id
         if accion == "aceptar_rebaja" and owner_campaign_authorization_is_stale(row):
+            from owner_portal.campaign import price_review_message
+
             return HTMLResponse(
-                "La recomendación está en revisión. Solicita contacto con tu ejecutivo antes de autorizar un precio.",
+                f"<main><h1>Recomendación en validación</h1><p>{escape(price_review_message('CAMPAIGN_PREPARATION_BLOCKED'))}</p>"
+                "<p>No se registró una nueva autorización. Contacta a tu ejecutivo PROCASA.</p></main>",
                 status_code=409,
             )
         from campanas import owner_campaign_test_runtime as runtime
         property_doc = db[runtime.PROPERTY_COLLECTION].find_one(
             {"codigo": {"$in": [codigo, int(codigo)] if codigo.isdigit() else [codigo]}},
         ) or {}
+        if accion == "aceptar_rebaja":
+            from owner_portal.campaign import (
+                price_review_message, validate_campaign_price_integrity,
+            )
+
+            integrity = validate_campaign_price_integrity(db, row, property_doc=property_doc)
+            if integrity.get("required"):
+                message = price_review_message(integrity.get("reason"), already_authorized=(
+                    str(row.get("authorization_status") or "").upper() == "PRICE_AUTHORIZED"
+                ))
+                return HTMLResponse(
+                    f"<main><h1>Recomendación en validación</h1><p>{escape(message)}</p>"
+                    "<p>No se registró una nueva autorización. Contacta a tu ejecutivo PROCASA.</p></main>",
+                    status_code=409,
+                )
         operation = str(row.get("operation") or runtime.resolve_property_operation(property_doc)).upper()
         if operation not in {"VENTA", "ARRIENDO"}:
             return HTMLResponse("No se pudo verificar la operación de la propiedad.", status_code=409)

@@ -24,8 +24,13 @@ templates = Jinja2Templates(directory="campanas/templates")
 
 
 def owner_campaign_authorization_is_stale(row: dict) -> bool:
-    """Fail closed for a stale price recommendation; advisor contact remains available."""
-    return str(row.get("send_status") or "").strip().upper() == "SKIPPED_STALE_OR_MISMATCH"
+    """A preflight skip stays blocked until a source-backed revalidation exists."""
+    revalidation = row.get("price_revalidation")
+    validated = isinstance(revalidation, dict) and str(revalidation.get("status") or "").upper() == "VALIDATED"
+    return (
+        str(row.get("send_status") or "").strip().upper() == "SKIPPED_STALE_OR_MISMATCH"
+        and not validated
+    )
 
 def _find_contacto_by_email(contactos, email_lower: str):
     contacto = contactos.find_one({"email_propietario_lc": email_lower})
@@ -349,11 +354,16 @@ def _process_owner_campaign_action(
         prop_type = str(row.get("property_type") or runtime._property_type(property_doc))
         commune = str(row.get("commune") or runtime._commune(property_doc))
         price_block = runtime.operation_price_block(property_doc, requested_operation=operation) or {}
-        current_price = float(row.get("current_price"))
-        recommended_price = float(row.get("recommended_price"))
-        recommended_pct = int(row.get("recommended_adjustment_pct"))
-        current_clp = row.get("current_price_clp") or price_block.get("precio_clp")
-        recommended_clp = row.get("recommended_price_clp")
+        price_revalidation = row.get("price_revalidation") if isinstance(row.get("price_revalidation"), dict) else {}
+        price_revalidated = str(price_revalidation.get("status") or "").upper() == "VALIDATED"
+        current_price = float(price_revalidation.get("current_price_uf") if price_revalidated else row.get("current_price"))
+        recommended_price = float(price_revalidation.get("recommended_price_uf") if price_revalidated else row.get("recommended_price"))
+        recommended_pct = int(price_revalidation.get("recommended_adjustment_pct") if price_revalidated else row.get("recommended_adjustment_pct"))
+        current_clp = (
+            price_revalidation.get("current_price_clp") if price_revalidated
+            else row.get("current_price_clp") or price_block.get("precio_clp")
+        )
+        recommended_clp = price_revalidation.get("recommended_price_clp") if price_revalidated else row.get("recommended_price_clp")
         if recommended_clp is None and current_clp is not None:
             recommended_clp = round(float(current_clp) * (100 - recommended_pct) / 100)
         gradual_pct = row.get("gradual_adjustment_pct")

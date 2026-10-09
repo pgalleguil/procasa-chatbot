@@ -25,7 +25,9 @@ jobs:
           python -m py_compile \
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
-            release_info.py
+            release_info.py owner_portal/campaign.py owner_portal/monthly.py \
+            owner_portal/price_revalidation.py campanas/handler.py \
+            campanas/owner_campaign_live_sender.py
       - name: Verify production ancestry
         run: python scripts/verify_production_deploy_base.py --approved-main-ref origin/main --head HEAD
 
@@ -37,6 +39,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: Owner campaign price revalidation
+            tests: >-
+              tests/test_owner_campaign_private_portal.py
+              tests/test_owner_campaign_live_sender_wave2.py
+              tests/pricing_intelligence/test_owner_portal_monthly_ux.py
+              tests/pricing_intelligence/test_owner_portal_property_media.py
           - suite: RUT and phone assignment guards
             tests: >-
               tests/test_rut_phone_validation.py

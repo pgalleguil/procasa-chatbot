@@ -42,36 +42,23 @@ logger = logging.getLogger(__name__)
 def validate_campaign_price_integrity(
     db: Any, row: Mapping[str, Any], *, property_doc: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Fail closed when campaign prices no longer match the canonical property.
+    """Fail closed unless the recommendation matches a verified live price source.
 
-    This check governs only the recommendation and its authorization. Report
-    sections are assembled independently from their verified sources.
+    A validated source-currency recheck supersedes the old frozen UF comparison.
+    That keeps CLP listings stable across daily UF conversion changes while still
+    rejecting any change to the published source amount, currency, or operation.
     """
     from campanas import owner_campaign_test_runtime as runtime
 
     code = _safe_code(row.get("property_code"))
-    if _clean(row.get("send_status")).upper() in STALE_STATUSES:
+    revalidation = row.get("price_revalidation")
+    has_revalidation = isinstance(revalidation, Mapping)
+    if _clean(row.get("send_status")).upper() in STALE_STATUSES and not has_revalidation:
         return {"required": True, "reason": "CAMPAIGN_PREPARATION_BLOCKED"}
     snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), Mapping) else {}
     operation = _clean(snapshot.get("operation_resolved") or snapshot.get("operation") or row.get("operation_resolved") or row.get("operation")).upper()
     if operation not in {"VENTA", "ARRIENDO"}:
         return {"required": True, "reason": "OPERATION_NOT_VERIFIABLE"}
-
-    def number(value: Any) -> float | None:
-        return runtime._number(value)
-
-    def equal(left: Any, right: Any, tolerance: float = 0.001) -> bool:
-        first, second = number(left), number(right)
-        return first is not None and second is not None and abs(first - second) <= tolerance
-
-    campaign_values: dict[str, Any] = {}
-    for field in ("current_price", "recommended_price", "recommended_adjustment_pct"):
-        row_value = row.get(field)
-        snapshot_value = snapshot.get(field)
-        if row_value is not None and snapshot_value is not None and not equal(row_value, snapshot_value, 0.001):
-            return {"required": True, "reason": "CAMPAIGN_SNAPSHOT_MISMATCH"}
-        campaign_values[field] = snapshot_value if snapshot_value is not None else row_value
-
     if not code:
         return {"required": True, "reason": "PROPERTY_IDENTITY_NOT_VERIFIABLE"}
     if property_doc is None:
@@ -88,14 +75,42 @@ def validate_campaign_price_integrity(
     resolved_operation = runtime.resolve_property_operation(property_doc)
     if resolved_operation in {"VENTA", "ARRIENDO"} and resolved_operation != operation:
         return {"required": True, "reason": "PROPERTY_OPERATION_MISMATCH"}
+    if has_revalidation:
+        from owner_portal.price_revalidation import validate_price_revalidation
+
+        result = validate_price_revalidation(row, property_doc, operation=operation)
+        if result.get("required"):
+            return result
+        return {
+            **result,
+            "operation": operation,
+            "current_price": result["live_current_price"],
+            "recommended_price": result["recommended_price"],
+            "price_revalidated": True,
+        }
+
+    def number(value: Any) -> float | None:
+        from campanas import owner_campaign_test_runtime as runtime
+        return runtime._number(value)
+
+    def equal(left: Any, right: Any, tolerance: float = 0.001) -> bool:
+        first, second = number(left), number(right)
+        return first is not None and second is not None and abs(first - second) <= tolerance
+
+    campaign_values: dict[str, Any] = {}
+    for field in ("current_price", "recommended_price", "recommended_adjustment_pct"):
+        row_value = row.get(field)
+        snapshot_value = snapshot.get(field)
+        if row_value is not None and snapshot_value is not None and not equal(row_value, snapshot_value, 0.001):
+            return {"required": True, "reason": "CAMPAIGN_SNAPSHOT_MISMATCH"}
+        campaign_values[field] = snapshot_value if snapshot_value is not None else row_value
+
     operation_data = property_doc.get("tipo_operacion")
     operation_data = operation_data if isinstance(operation_data, Mapping) else {}
     sale_block = operation_data.get("precio_venta") if isinstance(operation_data.get("precio_venta"), Mapping) else {}
     rent_block = operation_data.get("precio_arriendo") if isinstance(operation_data.get("precio_arriendo"), Mapping) else {}
     sale_price, rent_price = number(sale_block.get("precio_uf")), number(rent_block.get("precio_uf"))
     if resolved_operation not in {"VENTA", "ARRIENDO"}:
-        # Some live property records store the operation only as a price block.
-        # Accept that evidence only when exactly one operation has a valid UF price.
         if (sale_price is not None and sale_price > 0) == (rent_price is not None and rent_price > 0):
             return {"required": True, "reason": "OPERATION_NOT_VERIFIABLE"}
         evidenced_operation = "VENTA" if sale_price is not None and sale_price > 0 else "ARRIENDO"
@@ -123,7 +138,6 @@ def validate_campaign_price_integrity(
         "live_current_price": live_price,
     }
 
-
 def price_review_message(reason: Any, *, already_authorized: bool = False) -> str:
     messages = {
         "CAMPAIGN_PREPARATION_BLOCKED": "Al preparar este ajuste se detectó una diferencia que todavía está en revisión.",
@@ -138,6 +152,16 @@ def price_review_message(reason: Any, *, already_authorized: bool = False) -> st
         "MASTER_PROPERTY_NOT_FOUND": "No fue posible verificar la ficha vigente de la propiedad.",
         "MASTER_PROPERTY_LOOKUP_FAILED": "No fue posible consultar la ficha vigente de la propiedad.",
         "PROPERTY_IDENTITY_NOT_VERIFIABLE": "No fue posible verificar la identidad de la propiedad.",
+        "PRICE_REVALIDATION_NOT_VALIDATED": "La nueva revisión de precio todavía no tiene estado válido.",
+        "PRICE_REVALIDATION_IDENTITY_MISMATCH": "La revisión no corresponde a esta propiedad, campaña u operación.",
+        "PROPERTY_NOT_ACTIVE_OR_AVAILABLE": "La ficha ya no confirma que la propiedad esté activa y disponible.",
+        "CANONICAL_PUBLISHED_PRICE_NOT_VERIFIABLE": "La moneda o el precio publicado de la ficha no se pudieron verificar.",
+        "LIVE_PUBLISHED_PRICE_CHANGED": "El precio publicado cambió después de la última validación; se requiere una nueva revisión.",
+        "RECOMMENDATION_NOT_VERIFIABLE": "El porcentaje o el cálculo no coincide con la recomendación registrada para esta campaña.",
+        "UF_CONVERSION_NOT_VERIFIABLE": "La conversión CLP/UF no cuenta con una fuente oficial verificable.",
+        "PRICE_REVALIDATION_BASE_MISMATCH": "El precio base no coincide con la fuente publicada y su conversión registrada.",
+        "PRICE_REVALIDATION_CLP_MISMATCH": "El equivalente CLP del precio base no coincide con el cálculo registrado.",
+        "RECOMMENDATION_CLP_MISMATCH": "El equivalente CLP de la recomendación no coincide con el cálculo registrado.",
     }
     message = messages.get(str(reason or ""), "La recomendación de precio requiere una revisión de sus antecedentes.")
     if already_authorized:
@@ -468,10 +492,11 @@ def build_private_page_view(
     def frozen_value(key: str) -> Any:
         return snapshot.get(key) if snapshot.get(key) is not None else row.get(key)
 
-    current = frozen_value("current_price")
-    recommended = frozen_value("recommended_price")
-    current_clp = frozen_value("current_price_clp")
-    recommended_clp = frozen_value("recommended_price_clp")
+    current = price_integrity.get("current_price") if price_integrity.get("price_revalidated") else frozen_value("current_price")
+    recommended = price_integrity.get("recommended_price") if price_integrity.get("price_revalidated") else frozen_value("recommended_price")
+    current_clp = price_integrity.get("current_price_clp") if price_integrity.get("price_revalidated") else frozen_value("current_price_clp")
+    recommended_clp = price_integrity.get("recommended_price_clp") if price_integrity.get("price_revalidated") else frozen_value("recommended_price_clp")
+    adjustment_pct = price_integrity.get("recommended_adjustment_pct") if price_integrity.get("price_revalidated") else frozen_value("recommended_adjustment_pct")
     if not report_url:
         report_label = ""
     else:
@@ -508,7 +533,7 @@ def build_private_page_view(
         "current_price": current if not price_review_required else None,
         "current_price_label": _format_client_price(current, operation) if not price_review_required else "",
         "current_price_clp_label": _format_client_price(current_clp, operation, clp=True) if not price_review_required else "",
-        "recommended_adjustment_pct": frozen_value("recommended_adjustment_pct") if not price_review_required else None,
+        "recommended_adjustment_pct": adjustment_pct if not price_review_required else None,
         "recommended_price": recommended if not price_review_required else None,
         "recommended_price_label": _format_client_price(recommended, operation) if not price_review_required else "",
         "recommended_price_clp_label": _format_client_price(recommended_clp, operation, clp=True) if not price_review_required else "",
@@ -528,6 +553,8 @@ def build_private_page_view(
         "sticky_advisor_url": sticky_advisor_url,
         "safe_mode": safe_mode,
         "price_review_required": price_review_required,
+        "price_revalidated": bool(price_integrity.get("price_revalidated")),
+        "price_revalidation": price_integrity.get("price_revalidation") if price_integrity.get("price_revalidated") else None,
         "price_review_reason": price_integrity.get("reason") or "",
         "price_review_message": price_review_message(
             price_integrity.get("reason"), already_authorized=already_authorized,
@@ -552,8 +579,7 @@ def build_email_visual_landing_html(
     is_rental = operation == "ARRIENDO"
     document_type = _clean(snapshot.get("document_type") or row.get("document_type")).upper() or "NONE"
     report_visible = document_type in REPORT_TYPES
-    stale = _clean(row.get("send_status")).upper() in STALE_STATUSES
-    can_authorize = bool(view.get("primary_url")) and not stale
+    can_authorize = bool(view.get("primary_url")) and not bool(view.get("price_review_required"))
     if not can_authorize:
         # The approved template's non-price branch presents only the advisor action.
         display_recommended_price = None
@@ -598,9 +624,9 @@ def build_email_visual_landing_html(
         "price_label": view.get("current_price_label") or "No disponible",
         "current_price_clp_label": view.get("current_price_clp_label") or "No disponible",
         "recommended_price_label": display_recommended_price,
-        "recommended_adjustment_pct": snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct")),
+        "recommended_adjustment_pct": view.get("recommended_adjustment_pct", snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct"))),
         "recommended_price_clp_label": view.get("recommended_price_clp_label") or "No disponible",
-        "display_adjustment_label": (f"-{snapshot.get('recommended_adjustment_pct', row.get('recommended_adjustment_pct'))}%" if can_authorize and snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct")) is not None else ""),
+        "display_adjustment_label": (f"-{view.get('recommended_adjustment_pct', snapshot.get('recommended_adjustment_pct', row.get('recommended_adjustment_pct')))}%" if can_authorize and view.get("recommended_adjustment_pct", snapshot.get("recommended_adjustment_pct", row.get("recommended_adjustment_pct"))) is not None else ""),
         "feature_cards": list(saved_model.get("feature_cards") or []),
         "image": dict(saved_model.get("image") or {"available": False, "url": "", "source": "NONE", "count": 0}),
         "comparable": dict(saved_comparable),
@@ -619,10 +645,10 @@ def build_email_visual_landing_html(
         "cta": {"primary_url": str(view.get("primary_url") or ""), "advisor_url": str(view.get("advisor_url") or ""), "report_url": str(view.get("report_url") or "") if report_visible else ""},
     })
     # Prices shown to the client come exclusively from the ledger snapshot.
-    current_raw = snapshot.get("current_price", row.get("current_price"))
-    recommended_raw = snapshot.get("recommended_price", row.get("recommended_price"))
-    current_clp = snapshot.get("current_price_clp", row.get("current_price_clp"))
-    recommended_clp = snapshot.get("recommended_price_clp", row.get("recommended_price_clp"))
+    current_raw = view.get("current_price", snapshot.get("current_price", row.get("current_price")))
+    recommended_raw = view.get("recommended_price", snapshot.get("recommended_price", row.get("recommended_price")))
+    current_clp = view.get("current_price_clp", snapshot.get("current_price_clp", row.get("current_price_clp")))
+    recommended_clp = view.get("recommended_price_clp", snapshot.get("recommended_price_clp", row.get("recommended_price_clp")))
     if current_raw is not None:
         model["price_label"] = _price_label(current_raw, operation)
     if recommended_raw is not None and can_authorize:

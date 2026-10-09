@@ -325,6 +325,41 @@ def test_frozen_pricing_snapshot_rebuilds_and_reports_tampering():
     assert exc.value.details["recomputed_recommended_price"] == rebuilt["recommended_price"]
 
 
+def test_legacy_frozen_recommendation_16544_survives_newer_model_output():
+    manifest = {
+        "property_code": "16544",
+        "current_price": "36.5",
+        "recommended_adjustment_pct": "5",
+        "recommended_price": "34.675",
+    }
+
+    diagnostics = sender._validate_legacy_manifest_recommendation(
+        manifest, live_current_price=36.5,
+        recomputed_recommended_price=32.85,
+        recomputed_adjustment_pct=10,
+    )
+    row = {
+        "current_price_clp": 1498288,
+        "_model": {"pricing_recommendation": {"recommended_adjustment_pct": 10}},
+    }
+    sender._apply_frozen_manifest_recommendation(row, manifest, operation="ARRIENDO")
+
+    assert diagnostics["validation_basis"] == "LEGACY_FROZEN_RECOMMENDATION_ARITHMETIC"
+    assert row["recommended_adjustment_pct"] == 5
+    assert row["recommended_price"] == 34.675
+    assert row["recommended_price_clp"] == 1423374
+    assert row["_model"]["recommended_adjustment_pct"] == 5
+    assert row["_model"]["pricing_recommendation"]["recommended_price"] == 34.675
+
+
+def test_legacy_frozen_recommendation_rejects_bad_arithmetic():
+    with pytest.raises(sender.SenderError, match="manifest_recommendation_arithmetic_mismatch"):
+        sender._validate_legacy_manifest_recommendation(
+            {"current_price": 36.5, "recommended_adjustment_pct": 5, "recommended_price": 35},
+            live_current_price=36.5,
+        )
+
+
 def test_campaign_price_policy_keeps_five_percent_minimum_and_ten_percent_ceiling():
     from analytics.owner_campaign_email_v2 import calculate_commercial_price_recommendation
 

@@ -2894,6 +2894,15 @@ def test_premium_fixture_matrix_safe_fields_and_layout_order():
             assert not view["gap_explanation"]
         if case in {"stale", "no_gap"}:
             assert view["position_simulation"]["available"] is False
+        if case == "stale":
+            assert view["price_review_required"] is True
+            assert view["diagnosis"]
+            assert view["market_context"]
+            assert any(source["kind"] == "COMPARABLE" for source in view["market_evidence"]["sources"])
+            assert not view["market_position"]["available"]
+            assert not view["current_price_label"] and not view["recommended_price_label"]
+            assert "18.507 UF" not in html and "16.656 UF" not in html
+            assert "Referencias de mercado disponibles" in html
         if case == "no_gap":
             assert not soup.select_one("#position-title")
         if case in {"stale", "authorized"}: assert not soup.select_one('.button-primary[href]')

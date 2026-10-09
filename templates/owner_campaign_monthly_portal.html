@@ -570,8 +570,10 @@
     {% if view.property_image_url %}<div class="hero-photo-wrap"><img class="hero-photo" src="{{ view.property_image_url }}" alt="Fotografía de la propiedad {{ view.property_code }}" loading="eager" fetchpriority="high" width="640" height="480"></div>{% endif %}
   </section>
 
-  {% if view.safe_mode %}
-  <section class="card safe" role="status"><strong>Estamos revisando la información comercial de esta propiedad.</strong>Desde esta página puedes conversar con tu ejecutivo; el ajuste de precio no está disponible.</section>
+  {% if view.price_review_required %}
+  <section class="card safe" role="status"><strong>La recomendación de precio está en validación.</strong>{{ view.price_review_message or 'Estamos verificando los antecedentes del ajuste.' }} Las secciones del informe con información comprobable siguen disponibles; no es posible autorizar el ajuste mientras termina la revisión.</section>
+  {% elif view.report_restricted %}
+  <section class="card safe" role="status"><strong>Este informe comercial no está disponible.</strong>Puedes conversar con tu ejecutivo para consultar los antecedentes de la propiedad.</section>
   {% elif view.already_authorized %}
   <section class="card safe" role="status"><strong>Ajuste autorizado</strong>Tu decisión ya quedó registrada para esta propiedad.</section>
   {% endif %}
@@ -582,7 +584,7 @@
     {% else %}<span class="button button-primary" aria-disabled="true">Revisión en curso</span>{% endif %}
     {% if view.top_whatsapp_url %}<a class="button button-whatsapp" data-cta-placement="TOP" data-cta-type="WHATSAPP" href="{{ view.top_whatsapp_url|e }}{% if view.interaction_token %}&amp;owner_portal_context_token={{ view.interaction_token|urlencode }}{% endif %}" aria-label="Escribir por WhatsApp a {{ view.executive_name|e }}" rel="noreferrer">{{ ui_icon('whatsapp') }}<span>Escribir por WhatsApp</span></a>{% endif %}
   </nav>
-  <p class="action-note">Revisar no modifica tu precio. Podrás confirmar después.</p>
+  <p class="action-note">{% if view.price_review_required %}La autorización estará disponible cuando termine la validación de la recomendación.{% else %}Revisar no modifica tu precio. Podrás confirmar después.{% endif %}</p>
 
   {% if not view.report_restricted %}
   <section class="card" aria-labelledby="summary-title">
@@ -707,6 +709,18 @@
   </section>
   {% endif %}
 
+  {% if view.price_review_required and view.market_evidence and view.market_evidence.available %}
+  <section class="card" aria-labelledby="market-evidence-title">
+    <h2 class="section-heading" id="market-evidence-title"><span class="section-icon">{{ ui_icon('chart') }}</span>Referencias de mercado disponibles</h2>
+    <p class="compact-copy">Estas fuentes están disponibles por separado. La comparación con el precio de la propiedad se mostrará cuando termine la validación.</p>
+    <ul class="recommendation-details">
+      {% for source in view.market_evidence.sources %}
+      <li>{{ source.owner_label }}{% if source.value_label %}: {{ source.value_label }}{% elif source.kind == 'APPRAISAL' %}: documento disponible{% endif %}{% if source.count %} · {{ source.count }} propiedades similares{% endif %}{% if source.source_date %} · actualizado al {{ source.source_date }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
   {% if view.monthly_changes %}<section class="card" aria-labelledby="monthly-changes-title"><h2 class="section-heading" id="monthly-changes-title">Qué cambió desde el último informe</h2>{% if view.monthly_unchanged %}<p class="compact-copy">Sin cambios relevantes respecto del informe anterior</p>{% else %}<div class="monthly-changes">{% for item in view.monthly_changes %}<div class="monthly-change">{{ item.label }}<br><strong>{{ item.before }} {{ ui_icon('arrow', 'recommendation-arrow') }} {{ item.after }}</strong></div>{% endfor %}</div>{% endif %}</section>{% endif %}
 
   {% if view.market_context %}
@@ -721,7 +735,7 @@
   {% endif %}
 
   {% if view.price_review_required %}
-  <section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><p class="recommendation-summary">La recomendación de precio está en validación. El informe conserva las secciones con datos comprobables e indica por separado cualquier dato que no esté disponible. El ajuste se habilitará cuando termine la revisión.</p></section>
+  <section class="card recommendation" aria-labelledby="recommendation-title"><h2 class="section-heading" id="recommendation-title"><span class="section-icon">{{ ui_icon('spark') }}</span>Recomendación PROCASA</h2><p class="recommendation-summary">{{ view.price_review_message or 'La recomendación requiere validar sus antecedentes.' }} El ajuste se habilitará cuando termine la revisión.</p></section>
   {% elif view.diagnosis or view.recommendation_text %}
   <div class="columns">
     {% if view.diagnosis %}<section class="card" aria-labelledby="diagnosis-title"><h2 class="section-heading" id="diagnosis-title"><span class="section-icon">{{ ui_icon('document') }}</span>Diagnóstico PROCASA</h2><p class="compact-copy diagnosis-copy">{{ view.diagnosis }}</p></section>{% endif %}

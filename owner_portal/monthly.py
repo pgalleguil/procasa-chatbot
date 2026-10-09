@@ -2881,6 +2881,7 @@ def _comparable_owner_unit_label(comparables: Mapping[str, Any]) -> str:
 def _static_position_data(
     *, position: Mapping[str, Any], comparables: Mapping[str, Any],
     historical_email_verified: bool, campaign_comparable_mode: str, stale: bool,
+    reference_only: bool = False,
 ) -> dict[str, Any]:
     """Expose validated current comparable evidence without requiring a price simulation."""
     unavailable = {"available": False, "reason": "COMPARABLE_EVIDENCE_INSUFFICIENT"}
@@ -2920,6 +2921,20 @@ def _static_position_data(
     unit = reference_unit or property_unit or _text(position.get("unit"))
     if count is None or count < 5:
         return {**unavailable, "reason": "COMPARABLE_SAMPLE_TOO_SMALL"}
+    if reference_only:
+        reference_number = _number_from_label(reference)
+        unit = _position_unit_label(position.get("unit") or comparables.get("unit") or comparables.get("positioning_unit_label"))
+        if reference_number is None or reference_number <= 0:
+            return {**unavailable, "reason": "COMPARABLE_REFERENCE_NOT_VERIFIABLE"}
+        if not unit or _position_currency_basis(unit) != "UF" or not _position_area_basis(unit):
+            return {**unavailable, "reason": "COMPARABLE_REFERENCE_UNIT_NOT_VERIFIABLE"}
+        owner_unit = _text(position.get("owner_unit")) or unit
+        return {
+            "available": True, "count": int(count), "source": source,
+            "owner_unit": owner_unit, "reference_value": reference,
+            "reference_label": f"{_format_position_value(reference_number)} {owner_unit}",
+            "unit": unit, "reference_only": True,
+        }
     if reference_number is None or reference_number <= 0 or property_number is None or property_number <= 0:
         return {**unavailable, "reason": "COMPARABLE_VALUES_MISSING"}
     if not unit or not reference_unit or reference_unit != property_unit:
@@ -3911,8 +3926,10 @@ def build_monthly_portal_view(
         report_restricted = bool(campaign_view.get("report_restricted"))
     else:
         report_restricted = bool(campaign_view.get("safe_mode")) and not stale_status
-    stale = price_review_required
-    can_authorize = bool(campaign_view.get("top_primary_url")) and not stale and not report_restricted
+    # A recommendation review blocks price decisions only. It must not act as
+    # a blanket switch for independently verified report evidence.
+    stale = False
+    can_authorize = bool(campaign_view.get("top_primary_url")) and not price_review_required and not report_restricted
     already_authorized = bool(campaign_view.get("already_authorized"))
     docs = monthly.get("documents") if isinstance(monthly.get("documents"), list) else []
     document_type = str(_value(property_state, snapshot, "document_type") or row.get("document_type") or "NONE").upper()
@@ -3940,7 +3957,7 @@ def build_monthly_portal_view(
         _value(property_state, snapshot, "operation") or snapshot.get("operation_resolved")
         or row.get("operation") or campaign_view.get("operation")
     )
-    context_price = _value(property_state, snapshot, "current_price")
+    context_price = None if price_review_required else _value(property_state, snapshot, "current_price")
     context_condition = (
         property_state.get("property_condition") or property_state.get("condition")
         or monthly.get("property_condition") or snapshot.get("property_condition")
@@ -3964,7 +3981,7 @@ def build_monthly_portal_view(
             document_type, property_code, document_commune_label, str(document_url), primary_metadata,
         ))
         seen_document_urls.add(str(document_url))
-    if not stale and support_reference_url:
+    if support_reference_url:
         for item in docs:
             if not isinstance(item, Mapping) or not item.get("verified"):
                 continue
@@ -3999,7 +4016,7 @@ def build_monthly_portal_view(
         and appraisal_campaign_id and owner_email
     )
     resolved_appraisal_analysis: Mapping[str, Any] | None = None
-    if not stale and property_code and appraisal_access_is_valid:
+    if property_code and appraisal_access_is_valid:
         try:
             from campanas.private_report import (
                 resolve_appraisal_analysis_cached,
@@ -4072,17 +4089,18 @@ def build_monthly_portal_view(
 
     diagnosis = _text(recommendation.get("diagnosis")) or (evidence.get("diagnostic-copy") or [None])[0]
     recommendation_text = _text(recommendation.get("text") or recommendation.get("recommendation_text")) or (evidence.get("recommendation-copy") or [None])[0] or _text(campaign_view.get("recommendation_reason"))
-    if stale:
-        diagnosis = ""
+    if price_review_required:
         recommendation_text = ""
-    elif not diagnosis and all(activity.get(key) is None for key in ("leads", "total_leads", "conversations", "visits")):
+    if not diagnosis and all(activity.get(key) is None for key in ("leads", "total_leads", "conversations", "visits")):
         diagnosis = "No hay actividad comercial suficiente disponible para describir el comportamiento reciente de esta propiedad."
     adjustment_value = _value(recommendation, snapshot, "recommended_adjustment_pct")
     if adjustment_value is None:
         adjustment_value = campaign_view.get("recommended_adjustment_pct")
+    if price_review_required:
+        adjustment_value = None
     adjustment_label = ""
     telemetry_adjustment_pct = None
-    if not stale and adjustment_value is not None:
+    if adjustment_value is not None:
         try:
             adjustment_number = float(str(adjustment_value).replace(",", "."))
             telemetry_adjustment_pct = adjustment_number
@@ -4118,10 +4136,12 @@ def build_monthly_portal_view(
             })
             if market_reference_card.get("area_basis"):
                 communal_position_reference["area_basis"] = market_reference_card["area_basis"]
-    current_price = _value(property_state, snapshot, "current_price")
+    current_price = None if price_review_required else _value(property_state, snapshot, "current_price")
     recommended_price = recommendation.get("recommended_price")
     if recommended_price is None:
         recommended_price = snapshot.get("recommended_price")
+    if price_review_required:
+        recommended_price = None
     if current_price is not None or recommended_price is not None:
         # Use the exact client formatter already used by the campaign renderer.
         from .campaign import _format_client_price
@@ -4131,7 +4151,7 @@ def build_monthly_portal_view(
         current_price_label = campaign_view.get("current_price_label")
         recommended_price_label = campaign_view.get("recommended_price_label")
 
-    gap_explanation = "" if stale else _gap_explanation(position, adjustment_value)
+    gap_explanation = "" if price_review_required else _gap_explanation(position, adjustment_value)
     from .executive import resolve_executive_contact
     executive = resolve_executive_contact(db, row, monthly, _text(campaign_view.get("executive_name")))
     whatsapp_urls = {"TOP": "", "STICKY": ""}
@@ -4162,7 +4182,7 @@ def build_monthly_portal_view(
     monthly_changes = _previous_snapshot_changes(monthly_snapshots, monthly) if current_period else []
     recommendation_period_label = _recommendation_period_label(monthly.get("period") or monthly.get("generated_at"))
     adjustment_headline_label = ""
-    if adjustment_value is not None:
+    if not price_review_required and adjustment_value is not None:
         try:
             headline_adjustment = abs(float(str(adjustment_value).replace("%", "").replace(",", ".")))
             if headline_adjustment == headline_adjustment and headline_adjustment != float("inf"):
@@ -4173,7 +4193,7 @@ def build_monthly_portal_view(
         recommended_price, recommended_price_label, operation, current_price,
     )
     recommendation_summary, recommendation_details = _recommendation_narrative(position, activity, adjustment_value)
-    if stale:
+    if price_review_required:
         adjustment_headline_label = ""
         recommendation_summary = ""
         recommendation_details = []
@@ -4199,7 +4219,7 @@ def build_monthly_portal_view(
         and isinstance(email_html, str) and email_html.strip()
         and row_status in {"SENT", "DELIVERY_UNKNOWN"}
         and campaign_comparable_mode == "PRIMARY_COMPARABLES"
-        and not stale
+        and not price_review_required
     ):
         surfaces = evidence.get("verified_property_surfaces_m2")
         surfaces = surfaces if isinstance(surfaces, Mapping) else {}
@@ -4273,10 +4293,10 @@ def build_monthly_portal_view(
         recommended_price_label=simulation_recommended_price_label,
         adjustment=simulation_adjustment,
         recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
-        stale=stale,
+        stale=price_review_required,
     )
     historical_email_verified = bool(
-        not stale and row_status in {"SENT", "DELIVERY_UNKNOWN"}
+        row_status in {"SENT", "DELIVERY_UNKNOWN"}
         and isinstance(email_html, str) and email_html.strip()
     )
     static_comparables = comparable_state or (simulation_comparables if historical_email_comparable else {
@@ -4289,6 +4309,7 @@ def build_monthly_portal_view(
         historical_email_verified=historical_email_verified,
         campaign_comparable_mode=campaign_comparable_mode,
         stale=stale,
+        reference_only=price_review_required,
     )
     market_position = _market_position_data(
         position_simulation=position_simulation,
@@ -4298,17 +4319,17 @@ def build_monthly_portal_view(
         appraisal_card=appraisal_card,
         property_state=simulation_property_state,
         property_code=property_code,
-        current_price=simulation_current_price,
-        recommended_price=simulation_recommended_price,
+        current_price=None if price_review_required else simulation_current_price,
+        recommended_price=None if price_review_required else simulation_recommended_price,
         recommendation_is_monthly=recommendation.get("recommended_price") is not None or historical_email_comparable,
-        stale=stale,
+        stale=False,
     )
     market_evidence = _market_evidence_model(
         market_position=market_position,
         position_static=position_static,
         appraisal_card=appraisal_card,
         communal=communal_position_reference,
-        stale=stale,
+        stale=False,
     )
     market_position = {
         **market_position,
@@ -4346,12 +4367,12 @@ def build_monthly_portal_view(
         "property_type": property_type_label,
         "commune": commune_label,
         "operation": operation,
-        "current_price_label": current_price_label if not stale else "",
-        "current_price_count_value": current_price if not stale else None,
-        "recommended_price_label": recommended_price_label if not stale else "",
-        "recommended_price_display_label": recommended_price_display_label if not stale else "",
-        "recommended_price_count_value": recommended_price_display_value if not stale else None,
-        "recommendation_difference_label": recommendation_difference_label if not stale else "",
+        "current_price_label": current_price_label if not price_review_required else "",
+        "current_price_count_value": current_price if not price_review_required else None,
+        "recommended_price_label": recommended_price_label if not price_review_required else "",
+        "recommended_price_display_label": recommended_price_display_label if not price_review_required else "",
+        "recommended_price_count_value": recommended_price_display_value if not price_review_required else None,
+        "recommendation_difference_label": recommendation_difference_label if not price_review_required else "",
         "adjustment_pct": adjustment_value,
         "telemetry_adjustment_pct": telemetry_adjustment_pct,
         "adjustment_label": adjustment_label,
@@ -4408,8 +4429,10 @@ def build_monthly_portal_view(
         "report_period": report_period,
         "snapshot_hash": snapshot_hash,
         "source": campaign_view.get("source"),
-        "safe_mode": stale,
+        "safe_mode": report_restricted,
         "price_review_required": price_review_required,
+        "price_review_reason": _text(campaign_view.get("price_review_reason")),
+        "price_review_message": _text(campaign_view.get("price_review_message")),
         "report_restricted": report_restricted,
         "already_authorized": already_authorized,
         "can_authorize": can_authorize,

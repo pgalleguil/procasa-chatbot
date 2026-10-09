@@ -74,10 +74,19 @@ def make_test_db(row=None):
     db = mongomock.MongoClient()["test"]
     row = row or ledger_row()
     db[campaign.LEDGER_COLLECTION].insert_one(row)
+    operation = str(row.get("operation") or "VENTA").upper()
+    current_price = row.get("current_price")
+    sale = operation == "VENTA"
+    rent = operation == "ARRIENDO"
     db[campaign.MASTER_COLLECTION].insert_one({
         "codigo": str(row.get("property_code") or CODE),
         "metadata": {"tipo_propiedad": row.get("property_type") or "Departamento"},
         "ubicacion": {"comuna": row.get("commune") or "Santiago"},
+        "tipo_operacion": {
+            "venta": sale, "arriendo": rent,
+            "precio_venta": {"precio_uf": current_price} if sale else {},
+            "precio_arriendo": {"precio_uf": current_price} if rent else {},
+        },
     })
     return db
 
@@ -313,6 +322,8 @@ def test_code_16544_stale_campaign_keeps_html_report_visible_without_unvalidated
     assert 'data-count-final="5"' in response.text
     assert "Recomendación PROCASA" in response.text
     assert "La recomendación de precio está en validación" in response.text
+    assert "Al preparar este ajuste se detectó una diferencia" in response.text
+    assert "La autorización estará disponible cuando termine la validación" in response.text
     visible = VisibleTextParser()
     visible.feed(response.text)
     visible_text = " ".join(visible.parts)
@@ -324,6 +335,71 @@ def test_code_16544_stale_campaign_keeps_html_report_visible_without_unvalidated
     assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
     assert "Escribir por WhatsApp" in response.text
     assert "/campana/informe?token=" not in response.text
+
+
+def test_live_price_drift_blocks_recommendation_but_preserves_report(monkeypatch):
+    db = make_test_db()
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {"tipo_operacion.precio_venta.precio_uf": 3500}},
+    )
+    url = registered_link(monkeypatch, db, source="WHATSAPP")
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+
+    assert response.status_code == 200
+    assert "La recomendación de precio está en validación" in response.text
+    assert "El precio vigente de la ficha de la propiedad difiere" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "Actividad comercial" in response.text
+    assert "Precio actual" in response.text and "En validación" in response.text
+    assert "Precio sugerido" in response.text and "Pendiente de validación" in response.text
+    assert "3.427,5 UF" not in response.text and "3.119,025 UF" not in response.text
+    assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
+    assert "Escribir por WhatsApp" in response.text
+
+
+def test_inconsistent_campaign_arithmetic_stays_pending_and_hides_prices(monkeypatch):
+    db = make_test_db(ledger_row(recommended_price=3000))
+    url = registered_link(monkeypatch, db)
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+
+    assert response.status_code == 200
+    assert "El cálculo de la recomendación no coincide" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "3000" not in response.text
+    assert "3.119,025 UF" not in response.text
+    assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
+
+
+def test_price_integrity_accepts_production_price_block_without_operation_flags():
+    row = ledger_row()
+    db = make_test_db(row)
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {"tipo_operacion": {
+            "tipo": "Departamento",
+            "precio_venta": {"precio_uf": row["current_price"]},
+        }}},
+    )
+    result = campaign.validate_campaign_price_integrity(
+        db, db[campaign.LEDGER_COLLECTION].find_one({"_id": row["_id"]}),
+    )
+    assert result["required"] is False
+    assert result["live_current_price"] == row["current_price"]
+
+
+def test_missing_live_uf_price_blocks_recommendation():
+    row = ledger_row()
+    db = make_test_db(row)
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {"tipo_operacion.precio_venta": {"precio_clp": 140000000}}},
+    )
+    result = campaign.validate_campaign_price_integrity(
+        db, db[campaign.LEDGER_COLLECTION].find_one({"_id": row["_id"]}),
+    )
+    assert result["required"] is True
+    assert result["reason"] == "LIVE_PRICE_NOT_VERIFIABLE"
 
 
 def test_authorized_row_does_not_offer_another_authorization(monkeypatch):
@@ -733,7 +809,9 @@ def test_all_stale_sample_rows_keep_safe_renderer_without_price_authorization(mo
         parser.feed(response.text)
         sticky = next(attrs for tag, attrs in parser.tags if attrs.get("id") == "owner-portal-sticky-actions")
         assert sticky.get("aria-label") == "Acciones rápidas"
-        assert "el ajuste de precio no está disponible" in " ".join(parser.parts)
+        visible_text = " ".join(parser.parts)
+        assert "La recomendación de precio está en validación" in visible_text
+        assert "no es posible autorizar el ajuste mientras termina la revisión" in visible_text
         from campanas.owner_campaign_live_events import decode_live_token
         sticky_claims = [
             decode_live_token(parse_qs(urlsplit(link).query)["token"][0])

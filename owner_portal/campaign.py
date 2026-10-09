@@ -39,6 +39,112 @@ SHORT_KEY_HEX_LENGTH = 32  # 128 bits derived from the registered signed-token S
 logger = logging.getLogger(__name__)
 
 
+def validate_campaign_price_integrity(
+    db: Any, row: Mapping[str, Any], *, property_doc: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Fail closed when campaign prices no longer match the canonical property.
+
+    This check governs only the recommendation and its authorization. Report
+    sections are assembled independently from their verified sources.
+    """
+    from campanas import owner_campaign_test_runtime as runtime
+
+    code = _safe_code(row.get("property_code"))
+    if _clean(row.get("send_status")).upper() in STALE_STATUSES:
+        return {"required": True, "reason": "CAMPAIGN_PREPARATION_BLOCKED"}
+    snapshot = row.get("campaign_snapshot") if isinstance(row.get("campaign_snapshot"), Mapping) else {}
+    operation = _clean(snapshot.get("operation_resolved") or snapshot.get("operation") or row.get("operation_resolved") or row.get("operation")).upper()
+    if operation not in {"VENTA", "ARRIENDO"}:
+        return {"required": True, "reason": "OPERATION_NOT_VERIFIABLE"}
+
+    def number(value: Any) -> float | None:
+        return runtime._number(value)
+
+    def equal(left: Any, right: Any, tolerance: float = 0.001) -> bool:
+        first, second = number(left), number(right)
+        return first is not None and second is not None and abs(first - second) <= tolerance
+
+    campaign_values: dict[str, Any] = {}
+    for field in ("current_price", "recommended_price", "recommended_adjustment_pct"):
+        row_value = row.get(field)
+        snapshot_value = snapshot.get(field)
+        if row_value is not None and snapshot_value is not None and not equal(row_value, snapshot_value, 0.001):
+            return {"required": True, "reason": "CAMPAIGN_SNAPSHOT_MISMATCH"}
+        campaign_values[field] = snapshot_value if snapshot_value is not None else row_value
+
+    if not code:
+        return {"required": True, "reason": "PROPERTY_IDENTITY_NOT_VERIFIABLE"}
+    if property_doc is None:
+        try:
+            property_doc = db[MASTER_COLLECTION].find_one(
+                {"codigo": {"$in": [code, int(code)]}},
+            ) or {}
+        except Exception:
+            logger.exception("owner_campaign_price_integrity_lookup_failed property_code=%s", code)
+            return {"required": True, "reason": "MASTER_PROPERTY_LOOKUP_FAILED"}
+    if str(property_doc.get("codigo") or "").strip() != code:
+        return {"required": True, "reason": "MASTER_PROPERTY_NOT_FOUND"}
+
+    resolved_operation = runtime.resolve_property_operation(property_doc)
+    if resolved_operation in {"VENTA", "ARRIENDO"} and resolved_operation != operation:
+        return {"required": True, "reason": "PROPERTY_OPERATION_MISMATCH"}
+    operation_data = property_doc.get("tipo_operacion")
+    operation_data = operation_data if isinstance(operation_data, Mapping) else {}
+    sale_block = operation_data.get("precio_venta") if isinstance(operation_data.get("precio_venta"), Mapping) else {}
+    rent_block = operation_data.get("precio_arriendo") if isinstance(operation_data.get("precio_arriendo"), Mapping) else {}
+    sale_price, rent_price = number(sale_block.get("precio_uf")), number(rent_block.get("precio_uf"))
+    if resolved_operation not in {"VENTA", "ARRIENDO"}:
+        # Some live property records store the operation only as a price block.
+        # Accept that evidence only when exactly one operation has a valid UF price.
+        if (sale_price is not None and sale_price > 0) == (rent_price is not None and rent_price > 0):
+            return {"required": True, "reason": "OPERATION_NOT_VERIFIABLE"}
+        evidenced_operation = "VENTA" if sale_price is not None and sale_price > 0 else "ARRIENDO"
+        if evidenced_operation != operation:
+            return {"required": True, "reason": "PROPERTY_OPERATION_MISMATCH"}
+    price_block = sale_block if operation == "VENTA" else rent_block
+    live_price = number(price_block.get("precio_uf"))
+    frozen_price = number(campaign_values.get("current_price"))
+    if live_price is None or live_price <= 0:
+        return {"required": True, "reason": "LIVE_PRICE_NOT_VERIFIABLE"}
+    if frozen_price is None or frozen_price <= 0:
+        return {"required": True, "reason": "CAMPAIGN_PRICE_NOT_VERIFIABLE"}
+    if abs(live_price - frozen_price) > 0.01:
+        return {"required": True, "reason": "LIVE_PRICE_CHANGED", "live_current_price": live_price}
+
+    pct = number(campaign_values.get("recommended_adjustment_pct"))
+    recommended = number(campaign_values.get("recommended_price"))
+    if pct is None or not 5 <= pct <= 10 or recommended is None or recommended <= 0:
+        return {"required": True, "reason": "RECOMMENDATION_NOT_VERIFIABLE"}
+    expected = frozen_price * (100 - pct) / 100
+    if abs(expected - recommended) > max(0.001, abs(expected) * 0.000001):
+        return {"required": True, "reason": "RECOMMENDATION_ARITHMETIC_MISMATCH"}
+    return {
+        "required": False, "reason": "", "operation": operation,
+        "live_current_price": live_price,
+    }
+
+
+def price_review_message(reason: Any, *, already_authorized: bool = False) -> str:
+    messages = {
+        "CAMPAIGN_PREPARATION_BLOCKED": "Al preparar este ajuste se detectó una diferencia que todavía está en revisión.",
+        "CAMPAIGN_SNAPSHOT_MISMATCH": "Los datos guardados para preparar este ajuste no coinciden entre sí.",
+        "LIVE_PRICE_CHANGED": "El precio vigente de la ficha de la propiedad difiere del usado para preparar este ajuste.",
+        "LIVE_PRICE_NOT_VERIFIABLE": "No fue posible verificar el precio vigente de la ficha de la propiedad.",
+        "CAMPAIGN_PRICE_NOT_VERIFIABLE": "No fue posible verificar el precio usado para preparar este ajuste.",
+        "RECOMMENDATION_ARITHMETIC_MISMATCH": "El cálculo de la recomendación no coincide con el porcentaje registrado.",
+        "RECOMMENDATION_NOT_VERIFIABLE": "Faltan antecedentes para validar el cálculo de la recomendación.",
+        "PROPERTY_OPERATION_MISMATCH": "La operación registrada para el ajuste no coincide con la ficha vigente.",
+        "OPERATION_NOT_VERIFIABLE": "No fue posible verificar la operación de la propiedad.",
+        "MASTER_PROPERTY_NOT_FOUND": "No fue posible verificar la ficha vigente de la propiedad.",
+        "MASTER_PROPERTY_LOOKUP_FAILED": "No fue posible consultar la ficha vigente de la propiedad.",
+        "PROPERTY_IDENTITY_NOT_VERIFIABLE": "No fue posible verificar la identidad de la propiedad.",
+    }
+    message = messages.get(str(reason or ""), "La recomendación de precio requiere una revisión de sus antecedentes.")
+    if already_authorized:
+        message += " La autorización anterior permanece registrada; esta revisión no modifica esa decisión."
+    return message
+
+
 def _clean(value: Any) -> str:
     return str(value or "").strip()
 
@@ -336,9 +442,10 @@ def build_private_page_view(
     operation = _clean(snapshot.get("operation_resolved") or snapshot.get("operation") or row.get("operation_resolved") or row.get("operation")).upper()
     status = _clean(row.get("send_status")).upper()
     document_type = _clean(snapshot.get("document_type") or row.get("document_type")).upper() or "NONE"
-    stale = status in STALE_STATUSES
     excluded = status in EXCLUDED_STATUSES or _excluded(row)
     already_authorized = _clean(row.get("authorization_status")).upper() == "PRICE_AUTHORIZED"
+    price_integrity = validate_campaign_price_integrity(db, row)
+    price_review_required = bool(price_integrity.get("required"))
 
     def action_url(
         action: str, document: str | None = None, *, cta_placement: str = "ORIGINAL",
@@ -379,10 +486,10 @@ def build_private_page_view(
         snapshot.get("single_recommendation_text") or snapshot.get("recommendation_text")
         or saved_model.get("single_recommendation_text") or saved_model.get("recommendation_text")
     )
-    safe_mode = stale or excluded
+    safe_mode = excluded
     advisor_url = action_url("contactar_ejecutivo", cta_placement="ORIGINAL")
     top_advisor_url = action_url("contactar_ejecutivo", cta_placement="TOP")
-    can_authorize = not safe_mode and not already_authorized and current is not None and recommended is not None
+    can_authorize = not safe_mode and not price_review_required and not already_authorized and current is not None and recommended is not None
     top_primary_url = action_url("aceptar_rebaja", cta_placement="TOP") if can_authorize else ""
     sticky_primary_url = action_url("aceptar_rebaja", cta_placement="STICKY") if can_authorize else ""
     sticky_advisor_url = action_url("contactar_ejecutivo", cta_placement="STICKY")
@@ -398,13 +505,13 @@ def build_private_page_view(
         "operation": operation.title() if operation else "Operación no disponible",
         "property_type": _clean(snapshot.get("property_type") or row.get("property_type")),
         "commune": _clean(snapshot.get("commune") or row.get("commune")),
-        "current_price": current,
-        "current_price_label": _format_client_price(current, operation),
-        "current_price_clp_label": _format_client_price(current_clp, operation, clp=True),
-        "recommended_adjustment_pct": frozen_value("recommended_adjustment_pct"),
-        "recommended_price": recommended,
-        "recommended_price_label": _format_client_price(recommended, operation),
-        "recommended_price_clp_label": _format_client_price(recommended_clp, operation, clp=True),
+        "current_price": current if not price_review_required else None,
+        "current_price_label": _format_client_price(current, operation) if not price_review_required else "",
+        "current_price_clp_label": _format_client_price(current_clp, operation, clp=True) if not price_review_required else "",
+        "recommended_adjustment_pct": frozen_value("recommended_adjustment_pct") if not price_review_required else None,
+        "recommended_price": recommended if not price_review_required else None,
+        "recommended_price_label": _format_client_price(recommended, operation) if not price_review_required else "",
+        "recommended_price_clp_label": _format_client_price(recommended_clp, operation, clp=True) if not price_review_required else "",
         "leads_90d": frozen_value("leads_90d"),
         "comparable_mode": _clean(frozen_value("comparable_mode") or row.get("comparable_status")),
         "comparable_count": frozen_value("comparable_count"),
@@ -420,7 +527,11 @@ def build_private_page_view(
         "sticky_primary_url": sticky_primary_url,
         "sticky_advisor_url": sticky_advisor_url,
         "safe_mode": safe_mode,
-        "price_review_required": stale,
+        "price_review_required": price_review_required,
+        "price_review_reason": price_integrity.get("reason") or "",
+        "price_review_message": price_review_message(
+            price_integrity.get("reason"), already_authorized=already_authorized,
+        ) if price_review_required else "",
         "report_restricted": excluded,
         "already_authorized": already_authorized,
         "source": source,

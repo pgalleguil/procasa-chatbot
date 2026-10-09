@@ -358,6 +358,120 @@ def test_live_price_drift_blocks_recommendation_but_preserves_report(monkeypatch
     assert "Escribir por WhatsApp" in response.text
 
 
+def test_validated_source_price_restores_stale_link_and_ignores_daily_clp_uf_drift(monkeypatch):
+    row = ledger_row(send_status="SKIPPED_STALE_OR_MISMATCH")
+    db = make_test_db(row)
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {
+            "estado.estado_prop360": "Activa",
+            "estado.disponible_prop360": True,
+            "tipo_operacion.precio_venta": {
+                "precio_uf": 3427.5, "precio_clp": 140000000,
+                "precio_publicado": 140000000, "moneda_publicada": "CLP",
+            },
+        }},
+    )
+    from owner_portal.price_revalidation import build_price_revalidation
+
+    master = db[campaign.MASTER_COLLECTION].find_one({"codigo": CODE})
+    row["price_revalidation"] = build_price_revalidation(
+        row, master, validated_at="2026-10-09T12:00:00-03:00",
+        uf_rate_clp=41130.94, uf_rate_date="2026-10-09",
+    )
+    db[campaign.LEDGER_COLLECTION].update_one(
+        {"_id": row["_id"]}, {"$set": {"price_revalidation": row["price_revalidation"]}},
+    )
+    # A later daily UF-derived field can move while the published CLP amount stays fixed.
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE}, {"$set": {"tipo_operacion.precio_venta.precio_uf": 3400.0}},
+    )
+
+    url = registered_link(monkeypatch, db)
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+    integrity = campaign.validate_campaign_price_integrity(
+        db, db[campaign.LEDGER_COLLECTION].find_one({"_id": row["_id"]}),
+    )
+
+    assert response.status_code == 200
+    assert "Revisar ajuste" in response.text
+    assert "La recomendación de precio está en validación" not in response.text
+    assert integrity["required"] is False
+    assert integrity["price_revalidated"] is True
+    assert integrity["source_currency"] == "CLP"
+    assert integrity["current_price_clp"] == 140000000
+    assert integrity["recommended_price_clp"] == 127400000
+    assert integrity["recommended_adjustment_pct"] == 9
+
+
+def test_validated_source_price_blocks_if_published_amount_changes():
+    row = ledger_row(send_status="SKIPPED_STALE_OR_MISMATCH")
+    db = make_test_db(row)
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {
+            "estado.estado_prop360": "Activa",
+            "estado.disponible_prop360": True,
+            "tipo_operacion.precio_venta": {
+                "precio_uf": 3427.5, "precio_clp": 140000000,
+                "precio_publicado": 140000000, "moneda_publicada": "CLP",
+            },
+        }},
+    )
+    from owner_portal.price_revalidation import build_price_revalidation
+
+    master = db[campaign.MASTER_COLLECTION].find_one({"codigo": CODE})
+    row["price_revalidation"] = build_price_revalidation(
+        row, master, validated_at="2026-10-09T12:00:00-03:00",
+        uf_rate_clp=41130.94, uf_rate_date="2026-10-09",
+    )
+    db[campaign.LEDGER_COLLECTION].update_one(
+        {"_id": row["_id"]}, {"$set": {"price_revalidation": row["price_revalidation"]}},
+    )
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE}, {"$set": {
+            "tipo_operacion.precio_venta.precio_clp": 141000000,
+            "tipo_operacion.precio_venta.precio_publicado": 141000000,
+        }},
+    )
+
+    result = campaign.validate_campaign_price_integrity(
+        db, db[campaign.LEDGER_COLLECTION].find_one({"_id": row["_id"]}),
+    )
+
+    assert result["required"] is True
+    assert result["reason"] == "LIVE_PUBLISHED_PRICE_CHANGED"
+
+
+def test_price_revalidation_cannot_change_frozen_campaign_percentage():
+    row = ledger_row(send_status="SKIPPED_STALE_OR_MISMATCH")
+    db = make_test_db(row)
+    db[campaign.MASTER_COLLECTION].update_one(
+        {"codigo": CODE},
+        {"$set": {
+            "estado.estado_prop360": "Activa",
+            "estado.disponible_prop360": True,
+            "tipo_operacion.precio_venta": {
+                "precio_uf": 3427.5, "precio_clp": 140000000,
+                "precio_publicado": 140000000, "moneda_publicada": "CLP",
+            },
+        }},
+    )
+    from owner_portal.price_revalidation import build_price_revalidation
+
+    property_doc = db[campaign.MASTER_COLLECTION].find_one({"codigo": CODE})
+    row["price_revalidation"] = build_price_revalidation(
+        row, property_doc, validated_at="2026-10-09T12:00:00-03:00",
+        uf_rate_clp=41130.94, uf_rate_date="2026-10-09",
+    )
+    row["price_revalidation"]["recommended_adjustment_pct"] = 10
+
+    result = campaign.validate_campaign_price_integrity(db, row, property_doc=property_doc)
+
+    assert result["required"] is True
+    assert result["reason"] == "RECOMMENDATION_NOT_VERIFIABLE"
+
+
 def test_inconsistent_campaign_arithmetic_stays_pending_and_hides_prices(monkeypatch):
     db = make_test_db(ledger_row(recommended_price=3000))
     url = registered_link(monkeypatch, db)

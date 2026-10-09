@@ -315,6 +315,99 @@ def _rebuild_pricing_snapshot(
     return diagnostics
 
 
+def _validate_legacy_manifest_recommendation(
+    manifest_row: Mapping[str, Any], *, live_current_price: Any,
+    recomputed_recommended_price: Any = None, recomputed_adjustment_pct: Any = None,
+    recomputed_at: datetime | None = None,
+) -> dict[str, Any]:
+    """Validate a legacy frozen decision arithmetically, not against new signals.
+
+    Old manifests predate the saved input snapshot. Their stored percentage and
+    price remain the campaign decision; newer leads or comparables cannot rewrite
+    that decision during a later preflight.
+    """
+    current = _number(manifest_row.get("current_price"))
+    pct = _number(manifest_row.get("recommended_adjustment_pct"))
+    proposed = _number(manifest_row.get("recommended_price"))
+    diagnostics = {
+        "validation_basis": "LEGACY_FROZEN_RECOMMENDATION_ARITHMETIC",
+        "manifest_current_price": current,
+        "live_current_price": _number(live_current_price),
+        "manifest_adjustment_pct": pct,
+        "manifest_recommended_price": proposed,
+        "live_recomputed_adjustment_pct": _number(recomputed_adjustment_pct),
+        "live_recomputed_recommended_price": _number(recomputed_recommended_price),
+        "recomputed_at": recomputed_at.isoformat() if isinstance(recomputed_at, datetime) else None,
+    }
+    if current is None or current <= 0 or not _same_number(current, live_current_price):
+        raise SenderError("manifest_current_price_stale_or_mismatch", details=diagnostics)
+    if pct is None or not 5 <= pct <= 10 or proposed is None or not 0 < proposed < current:
+        raise SenderError("manifest_recommendation_not_valid", details=diagnostics)
+    expected = current * (100 - pct) / 100
+    if not math.isclose(proposed, expected, rel_tol=0.000001, abs_tol=0.001):
+        raise SenderError("manifest_recommendation_arithmetic_mismatch", details={
+            **diagnostics, "expected_recommended_price": expected,
+        })
+    return {**diagnostics, "expected_recommended_price": expected}
+
+
+def _apply_frozen_manifest_recommendation(
+    row: dict[str, Any], manifest_row: Mapping[str, Any], *, operation: str,
+) -> None:
+    """Keep legacy manifest prices consistent in the local render model."""
+    from decimal import Decimal, ROUND_HALF_UP
+    from analytics.owner_campaign_email_v2 import _clp_price_label, _price_label
+
+    current = _number(manifest_row.get("current_price"))
+    proposed = _number(manifest_row.get("recommended_price"))
+    pct = int(_number(manifest_row.get("recommended_adjustment_pct")) or 0)
+    row["current_price"] = current
+    row["recommended_adjustment_pct"] = pct
+    row["recommended_price"] = proposed
+    current_clp = _number(row.get("current_price_clp"))
+    if current_clp is not None and current_clp > 0:
+        proposed_clp = float((Decimal(str(current_clp)) * Decimal(100 - pct) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        row["recommended_price_clp"] = proposed_clp
+    model = row.get("_model")
+    if not isinstance(model, Mapping):
+        return
+    model = dict(model)
+    recommendation_copy = (
+        f"La recomendación de esta campaña propone reducir el precio en {pct}%, "
+        "calculado sobre el precio base guardado en el manifiesto."
+    )
+    model.update({
+        "price_label": _price_label(current, operation),
+        "recommended_price_label": _price_label(proposed, operation),
+        "recommended_adjustment_pct": pct,
+        "display_adjustment_label": f"-{pct}%",
+        "recommended_price": proposed,
+        "single_recommendation_text": recommendation_copy,
+        "recommendation_text": recommendation_copy,
+        "recommendation": "con ajuste de precio sustentado",
+    })
+    if current_clp is not None and current_clp > 0:
+        model["current_price_clp"] = current_clp
+        model["current_price_clp_label"] = _clp_price_label(current_clp, operation)
+        model["recommended_price_clp"] = row["recommended_price_clp"]
+        model["recommended_price_clp_label"] = _clp_price_label(row["recommended_price_clp"], operation)
+    pricing = dict(model.get("pricing_recommendation") or {})
+    pricing.update({
+        "current_price": current,
+        "recommended_adjustment_pct": pct,
+        "recommended_price": proposed,
+        "policy_validation_basis": "LEGACY_FROZEN_RECOMMENDATION_ARITHMETIC",
+    })
+    model["pricing_recommendation"] = pricing
+    appraisal = model.get("appraisal")
+    if isinstance(appraisal, Mapping):
+        appraisal = dict(appraisal)
+        appraisal["recommended_label"] = _price_label(proposed, operation)
+        appraisal["adjustment_label"] = f"-{pct}%"
+        model["appraisal"] = appraisal
+    row["_model"] = model
+
+
 def _recipient_cc(row: Mapping[str, Any], runtime: Any) -> list[str]:
     owner = runtime._valid_owner_email(row.get("owner_email"))
     boss = runtime._valid_owner_email(row.get("boss_cc"))
@@ -475,25 +568,14 @@ def _validate_row(
         if not _same_number(manifest_row.get("recommended_adjustment_pct"), row.get("recommended_adjustment_pct"), tolerance=0):
             raise SenderError("manifest_recommendation_stale_or_mismatch", details=pricing_diagnostics)
     else:
-        if not _same_number(manifest_row.get("recommended_price"), row.get("recommended_price")):
-            model = row.get("_model") if isinstance(row.get("_model"), Mapping) else {}
-            pricing = model.get("pricing_recommendation") if isinstance(model.get("pricing_recommendation"), Mapping) else {}
-            raise SenderError("manifest_recommended_price_stale_or_mismatch", details={
-                "manifest_recommended_price": _number(manifest_row.get("recommended_price")),
-                "recomputed_recommended_price": _number(row.get("recommended_price")),
-                "manifest_adjustment_pct": _number(manifest_row.get("recommended_adjustment_pct")),
-                "recomputed_adjustment_pct": _number(row.get("recommended_adjustment_pct")),
-                "manifest_current_price": _number(manifest_row.get("current_price")),
-                "recomputed_current_price": _number(row.get("current_price")),
-                "pricing_inputs": dict(pricing.get("inputs")) if isinstance(pricing.get("inputs"), Mapping) else {},
-                "recomputed_at": now.isoformat(),
-            })
-        if not _same_number(manifest_row.get("recommended_adjustment_pct"), row.get("recommended_adjustment_pct"), tolerance=0):
-            raise SenderError("manifest_recommendation_stale_or_mismatch", details={
-                "manifest_adjustment_pct": _number(manifest_row.get("recommended_adjustment_pct")),
-                "recomputed_adjustment_pct": _number(row.get("recommended_adjustment_pct")),
-                "recomputed_at": now.isoformat(),
-            })
+        pricing_diagnostics = _validate_legacy_manifest_recommendation(
+            manifest_row,
+            live_current_price=row.get("current_price"),
+            recomputed_recommended_price=row.get("recommended_price"),
+            recomputed_adjustment_pct=row.get("recommended_adjustment_pct"),
+            recomputed_at=now,
+        )
+        _apply_frozen_manifest_recommendation(row, manifest_row, operation=operation)
     adjustment = _number(row.get("recommended_adjustment_pct"))
     current = _number(row.get("current_price"))
     recommended = _number(row.get("recommended_price"))

@@ -3853,9 +3853,9 @@ def build_monthly_portal_view(
     # sources. The snapshot cutoff keeps this count tied to the campaign window.
     frozen_campaign_leads = _activity_count(campaign_snapshot.get("leads_90d"))
     frozen_campaign_cutoff = _activity_datetime(campaign_snapshot.get("prepared_at"))
-    campaign_price_review_required = (
+    campaign_price_review_required = bool(campaign_view.get("price_review_required")) or (
         str(row.get("send_status") or "").upper() == "SKIPPED_STALE_OR_MISMATCH"
-        or bool(campaign_view.get("price_review_required"))
+        and not campaign_view.get("price_revalidated")
     )
     if campaign_price_review_required and frozen_campaign_leads is not None and frozen_campaign_cutoff is not None:
         funnel_rows = {
@@ -3921,7 +3921,9 @@ def build_monthly_portal_view(
 
     status = str(row.get("send_status") or "").upper()
     stale_status = status == "SKIPPED_STALE_OR_MISMATCH"
-    price_review_required = stale_status or bool(campaign_view.get("price_review_required"))
+    price_review_required = bool(campaign_view.get("price_review_required")) or (
+        stale_status and not campaign_view.get("price_revalidated")
+    )
     if "report_restricted" in campaign_view:
         report_restricted = bool(campaign_view.get("report_restricted"))
     else:
@@ -3957,7 +3959,10 @@ def build_monthly_portal_view(
         _value(property_state, snapshot, "operation") or snapshot.get("operation_resolved")
         or row.get("operation") or campaign_view.get("operation")
     )
-    context_price = None if price_review_required else _value(property_state, snapshot, "current_price")
+    context_price = None if price_review_required else (
+        campaign_view.get("current_price") if campaign_view.get("current_price") is not None
+        else _value(property_state, snapshot, "current_price")
+    )
     context_condition = (
         property_state.get("property_condition") or property_state.get("condition")
         or monthly.get("property_condition") or snapshot.get("property_condition")
@@ -4093,9 +4098,9 @@ def build_monthly_portal_view(
         recommendation_text = ""
     if not diagnosis and all(activity.get(key) is None for key in ("leads", "total_leads", "conversations", "visits")):
         diagnosis = "No hay actividad comercial suficiente disponible para describir el comportamiento reciente de esta propiedad."
-    adjustment_value = _value(recommendation, snapshot, "recommended_adjustment_pct")
+    adjustment_value = campaign_view.get("recommended_adjustment_pct")
     if adjustment_value is None:
-        adjustment_value = campaign_view.get("recommended_adjustment_pct")
+        adjustment_value = _value(recommendation, snapshot, "recommended_adjustment_pct")
     if price_review_required:
         adjustment_value = None
     adjustment_label = ""
@@ -4136,8 +4141,13 @@ def build_monthly_portal_view(
             })
             if market_reference_card.get("area_basis"):
                 communal_position_reference["area_basis"] = market_reference_card["area_basis"]
-    current_price = None if price_review_required else _value(property_state, snapshot, "current_price")
-    recommended_price = recommendation.get("recommended_price")
+    current_price = None if price_review_required else (
+        campaign_view.get("current_price") if campaign_view.get("current_price") is not None
+        else _value(property_state, snapshot, "current_price")
+    )
+    recommended_price = campaign_view.get("recommended_price")
+    if recommended_price is None:
+        recommended_price = recommendation.get("recommended_price")
     if recommended_price is None:
         recommended_price = snapshot.get("recommended_price")
     if price_review_required:
@@ -4220,6 +4230,7 @@ def build_monthly_portal_view(
         and row_status in {"SENT", "DELIVERY_UNKNOWN"}
         and campaign_comparable_mode == "PRIMARY_COMPARABLES"
         and not price_review_required
+        and not campaign_view.get("price_revalidated")
     ):
         surfaces = evidence.get("verified_property_surfaces_m2")
         surfaces = surfaces if isinstance(surfaces, Mapping) else {}
@@ -4368,8 +4379,10 @@ def build_monthly_portal_view(
         "commune": commune_label,
         "operation": operation,
         "current_price_label": current_price_label if not price_review_required else "",
+        "current_price_clp_label": campaign_view.get("current_price_clp_label") if not price_review_required else "",
         "current_price_count_value": current_price if not price_review_required else None,
         "recommended_price_label": recommended_price_label if not price_review_required else "",
+        "recommended_price_clp_label": campaign_view.get("recommended_price_clp_label") if not price_review_required else "",
         "recommended_price_display_label": recommended_price_display_label if not price_review_required else "",
         "recommended_price_count_value": recommended_price_display_value if not price_review_required else None,
         "recommendation_difference_label": recommendation_difference_label if not price_review_required else "",
@@ -4377,6 +4390,9 @@ def build_monthly_portal_view(
         "telemetry_adjustment_pct": telemetry_adjustment_pct,
         "adjustment_label": adjustment_label,
         "adjustment_headline_label": adjustment_headline_label,
+        "price_revalidated": bool(campaign_view.get("price_revalidated")),
+        "price_revalidation_source_currency": (campaign_view.get("price_revalidation") or {}).get("source_currency") if campaign_view.get("price_revalidated") else "",
+        "price_revalidation_rate_date": (((campaign_view.get("price_revalidation") or {}).get("conversion") or {}).get("uf_rate_date") if campaign_view.get("price_revalidated") else ""),
         "recommendation_period_label": recommendation_period_label,
         "recommendation_summary": recommendation_summary,
         "recommendation_details": recommendation_details,

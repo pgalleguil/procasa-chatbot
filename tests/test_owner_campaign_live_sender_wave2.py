@@ -255,3 +255,87 @@ def test_wave2_preflight_skip_only_changes_ready_status_without_touching_snapsho
     assert query["send_status"] == "READY"
     assert update["$set"]["send_status"] == "SKIPPED_STALE_OR_MISMATCH"
     assert "campaign_snapshot" not in update["$set"]
+
+
+def test_preflight_skip_persists_safe_pricing_diagnostics_with_set_only():
+    class Collection:
+        def __init__(self):
+            self.call = None
+
+        def update_one(self, query, update):
+            self.call = (query, update)
+
+    class DB:
+        def __init__(self, collection):
+            self.collection = collection
+
+        def __getitem__(self, _name):
+            return self.collection
+
+    collection = Collection()
+    diagnostics = {"manifest_recommended_price": 950, "recomputed_recommended_price": 945.25}
+    sender._record_wave2_preflight_skip(
+        DB(collection), WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID, "6581",
+        "manifest_recommended_price_stale_or_mismatch", details=diagnostics,
+    )
+
+    _, update = collection.call
+    assert set(update) == {"$set"}
+    assert update["$set"]["preflight_diagnostics"] == diagnostics
+    assert "campaign_snapshot" not in update["$set"]
+
+
+def test_frozen_pricing_snapshot_rebuilds_and_reports_tampering():
+    from analytics.owner_campaign_email_v2 import (
+        OWNER_CAMPAIGN_PRICE_POLICY_VERSION,
+        calculate_commercial_price_recommendation,
+    )
+
+    inputs = {
+        "current_price": 1000, "leads_90d": 0, "comparable_subject": None,
+        "comparable_reference": None, "valuation_reference": None,
+        "operation": "VENTA", "lead_percentiles": {},
+    }
+    rebuilt = calculate_commercial_price_recommendation(**inputs)
+    manifest = {
+        "current_price": 1000, "recommended_adjustment_pct": rebuilt["recommended_adjustment_pct"],
+        "recommended_price": rebuilt["recommended_price"],
+    }
+    snapshot = {
+        "policy_version": OWNER_CAMPAIGN_PRICE_POLICY_VERSION,
+        "campaign_id": WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID, "property_code": "6581",
+        "inputs": inputs, "recommended_adjustment_pct": rebuilt["recommended_adjustment_pct"],
+        "recommended_price": rebuilt["recommended_price"],
+    }
+
+    diagnostics = sender._rebuild_pricing_snapshot(
+        snapshot, manifest, live_current_price=1000,
+        campaign_id=WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID, property_code="6581",
+    )
+    assert diagnostics["recomputed_recommended_price"] == rebuilt["recommended_price"]
+    assert diagnostics["pricing_inputs"] == inputs
+
+    tampered = {**snapshot, "recommended_price": 999}
+    with pytest.raises(sender.SenderError, match="manifest_pricing_snapshot_recommendation_mismatch") as exc:
+        sender._rebuild_pricing_snapshot(
+            tampered, manifest, live_current_price=1000,
+            campaign_id=WAVE2_SINGLE_PROPERTY_CAMPAIGN_ID, property_code="6581",
+        )
+    assert exc.value.details["snapshot_recommended_price"] == 999
+    assert exc.value.details["recomputed_recommended_price"] == rebuilt["recommended_price"]
+
+
+def test_campaign_price_policy_keeps_five_percent_minimum_and_ten_percent_ceiling():
+    from analytics.owner_campaign_email_v2 import calculate_commercial_price_recommendation
+
+    no_signals = calculate_commercial_price_recommendation(
+        current_price=1000, leads_90d=None, operation="VENTA",
+    )
+    zero_leads = calculate_commercial_price_recommendation(
+        current_price=1000, leads_90d=0, operation="VENTA",
+    )
+
+    assert no_signals["recommended_adjustment_pct"] == 5
+    assert no_signals["recommended_price"] == 950
+    assert zero_leads["recommended_adjustment_pct"] == 10
+    assert zero_leads["recommended_price"] == 900

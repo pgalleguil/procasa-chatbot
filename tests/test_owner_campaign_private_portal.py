@@ -72,11 +72,12 @@ def ledger_row(**overrides):
 
 def make_test_db(row=None):
     db = mongomock.MongoClient()["test"]
-    db[campaign.LEDGER_COLLECTION].insert_one(row or ledger_row())
+    row = row or ledger_row()
+    db[campaign.LEDGER_COLLECTION].insert_one(row)
     db[campaign.MASTER_COLLECTION].insert_one({
-        "codigo": CODE,
-        "metadata": {"tipo_propiedad": "Departamento"},
-        "ubicacion": {"comuna": "Santiago"},
+        "codigo": str(row.get("property_code") or CODE),
+        "metadata": {"tipo_propiedad": row.get("property_type") or "Departamento"},
+        "ubicacion": {"comuna": row.get("commune") or "Santiago"},
     })
     return db
 
@@ -283,6 +284,46 @@ def test_none_document_hides_report_and_stale_status_hides_authorization(monkeyp
     assert "REVISAR / CONFIRMAR AJUSTE" not in stale_response.text
     assert "Escribir por WhatsApp" in stale_response.text and "WhatsApp" in stale_response.text
     assert "3.119 UF" not in stale_response.text
+
+
+def test_code_16544_stale_campaign_keeps_html_report_visible_without_unvalidated_prices(monkeypatch):
+    row = ledger_row(
+        _id=f"{CAMPAIGN}:16544", property_code="16544", send_status="SKIPPED_STALE_OR_MISMATCH",
+        operation="ARRIENDO", property_type="Local Comercial", commune="Maipú",
+        current_price=36.5, recommended_adjustment_pct=5, recommended_price=34.675,
+        document_type="NONE",
+        campaign_snapshot={
+            "property_code": "16544", "operation": "ARRIENDO",
+            "property_type": "Local Comercial", "commune": "Maipú",
+            "leads_90d": 5,
+            "prepared_at": datetime(2026, 9, 30, 22, 58, 36, tzinfo=timezone.utc),
+        },
+    )
+    db = make_test_db(row)
+    url = registered_short_link(monkeypatch, db)
+    response = client_for(monkeypatch, db).get(url.replace("https://www.procasa.cl", ""))
+
+    assert response.status_code == 200
+    assert "Código 16544" in response.text
+    assert "Resumen en 30 segundos" in response.text
+    assert "Precio actual" in response.text and "En validación" in response.text
+    assert "Precio sugerido" in response.text and "Pendiente de validación" in response.text
+    assert "Actividad comercial" in response.text
+    assert "Consultas recibidas" in response.text
+    assert 'data-count-final="5"' in response.text
+    assert "Recomendación PROCASA" in response.text
+    assert "La recomendación de precio está en validación" in response.text
+    visible = VisibleTextParser()
+    visible.feed(response.text)
+    visible_text = " ".join(visible.parts)
+    assert "36,5 UF" not in visible_text
+    assert "34,675 UF" not in visible_text
+    assert "34.675" not in visible_text
+    assert "Ajuste: 5%" not in visible_text
+    assert "Recomendamos ajustar el precio un 5%" not in visible_text
+    assert "REVISAR / CONFIRMAR AJUSTE" not in response.text
+    assert "Escribir por WhatsApp" in response.text
+    assert "/campana/informe?token=" not in response.text
 
 
 def test_authorized_row_does_not_offer_another_authorization(monkeypatch):

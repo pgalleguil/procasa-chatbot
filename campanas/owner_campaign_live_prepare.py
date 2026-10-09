@@ -42,6 +42,7 @@ LIVE_MANIFEST_COLUMNS = [
     "recommendation_reason", "document_conflict", "recommended_adjustment_pct",
     "current_price", "recommended_price", "current_price_clp", "recommended_price_clp",
     "gradual_adjustment_pct", "gradual_price", "gradual_price_clp", "campaign_id", "send_status",
+    "pricing_snapshot",
 ]
 
 
@@ -56,6 +57,13 @@ def _owner_name(master: dict[str, Any]) -> str:
     first = runtime._path(master, "datos_propietario.nombres") or ""
     last = runtime._path(master, "datos_propietario.apellidos") or ""
     return " ".join(str(part).strip() for part in (first, last) if str(part).strip())
+
+
+def _manifest_values(row: dict[str, Any]) -> dict[str, Any]:
+    values = {key: row.get(key) for key in LIVE_MANIFEST_COLUMNS}
+    if isinstance(values.get("pricing_snapshot"), dict):
+        values["pricing_snapshot"] = json.dumps(values["pricing_snapshot"], ensure_ascii=False, sort_keys=True)
+    return values
 
 
 def _source_eligible(master: dict[str, Any]) -> bool:
@@ -129,6 +137,18 @@ def _row_for(db: Any, master: dict[str, Any], lead_percentiles: dict[str, Any], 
         reason += "; zero unique leads in 90 days"
     elif activity.get("lead_total") is not None:
         reason += f"; {activity['lead_total']} unique leads in 90 days"
+    pricing_inputs = recommendation.get("inputs") if isinstance(recommendation.get("inputs"), dict) else None
+    pricing_snapshot = None
+    if pricing_inputs is not None:
+        pricing_snapshot = {
+            "policy_version": str(recommendation.get("policy_version") or ""),
+            "campaign_id": PRODUCTION_CAMPAIGN_ID,
+            "property_code": code,
+            "inputs": dict(pricing_inputs),
+            "recommended_adjustment_pct": int(adjustment),
+            "recommended_price": proposed,
+            "prepared_at": now.isoformat(),
+        }
     return {
         "property_code": code,
         "operation_resolved": operation,
@@ -148,6 +168,7 @@ def _row_for(db: Any, master: dict[str, Any], lead_percentiles: dict[str, Any], 
         "recommended_adjustment_pct": int(adjustment),
         "current_price": current,
         "recommended_price": proposed,
+        "pricing_snapshot": pricing_snapshot,
         "current_price_clp": model.get("current_price_clp"),
         "recommended_price_clp": model.get("recommended_price_clp"),
         "gradual_adjustment_pct": (model.get("gradual_price_alternative") or {}).get("adjustment_pct"),
@@ -243,6 +264,7 @@ def prepare(*, write_ledger: bool = True) -> dict[str, Any]:
                     "current_price_clp": row["current_price_clp"],
                     "recommended_price": row["recommended_price"],
                     "recommended_price_clp": row["recommended_price_clp"],
+                    "pricing_snapshot": row.get("pricing_snapshot"),
                     "gradual_adjustment_pct": row["gradual_adjustment_pct"],
                     "gradual_price": row["gradual_price"],
                     "gradual_price_clp": row["gradual_price_clp"],
@@ -258,7 +280,7 @@ def prepare(*, write_ledger: bool = True) -> dict[str, Any]:
         with MANIFEST_PATH.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=LIVE_MANIFEST_COLUMNS)
             writer.writeheader()
-            writer.writerows({key: row.get(key) for key in LIVE_MANIFEST_COLUMNS} for row in batch)
+            writer.writerows(_manifest_values(row) for row in batch)
 
         for row in batch:
             # The render check uses the final template and real property model;
@@ -382,7 +404,7 @@ def prepare_manifest_from_selection(
         with output_path.open("w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=LIVE_MANIFEST_COLUMNS)
             writer.writeheader()
-            writer.writerows({key: row.get(key) for key in LIVE_MANIFEST_COLUMNS} for row in prepared)
+            writer.writerows(_manifest_values(row) for row in prepared)
         return {
             "manifest_path": str(output_path),
             "batch_id": batch_id,

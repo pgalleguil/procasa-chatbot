@@ -32,6 +32,7 @@ from config import Config
 logger = logging.getLogger(__name__)
 TEMPLATE_VERSION = "OWNER_CAMPAIGN_EMAIL_V2"
 TEMPLATE_FILE = "owner_campaign_email_v2.html"
+OWNER_CAMPAIGN_PRICE_POLICY_VERSION = "owner-campaign-price-v1"
 OWNER_CAMPAIGN_VISUAL_BASELINE_SHA256 = "9a4109513a9cce332f319d859307e272452e427bcb36461bb7cb6560016f5ff0"
 SINGLE_PROPERTY_HERO_TITLE = "Revisión comercial de tu propiedad"
 SINGLE_PROPERTY_SALE_HERO_DESCRIPTION = (
@@ -825,6 +826,16 @@ def calculate_commercial_price_recommendation(
         recommended = float(target)
     reason = "COMMERCIAL_REPOSITIONING"
     return {
+        "policy_version": OWNER_CAMPAIGN_PRICE_POLICY_VERSION,
+        "inputs": {
+            "current_price": current,
+            "leads_90d": int(leads) if leads is not None and leads >= 0 else None,
+            "comparable_subject": comparable_value,
+            "comparable_reference": comparable_market,
+            "valuation_reference": valuation,
+            "operation": _normalize_operation(operation),
+            "lead_percentiles": dict(lead_percentiles or {}),
+        },
         "leads_90d": int(leads) if leads is not None and leads >= 0 else None,
         "lead_pressure_score": scores["leads_90d"],
         "lead_percentiles": dict(lead_percentiles or {}),

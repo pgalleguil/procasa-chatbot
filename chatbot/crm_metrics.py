@@ -15,7 +15,8 @@ import uuid
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+from .constants import CHILE_TZ
+from .business_calendar import next_business_slot_utc
 from .mongo_identity import mongo_id_variants
 from .utils import calculate_business_minutes
 from captacion_contact_identity import normalize_phone
@@ -145,24 +146,7 @@ def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
     assigned = coerce_utc_datetime(assigned_at)
     if not assigned:
         return None
-    local = assigned.astimezone(CHILE_TZ)
-    if local.weekday() in BUSINESS_DAYS:
-        if BUSINESS_START_HOUR <= local.hour < BUSINESS_END_HOUR:
-            return assigned
-        # Before opening, the next business opening is today.
-        if local.hour < BUSINESS_START_HOUR:
-            opening = CHILE_TZ.localize(datetime(
-                local.year, local.month, local.day, BUSINESS_START_HOUR, 0, 0
-            ))
-            return opening.astimezone(timezone.utc)
-    day = local.date()
-    while True:
-        day += timedelta(days=1)
-        if day.weekday() in BUSINESS_DAYS:
-            opening = CHILE_TZ.localize(datetime(
-                day.year, day.month, day.day, BUSINESS_START_HOUR, 0, 0
-            ))
-            return opening.astimezone(timezone.utc)
+    return next_business_slot_utc(assigned)
 
 
 def resolve_cycle_sla_start(*, cycle: Mapping[str, Any] | None) -> Optional[datetime]:
@@ -672,34 +656,10 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
 
 
 def add_business_minutes(start_dt: datetime, minutes_to_add: float) -> datetime:
-    """Add business minutes using the existing Chile weekday business calendar."""
-    if start_dt.tzinfo is None:
-        start_dt = CHILE_TZ.localize(start_dt)
-    current = start_dt.astimezone(CHILE_TZ)
-    remaining = float(minutes_to_add)
+    """Add SLA minutes on Chilean business days, excluding public holidays."""
+    from .business_calendar import add_business_minutes as add_calendar_minutes
 
-    day_start = current.replace(hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0)
-    day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
-    if current < day_start:
-        current = day_start
-    elif current >= day_end:
-        current = day_start + timedelta(days=1)
-        while current.weekday() not in BUSINESS_DAYS:
-            current += timedelta(days=1)
-
-    while remaining > 0:
-        if current.weekday() in BUSINESS_DAYS:
-            day_end = current.replace(hour=BUSINESS_END_HOUR, minute=0, second=0, microsecond=0)
-            available = (day_end - current).total_seconds() / 60.0
-            if available >= remaining:
-                return (current + timedelta(minutes=remaining)).astimezone(timezone.utc)
-            remaining -= available
-        current = current.replace(
-            hour=BUSINESS_START_HOUR, minute=0, second=0, microsecond=0,
-        ) + timedelta(days=1)
-        while current.weekday() not in BUSINESS_DAYS:
-            current += timedelta(days=1)
-    return current.astimezone(timezone.utc)
+    return add_calendar_minutes(start_dt, minutes_to_add)
 
 
 def resolve_hot_start_at(*, assigned_at, temperature_history=None,

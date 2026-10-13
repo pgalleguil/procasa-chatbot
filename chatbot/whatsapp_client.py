@@ -189,7 +189,24 @@ def normalize_provider_status(value) -> str:
     return aliases.get(text, text or "unknown")
 
 
-def get_whatsapp_message_status_sync(provider_message_id: str) -> dict:
+def _provider_recipient_matches(expected_recipient: str | None, actual_jid: str | None) -> bool | None:
+    """Compare a provider JID with an expected phone without returning either."""
+    if not expected_recipient:
+        return None
+    if not actual_jid:
+        return False
+    try:
+        expected = provider_recipient(expected_recipient).split("@", 1)[0].lstrip("+")
+    except ValueError:
+        return False
+    actual = str(actual_jid).strip().split("@", 1)[0]
+    actual_digits = "".join(filter(str.isdigit, actual))
+    return bool(actual_digits and actual_digits == expected)
+
+
+def get_whatsapp_message_status_sync(
+    provider_message_id: str, *, expected_recipient: str | None = None
+) -> dict:
     if not provider_message_id:
         return {"delivery_status": "unknown", "provider_message_id": None}
     url = f"{Config.WASENDER_BASE_URL}/messages/{provider_message_id}/info"
@@ -197,15 +214,24 @@ def get_whatsapp_message_status_sync(provider_message_id: str) -> dict:
     try:
         response = requests.get(url, headers=headers, timeout=15)
         body = response.json() if response.content else {}
-        data = body.get("data") if isinstance(body, dict) and isinstance(body.get("data"), dict) else body
+        body = body if isinstance(body, dict) else {}
+        data = body.get("data") if isinstance(body.get("data"), dict) else body
         response_provider_id = _provider_message_id(data) or _provider_message_id(body)
         confirmed_provider_id = str(response_provider_id or provider_message_id)
         status = normalize_provider_status((data or {}).get("status") if isinstance(data, dict) else None)
+        key = (data or {}).get("key") if isinstance(data, dict) else None
+        if not isinstance(key, dict):
+            key = body.get("key")
+        key = key if isinstance(key, dict) else {}
+        remote_jid = (
+            (data or {}).get("remoteJid") if isinstance(data, dict) else None
+        ) or key.get("remoteJid") or body.get("remoteJid")
         provider_event_timestamp, timestamp_source = _extract_provider_event_timestamp(data)
         return {
             "delivery_status": status,
             "provider_message_id": confirmed_provider_id,
             "provider_message_id_matches": confirmed_provider_id == str(provider_message_id),
+            "recipient_matches": _provider_recipient_matches(expected_recipient, remote_jid),
             "http_status": response.status_code,
             "provider_error_code": provider_error_code(response.status_code),
             "provider_event_timestamp": provider_event_timestamp,
@@ -221,23 +247,38 @@ def get_whatsapp_message_status_sync(provider_message_id: str) -> dict:
             "delivery_status": "unknown",
             "provider_status": "unknown",
             "provider_message_id": str(provider_message_id),
+            "recipient_matches": None if not expected_recipient else False,
             "provider_error_code": None,
             "provider_event_timestamp": None,
             "provider_event_timestamp_source": None,
         }
 
 
-async def get_whatsapp_message_status(provider_message_id: str) -> dict:
+async def get_whatsapp_message_status(
+    provider_message_id: str, *, expected_recipient: str | None = None
+) -> dict:
     """Read provider status without sending or retrying a WhatsApp message."""
-    return await asyncio.to_thread(get_whatsapp_message_status_sync, provider_message_id)
+    return await asyncio.to_thread(
+        get_whatsapp_message_status_sync,
+        provider_message_id,
+        expected_recipient=expected_recipient,
+    )
 
 
-async def wait_for_whatsapp_delivery(provider_message_id: str, *, timeout_seconds=30) -> dict:
+async def wait_for_whatsapp_delivery(
+    provider_message_id: str, *, timeout_seconds=30, expected_recipient: str | None = None
+) -> dict:
     deadline = asyncio.get_running_loop().time() + timeout_seconds
     last = {"delivery_status": "pending", "provider_message_id": str(provider_message_id)}
     while asyncio.get_running_loop().time() < deadline:
-        last = await get_whatsapp_message_status(provider_message_id)
-        if last.get("delivery_status") in {"delivered", "read", "played", "failed"}:
+        last = await get_whatsapp_message_status(
+            provider_message_id, expected_recipient=expected_recipient
+        )
+        recipient_verified = expected_recipient is None or last.get("recipient_matches") is True
+        if last.get("delivery_status") == "failed" or (
+            last.get("delivery_status") in {"delivered", "read", "played"}
+            and recipient_verified
+        ):
             return last
         await asyncio.sleep(3)
     return last

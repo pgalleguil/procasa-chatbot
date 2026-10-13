@@ -25,8 +25,9 @@ from collections import Counter
 from bson import ObjectId
 
 from .constants import CHILE_TZ
+from .business_calendar import add_business_minutes
 from .crm_metrics import (
-    INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS, add_business_minutes,
+    INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS,
     calculate_cycle_sla,
     coerce_utc_datetime, event_evidence, is_first_sla_management_completed,
     normalize_result, resolve_cycle_sla_temperature,
@@ -348,7 +349,7 @@ async def evaluate_sla_alerts(
         # SLA_REASSIGNED_TO notification is actually delivered.  Do not let
         # this alert path fall back to assigned_at and emit a false breach.
         reassignment_state = str(cycle.get("reassignment_state") or "").upper()
-        awaiting_notification = reassignment_state == "AWAITING_OWNER_NOTIFICATION" or (
+        awaiting_notification = str(cycle.get("sla_start_status") or "").lower() == "pending_notification" or reassignment_state == "AWAITING_OWNER_NOTIFICATION" or (
             str(cycle.get("assigned_by") or "").lower() == "sla_reassignment"
             and not coerce_utc_datetime(cycle.get("owner_notified_at"))
             and not coerce_utc_datetime(cycle.get("sla_started_at"))

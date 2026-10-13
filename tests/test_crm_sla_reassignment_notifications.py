@@ -5,6 +5,7 @@ import mongomock
 import pytest
 
 from chatbot.crm_notifications import COLLECTION, individual_identity
+from chatbot.crm_metrics import commercial_sla_start_at
 from chatbot.crm_sla_reassignment_notifications import (
     SLA_REASSIGNED_TO,
     COLLECTION as SLA_COLLECTION,
@@ -187,9 +188,12 @@ def test_delivery_activates_destination_clock_once_and_uses_delivery_timestamp()
     assert cycle["reassignment_state"] == "active"
     expected_mongo_time = delivered_at.replace(tzinfo=None)
     assert cycle["owner_notified_at"] == expected_mongo_time
-    assert cycle["sla_started_at"] == expected_mongo_time
+    assert cycle["sla_started_at"] == commercial_sla_start_at(delivered_at).replace(tzinfo=None)
+    assert cycle["delivery_confirmed"] is True
+    assert cycle["delivery_confirmed_at"] == expected_mongo_time
+    assert cycle["sla_start_status"] == "started"
     assert lead["lifecycle"]["owner_notified_at"] == expected_mongo_time
-    assert lead["lifecycle"]["sla_started_at"] == expected_mongo_time
+    assert lead["lifecycle"]["sla_started_at"] == cycle["sla_started_at"]
 
     second = mark_new_owner_notification_delivered(
         db,
@@ -446,7 +450,7 @@ def test_frice_provider_delivery_timestamp_is_the_next_sla_start():
     cycle = db["crm_assignment_cycles"].find_one({"_id": "cycle-delivery"})
     lead = db["leads"].find_one({"_id": "lead-delivery"})
     assert db[SLA_COLLECTION].find_one({"_id": "frice-notification"})["actually_delivered"] is True
-    assert cycle["sla_started_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(delivered_at).replace(tzinfo=None)
     expiration = canonical_expiration_recheck(
         cycle,
         lead,

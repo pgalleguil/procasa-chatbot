@@ -858,6 +858,8 @@ def _assignment_number(cycle: Mapping[str, Any]) -> int:
 
 def _awaiting_owner_notification(cycle: Mapping[str, Any]) -> bool:
     """Whether a reassignment destination has not received its notice yet."""
+    if _text(cycle.get("sla_start_status")).lower() == "pending_notification":
+        return True
     state = _text(cycle.get("reassignment_state")).upper()
     if state == "AWAITING_OWNER_NOTIFICATION":
         return True

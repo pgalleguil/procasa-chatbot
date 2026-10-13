@@ -91,6 +91,8 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "cycle_not_found"
     if cycle.get("cycle_status") != "active" or cycle.get("unassigned_at"):
         return "cycle_inactive"
+    if str(cycle.get("sla_start_status") or "").lower() == "pending_notification":
+        return "awaiting_owner_notification"
 
     assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
     if not assigned_at:

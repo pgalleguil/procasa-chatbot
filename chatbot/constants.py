@@ -3,7 +3,7 @@ from enum import Enum
 import pytz
 
 # Configuración de Zona Horaria Chile
-CHILE_TZ = pytz.timezone('Chile/Continental')
+CHILE_TZ = pytz.timezone('America/Santiago')
 
 # --- CONFIGURACIÓN DE HORARIOS ---
 BUSINESS_START_HOUR = 9

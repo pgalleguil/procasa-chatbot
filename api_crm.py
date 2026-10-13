@@ -72,19 +72,23 @@ TYPE_LABELS = {
 TELEMETRY_LABEL_TYPES = frozenset(TYPE_LABELS.keys())
 
 
-def _after_hours_label(assigned_raw, *, sla_started_raw=None, has_real_management=False):
+def _after_hours_label(assigned_raw, *, sla_started_raw=None, has_real_management=False,
+                       sla_pending=False):
     """Display factual assignment and SLA-start dates for after-hours cycles."""
     dt = coerce_crm_datetime(assigned_raw)
     if not dt or has_real_management:
         return format_relative_time(assigned_raw)
-    from chatbot.constants import BUSINESS_DAYS, BUSINESS_START_HOUR, BUSINESS_END_HOUR
+    from chatbot.constants import BUSINESS_START_HOUR, BUSINESS_END_HOUR
+    from chatbot.business_calendar import is_business_day
     local = dt.astimezone(CHILE_TZ)
     now_local = datetime.now(CHILE_TZ)
     is_after_hours = (
-        local.weekday() not in BUSINESS_DAYS
+        not is_business_day(local.date())
         or local.hour >= BUSINESS_END_HOUR
         or local.hour < BUSINESS_START_HOUR
     )
+    if sla_pending:
+        return "SLA pendiente de confirmación"
     if not is_after_hours:
         return format_relative_time(assigned_raw)
     if local.date() == now_local.date() - timedelta(days=1) and local.hour >= BUSINESS_END_HOUR:
@@ -349,6 +353,280 @@ def crm_stage_group(stage):
     return "GESTION"
 
 
+_ADMIN_CORRECTION_CYCLE_ID_RE = re.compile(
+    r"^admin-correction:(?P<correction_id>[A-Z0-9_]+:[0-9a-fA-F]{24}):v(?P<version>[1-9][0-9]*)$"
+)
+
+
+def _is_valid_administrative_cycle(cycle, lead, *, expected_owner_user_id=None):
+    """Validate an administrative cycle against its canonical lead and owner."""
+    if not isinstance(cycle, dict) or not isinstance(lead, dict):
+        return False
+    if cycle.get("cycle_status") != "active" or cycle.get("unassigned_at") is not None:
+        return False
+    if cycle.get("schema_version") != "crm_assignment_cycle_v1":
+        return False
+    if cycle.get("reason") not in {"inbound_message", "lead_created", "manual_lead_created"}:
+        return False
+    if cycle.get("cycle_origin") not in {"inbound_message", "manual_lead"}:
+        return False
+    lead_id = str(lead.get("_id") or "")
+    if not lead_id or str(cycle.get("lead_id") or "") != lead_id:
+        return False
+    cycle_id = str(cycle.get("assignment_cycle_id") or "")
+    match = _ADMIN_CORRECTION_CYCLE_ID_RE.fullmatch(cycle_id)
+    correction_id = str(cycle.get("administrative_correction_id") or "")
+    if not match or match.group("correction_id") != correction_id:
+        return False
+    if not correction_id.endswith(f":{lead_id}"):
+        return False
+    owner_id = str(cycle.get("assigned_to_user_id") or "")
+    owner_name = str(cycle.get("assigned_to_display_name") or "").strip()
+    if not owner_id or not owner_name:
+        return False
+    if expected_owner_user_id and owner_id != str(expected_owner_user_id):
+        return False
+    lifecycle = lead.get("lifecycle") or {}
+    current_cycle_id = (
+        lifecycle.get("current_assignment_cycle_id")
+        or lifecycle.get("assignment_cycle_id")
+    )
+    if str(current_cycle_id or "") != cycle_id:
+        return False
+    if str(lifecycle.get("assigned_to_user_id") or "") != owner_id:
+        return False
+    mirrors = {
+        str(lead.get("ejecutivo_asignado") or "").strip().casefold(),
+        str((lead.get("prospecto") or {}).get("ejecutivo") or "").strip().casefold(),
+    }
+    return owner_name.casefold() in mirrors
+
+
+def _administrative_cycle_lookup_predicate():
+    """Mongo predicate for an admin cycle tied to the lead's canonical owner."""
+    return {"$and": [
+        {"administrative_correction_id": {
+            "$type": "string",
+            "$regex": r"^[A-Z0-9_]+:[0-9a-fA-F]{24}$",
+        }},
+        {"assignment_cycle_id": {"$regex": r"^admin-correction:.+:v[1-9][0-9]*$"}},
+        {"assigned_to_user_id": {"$type": "string", "$ne": ""}},
+        {"assigned_to_display_name": {"$type": "string", "$ne": ""}},
+        {"$expr": {"$and": [
+            {"$eq": ["$assignment_cycle_id", "$$lead_current_cycle_id"]},
+            {"$eq": ["$assigned_to_user_id", "$$lead_owner_user_id"]},
+            {"$eq": [
+                {"$arrayElemAt": [{"$split": ["$administrative_correction_id", ":"]}, -1]},
+                {"$toString": "$$lead_id"},
+            ]},
+            {"$or": [
+                {"$eq": ["$assigned_to_display_name", "$$lead_owner_name"]},
+                {"$eq": ["$assigned_to_display_name", "$$lead_prospect_owner_name"]},
+            ]},
+        ]}},
+    ]}
+
+
+def _canonical_active_cycle_lookup_stage():
+    """Load the canonical active cycle, including identity-valid admin cycles."""
+    return {"$lookup": {
+        "from": "crm_assignment_cycles",
+        "let": {
+            "lead_id": "$_id",
+            "lead_current_cycle_id": {"$ifNull": [
+                "$lifecycle.current_assignment_cycle_id",
+                "$lifecycle.assignment_cycle_id",
+            ]},
+            "lead_owner_user_id": "$lifecycle.assigned_to_user_id",
+            "lead_owner_name": "$ejecutivo_asignado",
+            "lead_prospect_owner_name": "$prospecto.ejecutivo",
+        },
+        "pipeline": [
+            {"$match": {
+                "$and": [
+                    {"$expr": {"$and": [
+                        {"$in": [{"$type": "$lead_id"}, ["objectId", "string"]]},
+                        {"$in": [{"$type": "$$lead_id"}, ["objectId", "string"]]},
+                        {"$eq": [
+                            {"$toString": "$lead_id"},
+                            {"$toString": "$$lead_id"},
+                        ]},
+                    ]}},
+                    {
+                        "cycle_status": "active",
+                        "unassigned_at": None,
+                        "schema_version": "crm_assignment_cycle_v1",
+                        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
+                        "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
+                    },
+                    {"$or": [
+                        {"notification_eligible": True},
+                        _administrative_cycle_lookup_predicate(),
+                    ]},
+                ],
+            }},
+            {"$sort": {"assigned_at": -1}},
+            {"$limit": 1},
+        ],
+        "as": "_active_cycle",
+    }}
+
+
+def _cycle_has_completed_management(cycle, result_rows=(), event_rows=()):
+    """Only a canonical result in this exact cycle stops its pending state."""
+    from chatbot.crm_metrics import is_first_sla_management_completed
+
+    return is_first_sla_management_completed(cycle, result_rows, event_rows)
+
+
+def _stage_query_with_pending_admin_cycles(stage_query, pending_lead_ids, *, include_pending):
+    """Project an unworked admin cycle into NEW without rewriting lead history."""
+    ids = list(pending_lead_ids or ())
+    if not ids:
+        return stage_query
+    if include_pending:
+        return {"$or": [stage_query, {"_id": {"$in": ids}}]}
+    return {"$and": [stage_query, {"_id": {"$nin": ids}}]}
+
+
+def _crm_sla_sort_key(lead):
+    """Sort a CRM row using SLA evidence attached to its selected current cycle."""
+    if lead.get("_admin_cycle_priority") == 0:
+        return (-1, 0)
+    overdue = lead.get("_overdue_minutes")
+    managed = lead.get("_has_management", 1)
+    assigned = lead.get("_has_assigned", 1)
+    if overdue is None:
+        return (4, 0)
+    if assigned == 0 and managed == 0:
+        return (3, 0)
+    if assigned != 0:
+        return (2, 0)
+    if overdue > 0:
+        return (0, -overdue)
+    return (1, -overdue)
+
+
+def _event_belongs_to_current_cycle(event, cycle):
+    """Accept only exact-cycle events or untagged evidence after assignment."""
+    if not isinstance(event, dict) or not isinstance(cycle, dict):
+        return False
+    cycle_id = str(cycle.get("assignment_cycle_id") or "")
+    event_cycle_id = str(event.get("assignment_cycle_id") or "")
+    if event_cycle_id:
+        return bool(cycle_id and event_cycle_id == cycle_id)
+    from chatbot.crm_metrics import coerce_utc_datetime
+
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    occurred_at = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+    return bool(assigned_at and occurred_at and occurred_at >= assigned_at)
+
+
+async def _get_administrative_cycle_lead_ids(
+    db, *, user_role, user_name, user_id=None, ejecutivo_filter=None
+):
+    """Find current admin cycles and the subset with no management in-cycle."""
+    is_admin = can_administer_leads(user_role)
+    owner_query = {}
+    if not is_admin:
+        if user_id:
+            owner_query["assigned_to_user_id"] = str(user_id)
+        elif user_name:
+            owner_query["assigned_to_display_name"] = user_name
+    elif ejecutivo_filter and str(ejecutivo_filter).strip().casefold() not in {"todos", "all"}:
+        owner_query["assigned_to_display_name"] = {
+            "$regex": re.compile(re.escape(str(ejecutivo_filter).strip()), re.IGNORECASE)
+        }
+
+    cycle_query = {
+        "cycle_status": "active",
+        "unassigned_at": None,
+        "schema_version": "crm_assignment_cycle_v1",
+        "administrative_correction_id": {
+            "$type": "string",
+            "$regex": r"^[A-Z0-9_]+:[0-9a-fA-F]{24}$",
+        },
+        "assignment_cycle_id": {"$regex": r"^admin-correction:.+:v[1-9][0-9]*$"},
+        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
+        "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
+    }
+    cycle_query.update(owner_query)
+    cycles = await db["crm_assignment_cycles"].find(cycle_query, {
+        "lead_id": 1, "assignment_cycle_id": 1, "assigned_at": 1, "cycle_status": 1,
+        "unassigned_at": 1, "schema_version": 1,
+        "administrative_correction_id": 1, "reason": 1, "cycle_origin": 1,
+        "assigned_to_user_id": 1, "assigned_to_display_name": 1,
+        "first_valid_management_at": 1, "sla_first_management_status": 1,
+    }).to_list(length=1000)
+    if not cycles:
+        return set(), set()
+
+    from chatbot.mongo_identity import mongo_id_variants
+    lead_ids = list({cycle.get("lead_id") for cycle in cycles if cycle.get("lead_id")})
+    lead_lookup_ids = list(dict.fromkeys(
+        value for lead_id in lead_ids for value in mongo_id_variants(lead_id)
+    ))
+    leads = await db["leads"].find(
+        {"_id": {"$in": lead_lookup_ids}},
+        {"_id": 1, "lifecycle": 1, "ejecutivo_asignado": 1, "prospecto.ejecutivo": 1},
+    ).to_list(length=len(lead_ids))
+    leads_by_id = {str(lead.get("_id")): lead for lead in leads}
+    cycle_ids = [str(cycle.get("assignment_cycle_id") or "") for cycle in cycles]
+    results = await db["crm_management_results"].find({
+        "assignment_cycle_id": {"$in": cycle_ids},
+        "status": "completed",
+    }, {"lead_id": 1, "assignment_cycle_id": 1, "result_type": 1, "result": 1, "status": 1}).to_list(length=5000)
+    results_by_cycle = {}
+    for result in results:
+        results_by_cycle.setdefault(str(result.get("assignment_cycle_id") or ""), []).append(result)
+
+    from chatbot.crm_metrics import coerce_utc_datetime
+    assigned_times = [coerce_utc_datetime(cycle.get("assigned_at")) for cycle in cycles]
+    assigned_times = [value for value in assigned_times if value]
+    events = []
+    if assigned_times:
+        earliest_assignment = min(assigned_times)
+        events = await db["crm_events"].find({
+            "lead_id": {"$in": lead_lookup_ids},
+            "$or": [
+                {"timestamp": {"$gte": earliest_assignment}},
+                {"occurred_at": {"$gte": earliest_assignment}},
+            ],
+        }, {
+            "lead_id": 1, "assignment_cycle_id": 1, "timestamp": 1,
+            "occurred_at": 1, "type": 1, "actor": 1, "actor_type": 1,
+            "confirmed": 1, "result": 1, "meta": 1,
+        }).to_list(length=10000)
+    events_by_lead = {}
+    for event in events:
+        events_by_lead.setdefault(str(event.get("lead_id") or ""), []).append(event)
+
+    selected_name = str(ejecutivo_filter or "").strip()
+    pending = set()
+    current_admin_cycles = set()
+    for cycle in cycles:
+        lead = leads_by_id.get(str(cycle.get("lead_id") or ""))
+        if not _is_valid_administrative_cycle(
+            cycle, lead, expected_owner_user_id=(user_id if not is_admin and user_id else None)
+        ):
+            continue
+        owner_name = str(cycle.get("assigned_to_display_name") or "").strip()
+        if not is_admin and not user_id and owner_name.casefold() != str(user_name or "").strip().casefold():
+            continue
+        if is_admin and selected_name and selected_name.casefold() != "todos":
+            if owner_name.casefold() != selected_name.casefold():
+                continue
+        current_admin_cycles.add(lead.get("_id"))
+        if _cycle_has_completed_management(
+            cycle,
+            results_by_cycle.get(str(cycle.get("assignment_cycle_id") or ""), ()),
+            events_by_lead.get(str(cycle.get("lead_id") or ""), ()),
+        ):
+            continue
+        pending.add(lead.get("_id"))
+    return pending, current_admin_cycles
+
+
 def _crm_stage_query(stages):
     """Filtra por la misma etapa efectiva que luego se muestra en el listado."""
     return {
@@ -491,9 +769,16 @@ def _resultado_estado_label(ev) -> Optional[str]:
 async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla_priority",
                               user_role="agente", user_name="", ejecutivo_filter=None,
                               temperatura_filter="HOT",
-                              page=1, limit=10, property_code=None):
+                              page=1, limit=10, property_code=None, user_id=None):
     from chatbot.storage import get_async_db
     db = get_async_db()
+    pending_admin_lead_ids, current_admin_cycle_lead_ids = await _get_administrative_cycle_lead_ids(
+        db,
+        user_role=user_role,
+        user_name=user_name,
+        user_id=user_id,
+        ejecutivo_filter=ejecutivo_filter,
+    )
     temperatura_filter = normalize_crm_temperature(temperatura_filter)
     # Todo el CRM trabaja exclusivamente con la temperatura normalizada.
     query_parts = [
@@ -577,25 +862,59 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         if filtro_estado == "UNASSIGNED":
             state_condition = {"$and": [_crm_stage_query(CRM_STAGE_GROUPS["NEW"]), unassigned_filter]}
         elif filtro_estado in ["NEW", "nuevo"]:
-            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["NEW"])
+            state_condition = _stage_query_with_pending_admin_cycles(
+                _crm_stage_query(CRM_STAGE_GROUPS["NEW"]),
+                pending_admin_lead_ids,
+                include_pending=True,
+            )
         elif filtro_estado == "GRUPO_GESTION":
-            state_condition = _crm_management_stage_query()
+            state_condition = _stage_query_with_pending_admin_cycles(
+                _crm_management_stage_query(), pending_admin_lead_ids, include_pending=False
+            )
         elif filtro_estado == "GRUPO_VISITA":
-            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["VISITA"])
+            state_condition = _stage_query_with_pending_admin_cycles(
+                _crm_stage_query(CRM_STAGE_GROUPS["VISITA"]), pending_admin_lead_ids,
+                include_pending=False,
+            )
         elif filtro_estado == "GRUPO_CERRADO":
-            state_condition = _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"])
+            state_condition = _stage_query_with_pending_admin_cycles(
+                _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"]), pending_admin_lead_ids,
+                include_pending=False,
+            )
         else:
             # Mapeo invertido para buscar por el valor del Enum o string legacy en la DB
             state_db_value = filtro_estado
             if filtro_estado == "visita": state_db_value = PipelineStage.VISIT_SCHEDULED
             elif filtro_estado == "gestion": state_db_value = PipelineStage.CONTACTED
             elif filtro_estado == "cerrado": state_db_value = PipelineStage.CLOSED_WON
-            state_condition = _crm_stage_query([state_db_value])
+            state_condition = _stage_query_with_pending_admin_cycles(
+                _crm_stage_query([state_db_value]), pending_admin_lead_ids,
+                include_pending=False,
+            )
 
     query_with_state_parts = list(query_parts)
     if state_condition:
         query_with_state_parts.append(state_condition)
     query_with_state = {"$and": query_with_state_parts} if query_with_state_parts else {}
+
+    operational_state_queries = {
+        "nuevo": _stage_query_with_pending_admin_cycles(
+            _crm_stage_query(CRM_STAGE_GROUPS["NEW"]), pending_admin_lead_ids,
+            include_pending=True,
+        ),
+        "gestion": _stage_query_with_pending_admin_cycles(
+            _crm_management_stage_query(), pending_admin_lead_ids,
+            include_pending=False,
+        ),
+        "visita": _stage_query_with_pending_admin_cycles(
+            _crm_stage_query(CRM_STAGE_GROUPS["VISITA"]), pending_admin_lead_ids,
+            include_pending=False,
+        ),
+        "cerrado": _stage_query_with_pending_admin_cycles(
+            _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"]), pending_admin_lead_ids,
+            include_pending=False,
+        ),
+    }
 
     # 1. EJECUCION DE KPIs OPTIMIZADA CON $FACET (1 solo roundtrip a MongoDB)
     import time
@@ -618,19 +937,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 {"$count": "count"}
             ],
             "nuevo": [
-                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["NEW"])]}},
+                {"$match": {"$and": [base_kpi_query, operational_state_queries["nuevo"]]}},
                 {"$count": "count"}
             ],
             "gestion": [
-                {"$match": {"$and": [base_kpi_query, _crm_management_stage_query()]}},
+                {"$match": {"$and": [base_kpi_query, operational_state_queries["gestion"]]}},
                 {"$count": "count"}
             ],
             "visita": [
-                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["VISITA"])]}},
+                {"$match": {"$and": [base_kpi_query, operational_state_queries["visita"]]}},
                 {"$count": "count"}
             ],
             "cerrado": [
-                {"$match": {"$and": [base_kpi_query, _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"])]}},
+                {"$match": {"$and": [base_kpi_query, operational_state_queries["cerrado"]]}},
                 {"$count": "count"}
             ]
         }}
@@ -638,12 +957,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
 
     # Desglose HOT/COLD por estado para el panel del universo Total. Se calcula
     # dentro del mismo $facet y sobre la misma base de ejecutivo/búsqueda.
-    state_kpi_conditions = {
-        "nuevo": _crm_stage_query(CRM_STAGE_GROUPS["NEW"]),
-        "gestion": _crm_management_stage_query(),
-        "visita": _crm_stage_query(CRM_STAGE_GROUPS["VISITA"]),
-        "cerrado": _crm_stage_query(CRM_STAGE_GROUPS["CERRADO"]),
-    }
+    state_kpi_conditions = operational_state_queries
     for state_key, state_query in state_kpi_conditions.items():
         for temperature_key, temperature_query in (("hot", CRM_HOT_QUERY), ("cold", CRM_COLD_QUERY)):
             facet_pipeline[0]["$facet"][f"{state_key}_{temperature_key}"] = [
@@ -717,7 +1031,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "lead_temperature_effective": 1,
         "temperature_history": 1,
         "_has_assigned": 1,
+        "_admin_cycle_priority": 1,
         "_cycle_assigned_at": 1,
+        "_cycle_sla_started_at": 1,
+        "_sla_pending_notification": 1,
         "_legacy_assigned_at": 1,
         "_temperature": 1,
         "_has_management": 1,
@@ -732,22 +1049,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # management evidence).  Unassigned leads sort last.
     canonical_pipeline = [
         {"$match": paginated_query},
-        {"$lookup": {
-            "from": "crm_assignment_cycles",
-            "let": {"lead_id": "$_id"},
-            "pipeline": [
-                {"$match": {
-                    "$expr": {"$eq": ["$lead_id", "$$lead_id"]},
-                    "unassigned_at": None,
-                    "notification_eligible": True,
-                    "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
-                    "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
-                }},
-                {"$sort": {"assigned_at": -1}},
-                {"$limit": 1},
-            ],
-            "as": "_active_cycle",
-        }},
+        {"$set": {"_admin_cycle_priority": {"$cond": [
+            {"$in": ["$_id", list(current_admin_cycle_lead_ids)]}, 0, 1,
+        ]}}},
+        _canonical_active_cycle_lookup_stage(),
         # $arrayElemAt([], 0) does NOT reliably return null in MongoDB.
         # Use $size to detect empty arrays before accessing elements.
         {"$set": {
@@ -766,6 +1071,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 "$_has_cycle",
                 "$_active_cycle.assigned_at",
                 None,
+            ]},
+            "_sla_pending_notification": {"$eq": [
+                {"$ifNull": ["$_active_cycle.sla_start_status", ""]},
+                "pending_notification",
+            ]},
+            "_cycle_sla_started_at": {"$cond": [
+                "$_has_cycle",
+                {"$ifNull": ["$_active_cycle.sla_started_at", "$_active_cycle.assigned_at"]},
+                "$_legacy_assigned_at",
             ]},
             "_temperature": {"$cond": [
                 "$_has_cycle",
@@ -800,10 +1114,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # overdue, negative = in-plazo.  Assigned + unmanaged only.
         {"$set": {
             "_overdue_minutes": {"$cond": [
-                "$_has_cycle",
+                {"$and": ["$_has_cycle", {"$not": ["$_sla_pending_notification"]}]},
                 {"$subtract": [
                     {"$dateDiff": {
-                        "startDate": {"$convert": {"input": "$_cycle_assigned_at", "to": "date", "onError": None, "onNull": None}},
+                        "startDate": {"$convert": {"input": "$_cycle_sla_started_at", "to": "date", "onError": None, "onNull": None}},
                         "endDate": "$$NOW",
                         "unit": "minute",
                     }},
@@ -817,7 +1131,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # Build sort spec from the canonical cycle fields
     _use_python_sla_sort = False
     if ordenar_por == "recent_assigned":
-        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+        _sort_spec = {"_admin_cycle_priority": 1, "_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
     elif ordenar_por == "sla_priority":
         # Include all leads; business-minute sort in Python groups
         # unmanaged+overdue first, managed/closed last.
@@ -839,6 +1153,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             ]},
         }})
         _sort_spec = {
+            "_admin_cycle_priority": 1,
             "_has_management": -1,     # DESC: 1 (unmanaged) before 0 (managed)
             "_has_assigned": 1,
             "_cycle_assigned_at": 1,
@@ -846,7 +1161,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_id": 1,
         }
     else:
-        _sort_spec = {"_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
+        _sort_spec = {"_admin_cycle_priority": 1, "_has_assigned": 1, "_cycle_assigned_at": -1, "_id": -1}
 
     canonical_pipeline.extend([
         {"$sort": _sort_spec},
@@ -866,7 +1181,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         sla_full_pipeline = list(canonical_pipeline)
         # Remove $skip, $limit, $project; add an aggregate-level $limit as safety cap
         sla_full_pipeline = [s for s in sla_full_pipeline if "$skip" not in s and "$limit" not in s and "$project" not in s]
-        sla_full_pipeline.append({"$project": PROJECTION})
+        sla_projection = {**PROJECTION, "_active_cycle": 1}
+        sla_full_pipeline.append({"$project": sla_projection})
 
     # Conteos y registros provienen del mismo snapshot y de una única agregación.
     facet_pipeline[0]["$facet"]["records"] = records_pipeline
@@ -891,18 +1207,22 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         for lead in sla_all:
             cycle = lead.get("_active_cycle")
             if isinstance(cycle, dict):
-                sla = calculate_cycle_sla(cycle=cycle, lead=lead, now=now_utc)
-                temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
-                measured = sla.get("hot_minutes") if temp == "HOT" else sla.get("minutes")
-                threshold = sla.get("threshold_minutes")
-                lead["_business_minutes"] = measured
-                lead["_overdue_minutes"] = (
-                    measured - threshold
-                    if measured is not None and threshold is not None and sla.get("coverage") == "determined"
-                    else None
-                )
-                if is_first_sla_management_completed(cycle):
-                    lead["_has_management"] = 0
+                if cycle.get("sla_start_status") == "pending_notification":
+                    lead["_business_minutes"] = None
+                    lead["_overdue_minutes"] = None
+                else:
+                    sla = calculate_cycle_sla(cycle=cycle, lead=lead, now=now_utc)
+                    temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+                    measured = sla.get("hot_minutes") if temp == "HOT" else sla.get("minutes")
+                    threshold = sla.get("threshold_minutes")
+                    lead["_business_minutes"] = measured
+                    lead["_overdue_minutes"] = (
+                        measured - threshold
+                        if measured is not None and threshold is not None and sla.get("coverage") == "determined"
+                        else None
+                    )
+                    if is_first_sla_management_completed(cycle):
+                        lead["_has_management"] = 0
             else:
                 lead["_business_minutes"] = None
                 lead["_overdue_minutes"] = None
@@ -912,20 +1232,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         #   2 = unassigned
         #   3 = managed assigned
         #   4 = no cycle / historical / missing date
-        def _sla_key(lead):
-            od = lead.get("_overdue_minutes")
-            mgmt = lead.get("_has_management", 1)
-            assigned = lead.get("_has_assigned", 1)
-            if od is None:
-                return (4, 0)
-            if assigned == 0 and mgmt == 0:
-                return (3, 0)
-            if assigned != 0:
-                return (2, 0)
-            if od > 0:
-                return (0, -od)
-            return (1, -od)
-        sla_all.sort(key=_sla_key)
+        sla_all.sort(key=_crm_sla_sort_key)
         total_count = len(sla_all)
         sla_page = sla_all[offset:offset + limit]
         leads_list = sla_page
@@ -1032,24 +1339,91 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
     # Resuelve todos los ciclos activos en una sola consulta batch.
     page_lead_ids = [l.get("_id") for l in leads_list if l.get("_id")]
     cycle_by_lead_id: dict[str, dict] = {}
+    management_results_by_cycle: dict[str, list[dict]] = {}
+    current_cycle_events_by_lead: dict[str, list[dict]] = {}
     if page_lead_ids:
         from chatbot.storage import get_async_db
+        from chatbot.mongo_identity import mongo_id_variants
         adb = get_async_db()
+        page_lead_lookup_ids = list(dict.fromkeys(
+            value for lead_id in page_lead_ids for value in mongo_id_variants(lead_id)
+        ))
         # The list must use the same canonical commercial cycle for SLA,
         # temperature and executive. Technical/legacy active cycles are not
         # presentation sources.
         cycles_cursor = adb["crm_assignment_cycles"].find(
-            {"lead_id": {"$in": page_lead_ids}, "cycle_status": "active",
+            {"lead_id": {"$in": page_lead_lookup_ids}, "cycle_status": "active",
              "schema_version": "crm_assignment_cycle_v1",
-             "notification_eligible": True,
+             "unassigned_at": None,
+             "$or": [
+                 {"notification_eligible": True},
+                 {
+                     "administrative_correction_id": {
+                         "$type": "string",
+                         "$regex": r"^[A-Z0-9_]+:[0-9a-fA-F]{24}$",
+                     },
+                     "assignment_cycle_id": {
+                         "$regex": r"^admin-correction:.+:v[1-9][0-9]*$",
+                     },
+                 },
+             ],
              "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
              "cycle_origin": {"$in": ["inbound_message", "manual_lead"]}},
         ).sort([("assigned_at", -1)])
         cycle_docs = await cycles_cursor.to_list(length=len(page_lead_ids) + 1)
+        page_leads_by_id = {str(row.get("_id")): row for row in leads_list}
         for c in cycle_docs:
             lid = str(c.get("lead_id"))
+            if c.get("administrative_correction_id"):
+                page_lead = page_leads_by_id.get(lid)
+                expected_owner_id = user_id if user_id and not can_administer_leads(user_role) else None
+                if not _is_valid_administrative_cycle(
+                    c, page_lead, expected_owner_user_id=expected_owner_id
+                ):
+                    continue
             if lid not in cycle_by_lead_id:
                 cycle_by_lead_id[lid] = c
+        page_cycle_ids = list({
+            str(cycle.get("assignment_cycle_id") or "")
+            for cycle in cycle_by_lead_id.values()
+            if cycle.get("assignment_cycle_id")
+        })
+        if page_cycle_ids:
+            result_rows = await adb["crm_management_results"].find({
+                "assignment_cycle_id": {"$in": page_cycle_ids},
+                "status": "completed",
+            }, {
+                "lead_id": 1, "assignment_cycle_id": 1, "result_type": 1,
+                "result": 1, "status": 1, "occurred_at": 1,
+            }).to_list(length=5000)
+            for result in result_rows:
+                management_results_by_cycle.setdefault(
+                    str(result.get("assignment_cycle_id") or ""), []
+                ).append(result)
+
+            from chatbot.crm_metrics import coerce_utc_datetime
+            cycle_assignment_times = [
+                coerce_utc_datetime(cycle.get("assigned_at"))
+                for cycle in cycle_by_lead_id.values()
+            ]
+            cycle_assignment_times = [value for value in cycle_assignment_times if value]
+            if cycle_assignment_times:
+                earliest_assignment = min(cycle_assignment_times)
+                current_events = await adb["crm_events"].find({
+                    "lead_id": {"$in": page_lead_lookup_ids},
+                    "$or": [
+                        {"timestamp": {"$gte": earliest_assignment}},
+                        {"occurred_at": {"$gte": earliest_assignment}},
+                    ],
+                }, {
+                    "lead_id": 1, "assignment_cycle_id": 1, "timestamp": 1,
+                    "occurred_at": 1, "type": 1, "actor": 1, "actor_type": 1,
+                    "confirmed": 1, "result": 1, "meta": 1,
+                }).to_list(length=10000)
+                for event in current_events:
+                    current_cycle_events_by_lead.setdefault(
+                        str(event.get("lead_id") or ""), []
+                    ).append(event)
 
     # 5. PROCESAR LEADS EN MEMORIA
     state_map = {
@@ -1123,13 +1497,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             recognized_management_ev = recognized_management_map.get(raw_phone)
         current_cycle = cycle_by_lead_id.get(str(lead.get("_id"))) if lead.get("_id") else None
         lifecycle = lead.get("lifecycle") or {}
+        pending_notification_sla = bool(
+            current_cycle and current_cycle.get("sla_start_status") == "pending_notification"
+        )
         # Never combine new-cycle SLA with historical lead fields.  If a
         # canonical active cycle exists, it is the sole source for this row.
         cycle_assignment_raw = ((current_cycle or {}).get("assigned_at")
                                 or lifecycle.get("assigned_at"))
-        cycle_sla_started_raw = ((current_cycle or {}).get("sla_started_at")
-                                or lifecycle.get("sla_started_at")
-                                or cycle_assignment_raw)
+        if current_cycle:
+            cycle_sla_started_raw = (
+                None if pending_notification_sla
+                else current_cycle.get("sla_started_at") or cycle_assignment_raw
+            )
+        else:
+            cycle_sla_started_raw = lifecycle.get("sla_started_at") or cycle_assignment_raw
         assigned_for_cycle = _coerce_crm_datetime(
             cycle_assignment_raw or lead.get("fecha_asignacion")
         )
@@ -1165,9 +1546,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         # applying it here incorrectly discarded the saved result and exposed
         # an older WhatsApp click as the latest action.
         if recognized_management_ev:
-            event_cycle_id = recognized_management_ev.get("assignment_cycle_id")
-            if (current_cycle_id and event_cycle_id
-                    and str(event_cycle_id) != str(current_cycle_id)):
+            if current_cycle and not _event_belongs_to_current_cycle(recognized_management_ev, current_cycle):
                 recognized_management_ev = None
         # Management is cycle-scoped and must come from a canonical human result.
         # A legacy lead-level timestamp must never mark a newer active cycle as
@@ -1175,9 +1554,27 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         cycle_management_at = (current_cycle or {}).get("first_valid_management_at")
         legacy_management_at = (lead.get("lifecycle") or {}).get("first_valid_management_at")
         from chatbot.crm_metrics import is_first_sla_management_completed
+        management_cycle_id = str((current_cycle or {}).get("assignment_cycle_id") or "")
+        current_cycle_result_rows = list(
+            management_results_by_cycle.get(management_cycle_id, ())
+        )
+        if current_cycle:
+            cycle_assigned_at = coerce_crm_datetime(current_cycle.get("assigned_at"))
+            if cycle_assigned_at:
+                current_cycle_result_rows = [
+                    result for result in current_cycle_result_rows
+                    if coerce_crm_datetime(result.get("occurred_at"))
+                    and coerce_crm_datetime(result.get("occurred_at")) >= cycle_assigned_at
+                ]
+        current_cycle_result = max(
+            current_cycle_result_rows,
+            key=lambda row: coerce_crm_datetime(row.get("occurred_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            default=None,
+        )
         canonical_cycle_managed = bool(current_cycle and is_first_sla_management_completed(
             current_cycle,
-            events=[recognized_management_ev] if recognized_management_ev else (),
+            current_cycle_result_rows,
+            current_cycle_events_by_lead.get(str(lead.get("_id") or ""), ()),
         ))
         has_real_management = bool(
             recognized_management_ev is not None
@@ -1187,15 +1584,28 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         )
         if recognized_management_ev:
             commercial_ev = recognized_management_ev
+        elif current_cycle_result:
+            commercial_ev = {
+                "result": current_cycle_result.get("result_type") or current_cycle_result.get("result"),
+                "timestamp": current_cycle_result.get("occurred_at"),
+                "meta": current_cycle_result.get("metadata") or {},
+            }
         else:
             commercial_ev = None
             for candidate_ev in events_list:
-                if (candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone
-                        or str(candidate_ev.get("lead_id") or "") == str(lead.get("_id") or "")):
+                same_lead = (
+                    candidate_ev.get("phone", "").replace("+", "").strip() == raw_phone
+                    or str(candidate_ev.get("lead_id") or "") == str(lead.get("_id") or "")
+                )
+                belongs_to_cycle = (
+                    _event_belongs_to_current_cycle(candidate_ev, current_cycle)
+                    if current_cycle else True
+                )
+                if same_lead and belongs_to_cycle:
                     if candidate_ev.get("type") in TELEMETRY_LABEL_TYPES:
                         commercial_ev = candidate_ev
                         break
-            if not commercial_ev:
+            if not commercial_ev and not current_cycle:
                 commercial_ev = last_ev
         if commercial_ev:
             event_meta = commercial_ev.get("meta") or commercial_ev.get("metadata") or {}
@@ -1217,6 +1627,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 else persisted_action
             )
             last_action_note = ""
+        if current_cycle and has_real_management and not commercial_ev:
+            last_action_text = "Gestión registrada en ciclo actual"
+            last_action_note = "El resultado del ciclo se conserva en el historial del lead."
 
         last_message_at = lead.get("last_message_at")
         message_dt = _coerce_crm_datetime(last_message_at)
@@ -1229,6 +1642,11 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         if has_new_customer_reply:
             last_action_text = "Nueva respuesta del cliente"
             last_action_note = lead.get("last_message_preview") or ""
+        elif current_cycle and not has_real_management:
+            # Keep the old commercial history in the lead timeline, but don't
+            # display it as work completed in this new operational cycle.
+            last_action_text = "Sin gestión en ciclo actual"
+            last_action_note = "El historial anterior se conserva en el detalle del lead."
         
         ultimo_msg_ts = lead.get("prospecto", {}).get("ultimo_mensaje")
         lifecycle_ts = ((current_cycle or {}).get("assigned_at")
@@ -1245,12 +1663,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         )
         
         estado_final = estado_db
+        admin_cycle_pending = bool(
+            current_cycle
+            and current_cycle.get("administrative_correction_id")
+            and not has_real_management
+        )
         # A stale CONTACTED value can remain on a lead after reassignment or
         # bot outreach. For an active cycle, only canonical human management
         # may promote the row; outreach alone remains Sin Atender.
-        if current_cycle and not has_real_management and estado_final not in (
-            PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
-            "ARCHIVED", "SUPPRESSED",
+        if current_cycle and not has_real_management and (
+            admin_cycle_pending or estado_final not in (
+                PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
+                "ARCHIVED", "SUPPRESSED",
+            )
         ):
             estado_final = PipelineStage.NEW
         elif (recognized_management_ev or has_real_management) and estado_final == PipelineStage.NEW:
@@ -1294,13 +1719,15 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             calculate_cycle_sla, calculate_sla, is_pre_visual_cutover,
             resolve_cycle_hot_start_details, resolve_cycle_sla_start,
         )
-        assigned_at_raw = ((current_cycle or {}).get("sla_started_at")
-                           or (current_cycle or {}).get("assigned_at")
-                           or lifecycle.get("sla_started_at") or lifecycle.get("assigned_at")
-                           or lead.get("fecha_asignacion"))
-        assigned_at = (_coerce_crm_datetime(assigned_at_raw)
-                       or assigned_for_cycle
-                       or effective_sent_at)
+        if pending_notification_sla:
+            assigned_at = None
+        elif current_cycle:
+            assigned_at = _coerce_crm_datetime(resolve_cycle_sla_start(cycle=current_cycle))
+        else:
+            assigned_at_raw = lifecycle.get("sla_started_at") or lifecycle.get("assigned_at") or lead.get("fecha_asignacion")
+            assigned_at = (_coerce_crm_datetime(assigned_at_raw)
+                           or assigned_for_cycle
+                           or effective_sent_at)
         visual_pre = is_pre_visual_cutover((current_cycle or {}).get("assigned_at") or assigned_at) if assigned_at else True
         
         sla_hours = 0
@@ -1310,7 +1737,20 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         sla_managed_outside = False
         sla_timing = "SLA no disponible"
         
-        if not assigned_at:
+        if pending_notification_sla:
+            sla_status = "pending_notification"
+            sla_label = "Pendiente de notificación"
+            sla_timing = "El SLA inicia tras confirmar la entrega"
+            sla_info = {
+                "status": sla_status,
+                "canonical_state": "AWAITING_NOTIFICATION",
+                "total_minutes": None,
+                "hot_minutes": None,
+                "threshold_minutes": 60 if temp == "HOT" else 180,
+                "assigned_at": None,
+                "deadline_at": None,
+            }
+        elif not assigned_at:
             sla_status = "historical" if visual_pre else "unknown"
             sla_label = "Histórico" if visual_pre else "SLA S/I"
         else:
@@ -1408,6 +1848,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         sla_labels_map = {
             "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Atención",
             "good": "En plazo", "pending": "Pendiente Asignación", "fulfilled": "Gestionado",
+            "pending_notification": "Pendiente de notificación",
             "hot_critical": "Vencido", "hot_near_critical": "Próximo a vencer",
             "hot_warning": "Atención prioritaria",
             "informativo": "Antigüedad", "historical": "Histórico", "unknown": "SLA S/I",
@@ -1425,12 +1866,19 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
 
         sla_started_display = cycle_sla_started_raw or lifecycle_ts
         management_age = format_relative_time(last_ts_obj).replace("Hace", "hace", 1)
-        if estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
+        if pending_notification_sla:
+            age_label = "Pendiente de notificación"
+        elif estado_final in (PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST):
             age_label = f"Cerrado {format_relative_time(lifecycle_ts or created_ts).replace('Hace', 'hace', 1)}"
-        elif last_action_text != "Sin gestión registrada":
+        elif last_action_text not in {"Sin gestión registrada", "Sin gestión en ciclo actual"}:
             age_label = f"Última gestión {management_age}"
         else:
-            assigned_age = _after_hours_label(lifecycle_ts or created_ts, sla_started_raw=sla_started_display, has_real_management=has_real_management)
+            assigned_age = _after_hours_label(
+                lifecycle_ts or created_ts,
+                sla_started_raw=sla_started_display,
+                has_real_management=has_real_management,
+                sla_pending=bool(current_cycle and current_cycle.get("sla_start_status") == "pending_notification"),
+            )
             if assigned_age.startswith("anoche"):
                 age_label = f"Asignado {assigned_age}"
             elif estado_final == PipelineStage.NEW:
@@ -1443,7 +1891,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "lead_id": str(lead.get("_id") or ""),
             "phone_is_synthetic": bool(lead.get("phone_is_synthetic")) or str(lead.get("phone", "")).startswith("no-phone-"),
             "sla_status": sla_status,
-            "sla_timing": sla_timing if assigned_at else "SLA no disponible",
+            "sla_timing": sla_timing if (assigned_at or pending_notification_sla) else "SLA no disponible",
             "sla_managed_outside": sla_managed_outside,
             "sla_label": sla_label,
             "age_label": age_label,
@@ -1454,6 +1902,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "prioridad_badge": prioridad_badge,
             "lead_temperature_effective": temp,
             "estado": estado_final,
+            "estado_comercial_historico": str(getattr(estado_db, "value", estado_db)),
+            "gestion_ciclo_pendiente": admin_cycle_pending,
             "estado_badge": config_estado["label"],
             "can_register_management": estado_final not in (
                 PipelineStage.CLOSED_WON, PipelineStage.CLOSED_LOST,
@@ -1474,7 +1924,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
-            "fecha_asignacion_relativa": _after_hours_label(lifecycle_ts or lead.get("fecha_asignacion"), sla_started_raw=sla_started_display, has_real_management=has_real_management),
+            "fecha_asignacion_relativa": _after_hours_label(
+                lifecycle_ts or lead.get("fecha_asignacion"),
+                sla_started_raw=sla_started_display,
+                has_real_management=has_real_management,
+                sla_pending=bool(current_cycle and current_cycle.get("sla_start_status") == "pending_notification"),
+            ),
             "assignment_cycle_id": current_cycle_id,
             "assigned_at": assigned_for_cycle,
             "sla_started_at": assigned_at,

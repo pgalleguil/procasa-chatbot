@@ -204,6 +204,14 @@ def test_sla_priority_uses_current_cycle_values_for_sort_order():
     }) == (-1, 0)
 
 
+def test_sla_start_wall_clock_is_rendered_in_chile_local_time():
+    instant = datetime(2026, 10, 13, 15, 59, tzinfo=timezone.utc)
+    local = api_crm._crm_sla_display_datetime(instant)
+
+    assert local == CHILE_TZ.localize(datetime(2026, 10, 13, 12, 59))
+    assert local.strftime("%d/%m/%Y %H:%M") == "13/10/2026 12:59"
+
+
 def test_crm_active_cycle_lookup_has_separate_admin_identity_branch():
     stage = api_crm._canonical_active_cycle_lookup_stage()
     lookup = stage["$lookup"]

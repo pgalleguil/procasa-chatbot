@@ -49,6 +49,12 @@ def coerce_crm_datetime(value):
     return None
 
 
+def _crm_sla_display_datetime(value):
+    """Convert an SLA instant to Chile local time for display fields."""
+    parsed = coerce_crm_datetime(value)
+    return parsed.astimezone(CHILE_TZ) if parsed else None
+
+
 # Module-level constants for CRM event display (defined before any function).
 TYPE_LABELS = {
     "CLICK_WHATSAPP_LEAD": "WhatsApp abierto",
@@ -1764,7 +1770,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             if current_cycle is not None and isinstance(current_cycle, dict):
                 canonical_assigned_at = resolve_cycle_sla_start(cycle=current_cycle)
                 if canonical_assigned_at:
-                    assigned_at = canonical_assigned_at
+                    assigned_at = _crm_sla_display_datetime(canonical_assigned_at)
                 hot_resolution = resolve_cycle_hot_start_details(cycle=current_cycle, lead=lead)
                 hot_started_at = hot_resolution.get("hot_start")
                 cycle_sla_events = [recognized_management_ev] if recognized_management_ev else ()

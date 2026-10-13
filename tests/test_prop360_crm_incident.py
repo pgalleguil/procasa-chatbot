@@ -113,7 +113,7 @@ def test_late_prop360_contact_after_managed_visit_does_not_reset_sla(monkeypatch
     }
     assert extractor.process_lead(raw) == "updated"
     saved = db["leads"].find_one({"_id": lead_id})
-    assert saved["lifecycle"]["assigned_at"] == original["assigned_at"]
+    assert crm_metrics.coerce_utc_datetime(saved["lifecycle"]["assigned_at"]) == crm_metrics.coerce_utc_datetime(original["assigned_at"])
     assert saved["lifecycle"]["current_assignment_cycle_id"] == original["assignment_cycle_id"]
     assert saved["lead_temperature_effective"] == "HOT"
     assert saved["pipeline_stage"] == "VISIT_SCHEDULED"

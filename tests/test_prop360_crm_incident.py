@@ -51,6 +51,103 @@ def test_new_prop360_event_creates_fresh_cycle_for_same_executive():
     assert db["crm_assignment_cycles"].count_documents({"lead_id": "lead-1"}) == 2
 
 
+def _managed_visit_before_late_prop360(monkeypatch):
+    """One canonical lead already handled by WhatsApp before a portal backfill."""
+    db = mongomock.MongoClient().incident
+    db["lead_ingest_events"].create_index([("source_system", 1), ("source_event_id", 1)], unique=True)
+    lead_id, user_id = ObjectId(), ObjectId()
+    old_assigned_at = datetime(2026, 10, 11, 16, 47, 31, tzinfo=timezone.utc)
+    managed_at = datetime(2026, 10, 11, 18, 23, 49, tzinfo=timezone.utc)
+    db["usuarios"].insert_one({"_id": user_id, "nombre": "Mariela Arriagada"})
+    lead = {
+        "_id": lead_id, "phone": "+56968780917",
+        "ejecutivo_asignado": "Mariela Arriagada",
+        "prospecto": {"nombre": "Cliente", "codigo": "16544", "ejecutivo": "Mariela Arriagada"},
+        "lead_temperature_effective": "HOT", "pipeline_stage": "VISIT_SCHEDULED",
+        "lifecycle": {"assigned_at": old_assigned_at, "first_valid_management_at": managed_at},
+        "messages": [], "source_events": [],
+    }
+    db["leads"].insert_one(lead.copy())
+    old_cycle = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id=str(user_id),
+        assigned_to_display_name="Mariela Arriagada",
+        assigned_by="commercial_intake", reason="inbound_message",
+        assigned_at=old_assigned_at, property_code="16544",
+    )
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": old_cycle["assignment_cycle_id"]},
+        {"$set": {"first_valid_management_at": managed_at,
+                  "first_valid_management_actor": str(user_id),
+                  "last_management_result": "VISIT_SCHEDULED"}},
+    )
+    monkeypatch.setattr(ingest_service, "get_db", lambda: db)
+    monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
+    monkeypatch.setattr(ingest_service, "_enrich_from_cartera", lambda _db, code: {
+        "property_found": True, "comuna": "Maipú", "region": "Metropolitana",
+        "operacion": "Arriendo", "tipo": "Local Comercial",
+    })
+    monkeypatch.setattr(
+        ingest_service, "find_responsible_executive",
+        lambda **kwargs: ("Mariela Arriagada", "+56911111111", "property"),
+    )
+    monkeypatch.setattr(
+        ingest_service, "get_next_business_slot",
+        lambda _now: datetime(2026, 10, 12, 12, tzinfo=timezone.utc),
+    )
+    monkeypatch.setattr(ingest_service, "log_event", lambda *args, **kwargs: None)
+    extractor = extractor_prop360.Prop360Extractor("", "", dry_run=False)
+    monkeypatch.setattr(extractor, "normalize_lead", lambda raw: raw)
+    return db, extractor, lead_id, old_cycle
+
+
+def test_late_prop360_contact_after_managed_visit_does_not_reset_sla(monkeypatch):
+    db, extractor, lead_id, original = _managed_visit_before_late_prop360(monkeypatch)
+    raw = {
+        "idContacto": "11838", "codigo": "16544", "contFono": "+56968780917",
+        "contNombre": "Cliente", "contMsg": "Contacto vía Portal Inmobiliario (form)",
+        "fechaContacto": "2026-10-11T13:46:39", "medio": "Portal Inmobiliario",
+    }
+    assert extractor.process_lead(raw) == "updated"
+    saved = db["leads"].find_one({"_id": lead_id})
+    assert saved["lifecycle"]["assigned_at"] == original["assigned_at"]
+    assert saved["lifecycle"].get("current_assignment_cycle_id") is None
+    assert saved["lead_temperature_effective"] == "HOT"
+    assert saved["pipeline_stage"] == "VISIT_SCHEDULED"
+    assert any(e["source_event_id"] == "11838" for e in saved["source_events"])
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead_id}) == 1
+    assert db["crm_assignment_cycles"].find_one({"assignment_cycle_id": original["assignment_cycle_id"]})["cycle_status"] == "active"
+    assert db["crm_notifications_v1"].count_documents({}) == 0
+    ledger = db["lead_ingest_events"].find_one({"source_system": "prop360", "source_event_id": "11838"})
+    assert ledger["status"] == "completed"
+    assert ledger["commercial_cycle_suppressed_reason"] == "HISTORICAL_CONTACT_ALREADY_MANAGED"
+    assert ledger["prior_managed_cycle_id"] == original["assignment_cycle_id"]
+    assert extractor.process_lead(raw) == "duplicate"
+
+
+def test_prop360_new_contact_after_management_creates_fresh_cycle(monkeypatch):
+    db, extractor, lead_id, original = _managed_visit_before_late_prop360(monkeypatch)
+
+    def enqueue_digest(_db, *, lead, cycle):
+        notification = {"assignment_cycle_ids": [cycle["assignment_cycle_id"]], "state": "pending"}
+        _db["crm_notifications_v1"].insert_one(notification)
+        return notification
+
+    monkeypatch.setattr("chatbot.crm_non_hot_digest.accumulate_non_hot_lead", enqueue_digest)
+    raw = {
+        "idContacto": "11839", "codigo": "16544", "contFono": "+56968780917",
+        "contNombre": "Cliente", "contMsg": "Otra consulta nueva",
+        "fechaContacto": "2026-10-12T15:00:00", "medio": "Portal Inmobiliario",
+    }
+    assert extractor.process_lead(raw) == "updated"
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead_id}) == 2
+    assert db["crm_assignment_cycles"].find_one({"assignment_cycle_id": original["assignment_cycle_id"]})["cycle_status"] == "closed"
+    new_cycle = db["crm_assignment_cycles"].find_one({"source_system": "prop360", "source_event_id": "11839"})
+    assert new_cycle["cycle_status"] == "active"
+    assert new_cycle.get("first_valid_management_at") is None
+    assert db["crm_notifications_v1"].count_documents({}) == 1
+    assert db["lead_ingest_events"].find_one({"source_event_id": "11839"})["suppress_commercial_cycle"] is False
+
+
 def test_new_prop360_event_routes_new_cycle_to_changed_executive():
     db = mongomock.MongoClient().incident
     lead = {"_id": "lead-2", "lead_temperature_effective": "COLD"}

@@ -25,7 +25,8 @@ jobs:
           python -m py_compile \
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
-            release_info.py owner_portal/campaign.py owner_portal/monthly.py \
+            release_info.py chatbot/ingest_service.py scraping_convecta/extractor_prop360.py \
+            owner_portal/campaign.py owner_portal/monthly.py \
             owner_portal/price_revalidation.py campanas/handler.py \
             campanas/owner_campaign_live_sender.py
       - name: Verify production ancestry
@@ -49,6 +50,9 @@ jobs:
             tests: >-
               tests/test_rut_phone_validation.py
               tests/test_phone_assignment_guards.py
+          - suite: Prop360 managed contact and event idempotency
+            tests: >-
+              tests/test_prop360_crm_incident.py
           - suite: Property portal resolution regressions
             tests: >-
               tests/test_commercial_intake_property_context.py

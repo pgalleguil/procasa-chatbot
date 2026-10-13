@@ -74,6 +74,10 @@ def _managed_visit_before_late_prop360(monkeypatch):
         assigned_by="commercial_intake", reason="inbound_message",
         assigned_at=old_assigned_at, property_code="16544",
     )
+    db["leads"].update_one(
+        {"_id": lead_id},
+        {"$set": {"lifecycle.current_assignment_cycle_id": old_cycle["assignment_cycle_id"]}},
+    )
     db["crm_assignment_cycles"].update_one(
         {"assignment_cycle_id": old_cycle["assignment_cycle_id"]},
         {"$set": {"first_valid_management_at": managed_at,
@@ -110,7 +114,7 @@ def test_late_prop360_contact_after_managed_visit_does_not_reset_sla(monkeypatch
     assert extractor.process_lead(raw) == "updated"
     saved = db["leads"].find_one({"_id": lead_id})
     assert saved["lifecycle"]["assigned_at"] == original["assigned_at"]
-    assert saved["lifecycle"].get("current_assignment_cycle_id") is None
+    assert saved["lifecycle"]["current_assignment_cycle_id"] == original["assignment_cycle_id"]
     assert saved["lead_temperature_effective"] == "HOT"
     assert saved["pipeline_stage"] == "VISIT_SCHEDULED"
     assert any(e["source_event_id"] == "11838" for e in saved["source_events"])

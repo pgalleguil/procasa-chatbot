@@ -190,13 +190,9 @@ def should_send_now() -> bool:
     Check if current time in Chile is within business hours.
     """
     now = datetime.now(CHILE_TZ)
-    weekday = now.weekday()
     hour = now.hour
-    
-    is_business_day = weekday in BUSINESS_DAYS
-    is_in_hours = (hour >= BUSINESS_START_HOUR and hour < BUSINESS_END_HOUR)
-    
-    result = is_business_day and is_in_hours
+    from .business_calendar import is_business_time
+    result = is_business_time(now, start_hour=BUSINESS_START_HOUR, end_hour=BUSINESS_END_HOUR)
     
     # logger.info(f"[SCHEDULE_DEBUG] Chile Time: {now.strftime('%H:%M:%S')} | Hour: {hour} | Weekday: {weekday} | In Hours: {is_in_hours} | Final Result: {result}")
     

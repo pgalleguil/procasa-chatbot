@@ -8,7 +8,7 @@ from bson import ObjectId
 
 from chatbot import whatsapp_client
 from chatbot.constants import CHILE_TZ
-from chatbot.crm_metrics import calculate_sla
+from chatbot.crm_metrics import calculate_sla, commercial_sla_start_at
 from chatbot.crm_notifications import individual_identity
 from chatbot.crm_sla_reassignment_notifications import (
     COLLECTION,
@@ -118,8 +118,29 @@ def test_delivered_with_provider_timestamp_activates_destination_cycle():
     cycle = db["crm_assignment_cycles"].find_one({"_id": "cycle-1"})
     assert result["status"] == "delivered"
     assert cycle["reassignment_state"] == "active"
-    assert cycle["sla_started_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(delivered_at).replace(tzinfo=None)
     assert cycle["owner_notified_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["delivery_confirmed"] is True
+    assert cycle["delivery_confirmed_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["sla_start_status"] == "started"
+
+
+def test_delivery_on_chile_holiday_starts_sla_at_next_business_opening():
+    db = _fixture()
+    delivered_at = datetime(2026, 10, 12, 15, 0, tzinfo=UTC)
+    result = record_sla_reassignment_delivery_status(
+        db,
+        provider_message_id="provider-1",
+        delivery_status="delivered",
+        delivered_at=delivered_at,
+    )
+    cycle = db["crm_assignment_cycles"].find_one({"_id": "cycle-1"})
+    expected_sla_start = commercial_sla_start_at(delivered_at)
+    assert expected_sla_start == datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
+    assert result["activation"]["status"] == "activated"
+    assert cycle["owner_notified_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["delivery_confirmed_at"] == delivered_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == expected_sla_start.replace(tzinfo=None)
 
 
 def test_read_activates_once_and_duplicate_poll_is_idle():
@@ -163,7 +184,7 @@ def test_webhook_then_poll_keeps_first_provider_clock():
     assert first["activation"]["status"] == "activated"
     assert second["activation"]["status"] == "already_active"
     assert notification["delivered_at"] == webhook_at.replace(tzinfo=None)
-    assert cycle["sla_started_at"] == webhook_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(webhook_at).replace(tzinfo=None)
 
 
 def test_delivered_then_sent_cannot_regress_delivery_or_clock():
@@ -188,7 +209,7 @@ def test_delivered_then_sent_cannot_regress_delivery_or_clock():
     assert notification["actually_delivered"] is True
     assert notification["provider_status_regression_observed"] is True
     assert notification["effective_delivery_at"] == first_at.replace(tzinfo=None)
-    assert cycle["sla_started_at"] == first_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(first_at).replace(tzinfo=None)
 
 
 def test_concurrent_delivered_and_sent_keeps_confirmed_delivery():
@@ -380,7 +401,9 @@ def test_delivered_without_provider_timestamp_uses_first_authenticated_observati
     assert notification["delivery_confirmed_observed_at"] == datetime(2026, 9, 20, 12, 5)
     assert notification["effective_delivery_at"] == datetime(2026, 9, 20, 12, 5)
     assert "delivered_at" not in notification
-    assert cycle["sla_started_at"] == datetime(2026, 9, 20, 12, 5)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(
+        datetime(2026, 9, 20, 12, 5, tzinfo=UTC)
+    ).replace(tzinfo=None)
     assert cycle["reassignment_state"] == "active"
 
 
@@ -399,7 +422,7 @@ def test_read_without_provider_timestamp_uses_first_authenticated_observation():
     assert notification["delivery_status"] == "read"
     assert notification["delivery_time_source"] == "PROVIDER_STATUS_FIRST_OBSERVED_AT"
     assert notification["effective_delivery_at"] == observed_at.replace(tzinfo=None)
-    assert cycle["sla_started_at"] == observed_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(observed_at).replace(tzinfo=None)
 
 
 def test_network_error_keeps_sent_without_sla_or_send():
@@ -576,7 +599,7 @@ def test_historical_delivery_recovery_is_idempotent_and_activates_existing_cycle
     assert notification["delivery_time_source"] == "PROVIDER_STATUS_FIRST_OBSERVED_AT"
     assert notification["delivery_evidence_reference"] == "render-event-123"
     assert "delivered_at" not in notification
-    assert cycle["sla_started_at"] == observed_at.replace(tzinfo=None)
+    assert cycle["sla_started_at"] == commercial_sla_start_at(observed_at).replace(tzinfo=None)
 
 
 def test_historical_recovery_resolves_objectid_notification_from_string_payload():

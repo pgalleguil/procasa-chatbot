@@ -6340,6 +6340,7 @@ async def _render_crm_list(
             ordenar_por=orden,
             user_role=user_role,
             user_name=user_name,
+            user_id=str(user.get("_id") or ""),
             ejecutivo_filter=ejecutivo,
             temperatura_filter=temperatura,
             page=page,

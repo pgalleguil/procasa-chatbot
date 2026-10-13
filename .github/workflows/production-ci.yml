@@ -60,6 +60,8 @@ jobs:
           - suite: CRM management SLA
             tests: >-
               tests/test_crm_management_sla.py
+              tests/test_crm_admin_cycle_inbox.py
+              tests/test_sla_business_minutes.py
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py
@@ -74,6 +76,7 @@ jobs:
             tests: >-
               tests/test_crm_sla_reassignment_notifications.py
               tests/test_crm_sla_delivery_reconciliation.py
+              tests/test_whatsapp_status_confirmation.py
           - suite: SLA shadow and reassignment guards
             tests: >-
               tests/test_crm_sla_shadow_infrastructure.py

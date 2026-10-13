@@ -26,7 +26,7 @@ from .crm_notifications import (
     refresh_lease,
     reserve_for_delivery,
 )
-from .crm_metrics import coerce_utc_datetime, utc_now
+from .crm_metrics import coerce_utc_datetime, commercial_sla_start_at, utc_now
 from .mongo_identity import mongo_id_variants
 from .crm_sla_cycle_links import (
     build_sla_short_url,
@@ -999,6 +999,7 @@ def mark_new_owner_notification_delivered(
             "reason": "DELIVERY_CONFIRMED_TIMESTAMP_MISSING",
             "notification_id": notification_id,
         }
+    effective_sla_start = commercial_sla_start_at(delivered) or delivered
 
     lead_id = str(notification.get("lead_id") or "").strip()
     cycle_id = str(notification.get("assignment_cycle_id") or "").strip()
@@ -1039,7 +1040,10 @@ def mark_new_owner_notification_delivered(
         },
         {"$set": {
             "owner_notified_at": delivered,
-            "sla_started_at": delivered,
+            "delivery_confirmed": True,
+            "delivery_confirmed_at": delivered,
+            "sla_start_status": "started",
+            "sla_started_at": effective_sla_start,
             "reassignment_state": "active",
             "notification_delivery_status": "delivered",
             "updated_at": delivered,
@@ -1064,7 +1068,7 @@ def mark_new_owner_notification_delivered(
             "lifecycle.assigned_to_user_id": recipient_id,
         },
         {"$set": {
-            "lifecycle.sla_started_at": delivered,
+            "lifecycle.sla_started_at": effective_sla_start,
             "lifecycle.owner_notified_at": delivered,
         }},
     )
@@ -1072,7 +1076,8 @@ def mark_new_owner_notification_delivered(
         "status": "activated",
         "assignment_cycle_id": cycle_id,
         "owner_notified_at": delivered,
-        "sla_started_at": delivered,
+        "delivery_confirmed_at": delivered,
+        "sla_started_at": effective_sla_start,
         "notification_id": notification_id,
     }
 

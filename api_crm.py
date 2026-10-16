@@ -471,7 +471,15 @@ def _canonical_active_cycle_lookup_stage():
                     ]},
                 ],
             }},
-            {"$sort": {"assigned_at": -1}},
+            # Normalize legacy ISO strings and BSON Date values before MongoDB
+            # picks the newest active cycle for a lead.
+            {"$set": {"_assigned_at_sort": {"$convert": {
+                "input": "$assigned_at",
+                "to": "date",
+                "onError": None,
+                "onNull": None,
+            }}}},
+            {"$sort": {"_assigned_at_sort": -1}},
             {"$limit": 1},
         ],
         "as": "_active_cycle",
@@ -1075,7 +1083,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "_has_assigned": {"$cond": ["$_has_cycle", 0, 1]},
             "_cycle_assigned_at": {"$cond": [
                 "$_has_cycle",
-                "$_active_cycle.assigned_at",
+                {"$convert": {
+                    "input": "$_active_cycle.assigned_at",
+                    "to": "date",
+                    "onError": None,
+                    "onNull": None,
+                }},
                 None,
             ]},
             "_sla_pending_notification": {"$eq": [

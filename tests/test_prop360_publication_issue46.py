@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from pathlib import Path
 
 import mongomock
 import pytest
@@ -16,8 +18,12 @@ from chatbot.publication_sync import (
     _existing_claims,
     parse_proppit_destinations,
     run_publication_reconciliation,
+    run_publication_sync_batch,
     safe_fetch_html,
+    sync_single_property_publications,
 )
+from chatbot.publication_import import normalize_authorized_publication_rows
+from chatbot.publication_audit import run_sucre_publication_audit
 from chatbot.property_lookup import build_property_alias, lookup_property_link
 from scraping_convecta.scraping_prop360_ficha_completa import parse_publicaciones_json, upsert_ficha
 
@@ -89,6 +95,7 @@ class FakeProp360:
             "response_valid": True, "office_id": 7, "complete": True,
             "reported_total": len(self.rows),
         }
+        self.portal_calls = []
 
     def login(self):
         return True
@@ -98,7 +105,27 @@ class FakeProp360:
         return self.rows
 
     def get_portales(self, codigo):
+        self.portal_calls.append(str(codigo))
         return deepcopy(self.payloads[str(codigo)])
+
+
+class IntermittentFakeProp360(FakeProp360):
+    def __init__(self, *, fail_code="2", **kwargs):
+        rows = [{"codigo": code, "estado": "Activa"} for code in ("1", "2", "3")]
+        payloads = {code: {"publications": [{"Portal": "Portal Inmobiliario", "Publications": [{
+            "Url": f"https://casa.mercadolibre.cl/MLC-{1000000000 + int(code)}-venta-_JM",
+            "Code": str(1000000000 + int(code)), "PropOperation": "V", "Status": 1,
+        }]}]} for code in ("1", "2", "3")}
+        super().__init__(rows=rows, payloads=payloads)
+        self.fail_code = fail_code
+        self.calls = []
+
+    def get_portales(self, codigo):
+        code = str(codigo)
+        self.calls.append(code)
+        if self.fail_code == code:
+            raise TimeoutError("simulated Prop360 timeout")
+        return deepcopy(self.payloads[code])
 
 
 class ReadOnlyCollection:
@@ -269,22 +296,68 @@ def test_duplicate_mlc_conflicts_across_legacy_format_variants():
 
 def test_chatbot_processing_service_uses_current_resolver_path(monkeypatch):
     db = mongomock.MongoClient().db
-    aliases = [_verified_alias(DESTINATIONS["trovit"], "trovit")]
+    aliases = [
+        _verified_alias(OLD_URL, "mercadolibre", OLD_MLC, status="historical"),
+        _verified_alias(NEW_URL, "mercadolibre", NEW_MLC),
+        _verified_alias(AGGREGATOR, "proppit", "10543041010016479"),
+    ]
+    aliases.extend(_verified_alias(url, provider) for provider, url in DESTINATIONS.items())
     prop = _doc(publications={"aliases": aliases})
     prop["ubicacion"] = {"comuna": "Lo Prado"}
     prop["tipo_operacion"] = {"tipo": "Casa", "venta": True}
     db.universo_cartera_prop360.insert_one(prop)
     monkeypatch.setattr("chatbot.link_extractor.get_db", lambda: db)
 
+    from chatbot import processing_service
+    from chatbot.processing_service import LeadProcessingService
+    real_resolver = processing_service.resolver_referencia_propiedad
+    resolved = []
+
+    def capture_resolver(*args, **kwargs):
+        result = real_resolver(*args, **kwargs)
+        resolved.append(result)
+        return result
+
+    monkeypatch.setattr(processing_service, "resolver_referencia_propiedad", capture_resolver)
+
+    references = [OLD_MLC, NEW_MLC, OLD_URL, NEW_URL, AGGREGATOR, *DESTINATIONS.values()]
+    for reference in references:
+        result = LeadProcessingService.classify({
+            "phone": "+56900000000",
+            "messages": [{"role": "user", "content": reference}],
+        })
+        assert result["comuna"] == "Lo Prado", (reference, result)
+        assert result["tipo"] == "CASA"
+        assert result["operacion"] == "V"
+        assert resolved[-1]["status"] == "resolved"
+        assert resolved[-1]["property"]["codigo"] == CODE
+    assert resolved[0]["property"]["_link_match"]["publication_status"] == "historical"
+
+
+def test_unknown_or_ambiguous_reference_does_not_fall_back_to_old_lead_code(monkeypatch):
+    db = mongomock.MongoClient().db
+    prop = _doc(publications={"aliases": [_verified_alias(NEW_URL, "mercadolibre", NEW_MLC)]})
+    prop["ubicacion"] = {"comuna": "Lo Prado"}
+    db.universo_cartera_prop360.insert_one(prop)
+    monkeypatch.setattr("chatbot.link_extractor.get_db", lambda: db)
     from chatbot.processing_service import LeadProcessingService
 
-    result = LeadProcessingService.classify({
-        "phone": "+56900000000",
-        "messages": [{"role": "user", "content": DESTINATIONS["trovit"]}],
+    unknown = LeadProcessingService.classify({
+        "phone": "+56900000000", "codigo": "16479",
+        "messages": [{"role": "user", "content": "https://casas.trovit.cl/detail/unknown-999"}],
     })
-    assert result["comuna"] == "Lo Prado"
-    assert result["tipo"] == "CASA"
-    assert result["operacion"] == "V"
+    assert unknown == {}
+
+    duplicate = _doc(code="16500", publications={"aliases": [
+        _verified_alias(NEW_URL, "mercadolibre", NEW_MLC),
+    ]})
+    duplicate["ubicacion"] = {"comuna": "Santiago"}
+    db.universo_cartera_prop360.insert_one(duplicate)
+    ambiguous = LeadProcessingService.classify({
+        "phone": "+56900000000", "codigo": "16479",
+        "messages": [{"role": "user", "content": NEW_URL}],
+    })
+    assert ambiguous == {}
 
 
 def test_lookup_blocks_duplicate_identifier_claims():
@@ -523,13 +596,34 @@ def test_safe_fetch_allows_verified_proppit_redirect_and_revalidates_each_hop(mo
     validations = []
     session = Session()
     monkeypatch.setattr(publication_sync, "_validate_public_url", lambda url: (validations.append(url) or (True, "")))
-    monkeypatch.setattr(publication_sync, "_robots_allows", lambda *_args: (True, ""))
+    monkeypatch.setattr(publication_sync, "_robots_allows", lambda *_args, **_kwargs: (True, ""))
     monkeypatch.setattr(publication_sync, "_rate_limit", lambda _host: None)
     result = safe_fetch_html(AGGREGATOR, session=session)
     assert result["status"] == "http_200"
     assert result["final_url"] == "https://proppit.com/property-links/uuid"
     assert validations == [AGGREGATOR, "https://proppit.com/property-links/uuid"]
     assert session.trust_env is False
+
+
+def test_prop360_client_can_bound_post_attempts_for_audit():
+    from scraping_convecta.scraping_prop360_ficha_completa import Prop360Client
+
+    class FailingSession:
+        def __init__(self):
+            self.calls = 0
+
+        def post(self, *_args, **_kwargs):
+            self.calls += 1
+            raise TimeoutError("bounded test timeout")
+
+    client = Prop360Client("", "", delay=0, request_timeout=7, max_attempts=1)
+    session = FailingSession()
+    client.client = session
+    with pytest.raises(TimeoutError, match="bounded test timeout"):
+        client._post("https://prop360.invalid/portals", {})
+    assert session.calls == 1
+    assert client.request_timeout == 7
+    assert client.max_attempts == 1
 
 
 def test_full_reconciliation_dry_run_writes_no_mongo_and_reports_all_providers(tmp_path):
@@ -596,3 +690,273 @@ def test_inventory_dry_run_reports_prop360_only_and_mongo_only_codes(tmp_path):
     assert report["mongo_only"] == ["6579"]
     assert report["inventory_mismatches"] == 2
     assert report["mongo_writes"] == 0
+
+
+def test_batch_failure_middle_is_queued_and_later_codes_are_processed(tmp_path, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setenv("PUBLICATION_SYNC_EXECUTE", "true")
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    db.universo_cartera_prop360.insert_many([_doc(code=code) for code in ("1", "2", "3")])
+    fake = IntermittentFakeProp360()
+    result = run_publication_sync_batch(
+        dry_run=False, execute=True, office_id=7, batch_size=3, db=db,
+        prop360_client=fake, backup_dir=tmp_path / "durable-backup",
+        output_dir=tmp_path / "reports",
+    )
+    assert result["status"] == "partial"
+    assert result["retry_codes"] == ["2"]
+    assert set(result["terminal_codes"]) == {"1", "3"}
+    assert fake.calls == ["1", "2", "3"]
+    state = db.prop360_publication_sync_state.find_one({"_id": "2"})
+    assert state["status"] == "pending"
+    assert state["attempt_count"] == 1
+    assert state["next_retry_at"] is not None
+    assert "TimeoutError" in state["error_code"]
+    assert db.prop360_publication_sync_state.find_one({"_id": "__cursor__"})["last_code"] == "3"
+
+    db.prop360_publication_sync_state.update_one(
+        {"_id": "2"}, {"$set": {"next_retry_at": datetime.now(timezone.utc) - timedelta(seconds=1)}}
+    )
+    fake.fail_code = None
+    retried = run_publication_sync_batch(
+        dry_run=False, execute=True, office_id=7, batch_size=1, db=db,
+        prop360_client=fake, backup_dir=tmp_path / "durable-backup",
+        output_dir=tmp_path / "reports",
+    )
+    assert retried["status"] == "completed"
+    assert fake.calls[-1] == "2"
+    assert db.prop360_publication_sync_state.find_one({"_id": "2"})["status"] == "success"
+
+
+def test_sync_single_property_is_read_only_without_both_explicit_flags(tmp_path, monkeypatch):
+    monkeypatch.delenv("PUBLICATION_SYNC_EXECUTE", raising=False)
+    monkeypatch.delenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED", raising=False)
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    doc = _doc(publications={"portal_inmobiliario": {"url_mercado_libre": OLD_URL}})
+    db.universo_cartera_prop360.insert_one(doc)
+    before = db.universo_cartera_prop360.find_one({"codigo": CODE})
+    result = sync_single_property_publications(
+        FakeProp360(), db.universo_cartera_prop360, db, before,
+        payload=_payload(aggregator=None),
+    )
+    after = db.universo_cartera_prop360.find_one({"codigo": CODE})
+    assert result["proposed_change"] is True
+    assert result["mongo_writes"] == 0
+    assert after["publicaciones"] == before["publicaciones"]
+    assert db.prop360_publication_sync_state.count_documents({}) == 0
+
+
+def test_new_property_write_rejects_missing_enable_flags_and_backup(tmp_path, monkeypatch):
+    monkeypatch.delenv("PUBLICATION_SYNC_EXECUTE", raising=False)
+    monkeypatch.setenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED", "true")
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    doc = _doc(publications={})
+    db.universo_cartera_prop360.insert_one(doc)
+    with pytest.raises(RuntimeError, match="both_explicit_enable_flags"):
+        sync_single_property_publications(
+            FakeProp360(), db.universo_cartera_prop360, db, doc,
+            payload=_payload(aggregator=None), backup_dir=tmp_path, execute=True,
+        )
+    assert db.universo_cartera_prop360.find_one({"codigo": CODE})["publicaciones"] == {}
+
+
+def test_render_backup_requires_mounted_durable_root(tmp_path, monkeypatch):
+    from chatbot import publication_sync
+
+    monkeypatch.setenv("RENDER", "true")
+    root = tmp_path / "render-disk"
+    root.mkdir()
+    monkeypatch.setenv("PUBLICATION_SYNC_BACKUP_DURABLE_ROOT", str(root))
+    monkeypatch.setattr(publication_sync.os.path, "ismount", lambda _path: False)
+    with pytest.raises(RuntimeError, match="not_a_mounted_disk"):
+        publication_sync._ensure_backups([_doc()], "run", root / "backups")
+    monkeypatch.setattr(publication_sync.os.path, "ismount", lambda _path: True)
+    backup = publication_sync._ensure_backups([_doc()], "run2", root / "backups")
+    assert backup["documents"] == 1
+    assert Path(backup["path"]).exists()
+
+
+def test_reconcile_batch_cli_propagates_backup_and_output_dirs(monkeypatch, tmp_path):
+    import scripts.reconcile_sucre_publications as cli
+
+    monkeypatch.setenv("PUBLICATION_SYNC_EXECUTE", "true")
+    captured = {}
+
+    def fake_batch(**kwargs):
+        captured.update(kwargs)
+        return {"status": "completed", "mongo_writes": 0}
+
+    monkeypatch.setattr(cli, "run_publication_sync_batch", fake_batch)
+    exit_code = cli.main([
+        "--office-id", "7", "--batch", "--execute", "--limit", "3",
+        "--backup-dir", str(tmp_path / "backup"),
+        "--output-dir", str(tmp_path / "reports"),
+    ])
+    assert exit_code == 0
+    assert captured["backup_dir"] == str(tmp_path / "backup")
+    assert captured["output_dir"] == str(tmp_path / "reports")
+
+
+def test_authorized_import_distinguishes_declared_from_confirmed_links(monkeypatch):
+    declared_rows = [{
+        "codigo_prop360": CODE, "portal": provider, "operacion": "V", "url": url,
+        "publication_role": "current", "attribution_status": "declared",
+        "availability_status": "unknown", "source_record_id": f"feed-{provider}",
+    } for provider, url in DESTINATIONS.items()]
+    declared = normalize_authorized_publication_rows(
+        declared_rows, source_type="admin_evidence_import", imported_at="2026-10-16T12:00:00+00:00",
+    )
+    assert declared["accepted_rows"] == 5
+    assert all(alias["resolvable"] is False for alias in declared["publications"]["aliases"])
+    assert all(alias["verification_status"] == "unverified" for alias in declared["publications"]["aliases"])
+
+    confirmed_rows = [{**row, "attribution_status": "confirmed",
+                       "evidence_reference": f"portal-export-row-{n}"}
+                      for n, row in enumerate(declared_rows, start=1)]
+    confirmed = normalize_authorized_publication_rows(
+        confirmed_rows, source_type="convecta_feed", imported_at="2026-10-16T12:00:00+00:00",
+    )
+    merged = merge_publication_snapshot({}, confirmed["publications"],
+                                        observed_at="2026-10-16T12:00:00+00:00")
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    imported_doc = _doc(publications=merged)
+    imported_doc["ubicacion"] = {"comuna": "Lo Prado"}
+    imported_doc["tipo_operacion"] = {"tipo": "Casa", "venta": True}
+    db.universo_cartera_prop360.insert_one(imported_doc)
+    from chatbot import link_extractor
+    from chatbot import processing_service
+    monkeypatch.setattr(link_extractor, "get_db", lambda: db)
+    real_resolver = processing_service.resolver_referencia_propiedad
+    classified_codes = []
+
+    def capture(*args, **kwargs):
+        result = real_resolver(*args, **kwargs)
+        if result.get("status") == "resolved":
+            classified_codes.append(result["property"].get("codigo"))
+        return result
+
+    monkeypatch.setattr(processing_service, "resolver_referencia_propiedad", capture)
+    from chatbot.processing_service import LeadProcessingService
+    for url in DESTINATIONS.values():
+        prop, meta = lookup_property_link(db, url)
+        assert prop["codigo"] == CODE
+        assert meta["verification_status"] == "source_verified"
+        result = LeadProcessingService.classify({
+            "phone": "+56900000001", "messages": [{"role": "user", "content": url}],
+        })
+        assert result["comuna"] == "Lo Prado"
+    assert classified_codes == [CODE] * 5
+
+
+def test_resumable_local_audit_keeps_incremental_checkpoint_and_skips_success(tmp_path):
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    db.universo_cartera_prop360.insert_many([_doc(code="16479"), _doc(code="16500")])
+    fake = FakeProp360(rows=[{"codigo": "16479", "estado": "Activa"},
+                             {"codigo": "16500", "estado": "Activa"}],
+                       payloads={"16479": _payload(aggregator=None),
+                                 "16500": _payload(aggregator=None)})
+    fetcher = lambda _url, **_kwargs: {"status": "robots_blocked", "reason": "robots_disallowed", "html": ""}
+    first = run_sucre_publication_audit(
+        output_dir=tmp_path, batch_size=1, db=db, prop360_client=fake, fetcher=fetcher,
+    )
+    run_dir = Path(first["run_dir"])
+    checkpoint = json.loads((run_dir / "checkpoint.json").read_text(encoding="utf-8"))
+    assert checkpoint["last_code_evaluated"] == "16479"
+    assert first["traceable_codes"] == 1
+    assert first["coverage_complete"] is False
+    assert first["mongo_writes"] == 0
+    second = run_sucre_publication_audit(
+        output_dir=tmp_path, resume_dir=run_dir, batch_size=1, db=db,
+        prop360_client=fake, fetcher=fetcher,
+    )
+    assert second["coverage_complete"] is True
+    assert second["traceable_codes"] == 2
+    assert second["mongo_writes"] == 0
+    assert fake.portal_calls == ["16479", "16500"]
+    assert (run_dir / "events.jsonl").read_text(encoding="utf-8").count("\n") == 2
+    assert Path(second["report_json"]).exists()
+    assert Path(second["report_csv"]).exists()
+
+
+def test_resumable_local_audit_retries_timeout_but_preserves_attempt_event(tmp_path):
+    class TimeoutOnce(FakeProp360):
+        def __init__(self):
+            super().__init__(rows=[{"codigo": CODE, "estado": "Activa"}],
+                             payloads={CODE: _payload(aggregator=None)})
+            self.calls = 0
+
+        def get_portales(self, codigo):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("temporary source timeout")
+            return super().get_portales(codigo)
+
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    db.universo_cartera_prop360.insert_one(_doc())
+    fake = TimeoutOnce()
+    first = run_sucre_publication_audit(
+        output_dir=tmp_path, batch_size=1, db=db, prop360_client=fake,
+    )
+    assert first["traceable_codes"] == 1
+    assert first["retryable_codes"] == [CODE]
+    run_dir = Path(first["run_dir"])
+    second = run_sucre_publication_audit(
+        output_dir=tmp_path, resume_dir=run_dir, batch_size=1, db=db,
+        prop360_client=fake, fetcher=lambda _url, **_kwargs: {
+            "status": "robots_blocked", "reason": "robots_disallowed", "html": "",
+        },
+    )
+    assert second["coverage_complete"] is True
+    assert second["retryable_codes"] == []
+    assert fake.calls == 2
+    assert (run_dir / "events.jsonl").read_text(encoding="utf-8").count("\n") == 2
+    assert second["mongo_writes"] == 0
+
+
+def test_resumable_audit_processes_later_codes_before_retrying_slow_code(tmp_path):
+    class FirstCodeTimeoutOnce(FakeProp360):
+        def __init__(self):
+            super().__init__(rows=[{"codigo": "16479", "estado": "Activa"},
+                                  {"codigo": "16500", "estado": "Activa"}],
+                             payloads={"16479": _payload(aggregator=None),
+                                       "16500": _payload(aggregator=None)})
+            self.first_code_calls = 0
+
+        def get_portales(self, codigo):
+            if codigo == "16479":
+                self.first_code_calls += 1
+                if self.first_code_calls == 1:
+                    raise TimeoutError("first property is slow")
+            return super().get_portales(codigo)
+
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    db.universo_cartera_prop360.insert_many([_doc(code="16479"), _doc(code="16500")])
+    fake = FirstCodeTimeoutOnce()
+    first = run_sucre_publication_audit(output_dir=tmp_path, batch_size=1, db=db,
+                                        prop360_client=fake)
+    run_dir = Path(first["run_dir"])
+    assert first["last_code_evaluated"] == "16479"
+    assert first["retryable_codes"] == ["16479"]
+
+    second = run_sucre_publication_audit(output_dir=tmp_path, resume_dir=run_dir,
+                                         batch_size=1, db=db, prop360_client=fake)
+    assert second["last_code_evaluated"] == "16500"
+    assert second["traceable_codes"] == 2
+    assert second["retryable_codes"] == ["16479"]
+    assert fake.portal_calls == ["16500"]
+
+    third = run_sucre_publication_audit(output_dir=tmp_path, resume_dir=run_dir,
+                                         batch_size=1, db=db, prop360_client=fake)
+    assert third["last_code_evaluated"] == "16479"
+    assert third["coverage_complete"] is True
+    assert third["retryable_codes"] == []
+    assert fake.portal_calls == ["16500", "16479"]
+    assert third["mongo_writes"] == 0

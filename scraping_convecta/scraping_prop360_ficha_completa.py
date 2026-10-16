@@ -742,14 +742,17 @@ class Prop360AuthError(Exception):
 
 
 class Prop360Client:
-    def __init__(self, email: str, password: str, delay: float = 0.3):
+    def __init__(self, email: str, password: str, delay: float = 0.3,
+                 request_timeout: float = 45.0, max_attempts: int = 3):
         self.email = email
         self.password = password
         self.delay = delay
+        self.request_timeout = max(1.0, float(request_timeout))
+        self.max_attempts = max(1, int(max_attempts))
         self.client = httpx.Client(
             verify=False,
             follow_redirects=True,
-            timeout=45.0,
+            timeout=self.request_timeout,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
                 "Referer": "https://procasa.prop360.cl/backOffice/propiedades/propiedades",
@@ -766,30 +769,34 @@ class Prop360Client:
 
     def _get(self, url: str, **kwargs):
         last = None
-        for _ in range(3):
+        for attempt in range(self.max_attempts):
             try:
                 r = self.client.get(url, **kwargs)
                 if r.status_code in (429, 500, 502, 503) and r.status_code != 200:
-                    time.sleep(1.5 * (_ + 1))
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(1.5 * (attempt + 1))
                     continue
                 return r
             except Exception as e:
                 last = e
-                time.sleep(1.0)
+                if attempt + 1 < self.max_attempts:
+                    time.sleep(1.0)
         raise last or RuntimeError(f"GET falló: {url}")
 
     def _post(self, url: str, data: dict, **kwargs):
         last = None
-        for _ in range(3):
+        for attempt in range(self.max_attempts):
             try:
                 r = self.client.post(url, data=data, **kwargs)
                 if r.status_code in (429, 500, 502, 503):
-                    time.sleep(1.5 * (_ + 1))
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(1.5 * (attempt + 1))
                     continue
                 return r
             except Exception as e:
                 last = e
-                time.sleep(1.0)
+                if attempt + 1 < self.max_attempts:
+                    time.sleep(1.0)
         raise last or RuntimeError(f"POST falló: {url}")
 
     def login(self) -> bool:
@@ -2595,7 +2602,12 @@ def run_all_offices(args, offices: list[int] | None = None) -> int:
                 OFICINA_NOMBRE = staged["office_name"]
                 for doc in staged["docs"]:
                     nuevo, _actualizado = upsert_ficha(write_coll, doc)
-                    if nuevo and OFFICE_ID == 7:
+                    if (nuevo and OFFICE_ID == 7
+                            and str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").lower()
+                            in {"1", "true", "yes", "on"}
+                            and str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").lower()
+                            in {"1", "true", "yes", "on"}
+                            and os.getenv("PUBLICATION_SYNC_BACKUP_DIR")):
                         try:
                             from chatbot.publication_sync import sync_single_property_publications
 
@@ -2603,6 +2615,7 @@ def run_all_offices(args, offices: list[int] | None = None) -> int:
                             sync_single_property_publications(
                                 None, write_coll, write_coll.database, saved,
                                 payload=(staged.get("portal_payloads") or {}).get(str(doc.get("codigo"))),
+                                backup_dir=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"), execute=True,
                             )
                         except Exception as publication_exc:
                             log.exception("[PUBLICATION_SYNC] nueva propiedad %s: %s",
@@ -2829,7 +2842,12 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
         # The explicit --execute flag is the sole path to cartera writes.
         for doc in scraped_docs:
             nuevo, _actualizado = upsert_ficha(coll, doc)
-            if nuevo and OFFICE_ID == 7:
+            if (nuevo and OFFICE_ID == 7
+                    and str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").lower()
+                    in {"1", "true", "yes", "on"}
+                    and str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").lower()
+                    in {"1", "true", "yes", "on"}
+                    and os.getenv("PUBLICATION_SYNC_BACKUP_DIR")):
                 try:
                     from chatbot.publication_sync import sync_single_property_publications
 
@@ -2837,6 +2855,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
                     sync_single_property_publications(
                         client, coll, coll.database, saved,
                         payload=portal_payloads.get(str(doc.get("codigo"))),
+                        backup_dir=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"), execute=True,
                     )
                 except Exception as publication_exc:
                     log.exception("[PUBLICATION_SYNC] nueva propiedad %s: %s",

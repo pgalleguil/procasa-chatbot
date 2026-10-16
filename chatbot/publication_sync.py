@@ -162,7 +162,7 @@ def _rate_limit(host: str) -> None:
         _HOST_LAST_REQUEST[host] = time.monotonic()
 
 
-def _robots_allows(url: str, http) -> tuple[bool, str]:
+def _robots_allows(url: str, http, *, timeout: tuple[float, float] = (5, 10)) -> tuple[bool, str]:
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
     cached = _ROBOTS_CACHE.get(host)
@@ -177,7 +177,7 @@ def _robots_allows(url: str, http) -> tuple[bool, str]:
     _rate_limit(host)
     try:
         response = http.get(
-            robots_url, allow_redirects=False, timeout=(5, 10),
+            robots_url, allow_redirects=False, timeout=timeout,
             headers={"User-Agent": "ProcasaPublicationAudit/1.0"}, stream=True,
         )
         status = int(response.status_code)
@@ -210,37 +210,57 @@ def _robots_allows(url: str, http) -> tuple[bool, str]:
         return False, "robots_" + type(exc).__name__
 
 
-def safe_fetch_html(url: str, *, session=None) -> dict:
+def safe_fetch_html(url: str, *, session=None, budget_seconds: float = 35,
+                    connect_timeout: float = 5, read_timeout: float = 15,
+                    retries: int = 3) -> dict:
     """GET an allowlisted HTTPS URL with validated DNS and manual redirects."""
     http = session or requests.Session()
     if hasattr(http, "trust_env"):
         http.trust_env = False
     current = url
+    deadline = time.monotonic() + max(1.0, float(budget_seconds))
+
+    def bounded_timeout() -> tuple[float, float] | None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.25:
+            return None
+        half = max(0.25, remaining / 2)
+        return min(float(connect_timeout), half), min(float(read_timeout), half)
+
     try:
         for redirect_count in range(MAX_REDIRECTS + 1):
+            request_timeout = bounded_timeout()
+            if request_timeout is None:
+                return {"status": "timeout", "reason": "property_audit_budget_exhausted",
+                        "final_url": current, "html": ""}
             valid, reason = _validate_public_url(current)
             if not valid:
                 return {"status": "blocked", "reason": reason, "final_url": current, "html": ""}
             host = urlsplit(current).hostname or ""
-            allowed, robots_reason = _robots_allows(current, http)
+            allowed, robots_reason = _robots_allows(current, http, timeout=request_timeout)
             if not allowed:
                 return {"status": "robots_blocked", "reason": robots_reason, "final_url": current, "html": ""}
             response = None
-            for attempt in range(3):
+            for attempt in range(max(1, int(retries))):
+                request_timeout = bounded_timeout()
+                if request_timeout is None:
+                    return {"status": "timeout", "reason": "property_audit_budget_exhausted",
+                            "final_url": current, "html": ""}
                 _rate_limit(host)
                 response = http.get(
-                    current, allow_redirects=False, timeout=(5, 15),
+                    current, allow_redirects=False, timeout=request_timeout,
                     headers={"User-Agent": "ProcasaPublicationAudit/1.0"}, stream=True,
                 )
                 transient_status = int(response.status_code) == 429 or int(response.status_code) >= 500
-                if not transient_status or attempt == 2:
+                if not transient_status or attempt + 1 >= max(1, int(retries)):
                     break
                 retry_after = response.headers.get("Retry-After", "")
                 response.close()
                 try:
-                    delay = min(30.0, max(float(retry_after), 1.0))
+                    delay = min(30.0, max(float(retry_after), 1.0),
+                                max(0.0, deadline - time.monotonic()))
                 except (TypeError, ValueError):
-                    delay = min(8.0, 2.0 ** attempt)
+                    delay = min(8.0, 2.0 ** attempt, max(0.0, deadline - time.monotonic()))
                 time.sleep(delay)
             assert response is not None
             status_code = int(response.status_code)
@@ -718,13 +738,46 @@ def _active_docs_for_listing(coll, active_rows: list[dict]) -> tuple[dict[str, d
     return valid, errors
 
 
+def _verify_backup_directory(backup_dir: str | Path | None) -> Path:
+    import tempfile
+    configured = backup_dir or os.getenv("PUBLICATION_SYNC_BACKUP_DIR")
+    if not configured:
+        raise RuntimeError("durable_backup_directory_required")
+    directory = Path(configured).expanduser().resolve()
+    if str(os.getenv("RENDER") or "").strip().lower() in {"1", "true", "yes"}:
+        durable_root_value = os.getenv("PUBLICATION_SYNC_BACKUP_DURABLE_ROOT")
+        if not durable_root_value:
+            raise RuntimeError("render_backup_durable_root_not_configured")
+        durable_root = Path(durable_root_value).expanduser().resolve()
+        try:
+            directory.relative_to(durable_root)
+        except ValueError as exc:
+            raise RuntimeError("backup_path_outside_durable_render_disk") from exc
+        if not durable_root.exists() or not os.path.ismount(durable_root):
+            raise RuntimeError("configured_render_backup_root_is_not_a_mounted_disk")
+    directory.mkdir(parents=True, exist_ok=True)
+    # Prove the configured destination is readable after a durable write before
+    # it is used as the sole rollback source.
+    with tempfile.NamedTemporaryFile(prefix=".publication-backup-check-", dir=directory,
+                                     delete=False) as probe:
+        probe_path = Path(probe.name)
+        probe_marker = uuid.uuid4().hex
+        probe.write(probe_marker.encode("ascii"))
+        probe.flush()
+        os.fsync(probe.fileno())
+    try:
+        if probe_path.read_text(encoding="ascii") != probe_marker:
+            raise RuntimeError("backup_directory_write_readback_failed")
+    finally:
+        probe_path.unlink(missing_ok=True)
+    return directory
+
+
 def _ensure_backups(docs: list[dict], run_id: str, backup_dir: str | Path | None = None) -> dict:
     from bson import json_util
     import gzip
 
-    directory = Path(backup_dir or os.getenv("PUBLICATION_SYNC_BACKUP_DIR")
-                     or (Path(__file__).resolve().parents[1] / "backups"))
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = _verify_backup_directory(backup_dir)
     path = directory / f"prop360_publications_sucre_pre_{run_id}.json.gz"
     payload = json_util.dumps(docs, ensure_ascii=False, sort_keys=True).encode("utf-8")
     digest = hashlib.sha256(payload).hexdigest()
@@ -735,6 +788,14 @@ def _ensure_backups(docs: list[dict], run_id: str, backup_dir: str | Path | None
     if len(restored) != len(docs):
         raise RuntimeError("backup_readback_document_count_mismatch")
     return {"path": str(path), "documents": len(restored), "sha256": digest}
+
+
+def _sync_execute_enabled() -> bool:
+    return str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _new_property_sync_enabled() -> bool:
+    return str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _strict_update_filter(doc: dict) -> dict:
@@ -812,12 +873,20 @@ def _stable_source_hash(incoming: dict, source_meta: dict) -> str:
 def sync_single_property_publications(client, coll, db, property_doc: dict, *,
                                       payload: dict | None = None,
                                       fetcher=safe_fetch_html,
-                                      backup_dir: str | Path | None = None) -> dict:
-    """Immediately reconcile a just-persisted Sucre property without touching other fields."""
+                                      backup_dir: str | Path | None = None,
+                                      execute: bool = False) -> dict:
+    """Diagnose new Sucre publication links; persist only with explicit opt-in."""
     code = str(property_doc.get("codigo") or "").strip()
     in_sucre, scope_error = _office_consistency(property_doc)
     if not code or not in_sucre or not _active_mongo_property(property_doc):
         return {"codigo": code, "status": "skipped", "reason": scope_error or "property_not_active_sucre"}
+    if execute:
+        if not _sync_execute_enabled() or not _new_property_sync_enabled():
+            raise RuntimeError("new_property_publication_write_requires_both_explicit_enable_flags")
+        backup_dir = backup_dir or os.getenv("PUBLICATION_SYNC_BACKUP_DIR")
+        if not backup_dir:
+            raise RuntimeError("new_property_publication_write_requires_durable_backup_directory")
+        _verify_backup_directory(backup_dir)
     if payload is None:
         payload = getattr(client, "last_portales_by_code", {}).get(code)
     if payload is None:
@@ -831,13 +900,14 @@ def sync_single_property_publications(client, coll, db, property_doc: dict, *,
     all_docs = list(coll.find({}, {"codigo": 1, "publicaciones": 1}))
     conflicts = _incoming_conflicts(incoming, code, _existing_claims(all_docs))
     if conflicts:
-        state = db[STATE_COLLECTION]
-        state.update_one({"_id": code}, {"$set": {
-            "codigo": code, "office_id": OFFICE_ID, "last_checked_at": checked_at,
-            "status": "conflict", "providers_pending": [], "error_code": "AMBIGUOUS_PROPERTY_REFERENCE",
-            "run_id": uuid.uuid4().hex, "updated_count": 0, "conflicts": conflicts,
-        }}, upsert=True)
-        return {"codigo": code, "status": "conflict", "conflicts": conflicts, "updated": False}
+        if execute:
+            db[STATE_COLLECTION].update_one({"_id": code}, {"$set": {
+                "codigo": code, "office_id": OFFICE_ID, "last_checked_at": checked_at,
+                "status": "conflict", "providers_pending": [], "error_code": "AMBIGUOUS_PROPERTY_REFERENCE",
+                "run_id": uuid.uuid4().hex, "updated_count": 0, "conflicts": conflicts,
+            }}, upsert=True)
+        return {"codigo": code, "status": "conflict", "conflicts": conflicts,
+                "updated": False, "mongo_writes": 1 if execute else 0}
     proposed = merge_publication_snapshot(
         property_doc.get("publicaciones"), incoming,
         observed_at=checked_at, source="prop360_publication_sync",
@@ -845,7 +915,7 @@ def sync_single_property_publications(client, coll, db, property_doc: dict, *,
     changed = proposed != (property_doc.get("publicaciones") or {})
     run_id = uuid.uuid4().hex
     backup = None
-    if changed:
+    if changed and execute:
         backup = _ensure_backups([property_doc], run_id, backup_dir)
         if backup.get("documents") != 1:
             raise RuntimeError("single_property_backup_verification_failed")
@@ -858,23 +928,27 @@ def sync_single_property_publications(client, coll, db, property_doc: dict, *,
     pending = _pending_providers(source_meta)
     blocked_reason = _blocked_source_reason(source_meta)
     state_coll = db[STATE_COLLECTION]
-    previous = state_coll.find_one({"_id": code}) or {}
-    attempt = int(previous.get("attempt_count") or 0) + (1 if pending else 0)
     state_status = "pending" if pending else "blocked" if blocked_reason else "success"
-    state_coll.update_one({"_id": code}, {"$set": {
-        "codigo": code, "office_id": OFFICE_ID, "last_checked_at": checked_at,
-        "last_success_at": checked_at if not pending and not blocked_reason else previous.get("last_success_at"),
-        "next_retry_at": _retry_after(attempt, _utc_now()) if pending else None,
-        "attempt_count": attempt if pending else 0,
-        "status": state_status,
-        "providers_pending": sorted(set(pending)),
-        "source_hash": _stable_source_hash(incoming, source_meta),
-        "run_id": run_id,
-        "error_code": "proppit_pending" if pending else blocked_reason,
-        "updated_count": 1 if changed else 0,
-    }}, upsert=True)
+    if execute:
+        previous = state_coll.find_one({"_id": code}) or {}
+        attempt = int(previous.get("attempt_count") or 0) + (1 if pending else 0)
+        state_coll.update_one({"_id": code}, {"$set": {
+            "codigo": code, "office_id": OFFICE_ID, "last_checked_at": checked_at,
+            "last_success_at": checked_at if not pending and not blocked_reason else previous.get("last_success_at"),
+            "next_retry_at": _retry_after(attempt, _utc_now()) if pending else None,
+            "attempt_count": attempt if pending else 0,
+            "status": state_status,
+            "providers_pending": sorted(set(pending)),
+            "source_hash": _stable_source_hash(incoming, source_meta),
+            "run_id": run_id,
+            "error_code": "proppit_pending" if pending else blocked_reason,
+            "updated_count": 1 if changed else 0,
+        }}, upsert=True)
     return {"codigo": code, "status": state_status,
-            "updated": changed, "backup": backup,
+            "updated": bool(changed and execute), "proposed_change": changed,
+            "proposed_publications": proposed if not execute else None,
+            "mongo_writes": ((1 if changed else 0) + 1) if execute else 0,
+            "backup": backup,
             "aggregator_results": source_meta.get("aggregator_results", [])}
 
 
@@ -892,6 +966,14 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
         raise ValueError("choose exactly one of dry-run or execute")
     if execute and backup_dir is None:
         backup_dir = os.getenv("PUBLICATION_SYNC_BACKUP_DIR")
+    if execute and not _sync_execute_enabled():
+        raise ValueError("publication writes require PUBLICATION_SYNC_EXECUTE=true")
+    if execute and not backup_dir:
+        raise ValueError("publication writes require a durable backup directory")
+    if execute:
+        # Prove backup storage before acquiring the Mongo lock or writing any
+        # synchronization state.
+        _verify_backup_directory(backup_dir)
     run_id = uuid.uuid4().hex
     started = _iso()
     own_client = False
@@ -909,6 +991,7 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
         "prop360_only": [], "mongo_only": [],
         "outside_office_documents_checked": 0, "outside_office_writes": 0,
         "backup": None, "records": [], "property_errors": [],
+        "terminal_codes": [], "retry_codes": [], "status": "failed",
     }
     try:
         if db is None:
@@ -974,6 +1057,11 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
             "codigo": code, "error": "inventory_mismatch",
             "reason": "active_sucre_mongo_document_missing_from_prop360_active_listing",
         } for code in mongo_only)
+        # Listing/Mongo scope mismatches have a known terminal result for this
+        # run. Runtime failures below are kept separate and enter the retry
+        # queue before the sequential cursor can pass them.
+        terminal_codes = {str(item.get("codigo") or "") for item in scope_errors
+                          if item.get("codigo")}
         claims = _existing_claims(all_docs)
         planned = []
         for position, row in enumerate(active_rows, start=1):
@@ -1076,13 +1164,29 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
                                 "changed": property_changed, "conflicts": conflicts,
                                 "source_meta": source_meta, "checked_at": checked_at,
                                 "status": status})
+                terminal_codes.add(code)
                 result["checked"] += 1
                 if position % DEFAULT_BATCH_SIZE == 0 or position == len(active_rows):
                     logger.info("Sucre publication dry-run progress: %s/%s checked",
                                 min(position, result["checked"]), len(active_rows))
             except Exception as exc:
                 result["errors"] += 1
-                result["property_errors"].append({"codigo": code, "error": type(exc).__name__, "reason": str(exc)[:200]})
+                result["retry_codes"].append(code)
+                result["property_errors"].append({
+                    "codigo": code, "error": type(exc).__name__,
+                    "reason": str(exc)[:200], "retryable": True,
+                })
+
+        result["terminal_codes"] = sorted(terminal_codes)
+        result["retry_codes"] = sorted(set(result["retry_codes"]))
+        accounted_codes = terminal_codes | set(result["retry_codes"])
+        selected_code_set = {str(item.get("codigo") or "").strip() for item in active_rows}
+        if result["errors"] and not (selected_code_set <= accounted_codes):
+            result["status"] = "failed"
+        elif result["errors"] or result["retry_codes"]:
+            result["status"] = "partial"
+        else:
+            result["status"] = "completed"
 
         if execute:
             changed_plans = [item for item in planned if item["changed"]]
@@ -1122,6 +1226,23 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
                     "updated_count": 1 if item["changed"] else 0,
                 }
                 state_coll.update_one({"_id": code}, {"$set": state_doc}, upsert=True)
+            for failed in (item for item in result["property_errors"] if item.get("retryable")):
+                code = str(failed.get("codigo") or "")
+                if not code:
+                    continue
+                retry_coll = db[STATE_COLLECTION]
+                previous = retry_coll.find_one({"_id": code}) or {}
+                attempt_count = int(previous.get("attempt_count") or 0) + 1
+                retry_coll.update_one({"_id": code}, {"$set": {
+                    "codigo": code, "office_id": OFFICE_ID,
+                    "last_checked_at": _iso(), "status": "pending",
+                    "providers_pending": ["prop360"],
+                    "next_retry_at": _retry_after(attempt_count, _utc_now()),
+                    "attempt_count": attempt_count,
+                    "error_code": failed.get("error") or "property_reconciliation_error",
+                    "last_error": str(failed.get("reason") or "")[:200],
+                    "run_id": run_id, "updated_count": 0,
+                }}, upsert=True)
         else:
             # Dry-run is intentionally free of Mongo writes, including locks,
             # job-state updates and status/log collections.
@@ -1201,6 +1322,8 @@ def run_publication_sync_batch(*, dry_run: bool = True, execute: bool = False,
         raise ValueError("batch execution requires explicit --office-id 7")
     if batch_size < 1 or batch_size > DEFAULT_BATCH_SIZE:
         raise ValueError("batch_size must be between 1 and 25")
+    if execute and not _sync_execute_enabled():
+        raise ValueError("batch writes require PUBLICATION_SYNC_EXECUTE=true")
     own_client = False
     db_client = None
     if db is None:
@@ -1245,7 +1368,8 @@ def run_publication_sync_batch(*, dry_run: bool = True, execute: bool = False,
         sequential_batch = after[:max(0, batch_size - len(retry_codes))]
         if not sequential_batch and not retry_codes:
             sequential_batch = [doc for doc in docs
-                                if str(doc.get("codigo") or "") not in deferred_codes][:batch_size]
+                                if str(doc.get("codigo") or "") not in deferred_codes
+                                and str(doc.get("codigo") or "") not in retry_codes][:batch_size]
         batch_codes = retry_codes + [str(doc.get("codigo") or "") for doc in sequential_batch]
         if not batch_codes:
             return {
@@ -1263,7 +1387,9 @@ def run_publication_sync_batch(*, dry_run: bool = True, execute: bool = False,
             prop360_client=prop360_client, client_factory=client_factory,
             backup_dir=backup_dir, output_dir=output_dir,
         )
-        if result.get("status") != "failed":
+        accounted = set(result.get("terminal_codes") or ()) | set(result.get("retry_codes") or ())
+        selected = set(batch_codes)
+        if result.get("status") != "failed" and selected.issubset(accounted):
             db[STATE_COLLECTION].update_one(
                 {"_id": "__cursor__"},
                 {"$set": {"office_id": OFFICE_ID,
@@ -1271,6 +1397,12 @@ def run_publication_sync_batch(*, dry_run: bool = True, execute: bool = False,
                           "updated_at": _iso(), "run_id": result.get("run_id")}},
                 upsert=True,
             )
+        elif result.get("status") != "failed":
+            result["status"] = "partial"
+            result["cursor_advanced"] = False
+        result.setdefault("cursor_advanced", bool(
+            result.get("status") != "failed" and selected.issubset(accounted)
+        ))
         return result
     finally:
         if own_client and db_client is not None:

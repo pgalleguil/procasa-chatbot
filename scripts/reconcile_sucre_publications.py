@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             result = run_publication_sync_batch(
                 dry_run=not args.execute, execute=args.execute,
                 office_id=office_id, batch_size=args.limit or DEFAULT_BATCH_SIZE,
+                backup_dir=args.backup_dir, output_dir=args.output_dir,
             )
         else:
             result = run_publication_reconciliation(

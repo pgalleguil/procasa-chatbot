@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true", help="Persist publication-only changes; default is dry-run.")
     parser.add_argument("--limit", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--backup-dir", default=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"))
+    parser.add_argument("--output-dir", default=os.getenv("PUBLICATION_SYNC_REPORT_DIR"))
     args = parser.parse_args(argv)
     if args.office_id != 7:
         print("ERROR: --office-id 7 is required; no other office is in scope.", file=sys.stderr)
@@ -33,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_publication_sync_batch(
             dry_run=not args.execute, execute=args.execute, office_id=7,
-            batch_size=args.limit, backup_dir=args.backup_dir,
+            batch_size=args.limit, backup_dir=args.backup_dir, output_dir=args.output_dir,
         )
     except Exception as exc:
         print(f"PUBLICATION_SYNC_FAILED={type(exc).__name__}:{str(exc)[:200]}", file=sys.stderr)

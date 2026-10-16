@@ -184,7 +184,11 @@ def _property_audit(client, code: str, baseline_doc: dict | None, claims: dict,
     scraped_at = _utc_now()
     old_publications = (baseline_doc or {}).get("publicaciones") or {}
     try:
-        payload = client.get_portales(code)
+        if isinstance(client, Prop360Client):
+            remaining = max(0.25, property_budget_seconds - (time.monotonic() - start))
+            payload = client.get_portales(code, budget_seconds=remaining)
+        else:
+            payload = client.get_portales(code)
         if not isinstance(payload, dict) or not isinstance(payload.get("publications"), list):
             raise ValueError("portal_payload_missing_or_invalid")
 

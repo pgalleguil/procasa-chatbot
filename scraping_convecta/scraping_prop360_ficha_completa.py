@@ -799,6 +799,39 @@ class Prop360Client:
                     time.sleep(1.0)
         raise last or RuntimeError(f"POST falló: {url}")
 
+    def _post_json_with_budget(self, url: str, data: dict, *, budget_seconds: float,
+                               headers: dict | None = None) -> dict:
+        """Read a streaming JSON response without exceeding one wall-clock budget."""
+        deadline = time.monotonic() + max(0.25, float(budget_seconds))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("prop360_property_budget_exhausted")
+        timeout = httpx.Timeout(
+            connect=min(self.request_timeout, remaining),
+            read=min(self.request_timeout, remaining),
+            write=min(self.request_timeout, remaining),
+            pool=min(self.request_timeout, remaining),
+        )
+        chunks = []
+        size = 0
+        with self.client.stream(
+            "POST", url, data=data, headers=headers, timeout=timeout,
+        ) as response:
+            for chunk in response.iter_bytes():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("prop360_property_budget_exhausted")
+                size += len(chunk)
+                if size > 2_000_000:
+                    raise ValueError("prop360_portal_payload_too_large")
+                chunks.append(chunk)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("prop360_property_budget_exhausted")
+        try:
+            payload = json.loads(b"".join(chunks).decode("utf-8-sig", errors="replace"))
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
     def login(self) -> bool:
         log.info("Iniciando sesión en Prop360…")
         resp = self.client.get(LOGIN_URL)
@@ -941,20 +974,24 @@ class Prop360Client:
         r = self._get(FICHA_PRINT_URL_TPL.format(codigo=codigo))
         return r.text
 
-    def get_portales(self, codigo: str) -> dict:
-        r = self._post(
-            PROPIEDAD_FICHA_ASHX,
-            {
-                "accion": "propCard_portals",
-                "idprop": codigo,
-                "cache": time.time() % 10,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        try:
-            payload = r.json()
-        except json.JSONDecodeError:
-            return {}
+    def get_portales(self, codigo: str, *, budget_seconds: float | None = None) -> dict:
+        data = {
+            "accion": "propCard_portals",
+            "idprop": codigo,
+            "cache": time.time() % 10,
+        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        if budget_seconds is None:
+            r = self._post(PROPIEDAD_FICHA_ASHX, data, headers=headers)
+            try:
+                payload = r.json()
+            except json.JSONDecodeError:
+                return {}
+        else:
+            payload = self._post_json_with_budget(
+                PROPIEDAD_FICHA_ASHX, data, budget_seconds=budget_seconds,
+                headers=headers,
+            )
         if not isinstance(payload, dict):
             return {}
         self.last_portales_by_code[str(codigo)] = payload

@@ -148,7 +148,9 @@ The run directory contains `manifest.json`, `checkpoint.json`, append-only
 `events.jsonl`, consolidated `results.json` / `results.csv`, and, once every
 initial code has a traceable result, `final_listing.json` plus inventory changes
 in `summary.json`. The per-property HTTP budget defaults to 35 seconds; the
-audit Prop360 session uses one request attempt with an 8-second request timeout.
+audit Prop360 session uses one request attempt with an 8-second request timeout,
+and its portal JSON is consumed as a stream under the same per-property
+deadline.
 Proppit fetches use the remaining property budget and one bounded request
 attempt while honoring robots rules. Change the budget with
 `--property-budget-seconds` (5–120 seconds). A timeout stays unverified and is

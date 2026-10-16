@@ -683,6 +683,38 @@ def test_prop360_client_can_bound_post_attempts_for_audit():
     assert client.max_attempts == 1
 
 
+def test_prop360_portal_json_enforces_total_stream_budget():
+    import time
+    from scraping_convecta.scraping_prop360_ficha_completa import Prop360Client
+
+    class SlowResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def iter_bytes(self):
+            time.sleep(0.3)
+            yield b'{"publications": []}'
+
+    class StreamingClient:
+        def __init__(self):
+            self.timeout = None
+
+        def stream(self, _method, _url, **kwargs):
+            self.timeout = kwargs["timeout"]
+            return SlowResponse()
+
+    client = Prop360Client("", "", delay=0, request_timeout=5, max_attempts=1)
+    stream_client = StreamingClient()
+    client.client = stream_client
+    with pytest.raises(TimeoutError, match="prop360_property_budget_exhausted"):
+        client.get_portales("16479", budget_seconds=0.25)
+    assert stream_client.timeout.read <= 0.25
+    assert "16479" not in client.last_portales_by_code
+
+
 def test_full_reconciliation_dry_run_writes_no_mongo_and_reports_all_providers(tmp_path):
     mongo = mongomock.MongoClient()
     raw_db = mongo.db

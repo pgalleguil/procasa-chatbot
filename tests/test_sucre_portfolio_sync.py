@@ -83,6 +83,13 @@ def test_new_property_enters_detail_and_inserts(monkeypatch):
     db = _db()
     calls = []
     _patch_detail(monkeypatch, calls)
+    from chatbot import publication_sync
+
+    def fake_publication_sync(client, coll, database, property_doc, *, payload=None, **kwargs):
+        calls.append(("publication_sync", property_doc["codigo"]))
+        return {"status": "success", "updated": True}
+
+    monkeypatch.setattr(publication_sync, "sync_single_property_publications", fake_publication_sync)
     result = sync.run_sucre_portfolio_sync(
         db=db, prop360_client=FakeClient([_row("100")]), apply_bajas=False
     )
@@ -91,6 +98,30 @@ def test_new_property_enters_detail_and_inserts(monkeypatch):
     assert result["fichas_completas_requeridas"] == 1
     assert result["fichas_completas_consultadas"] == 1
     assert calls == [("scrape", "100"), ("upsert", "100")]
+
+
+def test_new_property_publication_sync_requires_explicit_enable_and_backup(monkeypatch, tmp_path):
+    db = _db()
+    calls = []
+    _patch_detail(monkeypatch, calls)
+    from chatbot import publication_sync
+
+    def fake_publication_sync(client, coll, database, property_doc, *, payload=None, **kwargs):
+        calls.append(("publication_sync", property_doc["codigo"], kwargs.get("execute"), kwargs.get("backup_dir")))
+        return {"status": "success", "updated": True}
+
+    monkeypatch.setattr(publication_sync, "sync_single_property_publications", fake_publication_sync)
+    monkeypatch.setenv("PUBLICATION_SYNC_EXECUTE", "true")
+    monkeypatch.setenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED", "true")
+    monkeypatch.setenv("PUBLICATION_SYNC_BACKUP_DIR", str(tmp_path / "private-backup"))
+    result = sync.run_sucre_portfolio_sync(
+        db=db, prop360_client=FakeClient([_row("100")]), apply_bajas=False
+    )
+    assert result["status"] == "completed"
+    assert calls == [
+        ("scrape", "100"), ("upsert", "100"),
+        ("publication_sync", "100", True, str(tmp_path / "private-backup")),
+    ]
 
 
 def test_existing_without_change_does_not_enter_detail(monkeypatch):
@@ -228,3 +259,4 @@ def test_scheduler_stays_disabled_and_leads_loop_stays_started():
     assert "Automatic portfolio sync disabled" in source
     assert "Automatic portfolio UF/price sync disabled" in source
     assert "prop360_task = asyncio.create_task(_ppl())" in source
+    assert "publication_sync_worker" not in source

@@ -1351,6 +1351,31 @@ def run_portfolio_operational_sync(
                         )
                         if nuevo or actualizado:
                             result["actualizadas"] += 1
+                        if nuevo and scope["office_id"] == SUCRE_OFFICE_ID:
+                            # A newly persisted active Sucre property is
+                            # reconciled immediately for publication links.
+                            # This touches only ``publicaciones`` and its
+                            # retry state; failures do not block the listing
+                            # intake or alter operational fields.
+                            if (str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").lower() in {"1", "true", "yes", "on"}
+                                    and str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").lower()
+                                    in {"1", "true", "yes", "on"}
+                                    and os.getenv("PUBLICATION_SYNC_BACKUP_DIR")):
+                                try:
+                                    from chatbot.publication_sync import sync_single_property_publications
+
+                                    persisted = coll.find_one({"codigo": code}) or doc
+                                    publication_result = sync_single_property_publications(
+                                        prop360_client, coll, db, persisted,
+                                        payload=getattr(prop360_client, "last_portales_by_code", {}).get(code),
+                                        backup_dir=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"), execute=True,
+                                    )
+                                    result.setdefault("publication_sync", []).append(publication_result)
+                                except Exception as publication_exc:
+                                    result.setdefault("publication_sync_errors", []).append({
+                                        "codigo": code, "error": type(publication_exc).__name__,
+                                    })
+                                    log.exception("[PUBLICATION_SYNC] nueva propiedad %s", code)
                 except Exception:
                     _add_error(result, code)
                     log.exception("[PORTFOLIO_OPERATIONAL] fallo ficha %s", code)

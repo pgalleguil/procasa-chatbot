@@ -49,6 +49,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
 from config import Config
+from chatbot.property_lookup import build_property_alias, canonical_portal, extract_property_external_id
+from chatbot.publication_data import merge_publication_snapshot
 
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -740,14 +742,17 @@ class Prop360AuthError(Exception):
 
 
 class Prop360Client:
-    def __init__(self, email: str, password: str, delay: float = 0.3):
+    def __init__(self, email: str, password: str, delay: float = 0.3,
+                 request_timeout: float = 45.0, max_attempts: int = 3):
         self.email = email
         self.password = password
         self.delay = delay
+        self.request_timeout = max(1.0, float(request_timeout))
+        self.max_attempts = max(1, int(max_attempts))
         self.client = httpx.Client(
             verify=False,
             follow_redirects=True,
-            timeout=45.0,
+            timeout=self.request_timeout,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
                 "Referer": "https://procasa.prop360.cl/backOffice/propiedades/propiedades",
@@ -755,37 +760,77 @@ class Prop360Client:
         )
         self.session_active = False
         self.last_listing_meta = {}
+        # Keep only an execution-local copy so publication sync hooks can reuse
+        # the verified portal JSON already fetched for this same property.
+        self.last_portales_by_code = {}
 
     def _wait(self):
         time.sleep(self.delay * (0.6 + random.random() * 0.8))
 
     def _get(self, url: str, **kwargs):
         last = None
-        for _ in range(3):
+        for attempt in range(self.max_attempts):
             try:
                 r = self.client.get(url, **kwargs)
                 if r.status_code in (429, 500, 502, 503) and r.status_code != 200:
-                    time.sleep(1.5 * (_ + 1))
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(1.5 * (attempt + 1))
                     continue
                 return r
             except Exception as e:
                 last = e
-                time.sleep(1.0)
+                if attempt + 1 < self.max_attempts:
+                    time.sleep(1.0)
         raise last or RuntimeError(f"GET falló: {url}")
 
     def _post(self, url: str, data: dict, **kwargs):
         last = None
-        for _ in range(3):
+        for attempt in range(self.max_attempts):
             try:
                 r = self.client.post(url, data=data, **kwargs)
                 if r.status_code in (429, 500, 502, 503):
-                    time.sleep(1.5 * (_ + 1))
+                    if attempt + 1 < self.max_attempts:
+                        time.sleep(1.5 * (attempt + 1))
                     continue
                 return r
             except Exception as e:
                 last = e
-                time.sleep(1.0)
+                if attempt + 1 < self.max_attempts:
+                    time.sleep(1.0)
         raise last or RuntimeError(f"POST falló: {url}")
+
+    def _post_json_with_budget(self, url: str, data: dict, *, budget_seconds: float,
+                               headers: dict | None = None) -> dict:
+        """Read a streaming JSON response without exceeding one wall-clock budget."""
+        deadline = time.monotonic() + max(0.25, float(budget_seconds))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("prop360_property_budget_exhausted")
+        timeout = httpx.Timeout(
+            connect=min(self.request_timeout, remaining),
+            read=min(self.request_timeout, remaining),
+            write=min(self.request_timeout, remaining),
+            pool=min(self.request_timeout, remaining),
+        )
+        chunks = []
+        size = 0
+        with self.client.stream(
+            "POST", url, data=data, headers=headers, timeout=timeout,
+        ) as response:
+            for chunk in response.iter_bytes():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("prop360_property_budget_exhausted")
+                size += len(chunk)
+                if size > 2_000_000:
+                    raise ValueError("prop360_portal_payload_too_large")
+                chunks.append(chunk)
+        if time.monotonic() >= deadline:
+            raise TimeoutError("prop360_property_budget_exhausted")
+        try:
+            payload = json.loads(b"".join(chunks).decode("utf-8-sig", errors="replace"))
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def login(self) -> bool:
         log.info("Iniciando sesión en Prop360…")
@@ -929,22 +974,27 @@ class Prop360Client:
         r = self._get(FICHA_PRINT_URL_TPL.format(codigo=codigo))
         return r.text
 
-    def get_portales(self, codigo: str) -> dict:
-        r = self._post(
-            PROPIEDAD_FICHA_ASHX,
-            {
-                "accion": "propCard_portals",
-                "idprop": codigo,
-                "cache": time.time() % 10,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        try:
-            payload = r.json()
-        except json.JSONDecodeError:
-            return {}
+    def get_portales(self, codigo: str, *, budget_seconds: float | None = None) -> dict:
+        data = {
+            "accion": "propCard_portals",
+            "idprop": codigo,
+            "cache": time.time() % 10,
+        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        if budget_seconds is None:
+            r = self._post(PROPIEDAD_FICHA_ASHX, data, headers=headers)
+            try:
+                payload = r.json()
+            except json.JSONDecodeError:
+                return {}
+        else:
+            payload = self._post_json_with_budget(
+                PROPIEDAD_FICHA_ASHX, data, budget_seconds=budget_seconds,
+                headers=headers,
+            )
         if not isinstance(payload, dict):
             return {}
+        self.last_portales_by_code[str(codigo)] = payload
         return payload
 
     def get_bitacora(self, codigo: str, max_pages: int = 10) -> list[dict]:
@@ -1338,13 +1388,14 @@ def _ml_to_pi(url: str) -> str:
 
 def _pub_entry(p: dict) -> dict:
     op = str(p.get("PropOperation") or "").upper()
+    active = str(p.get("Status") or "").strip() == "1"
     return {
         "url": p.get("Url") or "",
         "code": p.get("Code") or "",
         "code_unique": p.get("CodeUnique") or "",
         "title": p.get("Title") or "",
         "operacion": "Venta" if op == "V" else "Arriendo",
-        "publicada": bool(p.get("Status") == 1),
+        "publicada": active,
         "estado": p.get("Status"),
         "expiration_date": p.get("ExpirationDate"),
         "quality": p.get("Quality"),
@@ -1353,7 +1404,7 @@ def _pub_entry(p: dict) -> dict:
     }
 
 
-def parse_publicaciones_json(payload: dict, codigo: str) -> dict:
+def parse_publicaciones_json(payload: dict, codigo: str, *, office_id: int | None = None) -> dict:
     if not isinstance(payload, dict):
         return {}
     by_portal = {}
@@ -1383,14 +1434,36 @@ def parse_publicaciones_json(payload: dict, codigo: str) -> dict:
     if "Portal Inmobiliario" in by_portal:
         ops = by_portal["Portal Inmobiliario"]
         pi = {}
-        ml_urls = [ops[o]["url"] for o in ("V", "A") if o in ops and ops[o]["url"]]
+        ml_all_urls = [ops[o]["url"] for o in ("V", "A")
+                       if o in ops and ops[o]["url"] and canonical_portal(ops[o]["url"]) == "mercadolibre"]
+        ml_urls = [ops[o]["url"] for o in ("V", "A")
+                   if o in ops and ops[o]["url"] and ops[o].get("publicada")
+                   and canonical_portal(ops[o]["url"]) == "mercadolibre"]
+        if ml_all_urls:
+            pi["urls_mercado_libre"] = ml_all_urls
         if ml_urls:
             pi["url_mercado_libre"] = ml_urls[0]
-            pi["urls_mercado_libre"] = ml_urls
-        pi_urls = [u for u in (_ml_to_pi(u) for u in ml_urls) if u]
+        elif ml_all_urls:
+            data.setdefault("_clear_publication_fields", []).append("portal_inmobiliario.url_mercado_libre")
+        # Only retain Portal Inmobiliario URLs actually returned by Prop360.
+        # Mercado Libre and PI share an MLC namespace, but a URL may not be
+        # synthesized by swapping domains.
+        pi_all_urls = [ops[o]["url"] for o in ("V", "A")
+                   if o in ops and ops[o]["url"] and canonical_portal(ops[o]["url"]) == "portal_inmobiliario"]
+        pi_urls = [ops[o]["url"] for o in ("V", "A")
+                   if o in ops and ops[o]["url"] and ops[o].get("publicada")
+                   and canonical_portal(ops[o]["url"]) == "portal_inmobiliario"]
+        if pi_all_urls:
+            pi["urls_pi"] = pi_all_urls
         if pi_urls:
             pi["url_pi"] = pi_urls[0]
-            pi["urls_pi"] = pi_urls
+        elif pi_all_urls:
+            data.setdefault("_clear_publication_fields", []).append("portal_inmobiliario.url_pi")
+        elif ml_urls:
+            # A verified Prop360 response contains the current MLC publication
+            # but no PI-domain destination. Retain the old value in accumulated
+            # arrays/aliases, while ceasing to present it as the current PI URL.
+            data.setdefault("_clear_publication_fields", []).append("portal_inmobiliario.url_pi")
         pi["publicaciones"] = ops
         data["portal_inmobiliario"] = pi
 
@@ -1416,6 +1489,48 @@ def parse_publicaciones_json(payload: dict, codigo: str) -> dict:
             if o in ops and ops[o]["code"]:
                 d["codigo_" + ("venta" if o == "V" else "arriendo")] = ops[o]["code"]
         data["chilepropiedades"] = d
+
+    # Prop360's portal JSON is the verified source for current publication
+    # identities. Keep one alias per real provider/operation observation.
+    # The alias expansion requested here is explicitly Sucre-scoped; other
+    # offices retain their pre-existing publication schema and sync cadence.
+    effective_office_id = -1 if office_id is None else int(office_id)
+    if effective_office_id != 7:
+        return data
+    aliases = []
+    observed_at = now_iso()
+    source_url = f"{BASE_URL}/backOffice/propiedades/propEditar?i={codigo}"
+    for source_name, ops in by_portal.items():
+        for op, entry in ops.items():
+            url = str(entry.get("url") or "").strip()
+            portal = canonical_portal(url)
+            if not portal:
+                portal = {
+                    "Sitio web propio": "procasa",
+                    "Portal Inmobiliario": "portal_inmobiliario",
+                    "TocToc": "toctoc", "Yapo": "yapo", "Proppit": "proppit",
+                    "ChilePropiedades": "chilepropiedades",
+                }.get(source_name, "")
+            if not portal:
+                continue
+            raw_id = (extract_property_external_id(url, portal)
+                      or entry.get("code_unique") or entry.get("code"))
+            if portal in {"mercadolibre", "portal_inmobiliario"} and raw_id:
+                raw_id = extract_property_external_id(str(raw_id), portal) or str(raw_id)
+                if re.fullmatch(r"\d+", str(raw_id)):
+                    raw_id = f"MLC-{raw_id}"
+            raw_status = entry.get("estado")
+            is_active = str(raw_status).strip() == "1" or entry.get("publicada") is True
+            publication_status = "active" if is_active else "historical"
+            aliases.append(build_property_alias(
+                url, portal, op, str(raw_id) if raw_id else None,
+                active=is_active, publication_status=publication_status,
+                resolvable=True, source="prop360_portals_api", source_url=source_url,
+                verification_status="source_verified", first_seen_at=observed_at,
+                last_seen_at=observed_at, verified_at=observed_at,
+            ))
+    if aliases:
+        data["aliases"] = aliases
 
     return data
 
@@ -1814,7 +1929,7 @@ def scrape_propiedad(client: Prop360Client, codigo: str, listing_row: dict) -> d
     estado = parse_estado(html_est, audit, listing_estado=listing_row.get("estado") or "Activa")
 
     client._wait()
-    publicaciones = parse_publicaciones_json(client.get_portales(codigo), codigo)
+    publicaciones = parse_publicaciones_json(client.get_portales(codigo), codigo, office_id=OFFICE_ID)
     html_pubs = parse_publicaciones(html_edit, codigo, audit)
     for k, v in html_pubs.items():
         if k == "whatsapp" and v:
@@ -1888,7 +2003,7 @@ def scrape_propiedad_imprimible(client: Prop360Client, codigo: str, listing_row:
     }
 
     client._wait()
-    publicaciones = parse_publicaciones_json(client.get_portales(codigo), codigo)
+    publicaciones = parse_publicaciones_json(client.get_portales(codigo), codigo, office_id=OFFICE_ID)
 
     client._wait()
     bitacora = client.get_bitacora(codigo)
@@ -2013,6 +2128,22 @@ def upsert_ficha(
         for field in ("fecha_primera_deteccion", "fuente_incorporacion"):
             if field in existing:
                 doc.setdefault(field, existing[field])
+
+    def _is_sucre_publication_scope(value: dict) -> bool:
+        office_id = value.get("oficina_id")
+        try:
+            if int(office_id) == 7:
+                return True
+        except (TypeError, ValueError):
+            pass
+        names = [value.get("oficina_nombre")]
+        names.extend((value.get(path) or {}).get("oficina") for path in ("resumen", "estado")
+                     if isinstance(value.get(path), dict))
+        return any(str(name or "").strip().casefold() == "procasa sucre" for name in names)
+
+    preserve_publication_history = (
+        _is_sucre_publication_scope(doc) or _is_sucre_publication_scope(existing)
+    )
     verified_operations = {
         op_key
         for op_key in ("precio_venta", "precio_arriendo")
@@ -2033,7 +2164,19 @@ def upsert_ficha(
         existing_sec = existing.get(section)
         new_sec = doc.get(section)
         if isinstance(existing_sec, dict) and isinstance(new_sec, dict):
-            merged = {**existing_sec, **new_sec}
+            if section == "publicaciones":
+                if preserve_publication_history:
+                    merged = merge_publication_snapshot(
+                        existing_sec, new_sec, observed_at=now_iso(),
+                        source="prop360_portals_api",
+                    )
+                else:
+                    # Issue #46's history-preserving publication behavior is
+                    # scoped to PROCASA Sucre. Other offices keep their current
+                    # merge semantics and are never expanded by this feature.
+                    merged = {**existing_sec, **new_sec}
+            else:
+                merged = {**existing_sec, **new_sec}
             if section == "tipo_operacion":
                 from chatbot.uf_service import validar_uf_vigente
                 effective_uf = _get_scrape_uf_context() if uf_info is _UNSET_UF_CONTEXT else (uf_info or {})
@@ -2495,7 +2638,25 @@ def run_all_offices(args, offices: list[int] | None = None) -> int:
                 OFFICE_ID = staged["office_id"]
                 OFICINA_NOMBRE = staged["office_name"]
                 for doc in staged["docs"]:
-                    upsert_ficha(write_coll, doc)
+                    nuevo, _actualizado = upsert_ficha(write_coll, doc)
+                    if (nuevo and OFFICE_ID == 7
+                            and str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").lower()
+                            in {"1", "true", "yes", "on"}
+                            and str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").lower()
+                            in {"1", "true", "yes", "on"}
+                            and os.getenv("PUBLICATION_SYNC_BACKUP_DIR")):
+                        try:
+                            from chatbot.publication_sync import sync_single_property_publications
+
+                            saved = write_coll.find_one({"codigo": doc.get("codigo")}) or doc
+                            sync_single_property_publications(
+                                None, write_coll, write_coll.database, saved,
+                                payload=(staged.get("portal_payloads") or {}).get(str(doc.get("codigo"))),
+                                backup_dir=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"), execute=True,
+                            )
+                        except Exception as publication_exc:
+                            log.exception("[PUBLICATION_SYNC] nueva propiedad %s: %s",
+                                          doc.get("codigo"), type(publication_exc).__name__)
                 for codigo in staged["errors"]:
                     upsert_error(write_coll, codigo, "scrape_error")
                 if staged["bajas_enabled"]:
@@ -2674,6 +2835,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
     scraped_docs = []
     errores = []
     tipos_detectados = {}
+    portal_payloads = {}
 
     # Scrape and compare everything first. In execute mode, Mongo is untouched
     # until the complete preview below has been printed.
@@ -2682,6 +2844,8 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
         try:
             listing_row = activa.get(codigo) or {"codigo": codigo, "estado": "Activa"}
             doc = scrape_propiedad(client, codigo, listing_row)
+            if str(codigo) in getattr(client, "last_portales_by_code", {}):
+                portal_payloads[str(codigo)] = client.last_portales_by_code[str(codigo)]
             doc = canonicalize_prices(doc, _get_scrape_uf_context())
             t_det = doc.get("metadata", {}).get("tipo_propiedad_detectado")
             if t_det:
@@ -2704,6 +2868,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
     elif getattr(args, "_defer_writes", False):
         args._manual_staged.append({
             "docs": scraped_docs,
+            "portal_payloads": portal_payloads,
             "errors": errores,
             "office_id": OFFICE_ID,
             "office_name": OFICINA_NOMBRE,
@@ -2713,7 +2878,25 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
     else:
         # The explicit --execute flag is the sole path to cartera writes.
         for doc in scraped_docs:
-            upsert_ficha(coll, doc)
+            nuevo, _actualizado = upsert_ficha(coll, doc)
+            if (nuevo and OFFICE_ID == 7
+                    and str(os.getenv("PUBLICATION_SYNC_EXECUTE") or "").lower()
+                    in {"1", "true", "yes", "on"}
+                    and str(os.getenv("PUBLICATION_SYNC_NEW_PROPERTIES_ENABLED") or "").lower()
+                    in {"1", "true", "yes", "on"}
+                    and os.getenv("PUBLICATION_SYNC_BACKUP_DIR")):
+                try:
+                    from chatbot.publication_sync import sync_single_property_publications
+
+                    saved = coll.find_one({"codigo": doc.get("codigo")}) or doc
+                    sync_single_property_publications(
+                        client, coll, coll.database, saved,
+                        payload=portal_payloads.get(str(doc.get("codigo"))),
+                        backup_dir=os.getenv("PUBLICATION_SYNC_BACKUP_DIR"), execute=True,
+                    )
+                except Exception as publication_exc:
+                    log.exception("[PUBLICATION_SYNC] nueva propiedad %s: %s",
+                                  doc.get("codigo"), type(publication_exc).__name__)
         for codigo in errores:
             upsert_error(coll, codigo, "scrape_error")
         if getattr(args, "_bajas_enabled", False):

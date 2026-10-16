@@ -1,0 +1,10 @@
+# Extracto documental de Config; no es un módulo ejecutable.
+# Fuente: config.py del árbol local inspeccionado.
+
+@staticmethod
+def get_captacion_collection(db):
+    return db[Config.CAPTACION_COLLECTION_NAME]
+
+CAPTACION_COLLECTION_NAME = os.getenv("CAPTACION_COLLECTION_NAME", "propiedades_captacion")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "universo_cartera_prop360")
+PROPERTY_COLLECTION_NAME = os.getenv("PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")

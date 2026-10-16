@@ -1,0 +1,1685 @@
+# chatbot/storage.py
+import re
+import os
+from pymongo import MongoClient
+import time
+import threading
+from contextvars import ContextVar
+import inspect
+import asyncio
+from datetime import datetime, timedelta, timezone
+import pytz
+from config import Config
+from typing import List, Dict, Optional
+
+# ---- Phone redaction for logs ----
+import logging
+_PHONE_RE = re.compile(r"(\+?56\s*9)\s*(\d{4})\s*(\d{4})")
+_PHONE_MASK = r"\1 **** \3"
+
+def redact_phone(text: str) -> str:
+    """Redact Chilean mobile numbers in log output. +56 9 XXXX 1234 -> +56 9 **** 1234"""
+    if not text or not isinstance(text, str):
+        return text
+    return _PHONE_RE.sub(_PHONE_MASK, text)
+
+
+class RedactPhoneFilter(logging.Filter):
+    """Logging filter that redacts phone numbers from log records.
+
+    Preserves types: int, float, bool, None are never converted to str.
+    Only string values and stringified record.msg are redacted.
+    """
+    def filter(self, record):
+        record.msg = redact_phone(str(record.msg))
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: _redact_value(v) for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(_redact_value(a) for a in record.args)
+        return True
+
+
+def _redact_value(val):
+    """Redact phone from val if it's a string; otherwise return as-is."""
+    if isinstance(val, str):
+        return redact_phone(val)
+    return val
+
+
+def install_log_redaction():
+    """Install phone redaction on the root logger and all named loggers."""
+    filt = RedactPhoneFilter()
+    for name in ("", "chatbot", "uvicorn", "uvicorn.access", "uvicorn.error",
+                 "webhook", "processing", "api", "crm"):
+        logging.getLogger(name).addFilter(filt)
+from .constants import PipelineStage, InteractionType, EventType, CHILE_TZ
+from uuid import uuid4
+from collections import deque
+
+logger = logging.getLogger(__name__)
+
+_mongo_client = None
+_mongo_forensics_patched = False
+_mongo_log_last_ts = {}
+_observability_lock = threading.Lock()
+_observability_metrics = {"mongo_sync_on_loop": 0, "event_loop_blocked": 0}
+_event_loop_blocked_ts = deque(maxlen=1000)
+_delegated_sync_mongo = ContextVar("delegated_sync_mongo", default=False)
+_dashboard_perf_context = ContextVar("dashboard_perf_context", default=None)
+
+
+def set_dashboard_perf_context(value):
+    """Attach an aggregate-only Mongo span sink to the current worker context."""
+    return _dashboard_perf_context.set(value)
+
+
+def reset_dashboard_perf_context(token):
+    _dashboard_perf_context.reset(token)
+
+
+def _dashboard_query_shape(name, args):
+    """Return filter/pipeline structure without values or document fields."""
+    try:
+        if name == "aggregate" and args and isinstance(args[0], list):
+            return {"pipeline_stages": [sorted(stage.keys()) for stage in args[0] if isinstance(stage, dict)]}
+        if args and isinstance(args[0], dict):
+            return {"filter_keys": sorted(str(key) for key in args[0])}
+    except Exception:
+        return {"shape_error": True}
+    return {}
+
+
+def record_observability_event(event_type: str, payload: dict | None = None, *, db=None) -> str:
+    """
+    Registro pasivo de eventos del flujo en la colección event_log.
+    Nunca lanza error al caller.
+    """
+    try:
+        event = {
+            "id": str(uuid4()),
+            "event": event_type,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if payload:
+            event.update(payload)
+        active_db = db if db is not None else get_db()
+        active_db["event_log"].insert_one(event)
+        return event["id"]
+    except Exception:
+        return ""
+
+
+def ensure_conversation_id(phone: str, lead_id: str | None = None,
+                            conversation_id: str | None = None) -> str:
+    """
+    Garantiza un conversation_id persistente por lead.
+    Si no existe, crea uno y lo guarda en la conversación.
+    """
+    db = get_db()
+    try:
+        selector = {"phone": phone}
+        if lead_id:
+            from bson import ObjectId
+            try:
+                selector = {"_id": ObjectId(lead_id)}
+            except Exception:
+                selector = {"_id": lead_id}
+        doc = db[COLLECTION_CONVERSATIONS].find_one(selector, {"conversation_id": 1})
+        existing_id = (doc or {}).get("conversation_id")
+        if existing_id:
+            return str(existing_id)
+
+        conversation_id = str(conversation_id or uuid4())
+        db[COLLECTION_CONVERSATIONS].update_one(
+            selector,
+            {
+                "$set": {"conversation_id": conversation_id},
+                "$setOnInsert": {"lead_temperature_effective": "COLD"},
+            },
+            upsert=True
+        )
+        return conversation_id
+    except Exception as exc:
+        # A transient database failure must not create a second identity that
+        # is never persisted.  Let the durable queue retry the operation.
+        logging.getLogger(__name__).exception("conversation_id_persistence_failed")
+        raise RuntimeError("conversation_id_persistence_failed") from exc
+
+
+async def run_in_threadpool(func, *args, **kwargs):
+    """Run synchronous storage work outside the caller's event loop."""
+    token = _delegated_sync_mongo.set(True)
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    finally:
+        _delegated_sync_mongo.reset(token)
+
+
+def observability_mark(kind: str, **kwargs):
+    with _observability_lock:
+        if kind in _observability_metrics:
+            _observability_metrics[kind] += 1
+        if kind == "event_loop_blocked":
+            _event_loop_blocked_ts.append(time.time())
+    return True
+
+
+def observability_snapshot_and_reset():
+    with _observability_lock:
+        snap = dict(_observability_metrics)
+        _observability_metrics["mongo_sync_on_loop"] = 0
+        _observability_metrics["event_loop_blocked"] = 0
+        return snap
+
+
+def observability_event_loop_blocked_recent(count_seconds: int = 10) -> int:
+    now = time.time()
+    with _observability_lock:
+        while _event_loop_blocked_ts and (now - _event_loop_blocked_ts[0]) > count_seconds:
+            _event_loop_blocked_ts.popleft()
+        return len(_event_loop_blocked_ts)
+
+def _should_rate_log(key: str, every_seconds: float) -> bool:
+    now = time.time()
+    last = _mongo_log_last_ts.get(key, 0.0)
+    if now - last >= every_seconds:
+        _mongo_log_last_ts[key] = now
+        return True
+    return False
+
+def _patch_mongo_forensics():
+    """Instrumentación temporal forense para operaciones sync de PyMongo."""
+    global _mongo_forensics_patched
+    if _mongo_forensics_patched:
+        return
+    try:
+        from pymongo.collection import Collection
+        op_names = [
+            "find", "find_one", "aggregate", "count_documents", "distinct",
+            "update_one", "find_one_and_update", "insert_one",
+        ]
+        for op in op_names:
+            original = getattr(Collection, op, None)
+            if not original or getattr(original, "__forensics_wrapped__", False):
+                continue
+
+            def _make_wrapper(name, fn):
+                def _wrapped(self, *args, **kwargs):
+                    t0 = time.perf_counter()
+                    thread_id = threading.get_ident()
+                    thread_name = threading.current_thread().name
+                    stack = inspect.stack()
+                    caller = stack[1].function if len(stack) > 1 else "unknown"
+                    stack_hint = " > ".join(f"{s.function}:{s.lineno}" for s in stack[1:5])
+                    file_hint = " > ".join((s.filename or "") for s in stack[1:8])
+                    from_motor = ("\\motor\\" in file_hint) or ("/motor/" in file_hint)
+                    in_event_loop = False
+                    try:
+                        asyncio.get_running_loop()
+                        in_event_loop = True
+                    except RuntimeError:
+                        in_event_loop = False
+                    is_main_thread = threading.current_thread() is threading.main_thread()
+                    delegated = _delegated_sync_mongo.get()
+                    if in_event_loop and is_main_thread and (not from_motor):
+                        observability_mark("mongo_sync_on_loop")
+                        logger.error(
+                            f"[MONGO_SYNC_ON_EVENT_LOOP] op={name} col={self.name} caller={caller} "
+                            f"thread={thread_name}:{thread_id} stack={stack_hint}"
+                        )
+                        logger.critical(
+                            f"[CRITICAL] [ASYNC_VIOLATION] type=mongo_sync_on_event_loop "
+                            f"event_loop_blocked=none lag_ms=none op={name} collection={self.name} "
+                            f"caller={caller} trace=none impact=HIGH action_required=true "
+                            f"async_context=true thread_type=main delegated=false safe=false"
+                        )
+                    elif in_event_loop and (not from_motor) and not delegated:
+                        logger.warning(
+                            f"[MONGO_SYNC_ON_WORKER_LOOP] op={name} col={self.name} caller={caller} "
+                            f"thread={thread_name}:{thread_id} delegated=false"
+                        )
+                    try:
+                        return fn(self, *args, **kwargs)
+                    finally:
+                        dt_ms = (time.perf_counter() - t0) * 1000
+                        dashboard_context = _dashboard_perf_context.get()
+                        if dashboard_context is not None:
+                            dashboard_context.append({
+                                "collection": self.name,
+                                "operation": name,
+                                "duration_ms": round(dt_ms, 1),
+                                "thread": thread_name,
+                                **_dashboard_query_shape(name, args),
+                            })
+                        # Reducir ruido: loggear siempre lo anómalo, y muestrear lo normal.
+                        # 1) Siempre: operaciones lentas >=400ms
+                        # 2) Siempre: sync real en event loop (no motor)
+                        # 3) Muestreo: 1 log/30s por firma para rápidas normales
+                        is_anomalous = (dt_ms >= 400.0) or (in_event_loop and is_main_thread and not from_motor)
+                        key = f"{name}:{self.name}:{caller}:{thread_name}:{str(in_event_loop).lower()}:{str(from_motor).lower()}"
+                        if is_anomalous or _should_rate_log(key, 30.0):
+                            logger.debug(
+                                f"[MONGO_OP] op={name} col={self.name} dur={dt_ms:.1f}ms "
+                                f"thread={thread_name}:{thread_id} caller={caller} stack={stack_hint} "
+                                f"in_event_loop={str(in_event_loop).lower()} from_motor={str(from_motor).lower()}"
+                            )
+                            logger.debug(
+                                f"[MONGO_OP_META] async_context={str(in_event_loop).lower()} "
+                                f"thread_type={'main' if thread_name.lower().startswith('main') else 'threadpool'} "
+                                f"safe={str((not in_event_loop) or from_motor or delegated).lower()} "
+                                f"delegated={str(delegated).lower()} from_motor={str(from_motor).lower()}"
+                            )
+                _wrapped.__forensics_wrapped__ = True
+                return _wrapped
+
+            setattr(Collection, op, _make_wrapper(op, original))
+        _mongo_forensics_patched = True
+        logger.info("[MONGO_FORENSICS] wrappers activos para operaciones sync")
+    except Exception as e:
+        logger.warning(f"[MONGO_FORENSICS] no se pudo activar wrappers: {e}")
+
+def get_db():
+    global _mongo_client
+    if _mongo_client is None:
+        # Timeouts defensivos para Render: evita freezes de 60s por conexiones TCP muertas
+        # socketTimeoutMS: max wait para respuesta de una operacion en progreso
+        # connectTimeoutMS: max espera al establecer una nueva conexion
+        # serverSelectionTimeoutMS: max espera para encontrar un servidor Mongo disponible
+        _mongo_client = MongoClient(
+            Config.MONGO_URI,
+            socketTimeoutMS=8000,
+            connectTimeoutMS=5000,
+            serverSelectionTimeoutMS=10000,
+            maxIdleTimeMS=45000,
+        )
+        _patch_mongo_forensics()
+    return _mongo_client[Config.DB_NAME]
+
+# --- ASYNC MOTOR INFRASTRUCTURE ---
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+except ImportError:
+    pass
+
+_async_mongo_client = None
+
+def get_async_db():
+    """Retorna la base de datos asíncrona usando motor. Solo debe llamarse en rutas async."""
+    global _async_mongo_client
+    if _async_mongo_client is None:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        _async_mongo_client = AsyncIOMotorClient(
+            Config.MONGO_URI,
+            socketTimeoutMS=8000,
+            connectTimeoutMS=5000,
+            serverSelectionTimeoutMS=10000,
+            maxIdleTimeMS=45000,
+        )
+    return _async_mongo_client[Config.DB_NAME]
+
+COLLECTION_CONVERSATIONS = "leads"
+COLLECTION_PENDING_NOTIFICATIONS = "pending_notifications"
+
+
+def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
+                    lead_id: str = None):
+    from .phone_utils import normalize_phone_strict, is_synthetic_phone
+    normalized = normalize_phone_strict(phone)
+    phone = normalized or phone
+
+    db = get_db()
+    now = datetime.now(CHILE_TZ)
+    metadata = dict(metadata or {})
+    from .conversation_observability import (
+        actor_type_for, new_message_id, resolve_or_create_conversation,
+    )
+    conversation_id = metadata.get("conversation_id")
+    conversation_id = resolve_or_create_conversation(
+        db, lead_id=lead_id, phone=phone, conversation_id=conversation_id,
+    )
+    actor_type = actor_type_for(
+        role, metadata.pop("actor_type", None),
+        is_human=bool(metadata.pop("is_human_agent", False)),
+    )
+    message_id = str(metadata.pop("message_id", None) or new_message_id())
+    standard_metadata = {
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "lead_id": str(lead_id) if lead_id else None,
+        "actor_type": actor_type,
+    }
+    for key in (
+        "actor_id", "provider_message_id", "property_id", "property_code",
+        "operation", "property_context_source", "property_context_confidence",
+        "source_message_ids", "property_contexts",
+    ):
+        if metadata.get(key) is not None:
+            standard_metadata[key] = metadata.pop(key)
+
+    # When the shared gate is explicitly enabled, an authenticated human
+    # outbound message claims protection before message persistence.  Clicks
+    # remain telemetry only; this branch is for an actual human message.
+    if actor_type == "human_agent" and lead_id:
+        from config import Config
+        if getattr(Config, "CRM_SLA_SECURITY_LAYER_ENABLED", False):
+            from .crm_lead_access import resolve_crm_lead_access_context
+            from .crm_management import LeadReassignedSlaLockedError
+            actor_id = str(standard_metadata.get("actor_id") or "").strip()
+            actor_doc = None
+            actor_values = [actor_id] if actor_id else []
+            try:
+                from bson import ObjectId
+                if actor_id and ObjectId.is_valid(actor_id):
+                    actor_values.append(ObjectId(actor_id))
+            except Exception:
+                pass
+            for actor_value in actor_values:
+                actor_doc = db["usuarios"].find_one({"_id": actor_value})
+                if actor_doc:
+                    break
+            access_context = resolve_crm_lead_access_context(
+                db, user=actor_doc, lead_id=lead_id,
+            )
+            if not access_context.access_allowed:
+                if access_context.is_locked:
+                    raise LeadReassignedSlaLockedError(LeadReassignedSlaLockedError.code)
+                raise PermissionError(access_context.lock_reason or "CRM_ASSIGNMENT_CONTEXT_INVALID")
+        if getattr(Config, "CRM_SLA_TRANSACTION_GATE_ENABLED", False):
+            from .crm_assignment_cycle_gate import (
+                CycleGateStatus,
+                HumanProtectionType,
+                claim_cycle_for_human_management,
+            )
+            from .crm_metrics import active_assignment_cycle
+            active_cycle = active_assignment_cycle(db, lead_id)
+            if active_cycle:
+                operation = str(standard_metadata.get("operation") or "").lower()
+                if "email" in operation:
+                    protection_type = HumanProtectionType.EMAIL.value
+                elif "call" in operation or "phone" in operation:
+                    protection_type = HumanProtectionType.CALL.value
+                elif "whatsapp" in operation or "wa" in operation:
+                    protection_type = HumanProtectionType.WHATSAPP.value
+                else:
+                    protection_type = HumanProtectionType.HUMAN_OUTREACH.value
+                gate_result = claim_cycle_for_human_management(
+                    db,
+                    lead_id=lead_id,
+                    assignment_cycle_id=active_cycle.get("assignment_cycle_id"),
+                    actor_user_id=standard_metadata.get("actor_id") or "",
+                    protection_type=protection_type,
+                    occurred_at=now,
+                )
+                if gate_result.status == CycleGateStatus.LEAD_REASSIGNED_SLA_LOCKED.value:
+                    from .crm_management import LeadReassignedSlaLockedError
+                    raise LeadReassignedSlaLockedError(
+                        LeadReassignedSlaLockedError.code
+                    )
+                if gate_result.status == CycleGateStatus.OWNER_MISMATCH.value:
+                    raise PermissionError("human message actor does not own active cycle")
+                if gate_result.status not in {
+                    CycleGateStatus.CLAIMED.value,
+                    CycleGateStatus.ALREADY_PROTECTED.value,
+                }:
+                    raise ValueError(f"human message gate rejected: {gate_result.status}")
+    message = {
+        "role": role,
+        "content": str(content),
+        "timestamp": now.isoformat(),
+        **standard_metadata,
+    }
+    message.update(metadata)
+
+    # A durable outbound response is not an effective customer interaction
+    # until the provider accepts it. Keep generated/attempted/suppressed/
+    # unknown messages in the audit trail, but do not promote them to the
+    # canonical lead snapshot used by CRM.
+    outbound_pending = (
+        role == "assistant"
+        and message.get("delivery_status") in {
+            "generated", "provider_attempt", "superseded", "suppressed", "delivery_unknown",
+        }
+    )
+    snapshot_fields = {} if outbound_pending else {
+        "last_message_at": now.isoformat(),
+        "last_message_role": role,
+        "last_message_preview": str(content)[:160],
+    }
+
+    if lead_id:
+        from bson import ObjectId
+        try:
+            qid = ObjectId(lead_id) if isinstance(lead_id, str) else lead_id
+        except Exception:
+            qid = lead_id
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"_id": qid},
+            {
+                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$set": {**snapshot_fields, "conversation_id": conversation_id},
+            }
+        )
+    else:
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {
+                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$set": {**snapshot_fields, "conversation_id": conversation_id},
+                "$setOnInsert": {
+                    "created_at": now.isoformat(),
+                    "lead_temperature_effective": "COLD",
+                }
+            },
+            upsert=True
+        )
+    if result.modified_count or result.upserted_id:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason=f"message_{role}", phone=phone)
+        if actor_type in {"customer", "human_agent"}:
+            try:
+                from .conversation_observability import record_conversation_event
+                record_conversation_event(
+                    db,
+                    event_type=("human_message_sent" if actor_type == "human_agent" else "customer_message_received"),
+                    conversation_id=conversation_id,
+                    lead_id=str(lead_id) if lead_id else None,
+                    message_id=message_id,
+                    property_id=standard_metadata.get("property_id"),
+                    property_code=standard_metadata.get("property_code"),
+                    operation=standard_metadata.get("operation"),
+                    actor_type=actor_type,
+                    actor_id=standard_metadata.get("actor_id"),
+                    timestamp=now,
+                    metadata={
+                        "provider_message_id_present": bool(standard_metadata.get("provider_message_id")),
+                    },
+                )
+            except Exception:
+                logging.getLogger(__name__).exception("conversation_message_event_failed")
+    return {
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "lead_id": str(lead_id) if lead_id else None,
+        "actor_type": actor_type,
+    }
+
+def obtener_conversacion(phone: str) -> List[Dict]:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"messages": 1})
+    if not doc:
+        return []
+    excluded_delivery_states = {
+        "generated", "provider_attempt", "superseded", "suppressed", "delivery_unknown",
+    }
+    return [
+        message for message in (doc.get("messages", []) or [])
+        if not (
+            message.get("role") == "assistant"
+            and message.get("delivery_status") in excluded_delivery_states
+        )
+    ]
+
+def obtener_prospecto(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone})
+    if not doc:
+        return {}
+    return doc.get("prospecto", {})
+
+
+VISIT_DATA_FIELDS = ("nombre", "rut", "email")
+
+
+def get_visit_data_state(phone: str) -> dict:
+    """Read the optional visit-enrichment state without exposing conversation content."""
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.visit_data": 1}
+    ) or {}
+    state = (doc.get("prospecto") or {}).get("visit_data") or {}
+    return dict(state)
+
+
+def update_visit_data_state(phone: str, updates: dict) -> dict:
+    """Merge auditable visit-data state into the lead document."""
+    if not updates:
+        return get_visit_data_state(phone)
+    db = get_db()
+    current = get_visit_data_state(phone)
+    merged = dict(current)
+    for key, value in updates.items():
+        if value is not None:
+            merged[key] = value
+    merged.setdefault("status", "not_offered")
+    merged["captured_fields"] = sorted(set(merged.get("captured_fields") or []).intersection(VISIT_DATA_FIELDS))
+    merged["requested_fields"] = sorted(set(merged.get("requested_fields") or []).intersection(VISIT_DATA_FIELDS))
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"prospecto.visit_data": merged}},
+        upsert=True,
+    )
+    return merged
+
+
+def get_rag_alternative_offer_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_alternative_offer": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_alternative_offer") or {})
+
+
+def update_rag_alternative_offer_state(phone: str, updates: dict) -> dict:
+    current = get_rag_alternative_offer_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_alternative_offer": merged}}, upsert=True
+    )
+    return merged
+
+
+def get_rag_search_state(phone: str) -> dict:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"prospecto.rag_search_state": 1}
+    ) or {}
+    return dict((doc.get("prospecto") or {}).get("rag_search_state") or {})
+
+
+def update_rag_search_state(phone: str, updates: dict) -> dict:
+    current = get_rag_search_state(phone)
+    merged = {**current, **{key: value for key, value in (updates or {}).items() if value is not None}}
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone}, {"$set": {"prospecto.rag_search_state": merged}}, upsert=True
+    )
+    return merged
+
+
+def update_generated_response_delivery(
+    phone: str,
+    *,
+    db=None,
+    batch_id: str,
+    status: str,
+    content: str | None = None,
+    generation_id: str | None = None,
+    provider_message_id: str | None = None,
+    provider_status: str | None = None,
+    provider_status_code: int | None = None,
+    response_source: str | None = None,
+    response_reason: str | None = None,
+    fallback_intent: str | None = None,
+) -> bool:
+    """Update only the generated outbound message for one durable batch."""
+    if not phone or not batch_id:
+        return False
+    selector = {
+        "phone": phone,
+        "messages": {"$elemMatch": {
+            "role": "assistant", "batch_id": batch_id,
+            **({"generation_id": generation_id} if generation_id else {}),
+        }},
+    }
+    active_db = db if db is not None else get_db()
+    existing = active_db[COLLECTION_CONVERSATIONS].find_one(
+        selector, {"messages": {"$elemMatch": {
+            "role": "assistant", "batch_id": batch_id,
+            **({"generation_id": generation_id} if generation_id else {}),
+        }}}
+    ) or {}
+    existing_message = (existing.get("messages") or [{}])[0]
+    fields = {"messages.$.delivery_status": status}
+    if content is not None:
+        fields["messages.$.content"] = str(content)
+    if provider_message_id is not None:
+        fields["messages.$.provider_message_id"] = str(provider_message_id)
+    for name, value in (
+        ("response_source", response_source),
+        ("response_reason", response_reason),
+        ("fallback_intent", fallback_intent),
+    ):
+        if value is not None:
+            fields[f"messages.$.{name}"] = str(value)
+    if provider_status in {"accepted", "sent", "delivered", "read", "failed", "unknown"}:
+        fields["messages.$.provider_status"] = provider_status
+        if provider_status_code is not None:
+            fields["messages.$.provider_status_code"] = int(provider_status_code)
+        fields["messages.$.last_delivery_update_at"] = datetime.now(timezone.utc)
+        timestamp_field = {
+            "accepted": "accepted_at", "delivered": "delivered_at",
+            "read": "read_at", "failed": "failed_at",
+        }.get(provider_status)
+        if timestamp_field and not existing_message.get(timestamp_field):
+            fields[f"messages.$.{timestamp_field}"] = datetime.now(timezone.utc)
+    if status == "accepted":
+        effective_content = str(content) if content is not None else None
+        if effective_content is not None:
+            fields.update({
+                "last_message_at": datetime.now(CHILE_TZ).isoformat(),
+                "last_message_role": "assistant",
+                "last_message_preview": effective_content[:160],
+            })
+    result = active_db[COLLECTION_CONVERSATIONS].update_one(selector, {"$set": fields})
+    if provider_message_id and result.matched_count:
+        # A provider callback can arrive between the provider response and the
+        # write above. Reconcile any status that was safely parked by the
+        # webhook handler before returning to the delivery pipeline.
+        reconcile_pending_chatbot_delivery(
+            provider_message_id, db=active_db, batch_id=batch_id,
+        )
+    return bool(result.modified_count or result.matched_count)
+
+
+_CHATBOT_DELIVERY_EVENTS = frozenset({
+    "messages.update", "message.update", "messages.status", "message.status",
+})
+_DELIVERY_STATUS_RANK = {
+    "unknown": 0,
+    "accepted": 1,
+    "sent": 2,
+    "delivered": 3,
+    "read": 4,
+    "failed": 4,
+}
+_CHATBOT_PENDING_DELIVERY_COLLECTION = "chatbot_delivery_status_events"
+_CHATBOT_PENDING_DELIVERY_TTL = timedelta(hours=1)
+
+
+def _extract_chatbot_delivery_update(payload: dict) -> tuple[str | None, str, int | None]:
+    """Extract the provider id/status from the current Wasender update shape."""
+    data = payload.get("data") or {}
+    key = data.get("key") or payload.get("key") or {}
+    update = data.get("update") or payload.get("update") or {}
+    provider_message_id = str(
+        key.get("id") or data.get("messageId") or data.get("message_id")
+        or payload.get("message_id") or payload.get("messageId") or payload.get("id") or ""
+    ).strip() or None
+    raw_status = (
+        update.get("status") if isinstance(update, dict) else None
+    )
+    if raw_status is None:
+        raw_status = data.get("status") or payload.get("status")
+    from .whatsapp_client import normalize_provider_status
+    status = normalize_provider_status(raw_status)
+    status_code = None
+    if isinstance(raw_status, int) and not isinstance(raw_status, bool):
+        status_code = raw_status
+    elif isinstance(raw_status, str) and raw_status.strip().isdigit():
+        status_code = int(raw_status.strip())
+    if status not in _DELIVERY_STATUS_RANK:
+        status = "unknown"
+    return provider_message_id, status, status_code
+
+
+def _delivery_status_can_advance(current: str | None, incoming: str) -> bool:
+    """Prevent duplicate or out-of-order provider callbacks from regressing."""
+    current = str(current or "unknown").strip().lower()
+    incoming = str(incoming or "unknown").strip().lower()
+    # ``delivered`` may advance to ``read``, but a later provider
+    # retry/error notification must never rewrite evidence that the
+    # recipient's device already accepted the message. ``read`` and
+    # ``failed`` are terminal.
+    if current in {"read", "failed"}:
+        return False
+    if incoming == "failed" and current == "delivered":
+        return False
+    if incoming == current:
+        return False
+    return _DELIVERY_STATUS_RANK.get(incoming, 0) > _DELIVERY_STATUS_RANK.get(current, 0)
+
+
+def _delivery_timestamp_field(status: str) -> str | None:
+    return {
+        "accepted": "accepted_at",
+        "delivered": "delivered_at",
+        "read": "read_at",
+        "failed": "failed_at",
+    }.get(status)
+
+
+def _apply_chatbot_delivery_status(
+    db,
+    *,
+    provider_message_id: str,
+    incoming_status: str,
+    status_code: int | None,
+    now: datetime,
+    batch_id: str | None = None,
+) -> tuple[bool, bool, dict | None]:
+    """Apply one provider update to the lead message and response batch.
+
+    The second return value tells callers whether the response batch was also
+    found. This matters during the short window where the lead message has
+    its provider id but ``finalize_batch`` has not yet attached that id to the
+    batch document.
+    """
+    lead_tracked = False
+    batch_tracked = False
+
+    lead = db[COLLECTION_CONVERSATIONS].find_one(
+        {"messages": {"$elemMatch": {
+            "role": "assistant", "provider_message_id": provider_message_id,
+        }}},
+        {"_id": 1, "messages": {"$elemMatch": {
+            "role": "assistant", "provider_message_id": provider_message_id,
+        }}},
+    )
+    if lead:
+        message = (lead.get("messages") or [{}])[0]
+        current_status = message.get("provider_status") or message.get("delivery_status")
+        can_update = _delivery_status_can_advance(current_status, incoming_status)
+        needs_provider_metadata = not message.get("provider_status")
+        if can_update or needs_provider_metadata:
+            target_status = incoming_status if can_update else str(current_status or incoming_status).lower()
+            fields = {
+                "messages.$.delivery_status": target_status,
+                "messages.$.provider_status": target_status,
+                "messages.$.last_delivery_update_at": now,
+            }
+            if status_code is not None and target_status == incoming_status:
+                fields["messages.$.provider_status_code"] = status_code
+            timestamp_field = _delivery_timestamp_field(target_status)
+            if timestamp_field and not message.get(timestamp_field):
+                fields[f"messages.$.{timestamp_field}"] = now
+            db[COLLECTION_CONVERSATIONS].update_one(
+                {"_id": lead["_id"], "messages": {"$elemMatch": {
+                    "role": "assistant", "provider_message_id": provider_message_id,
+                }}},
+                {"$set": fields},
+            )
+        lead_tracked = True
+
+    if batch_id:
+        batch = db["chatbot_inbound_jobs"].find_one(
+            {"_id": batch_id, "kind": "response_batch"},
+            {"_id": 1, "provider_status": 1, "delivery_status": 1,
+             "accepted_at": 1, "delivered_at": 1, "read_at": 1, "failed_at": 1,
+             "lead_id": 1, "conversation_id": 1},
+        )
+    else:
+        batch = db["chatbot_inbound_jobs"].find_one(
+            {"kind": "response_batch", "outbound_provider_message_id": provider_message_id},
+            {"_id": 1, "provider_status": 1, "delivery_status": 1,
+             "accepted_at": 1, "delivered_at": 1, "read_at": 1, "failed_at": 1,
+             "lead_id": 1, "conversation_id": 1},
+        )
+    if batch:
+        current_status = batch.get("provider_status") or batch.get("delivery_status")
+        can_update = _delivery_status_can_advance(current_status, incoming_status)
+        if can_update or not batch.get("provider_status"):
+            target_status = incoming_status if can_update else str(current_status or incoming_status).lower()
+            fields = {
+                "provider_status": target_status,
+                "delivery_status": target_status,
+                "last_delivery_update_at": now,
+            }
+            if status_code is not None and target_status == incoming_status:
+                fields["provider_status_code"] = status_code
+            timestamp_field = _delivery_timestamp_field(target_status)
+            if timestamp_field and not batch.get(timestamp_field):
+                fields[timestamp_field] = now
+            db["chatbot_inbound_jobs"].update_one(
+                {"_id": batch["_id"], "kind": "response_batch"},
+                {"$set": fields},
+            )
+        batch_tracked = True
+
+    return lead_tracked or batch_tracked, batch_tracked, batch
+
+
+def _park_unmatched_chatbot_delivery(
+    db, *, provider_message_id: str, status: str, status_code: int | None, now: datetime,
+) -> None:
+    """Temporarily retain an unmatched callback until outbound persistence catches up."""
+    collection = db[_CHATBOT_PENDING_DELIVERY_COLLECTION]
+    existing = collection.find_one(
+        {"provider_message_id": provider_message_id},
+        {"provider_status": 1},
+    ) or {}
+    current = existing.get("provider_status")
+    if current and not _delivery_status_can_advance(current, status):
+        return
+    update = {
+        "$set": {
+            "provider_status": status,
+            "provider_status_code": status_code,
+            "last_received_at": now,
+            "expires_at": now + _CHATBOT_PENDING_DELIVERY_TTL,
+        },
+        "$setOnInsert": {
+            "provider_message_id": provider_message_id,
+            "created_at": now,
+        },
+    }
+    collection.update_one({"provider_message_id": provider_message_id}, update, upsert=True)
+
+
+def reconcile_pending_chatbot_delivery(
+    provider_message_id: str, *, db=None, batch_id: str | None = None,
+) -> bool:
+    """Apply and remove a callback parked during provider-id persistence."""
+    if not provider_message_id:
+        return False
+    active_db = db if db is not None else get_db()
+    pending = active_db[_CHATBOT_PENDING_DELIVERY_COLLECTION].find_one(
+        {"provider_message_id": str(provider_message_id)},
+    )
+    if not pending:
+        return False
+    tracked, _batch_tracked, _batch = _apply_chatbot_delivery_status(
+        active_db,
+        provider_message_id=str(provider_message_id),
+        incoming_status=str(pending.get("provider_status") or "unknown"),
+        status_code=pending.get("provider_status_code"),
+        now=pending.get("last_received_at") or datetime.now(timezone.utc),
+        batch_id=batch_id,
+    )
+    if tracked:
+        active_db[_CHATBOT_PENDING_DELIVERY_COLLECTION].delete_one(
+            {"_id": pending["_id"]},
+        )
+    return tracked
+
+
+def record_chatbot_delivery_status_webhook(payload: dict) -> bool:
+    """Persist chatbot outbound provider status updates by provider ID.
+
+    This is intentionally separate from the weekly-report delivery ledger.
+    It only updates records that already contain the provider message ID and
+    never changes the durable queue's ``state`` field.
+    """
+    if not isinstance(payload, dict) or payload.get("event") not in _CHATBOT_DELIVERY_EVENTS:
+        return False
+    provider_message_id, incoming_status, status_code = _extract_chatbot_delivery_update(payload)
+    if not provider_message_id:
+        return False
+    now = datetime.now(timezone.utc)
+    db = get_db()
+    tracked, batch_tracked, batch = _apply_chatbot_delivery_status(
+        db,
+        provider_message_id=provider_message_id,
+        incoming_status=incoming_status,
+        status_code=status_code,
+        now=now,
+    )
+    if tracked and batch_tracked:
+        db[_CHATBOT_PENDING_DELIVERY_COLLECTION].delete_many(
+            {"provider_message_id": provider_message_id},
+        )
+    else:
+        # This is the intentional race-handling path. The record is retained
+        # for a bounded period and reconciled when the outbound id is written.
+        _park_unmatched_chatbot_delivery(
+            db, provider_message_id=provider_message_id,
+            status=incoming_status, status_code=status_code, now=now,
+        )
+        tracked = True
+
+    if tracked:
+        try:
+            record_observability_event(
+                "OUTBOUND_STATUS_PENDING_CORRELATION" if not batch_tracked else "OUTBOUND_STATUS_UPDATED",
+                {
+                "provider_message_id": provider_message_id,
+                "provider_status": incoming_status,
+                "provider_status_code": status_code,
+                "lead_id": batch.get("lead_id") if batch else None,
+                "conversation_id": batch.get("conversation_id") if batch else None,
+                },
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("chatbot_delivery_status_event_failed")
+    return tracked
+
+
+def find_bot_outbound_by_provider_id(provider_message_id: str) -> dict | None:
+    """Resolve a provider outbound ID to a chatbot-owned lead, if any."""
+    provider_id = str(provider_message_id or "").strip()
+    if not provider_id:
+        return None
+    db = get_db()
+    lead = db[COLLECTION_CONVERSATIONS].find_one(
+        {"messages": {"$elemMatch": {
+            "role": "assistant", "provider_message_id": provider_id,
+        }}},
+        {"_id": 1, "phone": 1, "conversation_id": 1},
+    )
+    if lead:
+        return lead
+    return db["chatbot_inbound_jobs"].find_one(
+        {"kind": "response_batch", "outbound_provider_message_id": provider_id},
+        {"phone": 1, "lead_id": 1, "conversation_id": 1},
+    )
+
+
+def mark_human_takeover(phone: str, *, source: str = "whatsapp_human_message",
+                        reason: str | None = None, agent_id: str | None = None) -> str:
+    """Record a human message as the cutoff for unsent automatic responses."""
+    now = datetime.now(timezone.utc)
+    db = get_db()
+    from .conversation_observability import transition_to_human
+    transition_to_human(
+        db, phone=phone, source=source,
+        reason=reason or source, agent_id=agent_id, at=now,
+    )
+    return now.isoformat()
+
+PROPERTY_ACTIVE_CONTEXT_FIELDS = (
+    "codigo", "codigo_propiedad", "codigo_internacional", "codigo_yapo",
+    "codigo_mercadolibre", "precio_uf", "precio_clp", "comuna", "region",
+    "sector", "direccion", "tipo", "operacion", "operacion_fuente",
+    "portal_origen", "external_id_origen", "gastos_comunes", "dormitorios",
+    "banos", "estacionamientos", "superficie_util", "superficie_total",
+    "superficie_terreno", "superficie_construida", "caracteristicas",
+    "observaciones", "orientacion", "incluye_gastos_comunes",
+)
+
+
+def _property_context_snapshot(prospect: dict) -> dict | None:
+    code = prospect.get("codigo") or prospect.get("codigo_propiedad")
+    if code in (None, ""):
+        return None
+    snapshot = {
+        key: prospect[key]
+        for key in PROPERTY_ACTIVE_CONTEXT_FIELDS
+        if key in prospect and prospect[key] not in (None, "")
+    }
+    snapshot["status"] = "previous"
+    snapshot["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    if prospect.get("current_requested_property"):
+        snapshot["request"] = prospect["current_requested_property"]
+    return snapshot
+
+
+def record_unresolved_property_request(
+    phone: str, request: dict, trace_id: str = None,
+) -> dict:
+    """Make an explicit unresolved link the only active property request.
+
+    Previous resolved facts are preserved under ``previous_property`` while
+    all active listing fields are removed atomically with the unresolved
+    request snapshot. ``actualizar_prospecto`` intentionally ignores None,
+    so a normal prospect update cannot provide these clearing semantics.
+    """
+    db = get_db()
+    collection = db[COLLECTION_CONVERSATIONS]
+    lead = collection.find_one({"phone": phone}, {"prospecto": 1}) or {}
+    prospect = dict(lead.get("prospecto") or {})
+    previous = _property_context_snapshot(prospect)
+    prior_request = prospect.get("current_requested_property") or {}
+    current_request = {
+        **(request or {}),
+        "status": "unresolved",
+        "property_code": None,
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if (
+        prior_request.get("status") == "unresolved"
+        and str(prior_request.get("external_id") or "").casefold()
+        == str(current_request.get("external_id") or "").casefold()
+        and prior_request.get("last_alerted_at")
+    ):
+        current_request["last_alerted_at"] = prior_request["last_alerted_at"]
+    set_fields = {
+        "prospecto.current_requested_property": current_request,
+        "prospecto.link_detectado": True,
+        "prospecto.link_pendiente": True,
+    }
+    if previous:
+        set_fields["prospecto.previous_property"] = previous
+    unset_fields = {
+        f"prospecto.{field}": ""
+        for field in PROPERTY_ACTIVE_CONTEXT_FIELDS
+    }
+    result = collection.update_one(
+        {"phone": phone},
+        {"$set": set_fields, "$unset": unset_fields},
+        upsert=True,
+    )
+    if trace_id:
+        logger.info(
+            "[PROPERTY_CONTEXT_UNRESOLVED] trace=%s phone=%s external_id=%s previous_code=%s modified=%s",
+            trace_id, phone, current_request.get("external_id"),
+            (previous or {}).get("codigo"), bool(result.modified_count or result.upserted_id),
+        )
+    if result.modified_count or result.upserted_id:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason="property_context_unresolved", phone=phone)
+    return current_request
+
+
+def record_resolved_property_request(
+    phone: str, request: dict, property_code: str, trace_id: str = None,
+) -> dict:
+    """Record which explicit link produced the current resolved property."""
+    db = get_db()
+    collection = db[COLLECTION_CONVERSATIONS]
+    lead = collection.find_one({"phone": phone}, {"prospecto": 1}) or {}
+    prospect = dict(lead.get("prospecto") or {})
+    previous = _property_context_snapshot(prospect)
+    if previous and str(previous.get("codigo") or previous.get("codigo_propiedad")) == str(property_code):
+        previous = None
+    current_request = {
+        **(request or {}),
+        "status": "resolved",
+        "property_code": str(property_code),
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    set_fields = {
+        "prospecto.current_requested_property": current_request,
+        "prospecto.link_detectado": True,
+        "prospecto.link_pendiente": False,
+    }
+    if previous:
+        set_fields["prospecto.previous_property"] = previous
+    unset_fields = {f"prospecto.{field}": "" for field in PROPERTY_ACTIVE_CONTEXT_FIELDS}
+    result = collection.update_one(
+        {"phone": phone},
+        {"$set": set_fields, "$unset": unset_fields},
+        upsert=True,
+    )
+    if trace_id:
+        logger.info(
+            "[PROPERTY_CONTEXT_RESOLVED] trace=%s phone=%s external_id=%s property_code=%s",
+            trace_id, phone, current_request.get("external_id"), property_code,
+        )
+    if result.modified_count or result.upserted_id:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason="property_context_resolved", phone=phone)
+    return current_request
+
+
+def is_property_missing_alert_recent(
+    current_request: dict, external_id: str, *, now: datetime | None = None,
+    window_minutes: int = 60,
+) -> bool:
+    """Return whether this exact unresolved MLC was alerted in the recent window."""
+    if not isinstance(current_request, dict):
+        return False
+    if current_request.get("status") != "unresolved":
+        return False
+    if str(current_request.get("external_id") or "").casefold() != str(external_id or "").casefold():
+        return False
+    raw_timestamp = current_request.get("last_alerted_at")
+    if not raw_timestamp:
+        return False
+    try:
+        last_alerted = datetime.fromisoformat(str(raw_timestamp))
+    except (TypeError, ValueError):
+        return False
+    current_time = now or datetime.now(timezone.utc)
+    if last_alerted.tzinfo is None:
+        last_alerted = last_alerted.replace(tzinfo=timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    elapsed = current_time.astimezone(timezone.utc) - last_alerted.astimezone(timezone.utc)
+    return timedelta(0) <= elapsed <= timedelta(minutes=max(0, window_minutes))
+
+
+def mark_property_request_alerted(phone: str, external_id: str, alerted_at: str) -> None:
+    """Mark only the still-current unresolved MLC as recently alerted."""
+    get_db()[COLLECTION_CONVERSATIONS].update_one(
+        {
+            "phone": phone,
+            "prospecto.current_requested_property.external_id": external_id,
+            "prospecto.current_requested_property.status": "unresolved",
+        },
+        {"$set": {"prospecto.current_requested_property.last_alerted_at": alerted_at}},
+    )
+
+
+def actualizar_prospecto(phone: str, datos: dict, trace_id: str = None):
+    if not datos:
+        return
+
+    # Validación defensiva de nombre
+    if "nombre" in datos:
+        nombre = str(datos.get("nombre", "")).strip()
+        if len(nombre.split()) > 5 or len(nombre) < 2:
+            del datos["nombre"]
+        else:
+            datos["nombre"] = nombre.title()
+
+    db = get_db()
+    lead_snapshot = None
+    update_fields = {
+        "$set": {},
+        "$setOnInsert": {"lead_temperature_effective": "COLD"},
+    }
+    for key, value in datos.items():
+        if value not in [None, "", "desconocido"]:
+            if isinstance(value, (bool, int, float, list, dict)):
+                update_fields["$set"][f"prospecto.{key}"] = value
+            else:
+                update_fields["$set"][f"prospecto.{key}"] = str(value).strip()
+
+    if "alerts_sent" in datos:
+        from .lead_temperature import derive_effective_temperature
+
+        lead_snapshot = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}) or {}
+        prospecto_snapshot = dict(lead_snapshot.get("prospecto") or {})
+        prospecto_snapshot["alerts_sent"] = datos["alerts_sent"]
+        update_fields["$set"]["lead_temperature_effective"] = derive_effective_temperature(
+            lead_snapshot,
+            overrides={"prospecto": prospecto_snapshot},
+        )
+        update_fields.pop("$setOnInsert", None)
+
+    if update_fields["$set"]:
+        if trace_id:
+            logger.info(f"[PROSPECT_UPDATE] trace={trace_id} phone={phone} fields={list(update_fields['$set'].keys())}")
+        result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            update_fields,
+            upsert=True
+        )
+        visible_prospect_fields = {
+            "nombre", "ejecutivo", "codigo", "codigo_yapo",
+            "codigo_mercadolibre", "ultimo_mensaje", "alerts_sent",
+        }
+        if (result.modified_count or result.upserted_id) and visible_prospect_fields.intersection(datos):
+            from .crm_updates import bump_crm_leads_version
+            bump_crm_leads_version(db, reason="prospect_updated", phone=phone)
+        effective_temperature = update_fields["$set"].get("lead_temperature_effective")
+        if effective_temperature and lead_snapshot and lead_snapshot.get("_id"):
+            from .crm_metrics import sync_active_cycle_temperature
+            sync_active_cycle_temperature(
+                db,
+                lead_snapshot["_id"],
+                temperature=effective_temperature,
+                transition_at=datetime.now(CHILE_TZ),
+            )
+
+def establecer_nombre_usuario(phone: str, nombre: str):
+    actualizar_prospecto(phone, {"nombre": nombre})
+
+def obtener_bot_pausado(phone: str) -> bool:
+    db = get_db()
+    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"is_paused": 1})
+    if not doc:
+        return False
+    return doc.get("is_paused", False)
+
+def toggle_bot_pausado(phone: str) -> bool:
+    """Toggles and returns the new state"""
+    db = get_db()
+    current_state = obtener_bot_pausado(phone)
+    new_state = not current_state
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"is_paused": new_state}}
+    )
+    return new_state
+
+def registrar_propiedades_vistas(phone: str, nuevos_codigos: List[str]):
+    if not nuevos_codigos: return
+    db = get_db()
+    nuevos_codigos = [str(c).strip() for c in nuevos_codigos if c]
+    
+    try:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$addToSet": {"prospecto.propiedades_vistas": {"$each": nuevos_codigos}}},
+            upsert=True
+        )
+    except Exception as e:
+        # Si falla porque el campo no es un array (ej: es un string), lo convertimos
+        logger.warning(f"[STORAGE] Re-intentando registro de propiedades por conflicto de tipo: {e}")
+        doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"prospecto.propiedades_vistas": 1})
+        current = (doc or {}).get("prospecto", {}).get("propiedades_vistas")
+        
+        if isinstance(current, str):
+            final_list = list(set([current] + nuevos_codigos))
+        elif isinstance(current, list):
+            final_list = list(set(current + nuevos_codigos))
+        else:
+            final_list = nuevos_codigos
+            
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": {"prospecto.propiedades_vistas": final_list}},
+            upsert=True
+        )
+
+def obtener_propiedades_vistas(phone: str) -> List[str]:
+    p = obtener_prospecto(phone)
+    return p.get("propiedades_vistas", [])
+
+# ==========================================
+# NOTIFICACIONES PENDIENTES
+# ==========================================
+
+def save_pending_notification(lead_data: dict):
+    from .notification_identity import lead_notification_identity
+
+    db = get_db()
+    lead_phone = lead_data.get("lead_phone") or lead_data.get("phone")
+    notification_key = lead_notification_identity(lead_data)
+
+    # Un evento puede ser detectado por reglas con distinto lead_type. Para el
+    # ejecutivo sigue siendo el mismo contacto interesado en la misma propiedad.
+    if notification_key:
+        collection = db[COLLECTION_PENDING_NOTIFICATIONS]
+        existing = collection.find_one({
+            "status": {"$in": ["pending", "sent"]},
+            "notification_key": notification_key,
+        })
+
+        # Compatibilidad con documentos pendientes creados antes de esta clave.
+        if not existing and lead_phone:
+            legacy_candidates = collection.find({
+                "status": {"$in": ["pending", "sent"]},
+                "$or": [
+                    {"lead_data.lead_phone": lead_phone},
+                    {"lead_data.phone": lead_phone},
+                ],
+            })
+            existing = next(
+                (candidate for candidate in legacy_candidates
+                 if lead_notification_identity(candidate) == notification_key),
+                None,
+            )
+
+        if existing and existing.get("status") == "sent":
+            return
+
+        if existing:
+            collection.update_one(
+                {"_id": existing["_id"]},
+                {
+                    "$set": {
+                        "lead_data": lead_data,
+                        "notification_key": notification_key,
+                        "created_at": datetime.now(CHILE_TZ).isoformat(),
+                        "status": "pending",
+                    }
+                }
+            )
+            return
+
+    notification = {
+        "lead_data": lead_data,
+        "created_at": datetime.now(CHILE_TZ).isoformat(),
+        "status": "pending",
+        "attempts": 0
+    }
+    if notification_key:
+        notification["notification_key"] = notification_key
+    db[COLLECTION_PENDING_NOTIFICATIONS].insert_one(notification)
+
+def get_pending_notifications():
+    db = get_db()
+    _reconcile_missing_hot_notifications(db)
+    return list(db[COLLECTION_PENDING_NOTIFICATIONS].find({"status": "pending"}))
+
+
+_HOT_RECONCILIATION_LAST_RUN = None
+_HOT_RECONCILIATION_CUTOVER = "2026-07-20T00:00:00-04:00"
+
+
+def _reconcile_missing_hot_notifications(db):
+    """Recover post-cutover HOT assignments that never reached the durable queue.
+
+    Uses the canonical path (``assign_and_enqueue_hot()`` → ``crm_notifications_v1``).
+    No new documents are created in ``pending_notifications``.
+    The scan is throttled and runs only when the normal business-hours consumer
+    asks for pending work.
+    """
+    global _HOT_RECONCILIATION_LAST_RUN
+    if not Config.LEAD_HOT_RECONCILIATION_ENABLED:
+        return
+    if not Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
+        return
+    from datetime import timezone
+    from .crm_metrics import coerce_utc_datetime, active_assignment_cycle
+    from .crm_hot_delivery import assign_and_enqueue_hot
+    from .crm_notifications import individual_identity, COLLECTION as NOTIF_COLL
+
+    now = datetime.now(timezone.utc)
+    if _HOT_RECONCILIATION_LAST_RUN and (now - _HOT_RECONCILIATION_LAST_RUN).total_seconds() < 300:
+        return
+    _HOT_RECONCILIATION_LAST_RUN = now
+    cutover = coerce_utc_datetime(_HOT_RECONCILIATION_CUTOVER)
+    recovered = 0
+    closed = {"ARCHIVED", "REJECTED", "CLOSED_LOST", "CLOSED_WON"}
+
+    projection = {
+        "_id": 1, "phone": 1, "created_at": 1, "ejecutivo_asignado": 1,
+        "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1,
+        "prospecto": 1, "last_message_preview": 1, "lifecycle.first_valid_management_at": 1,
+        "lifecycle.assigned_at": 1,
+    }
+    for lead_doc in db["leads"].find({"lead_temperature_effective": "HOT"}, projection):
+        created_at = coerce_utc_datetime(lead_doc.get("created_at"))
+        if not created_at or created_at < cutover:
+            continue
+        if str(lead_doc.get("pipeline_stage") or lead_doc.get("stage") or "").upper() in closed:
+            continue
+        if (lead_doc.get("lifecycle") or {}).get("first_valid_management_at"):
+            continue
+        executive = lead_doc.get("ejecutivo_asignado")
+        if not executive:
+            continue
+        user = db["usuarios"].find_one({"nombre": executive, "is_active": True})
+        if not user:
+            continue
+        recipient_user_id = str(user.get("_id") or "")
+        target_phone = user.get("telefono") or user.get("tel") or user.get("movil")
+        if not target_phone:
+            continue
+
+        # Resolve or create active cycle
+        cycle = active_assignment_cycle(db, lead_doc["_id"])
+        if not cycle:
+            from .crm_metrics import create_assignment_cycle
+            assigned_at = coerce_utc_datetime(
+                (lead_doc.get("lifecycle") or {}).get("assigned_at")
+            ) or created_at
+            cycle = create_assignment_cycle(
+                db, lead=lead_doc, assigned_to_user_id=recipient_user_id,
+                assigned_by="system", reason="reconciliation",
+                assigned_at=assigned_at,
+                assigned_to_display_name=executive,
+            )
+        if not cycle:
+            continue
+
+        cycle_id = str(cycle.get("assignment_cycle_id", ""))
+        if not cycle_id:
+            continue
+
+        # Check canonical dedup
+        identity = individual_identity(
+            lead_id=lead_doc["_id"], assignment_cycle_id=cycle_id,
+            notification_type="lead_assignment_hot", recipient_user_id=recipient_user_id,
+        )
+        existing = db[NOTIF_COLL].find_one({
+            "individual_identity": identity,
+            "state": {"$in": ["pending", "sending", "sent"]},
+        })
+        if existing:
+            continue
+
+        prospect = lead_doc.get("prospecto") or {}
+        property_code = (
+            prospect.get("codigo") or prospect.get("codigo_interno")
+            or prospect.get("codigo_propiedad") or prospect.get("codigo_mercadolibre")
+        )
+        payload = {
+            "phone": lead_doc.get("phone"), "lead_phone": lead_doc.get("phone"),
+            "property_code": property_code,
+            "target_name": executive, "target_phone": target_phone,
+            "nombre": prospect.get("nombre"),
+            "comuna": prospect.get("comuna"), "operacion": prospect.get("operacion"),
+            "canal": prospect.get("origen"), "source": prospect.get("origen"),
+            "last_message": prospect.get("ultimo_mensaje") or lead_doc.get("last_message_preview"),
+            "lead_type": "CRMLead", "notification_type": "lead_assignment_reconciled",
+            "reconciled": True,
+        }
+
+        assign_and_enqueue_hot(
+            db, lead=lead_doc, recipient_user_id=recipient_user_id,
+            recipient_phone=target_phone, payload=payload,
+            assigned_by="system", reason="reconciliation",
+            recipient_name=executive,
+        )
+        recovered += 1
+
+    if recovered:
+        logger.warning("[NOTIFICATION_RECONCILIATION] Recuperados %s leads HOT via ruta canónica", recovered)
+
+def mark_notification_sent(notification_id):
+    db = get_db()
+    db[COLLECTION_PENDING_NOTIFICATIONS].update_one(
+        {"_id": notification_id},
+        {"$set": {"status": "sent", "sent_at": datetime.now(CHILE_TZ).isoformat()}}
+    )
+
+def delete_pending_notification(notification_id):
+    db = get_db()
+    db[COLLECTION_PENDING_NOTIFICATIONS].delete_one({"_id": notification_id})
+
+# ==========================================
+# EVENT LOG & PIPELINE
+# ==========================================
+
+def log_event(phone: str, event_type: str, actor: str = "system", meta: dict = None,
+              *, lead_id=None, actor_type=None, result=None, confirmed=False,
+              timestamp=None):
+    db = get_db()
+    from .crm_metrics import active_assignment_cycle, coerce_utc_datetime, event_evidence, resolve_canonical_lead, utc_now
+    resolution = resolve_canonical_lead(db, lead_id=lead_id, phone=phone)
+    lead = resolution.lead
+    event_at = coerce_utc_datetime(timestamp) or utc_now()
+    cycle = active_assignment_cycle(db, lead["_id"]) if lead else None
+    event = {
+        "phone": str(phone).replace("+", "").strip(),
+        "timestamp": event_at,
+        "type": event_type,
+        "actor": actor,
+        "actor_type": actor_type or ("system" if str(actor).lower() in {"system", "bot", "sistema"} else "human"),
+        "lead_id": lead.get("_id") if lead else None,
+        "assignment_cycle_id": cycle.get("assignment_cycle_id") if cycle else None,
+        "result": result,
+        "confirmed": bool(confirmed),
+        "identity_status": resolution.status,
+        "meta": meta or {}
+    }
+    event["evidence"] = event_evidence(event)
+    inserted_event = db["crm_events"].insert_one(event)
+    if lead and event["evidence"]["management"]:
+        first_fields = {"lifecycle.first_valid_management_at": event_at}
+        if event["evidence"]["contact_attempt"]:
+            first_fields["lifecycle.first_contact_attempt_at"] = event_at
+        if event["evidence"]["effective_contact"]:
+            first_fields["lifecycle.first_effective_contact_at"] = event_at
+        for key, value in first_fields.items():
+            db["leads"].update_one(
+                {"_id": lead["_id"], "$or": [{key: {"$exists": False}}, {key: None}]},
+                {"$set": {key: value}},
+            )
+        if cycle:
+            db["crm_assignment_cycles"].update_one(
+                {"_id": cycle["_id"], "$or": [
+                    {"first_valid_management_at": {"$exists": False}},
+                    {"first_valid_management_at": None},
+                ]},
+                {"$set": {"first_valid_management_at": event_at, "first_valid_management_actor": actor}},
+            )
+        if event["evidence"]["result"] == "NO_RESPONDIO":
+            db[COLLECTION_CONVERSATIONS].update_one(
+                {"_id": lead["_id"]},
+                {"$set": {
+                    "management_status": "managed_waiting_response",
+                    "contact_attempted": True,
+                    "effective_contact": False,
+                    "follow_up_required": True,
+                }},
+            )
+            if cycle:
+                db["crm_assignment_cycles"].update_one(
+                    {"_id": cycle["_id"]},
+                    {"$set": {
+                        "sla_first_management_status": "completed",
+                        "sla_pending_alerts_cancelled_at": event_at,
+                        "last_management_result": "NO_RESPONDIO",
+                        "sla_alert_claims.yellow.status": "suppressed",
+                        "sla_alert_claims.red.status": "suppressed",
+                    }},
+                )
+        # Effective contact may promote the pipeline to CONTACTED. A valid
+        # no-response attempt stops SLA, but remains in the non-contact state.
+        if event["evidence"]["effective_contact"]:
+            db[COLLECTION_CONVERSATIONS].update_one(
+            {
+                "_id": lead["_id"],
+                "$or": [
+                    {"pipeline_stage": {"$in": ["NEW", "new", "nuevo", ""]}},
+                    {
+                        "pipeline_stage": {"$exists": False},
+                        "stage": {"$in": ["NEW", "new", "nuevo", "", None]},
+                    },
+                    {
+                        "pipeline_stage": None,
+                        "stage": {"$in": ["NEW", "new", "nuevo", "", None]},
+                    },
+                ],
+            },
+            {"$set": {
+                "pipeline_stage": "CONTACTED",
+                "stage": "CONTACTED",
+                "last_crm_update": event_at,
+            }},
+            )
+    
+    # Precomputación SaaS: Actualizar métricas del lead atómicamente
+    try:
+        from .metrics import update_lead_metrics
+        update_lead_metrics(db, phone, event_at=event["timestamp"], event_type=event_type,
+                            lead_id=event.get("lead_id"))
+    except Exception as e:
+        logger.error(f"Error triggering metrics update in log_event: {e}")
+    finally:
+        from .crm_updates import bump_crm_leads_version
+        bump_crm_leads_version(db, reason=f"event_{event_type}", phone=phone)
+    return str(inserted_event.inserted_id)
+
+def update_lead_state(phone: str, stage: str = None, metadata: dict = None):
+    db = get_db()
+    update_data = {}
+    if stage:
+        update_data["stage"] = stage
+    
+    ts = datetime.now(CHILE_TZ).isoformat()
+    # Mapeo de timestamps automáticos por stage
+    if stage == PipelineStage.CONTACTED:
+        update_data["lifecycle.first_response_at"] = ts
+    elif stage == PipelineStage.VISIT_SCHEDULED:
+        update_data["lifecycle.visit_scheduled_at"] = ts
+    elif stage == PipelineStage.CLOSED_WON:
+        update_data["lifecycle.closed_at"] = ts
+    
+    if metadata:
+        for k, v in metadata.items():
+            update_data[k] = v
+
+    if update_data:
+        db[COLLECTION_CONVERSATIONS].update_one(
+            {"phone": phone},
+            {"$set": update_data, "$setOnInsert": {"lifecycle.created_at": ts}},
+            upsert=True
+        )
+        if stage:
+            log_event(phone, InteractionType.STATUS_CHANGE, "system", {"to": stage})
+        else:
+            # Si no hay cambio de estado pero hay metadatos, forzamos refresco de métricas
+            try:
+                from .metrics import update_lead_metrics
+                update_lead_metrics(db, phone)
+            except: pass
+
+# ── Pending response (visit confirmation) ──
+
+PENDING_RESPONSE_TTL_MINUTES = 60  # Default; override via env var at startup
+PROPERTY_IDENTIFIER_RESPONSE_TYPE = "PROPERTY_IDENTIFIER"
+
+
+def set_pending_response(phone: str, response_type: str, property_code: str, conversation_id: str):
+    """Persist a pending response state on the lead document."""
+    db = get_db()
+    now = datetime.now(CHILE_TZ)
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {
+            "pending_response.type": response_type,
+            "pending_response.created_at": now.isoformat(),
+            "pending_response.property_code": property_code,
+            "pending_response.conversation_id": conversation_id,
+            "pending_response.status": "waiting",
+        }},
+    )
+
+
+def set_pending_property_identifier(
+    phone: str,
+    conversation_id: str,
+    *,
+    provider_message_id: str | None = None,
+    prompt_source: str = "bot",
+    visit_urgency: str | None = None,
+    prompt_text: str | None = None,
+):
+    """Persist the existing pending-response mechanism for unresolved visits."""
+    db = get_db()
+    now = datetime.now(CHILE_TZ).isoformat()
+    pending = {
+        "type": PROPERTY_IDENTIFIER_RESPONSE_TYPE,
+        "created_at": now,
+        "property_code": "",
+        "conversation_id": conversation_id,
+        "status": "waiting",
+        "prompt_source": prompt_source,
+        "reason": "visit_property_unresolved",
+    }
+    if provider_message_id:
+        pending["provider_message_id"] = str(provider_message_id)
+    if visit_urgency:
+        pending["visit_urgency"] = visit_urgency
+    if prompt_text:
+        pending["prompt_text"] = str(prompt_text)
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"pending_response": pending}},
+    )
+    return pending
+
+
+def get_pending_response(phone: str, response_type: str = "VISIT_CONFIRMATION") -> Optional[dict]:
+    """Return pending response state if it exists and hasn't expired."""
+    db = get_db()
+    lead = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"pending_response": 1})
+    if not lead:
+        return None
+    pr = lead.get("pending_response")
+    if not pr or pr.get("type") != response_type:
+        return None
+    if pr.get("status") != "waiting":
+        return None
+    created = pr.get("created_at")
+    if not created:
+        return None
+    try:
+        created_dt = datetime.fromisoformat(created)
+        if created_dt.tzinfo is None:
+            created_dt = CHILE_TZ.localize(created_dt)
+        elapsed = datetime.now(CHILE_TZ) - created_dt
+        ttl = timedelta(minutes=int(os.getenv("PENDING_RESPONSE_TTL_MINUTES", "60")))
+        if elapsed > ttl:
+            return None
+    except (ValueError, TypeError):
+        return None
+    return pr
+
+
+def resolve_pending_response(phone: str, status: str):
+    """Mark a pending response as confirmed, rejected, or expired."""
+    db = get_db()
+    db[COLLECTION_CONVERSATIONS].update_one(
+        {"phone": phone},
+        {"$set": {"pending_response.status": status, "pending_response.resolved_at": datetime.now(CHILE_TZ).isoformat()}},
+    )
+
+
+def get_user_by_phone(phone: str) -> Optional[dict]:
+    """Busca un usuario en la colección 'usuarios' por su teléfono (normalizado)."""
+    if not phone:
+        return None
+    db = get_db()
+    # Normalizamos el teléfono para la búsqueda (quitamos + y espacios)
+    phone_clean = str(phone).replace("+", "").replace(" ", "").strip()
+    
+    # Buscamos por teléfono con regex para ser flexibles
+    return db["usuarios"].find_one({
+        "telefono": {"$regex": phone_clean}
+    })

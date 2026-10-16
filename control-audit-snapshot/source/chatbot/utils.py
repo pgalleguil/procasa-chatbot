@@ -1,0 +1,201 @@
+from datetime import datetime, timedelta, time
+from typing import Optional, List, Union
+from .constants import CHILE_TZ, BUSINESS_START_HOUR, BUSINESS_END_HOUR, BUSINESS_DAYS
+from .business_calendar import calculate_business_minutes as _calculate_business_minutes
+
+import re
+
+def calculate_business_minutes(start_dt: datetime, end_dt: datetime) -> float:
+    """
+    Calcula la cantidad de minutos transcurridos entre dos fechas, 
+    contando únicamente el tiempo dentro del horario laboral.
+    """
+    return _calculate_business_minutes(start_dt, end_dt)
+
+# ==========================================
+# 1. LIMPIEZA DE TELÉFONO (FUNCIÓN FALTANTE)
+# ==========================================
+def limpiar_telefono(phone: str) -> str:
+    """Limpia el número de teléfono para su uso en la base de datos."""
+    if not phone: return ""
+    # Quita cualquier cosa que no sea dígito
+    num = re.sub(r"[^\d]", "", phone)
+    # Intenta quitar el código de país '56' o '0' si están al inicio
+    if num.startswith("56"): num = num[2:]
+    if num.startswith("0"): num = num[1:]
+    return num
+
+# ==========================================
+# 2. CONVERSIÓN SEGURA DE NÚMEROS (Corrección del error 'invalid literal for int')
+# ==========================================
+def safe_int_conversion(valor) -> int:
+    """Convierte strings con formato '100,000' o '100.000' a enteros limpios."""
+    if not valor:
+        return 0
+    
+    # Convertimos a string y quitamos comas y puntos
+    s_val = str(valor).replace(",", "").replace(".", "").strip()
+    
+    try:
+        # Intentamos convertir lo que queda a entero
+        return int(s_val)
+    except ValueError:
+        try:
+            # Si falla, intentamos float y luego int (por si hay decimales raros)
+            return int(float(s_val))
+        except ValueError:
+            return 0
+
+
+def parse_bool(valor) -> bool:
+    """Convierte strings y números comunes a bool real."""
+    if isinstance(valor, bool):
+        return valor
+    if valor is None:
+        return False
+    if isinstance(valor, (int, float)):
+        return valor != 0
+    s = str(valor).strip().lower()
+    return s in {"1", "true", "t", "yes", "y", "si", "sí", "on"}
+
+# ==========================================
+# 3. EXTRACCIÓN DE DATOS PERSONALES
+# ==========================================
+
+def validar_rut(rut_sin_formato: str) -> bool:
+    """
+    Valida el dígito verificador de un RUT chileno.
+    rut_sin_formato: solo números + posible K al final (ej: "28546597")
+    """
+    if not re.match(r"^\d+[Kk\d]$", rut_sin_formato):
+        return False
+    
+    dv_provisto = rut_sin_formato[-1].upper()
+    cuerpo = rut_sin_formato[:-1]
+    
+    if not cuerpo.isdigit():
+        return False
+    
+    suma = 0
+    multiplo = 2
+    for digito in reversed(cuerpo):
+        suma += int(digito) * multiplo
+        multiplo = 2 if multiplo == 7 else multiplo + 1  # serie correcta: 2,3,4,5,6,7,2,3...
+    
+    resto = suma % 11
+    dv_calculado = "0" if resto == 0 else "K" if resto == 1 else str(11 - resto)
+    
+    return dv_calculado == dv_provisto
+
+def extraer_rut(texto: str, *, allow_unlabelled: bool = False) -> Optional[str]:
+    """Extract a valid personal RUT only when the message supplies context.
+
+    URLs and property-publication references are removed or rejected before
+    modulus validation. A plain numeric string is accepted only when explicitly
+    labeled as a RUT; ``allow_unlabelled`` is reserved for the optional visit
+    data slot after the customer has accepted that request.
+    """
+    # Numeric IDs embedded in listing URLs are not personal data.
+    texto_sin_urls = re.sub(
+        r"https?://[^\s<>\]\)\"]+", " ", str(texto or ""), flags=re.IGNORECASE
+    )
+    rut_pattern = re.compile(
+        r"\b(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])\b", re.IGNORECASE
+    )
+    rut_label = re.compile(
+        r"\b(?:mi|su|el)?\s*rut\b"
+        r"(?:\s+(?:es|ser[ií]a|n(?:ro|[úu]mero)))?\s*[:#]?\s*$",
+        re.IGNORECASE,
+    )
+    property_reference = re.compile(
+        r"\b(?:propiedad|inmueble|publicaci[oó]n|aviso|ficha|c[oó]digo|"
+        r"identificador|enlace)\b",
+        re.IGNORECASE,
+    )
+
+    for match in rut_pattern.finditer(texto_sin_urls):
+        prefix = texto_sin_urls[max(0, match.start() - 64):match.start()]
+        personal_context = bool(rut_label.search(prefix))
+        if not personal_context and not allow_unlabelled:
+            continue
+        if not personal_context:
+            # In the optional prompt's reply, require RUT punctuation when no
+            # RUT label is present; bare numeric values can be listing IDs.
+            has_formatting = bool(re.search(r"[.-]", match.group(1)))
+            if not has_formatting:
+                continue
+            if property_reference.search(prefix):
+                continue
+
+        rut_raw = match.group(1).replace(".", "").replace("-", "").upper()
+        if len(rut_raw) < 2:
+            continue
+        cuerpo, dv = rut_raw[:-1], rut_raw[-1]
+        if validar_rut(cuerpo + dv):
+            return f"{cuerpo}-{dv}"
+
+    return None
+
+def extraer_email(texto: str) -> Optional[str]:
+    match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', texto)
+    return match.group(0).lower() if match else None
+
+def extraer_nombre_posible(texto: str) -> Optional[str]:
+    """
+    Intenta extraer un nombre propio limpiando palabras comunes.
+    """
+    texto_limpio = re.sub(r'[\d\W_]+', ' ', texto).strip()
+    
+    # Lista ampliada de palabras y frases que NO son nombres
+    palabras_ignoradas = [
+        "Hola", "Gracias", "Si", "Sí", "No", "Quiero", "Busco", "Necesito", 
+        "El", "La", "Los", "Un", "Una", "Dato", "Correo", "Rut", "Nombre", 
+        "Visitar", "Ver", "Agendar", "Por", "Favor", "Saludos",
+        "Interesa", "Interesado", "Interesada", "Gustaría", "Podría",
+        "Me", "Te", "Le", "Se", "Lo", "La", "Al", "Del",
+        "Fin", "Semana", "Mañana", "Tarde", "Noche", "Lunes", "Martes", 
+        "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo", "Ok", "Claro", 
+        "Perfecto", "Excelente", "Casa", "Depto"
+    ]
+    
+    tokens = [p.strip(".,!?").title() for p in texto_limpio.split()]
+    nombres_candidatos = []
+
+    for t in tokens:
+        if len(t) < 2 or any(char.isdigit() for char in t): 
+            continue
+        
+        if t not in palabras_ignoradas:
+            nombres_candidatos.append(t)
+
+    # Heurística simple: si tenemos 2 a 4 palabras que parecen nombres, las devolvemos.
+    if 1 < len(nombres_candidatos) <= 4 and all(t[0].isupper() for t in nombres_candidatos):
+        return " ".join(nombres_candidatos)
+        
+    return None
+
+def extraer_nombre_explicito(texto: str) -> Optional[str]:
+    """
+    Extrae nombre SOLO si el usuario lo entrega explícitamente.
+    Ej: 
+    - "me llamo Pedro"
+    - "mi nombre es Juan Pérez"
+    - "soy María"
+    """
+    texto = texto.strip()
+
+    patrones = [
+        r"me llamo\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})",
+        r"mi nombre es\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})",
+        r"soy\s+([A-Za-zÁÉÍÓÚÑáéíóúñ ]{2,40})"
+    ]
+
+    for patron in patrones:
+        match = re.search(patron, texto, re.IGNORECASE)
+        if match:
+            nombre = match.group(1).strip().title()
+            # Evitamos frases largas raras
+            if len(nombre.split()) <= 4:
+                return nombre
+
+    return None

@@ -1,0 +1,216 @@
+@app.get("/api/leads-dashboard/operations/control-breakdown")
+async def api_leads_dashboard_operations_control_breakdown(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+):
+    """Desglose de cartera vigente e historial de asignación para Control."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_leads_control_breakdown(
+            period_start=period_start,
+            period_end=period_end,
+            executive=executive,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/operations/control-monthly")
+async def api_leads_dashboard_operations_control_monthly(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    compare: str = Query("auto"),
+    period_preset: str = Query("custom"),
+):
+    """Indicadores mensuales auditables para reuniones 1:1 de Control."""
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_monthly_leads_control(
+            period_start=period_start,
+            period_end=period_end,
+            executive=executive,
+            compare=compare,
+            period_preset=period_preset,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/operations/control-monthly/executives")
+async def api_leads_dashboard_operations_control_monthly_executives(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_monthly_control_executives(period_start=period_start, period_end=period_end),
+    )
+
+
+@app.get("/api/leads-dashboard/operations/control-portfolio-demand")
+async def api_leads_dashboard_operations_control_portfolio_demand(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_monthly_control_portfolio_demand(
+            period_start=period_start, period_end=period_end, executive=executive,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/operations/control-portfolio-property-leads")
+async def api_leads_dashboard_operations_control_portfolio_property_leads(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    property_code: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_monthly_control_property_leads(
+            period_start=period_start, period_end=period_end,
+            executive=executive, property_code=property_code,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/operations/control-portfolio-conversation")
+async def api_leads_dashboard_operations_control_portfolio_conversation(
+    request: Request,
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+    executive: str = Query(None),
+    property_code: str = Query(None),
+    lead_id: str = Query(None),
+    assignment_cycle_id: str = Query(None),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_monthly_control_lead_conversation(
+            period_start=period_start, period_end=period_end, executive=executive,
+            property_code=property_code, lead_id=lead_id,
+            assignment_cycle_id=assignment_cycle_id,
+        ),
+    )
+
+
+@app.get("/api/leads-dashboard/control-commitments")
+async def api_leads_dashboard_control_commitments(
+    request: Request,
+    executive: str = Query(...),
+    meeting_month: str = Query(...),
+):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    from analytics.control_commitments import get_meeting_commitments
+    from chatbot.storage import get_db
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: get_meeting_commitments(
+        get_db(), executive=executive, meeting_month=meeting_month,
+    ))
+
+
+@app.post("/api/leads-dashboard/control-commitments")
+async def api_leads_dashboard_save_control_commitment(request: Request):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    payload = await request.json()
+    from analytics.control_commitments import save_meeting_commitment
+    from chatbot.storage import get_db
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, lambda: save_meeting_commitment(
+            get_db(), executive=payload.get("executive"),
+            meeting_month=payload.get("meeting_month"),
+            actor=user.get("nombre") or "Supervisor", payload=payload,
+        ))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/leads-dashboard/control-commitments")
+async def api_leads_dashboard_update_control_commitment(request: Request):
+    user = await get_current_user_doc(request)
+    if not user or user.get("rol") not in ["admin", "supervisor"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    payload = await request.json()
+    from analytics.control_commitments import update_meeting_commitment
+    from chatbot.storage import get_db
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, lambda: update_meeting_commitment(
+            get_db(), executive=str(payload.get("executive") or ""),
+            meeting_month=str(payload.get("meeting_month") or ""),
+            commitment_id=str(payload.get("commitment_id") or ""),
+            status=str(payload.get("status") or ""), evidence=str(payload.get("evidence") or ""),
+        ))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/leads-dashboard/captacion-management")
+async def api_leads_dashboard_captacion_management(
+    request: Request,
+    executive: str = Query(None),
+    period_start: str = Query(None),
+    period_end: str = Query(None),
+):
+    """Resumen de actividad del equipo usando el período seleccionado del dashboard."""
+    user = await get_current_user_doc(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    if not user or user.get("rol") not in CAPTACION_PRIVILEGED_ROLES:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    from chatbot.storage import get_db
+
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(
+        _WEB_THREAD_POOL,
+        lambda: get_captacion_goal_dashboard(
+            get_db(),
+            selected_executive=executive or None,
+            period_start=period_start or None,
+            period_end=period_end or None,
+            excluded_executives=CAPTACION_GOAL_EXCLUDED_EXECUTIVES,
+        ),
+    )
+    response = JSONResponse(jsonable_encoder(payload))
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+

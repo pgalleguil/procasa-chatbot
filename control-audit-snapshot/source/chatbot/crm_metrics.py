@@ -1,0 +1,928 @@
+"""Canonical CRM measurement rules.
+
+This module is the only place where CRM human management, contact evidence,
+assignment cycles and SLA are defined.  It deliberately contains no weekly
+report or WhatsApp concerns.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from typing import Any, Iterable, Mapping, Optional
+import re
+import uuid
+
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+
+from .constants import CHILE_TZ
+from .business_calendar import next_business_slot_utc
+from .mongo_identity import mongo_id_variants
+from .utils import calculate_business_minutes
+from captacion_contact_identity import normalize_phone
+
+METRIC_VERSION = "crm_metrics_v1"
+INSTRUMENTATION_CUTOVER = "2026-07-20T00:00:00-04:00"
+MANAGEMENT_ENFORCEMENT_CUTOVER = "2026-07-23T22:00:00Z"  # Phase 2 deploy; override via env
+
+OPEN_ONLY_EVENT_TYPES = frozenset({
+    "CLICK_WHATSAPP_LEAD", "CLICK_PHONE_LEAD", "CLICK_EMAIL_LEAD",
+    "CLICK_WHATSAPP_OWNER", "CLICK_PHONE_OWNER", "CLICK_EMAIL_OWNER",
+    "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD",
+    "OPEN_DETAIL", "NAVIGATION", "FILTER", "ASSIGNMENT", "assignment",
+    "ALERT", "ALERT_SENT", "alert_sent", "BOT_MSG",
+})
+VALID_MANAGEMENT_EVENT_TYPES = frozenset({
+    "GESTION_LOG", "HUMAN_NOTE", "CONTACT_RESULT",
+    "MANUAL_ENTRY",
+})
+REGISTERED_OUTREACH_EVENT_TYPES = frozenset({
+    "CLICK_WHATSAPP_LEAD", "SEND_WA_LEAD", "SEND_EMAIL_LEAD", "CALL_COMPLETED_LEAD",
+})
+CONTACT_ATTEMPT_RESULTS = frozenset({
+    "NO_RESPONDIO", "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
+    "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER", "OTHER_EXPLICIT",
+})
+EFFECTIVE_CONTACT_RESULTS = frozenset({
+    "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "OTHER_EXPLICIT",
+})
+VALID_MANAGEMENT_RESULTS = frozenset({
+    # Failed/no-response attempts are auditable contact attempts and stop the
+    # alert SLA, but they must not promote a lead to CONTACTED.
+    "OCUPADO", "NUMERO_INVALIDO", "MENSAJE_ENVIADO",
+    "NO_RESPONDIO",
+    "CONTACTADO", "SOLICITA_SEGUIMIENTO", "NO_INTERESADO", "OTRO",
+    "MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT",
+    "EFFECTIVE_CONTACT", "FOLLOW_UP_REQUESTED", "INVALID_NUMBER",
+    "DISCARDED_VALID_REASON", "SCHEDULE_FOLLOW_UP", "OTHER_EXPLICIT",
+})
+HUMAN_ACTOR_TYPES = frozenset({"human", "agent", "administrator", "supervisor"})
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def coerce_utc_datetime(value: Any, *, naive_timezone=CHILE_TZ) -> Optional[datetime]:
+    """Read BSON datetimes and legacy ISO values without silently guessing invalid data."""
+    if isinstance(value, datetime):
+        parsed = value
+        # BSON datetimes returned by PyMongo are UTC even when tz_aware=False.
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        # Legacy zone-less strings are CRM local values, not BSON timestamps.
+        if parsed.tzinfo is None:
+            parsed = naive_timezone.localize(parsed)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
+    """Return the effective SLA start using Chile business hours, in UTC.
+
+    The cycle keeps both the factual assignment instant and this business-clock
+    boundary so presentation and alerting never inherit a lead's old history.
+    """
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return None
+    return next_business_slot_utc(assigned)
+
+
+@dataclass(frozen=True)
+class LeadResolution:
+    lead: Optional[Mapping[str, Any]]
+    status: str
+    candidate_count: int
+
+
+def resolve_canonical_lead(db, *, lead_id=None, phone=None) -> LeadResolution:
+    """Resolve by lead._id; phone fallback is accepted only when unambiguous."""
+    if lead_id is not None:
+        lead = db["leads"].find_one({"_id": lead_id})
+        return LeadResolution(lead, "resolved" if lead else "not_found", int(bool(lead)))
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return LeadResolution(None, "missing_identity", 0)
+    candidates = list(db["leads"].find(
+        {"phone": {"$regex": rf"^\+?{re.escape(normalized)}$"}}, limit=2
+    ))
+    if len(candidates) == 1:
+        return LeadResolution(candidates[0], "resolved_legacy_phone", 1)
+    return LeadResolution(None, "ambiguous_phone" if candidates else "not_found", len(candidates))
+
+
+def normalize_result(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    result = re.sub(r"[^A-Z0-9]+", "_", str(value).strip().upper()).strip("_")
+    aliases = {
+        "INTENTO_FALLIDO": "NO_RESPONDIO", "HABLE": "CONTACTADO",
+        "REQUIERE_SEGUIMIENTO": "SOLICITA_SEGUIMIENTO",
+        "LEAD_PAUSADO": "SOLICITA_SEGUIMIENTO", "LEAD_CERRADO": "NO_INTERESADO",
+        "WHATSAPP_ENVIADO": "MENSAJE_ENVIADO", "VISITA_AGENDADA": "CONTACTADO",
+        "MENSAJE_ENVIADO_ESPERANDO_RESPUESTA": "MESSAGE_SENT_WAITING_RESPONSE",
+        "LLAMADA_SIN_RESPUESTA": "CALL_NO_ANSWER",
+        "CONTACTO_EFECTIVO": "EFFECTIVE_CONTACT",
+        "NUMERO_INVALIDO": "INVALID_NUMBER",
+        # Legacy owner-management values persisted by the old detail form.
+        "OWNER_OTRO": "OTHER_EXPLICIT",
+        "NO_RESPONDE_LLAMADA": "CALL_NO_ANSWER",
+        "NO_LOGRA_CONTACTO": "CALL_NO_ANSWER",
+        # ---- "Gestión Propietario" results (crm_lead_detail ownerReasons) ----
+        # Owner contact achieved: positive / informative outcomes.
+        "AUTORIZA_VISITA": "EFFECTIVE_CONTACT",
+        "ACEPTA_MOSTRAR": "EFFECTIVE_CONTACT",
+        "CONFIRMA_DISPONIBILIDAD": "EFFECTIVE_CONTACT",
+        "SOLO_MANANAS": "EFFECTIVE_CONTACT",
+        "DESDE_MARZO": "EFFECTIVE_CONTACT",
+        "CON_24H_AVISO": "EFFECTIVE_CONTACT",
+        "SOLO_FINES_SEMANA": "EFFECTIVE_CONTACT",
+        "NO_ACEPTA_VISITAS_AUN": "EFFECTIVE_CONTACT",
+        # Owner not reached: auditable attempt that stops SLA.
+        "INTENTO_CONTACTO": "NO_RESPONDIO",
+        "NO_LOGRA_CONTACTO": "NO_RESPONDIO",
+        # Owner reached but negative / closed outcome.
+        "NO_QUIERE_MOSTRAR": "NO_INTERESADO",
+        "NO_QUIERE_VISITAS": "NO_INTERESADO",
+        "NO_BAJA_PRECIO": "NO_INTERESADO",
+        "RECHAZA_VISITA": "NO_INTERESADO",
+        "NO_REGULARIZADA": "NO_INTERESADO",
+        "DOC_INCOMPLETA": "NO_INTERESADO",
+        "ROL_INCORRECTO": "NO_INTERESADO",
+        "PROPIETARIO_RETIRO": "NO_INTERESADO",
+        "VENDIO_FUERA": "NO_INTERESADO",
+        "NO_AUTORIZA_GESTION": "NO_INTERESADO",
+        # ---- Closing diagnostics (crm_lead_detail closingReasons) ----
+        "VENTA_CONCRETADA": "NO_INTERESADO",
+        "DERIVADO": "NO_INTERESADO",
+        "RECHAZO_BANCARIO": "NO_INTERESADO",
+        "FUERA_PRESUPUESTO": "NO_INTERESADO",
+        "PROP_SUBE_PRECIO": "NO_INTERESADO",
+        "ESPERA_BAJA": "NO_INTERESADO",
+        "CONDICIONES": "NO_INTERESADO",
+        "GASTOS_ALTOS": "NO_INTERESADO",
+        "PROP_NO_DISPONIBLE": "NO_INTERESADO",
+        "PROPIETARIO_INUBICABLE": "NO_INTERESADO",
+        "UBICACION": "NO_INTERESADO",
+        "DISTRIBUCION": "NO_INTERESADO",
+        "ESTADO_PROPIEDAD": "NO_INTERESADO",
+        "DIFERENCIA_FICHA": "NO_INTERESADO",
+        "ARREPENTIMIENTO": "NO_INTERESADO",
+        "DEJO_RESPONDER": "NO_INTERESADO",
+        "SIN_URGENCIA_REAL": "NO_INTERESADO",
+        "CANCELADA_PERSONAL": "NO_INTERESADO",
+        "OTRA_PROPIEDAD": "NO_INTERESADO",
+        "OTRA_CORREDORA": "NO_INTERESADO",
+        "TRATO_DIRECTO": "NO_INTERESADO",
+        "ES_CORREDOR": "NO_INTERESADO",
+        "DUPLICADO": "NO_INTERESADO",
+        "BASURA": "NO_INTERESADO",
+        "ERROR_CARGA": "NO_INTERESADO",
+        "CONTACTO_INVALIDO": "NO_INTERESADO",
+    }
+    return aliases.get(result, result) if result else None
+
+
+def event_evidence(event: Mapping[str, Any]) -> dict[str, Any]:
+    raw = event.get("type") or ""
+    if hasattr(raw, "value"):
+        raw = raw.value
+    event_type = str(raw).upper()
+    meta = event.get("meta") or {}
+    actor = event.get("actor")
+    actor_type = str(event.get("actor_type") or meta.get("actor_type") or "").lower()
+    human = bool(actor) and str(actor).lower() not in {"system", "bot", "sistema", "none"}
+    human = human and (not actor_type or actor_type in HUMAN_ACTOR_TYPES)
+    result = normalize_result(event.get("result") or meta.get("result") or meta.get("contact_result"))
+    confirmed = bool(event.get("confirmed", meta.get("confirmed", False)))
+    identifiable = event.get("lead_id") is not None
+    attempt = human and identifiable and confirmed and result in CONTACT_ATTEMPT_RESULTS
+    effective = attempt and result in EFFECTIVE_CONTACT_RESULTS
+    meaningful_change = bool(meta.get("meaningful_change"))
+    management = human and identifiable and event_type not in OPEN_ONLY_EVENT_TYPES and (
+        event_type in VALID_MANAGEMENT_EVENT_TYPES
+        and event_type != "CONTACT_RESULT"
+        and result is not None
+        and result in VALID_MANAGEMENT_RESULTS
+    )
+    return {
+        "human": human, "management": management, "contact_attempt": attempt,
+        "effective_contact": effective, "result": result,
+    }
+
+
+def is_first_sla_management_completed(
+    cycle: Mapping[str, Any] | None,
+    management_results: Iterable[Mapping[str, Any]] = (),
+    events: Iterable[Mapping[str, Any]] = (),
+) -> bool:
+    """Return whether this exact assignment cycle has a completed management result."""
+    if not isinstance(cycle, Mapping):
+        return False
+    if cycle.get("first_valid_management_at") not in (None, ""):
+        return True
+    if str(cycle.get("sla_first_management_status") or "").lower() == "completed":
+        return True
+    cycle_id = str(cycle.get("assignment_cycle_id") or "")
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    if not cycle_id or not assigned_at:
+        return False
+
+    for result in management_results or ():
+        if str(result.get("assignment_cycle_id") or "") != cycle_id:
+            continue
+        if str(result.get("status") or "completed").lower() != "completed":
+            continue
+        result_type = normalize_result(result.get("result_type") or result.get("result"))
+        occurred_at = coerce_utc_datetime(result.get("occurred_at"))
+        if result_type in VALID_MANAGEMENT_RESULTS and occurred_at and occurred_at >= assigned_at:
+            return True
+
+    for event in events or ():
+        event_cycle_id = str(event.get("assignment_cycle_id") or "")
+        if event_cycle_id and event_cycle_id != cycle_id:
+            continue
+        occurred_at = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+        if occurred_at and occurred_at >= assigned_at and event_evidence(event).get("management"):
+            return True
+    return False
+
+
+def registered_outreach_evidence(event: Optional[Mapping[str, Any]], *, assigned_at=None,
+                                 assignment_cycle_id=None,
+                                 allow_historical_for_presentation=False) -> dict[str, Any]:
+    """Interpret a recorded outreach event for presentation only — never counts as management."""
+    if not event or str(event.get("type") or "").upper() not in REGISTERED_OUTREACH_EVENT_TYPES:
+        return {"recognized": False, "occurred_at": None, "reason": "not_registered_outreach"}
+    occurred = coerce_utc_datetime(event.get("timestamp") or event.get("occurred_at"))
+    assigned = coerce_utc_datetime(assigned_at)
+    if not occurred:
+        return {"recognized": False, "occurred_at": None, "reason": "invalid_timestamp"}
+    if assigned and occurred < assigned and not allow_historical_for_presentation:
+        return {"recognized": False, "occurred_at": occurred, "reason": "previous_assignment_cycle"}
+    event_cycle = event.get("assignment_cycle_id")
+    if (assignment_cycle_id and event_cycle and str(event_cycle) != str(assignment_cycle_id)
+            and not allow_historical_for_presentation):
+        return {"recognized": False, "occurred_at": occurred, "reason": "different_assignment_cycle"}
+    return {"recognized": True, "occurred_at": occurred, "reason": "registered_outreach"}
+
+
+def unique_managed_lead_ids(events: Iterable[Mapping[str, Any]]) -> set[Any]:
+    return {event["lead_id"] for event in events if event_evidence(event)["management"]}
+
+
+def _assignment_cycle_selector(cycle: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a narrow identity selector for real and lightweight DB adapters."""
+    assignment_cycle_id = cycle.get("assignment_cycle_id")
+    if assignment_cycle_id:
+        return {"assignment_cycle_id": assignment_cycle_id}
+    if cycle.get("_id") is not None:
+        return {"_id": cycle["_id"]}
+    return {}
+
+
+def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
+                            reason, assigned_at=None, assigned_to_display_name=None,
+                            property_code=None) -> dict[str, Any]:
+    if not isinstance(lead, Mapping) or lead.get("_id") is None:
+        raise ValueError("canonical lead document is required for assignment cycle")
+    lead_id = lead["_id"]
+    # A cycle may only be created from the exact identity already persisted in
+    # the canonical leads collection.  This catches callers that accidentally
+    # pass a transport id, conversation id, phone, or a stale synthetic row.
+    # Lightweight unit adapters may omit ``leads``; production always has it.
+    try:
+        leads_collection = db["leads"]
+    except (KeyError, TypeError):
+        leads_collection = None
+    if leads_collection is not None:
+        persisted_lead = leads_collection.find_one({"_id": lead_id}, {"_id": 1})
+        if not persisted_lead or persisted_lead.get("_id") != lead_id:
+            raise ValueError("canonical lead document not found for assignment cycle")
+
+    assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
+    # Resolve canonical ObjectId cycles first, with a bounded legacy string
+    # fallback, so a historical row cannot create a second active cycle.
+    active = active_assignment_cycle(db, lead["_id"])
+    if (active and active.get("schema_version") == "crm_assignment_cycle_v1"
+            and active.get("cycle_status") == "active"
+            and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
+        if property_code:
+            prop_code = str(property_code).strip()
+            if str(active.get("property_code") or "").strip() != prop_code:
+                cycle_selector = _assignment_cycle_selector(active)
+                if cycle_selector:
+                    db["crm_assignment_cycles"].update_one(
+                        cycle_selector,
+                        {"$set": {"property_code": prop_code}},
+                    )
+                active["property_code"] = prop_code
+        return active
+    if active:
+        cycle_selector = _assignment_cycle_selector(active)
+        if cycle_selector:
+            cycle_selector["unassigned_at"] = None
+            db["crm_assignment_cycles"].update_one(
+                cycle_selector,
+                {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
+            )
+    # Determine SLA policy version for this cycle
+    sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
+    # Only leads created by real commercial events are notification-eligible
+    notifiable_reasons = frozenset({
+        "lead_created", "inbound_message", "manual_lead_created",
+    })
+    notification_eligible = reason in notifiable_reasons
+    sla_start_status = "pending_notification" if notification_eligible else "started"
+    if reason == "manual_lead_created":
+        cycle_origin = "manual_lead"
+    elif reason == "lead_created":
+        cycle_origin = "inbound_message"
+    else:
+        cycle_origin = reason
+    cycle = {
+        "assignment_cycle_id": str(uuid.uuid4()), "lead_id": lead_id,
+        "assigned_to_user_id": assigned_to_user_id, "assigned_at": assigned_at,
+        "cycle_started_at": assigned_at,
+        "notification_sent_at": None,
+        "delivered_at": None,
+        "read_at": None,
+        "sla_started_at": None if notification_eligible else commercial_sla_start_at(assigned_at),
+        "sla_start_status": sla_start_status,
+        "temperature_at_assignment": str(lead.get("lead_temperature_effective") or "COLD").upper(),
+        "assigned_to_display_name": assigned_to_display_name or str(assigned_to_user_id),
+        "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
+        "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
+        "cycle_status": "active",
+        "applied_transition_ids": [],
+        "sla_policy_version": sla_policy,
+        "notification_eligible": notification_eligible,
+        "cycle_origin": cycle_origin,
+        "property_code": str(property_code).strip() if property_code else None,
+    }
+    try:
+        db["crm_assignment_cycles"].insert_one(cycle)
+    except DuplicateKeyError:
+        # The partial unique active-cycle index resolves concurrent retries.
+        winner = active_assignment_cycle(db, lead["_id"])
+        if winner and str(winner.get("assigned_to_user_id")) == str(assigned_to_user_id):
+            return winner
+        raise
+    return cycle
+
+
+def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=None):
+    """Propagate the lead's current temperature to its active assignment cycle.
+
+    Keeps ``temperature_at_assignment`` on the active cycle in sync with the
+    live lead temperature (e.g. COLD -> HOT escalation mid-conversation) so the
+    CRM badge and SLA policy follow the current temperature WITHOUT creating a
+    new assignment cycle or re-assigning the executive.  Idempotent: no-op when
+    the cycle already carries the given temperature.
+    """
+    temp = str(temperature or "").strip().upper()
+    if not temp:
+        return None
+    cycle = None
+    for lead_key in mongo_id_variants(lead_id):
+        cycle = db["crm_assignment_cycles"].find_one({
+            "lead_id": lead_key, "cycle_status": "active", "unassigned_at": None,
+        })
+        if cycle:
+            break
+    if not cycle:
+        return None
+    if str(cycle.get("temperature_at_assignment") or "").upper() == temp:
+        return cycle
+    transition = coerce_utc_datetime(transition_at) or utc_now()
+    cycle_update = {"temperature_at_assignment": temp}
+    if temp == "HOT":
+        cycle_update.update({
+            "temperature_transitioned_at": transition,
+            "hot_started_at": transition,
+        })
+    db["crm_assignment_cycles"].update_one(
+        {"_id": cycle["_id"]},
+        {"$set": cycle_update},
+    )
+    return db["crm_assignment_cycles"].find_one({"_id": cycle["_id"]})
+
+
+def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, Any]:
+    """Dry-run by default; legacy cycles are outside the partial indexes."""
+    collection = db["crm_assignment_cycles"]
+    canonical_filter = {
+        "schema_version": "crm_assignment_cycle_v1", "cycle_status": "active",
+        "lead_id": {"$exists": True}, "assigned_to_user_id": {"$exists": True},
+        "assignment_cycle_id": {"$exists": True},
+    }
+    eligible = collection.count_documents(canonical_filter)
+    duplicates = list(collection.aggregate([
+        {"$match": canonical_filter},
+        {"$group": {"_id": "$lead_id", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]))
+    created = []
+    if create and not duplicates:
+        created.append(collection.create_index(
+            [("lead_id", 1), ("cycle_status", 1)], unique=True,
+            partialFilterExpression=canonical_filter, name="uq_crm_active_cycle_v1",
+        ))
+        created.append(collection.create_index(
+            [("lead_id", 1), ("assigned_to_user_id", 1), ("cycle_status", 1), ("assignment_cycle_id", 1)],
+            unique=True, partialFilterExpression=canonical_filter, name="uq_crm_cycle_identity_v1",
+        ))
+    return {"eligible_documents": eligible, "duplicates": duplicates,
+            "safe_to_create": not duplicates, "created": created}
+
+
+def active_assignment_cycle(db, lead_id):
+    for lead_key in mongo_id_variants(lead_id):
+        cycle = db["crm_assignment_cycles"].find_one(
+            {"lead_id": lead_key, "unassigned_at": None},
+            sort=[("assigned_at", -1)],
+        )
+        if cycle:
+            return cycle
+    return None
+
+
+def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
+                  temperature=None, hot_started_at=None,
+                  require_hot_start=False) -> dict[str, Any]:
+    """Calculate SLA with differentiated thresholds for Lead vs Lead Hot.
+
+    Lead thresholds:   0-119 good, 120-149 warning, 150-179 near_critical, 180+ critical
+    Lead Hot thresholds: 0-29 good, 30-44 warning, 45-59 near_critical, 60+ critical
+
+    When hot_started_at is provided, returns both total minutes and hot_segment minutes.
+    """
+    start = coerce_utc_datetime(assigned_at)
+    end = coerce_utc_datetime(first_valid_management_at)
+    hot_start = coerce_utc_datetime(hot_started_at) if hot_started_at else None
+    current = coerce_utc_datetime(now) if now is not None else utc_now()
+    if not start:
+        return {
+            "status": "unknown", "canonical_state": "SLA_NOT_STARTED",
+            "minutes": None, "hot_minutes": None, "fulfilled": False,
+            "coverage": "insufficient_data",
+        }
+    boundary = end or current
+    total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
+
+    # A current HOT cycle always uses the 60-minute policy.  If it was
+    # already HOT at assignment, its SLA segment starts at sla_started_at.
+    is_hot = str(temperature or "").upper() == "HOT"
+    hot_minutes = None
+    if is_hot:
+        if hot_start:
+            hot_boundary = end or current
+            hot_minutes = max(0, calculate_business_minutes(
+                hot_start.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
+        elif require_hot_start:
+            return {
+                "status": "unknown", "canonical_state": "INSUFFICIENT_DATA",
+                "minutes": total_minutes, "hot_minutes": None, "fulfilled": False,
+                "coverage": "insufficient_data",
+            }
+        else:
+            hot_minutes = total_minutes
+    use_hot_thresholds = is_hot
+
+    if end:
+        measured_minutes = hot_minutes if use_hot_thresholds else total_minutes
+        threshold = 60 if use_hot_thresholds else 180
+        status = "fulfilled"
+        canonical_state = "MANAGED_WITHIN_SLA" if measured_minutes < threshold else "MANAGED_OUTSIDE_SLA"
+    elif use_hot_thresholds:
+        if hot_minutes >= 60:
+            status = "critical"
+            canonical_state = "BREACHED"
+        elif hot_minutes >= 45:
+            status = "near_critical"
+            canonical_state = "NEAR_BREACH"
+        elif hot_minutes >= 30:
+            status = "warning"
+            canonical_state = "ATTENTION"
+        else:
+            status = "good"
+            canonical_state = "ACTIVE_NORMAL"
+    else:
+        if total_minutes >= 180:
+            status = "critical"
+            canonical_state = "BREACHED"
+        elif total_minutes >= 150:
+            status = "near_critical"
+            canonical_state = "NEAR_BREACH"
+        elif total_minutes >= 120:
+            status = "warning"
+            canonical_state = "ATTENTION"
+        else:
+            status = "good"
+            canonical_state = "ACTIVE_NORMAL"
+    return {
+        "status": status, "canonical_state": canonical_state,
+        "minutes": total_minutes, "fulfilled": bool(end),
+        "age_minutes": total_minutes, "hot_minutes": hot_minutes,
+        "threshold_minutes": 60 if use_hot_thresholds else 180,
+        "coverage": "determined",
+    }
+
+
+def resolve_hot_start_at(*, assigned_at, temperature_history=None,
+                         effective_temperature=None) -> Optional[datetime]:
+    """Resolve a demonstrable Hot start without inferring it from current state."""
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return None
+    events = []
+    for entry in temperature_history or []:
+        if not isinstance(entry, Mapping):
+            continue
+        value = str(entry.get("value") or entry.get("temperature") or "").upper()
+        raw_at = entry.get("at") or entry.get("timestamp") or entry.get("changed_at")
+        timestamp = coerce_utc_datetime(raw_at)
+        if value in {"HOT", "COLD"} and timestamp:
+            events.append((timestamp, value))
+    events.sort(key=lambda item: item[0])
+    before_assignment = [item for item in events if item[0] <= assigned]
+    if before_assignment and before_assignment[-1][1] == "HOT":
+        return assigned
+    for timestamp, value in events:
+        if timestamp >= assigned and value == "HOT":
+            return timestamp
+    # Current HOT without a historical timestamp is intentionally insufficient.
+    return None
+
+
+def is_pre_cutover_cycle(assigned_at, *, cutover=None) -> bool:
+    """Return True if cycle assigned_at predates the management enforcement cutover."""
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return False
+    if cutover is not None:
+        cutoff = coerce_utc_datetime(cutover)
+    else:
+        from config import Config
+        raw = getattr(Config, "CRM_MANAGEMENT_ENFORCEMENT_CUTOVER_AT", None) or MANAGEMENT_ENFORCEMENT_CUTOVER
+        cutoff = coerce_utc_datetime(raw)
+    return assigned < cutoff
+
+
+def is_pre_visual_cutover(assigned_at, *, cutover=None) -> bool:
+    """Return True if assigned_at predates the SLA VISUAL cutover.
+
+    Cycles on/after this cutover use differentiated thresholds (Lead 120/150/180,
+    Lead Hot 30/45/60). Pre-cutover = Historico / SLA no aplicable.
+    """
+    assigned = coerce_utc_datetime(assigned_at)
+    if not assigned:
+        return False
+    if cutover is not None:
+        cutoff = coerce_utc_datetime(cutover)
+    else:
+        from config import Config
+        raw = getattr(Config, "CRM_SLA_VISUAL_CUTOVER_AT", None) or "2026-07-23T23:00:00Z"
+        cutoff = coerce_utc_datetime(raw)
+    return assigned < cutoff
+
+
+def atomic_transition_to_hot(db, *, cycle_id, notification_id, timestamp):
+    """Atomically close NON_HOT and open HOT for a cycle.
+
+    Uses ``applied_transition_ids`` for idempotency.  The operation is a
+    single ``find_one_and_update`` that:
+    1. Verifies the cycle is active.
+    2. Confirms the transition ID has not been applied before.
+    3. Confirms a NON_HOT segment is active (segment_end is null).
+    4. Confirms NO HOT segment is already active.
+    5. Closes the NON_HOT segment and opens HOT in one pipeline.
+
+    Returns the updated cycle or ``None`` if the transition was already applied
+    or the preconditions were not met.
+    """
+    transition_id = f"{cycle_id}|{notification_id}|NON_HOT_to_HOT"
+    now = coerce_utc_datetime(timestamp) or utc_now()
+    notification_id_str = str(notification_id)
+
+    pipeline = [
+        {"$set": {
+            "sla_segments": {
+                "$concatArrays": [
+                    {
+                        "$map": {
+                            "input": {"$ifNull": ["$sla_segments", []]},
+                            "as": "seg",
+                            "in": {
+                                "$cond": [
+                                    {
+                                        "$and": [
+                                            {"$eq": ["$$seg.policy", "NON_HOT"]},
+                                            {"$eq": ["$$seg.segment_end", None]},
+                                        ]
+                                    },
+                                    {
+                                        "$mergeObjects": [
+                                            "$$seg",
+                                            {
+                                                "segment_end": now,
+                                                "end_reason": "superseded_by_hot",
+                                            },
+                                        ]
+                                    },
+                                    "$$seg",
+                                ]
+                            },
+                        }
+                    },
+                    [
+                        {
+                            "policy": "HOT",
+                            "segment_start": now,
+                            "segment_end": None,
+                            "end_reason": None,
+                            "notification_id": notification_id_str,
+                        }
+                    ],
+                ]
+            },
+            "applied_transition_ids": {
+                "$setUnion": [
+                    {"$ifNull": ["$applied_transition_ids", []]},
+                    [transition_id],
+                ]
+            },
+        }}
+    ]
+
+    return db["crm_assignment_cycles"].find_one_and_update(
+        {
+            "assignment_cycle_id": cycle_id,
+            "cycle_status": "active",
+            "applied_transition_ids": {"$ne": transition_id},
+            "$and": [
+                {"sla_segments": {"$elemMatch": {"policy": "NON_HOT", "segment_end": None}}},
+                {"sla_segments": {"$not": {"$elemMatch": {"policy": "HOT", "segment_end": None}}}},
+            ],
+        },
+        pipeline,
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def pipeline_activity_in_period(*, visits, events, start, end) -> dict[str, int]:
+    start_utc, end_utc = coerce_utc_datetime(start), coerce_utc_datetime(end)
+    def inside(value):
+        parsed = coerce_utc_datetime(value)
+        return bool(parsed and start_utc <= parsed < end_utc)
+    visit_ids = {
+        str(v.get("lead_id") or v.get("_id")) for v in visits
+        if inside(v.get("confirmed_at") or v.get("created_at"))
+    }
+    won, lost = set(), set()
+    for event in events:
+        if not inside(event.get("timestamp")):
+            continue
+        result = normalize_result((event.get("meta") or {}).get("to") or event.get("result"))
+        lead_id = event.get("lead_id")
+        if lead_id is None:
+            continue
+        if result == "CLOSED_WON": won.add(lead_id)
+        elif result == "CLOSED_LOST": lost.add(lead_id)
+    return {"visits": len(visit_ids), "closed_won": len(won), "closed_lost": len(lost)}
+
+
+def build_snapshot_document(*, period_start, period_end, cohort, pipeline,
+                            priorities, executives, data_quality) -> dict[str, Any]:
+    return {
+        "period": {"start": period_start, "end": period_end, "timezone": "America/Santiago"},
+        "cohort": cohort, "pipeline_activity": pipeline, "current_priorities": priorities,
+        "executives": executives, "metric_version": METRIC_VERSION,
+        "data_quality": data_quality, "generated_at": utc_now(), "immutable": True,
+    }
+
+
+def validate_list_parity(*, kpis: Mapping[str, int], listed_total: int,
+                         state_filter: Optional[str] = None) -> dict[str, Any]:
+    """Invariant shared by cards, state panel, list and pagination."""
+    key_by_filter = {
+        None: "scope_total", "Todos": "scope_total", "NEW": "nuevo", "nuevo": "nuevo",
+        "GRUPO_GESTION": "gestion", "GRUPO_VISITA": "visita", "GRUPO_CERRADO": "cerrado",
+    }
+    key = key_by_filter.get(state_filter)
+    if not key:
+        return {"validated": True, "metric": None}
+    expected = int(kpis.get(key, 0))
+    return {"validated": expected == int(listed_total), "metric": key,
+            "expected": expected, "listed_total": int(listed_total)}
+
+
+def persist_immutable_snapshot(db, snapshot: Mapping[str, Any]):
+    """Explicit preparation hook; it does not schedule or publish anything."""
+    document = dict(snapshot)
+    if document.get("metric_version") != METRIC_VERSION:
+        raise ValueError("snapshot metric_version mismatch")
+    period = document.get("period") or {}
+    key = f"{METRIC_VERSION}:{period.get('start')}:{period.get('end')}"
+    existing = db["crm_metric_snapshots"].find_one({"snapshot_key": key})
+    if existing:
+        return existing
+    document["snapshot_key"] = key
+    db["crm_metric_snapshots"].insert_one(document)
+    return document
+
+
+def chile_period_bounds(period_start, period_end):
+    """Inclusive local dates represented as an exclusive UTC interval."""
+    start_date = period_start if hasattr(period_start, "year") and not isinstance(period_start, str) else datetime.fromisoformat(str(period_start)).date()
+    end_date = period_end if hasattr(period_end, "year") and not isinstance(period_end, str) else datetime.fromisoformat(str(period_end)).date()
+    start_local = CHILE_TZ.localize(datetime.combine(start_date, datetime.min.time()))
+    end_local = CHILE_TZ.localize(datetime.combine(end_date, datetime.min.time()))
+    return start_local.astimezone(timezone.utc), (end_local + __import__("datetime").timedelta(days=1)).astimezone(timezone.utc)
+
+
+def in_utc_interval(value, start_utc, end_utc) -> bool:
+    parsed = coerce_utc_datetime(value)
+    return bool(parsed and start_utc <= parsed < end_utc)
+
+
+def historical_temperature_at(lead: Mapping[str, Any], cutoff_utc) -> Optional[str]:
+    """Return HOT/COLD only from timestamped evidence, never from current inventory."""
+    evidence = []
+    for entry in lead.get("temperature_history") or []:
+        at = coerce_utc_datetime(entry.get("at") or entry.get("timestamp"))
+        value = str(entry.get("value") or entry.get("temperature") or "").upper()
+        if at and at < cutoff_utc and value in {"HOT", "COLD"}:
+            evidence.append((at, value))
+    return max(evidence, default=(None, None), key=lambda item: item[0])[1]
+
+
+def format_business_age(minutes: Optional[int]) -> Optional[str]:
+    if minutes is None:
+        return None
+    minutes = max(0, int(minutes))
+    days, remaining = divmod(minutes, 8 * 60)
+    hours = remaining // 60
+    if days and hours:
+        return f"{days} d\u00eda{'s' if days != 1 else ''} h\u00e1bil{'es' if days != 1 else ''} y {hours} hora{'s' if hours != 1 else ''}"
+    if days:
+        return f"{days} d\u00eda{'s' if days != 1 else ''} h\u00e1bil{'es' if days != 1 else ''}"
+    return f"{hours} hora{'s' if hours != 1 else ''} h\u00e1bil{'es' if hours != 1 else ''}"
+
+
+def build_weekly_crm_snapshot(db, *, period_start, period_end, priority_as_of,
+                              executive_order: Iterable[str]) -> dict[str, Any]:
+    """Build cohort, pipeline and Monday inventory from canonical CRM evidence."""
+    start_utc, end_utc = chile_period_bounds(period_start, period_end)
+    priority_utc = coerce_utc_datetime(priority_as_of)
+    if not priority_utc:
+        raise ValueError("priority_as_of invÃ¡lido")
+    cutover_utc = coerce_utc_datetime(INSTRUMENTATION_CUTOVER)
+    if start_utc < cutover_utc:
+        raise ValueError("El periodo es anterior al corte operativo de CRM")
+
+    leads = list(db["leads"].find({}, {"messages": 0}))
+    lead_by_id = {lead["_id"]: lead for lead in leads}
+    cohort_ids = {
+        lead["_id"] for lead in leads
+        if in_utc_interval(lead.get("created_at") or (lead.get("lifecycle") or {}).get("created_at"), start_utc, end_utc)
+    }
+    events = list(db["crm_events"].find({}))
+    period_events = [event for event in events if in_utc_interval(event.get("timestamp"), start_utc, end_utc)]
+    valid_management = [event for event in period_events if event_evidence(event)["management"]]
+    managed_ids = {event["lead_id"] for event in valid_management if event.get("lead_id") in cohort_ids}
+    unmanaged_ids = cohort_ids - managed_ids
+
+    attempts = {e["lead_id"] for e in period_events if event_evidence(e)["contact_attempt"] and e.get("lead_id") in lead_by_id}
+    effective = {e["lead_id"] for e in period_events if event_evidence(e)["effective_contact"] and e.get("lead_id") in lead_by_id}
+    ambiguous = sum(1 for e in period_events if e.get("identity_status") == "ambiguous_phone")
+    unresolved_actor = sum(1 for e in period_events if e.get("lead_id") and e.get("actor_type") == "human" and not e.get("actor"))
+
+    visits = list(db["visitas"].find({}))
+    period_visits = [v for v in visits if in_utc_interval(v.get("confirmed_at") or v.get("created_at"), start_utc, end_utc)]
+    visit_lead_ids = {v.get("lead_id") for v in period_visits if v.get("lead_id") in lead_by_id}
+    won, lost = set(), set()
+    for event in period_events:
+        to_stage = normalize_result((event.get("meta") or {}).get("to") or event.get("result"))
+        if event.get("lead_id") not in lead_by_id:
+            continue
+        if to_stage == "CLOSED_WON": won.add(event["lead_id"])
+        if to_stage == "CLOSED_LOST": lost.add(event["lead_id"])
+
+    temperatures = {lead_id: historical_temperature_at(lead_by_id[lead_id], end_utc) for lead_id in cohort_ids}
+    # Preserve partial historical evidence. Unknown is a first-class value and
+    # must never be silently converted to Cold or make known counts disappear.
+    hot_cutoff = sum(value == "HOT" for value in temperatures.values())
+    cold_cutoff = sum(value == "COLD" for value in temperatures.values())
+    unknown_cutoff = sum(value not in {"HOT", "COLD"} for value in temperatures.values())
+    temperature_invariant_valid = hot_cutoff + cold_cutoff + unknown_cutoff == len(cohort_ids)
+    temperature_publishable = unknown_cutoff == 0
+    hot_pending_cutoff = sum(lead_id in unmanaged_ids and value == "HOT" for lead_id, value in temperatures.items())
+    cold_pending_cutoff = sum(lead_id in unmanaged_ids and value == "COLD" for lead_id, value in temperatures.items())
+    unknown_pending_cutoff = sum(
+        lead_id in unmanaged_ids and value not in {"HOT", "COLD"}
+        for lead_id, value in temperatures.items()
+    )
+
+    cycles = list(db["crm_assignment_cycles"].find({}))
+    period_cycles = [c for c in cycles if in_utc_interval(c.get("assigned_at"), start_utc, end_utc)]
+    active_cycles = [c for c in cycles if not c.get("unassigned_at") and c.get("lead_id") in lead_by_id]
+    active_by_lead = {c["lead_id"]: c for c in sorted(active_cycles, key=lambda c: coerce_utc_datetime(c.get("assigned_at")) or datetime.min.replace(tzinfo=timezone.utc))}
+    pending_stages = {"NEW", "NEW_LEAD", "NUEVO", ""}
+    pending_ids = {
+        lead_id for lead_id, lead in lead_by_id.items()
+        if str(lead.get("pipeline_stage") or lead.get("stage") or "NEW").upper() in pending_stages
+    }
+    current_pending_cycles = {lead_id: cycle for lead_id, cycle in active_by_lead.items() if lead_id in pending_ids}
+    excluded_unassigned = len(pending_ids - set(current_pending_cycles))
+    hot_unattended = sum(
+        str(lead_by_id[lead_id].get("lead_temperature_effective") or "").upper() == "HOT"
+        for lead_id in current_pending_cycles
+    )
+    overdue_ids, pending_ages = set(), {}
+    for lead_id, cycle in current_pending_cycles.items():
+        assigned = coerce_utc_datetime(cycle.get("assigned_at"))
+        if not assigned or assigned < cutover_utc:
+            continue
+        first = coerce_utc_datetime(cycle.get("first_valid_management_at"))
+        sla = calculate_sla(assigned_at=assigned, first_valid_management_at=first, now=priority_utc)
+        if not first and sla["status"] == "critical": overdue_ids.add(lead_id)
+        if not first and sla["minutes"] is not None: pending_ages[lead_id] = sla["minutes"]
+
+    names = list(dict.fromkeys(str(name).strip() for name in executive_order if str(name).strip()))
+    buckets = {name: {"name": name, "new_assigned_unique": 0, "managed_unique": 0, "current_pending_unique": 0,
+                      "effective_contacts_unique": 0, "leads_with_visit_unique": 0,
+                      "closed_won_unique": 0, "closed_lost_unique": 0} for name in names}
+    def bucket(name):
+        return buckets.get(str(name or "").strip())
+    new_sets, managed_sets, pending_sets, effective_sets = {}, {}, {}, {}
+    for cycle in period_cycles:
+        name = cycle.get("assigned_to_display_name") or cycle.get("assigned_to_user_id")
+        if bucket(name): new_sets.setdefault(name, set()).add(cycle.get("lead_id"))
+    for event in valid_management:
+        name = event.get("actor")
+        if bucket(name): managed_sets.setdefault(name, set()).add(event.get("lead_id"))
+    for lead_id, cycle in current_pending_cycles.items():
+        name = cycle.get("assigned_to_display_name") or cycle.get("assigned_to_user_id")
+        if bucket(name): pending_sets.setdefault(name, set()).add(lead_id)
+    for event in period_events:
+        if event_evidence(event)["effective_contact"] and bucket(event.get("actor")):
+            effective_sets.setdefault(event["actor"], set()).add(event.get("lead_id"))
+    for name, row in buckets.items():
+        row["new_assigned_unique"] = len(new_sets.get(name, set()) - {None})
+        row["managed_unique"] = len(managed_sets.get(name, set()) - {None})
+        row["current_pending_unique"] = len(pending_sets.get(name, set()) - {None})
+        row["effective_contacts_unique"] = len(effective_sets.get(name, set()) - {None})
+
+    oldest = max(pending_ages.values(), default=None)
+    limitations = []
+    if not temperature_publishable: limitations.append("Temperatura hist\u00f3rica al corte no demostrable para toda la cohorte")
+    if ambiguous: limitations.append("Existen eventos ambiguos excluidos")
+    snapshot = {
+        "schema_version": "crm_weekly_snapshot_v1", "metric_version": METRIC_VERSION,
+        "report": {"period_start": str(period_start), "period_end": str(period_end), "timezone": "America/Santiago",
+                   "generated_at": utc_now(), "historical_comparison_allowed": False},
+        "cohort": {"received_unique": len(cohort_ids), "hot_at_cutoff_unique": hot_cutoff,
+                   "cold_at_cutoff_unique": cold_cutoff,
+                   "unknown_temperature_at_cutoff_unique": unknown_cutoff,
+                   "managed_unique": len(managed_ids),
+                   "unmanaged_at_cutoff_unique": len(unmanaged_ids),
+                   "hot_unmanaged_at_cutoff_unique": hot_pending_cutoff,
+                   "cold_unmanaged_at_cutoff_unique": cold_pending_cutoff,
+                   "unknown_temperature_unmanaged_at_cutoff_unique": unknown_pending_cutoff,
+                   # Compatibility for the not-yet-active report code.
+                   "hot_pending_at_cutoff_unique": hot_pending_cutoff},
+        "pipeline_activity": {"leads_with_confirmed_attempt_unique": len(attempts),
+                              "leads_with_effective_contact_unique": len(effective),
+                              "leads_with_visit_unique": len(visit_lead_ids), "visit_events_total": len(period_visits),
+                              "closed_won_unique": len(won), "closed_lost_unique": len(lost)},
+        "monday_priorities": {"priority_as_of": priority_utc.astimezone(CHILE_TZ).isoformat(),
+                              "hot_unattended_unique": hot_unattended,
+                              "sla_overdue_publishable_unique": len(overdue_ids),
+                              "oldest_pending_business_minutes": oldest,
+                              "oldest_pending_display": format_business_age(oldest)},
+        "executives": list(buckets.values()),
+        "operational_focus": {"key": "", "supporting_metrics": {}},
+        "data_quality": {"cutover": INSTRUMENTATION_CUTOVER, "complete_for_period": True,
+                         "temperature_publishable": temperature_publishable, "sla_publishable": True,
+                         "sla_definition": "team_first_assignment_to_first_valid_management",
+                         "excluded_ambiguous_events": ambiguous,
+                         "excluded_unresolved_actor_events": unresolved_actor,
+                         "excluded_unassigned_leads": excluded_unassigned,
+                         "unknown_temperature_count": unknown_cutoff,
+                         "temperature_invariant_valid": temperature_invariant_valid,
+                         "limitations": limitations},
+        "crm_parity": {"validated": False, "differences": []},
+        "_audit": {"cohort_ids": list(cohort_ids), "managed_ids": list(managed_ids), "unmanaged_ids": list(unmanaged_ids)},
+    }
+    return snapshot

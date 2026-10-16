@@ -14,6 +14,7 @@ from .property_lookup import (
     normalize_property_url,
     extract_property_external_id,
     operation_from_property_url,
+    extract_property_urls,
 )
 
 URL_RE = re.compile(r'https?://[^\s<>\]\)"]+', re.IGNORECASE)
@@ -28,6 +29,13 @@ def detectar_plataforma(url: str) -> str:
         "mercadolibre": "MercadoLibre",
         "procasa": "Procasa",
         "enlaceinmobiliario": "Enlace Inmobiliario",
+        "proppit": "Proppit",
+        "icasas": "iCasas",
+        "trovit": "Trovit",
+        "mitula": "Mitula",
+        "nuroa": "Nuroa",
+        "nestoria": "Nestoria",
+        "chilepropiedades": "ChilePropiedades",
     }.get(canonical_portal(url), "Otro Portal")
 
 
@@ -188,7 +196,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
     Prioriza el campo de búsqueda según la plataforma detectada en la URL.
     Retorna: (encontrado_link, propiedad_encontrada, plataforma_origen, codigo_externo)
     """
-    urls = URL_RE.findall(mensaje)
+    urls = extract_property_urls(mensaje)
     db = get_db()
     coleccion = db[PROPERTY_COLLECTION_NAME]
     logger.info(f"[LINK_TRACE] trace={trace_id or 'no-trace'} phone={phone} inicio_resolucion_link")
@@ -204,7 +212,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
     
     for url in urls:
         # Limpieza básica
-        url_clean = url.split("?")[0].split("#")[0].rstrip("/")
+        url_clean = url.rstrip(".,;:!?")
         url_lower = url_clean.lower()
         url_regex = construir_patron_url(url_clean)
         url_norm = normalizar_url(url_clean)
@@ -503,11 +511,22 @@ def resolver_referencia_propiedad(
     expected_personal_data_field: Optional[str] = None,
 ) -> dict:
     """Resolve one current property reference without guessing its source portal."""
-    urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(str(mensaje or ""))]
-    bare_text = URL_RE.sub(" ", str(mensaje or "")).strip()
+    urls = extract_property_urls(mensaje)
+    bare_text = str(mensaje or "")
+    for found_url in urls:
+        bare_text = bare_text.replace(found_url, " ")
+    bare_text = bare_text.strip()
     bare_numeric_code = (
         bare_text if re.fullmatch(r"\d{9,10}", bare_text) else None
     )
+    bare_mlc = None
+    if not urls:
+        mlc_matches = list(dict.fromkeys(
+            f"MLC-{match.group(1)}"
+            for match in re.finditer(r"\bMLC[-_ ]?(\d{7,})\b", bare_text, re.I)
+        ))
+        if len(mlc_matches) == 1:
+            bare_mlc = mlc_matches[0]
     db = None
     bare_code_prop = None
     bare_code_meta = {}
@@ -535,11 +554,23 @@ def resolver_referencia_propiedad(
         "url": urls[0] if urls else "",
         "error_code": None,
     }
-    if not urls and not explicit_codes and not bare_numeric_code:
+    if not urls and not explicit_codes and not bare_numeric_code and not bare_mlc:
         return result
 
     if db is None:
         db = get_db()
+    if bare_mlc and not urls:
+        mlc_prop, mlc_meta = lookup_property_link(db, bare_mlc, PROPERTY_COLLECTION_NAME)
+        result.update(platform="MercadoLibre", external_id=bare_mlc)
+        if mlc_meta.get("error_code") == "AMBIGUOUS_PROPERTY_REFERENCE":
+            result.update(status="ambiguous", error_code="AMBIGUOUS_PROPERTY_REFERENCE")
+        elif mlc_prop:
+            prop = dict(mlc_prop)
+            prop["_link_match"] = mlc_meta
+            result.update(status="resolved", property=prop)
+        else:
+            result.update(status="unresolved", error_code="PROPERTY_NOT_FOUND")
+        return result
     url_properties: dict[str, dict] = {}
     url_ids = []
     url_ambiguity = None

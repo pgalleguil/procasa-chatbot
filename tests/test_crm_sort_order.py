@@ -32,6 +32,13 @@ def test_sort_spec_recent_assigned():
     # Verify the branch for recent_assigned
     assert 'ordenar_por == "recent_assigned"' in src
 
+    # Recent assignments must be globally chronological; admin-cycle priority
+    # is reserved for SLA ordering and must not place older assignments first.
+    recent_block = src.split('if ordenar_por == "recent_assigned":', 1)[1].split(
+        'elif ordenar_por == "sla_priority":', 1
+    )[0]
+    assert '"_admin_cycle_priority"' not in recent_block
+
 def test_sort_spec_sla_priority():
     """sla_priority: HOT first (_temperature=0), oldest first (_cycle_assigned_at ASC)."""
     path = "api_crm.py"

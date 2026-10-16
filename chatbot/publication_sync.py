@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import socket
 import threading
 import time
 import uuid
@@ -129,7 +128,45 @@ def _safe_host(host: str) -> bool:
     return any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_HOSTS)
 
 
-def _validate_public_url(url: str) -> tuple[bool, str]:
+def _resolve_public_addresses(host: str, timeout: float) -> list[str]:
+    """Resolve A and AAAA records under one explicit DNS deadline."""
+    import dns.exception
+    import dns.resolver
+
+    deadline = time.monotonic() + max(0.25, float(timeout))
+    resolver = dns.resolver.Resolver(configure=True)
+    addresses: list[str] = []
+    for record_type in ("A", "AAAA"):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.05:
+            raise TimeoutError("dns_timeout")
+        resolver.timeout = min(2.0, remaining)
+        try:
+            answer = resolver.resolve(
+                host, record_type, lifetime=remaining, search=False,
+                raise_on_no_answer=False,
+            )
+        except dns.resolver.NoAnswer:
+            continue
+        except dns.resolver.NXDOMAIN:
+            return []
+        except dns.exception.Timeout as exc:
+            raise TimeoutError("dns_timeout") from exc
+        except dns.resolver.NoNameservers as exc:
+            raise OSError("dns_no_nameservers") from exc
+        except dns.exception.DNSException as exc:
+            raise OSError("dns_resolution_error") from exc
+        records = getattr(answer, "rrset", answer)
+        if records is None:
+            continue
+        for record in records:
+            address = getattr(record, "address", None)
+            if address:
+                addresses.append(str(address))
+    return addresses
+
+
+def _validate_public_url(url: str, *, dns_timeout: float = 5) -> tuple[bool, str]:
     try:
         parts = urlsplit(url)
         if parts.scheme.lower() != "https" or not parts.hostname:
@@ -139,14 +176,16 @@ def _validate_public_url(url: str) -> tuple[bool, str]:
         host = parts.hostname.lower().rstrip(".")
         if not _safe_host(host):
             return False, "host_not_allowlisted"
-        addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        addresses = _resolve_public_addresses(host, dns_timeout)
         if not addresses:
             return False, "dns_no_addresses"
         for address in addresses:
-            ip = ipaddress.ip_address(address[4][0])
+            ip = ipaddress.ip_address(address)
             if not ip.is_global:
                 return False, "non_public_ip"
         return True, ""
+    except TimeoutError:
+        return False, "dns_timeout"
     except (OSError, ValueError):
         return False, "dns_or_url_error"
 
@@ -162,22 +201,32 @@ def _rate_limit(host: str) -> None:
         _HOST_LAST_REQUEST[host] = time.monotonic()
 
 
-def _robots_allows(url: str, http, *, timeout: tuple[float, float] = (5, 10)) -> tuple[bool, str]:
+def _robots_allows(url: str, http, *, timeout: tuple[float, float] = (5, 10),
+                   deadline: float | None = None) -> tuple[bool, str]:
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
+    deadline = deadline or (time.monotonic() + sum(timeout))
     cached = _ROBOTS_CACHE.get(host)
     if cached and cached[0] > time.monotonic():
         parser = cached[1]
         return (parser.can_fetch("ProcasaPublicationAudit/1.0", url), "robots_disallowed") if parser else (False, "robots_unavailable")
     robots_url = f"https://{host}/robots.txt"
-    valid, reason = _validate_public_url(robots_url)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.05:
+        return False, "robots_timeout"
+    valid, reason = _validate_public_url(robots_url, dns_timeout=min(timeout[0], remaining))
     if not valid:
         _ROBOTS_CACHE[host] = (time.monotonic() + 300, None)
         return False, "robots_" + reason
     _rate_limit(host)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.05:
+        return False, "robots_timeout"
+    request_timeout = (min(timeout[0], max(0.05, remaining / 2)),
+                       min(timeout[1], max(0.05, remaining / 2)))
     try:
         response = http.get(
-            robots_url, allow_redirects=False, timeout=timeout,
+            robots_url, allow_redirects=False, timeout=request_timeout,
             headers={"User-Agent": "ProcasaPublicationAudit/1.0"}, stream=True,
         )
         status = int(response.status_code)
@@ -188,6 +237,9 @@ def _robots_allows(url: str, http, *, timeout: tuple[float, float] = (5, 10)) ->
         elif status == 200:
             chunks, size = [], 0
             for chunk in response.iter_content(4096):
+                if time.monotonic() >= deadline:
+                    response.close()
+                    return False, "robots_timeout"
                 size += len(chunk)
                 if size > 256_000:
                     response.close()
@@ -233,13 +285,16 @@ def safe_fetch_html(url: str, *, session=None, budget_seconds: float = 35,
             if request_timeout is None:
                 return {"status": "timeout", "reason": "property_audit_budget_exhausted",
                         "final_url": current, "html": ""}
-            valid, reason = _validate_public_url(current)
+            valid, reason = _validate_public_url(current, dns_timeout=request_timeout[0])
             if not valid:
-                return {"status": "blocked", "reason": reason, "final_url": current, "html": ""}
+                return {"status": "timeout" if reason == "dns_timeout" else "blocked",
+                        "reason": reason, "final_url": current, "html": ""}
             host = urlsplit(current).hostname or ""
-            allowed, robots_reason = _robots_allows(current, http, timeout=request_timeout)
+            allowed, robots_reason = _robots_allows(current, http, timeout=request_timeout,
+                                                     deadline=deadline)
             if not allowed:
-                return {"status": "robots_blocked", "reason": robots_reason, "final_url": current, "html": ""}
+                return {"status": "timeout" if robots_reason.endswith("timeout") else "robots_blocked",
+                        "reason": robots_reason, "final_url": current, "html": ""}
             response = None
             for attempt in range(max(1, int(retries))):
                 request_timeout = bounded_timeout()
@@ -247,6 +302,10 @@ def safe_fetch_html(url: str, *, session=None, budget_seconds: float = 35,
                     return {"status": "timeout", "reason": "property_audit_budget_exhausted",
                             "final_url": current, "html": ""}
                 _rate_limit(host)
+                request_timeout = bounded_timeout()
+                if request_timeout is None:
+                    return {"status": "timeout", "reason": "property_audit_budget_exhausted",
+                            "final_url": current, "html": ""}
                 response = http.get(
                     current, allow_redirects=False, timeout=request_timeout,
                     headers={"User-Agent": "ProcasaPublicationAudit/1.0"}, stream=True,
@@ -277,6 +336,10 @@ def safe_fetch_html(url: str, *, session=None, budget_seconds: float = 35,
             chunks = []
             size = 0
             for chunk in response.iter_content(16_384):
+                if time.monotonic() >= deadline:
+                    response.close()
+                    return {"status": "timeout", "reason": "property_audit_budget_exhausted",
+                            "http_status": status_code, "final_url": current, "html": ""}
                 size += len(chunk)
                 if size > MAX_RESPONSE_BYTES:
                     response.close()

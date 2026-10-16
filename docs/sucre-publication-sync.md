@@ -152,7 +152,10 @@ audit Prop360 session uses one request attempt with an 8-second request timeout.
 Proppit fetches use the remaining property budget and one bounded request
 attempt while honoring robots rules. Change the budget with
 `--property-budget-seconds` (5–120 seconds). A timeout stays unverified and is
-never represented as a successful URL observation.
+never represented as a successful URL observation. DNS A/AAAA validation,
+robots retrieval, request timeouts, and streamed response bodies all share the
+per-property deadline; an early timeout is recorded and does not block later
+codes in the initial pass.
 
 Run the full active Sucre dry-run. This writes local JSON/CSV report files but
 does not write Mongo, acquire a Mongo lock, or update synchronization state:

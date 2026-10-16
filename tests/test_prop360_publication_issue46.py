@@ -7,6 +7,7 @@ from pathlib import Path
 import mongomock
 import pytest
 
+from chatbot import publication_sync
 from chatbot.link_extractor import resolver_referencia_propiedad
 from chatbot.publication_data import merge_publication_snapshot
 from chatbot.publication_sync import (
@@ -553,9 +554,7 @@ def test_safe_fetch_blocks_non_allowlisted_host_before_request():
 
 
 def test_safe_fetch_rejects_private_dns_and_revalidates_redirect(monkeypatch):
-    monkeypatch.setattr("chatbot.publication_sync.socket.getaddrinfo", lambda *a, **k: [
-        (2, 1, 6, "", ("127.0.0.1", 443)),
-    ])
+    monkeypatch.setattr(publication_sync, "_resolve_public_addresses", lambda *_args: ["127.0.0.1"])
     result = safe_fetch_html("https://links.proppit.com/links")
     assert result["status"] == "blocked"
     assert result["reason"] == "non_public_ip"
@@ -595,7 +594,8 @@ def test_safe_fetch_allows_verified_proppit_redirect_and_revalidates_each_hop(mo
 
     validations = []
     session = Session()
-    monkeypatch.setattr(publication_sync, "_validate_public_url", lambda url: (validations.append(url) or (True, "")))
+    monkeypatch.setattr(publication_sync, "_validate_public_url",
+                        lambda url, **_kwargs: (validations.append(url) or (True, "")))
     monkeypatch.setattr(publication_sync, "_robots_allows", lambda *_args, **_kwargs: (True, ""))
     monkeypatch.setattr(publication_sync, "_rate_limit", lambda _host: None)
     result = safe_fetch_html(AGGREGATOR, session=session)
@@ -603,6 +603,63 @@ def test_safe_fetch_allows_verified_proppit_redirect_and_revalidates_each_hop(mo
     assert result["final_url"] == "https://proppit.com/property-links/uuid"
     assert validations == [AGGREGATOR, "https://proppit.com/property-links/uuid"]
     assert session.trust_env is False
+
+
+def test_public_dns_resolution_uses_remaining_budget(monkeypatch):
+    import dns.resolver
+
+    lifetimes = []
+
+    class Record:
+        address = "8.8.8.8"
+
+    class Resolver:
+        timeout = None
+
+        def resolve(self, _host, _record_type, *, lifetime, **_kwargs):
+            lifetimes.append(lifetime)
+            return [Record()]
+
+    monkeypatch.setattr(dns.resolver, "Resolver", lambda configure=True: Resolver())
+    addresses = publication_sync._resolve_public_addresses("links.proppit.com", 0.5)
+    assert addresses == ["8.8.8.8", "8.8.8.8"]
+    assert len(lifetimes) == 2
+    assert all(0 < value <= 0.5 for value in lifetimes)
+
+
+def test_safe_fetch_stops_slow_stream_at_property_budget(monkeypatch):
+    clock = [0.0]
+    dns_timeouts = []
+    monkeypatch.setattr(publication_sync.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(publication_sync, "_validate_public_url",
+                        lambda _url, *, dns_timeout: (dns_timeouts.append(dns_timeout) or (True, "")))
+    monkeypatch.setattr(publication_sync, "_robots_allows", lambda *_args, **_kwargs: (True, ""))
+    monkeypatch.setattr(publication_sync, "_rate_limit", lambda _host: None)
+
+    class Response:
+        status_code = 200
+        headers = {}
+        encoding = "utf-8"
+
+        def close(self):
+            pass
+
+        def iter_content(self, _chunk_size):
+            yield b"first"
+            clock[0] = 1.1
+            yield b"second"
+
+    class Session:
+        trust_env = True
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    result = safe_fetch_html("https://links.proppit.com/links", session=Session(),
+                             budget_seconds=1, connect_timeout=1, read_timeout=1, retries=1)
+    assert result["status"] == "timeout"
+    assert result["reason"] == "property_audit_budget_exhausted"
+    assert dns_timeouts and all(value <= 0.5 for value in dns_timeouts)
 
 
 def test_prop360_client_can_bound_post_attempts_for_audit():

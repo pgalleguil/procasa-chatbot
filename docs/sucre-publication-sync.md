@@ -81,16 +81,41 @@ sync status is from 2026-09-30, reports `apply_bajas=false` and
 Prop360/Mongo status mismatch with no recorded transition; no document was
 changed or automatically declared baja.
 
-The initial full per-property publication dry-run was not completed: the first
-detail request exceeded the previous retry/timeout window. A local resumable
-auditor is now available. It snapshots the validated active listing and only
+The local resumable auditor snapshots the validated active listing and only
 publication/office identity fields, processes at most 25 codes per invocation,
 stores each property attempt incrementally, and retries recorded timeouts on
 resume. A run reports `coverage_complete` separately from link verification;
 `timeout`, `blocked`, `conflict`, and `unverified` are never counted as a
 verified URL or a successful update. The original 441-code snapshot must all
-have traceable provider rows before coverage is complete. Every audit batch is
-read-only against Mongo.
+have traceable provider rows before coverage is complete. A provider row is
+marked `safe_to_migrate` only when its reference is verified and conflict-free;
+blocked or unverified rows remain false even if another provider for that
+property has a verified change. Every audit batch is read-only against Mongo.
+
+The complete read-only run on 2026-10-16 covered all 441 initial Prop360 codes
+in 18 bounded batches, with 0 untraced and 0 retryable codes. The final listing
+also contained 441 codes and reported 0 additions, 0 removals, and 0 listing
+changes during the audit. Mongo had 442 active records; the sole Mongo-only
+code was 6579. The cumulative `results.json` and `results.csv` contain 5,281
+records by code/provider/operation, including observed changes and blocked or
+unverified sources. There were no duplicate Prop360 codes or identity
+contradictions. This audit did not write Mongo.
+
+The audit found 26 codes with a raw provider change proposal. Fourteen codes
+had at least one conflict-free, verified provider change:
+`16479, 16492, 16555, 16588, 16704, 17176, 5670, 5709, 6255, 6260, 6348,
+6522, 6698, 6701`. Ten Mercado Libre records, three Yapo records, and two
+TocToc records were reported as changed. Twelve Proppit rows were reported as
+new proposals, but remain blocked/unverified and are not safe to migrate.
+Provider status counts and the full per-code rows are in the local report.
+
+For code `16479`, authenticated Prop360 returned current Venta MLC
+`MLC-4548780920`; Mongo contains the earlier MLC `MLC-3842833828` and its old
+URL. The dry-run records the new MLC/URL as current and the old MLC/URL as
+historical, resolvable references. The Prop360 Proppit aggregator URL is
+present, but robots rules blocked its page. The five iCasas/Trovit/Mitula/
+Nuroa/Nestoria links therefore remain unverified fixture data and are not
+included as observed current publications.
 
 ## Sync behavior and safety
 

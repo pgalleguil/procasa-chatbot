@@ -631,7 +631,8 @@ def _difference(old: dict, new: dict, code: str, scraped_at: str, source: str,
                 and alias.get("publication_status") in {"historical", "expired", "unavailable"}
                 and alias.get("url")
             }),
-            "change_type": change, "safe_to_migrate": change != "conflict",
+            # The caller sets this only after source evidence and conflicts are checked.
+            "change_type": change, "safe_to_migrate": False,
             "reason": error or ("identity stable" if change == "unchanged" else "current source observation"),
             "scraped_at": scraped_at, "source": source, "status": status, "error": error,
         })
@@ -663,7 +664,7 @@ def _ensure_provider_rows(rows: list[dict], code: str, scraped_at: str, source: 
                 "old_urls": [], "new_urls": urls,
                 "historical_external_ids": [], "historical_urls": [],
                 "change_type": "not_observed" if not observed else "new",
-                "safe_to_migrate": not bool(conflicts),
+                "safe_to_migrate": False,
                 "reason": "destination_not_observed_in_proppit" if not observed else "aggregator_destination_observed",
                 "scraped_at": scraped_at,
                 "source": source,
@@ -1168,7 +1169,6 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
                 )
                 for diff in diffs:
                     diff["conflicts"] = conflicts
-                    diff["safe_to_migrate"] = not conflicts
                     diff["aggregator_results"] = source_meta.get("aggregator_results", [])
                     evidence_alias = next((alias for alias in (incoming.get("aliases") or [])
                                            if isinstance(alias, dict)
@@ -1177,6 +1177,8 @@ def run_publication_reconciliation(*, dry_run: bool = True, execute: bool = Fals
                                                 or _canonical_operation(alias.get("operacion"))
                                                 == _canonical_operation(diff.get("operacion")))), None)
                     diff["evidence_level"] = (evidence_alias or {}).get("verification_status", "not_observed")
+                    diff["safe_to_migrate"] = (not conflicts
+                                               and diff["evidence_level"] == "source_verified")
                     diff["source_url"] = (evidence_alias or {}).get("source_url")
                     diff["status"] = "AMBIGUOUS" if conflicts else status
                     diff["property_status"] = "AMBIGUOUS" if conflicts else status

@@ -171,6 +171,8 @@ def _provider_rows(code: str, old_publications: dict, incoming: dict, proposed: 
         row["property_status"] = status
         row["evidence_level"] = (matching_aliases[0].get("verification_status") if matching_aliases else
                                  next((item.get("source_status") for item in relevant_aggregators), "not_observed"))
+        row["safe_to_migrate"] = (status in {"changed", "unchanged"}
+                                  and row["evidence_level"] == "source_verified")
         row["error"] = ";".join(str(item.get("reason") or item.get("source_status"))
                                for item in relevant_aggregators
                                if item.get("source_status") not in {"source_verified", "source_verified_no_destinations"}) or None
@@ -239,8 +241,14 @@ def _property_audit(client, code: str, baseline_doc: dict | None, claims: dict,
 
 def _consolidate(run_dir: Path, manifest: dict, checkpoint: dict, *, final_rows: list[dict] | None = None) -> dict:
     events = checkpoint.get("latest_by_code", {})
-    rows = [row for code in manifest["initial_codes"]
-            for row in (events.get(code, {}).get("records") or [])]
+    rows = []
+    for code in manifest["initial_codes"]:
+        for row in events.get(code, {}).get("records") or []:
+            # Recompute from persisted evidence so resumed/final reports cannot
+            # retain an optimistic flag produced before verification completed.
+            row["safe_to_migrate"] = (row.get("status") in {"changed", "unchanged"}
+                                      and row.get("evidence_level") == "source_verified")
+            rows.append(row)
     records_path = run_dir / "results.json"
     csv_path = run_dir / "results.csv"
     _atomic_json(records_path, rows)
@@ -256,10 +264,22 @@ def _consolidate(run_dir: Path, manifest: dict, checkpoint: dict, *, final_rows:
     os.replace(temp_path, csv_path)
     covered = set(events)
     counts: dict[str, dict[str, int]] = {}
+    change_counts: dict[str, dict[str, int]] = {}
+    changed_codes = set()
+    safe_changed_codes = set()
     for row in rows:
         stats = counts.setdefault(str(row.get("portal") or "unknown"), {})
         status = str(row.get("status") or "unverified")
         stats[status] = stats.get(status, 0) + 1
+        change_type = str(row.get("change_type") or "unchanged")
+        if change_type in {"new", "changed"}:
+            provider_changes = change_counts.setdefault(str(row.get("portal") or "unknown"), {})
+            provider_changes[change_type] = provider_changes.get(change_type, 0) + 1
+            code = str(row.get("codigo_prop360") or "")
+            if code:
+                changed_codes.add(code)
+                if row.get("safe_to_migrate") is True:
+                    safe_changed_codes.add(code)
     summary = {
         "run_id": manifest["run_id"],
         "initial_prop360_active": len(manifest["initial_codes"]),
@@ -277,6 +297,11 @@ def _consolidate(run_dir: Path, manifest: dict, checkpoint: dict, *, final_rows:
         "prop360_only": manifest["prop360_only"],
         "scope_errors": manifest["scope_errors"],
         "provider_status_counts": counts,
+        "provider_change_counts": change_counts,
+        "codes_with_publication_changes": sorted(changed_codes),
+        "codes_with_safe_verified_changes": sorted(safe_changed_codes),
+        "safe_to_migrate_records": sum(1 for row in rows if row.get("safe_to_migrate") is True),
+        "unsafe_or_unverified_records": sum(1 for row in rows if row.get("safe_to_migrate") is not True),
         "coverage_complete": covered == set(manifest["initial_codes"]),
         "all_provider_links_verified": bool(rows) and all(row.get("status") in {"verified", "changed", "unchanged"}
                                                           for row in rows),

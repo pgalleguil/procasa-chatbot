@@ -737,6 +737,33 @@ def test_full_reconciliation_dry_run_writes_no_mongo_and_reports_all_providers(t
         {row["portal"] for row in report["records"]}
     )
     assert {row["portal"] for row in report["records"] if row["new_urls"]} >= set(DESTINATIONS)
+    assert all(row["safe_to_migrate"] is True for row in report["records"]
+               if row.get("evidence_level") == "source_verified" and not row.get("conflicts"))
+    assert all(row["safe_to_migrate"] is False for row in report["records"]
+               if row.get("evidence_level") != "source_verified")
+
+
+def test_blocked_proppit_destinations_are_not_marked_safe_to_migrate(tmp_path):
+    mongo = mongomock.MongoClient()
+    db = mongo.db
+    db.universo_cartera_prop360.insert_one(_doc(publications={}))
+    fake = FakeProp360(rows=[{"codigo": CODE, "estado": "Activa"}],
+                       payloads={CODE: _payload()})
+    result = run_sucre_publication_audit(
+        output_dir=tmp_path, batch_size=1, db=db, prop360_client=fake,
+        fetcher=lambda _url, **_kwargs: {
+            "status": "robots_blocked", "reason": "robots_disallowed", "html": "",
+        },
+    )
+    rows = json.loads(Path(result["report_json"]).read_text(encoding="utf-8"))
+    by_provider = {row["portal"]: row for row in rows if row.get("codigo_prop360") == CODE}
+    assert by_provider["mercadolibre"]["status"] == "changed"
+    assert by_provider["mercadolibre"]["safe_to_migrate"] is True
+    assert by_provider["proppit"]["status"] == "blocked"
+    assert by_provider["proppit"]["safe_to_migrate"] is False
+    for provider in PROVIDERS:
+        assert by_provider[provider]["status"] == "blocked"
+        assert by_provider[provider]["safe_to_migrate"] is False
 
 
 def test_office_mismatch_and_inactive_property_never_enter_scope(tmp_path):

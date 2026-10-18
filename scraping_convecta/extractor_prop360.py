@@ -338,6 +338,24 @@ class Prop360Extractor:
             )
             return
 
+        source_event_id = str(prop360_lead.get("idContacto") or event.source_event_id)
+        ledger_filter = {"source_system": "prop360", "source_event_id": source_event_id}
+        ledger = db["lead_ingest_events"].find_one(ledger_filter)
+        # An event received late is not a second assignment if a human managed
+        # this exact property/executive after the factual source contact time.
+        # Do not override a cycle that was already persisted by an older retry.
+        if (ledger and ledger.get("suppress_commercial_cycle")
+                and not db["crm_assignment_cycles"].find_one(ledger_filter)):
+            db["lead_ingest_events"].update_one(ledger_filter, {
+                "$set": {"status": "completed",
+                         "commercial_cycle_suppressed_reason": "HISTORICAL_CONTACT_ALREADY_MANAGED"},
+            })
+            logger.info(
+                "[NOTIF] Historical managed contact: no new cycle lead_id=%s event_id=%s",
+                lead_id, source_event_id,
+            )
+            return
+
         exec_user = None
         if exec_name:
             exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})

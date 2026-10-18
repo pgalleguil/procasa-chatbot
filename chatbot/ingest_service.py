@@ -149,6 +149,37 @@ def _is_valid_property_code(code: Optional[str]) -> bool:
     return str(code).strip().upper() not in INVALID_PROPERTY_CODES
 
 
+def _managed_prior_prop360_cycle(db, lead: Dict[str, Any], event: LeadEvent, property_code: str):
+    """Return the already-managed cycle when a late source event predates management.
+
+    A new source id is still a distinct ingestion event; suppress only the
+    *commercial assignment* when its factual contact time belongs to an
+    opportunity subsequently handled by the same executive on the same property.
+    No usable source timestamp means no suppression.
+    """
+    if event.source_system != "prop360" or not event.contact_date:
+        return None
+    if str((lead.get("prospecto") or {}).get("codigo") or "").strip() != property_code:
+        return None
+    owner = str(lead.get("ejecutivo_asignado") or (lead.get("prospecto") or {}).get("ejecutivo") or "").strip()
+    if not owner or owner.casefold() in {"sin asignar", "no asignado"}:
+        return None
+
+    from .crm_metrics import coerce_utc_datetime
+    factual_contact_at = coerce_utc_datetime(event.contact_date)
+    if factual_contact_at is None:
+        return None
+    for cycle in db["crm_assignment_cycles"].find({
+        "lead_id": lead["_id"], "property_code": property_code,
+    }).sort("assigned_at", -1).limit(20):
+        if str(cycle.get("assigned_to_display_name") or "").strip().casefold() != owner.casefold():
+            continue
+        first_management = coerce_utc_datetime(cycle.get("first_valid_management_at"))
+        if first_management is not None and factual_contact_at <= first_management:
+            return cycle
+    return None
+
+
 def _find_lead_by_id(phone: Optional[str], email: Optional[str]) -> Tuple[Optional[Dict], Optional[Dict], Optional[str]]:
     """
     Busca en leads por teléfono y/o email.
@@ -486,12 +517,26 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         elif current_exec not in unassigned:
             exec_name = current_exec
 
-        hot_detected = _has_hot_intent(message)
-        initial_temp = "HOT" if hot_detected else "COLD"
-        temp_set = effective_temperature_set(initial_temp)
-        update_fields.update(temp_set)
-        if hot_detected:
-            update_fields["last_intent"] = "ASK_VISIT"
+        # Prop360 can deliver yesterday's contact after the executive has
+        # already handled that same opportunity through WhatsApp. The event is
+        # still ingested for provenance, but must not reset assignment/SLA.
+        historical_managed_cycle = None
+        if (event.source_system == "prop360"
+                and str(exec_name or "").strip().casefold() == str(current_exec or "").strip().casefold()):
+            historical_managed_cycle = _managed_prior_prop360_cycle(
+                db, target_lead, event, property_code,
+            )
+        if historical_managed_cycle:
+            for field_name in ("lifecycle.assigned_at", "ejecutivo_asignado",
+                               "prospecto.ejecutivo", "last_message_at"):
+                update_fields.pop(field_name, None)
+            initial_temp = str(target_lead.get("lead_temperature_effective") or "COLD").upper()
+        else:
+            hot_detected = _has_hot_intent(message)
+            initial_temp = "HOT" if hot_detected else "COLD"
+            update_fields.update(effective_temperature_set(initial_temp))
+            if hot_detected:
+                update_fields["last_intent"] = "ASK_VISIT"
 
         update_payload = {"$set": {}, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
         for k, v in update_fields.items():
@@ -517,7 +562,12 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             db[IDEMPOTENCY_COLLECTION].update_one(
                 {"source_system": event.source_system, "source_event_id": str(event.source_event_id)},
                 {"$set": {"status": "lead_persisted", "lead_id": target_lead["_id"],
-                          "action": action, "property_code": property_code}},
+                          "action": action, "property_code": property_code,
+                          "suppress_commercial_cycle": bool(historical_managed_cycle),
+                          "prior_managed_cycle_id": (
+                              historical_managed_cycle.get("assignment_cycle_id")
+                              if historical_managed_cycle else None
+                          )}},
             )
         else:
             _finalize_event(event.source_system, event.source_event_id, lead_id, "updated")

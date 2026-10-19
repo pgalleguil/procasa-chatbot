@@ -27,6 +27,7 @@ from pymongo.write_concern import WriteConcern
 INCIDENT_ID = "PROC-2026-10-P0-6732"
 CONFIRMATION = "P0-6732-RESTORE-HERNAN"
 DATABASE = "URLS"
+BACKUP_FORMAT = "procasa-p0-6732-pre-repair-v2"
 LEAD_OID = "6ad613470035d45d0f87595b"
 PRODUCTION_CLUSTER_PREFIX = "ac-8f1k7c3-shard-"
 PRODUCTION_CLUSTER_SUFFIX = ".mzve39k.mongodb.net"
@@ -121,7 +122,7 @@ def load_backup(path: Path) -> dict[str, Any]:
         backup = json_util.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         raise RepairSafetyError(f"could not parse backup ({type(exc).__name__})") from exc
-    if backup.get("format") != "procasa-p0-6732-pre-repair-v2":
+    if backup.get("format") != BACKUP_FORMAT:
         raise RepairSafetyError("backup format is not the reviewed P0 pre-repair snapshot")
     if backup.get("database") != DATABASE or str(backup.get("lead_id")) != LEAD_OID:
         raise RepairSafetyError("backup database or lead identity does not match this repair")
@@ -132,6 +133,74 @@ def load_backup(path: Path) -> dict[str, Any]:
         if not isinstance(bundle.get("documents"), list):
             raise RepairSafetyError(f"backup {key} snapshot is malformed")
     return backup
+
+
+def _build_backup(db: Any, session: Any = None) -> dict[str, Any]:
+    """Capture the reviewed 6732 scope from one consistent database snapshot."""
+    options = {"session": session} if session is not None else {}
+    lead = db["leads"].find_one({"_id": ObjectId(LEAD_OID)}, **options)
+    if not lead:
+        raise RepairSafetyError("target lead 6732 is absent from the snapshot")
+
+    lead_ids = [ObjectId(LEAD_OID), LEAD_OID]
+    phone = lead.get("phone")
+    cycles = _find_many(db, "crm_assignment_cycles", {"lead_id": {"$in": lead_ids}}, session=session)
+    cycle_ids = [str(row.get("assignment_cycle_id")) for row in cycles]
+    management = _find_many(db, "crm_management_results", {"lead_id": {"$in": lead_ids}}, session=session)
+    events = _find_many(db, "crm_events", {"lead_id": {"$in": lead_ids}}, session=session)
+    notifications = _find_many(db, "crm_notifications_v1", {"$or": [
+        {"assignment_cycle_id": {"$in": cycle_ids}},
+        {"assignment_cycle_ids": {"$in": cycle_ids}},
+        {"lead_id": {"$in": lead_ids}},
+        {"lead_ids": {"$in": lead_ids}},
+    ]}, session=session)
+    ingest_events = _find_many(db, "lead_ingest_events", {"lead_id": {"$in": lead_ids},
+                                                           "property_code": "6732"}, session=session)
+    integrity_alerts = _find_many(db, "crm_assignment_integrity_alerts",
+                                  {"lead_id": {"$in": lead_ids}}, session=session)
+    sla_audit = _find_many(db, "crm_sla_reassignment_audit_v1", {"$or": [
+        {"source_cycle_id": {"$in": cycle_ids}},
+        {"new_cycle_id": {"$in": cycle_ids}},
+        {"lead_id": {"$in": lead_ids}, "property_code": "6732"},
+    ]}, session=session)
+    pending = _find_many(db, "pending_notifications", {"$or": [
+        {"lead_id": {"$in": lead_ids}}, {"phone": phone}, {"telefono": phone}, {"lead_phone": phone},
+    ]}, session=session)
+
+    documents = {
+        "lead": [lead],
+        "cycles": cycles,
+        "management_results": management,
+        "events": events,
+        "notifications": notifications,
+        "legacy_pending_notifications": pending,
+        "ingest_events": ingest_events,
+        "integrity_alerts": integrity_alerts,
+        "sla_reassignment_audit": sla_audit,
+    }
+    return {
+        "format": BACKUP_FORMAT,
+        "database": DATABASE,
+        "lead_id": LEAD_OID,
+        "created_at": datetime.now(timezone.utc),
+        "collections": {
+            key: {"collection": BACKUP_COLLECTIONS[key], "documents": rows}
+            for key, rows in documents.items()
+        },
+    }
+
+
+def _write_backup(path: Path, backup: Mapping[str, Any]) -> str:
+    if path.exists():
+        raise RepairSafetyError(f"backup output already exists: {path.name}; choose a new path")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json_util.dumps(backup, json_options=json_util.CANONICAL_JSON_OPTIONS, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _backup_docs(backup: Mapping[str, Any], key: str) -> list[dict[str, Any]]:
@@ -668,9 +737,11 @@ def verify_postcommit(db: Any, backup: Mapping[str, Any]) -> dict[str, Any]:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--capture-backup", action="store_true", help="save a checksummed production snapshot; no DB writes")
     mode.add_argument("--dry-run", action="store_true", help="validate live state and write a checksummed preflight; performs no DB writes")
     mode.add_argument("--execute", action="store_true", help="apply the verified correction in one MongoDB transaction")
-    parser.add_argument("--backup", required=True, type=Path, help="path to the existing pre-repair BSON/JSON snapshot")
+    parser.add_argument("--backup", type=Path, help="path to the existing pre-repair BSON/JSON snapshot")
+    parser.add_argument("--backup-out", type=Path, help="new output path for --capture-backup")
     parser.add_argument("--preflight", type=Path, help="preflight file previously produced by --dry-run; required for --execute")
     parser.add_argument("--preflight-out", type=Path, help="new preflight output path for --dry-run")
     parser.add_argument("--database", default=DATABASE)
@@ -685,14 +756,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error(f"--execute requires --preflight and --confirm-incident {CONFIRMATION}")
     if args.dry_run and args.preflight:
         parser.error("use --preflight-out with --dry-run; --preflight is for --execute")
+    if args.capture_backup:
+        if not args.backup_out or args.backup or args.preflight or args.preflight_out or args.confirm_incident:
+            parser.error("--capture-backup requires only --backup-out")
+    elif not args.backup or args.backup_out:
+        parser.error("--dry-run/--execute require --backup; --backup-out is only for --capture-backup")
     return args
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    backup_path = args.backup.expanduser().resolve()
-    backup = load_backup(backup_path)
-    backup_sha256 = hashlib.sha256(backup_path.read_bytes()).hexdigest()
+    backup_path = args.backup.expanduser().resolve() if args.backup else None
+    backup = load_backup(backup_path) if backup_path else None
+    backup_sha256 = hashlib.sha256(backup_path.read_bytes()).hexdigest() if backup_path else None
     uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
     if not uri:
         print("ERROR: set MONGODB_URI or MONGO_URI in the authorized environment; no credential is accepted on the command line.", file=sys.stderr)
@@ -702,6 +778,31 @@ def main(argv: list[str] | None = None) -> int:
     try:
         db = client[DATABASE]
         production_identity = _validate_production_identity(client, db)
+        if args.capture_backup:
+            backup_path = args.backup_out.expanduser().resolve()
+            with client.start_session() as session:
+                session.start_transaction(
+                    read_concern=ReadConcern("snapshot"),
+                    write_concern=WriteConcern("majority"),
+                    read_preference=ReadPreference.PRIMARY,
+                )
+                try:
+                    live_backup = _build_backup(db, session=session)
+                    snapshot = collect_snapshot(db, live_backup, session=session)
+                    session.commit_transaction()
+                except Exception:
+                    if session.in_transaction:
+                        session.abort_transaction()
+                    raise
+            backup_sha256 = _write_backup(backup_path, live_backup)
+            backup = load_backup(backup_path)
+            _validate_backup_scenario(backup, snapshot)
+            print("STATUS: production_backup_captured; no database writes performed")
+            print(f"BACKUP: {backup_path}")
+            print(f"BACKUP_SHA256: {backup_sha256}")
+            print(f"DATABASE_IDENTITY: {DATABASE}; confirmed Procasa production replica set")
+            print("SNAPSHOT: replica-set snapshot transaction; only the 6732 incident scope was captured")
+            return 0
         if args.dry_run:
             if _verify_already_applied(db, backup):
                 print("STATUS: already_applied; post-commit invariants verified; no writes performed")

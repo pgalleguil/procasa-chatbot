@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from copy import deepcopy
+
+import pytest
+from bson import ObjectId
+
+from maintenance import repair_procasa_p0_6732 as repair
+
+
+class _Cursor(list):
+    def limit(self, count):
+        return _Cursor(self[:count])
+
+
+class _Collection:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def find_one(self, _query, **_options):
+        return deepcopy(self.rows[0]) if self.rows else None
+
+    def find(self, _query, **_options):
+        return _Cursor(deepcopy(self.rows))
+
+
+class _Database(dict):
+    def __getitem__(self, name):
+        return super().__getitem__(name)
+
+
+def _fake_db():
+    lead = {
+        "_id": ObjectId(repair.LEAD_OID),
+        "phone": "+56911112222",
+        "ejecutivo_asignado": repair.MARIA_NAME,
+        "prospecto": {"codigo": "6732", "ejecutivo": repair.MARIA_NAME},
+    }
+    return _Database({
+        "leads": _Collection([lead]),
+        "crm_assignment_cycles": _Collection([
+            {"assignment_cycle_id": repair.HERNAN_CYCLE_ID, "lead_id": lead["_id"]},
+            {"assignment_cycle_id": repair.MARIA_CYCLE_ID, "lead_id": lead["_id"]},
+        ]),
+        "crm_management_results": _Collection([
+            {"_id": key, "lead_id": lead["_id"]} for key in repair.MANAGEMENT_RECORDS
+        ]),
+        "crm_events": _Collection([{"_id": "event-1", "lead_id": lead["_id"]}]),
+        "crm_notifications_v1": _Collection([{"_id": "notification-1", "lead_id": lead["_id"]}]),
+        "lead_ingest_events": _Collection([{"_id": "ingest-1", "lead_id": lead["_id"], "property_code": "6732"}]),
+        "crm_assignment_integrity_alerts": _Collection([{"_id": "alert-1", "lead_id": lead["_id"]}]),
+        "crm_sla_reassignment_audit_v1": _Collection([{"_id": "audit-1", "lead_id": lead["_id"]}]),
+        "pending_notifications": _Collection([{"_id": "pending-1", "phone": lead["phone"]}]),
+    })
+
+
+def test_capture_backup_records_only_reviewed_6732_collections():
+    backup = repair._build_backup(_fake_db())
+
+    assert backup["format"] == repair.BACKUP_FORMAT
+    assert backup["database"] == "URLS"
+    assert str(backup["lead_id"]) == repair.LEAD_OID
+    assert set(backup["collections"]) == set(repair.BACKUP_COLLECTIONS)
+    assert backup["collections"]["cycles"]["collection"] == "crm_assignment_cycles"
+    assert len(backup["collections"]["cycles"]["documents"]) == 2
+    assert len(backup["collections"]["management_results"]["documents"]) == 2
+
+
+def test_capture_backup_write_is_checksumming_and_refuses_overwrite(tmp_path):
+    path = tmp_path / "6732-backup.json"
+    backup = repair._build_backup(_fake_db())
+
+    checksum = repair._write_backup(path, backup)
+
+    assert len(checksum) == 64
+    assert repair.load_backup(path)["format"] == repair.BACKUP_FORMAT
+    with pytest.raises(repair.RepairSafetyError, match="already exists"):
+        repair._write_backup(path, backup)
+
+
+def test_capture_mode_requires_a_new_backup_output_path():
+    with pytest.raises(SystemExit):
+        repair.parse_args(["--capture-backup", "--actor", "Pablo Galleguillos"])
+
+    args = repair.parse_args([
+        "--capture-backup", "--backup-out", "/tmp/6732.json", "--actor", "Pablo Galleguillos",
+    ])
+    assert args.capture_backup is True
+    assert args.backup_out.name == "6732.json"
+    assert args.backup is None

@@ -372,9 +372,12 @@ def _is_valid_administrative_cycle(cycle, lead, *, expected_owner_user_id=None):
         return False
     if cycle.get("schema_version") != "crm_assignment_cycle_v1":
         return False
-    if cycle.get("reason") != "crm_list_admin":
+    # Legacy administrative corrections preserve their original creation
+    # reason/origin. The explicit correction ID and canonical cycle ID below
+    # distinguish them from ordinary assignment cycles.
+    if cycle.get("reason") not in {"inbound_message", "lead_created", "manual_lead_created", "crm_list_admin"}:
         return False
-    if cycle.get("cycle_origin") != "administrative_correction":
+    if cycle.get("cycle_origin") not in {"inbound_message", "manual_lead", "administrative_correction"}:
         return False
     lead_id = str(lead.get("_id") or "")
     if not lead_id or str(cycle.get("lead_id") or "") != lead_id:

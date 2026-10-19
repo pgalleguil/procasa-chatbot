@@ -59,6 +59,94 @@ def test_prop360_first_then_whatsapp_reuses_the_same_cycle():
     assert db["crm_assignment_cycles"].count_documents({"lead_id": lead["_id"]}) == 1
 
 
+def test_prop360_event_after_effective_contact_reuses_cycle_without_new_sla_or_notice(monkeypatch):
+    db = mongomock.MongoClient().incident
+    lead_id = ObjectId("6ad6066de66c461dd69d696d")
+    owner_id = ObjectId("6989c6309dd2ba54e478196c")
+    assigned_at = datetime(2026, 10, 19, 12, 0, 43, 396000, tzinfo=timezone.utc)
+    managed_at = datetime(2026, 10, 19, 12, 20, 26, 254000, tzinfo=timezone.utc)
+    lead = {
+        "_id": lead_id,
+        "phone": "+56973707048",
+        "ejecutivo_asignado": "Mariela Arriagada",
+        "lead_temperature_effective": "COLD",
+        "prospecto": {
+            "codigo": "17252", "ejecutivo": "Mariela Arriagada",
+            "link_detectado": True,
+        },
+        "lifecycle": {},
+    }
+    db["leads"].insert_one(lead.copy())
+    db["usuarios"].insert_one({
+        "_id": owner_id, "nombre": "Mariela Arriagada",
+        "telefono": "+56911112222", "is_active": True,
+    })
+    original = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id=str(owner_id),
+        assigned_to_display_name="Mariela Arriagada", assigned_by="prop360_extractor",
+        reason="lead_created", property_code="17252", assigned_at=assigned_at,
+        source_system="prop360", source_event_id="12244",
+    )
+    db["crm_management_results"].insert_one({
+        "_id": "crm_management:17252-valid-effective-contact",
+        "lead_id": lead_id, "assignment_cycle_id": original["assignment_cycle_id"],
+        "actor_user_id": str(owner_id), "result_type": "EFFECTIVE_CONTACT",
+        "status": "completed", "occurred_at": managed_at,
+    })
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": original["assignment_cycle_id"]},
+        {"$set": {
+            "first_valid_management_at": managed_at,
+            "first_effective_contact_at": managed_at,
+            "sla_first_management_status": "completed",
+        }},
+    )
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lifecycle.current_assignment_cycle_id": original["assignment_cycle_id"],
+        "lifecycle.assignment_cycle_id": original["assignment_cycle_id"],
+        "lifecycle.assigned_to_user_id": str(owner_id),
+        "lifecycle.assigned_to_display_name": "Mariela Arriagada",
+        "lifecycle.sla_started_at": original["sla_started_at"],
+        "sla_status": "fulfilled",
+    }})
+    db["lead_ingest_events"].insert_one({
+        "source_system": "prop360", "source_event_id": "12276",
+        "lead_id": lead_id, "status": "processing",
+    })
+    db["crm_notifications_v1"].insert_one({
+        "assignment_cycle_ids": [original["assignment_cycle_id"]],
+        "digest_type": "non_hot_digest_v1", "state": "sent",
+    })
+    monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
+    extractor = object.__new__(extractor_prop360.Prop360Extractor)
+    extractor.metrics = {"notifications_enqueued": 0}
+
+    extractor._enqueue_notification(
+        str(lead_id), "Mariela Arriagada",
+        LeadEvent("prop360", "12276", phone=lead["phone"], name="Cliente",
+                  message="Consulta", property_code="17252"),
+        {"idContacto": 12276},
+    )
+
+    persisted = db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": original["assignment_cycle_id"],
+    })
+    updated_lead = db["leads"].find_one({"_id": lead_id})
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead_id}) == 1
+    assert persisted["cycle_status"] == "active" and persisted["unassigned_at"] is None
+    assert persisted["sla_first_management_status"] == "completed"
+    assert crm_metrics.coerce_utc_datetime(persisted["sla_started_at"]) == crm_metrics.coerce_utc_datetime(original["sla_started_at"])
+    assert crm_metrics.coerce_utc_datetime(persisted["first_valid_management_at"]) == managed_at
+    assert updated_lead["lifecycle"]["current_assignment_cycle_id"] == original["assignment_cycle_id"]
+    assert updated_lead["lifecycle"]["assignment_cycle_id"] == original["assignment_cycle_id"]
+    assert updated_lead["sla_status"] == "fulfilled"
+    assert db["crm_management_results"].count_documents({
+        "assignment_cycle_id": original["assignment_cycle_id"],
+        "result_type": "EFFECTIVE_CONTACT", "status": "completed",
+    }) == 1
+    assert db["crm_notifications_v1"].count_documents({}) == 1
+
+
 def test_closed_prior_cycle_stays_immutable_when_new_opportunity_starts():
     db = mongomock.MongoClient().incident
     lead = {"_id": "lead-closed-prior", "lead_temperature_effective": "COLD"}

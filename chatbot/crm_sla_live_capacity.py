@@ -47,6 +47,9 @@ def _live_cycle_query(policy_since: datetime) -> dict[str, Any]:
         "schema_version": "crm_assignment_cycle_v1",
         "reason": {"$nin": list(EXCLUDED_ORIGINS)},
         "cycle_origin": {"$nin": list(EXCLUDED_ORIGINS)},
+        # Administrative repair cycles stay visible in history but must never
+        # inflate live SLA capacity or restart first-management accounting.
+        "sla_performance_excluded": {"$ne": True},
         "$or": [
             {"sla_started_at": {"$gte": CUTOVER_AT}},
             {"sla_started_at": {"$exists": False}, "assigned_at": {"$gte": CUTOVER_AT}},

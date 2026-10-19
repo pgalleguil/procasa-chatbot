@@ -8,7 +8,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
+import time
+import uuid
 from typing import Any, Mapping
+
+from pymongo.errors import AutoReconnect, ConnectionFailure, NetworkTimeout, ServerSelectionTimeoutError
 
 from .crm_metrics import (
     coerce_utc_datetime,
@@ -46,7 +50,12 @@ def active_assignment_cycles(db: Any, lead_id: Any) -> list[dict[str, Any]]:
     return list(unique.values())
 
 
-def assignment_context(db: Any, lead: Mapping[str, Any]) -> dict[str, Any]:
+def assignment_context(
+    db: Any,
+    lead: Mapping[str, Any],
+    *,
+    active_cycles_override: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Resolve a customer-safe owner only when the canonical cycle and mirrors agree."""
     lead_id = lead.get("_id")
     if lead_id is None:
@@ -68,7 +77,20 @@ def assignment_context(db: Any, lead: Mapping[str, Any]) -> dict[str, Any]:
         name for name in mirrored_names
         if name and name.casefold() not in UNASSIGNED_OWNER_LABELS
     ]
-    cycles = active_assignment_cycles(db, lead_id)
+    if active_cycles_override is None:
+        cycles = active_assignment_cycles(db, lead_id)
+    else:
+        # The reconciler can supply histories loaded in one bounded batch,
+        # avoiding one network round-trip per lead while keeping this helper's
+        # standalone read behavior unchanged.
+        unique: dict[str, dict[str, Any]] = {}
+        for row in active_cycles_override:
+            if row.get("unassigned_at") is not None or row.get("cycle_status") not in {"active", None}:
+                continue
+            cycle_id = str(row.get("assignment_cycle_id") or row.get("_id") or "")
+            if cycle_id:
+                unique[cycle_id] = row
+        cycles = list(unique.values())
 
     if not cycles:
         if pointers or explicit_names:
@@ -229,6 +251,7 @@ def record_assignment_integrity_alert(
     issue_code: str,
     evidence: Mapping[str, Any] | None = None,
     detected_at: datetime | None = None,
+    detection_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Upsert one durable, deduplicated internal review alert."""
     when = detected_at or datetime.now(timezone.utc)
@@ -238,23 +261,57 @@ def record_assignment_integrity_alert(
         .encode("utf-8", "replace")
     ).hexdigest()[:24]
     alert_id = f"assignment-integrity:{digest}"
-    db[ALERT_COLLECTION].update_one(
-        {"_id": alert_id},
-        {
-            "$setOnInsert": {
-                "lead_id": lead_id,
-                "issue_code": issue_code,
-                "severity": "P0",
-                "status": "open",
-                "first_detected_at": when,
-                "evidence": evidence,
-                "review_required": True,
+    if detection_run_id:
+        # The reconciler retries transient Mongo read failures. Use a stable
+        # per-run id so retrying a partially persisted report cannot inflate
+        # alert observations more than once.
+        insert_fields = {
+            "lead_id": lead_id,
+            "issue_code": issue_code,
+            "severity": "P0",
+            "status": "open",
+            "first_detected_at": when,
+            "evidence": evidence,
+            "review_required": True,
+            "observations": 0,
+        }
+        try:
+            db[ALERT_COLLECTION].update_one(
+                {"_id": alert_id}, {"$setOnInsert": insert_fields}, upsert=True,
+            )
+        except Exception as exc:
+            # A concurrent run may win the unique _id insert. Only suppress
+            # the duplicate-key race; other failures must reach the caller.
+            from pymongo.errors import DuplicateKeyError
+            if not isinstance(exc, DuplicateKeyError):
+                raise
+        db[ALERT_COLLECTION].update_one(
+            {"_id": alert_id, "last_observation_run_id": {"$ne": detection_run_id}},
+            {"$set": {"last_detected_at": when, "last_observation_run_id": detection_run_id},
+             "$inc": {"observations": 1}},
+        )
+        db[ALERT_COLLECTION].update_one(
+            {"_id": alert_id, "last_observation_run_id": detection_run_id},
+            {"$set": {"last_detected_at": when}},
+        )
+    else:
+        db[ALERT_COLLECTION].update_one(
+            {"_id": alert_id},
+            {
+                "$setOnInsert": {
+                    "lead_id": lead_id,
+                    "issue_code": issue_code,
+                    "severity": "P0",
+                    "status": "open",
+                    "first_detected_at": when,
+                    "evidence": evidence,
+                    "review_required": True,
+                },
+                "$set": {"last_detected_at": when},
+                "$inc": {"observations": 1},
             },
-            "$set": {"last_detected_at": when},
-            "$inc": {"observations": 1},
-        },
-        upsert=True,
-    )
+            upsert=True,
+        )
     return db[ALERT_COLLECTION].find_one({"_id": alert_id}) or {
         "_id": alert_id, "lead_id": lead_id, "issue_code": issue_code,
         "severity": "P0", "status": "open", "evidence": evidence,
@@ -294,6 +351,51 @@ def _valid_transfer_transition(
     return False
 
 
+def _was_transition_administratively_corrected(
+    previous: Mapping[str, Any],
+    current: Mapping[str, Any],
+    cycles: list[dict[str, Any]],
+    *,
+    db: Any = None,
+) -> bool:
+    """Suppress only a historical owner change explicitly reversed later.
+
+    The source cycle remains in history. The later correction must point to
+    both exact cycles, restore the same owner, carry a valid human admin
+    authorization, and be marked excluded from performance scoring.
+    """
+    if current.get("administratively_corrected") is not True:
+        return False
+    corrected_cycle_id = str(current.get("assignment_cycle_id") or "")
+    correction_cycle_id = str(current.get("correction_cycle_id") or "")
+    incident_id = str(current.get("correction_incident_id") or "")
+    previous_cycle_id = str(previous.get("assignment_cycle_id") or "")
+    previous_owner = str(previous.get("assigned_to_user_id") or "")
+    if not all((corrected_cycle_id, correction_cycle_id, incident_id, previous_cycle_id, previous_owner)):
+        return False
+    correction = next((
+        row for row in cycles
+        if str(row.get("assignment_cycle_id") or "") == correction_cycle_id
+    ), None)
+    if not correction:
+        return False
+    correction_audit = correction.get("administrative_correction") or {}
+    incident_matches = (
+        str(correction.get("correction_incident_id") or correction_audit.get("incident_id") or "")
+        == incident_id
+    )
+    return bool(
+        correction.get("cycle_origin") == "administrative_correction"
+        and correction.get("corrects_assignment_cycle_id") == corrected_cycle_id
+        and correction.get("restores_assignment_cycle_id") == previous_cycle_id
+        and str(correction.get("assigned_to_user_id") or "") == previous_owner
+        and correction.get("sla_performance_excluded") is True
+        and correction.get("notification_eligible") is False
+        and incident_matches
+        and _valid_transfer_transition(current, correction, db=db)
+    )
+
+
 def _transition_findings(db: Any, lead_id: Any, cycles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     ordered = sorted(
@@ -306,6 +408,8 @@ def _transition_findings(db: Any, lead_id: Any, cycles: list[dict[str, Any]]) ->
         if not previous_owner or previous_owner == current_owner:
             continue
         if _valid_transfer_transition(previous, current, db=db):
+            continue
+        if _was_transition_administratively_corrected(previous, current, ordered, db=db):
             continue
         managed = cycle_has_human_management(db, previous)
         reason = str(current.get("reason") or "").strip().lower()
@@ -344,20 +448,41 @@ def _transition_findings(db: Any, lead_id: Any, cycles: list[dict[str, Any]]) ->
     return findings
 
 
-def _notification_findings(db: Any, lead_id: Any, cycles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _notification_findings(
+    db: Any,
+    lead_id: Any,
+    cycles: list[dict[str, Any]],
+    *,
+    notifications: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     cycle_ids = [str(row.get("assignment_cycle_id") or "") for row in cycles]
     cycle_ids = [value for value in cycle_ids if value]
     if not cycle_ids:
         return []
-    notifications = list(db["crm_notifications_v1"].find({
-        "$or": [
-            {"assignment_cycle_id": {"$in": cycle_ids},
-             "notification_type": "lead_assignment_hot"},
-            {"assignment_cycle_ids": {"$in": cycle_ids},
-             "digest_type": "non_hot_digest_v1"},
-        ],
-        "state": {"$in": ["pending", "sending", "sent", "failed_retryable"]},
-    }).limit(500))
+    if notifications is None:
+        notifications = list(db["crm_notifications_v1"].find({
+            "$or": [
+                {"assignment_cycle_id": {"$in": cycle_ids},
+                 "notification_type": "lead_assignment_hot"},
+                {"assignment_cycle_ids": {"$in": cycle_ids},
+                 "digest_type": "non_hot_digest_v1"},
+            ],
+            "state": {"$in": ["pending", "sending", "sent", "failed_retryable"]},
+        }).limit(500))
+    else:
+        cycle_id_set = set(cycle_ids)
+        notifications = [
+            row for row in notifications
+            if (
+                str(row.get("assignment_cycle_id") or "") in cycle_id_set
+                or bool(cycle_id_set.intersection(str(value) for value in row.get("assignment_cycle_ids") or []))
+            )
+            and row.get("state") in {"pending", "sending", "sent", "failed_retryable"}
+            and (
+                row.get("notification_type") == "lead_assignment_hot"
+                or row.get("digest_type") == "non_hot_digest_v1"
+            )
+        ]
     delivered = [row for row in notifications if row.get("state") in {"sent", "sending"} or row.get("actually_delivered") is True]
     cycle_by_id = {str(row.get("assignment_cycle_id")): row for row in cycles}
     recipients_by_cycle: dict[str, set[str]] = {}
@@ -458,11 +583,13 @@ def reconcile_assignment_integrity(
     lookback_days: int = 30,
     limit: int = 10000,
     persist_alerts: bool = True,
+    detection_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Audit recent and active cycles; persist alerts without changing owners."""
     current = now or datetime.now(timezone.utc)
     cutoff = current - timedelta(days=max(int(lookback_days), 1))
     cutoff_iso = cutoff.isoformat()
+    candidate_projection = {"_id": 1, "lead_id": 1, "assigned_at": 1, "cycle_status": 1, "unassigned_at": 1}
     cursor = db["crm_assignment_cycles"].find({
         "$or": [
             {"assigned_at": {"$gte": cutoff}},
@@ -470,7 +597,10 @@ def reconcile_assignment_integrity(
             {"cycle_status": "active", "unassigned_at": None},
             {"cycle_status": {"$exists": False}, "unassigned_at": None},
         ],
-    }).sort("assigned_at", 1).limit(max(int(limit), 1))
+    }, candidate_projection).limit(max(int(limit), 1))
+    # This query is intentionally unsorted and projected. The previous full
+    # document sort pulled every historical cycle over the network before the
+    # audit could begin, exceeding Render's 8-second Mongo socket timeout.
     candidate_rows = list(cursor)
     candidate_leads: dict[str, Any] = {}
     for row in candidate_rows:
@@ -493,28 +623,81 @@ def reconcile_assignment_integrity(
         if lead_id is not None:
             candidate_leads.setdefault(str(lead_id), lead_id)
 
-    # Load each affected lead's complete history so a recent owner change can
-    # be compared with a previous cycle even when that cycle predates 30 days.
+    # Load all candidate histories and their lead mirrors in bounded batches.
+    # This keeps the 30-day reconciler from issuing several thousand serial
+    # round-trips for active leads and their cycle histories.
+    id_variants: list[Any] = []
+    for lead_id in candidate_leads.values():
+        id_variants.extend(mongo_id_variants(lead_id))
+    unique_variants: dict[tuple[str, str], Any] = {}
+    for value in id_variants:
+        unique_variants[(type(value).__name__, str(value))] = value
+    query_ids = list(unique_variants.values())
+
+    history_projection = {
+        "_id": 1, "lead_id": 1, "assignment_cycle_id": 1,
+        "assigned_to_user_id": 1, "assigned_to_display_name": 1,
+        "assigned_at": 1, "cycle_status": 1, "unassigned_at": 1,
+        "property_code": 1, "reason": 1, "assigned_by": 1,
+        "source_system": 1, "source_event_id": 1,
+        "transfer_authorization": 1, "reassignment_decision_id": 1,
+        "reassignment_state": 1, "first_valid_management_at": 1,
+        "sla_first_management_status": 1, "notification_eligible": 1,
+        "administratively_corrected": 1, "correction_cycle_id": 1,
+        "correction_incident_id": 1, "corrects_assignment_cycle_id": 1,
+        "restores_assignment_cycle_id": 1, "sla_performance_excluded": 1,
+    }
+    history_limit = min(max(int(limit), 1) * 10, 100000)
+    history_rows = list(db["crm_assignment_cycles"].find(
+        {"lead_id": {"$in": query_ids}}, history_projection,
+    ).limit(history_limit + 1)) if query_ids else []
+    if len(history_rows) > history_limit:
+        raise RuntimeError("assignment history exceeded the reconciliation safety cap")
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for key, lead_id in candidate_leads.items():
-        variants = list(mongo_id_variants(lead_id))
-        history = list(db["crm_assignment_cycles"].find({
-            "lead_id": {"$in": variants},
-        }).sort("assigned_at", 1).limit(max(int(limit), 1)))
-        grouped[key] = history or [row for row in candidate_rows if str(row.get("lead_id")) == key]
+    for row in history_rows:
+        lead_key = str(row.get("lead_id") or "")
+        if lead_key:
+            grouped.setdefault(lead_key, []).append(row)
+    for key in candidate_leads:
+        grouped.setdefault(key, [row for row in candidate_rows if str(row.get("lead_id")) == key])
+
+    lead_projection = {
+        "_id": 1, "lifecycle": 1, "ejecutivo_asignado": 1,
+        "prospecto.ejecutivo": 1, "prospecto.codigo": 1, "codigo": 1,
+        "messages.role": 1, "messages.content": 1,
+    }
+    lead_rows = list(db["leads"].find(
+        {"_id": {"$in": query_ids}}, lead_projection,
+    ).limit(max(int(limit), 1))) if query_ids else []
+    leads_by_id = {str(row.get("_id")): row for row in lead_rows if row.get("_id") is not None}
+
+    all_cycle_ids = sorted({
+        str(row.get("assignment_cycle_id") or "")
+        for rows in grouped.values() for row in rows
+        if row.get("assignment_cycle_id")
+    })
+    notifications = list(db["crm_notifications_v1"].find({
+        "$or": [
+            {"assignment_cycle_id": {"$in": all_cycle_ids}, "notification_type": "lead_assignment_hot"},
+            {"assignment_cycle_ids": {"$in": all_cycle_ids}, "digest_type": "non_hot_digest_v1"},
+        ],
+        "state": {"$in": ["pending", "sending", "sent", "failed_retryable"]},
+    }, {
+        "_id": 1, "assignment_cycle_id": 1, "assignment_cycle_ids": 1,
+        "notification_type": 1, "digest_type": 1, "state": 1,
+        "recipient_user_id": 1, "actually_delivered": 1,
+    }).limit(max(int(limit), 1))) if all_cycle_ids else []
 
     finding_rows: list[dict[str, Any]] = []
     leads_checked = 0
     for key, cycle_rows in grouped.items():
         lead_id = candidate_leads[key]
-        lead = None
-        for candidate in mongo_id_variants(lead_id):
-            lead = db["leads"].find_one({"_id": candidate})
-            if lead:
-                break
+        lead = leads_by_id.get(key)
         leads_checked += 1
         if lead:
-            integrity = assignment_context(db, lead)
+            integrity = assignment_context(
+                db, lead, active_cycles_override=cycle_rows,
+            )
             if integrity.get("status") == "conflict":
                 finding_rows.append({
                     "issue_code": "canonical_cycle_mirror_inconsistency",
@@ -525,14 +708,17 @@ def reconcile_assignment_integrity(
                 })
             finding_rows.extend(_chatbot_owner_findings(lead, cycle_rows, integrity))
         finding_rows.extend(_transition_findings(db, lead_id, cycle_rows))
-        finding_rows.extend(_notification_findings(db, lead_id, cycle_rows))
+        finding_rows.extend(_notification_findings(
+            db, lead_id, cycle_rows, notifications=notifications,
+        ))
 
     persisted = 0
     if persist_alerts:
+        detection_run_id = detection_run_id or uuid.uuid4().hex
         for finding in finding_rows:
             record_assignment_integrity_alert(
                 db, lead_id=finding.get("lead_id"), issue_code=str(finding["issue_code"]),
-                evidence=finding, detected_at=current,
+                evidence=finding, detected_at=current, detection_run_id=detection_run_id,
             )
             persisted += 1
     report = {
@@ -548,3 +734,44 @@ def reconcile_assignment_integrity(
     if finding_rows:
         logger.error("[CRM_ASSIGNMENT_INTEGRITY] findings=%s leads=%s", len(finding_rows), leads_checked)
     return report
+
+
+TRANSIENT_RECONCILIATION_ERRORS = (
+    NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError, ConnectionFailure,
+)
+
+
+def reconcile_assignment_integrity_with_retries(
+    db: Any,
+    *,
+    max_attempts: int = 3,
+    base_delay_seconds: float = 1.0,
+    max_delay_seconds: float = 5.0,
+    sleep=None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Retry the bounded read/audit pass on transient Mongo connection errors.
+
+    One run id is reused across attempts, so alert persistence remains
+    idempotent even when a connection drops after partial alert writes.
+    """
+    attempts = max(int(max_attempts), 1)
+    wait = sleep or time.sleep
+    run_id = str(kwargs.pop("detection_run_id", None) or uuid.uuid4().hex)
+    for attempt in range(1, attempts + 1):
+        try:
+            report = reconcile_assignment_integrity(
+                db, detection_run_id=run_id, **kwargs,
+            )
+            report["attempts"] = attempt
+            return report
+        except TRANSIENT_RECONCILIATION_ERRORS as exc:
+            if attempt >= attempts:
+                raise
+            delay = min(float(base_delay_seconds) * (2 ** (attempt - 1)), float(max_delay_seconds))
+            logger.warning(
+                "[CRM_ASSIGNMENT_INTEGRITY] transient Mongo error attempt=%s/%s; retrying in %.1fs (%s)",
+                attempt, attempts, delay, type(exc).__name__,
+            )
+            wait(delay)
+    raise RuntimeError("unreachable reconciliation retry state")

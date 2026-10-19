@@ -1478,6 +1478,7 @@
         .lead-cell .lead-name, .management-cell .management-main { font-size: .82rem; font-weight: 600; color: var(--text-primary); }
         .lead-cell .lead-meta, .management-cell .management-meta { display: block; margin-top: 3px; color: var(--text-secondary); font-size: .68rem; }
         .management-cell .management-meta { color: var(--text-secondary); }
+        .management-cell .management-visit-follow-up { color: var(--state-visits); font-weight: 600; }
         /* El texto de Gestión nunca debe invadir Código, Respuesta u otra columna. */
         .crm-table td.col-management,
         .crm-table td.col-management .mobile-cell-value,
@@ -3170,7 +3171,11 @@
                                 <div class="mobile-cell-value">
                                     <div class="lead-cell">
                                         <div class="lead-name">{{ lead.nombre }}</div>
+                                        {% if lead.phone %}
+                                        <a class="lead-meta phone-link" href="tel:{{ lead.phone|replace(' ', '')|replace('-', '') }}" aria-label="Llamar a {{ lead.nombre }}">{{ lead.whatsapp_display }}</a>
+                                        {% else %}
                                         <span class="lead-meta">{{ lead.whatsapp_display }}</span>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </td>
@@ -3184,9 +3189,13 @@
                                     <div class="management-cell">
                                         <div class="management-main">{{ lead.estado_badge }}</div>
                                         {% if lead.gestionado %}
+                                        <span class="management-meta management-first-contact">Primera gestión: Cumplida</span>
                                         <span class="management-meta">Última: {{ lead.ultima_accion_titulo }}{% if lead.ultima_accion_nota %} · {{ lead.ultima_accion_nota }}{% endif %} · {{ lead.tiempo_relativo }}</span>
                                         {% else %}
                                         <span class="management-meta">Última: Sin gestión</span>
+                                        {% endif %}
+                                        {% if lead.visit_follow_up_status == 'pending' and lead.visit_follow_up_preference %}
+                                        <span class="management-meta management-visit-follow-up">Solicitud de visita: Pendiente de coordinación · {{ lead.visit_follow_up_preference }}</span>
                                         {% endif %}
                                     </div>
                                 </div>

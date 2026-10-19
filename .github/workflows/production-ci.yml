@@ -25,6 +25,9 @@ jobs:
           python -m py_compile \
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
+            chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py \
+            maintenance/repair_procasa_p0_17252.py maintenance/repair_procasa_p0_6732.py \
+            maintenance/ensure_crm_cycle_reconciliation_index.py \
             release_info.py owner_portal/campaign.py owner_portal/monthly.py \
             owner_portal/price_revalidation.py campanas/handler.py \
             campanas/owner_campaign_live_sender.py
@@ -62,6 +65,12 @@ jobs:
               tests/test_crm_management_sla.py
               tests/test_crm_admin_cycle_inbox.py
               tests/test_sla_business_minutes.py
+          - suite: P0 CRM assignment integrity and lead inbox
+            tests: >-
+              tests/test_p0_repair_17252.py
+              tests/test_assignment_integrity_p0.py
+              tests/test_prop360_crm_incident.py
+              tests/test_crm_list_actions.py
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py

@@ -37,7 +37,7 @@ HERNAN_USER_ID = "6a681413140190dde11f26d1"
 MARIA_USER_ID = "69c19b98fbbbf113235ba844"
 HERNAN_NAME = "Hernán Castro"
 MARIA_NAME = "María Paz Galleguillos"
-VISIT_ACCEPTANCE_EVENT_ID = "6ad613bce66c461dd69d69ad"
+VISIT_ACCEPTANCE_EVENT_ID = "6ad613bce66c461dd69d69aa"
 VISIT_ACCEPTANCE_AT = datetime(2026, 10, 19, 12, 57, 32, 37_000, tzinfo=timezone.utc)
 MANAGEMENT_RECORDS = {
     "crm_management:192709ed-61b2-4848-8a91-c22b8cf15ef7": datetime(

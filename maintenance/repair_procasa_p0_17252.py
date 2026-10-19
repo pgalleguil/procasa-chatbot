@@ -475,7 +475,9 @@ def _active(row: Mapping[str, Any]) -> bool:
     return row.get("cycle_status") == "active" and row.get("unassigned_at") is None
 
 
-def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
+def _verify_applied(
+    db: Any, session: Any = None, *, diagnostic: bool = False,
+) -> dict[str, Any] | None:
     options = {"session": session} if session is not None else {}
     lead = db["leads"].find_one({"_id": ObjectId(LEAD_OID)}, **options)
     if not lead:
@@ -506,7 +508,9 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
     )
     try:
         provider_acceptance = _provider_acceptance_evidence(notifications)
-    except RepairSafetyError:
+    except RepairSafetyError as exc:
+        if diagnostic:
+            raise RepairSafetyError(f"postcondition provider_acceptance failed: {exc}") from exc
         return None
     by_id = {str(row.get("assignment_cycle_id")): row for row in cycles}
     original, duplicate = by_id.get(ORIGINAL_CYCLE_ID), by_id.get(DUPLICATE_CYCLE_ID)
@@ -524,7 +528,9 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
         original_management, duplicate_management = _validated_management_history(
             management, original or {}, duplicate or {},
         )
-    except RepairSafetyError:
+    except RepairSafetyError as exc:
+        if diagnostic:
+            raise RepairSafetyError(f"postcondition management_history failed: {exc}") from exc
         return None
     restoration_history = (original or {}).get("administrative_state_history") or []
     complete_reversal_recorded = any(
@@ -534,69 +540,100 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
         and _utc(row.get("sla_started_at_corrected_to_provider_acceptance")) == provider_acceptance["accepted_at"]
         for row in restoration_history
     )
-    if (not original or not duplicate or not audit
-            or lead.get("ejecutivo_asignado") != MARIELA_NAME
-            or prospect.get("ejecutivo") != MARIELA_NAME
-            or lead.get("lead_temperature_effective") != "HOT"
-            or lead.get("lead_temperature") != "HOT"
-            or lifecycle.get("current_assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or lifecycle.get("assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or lifecycle.get("assigned_to_user_id") != MARIELA_USER_ID
-            or lifecycle.get("assigned_to_display_name") != MARIELA_NAME
-            or _utc(lifecycle.get("assigned_at")) != _utc(original.get("assigned_at"))
-            or not _active(original) or _active(duplicate)
-            or original.get("closed_at") is not None
-            or original.get("closed_reason") is not None
-            or not complete_reversal_recorded
-            or duplicate.get("administratively_corrected") is not True
-            or duplicate.get("corrects_assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or duplicate.get("sla_performance_excluded") is not True
-            or duplicate.get("notification_eligible") is not False
-            or duplicate.get("sla_first_management_status") != "excluded_duplicate_cycle"
-            or original.get("sla_first_management_status") != "completed"
-            or original.get("temperature_evidence_event_id") != HOT_INTENT_EVENT_ID
-            or _utc(lifecycle.get("sla_started_at")) != provider_acceptance["accepted_at"]
-            or _utc(original.get("sla_started_at")) != provider_acceptance["accepted_at"]
-            or _utc(lifecycle.get("cycle_started_at")) != _utc(original.get("cycle_started_at") or original.get("assigned_at"))
-            or _utc(lifecycle.get("first_contact_attempt_at")) != _utc(original.get("first_contact_attempt_at"))
-            or _utc(lifecycle.get("first_effective_contact_at")) != _utc(original.get("first_effective_contact_at"))
-            or _utc(lifecycle.get("first_valid_management_at")) != _utc(original.get("first_valid_management_at"))
-            or lifecycle.get("first_valid_management_actor") != MARIELA_USER_ID
-            or lifecycle.get("sla_first_management_status") != "completed"
-            or _utc(lifecycle.get("hot_since")) != HOT_SINCE_AT
-            or _utc(lifecycle.get("temperature_transitioned_at")) != HOT_SINCE_AT
-            or lead.get("sla_status") != "fulfilled"
-            or len(duplicate_sla_alerts) != 1
-            or not _is_target_duplicate_sla_alert(duplicate_sla_alerts[0])
-            or duplicate_sla_alerts[0].get("administratively_corrected") is not True
-            or duplicate_sla_alerts[0].get("correction_incident_id") != INCIDENT_ID
-            or duplicate_sla_alerts[0].get("corrects_assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or duplicate_sla_alerts[0].get("sla_performance_excluded") is not True
-            or _id_set(management) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
-            or _id_set([original_management, duplicate_management]) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
-            or _utc(duplicate_management.get("occurred_at")) != DUPLICATE_MANAGEMENT_AT
-            or _utc(duplicate.get("first_valid_management_at")) != DUPLICATE_MANAGEMENT_AT
-            or visit_follow_up.get("status") != "pending"
-            or visit_follow_up.get("type") != "VISIT_COORDINATION"
-            or visit_follow_up.get("assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or visit_follow_up.get("property_id") != "17252"
-            or visit_follow_up.get("availability") != VISIT_AVAILABILITY
-            or _utc(visit_follow_up.get("requested_at")) != VISIT_REQUEST_AT
-            or visit_follow_up.get("automation_eligible") is not False
-            or visit_follow_up.get("appointment_confirmed") is not False
-            or lead.get("visit_follow_up_status") != "pending"
-            or visit_preference.get("text") != VISIT_AVAILABILITY
-            or visit_preference.get("evidence_event_ids") != [VISIT_DAY_EVENT_ID, VISIT_HOURS_EVENT_ID]
-            or active_conflicts
-            or not expected_resolved_alert_ids
-            or _id_set(resolved_alerts) != expected_resolved_alert_ids
-            or any(row.get("status") != "resolved"
-                   or row.get("correction_incident_id") != INCIDENT_ID
-                   for row in resolved_alerts)
-            or len(cycles) != 2
-            or visits or visit_orders or tasks or pending
-            or audit.get("meta", {}).get("customer_message_sent") is not False
-            or audit.get("meta", {}).get("appointment_created") is not False):
+    checks = {
+        "lead_and_audit_exist": bool(original and duplicate and audit),
+        "owner_mirrors": bool(lead.get("ejecutivo_asignado") == MARIELA_NAME
+                               and prospect.get("ejecutivo") == MARIELA_NAME),
+        "hot_temperature": bool(lead.get("lead_temperature_effective") == "HOT"
+                                and lead.get("lead_temperature") == "HOT"),
+        "canonical_pointers": bool(lifecycle.get("current_assignment_cycle_id") == ORIGINAL_CYCLE_ID
+                                    and lifecycle.get("assignment_cycle_id") == ORIGINAL_CYCLE_ID),
+        "owner_identity": bool(lifecycle.get("assigned_to_user_id") == MARIELA_USER_ID
+                                and lifecycle.get("assigned_to_display_name") == MARIELA_NAME),
+        "assigned_at_preserved": bool(_utc(lifecycle.get("assigned_at")) == _utc(original.get("assigned_at"))),
+        "single_active_original_cycle": bool(_active(original) and not _active(duplicate)),
+        "original_close_reversed": bool(original.get("closed_at") is None
+                                         and original.get("closed_reason") is None
+                                         and complete_reversal_recorded),
+        "duplicate_marked_corrected": bool(
+            duplicate.get("administratively_corrected") is True
+            and duplicate.get("corrects_assignment_cycle_id") == ORIGINAL_CYCLE_ID
+            and duplicate.get("sla_performance_excluded") is True
+            and duplicate.get("notification_eligible") is False
+            and duplicate.get("sla_first_management_status") == "excluded_duplicate_cycle"
+        ),
+        "original_first_management_completed": bool(original.get("sla_first_management_status") == "completed"),
+        "hot_intent_evidence": bool(original.get("temperature_evidence_event_id") == HOT_INTENT_EVENT_ID),
+        "provider_acceptance_sla_start": bool(
+            _utc(lifecycle.get("sla_started_at")) == provider_acceptance["accepted_at"]
+            and _utc(original.get("sla_started_at")) == provider_acceptance["accepted_at"]
+        ),
+        "cycle_start_preserved": bool(
+            _utc(lifecycle.get("cycle_started_at"))
+            == _utc(original.get("cycle_started_at") or original.get("assigned_at"))
+        ),
+        "contact_timestamps_preserved": bool(
+            _utc(lifecycle.get("first_contact_attempt_at")) == _utc(original.get("first_contact_attempt_at"))
+            and _utc(lifecycle.get("first_effective_contact_at")) == _utc(original.get("first_effective_contact_at"))
+            and _utc(lifecycle.get("first_valid_management_at")) == _utc(original.get("first_valid_management_at"))
+            and lifecycle.get("first_valid_management_actor") == MARIELA_USER_ID
+            and lifecycle.get("sla_first_management_status") == "completed"
+        ),
+        "hot_transition_preserved": bool(
+            _utc(lifecycle.get("hot_since")) == HOT_SINCE_AT
+            and _utc(lifecycle.get("temperature_transitioned_at")) == HOT_SINCE_AT
+        ),
+        "lead_sla_fulfilled": bool(lead.get("sla_status") == "fulfilled"),
+        "duplicate_sla_warning_preserved_and_excluded": bool(
+            len(duplicate_sla_alerts) == 1
+            and _is_target_duplicate_sla_alert(duplicate_sla_alerts[0])
+            and duplicate_sla_alerts[0].get("administratively_corrected") is True
+            and duplicate_sla_alerts[0].get("correction_incident_id") == INCIDENT_ID
+            and duplicate_sla_alerts[0].get("corrects_assignment_cycle_id") == ORIGINAL_CYCLE_ID
+            and duplicate_sla_alerts[0].get("sla_performance_excluded") is True
+        ),
+        "both_human_management_records_preserved": bool(
+            _id_set(management) == {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
+            and _id_set([original_management, duplicate_management]) == {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
+            and _utc(duplicate_management.get("occurred_at")) == DUPLICATE_MANAGEMENT_AT
+            and _utc(duplicate.get("first_valid_management_at")) == DUPLICATE_MANAGEMENT_AT
+        ),
+        "visit_follow_up_pending_without_appointment": bool(
+            visit_follow_up.get("status") == "pending"
+            and visit_follow_up.get("type") == "VISIT_COORDINATION"
+            and visit_follow_up.get("assignment_cycle_id") == ORIGINAL_CYCLE_ID
+            and visit_follow_up.get("property_id") == "17252"
+            and visit_follow_up.get("availability") == VISIT_AVAILABILITY
+            and _utc(visit_follow_up.get("requested_at")) == VISIT_REQUEST_AT
+            and visit_follow_up.get("automation_eligible") is False
+            and visit_follow_up.get("appointment_confirmed") is False
+            and lead.get("visit_follow_up_status") == "pending"
+            and visit_preference.get("text") == VISIT_AVAILABILITY
+            and visit_preference.get("evidence_event_ids") == [VISIT_DAY_EVENT_ID, VISIT_HOURS_EVENT_ID]
+        ),
+        "pointer_alerts_resolved": bool(
+            not active_conflicts
+            and expected_resolved_alert_ids
+            and _id_set(resolved_alerts) == expected_resolved_alert_ids
+            and all(row.get("status") == "resolved"
+                    and row.get("correction_incident_id") == INCIDENT_ID
+                    for row in resolved_alerts)
+        ),
+        "two_cycles_retained": bool(len(cycles) == 2),
+        "no_visit_or_outbound_side_effect": bool(not visits and not visit_orders and not tasks and not pending),
+        "no_customer_message_or_appointment": bool(
+            audit.get("meta", {}).get("customer_message_sent") is False
+            and audit.get("meta", {}).get("appointment_created") is False
+        ),
+    }
+    failed_checks = [key for key, passed in checks.items() if not passed]
+    if failed_checks:
+        if diagnostic:
+            raise RepairSafetyError(
+                "in-transaction invariant verification failed ("
+                + ", ".join(failed_checks)
+                + "); all writes are being rolled back"
+            )
         return None
     if (len(sla_segments) != 2
             or sla_segments[0].get("policy") != "NON_HOT"
@@ -606,17 +643,25 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
             or sla_segments[1].get("policy") != "HOT"
             or _utc(sla_segments[1].get("segment_start")) != HOT_SINCE_AT
             or sla_segments[1].get("segment_end") is not None):
+        if diagnostic:
+            raise RepairSafetyError(
+                "in-transaction invariant verification failed (sla_segments); all writes are being rolled back"
+            )
         return None
     chatbot_owner = None
     if session is None:
         try:
             from chatbot.crm_assignment_integrity import assignment_context
             chatbot_owner = assignment_context(db, lead)
-        except Exception:
+        except Exception as exc:
+            if diagnostic:
+                raise RepairSafetyError(f"in-transaction invariant verification failed (chatbot_owner_lookup: {type(exc).__name__})") from exc
             return None
         if (chatbot_owner.get("status") != "consistent"
                 or chatbot_owner.get("owner_name") != MARIELA_NAME
                 or (chatbot_owner.get("cycle") or {}).get("assignment_cycle_id") != ORIGINAL_CYCLE_ID):
+            if diagnostic:
+                raise RepairSafetyError("in-transaction invariant verification failed (chatbot_owner)")
             return None
     return {
         "owner": lead.get("ejecutivo_asignado"),
@@ -912,7 +957,7 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
             )
             _require_one(resolved, "cycle-pointer alert resolution")
 
-        if not _verify_applied(db, session=session):
+        if not _verify_applied(db, session=session, diagnostic=True):
             raise RepairSafetyError("in-transaction invariant verification failed; all writes are being rolled back")
         return "committed"
 

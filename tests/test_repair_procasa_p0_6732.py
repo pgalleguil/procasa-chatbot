@@ -88,3 +88,8 @@ def test_capture_mode_requires_a_new_backup_output_path():
     assert args.capture_backup is True
     assert args.backup_out.name == "6732.json"
     assert args.backup is None
+
+
+def test_visit_preference_evidence_uses_the_original_inbound_event_id():
+    assert repair.VISIT_ACCEPTANCE_EVENT_ID == "6ad613bce66c461dd69d69aa"
+    assert repair.VISIT_ACCEPTANCE_AT.isoformat() == "2026-10-19T12:57:32.037000+00:00"

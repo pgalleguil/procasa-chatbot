@@ -37,6 +37,16 @@ def test_17252_sla_origin_uses_provider_acceptance_not_creation_or_delivery():
     assert proof["timestamp_source"].endswith("completed_at_after_provider_2xx")
 
 
+def test_17252_hot_evidence_preserves_microseconds_beyond_bson_date_precision():
+    source = repair.HOT_SINCE_AT
+
+    stored_date = repair._bson_millisecond_datetime(source)
+
+    assert stored_date == datetime(2026, 10, 19, 17, 50, 4, 23000, tzinfo=timezone.utc)
+    assert repair._utc(source.isoformat()) == source
+    assert source.microsecond == 23557
+
+
 @pytest.mark.parametrize(
     "rows",
     [

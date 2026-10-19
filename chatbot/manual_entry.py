@@ -212,6 +212,41 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     status, executive = check_lead_duplicate(phone, property_code, email)
     if status == "duplicate_same_property":
         return {"status": "error", "message": f"Este contacto ya existe para esta propiedad y está asignado a {executive}"}
+    if status == "existing_other_property":
+        identity_filters = []
+        if phone:
+            identity_filters.append({"phone": phone})
+        if email:
+            identity_filters.append({"prospecto.email": email.strip().lower()})
+        existing = db["leads"].find_one({"$or": identity_filters}) if identity_filters else None
+        if existing:
+            from .crm_assignment_integrity import record_assignment_integrity_alert
+            from .crm_metrics import active_assignment_cycle
+            current_cycle = active_assignment_cycle(db, existing["_id"])
+            active_property = str((current_cycle or {}).get("property_code") or
+                                  (existing.get("prospecto") or {}).get("codigo") or "").strip()
+            inquiry_id = f"manual-property:{existing['_id']}:{property_code}"
+            db["crm_commercial_property_inquiries"].update_one(
+                {"_id": inquiry_id},
+                {"$setOnInsert": {
+                    "lead_id": existing["_id"], "property_code": property_code,
+                    "source_system": "manual", "received_at": datetime.now(CHILE_TZ),
+                    "status": "review_required",
+                    "active_assignment_cycle_id": (current_cycle or {}).get("assignment_cycle_id"),
+                    "active_property_code": active_property,
+                }},
+                upsert=True,
+            )
+            record_assignment_integrity_alert(
+                db, lead_id=existing["_id"],
+                issue_code="new_property_interest_requires_opportunity_review",
+                evidence={"property_code": property_code, "active_property_code": active_property,
+                          "source_system": "manual", "signature": f"{existing['_id']}:{property_code}"},
+            )
+            return {"status": "review_required", "message": "El contacto ya está vinculado a otra propiedad. La nueva oportunidad quedó para revisión interna.",
+                    "lead_id": str(existing["_id"]), "property_code": property_code}
+        return {"status": "review_required", "message": "El contacto coincide con otro registro. La nueva oportunidad requiere revisión interna.",
+                "property_code": property_code}
 
     # 3. Asignar ejecutivo
     if phone_is_real:
@@ -293,22 +328,104 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
         existing_lead = db["leads"].find_one({"$or": existing_query})
 
     cycle = None
+    reused_active_cycle = False
     try:
         if existing_lead:
             lead_id = str(existing_lead["_id"])
+            from .crm_assignment_integrity import assignment_context, record_assignment_integrity_alert
+            assignment_state = assignment_context(db, existing_lead)
+            active_cycles = assignment_state.get("active_cycles") or []
+            existing_cycle = active_cycles[0] if len(active_cycles) == 1 else None
+            if assignment_state.get("status") == "conflict":
+                record_assignment_integrity_alert(
+                    db, lead_id=existing_lead["_id"],
+                    issue_code="manual_entry_blocked_by_assignment_conflict",
+                    evidence={"issues": assignment_state.get("issues"),
+                              "signature": f"{existing_lead['_id']}:{':'.join(assignment_state.get('issues') or [])}"},
+                )
+                return {"status": "review_required", "message": "La asignación vigente requiere revisión interna.",
+                        "lead_id": lead_id, "property_code": property_code}
+            active_property = str((existing_cycle or {}).get("property_code") or
+                                  (existing_lead.get("prospecto") or {}).get("codigo") or "").strip()
+            existing_stage = str(existing_lead.get("pipeline_stage") or existing_lead.get("stage") or "").upper()
+            if existing_stage in {"ARCHIVED", "CLOSED", "CLOSED_LOST", "CLOSED_WON", "SUPPRESSED"}:
+                from .crm_assignment_integrity import record_assignment_integrity_alert
+                record_assignment_integrity_alert(
+                    db, lead_id=existing_lead["_id"],
+                    issue_code="closed_lead_reactivation_requires_context_review",
+                    evidence={"stage": existing_stage, "property_code": property_code,
+                              "source_system": "manual",
+                              "signature": f"{existing_lead['_id']}:{existing_stage}:{property_code}"},
+                )
+                return {"status": "review_required", "message": "El contacto está cerrado. La reactivación requiere revisión interna.",
+                        "lead_id": lead_id, "property_code": property_code}
+            if active_property and active_property != property_code:
+                from .crm_assignment_integrity import record_assignment_integrity_alert
+                inquiry_id = f"manual-property:{existing_lead['_id']}:{property_code}"
+                db["crm_commercial_property_inquiries"].update_one(
+                    {"_id": inquiry_id},
+                    {"$setOnInsert": {
+                        "lead_id": existing_lead["_id"], "property_code": property_code,
+                        "source_system": "manual", "received_at": now,
+                        "status": "review_required",
+                        "active_assignment_cycle_id": (existing_cycle or {}).get("assignment_cycle_id"),
+                        "active_property_code": active_property,
+                    }},
+                    upsert=True,
+                )
+                record_assignment_integrity_alert(
+                    db, lead_id=existing_lead["_id"],
+                    issue_code="new_property_interest_requires_opportunity_review",
+                    evidence={"property_code": property_code, "active_property_code": active_property,
+                              "source_system": "manual", "signature": f"{existing_lead['_id']}:{property_code}"},
+                )
+                return {"status": "review_required", "message": "El contacto ya está vinculado a otra propiedad. La nueva oportunidad quedó para revisión interna.",
+                        "lead_id": lead_id, "property_code": property_code}
+
+            existing_owner = str(
+                (existing_cycle or {}).get("assigned_to_display_name")
+                or existing_lead.get("ejecutivo_asignado")
+                or (existing_lead.get("prospecto") or {}).get("ejecutivo")
+                or ""
+            ).strip()
+            unassigned_values = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", "Sin asignar", ""}
+            if not existing_cycle and existing_owner not in unassigned_values:
+                record_assignment_integrity_alert(
+                    db, lead_id=existing_lead["_id"],
+                    issue_code="assigned_lead_without_active_cycle_requires_review",
+                    evidence={"owner_name": existing_owner, "property_code": property_code,
+                              "signature": f"{existing_lead['_id']}:{existing_owner}:{property_code}"},
+                )
+                return {"status": "review_required", "message": "La responsabilidad histórica requiere revisión interna.",
+                        "lead_id": lead_id, "property_code": property_code}
+            if existing_cycle:
+                reused_active_cycle = True
+                cycle = existing_cycle
+                exec_name = existing_cycle.get("assigned_to_display_name") or existing_owner
+                try:
+                    from bson import ObjectId as BsonObjectId
+                    owner_user = db["usuarios"].find_one({"_id": BsonObjectId(str(existing_cycle.get("assigned_to_user_id")))})
+                except Exception:
+                    owner_user = db["usuarios"].find_one({"nombre": exec_name, "is_active": {"$ne": False}})
+                exec_phone = (owner_user or {}).get("telefono") or (owner_user or {}).get("tel") or (owner_user or {}).get("movil")
+
             # Update sequence for returning user
-            update_payload = {
-                "$set": {
-                    "last_crm_update": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                    "origen": origen,
+            returning_fields = {
+                "last_crm_update": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "origen": origen,
+                "prospecto.canal_origen": origen,
+            }
+            if not reused_active_cycle:
+                returning_fields.update({
                     "lead_temperature": lead_temperature,
                     "lead_temperature_effective": lead_temperature,
-                    "stage": PipelineStage.NEW, # Bump to NEW so it flags as Sin Atender 
+                    "stage": PipelineStage.NEW,
                     "pipeline_stage": PipelineStage.NEW,
-                    "prospecto.codigo": property_code, # Update active property
-                    "prospecto.canal_origen": origen
-                },
+                    "prospecto.codigo": property_code,
+                })
+            update_payload = {
+                "$set": returning_fields,
                 "$push": {
                     "messages": {
                         "role": "system",
@@ -327,7 +444,9 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 }
             
             # Lógica de ejecutivo: Priorizamos SIEMPRE mantener al ejecutivo que ya lo está atendiendo.
-            current_exec = existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")
+            current_exec = exec_name if reused_active_cycle else (
+                existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")
+            )
             if current_exec and current_exec not in [UNASSIGNED_LABEL, "No asignado"]:
                 # Respetamos que ya tiene un ejecutivo (ej: Raquel) aunque la propiedad sea de otro (ej: Erika)
                 exec_name = current_exec
@@ -344,7 +463,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
             lead_id = str(existing_lead["_id"])
             # Create assignment cycle for the new property interest
-            if phone_is_real:
+            if phone_is_real and not reused_active_cycle:
                 from .crm_metrics import create_assignment_cycle
                 exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
                 assigned_to = str(exec_user["_id"]) if exec_user else exec_name
@@ -381,7 +500,7 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
             raise RuntimeError("manual lead cycle was not created")
         source_event_id = f"manual_lead:{lead_id}:{cycle_id}" if cycle_id else None
         notification = None
-        if cycle_id:
+        if cycle_id and not reused_active_cycle:
             db["crm_assignment_cycles"].update_one(
                 {"assignment_cycle_id": cycle_id},
                 {"$set": {"source_event_id": source_event_id,
@@ -389,7 +508,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                           "source_event_type": "MANUAL_LEAD_CREATED"}},
             )
         fresh_lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
-        if cycle_id and fresh_lead and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT":
+        if (cycle_id and fresh_lead and not reused_active_cycle
+                and str(fresh_lead.get("lead_temperature_effective") or "").upper() != "HOT"):
             from .crm_non_hot_digest import accumulate_non_hot_lead
             notification = accumulate_non_hot_lead(db, lead=fresh_lead, cycle=cycle)
             if notification:

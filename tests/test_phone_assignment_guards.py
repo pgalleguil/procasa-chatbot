@@ -91,7 +91,7 @@ def test_commercial_intake_valid_phone_routes_once_and_is_idempotent():
             text="La propiedad 6508",
         )
 
-    assert first["commercial_processing_state"] == commercial_intake.COMPLETED
+    assert first["commercial_processing_state"] == commercial_intake.COMPLETED, first.get("history")
     assert second["assignment_cycle_id"] == first["assignment_cycle_id"]
     assert route.call_count == 1
     assert digest.call_count == 1

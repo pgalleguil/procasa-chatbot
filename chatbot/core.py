@@ -511,12 +511,13 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             or bool(stored_visit_preference)
         ),
     )
+    visit_preference_captured_this_turn = bool(visit_preference)
     if not visit_preference and isinstance(stored_visit_preference, dict):
         current_property = str(prospecto_actual.get("codigo") or "")
         stored_property = str(stored_visit_preference.get("property_id") or "")
         if not stored_property or not current_property or stored_property == current_property:
             visit_preference = stored_visit_preference.get("text") or None
-    if visit_preference:
+    if visit_preference_captured_this_turn:
         visit_preference_record = {
             "text": visit_preference,
             "property_id": prospecto_actual.get("codigo"),
@@ -598,27 +599,24 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "is_from_me": bool(is_from_me)
     })
 
-    # NUEVO: Lógica de Reactivación (Si estaba archivado y vuelve a escribir)
-    # Se considera lead nuevo para efectos de procesamiento.
-    if lead_doc_full.get("stage") == "ARCHIVED":
-        logger.info(f"🔄 [REACTIVATION] Lead {phone} estaba ARCHIVADO y volvió a escribir. Reactivando...")
-        now_str = datetime.now(CHILE_TZ).isoformat()
-        
-        # Actualizamos campos de nivel superior para que el motor lo vea como nuevo
-        await _run_sync(
-            db["leads"].update_one,
-            {"phone": phone},
-            {"$set": {
-                "stage": PipelineStage.NEW,
-                "pipeline_stage": PipelineStage.NEW,
-                "archive_reason": None,
-                "reactivated_at": now_str,
-                "created_at": now_str, # Reset timestamps to avoid immediate re-archival
-                "timestamp": now_str,
-                "last_processed_at": None
-            }}
+    # Reopen a closed lead only when this turn contains a clear commercial signal.
+    # Preserve its original age and every prior stage/assignment cycle for SLA audit.
+    closed_stages = {"ARCHIVED", "CLOSED", "CLOSED_LOST", "CLOSED_WON", "SUPPRESSED"}
+    current_stage = str(lead_doc_full.get("pipeline_stage") or lead_doc_full.get("stage") or "").upper()
+    if current_stage in closed_stages:
+        reactivated = await _run_sync(
+            CrmService.reactivate_closed_lead_if_commercial,
+            phone, original_message,
         )
-        lead_doc_full["stage"] = PipelineStage.NEW # Actualizar copia local
+        if reactivated:
+            lead_doc_full["stage"] = PipelineStage.NEW
+            lead_doc_full["pipeline_stage"] = PipelineStage.NEW
+            await _run_sync(record_observability_event, "commercial_lead_reactivated", {
+                "conversation_id": conversation_id,
+                "lead_id": str(lead_doc_full.get("_id")),
+                "previous_stage": current_stage,
+                "reason": "explicit_commercial_interest",
+            })
 
     # Solo forzar WhatsApp como fallback si no hay origen previo (permite Yapo, MercadoLibre, etc.)
     if not prospecto_actual.get("origen"):
@@ -1148,27 +1146,52 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         """)
 
     # --- CONTEXTO 1.5: EVALUAR EJECUTIVO HISTÓRICO EFECTIVO ---
-    current_exec = lead_doc_full.get("ejecutivo_asignado") or prospecto_actual.get("ejecutivo")
-    effective_exec = None
-    if current_exec and current_exec not in ["No Asignado", "Sin Asignar", None, ""]:
-        # Verificamos que siga disponible
-        from .lead_router import get_active_executive
-        comuna_lead = (
-            get_prop_location(propiedad).get("comuna")
-            if propiedad
-            else prospecto_actual.get("comuna")
+    from .crm_assignment_integrity import (
+        assignment_context as resolve_assignment_context,
+        record_assignment_integrity_alert,
+    )
+    assignment_resolution = await _run_sync(
+        resolve_assignment_context, db, lead_doc_full,
+    )
+    assignment_conflict = assignment_resolution.get("status") == "conflict"
+    effective_exec = assignment_resolution.get("owner_name")
+    assignment_names = {
+        str(value).strip()
+        for value in (
+            (lead_doc_full.get("ejecutivo_asignado")),
+            (prospecto_actual or {}).get("ejecutivo"),
+            *[
+                row.get("assigned_to_display_name")
+                for row in assignment_resolution.get("active_cycles") or []
+            ],
         )
-        effective_exec = get_active_executive(current_exec, comuna_lead)
-        # Si fue reasignado, actualizamos tempranamente en la BD y en las variables
-        if effective_exec != current_exec:
-            logger.info(f"[CORE] Reasignación temprana detectada de {current_exec} a {effective_exec} por indisponibilidad.")
-            await _run_sync(
-                db["leads"].update_one,
-                {"phone": phone},
-                {"$set": {"ejecutivo_asignado": effective_exec, "prospecto.ejecutivo": effective_exec}}
-            )
-            lead_doc_full["ejecutivo_asignado"] = effective_exec
-            prospecto_actual["ejecutivo"] = effective_exec
+        if str(value or "").strip()
+    }
+    if assignment_conflict:
+        assignment_cycle_ids = sorted(
+            str(row.get("assignment_cycle_id") or "")
+            for row in assignment_resolution.get("active_cycles") or []
+        )
+        await _run_sync(
+            record_assignment_integrity_alert,
+            db,
+            lead_id=lead_doc_full.get("_id"),
+            issue_code="chatbot_customer_message_assignment_conflict",
+            evidence={
+                "issues": assignment_resolution.get("issues"),
+                "active_cycle_ids": assignment_cycle_ids,
+                "signature": ":".join(assignment_cycle_ids) + ":" + ":".join(assignment_resolution.get("issues") or []),
+            },
+        )
+        # The mirrors are untrusted during a conflict.  Do not put either name
+        # into the model context, where it could be repeated to the customer.
+        prospecto_actual.pop("ejecutivo", None)
+        system_parts.append(
+            "[ASIGNACIÓN EN REVISIÓN]\n"
+            "El registro de responsabilidad comercial presenta una discrepancia. "
+            "No nombres, confirmes ni deduzcas qué ejecutivo está a cargo. "
+            "Indica que el equipo está verificando la asignación y solicita revisión interna."
+        )
 
     # --- CONTEXTO 2: INFORMACIÓN DE PROPIEDADES (PRIORIDAD: ESPECÍFICA > BÚSQUEDA) ---
 
@@ -1603,7 +1626,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             # Do not use substring matching here: the old ``"ya"`` token
             # matched the ``yapo`` domain and treated a property URL as a
             # visit confirmation.  Confirmation requires semantic intent.
-            is_affirmative = is_visit_confirmation(original_message)
+            is_affirmative = is_visit_confirmation(original_message) or visit_preference_captured_this_turn
 
             # A property URL identifies the listing; it is not a semantic
             # confirmation that the client wants to visit it.  Keep the
@@ -1663,7 +1686,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion,
         pending_visit_confirmation=bool(pending_visit_before),
         visit_data_state={},
-    )
+    ) or visit_preference_captured_this_turn
     if intencion == "agendar_visita" and not visit_intent_clear:
         intencion = "consulta_general"
     elif visit_intent_clear:
@@ -1809,6 +1832,31 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 rental_docs_readiness=prospecto_actual.get("rental_docs_readiness"),
             ),
         )
+
+    if assignment_conflict:
+        response_mentions_owner = any(
+            name.casefold() in str(respuesta or "").casefold()
+            for name in assignment_names
+        )
+        response_claims_owner = bool(re.search(
+            r"\b(?:ejecutiv[oa]|asesor[oa]|a\s+cargo|te\s+atiende|responsable\s+de\s+tu\s+consulta)\b",
+            str(respuesta or ""), re.IGNORECASE,
+        ))
+        asks_for_owner = bool(re.search(
+            r"\b(?:qui[eé]n|cu[aá]l|con\s+qui[eé]n).{0,45}\b(?:ejecutiv[oa]|asesor[oa]|est[aá]\s+a\s+cargo|atiende|contacto)\b|"
+            r"\b(?:mi|la|el)\s+(?:ejecutiv[oa]|asesor[oa])\b",
+            str(original_message or ""), re.IGNORECASE,
+        ))
+        if response_mentions_owner or response_claims_owner or asks_for_owner:
+            respuesta = (
+                "Estoy verificando con el equipo quién está a cargo de tu consulta. "
+                "Aún no puedo confirmar qué ejecutivo la está atendiendo."
+            )
+            await _run_sync(record_observability_event, "assignment_conflict_escalated", {
+                "conversation_id": conversation_id,
+                "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                "issue_codes": assignment_resolution.get("issues"),
+            })
     previous_bot_responses = [
         str(item.get("content") or "") for item in historial
         if item.get("role") == "assistant"

@@ -231,6 +231,7 @@ background_tasks_status = {
     "lead_processing": {"status": "starting", "last_heartbeat": None},
     "crm_sla_reassignment_shadow": {"status": "disabled", "health": "DISABLED", "last_heartbeat": None},
     "crm_current_owner_mirror_repair": {"status": "disabled", "last_heartbeat": None},
+    "crm_assignment_integrity_reconciliation": {"status": "starting", "last_heartbeat": None},
 }
 # Keep the historical health key as an alias while exposing the explicit
 # engine/consumer split to operators and health probes.
@@ -1339,6 +1340,31 @@ async def lifespan(app: FastAPI):
         sla_orch_task = asyncio.create_task(_sla_alert_orchestrator_runner())
     except Exception:
         logger.warning("[SLA_ALERT] Orchestrator import failed — disabled", exc_info=True)
+
+    async def _assignment_integrity_reconciliation_runner():
+        entry = background_tasks_status["crm_assignment_integrity_reconciliation"]
+        while True:
+            entry["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            try:
+                from chatbot.storage import get_db
+                from chatbot.crm_assignment_integrity import reconcile_assignment_integrity
+                report = await asyncio.to_thread(
+                    lambda: reconcile_assignment_integrity(
+                        get_db(), lookback_days=30, limit=10000, persist_alerts=True,
+                    )
+                )
+                entry.update({"status": "running", "last_report": {
+                    "cycles_scanned": report.get("cycles_scanned"),
+                    "leads_checked": report.get("leads_checked"),
+                    "findings": report.get("findings"),
+                    "alerts_upserted": report.get("alerts_upserted"),
+                }})
+            except Exception as exc:
+                entry.update({"status": f"error: {type(exc).__name__}", "last_error": str(exc)})
+                logger.exception("[CRM_ASSIGNMENT_INTEGRITY] reconciliation failed")
+            await asyncio.sleep(900)
+
+    assignment_integrity_task = asyncio.create_task(_assignment_integrity_reconciliation_runner())
 
     # Chatbot response worker — durable inbound → batch → LLM → WASender
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
@@ -6729,16 +6755,58 @@ async def process_pending_leads_loop():
                             logger.warning(f"[BACKGROUND] Skipped: No se pudo encontrar destino válido para lead {lead_data.get('phone')}")
                             await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
                             continue
+
+                        # Validate the queued recipient against the live CRM
+                        # cycle before any executive-facing WhatsApp is sent.
+                        from chatbot.crm_assignment_integrity import prepare_pending_assignment_notification
+                        from chatbot.storage import get_db as _get_assignment_db
+                        requested_name = p.get("target_name") or lead_data.get("target_name")
+                        guarded = await run_db(
+                            "pending_notifications.assignment_guard",
+                            lambda: prepare_pending_assignment_notification(
+                                _get_assignment_db(),
+                                lead_phone=str(lead_data.get("phone") or ""),
+                                requested_owner_name=str(requested_name or ""),
+                                requested_cycle_id=str(
+                                    p.get("assignment_cycle_id") or lead_data.get("assignment_cycle_id") or ""
+                                ) or None,
+                            ),
+                        )
+                        if guarded.get("status") != "ready":
+                            reason = str(guarded.get("reason") or "assignment_unverified")
+                            await run_db(
+                                "pending_notifications.suppress_assignment_conflict",
+                                lambda notification_id=p["_id"], suppress_reason=reason: _get_assignment_db()[
+                                    "pending_notifications"
+                                ].update_one(
+                                    {"_id": notification_id, "status": "pending"},
+                                    {"$set": {
+                                        "status": "suppressed_assignment_integrity",
+                                        "suppression_reason": suppress_reason,
+                                        "suppressed_at": datetime.now(CHILE_TZ).isoformat(),
+                                    }},
+                                ),
+                            )
+                            logger.warning(
+                                "[BACKGROUND] Notice suppressed before delivery for assignment review: lead_id=%s reason=%s",
+                                guarded.get("lead_id"), reason,
+                            )
+                            continue
+
+                        target_phone = guarded["owner_phone"]
+                        p["target_name"] = guarded["owner_name"]
+                        lead_data["target_phone"] = target_phone
+                        lead_data["target_name"] = guarded["owner_name"]
+                        lead_data["assignment_cycle_id"] = guarded["cycle_id"]
                             
                         if target_phone not in by_executive:
-                            by_executive[target_phone] = {"name": p.get("target_name") or lead_data.get("target_name"), "items": []}
+                            by_executive[target_phone] = {"name": guarded["owner_name"], "items": []}
                         
                         by_executive[target_phone]["items"].append(p)
 
                     # 2. Procesar cada ejecutivo
                     from chatbot.lead_router import format_whatsapp_template, format_summary_whatsapp_template
                     from chatbot.notification_service import NotificationService
-                    from chatbot.crm_service import CrmService
                     from chatbot.notification_identity import deduplicate_lead_notifications
 
                     for target_phone, data in by_executive.items():
@@ -6757,28 +6825,6 @@ async def process_pending_leads_loop():
                         if len(items) > 1:
                             logger.info(f"[BACKGROUND] Enviando resumen de {len(items)} leads a {target_name}")
                             msg = format_summary_whatsapp_template(items, target_name)
-                            
-                            # Marcamos todos como asignados en CRM (solo si no tienen ejecutivo aún)
-                            for item in items:
-                                lead_phone = item.get("lead_data", {}).get("phone")
-                                if lead_phone:
-                                    try:
-                                        lead_db = await run_db(
-                                            "leads.find_one",
-                                            (lambda: CrmService._db()["leads"].find_one({"phone": lead_phone}))
-                                        ) if hasattr(CrmService, '_db') else None
-                                        existing_exec = (lead_db or {}).get("ejecutivo_asignado") if lead_db else None
-                                        from chatbot.constants import UNASSIGNED_LABEL
-                                        unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
-                                        if not existing_exec or existing_exec in unassigned:
-                                            await run_db(
-                                                "crm.assign_executive",
-                                                CrmService.assign_executive,
-                                                lead_phone,
-                                                target_name,
-                                                "LeadRouter"
-                                            )
-                                    except: pass
                             
                             success = await NotificationService.send_notification(
                                 phone=target_phone,
@@ -6810,26 +6856,6 @@ async def process_pending_leads_loop():
                                 True
                             )
                             
-                            if lead_phone:
-                                try:
-                                    from chatbot.storage import get_db as _get_db
-                                    _lead_db = await run_db(
-                                        "leads.find_one",
-                                        (lambda: _get_db()["leads"].find_one({"phone": lead_phone}))
-                                    )
-                                    existing_exec = (_lead_db or {}).get("ejecutivo_asignado")
-                                    from chatbot.constants import UNASSIGNED_LABEL
-                                    unassigned = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
-                                    if not existing_exec or existing_exec in unassigned:
-                                        await run_db(
-                                            "crm.assign_executive",
-                                            CrmService.assign_executive,
-                                            lead_phone,
-                                            target_name,
-                                            "LeadRouter"
-                                        )
-                                except: pass
-                                
                             success = await NotificationService.send_notification(
                                 phone=target_phone,
                                 message=msg,

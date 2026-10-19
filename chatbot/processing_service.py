@@ -404,24 +404,57 @@ class LeadProcessingService:
         if prospecto.get("link_pendiente") is True:
             logger.info(f"[PROCESS_SERVICE] Lead {lead_doc.get('phone')} con link_pendiente=True. No se reasigna al equipo.")
             return {}
-        
+
         unassigned_labels = [UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""]
+        if current_exec in unassigned_labels:
+            from .phone_utils import has_real_phone
+            contact_candidates = (
+                lead_doc.get("phone"),
+                lead_doc.get("contact_phone_normalized"),
+                lead_doc.get("contact_phone"),
+                prospecto.get("phone"),
+            )
+            if not any(has_real_phone(value) for value in contact_candidates):
+                logger.info(
+                    "[PROCESS_SERVICE] Lead %s sin teléfono de contacto válido. Se omite asignación automática.",
+                    lead_doc.get("_id") or lead_doc.get("phone"),
+                )
+                return {}
+
+        db = LeadProcessingService._db()
+        try:
+            from .crm_assignment_integrity import assignment_context, record_assignment_integrity_alert
+            assignment_state = assignment_context(db, lead_doc)
+        except Exception as exc:
+            logger.warning(
+                "[PROCESS_SERVICE] Assignment state unavailable; block auto-assignment lead=%s reason=%s",
+                lead_doc.get("_id") or lead_doc.get("phone"), type(exc).__name__,
+            )
+            return {}
+        if assignment_state.get("status") == "conflict" or assignment_state.get("active_cycles"):
+            issues = assignment_state.get("issues") or ["active_cycle_exists"]
+            try:
+                record_assignment_integrity_alert(
+                    db, lead_id=lead_doc.get("_id"),
+                    issue_code="automatic_processing_assignment_blocked_by_canonical_cycle",
+                    evidence={"issues": issues,
+                              "cycle_ids": [row.get("assignment_cycle_id") for row in assignment_state.get("active_cycles") or []],
+                              "signature": f"{lead_doc.get('_id')}:{':'.join(issues)}"},
+                )
+            except Exception:
+                logger.warning("[PROCESS_SERVICE] Could not persist assignment review alert", exc_info=True)
+            logger.info(
+                "[PROCESS_SERVICE] Lead %s has canonical or conflicting assignment state; auto-routing is blocked.",
+                lead_doc.get("_id") or lead_doc.get("phone"),
+            )
+            return {}
         
         if current_exec not in unassigned_labels:
-            from .lead_router import get_active_executive, get_next_business_slot
-            comuna_lead = prospecto.get("comuna") or lead_doc.get("comuna") or ""
-            effective_exec = get_active_executive(current_exec, comuna_lead)
-            if effective_exec != current_exec:
-                logger.info(f"[PROCESS_SERVICE] Ejecutivo histórico {current_exec} no disponible. Reasignando a {effective_exec}.")
-                now_cl = datetime.now(CHILE_TZ)
-                assigned_at = get_next_business_slot(now_cl)
-                return {
-                    "ejecutivo_asignado": effective_exec,
-                    "prospecto.ejecutivo": effective_exec,
-                    "lifecycle.assigned_at": assigned_at.isoformat(),
-                    "auto_reassigned": True,
-                    "assignment_type": "VACATION_REASSIGNMENT"
-                }
+            logger.info(
+                "[PROCESS_SERVICE] Lead %s ya tiene ejecutivo %s; el reprocesamiento "
+                "automático conserva al responsable canónico.",
+                lead_doc.get("_id") or lead_doc.get("phone"), current_exec,
+            )
             return {} # Ya tiene asignado y sigue activo
 
         from .phone_utils import has_real_phone
@@ -450,7 +483,6 @@ class LeadProcessingService:
             )
             return {}
 
-        db = LeadProcessingService._db()
         prop = find_property_by_any_identifier(db, property_code, PROPERTY_COLLECTION_NAME)
         if not prop:
             logger.info(

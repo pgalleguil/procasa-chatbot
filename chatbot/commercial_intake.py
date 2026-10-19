@@ -27,20 +27,26 @@ WAITING_INVENTORY = "waiting_inventory_sync"
 RECONCILING = "reconciling"
 INACTIVE_PROPERTY = "inventory_inactive"
 FAILED_RECIPIENT = "failed_recipient"
+WAITING_OPPORTUNITY_REVIEW = "waiting_opportunity_review"
 COMPLETED = "completed"
 
 def _now():
     return datetime.now(timezone.utc)
 
 def _candidate(text, lead):
-    code = (lead.get("prospecto") or {}).get("codigo")
-    if code: return str(code).strip()
+    # Prefer a concrete property reference in this inbound message.  A
+    # previously assigned property's code is only the fallback; otherwise a
+    # second-property inquiry is silently folded into the old opportunity.
     urls = re.findall(r"https?://[^\s]+", str(text or ""), flags=re.I)
     if urls: return urls[-1]
     mlc = re.search(r"\bMLC[-_]?\d+\b", str(text or ""), flags=re.I)
     if mlc: return mlc.group(0)
     match = re.search(r"\b\d{4,12}\b", str(text or ""))
-    return match.group(0) if match else None
+    if match:
+        return match.group(0)
+    code = (lead.get("prospecto") or {}).get("codigo")
+    if code: return str(code).strip()
+    return None
 
 
 def property_reference_identity(raw):
@@ -310,6 +316,8 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     # and María Paz, and the lead ended assigned to the wrong executive).
     from .crm_metrics import active_assignment_cycle
     active_cycle = active_assignment_cycle(db, lead["_id"])
+    from .crm_assignment_integrity import assignment_context, record_assignment_integrity_alert
+    assignment_state = assignment_context(db, lead)
     if active_cycle:
         cycle_prop = str((active_cycle or {}).get("property_code") or "").strip()
         if cycle_prop:
@@ -320,6 +328,136 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             ).strip() == str(code).strip()
     else:
         same_property = False
+
+    if active_cycle and not same_property:
+        inquiry_id = f"commercial-property:{lead['_id']}:{code}:{inbound_provider_id}"
+        db["crm_commercial_property_inquiries"].update_one(
+            {"_id": inquiry_id},
+            {"$setOnInsert": {
+                "lead_id": lead["_id"], "property_code": code,
+                "source_inbound_provider_id": str(inbound_provider_id),
+                "source_portal": prop_meta.get("portal"),
+                "source_external_id": prop_meta.get("external_id"),
+                "received_at": now,
+                "status": "review_required",
+                "active_assignment_cycle_id": active_cycle.get("assignment_cycle_id"),
+                "active_property_code": cycle_prop,
+                "source_message": str(text or ""),
+            }},
+            upsert=True,
+        )
+        record_assignment_integrity_alert(
+            db,
+            lead_id=lead["_id"],
+            issue_code="new_property_interest_requires_opportunity_review",
+            evidence={
+                "property_code": code, "active_property_code": cycle_prop,
+                "active_cycle_id": active_cycle.get("assignment_cycle_id"),
+                "source_inbound_provider_id": str(inbound_provider_id),
+                "signature": f"{active_cycle.get('assignment_cycle_id')}:{code}",
+            },
+        )
+        db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+            **identity,
+            "lead_id": lead["_id"], "resolved_property_code": code,
+            "related_assignment_cycle_id": active_cycle.get("assignment_cycle_id"),
+            "notification_eligible": False, "property_resolved_at": now,
+            "source_message": str(text or ""),
+        }})
+        _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+               "different_property_requires_separate_opportunity_review", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
+
+    lifecycle = lead.get("lifecycle") or {}
+    if len(assignment_state.get("active_cycles") or []) > 1 or (
+        (lifecycle.get("current_assignment_cycle_id") or lifecycle.get("assignment_cycle_id"))
+        and not (assignment_state.get("active_cycles") or [])
+    ):
+        record_assignment_integrity_alert(
+            db,
+            lead_id=lead["_id"],
+            issue_code="commercial_intake_blocked_by_assignment_conflict",
+            evidence={"issues": assignment_state.get("issues"),
+                      "active_cycle_ids": [row.get("assignment_cycle_id") for row in assignment_state.get("active_cycles") or []],
+                      "signature": f"{lead['_id']}:{':'.join(assignment_state.get('issues') or [])}"},
+        )
+        db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+            "lead_id": lead["_id"], "resolved_property_code": code,
+            "notification_eligible": False, "property_resolved_at": now,
+        }})
+        _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+               "assignment_cycle_conflict_or_stale_pointer", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
+
+    if active_cycle and assignment_state.get("status") == "conflict":
+        record_assignment_integrity_alert(
+            db,
+            lead_id=lead["_id"],
+            issue_code="commercial_intake_blocked_by_assignment_conflict",
+            evidence={
+                "issues": assignment_state.get("issues"),
+                "cycle_id": active_cycle.get("assignment_cycle_id"),
+                "signature": f"{active_cycle.get('assignment_cycle_id')}:{':'.join(assignment_state.get('issues') or [])}",
+            },
+        )
+        db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+            "lead_id": lead["_id"], "resolved_property_code": code,
+            "related_assignment_cycle_id": active_cycle.get("assignment_cycle_id"),
+            "notification_eligible": False, "property_resolved_at": now,
+        }})
+        _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+               "assignment_mirror_conflict", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
+
+    existing_owner = str(
+        lead.get("ejecutivo_asignado") or (lead.get("prospecto") or {}).get("ejecutivo") or ""
+    ).strip()
+    lead_stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").strip().upper()
+    if lead_stage in {"ARCHIVED", "CLOSED", "CLOSED_LOST", "CLOSED_WON", "SUPPRESSED"}:
+        record_assignment_integrity_alert(
+            db,
+            lead_id=lead["_id"],
+            issue_code="closed_lead_reactivation_requires_context_review",
+            evidence={"stage": lead_stage, "property_code": code,
+                      "source_inbound_provider_id": str(inbound_provider_id),
+                      "signature": f"{lead['_id']}:{lead_stage}:{code}"},
+        )
+        _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+               "closed_lead_requires_explicit_reactivation", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
+
+    assigned_labels = {"No Asignado", "No asignado", "Sin Asignar", "Sin asignar", ""}
+    if not active_cycle and existing_owner and existing_owner not in assigned_labels:
+        current_property = str(
+            (lead.get("prospecto") or {}).get("codigo") or lead.get("codigo") or ""
+        ).strip()
+        if current_property and current_property != str(code).strip():
+            record_assignment_integrity_alert(
+                db,
+                lead_id=lead["_id"],
+                issue_code="new_property_interest_requires_opportunity_review",
+                evidence={"property_code": code, "lead_property_code": current_property,
+                          "owner_name": existing_owner,
+                          "signature": f"{lead['_id']}:{current_property}:{code}"},
+            )
+            _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+                   "different_property_without_canonical_cycle", now)
+            return db[COLLECTION].find_one({"_id": event["_id"]})
+        lifecycle = lead.get("lifecycle") or {}
+        record_assignment_integrity_alert(
+            db,
+            lead_id=lead["_id"],
+            issue_code="assigned_lead_without_active_cycle_requires_review",
+            evidence={"owner_name": existing_owner, "property_code": code,
+                      "has_cycle_pointer": bool(
+                          lifecycle.get("current_assignment_cycle_id")
+                          or lifecycle.get("assignment_cycle_id")
+                      ),
+                      "signature": f"{lead['_id']}:{existing_owner}:{code}"},
+        )
+        _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+               "assigned_lead_without_active_cycle", now)
+        return db[COLLECTION].find_one({"_id": event["_id"]})
 
     reuse = bool(active_cycle) and same_property
     cycle = None
@@ -338,9 +476,22 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
             cycle = active_cycle
             assignment_type = "PROPERTY"
         else:
-            # Stale cycle (user removed / phone missing). Fall back to a fresh
-            # router assignment instead of leaving the lead stranded.
-            reuse = False
+            record_assignment_integrity_alert(
+                db,
+                lead_id=lead["_id"],
+                issue_code="active_assignment_owner_unavailable",
+                evidence={"cycle_id": active_cycle.get("assignment_cycle_id"),
+                          "owner_user_id": recipient_user_id,
+                          "signature": str(active_cycle.get("assignment_cycle_id"))},
+            )
+            db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+                "lead_id": lead["_id"], "resolved_property_code": code,
+                "assignment_cycle_id": active_cycle.get("assignment_cycle_id"),
+                "notification_eligible": False,
+            }})
+            _state(db, event["_id"], FAILED_RECIPIENT,
+                   "canonical_assignment_owner_unavailable", now)
+            return db[COLLECTION].find_one({"_id": event["_id"]})
     if not reuse:
         executive, _unused, assignment_type = find_responsible_executive(
             property_code=code, comuna=comuna, lead_phone=phone)
@@ -355,12 +506,55 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         cycle = create_assignment_cycle(db, lead=lead, assigned_to_user_id=str(recipient["_id"]),
             assigned_by="commercial_intake", reason="inbound_message", assigned_at=now,
             assigned_to_display_name=recipient["nombre"], property_code=code)
-        db["crm_assignment_cycles"].update_one({"assignment_cycle_id": cycle["assignment_cycle_id"]},
+        db["crm_assignment_cycles"].update_one({"assignment_cycle_id": cycle["assignment_cycle_id"],
+                                                 "source_event_id": {"$exists": False}},
             {"$set": {"source_inbound_provider_id": str(inbound_provider_id),
                       "source_event_id": str(inbound_provider_id), "source_event_verified": True}})
         cycle = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": cycle["assignment_cycle_id"]}) or cycle
+    # A concurrent channel may have committed the cycle after the read above.
+    # Notifications and mirrors must follow the winning cycle's owner.
+    cycle_owner_id = str(cycle.get("assigned_to_user_id") or "")
+    if cycle_owner_id and cycle_owner_id != str(recipient.get("_id")):
+        try:
+            from bson import ObjectId
+            recipient = db["usuarios"].find_one({"_id": ObjectId(cycle_owner_id), "is_active": {"$ne": False}})
+        except Exception:
+            recipient = db["usuarios"].find_one({"nombre": cycle.get("assigned_to_display_name"), "is_active": {"$ne": False}})
+        recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
+        if not recipient or not recipient_phone:
+            record_assignment_integrity_alert(
+                db, lead_id=lead["_id"], issue_code="active_assignment_owner_unavailable",
+                evidence={"cycle_id": cycle.get("assignment_cycle_id"),
+                          "owner_user_id": cycle_owner_id,
+                          "signature": str(cycle.get("assignment_cycle_id"))},
+            )
+            _state(db, event["_id"], FAILED_RECIPIENT, "canonical_assignment_owner_unavailable", now)
+            return db[COLLECTION].find_one({"_id": event["_id"]})
+        assignment_type = "PROPERTY"
+        reuse = True
+        executive = recipient.get("nombre") or cycle.get("assigned_to_display_name")
     pending_other = _pending_other_count(db, lead["_id"], event["_id"])
-    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+    lead_lifecycle = lead.get("lifecycle") or {}
+    expected_cycle_pointer = lead_lifecycle.get("current_assignment_cycle_id")
+    cycle_pointer_guard = {"$or": [
+        {"lifecycle.current_assignment_cycle_id": {"$exists": False}},
+        {"lifecycle.current_assignment_cycle_id": None},
+        {"lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"]},
+    ]} if expected_cycle_pointer is None else {"lifecycle.current_assignment_cycle_id": cycle["assignment_cycle_id"]}
+    mirror_result = db["leads"].update_one({"_id": lead["_id"], "$and": [
+        cycle_pointer_guard,
+        {"$or": [
+            {"ejecutivo_asignado": recipient["nombre"]},
+            {"ejecutivo_asignado": {"$exists": False}},
+            {"ejecutivo_asignado": None},
+            {"ejecutivo_asignado": {"$in": list(assigned_labels)}},
+        ]},
+        {"$or": [
+            {"lifecycle.assigned_to_user_id": str(cycle.get("assigned_to_user_id") or "")},
+            {"lifecycle.assigned_to_user_id": {"$exists": False}},
+            {"lifecycle.assigned_to_user_id": None},
+        ]},
+    ]}, {"$set": {
         "ejecutivo_asignado": recipient["nombre"], "prospecto.ejecutivo": recipient["nombre"],
         "prospecto.codigo": code,
         "prospecto.codigo_propiedad": code,
@@ -388,6 +582,25 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         "commercial_notification_eligible": True,
         "prospecto.link_pendiente": bool(pending_other),
     }})
+    if getattr(mirror_result, "matched_count", 0) != 1:
+        fresh_after_race = db["leads"].find_one({"_id": lead["_id"]}) or lead
+        winner_state = assignment_context(db, fresh_after_race)
+        if (winner_state.get("status") != "consistent"
+                or str((winner_state.get("cycle") or {}).get("assignment_cycle_id")) != str(cycle.get("assignment_cycle_id"))):
+            record_assignment_integrity_alert(
+                db, lead_id=lead["_id"], issue_code="commercial_intake_owner_mirror_compare_and_set_failed",
+                evidence={"cycle_id": cycle.get("assignment_cycle_id"),
+                          "issues": winner_state.get("issues"),
+                          "signature": str(cycle.get("assignment_cycle_id"))},
+            )
+            db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
+                "lead_id": lead["_id"], "resolved_property_code": code,
+                "related_assignment_cycle_id": cycle.get("assignment_cycle_id"),
+                "notification_eligible": False,
+            }})
+            _state(db, event["_id"], WAITING_OPPORTUNITY_REVIEW,
+                   "assignment_changed_during_owner_mirror_write", now)
+            return db[COLLECTION].find_one({"_id": event["_id"]})
     fresh = db["leads"].find_one({"_id": lead["_id"]}) or lead
     # A reused assignment already owns its notification lifecycle. Resolving
     # or retrying property context must not enqueue a second notification.

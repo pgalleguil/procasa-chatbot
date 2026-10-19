@@ -408,6 +408,78 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
 
     if target_lead:
         lead_id = str(target_lead["_id"])
+        from .crm_assignment_integrity import (
+            active_assignment_cycles,
+            assignment_context,
+            record_assignment_integrity_alert,
+        )
+        assignment_state = assignment_context(db, target_lead)
+        active_cycles = assignment_state.get("active_cycles") or []
+        active_cycle = active_cycles[0] if len(active_cycles) == 1 else None
+        existing_property = str(
+            (target_lead.get("prospecto") or {}).get("codigo")
+            or target_lead.get("codigo") or ""
+        ).strip()
+        cycle_property = str((active_cycle or {}).get("property_code") or existing_property).strip()
+        incoming_property = str(property_code or "").strip()
+        lifecycle = target_lead.get("lifecycle") or {}
+        has_stale_cycle_pointer = bool(
+            lifecycle.get("current_assignment_cycle_id") or lifecycle.get("assignment_cycle_id")
+        ) and not active_cycles
+        blocking_assignment_conflict = (
+            bool(active_cycles) and assignment_state.get("status") == "conflict"
+        ) or len(active_cycles) > 1 or has_stale_cycle_pointer
+        property_is_current_opportunity = not active_cycle or not cycle_property or (
+            incoming_property == cycle_property
+        )
+        if blocking_assignment_conflict:
+            property_is_current_opportunity = False
+            issue_signature = ":".join(assignment_state.get("issues") or ["stale_cycle_pointer"])
+            record_assignment_integrity_alert(
+                db,
+                lead_id=target_lead["_id"],
+                issue_code="ingest_blocked_by_assignment_conflict",
+                evidence={
+                    "issues": assignment_state.get("issues"),
+                    "cycle_id": active_cycle.get("assignment_cycle_id"),
+                    "signature": f"{active_cycle.get('assignment_cycle_id')}:{issue_signature}",
+                },
+            )
+        if active_cycle and incoming_property and cycle_property and incoming_property != cycle_property:
+            # One lead document has one active commercial opportunity. Preserve
+            # that property's mirrors and record the second inquiry for review.
+            interest_id = hashlib.sha256(
+                f"{target_lead['_id']}|{incoming_property}|{event.source_system}|{event.source_event_id}".encode(
+                    "utf-8", "replace"
+                )
+            ).hexdigest()
+            db["crm_commercial_property_inquiries"].update_one(
+                {"_id": interest_id},
+                {"$setOnInsert": {
+                    "lead_id": target_lead["_id"],
+                    "property_code": incoming_property,
+                    "source_system": event.source_system,
+                    "source_event_id": str(event.source_event_id),
+                    "received_at": now,
+                    "status": "review_required",
+                    "active_assignment_cycle_id": active_cycle.get("assignment_cycle_id"),
+                    "active_property_code": cycle_property,
+                }},
+                upsert=True,
+            )
+            record_assignment_integrity_alert(
+                db,
+                lead_id=target_lead["_id"],
+                issue_code="new_property_interest_requires_opportunity_review",
+                evidence={
+                    "property_code": incoming_property,
+                    "active_property_code": cycle_property,
+                    "active_cycle_id": active_cycle.get("assignment_cycle_id"),
+                    "source_system": event.source_system,
+                    "source_event_id": str(event.source_event_id),
+                    "signature": f"{active_cycle.get('assignment_cycle_id')}:{incoming_property}",
+                },
+            )
         update_fields: Dict[str, Any] = {
             "last_message_at": now_iso,
             "last_crm_update": now,
@@ -426,16 +498,12 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             update_fields["prospecto.phone"] = phone_normalized
 
         if property_code and _is_valid_property_code(property_code):
-            update_fields["prospecto.codigo"] = property_code
-            update_fields["prospecto.comuna"] = property_enrich.get("comuna", target_lead.get("prospecto", {}).get("comuna", ""))
-            update_fields["prospecto.region"] = property_enrich.get("region", "")
-            update_fields["prospecto.tipo"] = property_enrich.get("tipo", "")
-            update_fields["prospecto.operacion"] = property_enrich.get("operacion", "")
-            if phone_normalized:
-                db[COLLECTION_CONVERSATIONS].update_one(
-                    {"_id": target_lead["_id"]},
-                    {"$addToSet": {"prospecto.propiedades_vistas": property_code}},
-                )
+            if property_is_current_opportunity:
+                update_fields["prospecto.codigo"] = property_code
+                update_fields["prospecto.comuna"] = property_enrich.get("comuna", target_lead.get("prospecto", {}).get("comuna", ""))
+                update_fields["prospecto.region"] = property_enrich.get("region", "")
+                update_fields["prospecto.tipo"] = property_enrich.get("tipo", "")
+                update_fields["prospecto.operacion"] = property_enrich.get("operacion", "")
 
         if portal_source:
             update_fields["origen"] = portal_source
@@ -446,10 +514,14 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
                 "source_event_id": event.source_event_id,
                 "contact_date": contact_date,
                 "portal_source": portal_source,
+                "property_code": incoming_property or None,
+                "assignment_cycle_id": (active_cycle or {}).get("assignment_cycle_id"),
                 "message_preview": message[:160],
                 "ingested_at": now_iso,
             }
         }
+        if property_code and _is_valid_property_code(property_code):
+            update_fields["$addToSet"]["prospecto.propiedades_vistas"] = property_code
 
         message_entry = {
             "role": "user",
@@ -462,35 +534,38 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
 
         current_exec = target_lead.get("ejecutivo_asignado") or target_lead.get("prospecto", {}).get("ejecutivo")
         unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""}
+        canonical_owner = (active_cycle or {}).get("assigned_to_display_name")
+        if blocking_assignment_conflict:
+            exec_name = None
+        elif active_cycle:
+            exec_name = canonical_owner if assignment_state.get("status") == "consistent" else None
+        else:
+            exec_name = current_exec if current_exec not in unassigned else UNASSIGNED_LABEL
 
-        exec_name = current_exec if current_exec not in unassigned else UNASSIGNED_LABEL
-        if phone_has_real and (
-            event.source_system == "prop360"
-            or current_exec in unassigned
-            or property_code != target_lead.get("prospecto", {}).get("codigo")
-        ):
-            if _is_valid_property_code(property_code) and property_enrich["property_found"]:
-                exec_name, exec_phone, assignment_type = find_responsible_executive(
-                    property_code=property_code,
-                    comuna=property_enrich.get("comuna", ""),
-                    lead_phone=phone_normalized,
-                    lead_name=name,
-                )
-                if exec_name not in unassigned:
-                    update_fields["ejecutivo_asignado"] = exec_name
-                    update_fields["prospecto.ejecutivo"] = exec_name
-                    assigned_at = get_next_business_slot(now)
-                    update_fields["lifecycle.assigned_at"] = assigned_at.isoformat()
-                    if not current_exec or current_exec in unassigned:
-                        update_fields["lifecycle.created_at"] = now_iso
-        elif current_exec not in unassigned:
-            exec_name = current_exec
+        proposed_owner = None
+        proposed_assigned_at = None
+        if (not active_cycle and current_exec in unassigned and phone_has_real
+                and _is_valid_property_code(property_code) and property_enrich["property_found"]
+                and property_is_current_opportunity):
+            proposed_owner, _exec_phone, assignment_type = find_responsible_executive(
+                property_code=property_code,
+                comuna=property_enrich.get("comuna", ""),
+                lead_phone=phone_normalized,
+                lead_name=name,
+            )
+            if proposed_owner not in unassigned:
+                proposed_assigned_at = get_next_business_slot(now)
 
         hot_detected = _has_hot_intent(message)
-        initial_temp = "HOT" if hot_detected else "COLD"
+        current_temperature = str(
+            target_lead.get("lead_temperature_effective")
+            or target_lead.get("lead_temperature")
+            or "COLD"
+        ).upper()
+        initial_temp = "HOT" if hot_detected else current_temperature
         temp_set = effective_temperature_set(initial_temp)
         update_fields.update(temp_set)
-        if hot_detected:
+        if hot_detected and not target_lead.get("last_intent"):
             update_fields["last_intent"] = "ASK_VISIT"
 
         update_payload = {"$set": {}, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
@@ -501,6 +576,46 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             update_payload["$addToSet"] = update_fields["$addToSet"]
 
         db[COLLECTION_CONVERSATIONS].update_one({"_id": target_lead["_id"]}, update_payload)
+
+        assignment_changed = False
+        if proposed_owner and proposed_assigned_at:
+            owner_filter = {
+                "_id": target_lead["_id"],
+                "$and": [
+                    {"$or": [
+                        {"ejecutivo_asignado": {"$exists": False}},
+                        {"ejecutivo_asignado": None},
+                        {"ejecutivo_asignado": ""},
+                        {"ejecutivo_asignado": {"$in": list(unassigned)}},
+                    ]},
+                    {"$or": [
+                        {"lifecycle.current_assignment_cycle_id": {"$exists": False}},
+                        {"lifecycle.current_assignment_cycle_id": None},
+                        {"lifecycle.current_assignment_cycle_id": ""},
+                    ]},
+                ],
+            }
+            assigned = db[COLLECTION_CONVERSATIONS].update_one(
+                owner_filter,
+                {"$set": {
+                    "ejecutivo_asignado": proposed_owner,
+                    "prospecto.ejecutivo": proposed_owner,
+                    "lifecycle.assigned_at": proposed_assigned_at.isoformat(),
+                    "lifecycle.created_at": target_lead.get("lifecycle", {}).get("created_at") or now_iso,
+                }},
+            )
+            assignment_changed = bool(getattr(assigned, "modified_count", 0))
+            if assignment_changed:
+                exec_name = proposed_owner
+            else:
+                winner = db[COLLECTION_CONVERSATIONS].find_one({"_id": target_lead["_id"]}) or {}
+                winner_cycles = active_assignment_cycles(db, target_lead["_id"])
+                if winner_cycles:
+                    winner_context = assignment_context(db, winner)
+                    exec_name = winner_context.get("owner_name") if winner_context.get("status") == "consistent" else None
+                else:
+                    winner_name = winner.get("ejecutivo_asignado") or (winner.get("prospecto") or {}).get("ejecutivo")
+                    exec_name = winner_name if winner_name not in unassigned and not blocking_assignment_conflict else None
 
         log_event(
             phone_normalized or email or "unknown",
@@ -525,10 +640,10 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             status="updated",
             lead_id=lead_id,
             identity_match=identity,
-            executive=update_fields.get("ejecutivo_asignado", current_exec),
+            executive=exec_name,
             property_found=property_enrich["property_found"],
             temperature=initial_temp,
-            assignment_changed=(update_fields.get("ejecutivo_asignado") != target_lead.get("ejecutivo_asignado")),
+            assignment_changed=assignment_changed,
         )
 
     exec_name, exec_phone, assignment_type = UNASSIGNED_LABEL, None, "NO_PROPERTY"

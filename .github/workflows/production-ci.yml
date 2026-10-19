@@ -27,6 +27,7 @@ jobs:
             captacion_management.py captacion_assignment_eligibility.py \
             chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py \
             maintenance/repair_procasa_p0_17252.py maintenance/repair_procasa_p0_6732.py \
+            maintenance/repair_procasa_prop360_duplicate_cycles.py \
             maintenance/ensure_crm_cycle_reconciliation_index.py \
             release_info.py owner_portal/campaign.py owner_portal/monthly.py \
             owner_portal/price_revalidation.py campanas/handler.py \
@@ -71,6 +72,7 @@ jobs:
               tests/test_assignment_integrity_p0.py
               tests/test_prop360_crm_incident.py
               tests/test_crm_list_actions.py
+              tests/test_repair_procasa_prop360_duplicate_cycles.py
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py

@@ -170,3 +170,50 @@ def test_second_active_cycle_or_wrong_owner_is_never_treated_as_a_repairable_dup
     with pytest.raises(repair.RepairSafetyError, match="exactly the individually reviewed two cycles"):
         repair._validate_scenario("5806", snapshot)
 
+
+@pytest.mark.parametrize("case_name", ["17252-other", "5806"])
+def test_postcondition_chatbot_lookup_uses_transaction_snapshot(case_name):
+    from chatbot.crm_assignment_integrity import assignment_context
+    import mongomock
+
+    snapshot = _case_snapshot(case_name)
+    case = repair.CASES[case_name]
+    lead = deepcopy(snapshot["lead"][0])
+    lead["lifecycle"]["current_assignment_cycle_id"] = case["original_cycle_id"]
+    lead["lifecycle"]["assignment_cycle_id"] = case["original_cycle_id"]
+    cycles = deepcopy(snapshot["cycles"])
+    original = next(row for row in cycles if row["assignment_cycle_id"] == case["original_cycle_id"])
+    duplicate = next(row for row in cycles if row["assignment_cycle_id"] == case["duplicate_cycle_id"])
+    original["cycle_status"] = "active"
+    original["unassigned_at"] = None
+    duplicate["cycle_status"] = "closed"
+    duplicate["unassigned_at"] = datetime.now(timezone.utc)
+
+    # The database deliberately contains no cycles: in a transaction the helper
+    # must use the snapshot override, since a separate read cannot see writes.
+    context = assignment_context(
+        mongomock.MongoClient().incident, lead, active_cycles_override=cycles
+    )
+    assert context["status"] == "consistent"
+    assert context["cycle"]["assignment_cycle_id"] == case["original_cycle_id"]
+
+
+@pytest.mark.parametrize("case_name", ["17252-other", "5806"])
+def test_audit_event_acceptance_time_matches_naive_mongo_utc(case_name):
+    snapshot = _case_snapshot(case_name)
+    case = repair.CASES[case_name]
+    _, _, duplicate, accepted = repair._validate_scenario(case_name, snapshot)
+    audit = {
+        "type": "ADMINISTRATIVE_PROP360_DUPLICATE_CYCLE_REPAIR",
+        "meta": {
+            "incident_id": case["incident_id"],
+            "provider_accepted_at": accepted["accepted_at"].replace(tzinfo=None),
+            "customer_message_sent": False,
+            "assignment_notification_sent": False,
+        },
+    }
+
+    assert repair._audit_event_matches(audit, case, accepted["accepted_at"])
+    audit["meta"]["provider_accepted_at"] = duplicate["assigned_at"]
+    assert not repair._audit_event_matches(audit, case, accepted["accepted_at"])
+

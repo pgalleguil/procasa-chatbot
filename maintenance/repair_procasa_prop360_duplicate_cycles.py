@@ -295,6 +295,19 @@ def _open_pointer_alert(row: Mapping[str, Any], case: Mapping[str, Any]) -> bool
     )
 
 
+def _audit_event_matches(audit: Mapping[str, Any] | None, case: Mapping[str, Any],
+                         accepted_at: datetime) -> bool:
+    meta = (audit or {}).get("meta") or {}
+    return bool(
+        audit
+        and audit.get("type") == "ADMINISTRATIVE_PROP360_DUPLICATE_CYCLE_REPAIR"
+        and meta.get("incident_id") == case["incident_id"]
+        and _utc(meta.get("provider_accepted_at")) == _utc(accepted_at)
+        and meta.get("customer_message_sent") is False
+        and meta.get("assignment_notification_sent") is False
+    )
+
+
 def _validate_scenario(case_name: str, snapshot: Mapping[str, list[Mapping[str, Any]]]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     case = CASES[case_name]
     if len(snapshot["lead"]) != 1:
@@ -454,11 +467,15 @@ def _verify_applied(db: Any, case_name: str, backup: Mapping[str, Any], session:
     pointer_context = None
     try:
         from chatbot.crm_assignment_integrity import assignment_context
-        pointer_context = assignment_context(db, lead)
+        # During the transaction these documents are not visible to a separate
+        # collection read without the session. Resolve from the transaction's
+        # just-read snapshot so this check sees the proposed sole active cycle.
+        pointer_context = assignment_context(
+            db, lead, active_cycles_override=snapshot["cycles"]
+        )
     except Exception as exc:
         if diagnostic:
             raise RepairSafetyError(f"postcondition chatbot owner lookup failed ({type(exc).__name__})") from exc
-    audit_meta = (audit or {}).get("meta") or {}
     try:
         target_expected = {str(row.get("_id")): row for row in management_backup}
         target_current = {str(row.get("_id")): row for row in snapshot["management"]}
@@ -501,11 +518,7 @@ def _verify_applied(db: Any, case_name: str, backup: Mapping[str, Any], session:
         "notifications_unchanged_no_new_whatsapp": notification_history_unchanged,
         "tasks_and_visits_unchanged": unchanged_operational_records,
         "no_open_pointer_alerts": not alerts_open,
-        "audit_event_present": bool(audit and audit.get("type") == "ADMINISTRATIVE_PROP360_DUPLICATE_CYCLE_REPAIR"
-                                     and audit_meta.get("incident_id") == case["incident_id"]
-                                     and audit_meta.get("provider_accepted_at") == accepted_at
-                                     and audit_meta.get("customer_message_sent") is False
-                                     and audit_meta.get("assignment_notification_sent") is False),
+        "audit_event_present": _audit_event_matches(audit, case, accepted_at),
         "event_history_preserved": _fingerprint(events_without_audit) == _fingerprint(backup_events),
         "chatbot_owner_consistent": bool(pointer_context and pointer_context.get("status") == "consistent"
                                           and pointer_context.get("owner_name") == case["owner_name"]
